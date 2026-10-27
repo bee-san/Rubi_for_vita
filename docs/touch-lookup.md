@@ -380,6 +380,11 @@ format, with illustrative numbers (no console has logged the stick's fields yet)
 overlay closed: 3733 frames, 2 word moves, stick 127, slowest frame 11 ms, 4 row moves, 1 wraps, 0 without layout, slowest key 128 us, 37 stick moves, 3 deferred lookups after 200 ms
 ```
 
+Since #360 the line ends with the press-to-screen figure, `, lookups shown N: mean M ms (A ms after the result),
+max X ms`: the lookups drawn while the overlay was open, from their press (the post) to the render that drew the word,
+of it after the result's publication, and the slowest
+([release-variants.md](release-variants.md#the-debug-builds-job-lines-after-the-result-360)).
+
 `word moves`, `row moves`, `wraps`, `without layout` and `slowest key` stay the
 arrows', taps' and dictionary pages' (the stick's steps take the arrows' code
 with its `stick` flag, which leaves those counts alone, and are counted among
@@ -488,7 +493,7 @@ lookup cursor at 59: 7 chars, dictionary 1/1, page 1/1, 5 reads 16948 B, rc=0, 0
 ```
 
 That is why (`first word` during Auto OCR, `on open`, `cursor` for an arrow
-or a tap, `page` for an L or R tap), the cursor byte, the matched span in
+or a tap, `page` for an L or R tap before 0.9.6, which stacks the dictionaries instead), the cursor byte, the matched span in
 characters, the dictionary file (`?` among several with one shown), the page,
 the file reads and bytes, the result and the time; then up to 8 characters
 at the cursor, the entry, its dictionary's name (the file's title, as the bundled

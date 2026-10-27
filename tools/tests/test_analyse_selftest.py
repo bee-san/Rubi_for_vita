@@ -1079,8 +1079,9 @@ class GameStartLines(unittest.TestCase):
         # the format string the analyser reads, as shell/worker.c has it: the dictionary's name is
         # core/config.h's VJO_DICT_NAME, the only dictionary since the Hachidori relay's removal
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
-        self.assertIn('vjo_log("game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s"',
-                      worker)
+        # (in the data segment since #358: a VJO_DATA_TABLE string, logged as vjo_log(started, ...))
+        self.assertIn('"game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s";', worker)
+        self.assertIn("vjo_log(started, title_id,", worker)
         self.assertIn('#define VJO_DICT_NAME "Local dictionaries"\n', (ROOT / "core/config.h").read_text(encoding="utf-8"))
         self.assertNotIn("(key %s)", worker)
         line = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
@@ -1163,6 +1164,32 @@ class OverlayCloseLines(unittest.TestCase):
                     5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 200)
         self.assertEqual(a.summarise_log(line)["left_stick"],
                          {"closes": 1, "moves": 8, "deferred_lookups": 9, "rest_ms": [200]})
+        self.assertNotIn("lookups_shown", a.summarise_log(line))
+
+    def test_the_lookups_shown_figure(self):
+        """#360: the debug build's close line ends with the press-to-screen figure (shell/lookup_shown.h
+        VJO_SHOWN_FORMAT, after the counts above in close_page's one line): each close's lookups shown, their mean
+        ms from the press to the frame that drew them, of it after their result's publication, and the largest;
+        --collect's analysis weights each close's means by its lookups."""
+        head = (ROOT / "shell/lookup_shown.h").read_text(encoding="utf-8")
+        fmt = re.search(r'#define VJO_SHOWN_FORMAT "([^"]+)"', head).group(1)
+        self.assertEqual(fmt, ", lookups shown %u: mean %u ms (%u ms after the result), max %u ms")
+        overlay = (ROOT / "shell/overlay.cpp").read_text(encoding="utf-8")
+        # close_page's one line: the counts' format, then the figure's, then its newline
+        self.assertRegex(overlay, r'%d deferred lookups after %u ms"\s+VJO_SHOWN_FORMAT "\\n",')
+        close = ("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
+                 "%d without layout, slowest key %d us, %d stick moves, %d deferred lookups after %u ms" + fmt + "\n")
+        log = close % (900, 12, 0, 20, 1, 0, 0, 300, 0, 0, 200, 10, 48, 12, 95) + \
+            close % (300, 2, 0, 18, 0, 0, 0, 120, 0, 0, 200, 2, 30, 6, 31) + \
+            close % (60, 0, 0, 9, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0)
+        lg = a.summarise_log(log)
+        self.assertEqual(lg["lookups_shown"], {"closes": 3, "n": 12, "ms": 10 * 48 + 2 * 30, "after_ms": 10 * 12 + 2 * 6,
+                                               "max_ms": 95})
+        self.assertEqual(lg["left_stick"]["closes"], 3)  # the stick's fields are still read before the figure
+        self.assertIn("; lookups shown (3 of them): 12, from the press to the frame that drew the word 45 ms mean "
+                      "(11 ms of it after the result), 95 ms at most", a.overlay_summary(lg))
+        lg = a.summarise_log(close % (60, 0, 0, 9, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0))
+        self.assertIn("; lookups shown (1 of them): none", a.overlay_summary(lg))
 
 
 def export_line(what="queued", rc=0, cards=2, moved=2, kept=0, unreadable=0, too_large=0, left=0, stopped=0, swept=None):
@@ -1562,7 +1589,8 @@ class ClockWindows(unittest.TestCase):
         shell = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
         body = shell[re.search(r"\nstatic void activate_game\(", shell).start():]
         body = body[:body.index("\n}\n")]
-        self.assertLess(body.index("apply_config();"), body.index('vjo_log("game %s started: '))
+        self.assertLess(body.index("apply_config();"), body.index('"game %s started: '))  # (#358: a data-segment format)
+        self.assertLess(body.index('"game %s started: '), body.index("vjo_log(started, "))
 
     def test_the_test3_style_fixture_reads_its_boost_off_window_plainly(self):
         # tools/tests/fixtures/log-test3-style.txt: synthetic (no console, no game), test.3's checklist in order:
@@ -2235,11 +2263,13 @@ class BoostLikeForLike(unittest.TestCase):
         cond = worker.index("if (stats.lines && (want_helpers || stats.cached)) {")
         self.assertLess(cond, par)
         self.assertLess(par - cond, 1500)
-        # the done line's appends (DONE_APPENDS), which builds before API 22 do not log
+        # the done line's appends (DONE_APPENDS), which builds before API 22 do not log, and since #360 the lines it held
         self.assertIn('"job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, log %u ms in %u "\n'
-                      '            "appends"', shell)
+                      '        "appends, %d held"', shell)
         self.assertTrue(a.DONE_APPENDS.match("job 1 done rc=0 in 3300 ms, arena peak 0, dictionary page 1/1, game 3100 "
                                              "ms, log 62 ms in 6 appends"))
+        self.assertTrue(a.DONE_APPENDS.match("job 1 done rc=0 in 3300 ms, arena peak 0, dictionary page 1/1, game 3100 "
+                                             "ms, log 62 ms in 6 appends, 3 held"))
         # the off window's clock is assumed: only job_busy reads the clock, and it returns first with the boost off;
         # no start line logs it (a plugin that read it elsewhere would have to be shown beside the assumption)
         body = worker[worker.index("static void job_busy(void *ud, int on)"):]
@@ -2620,7 +2650,8 @@ class PressesAndRereads(unittest.TestCase):
         for want in ("presses (the overlay opened) with ocr_mode auto: 7 in 1 game window; 2 shown at once",
                      "1 waited for a job still running: the word at most 2.5 s after the press (est.: that job's "
                      "whole time, begun before the press, as the log has no time for a job's start; then its done "
-                     "line's 2 appends at up to 46 ms each and the Shell's 50 ms poll)",
+                     "line's 2 appends at up to 46 ms each (none where it held its lines until its result, #360) "
+                     "and the Shell's 50 ms poll)",
                      "1 recognized on the press: the text 1.2 s after its job's start, the word 1.4 s; of it, waiting "
                      "for the text to hold still 0.8 s (the job starts after the press's own handling, its log lines "
                      "and config.ini's re-read, est. 0.04-0.3 s; each time is taken before its own log line's appends)",
@@ -2697,13 +2728,16 @@ class PressesAndRereads(unittest.TestCase):
                + text + end(0, 1520) + cursor(400) + CLOSE)
         self.assertIn("1 waited for a job still running: the word at most 2.2 s after the press (est.: that job's whole "
                       "time, begun before the press, as the log has no time for a job's start; then its done line's 2 "
-                      "appends at up to 46 ms each and the Shell's 50 ms poll; for 1 OCR-only job, with the lookup of the "
+                      "appends at up to 46 ms each (none where it held its lines until its result, #360) and the "
+                      "Shell's 50 ms poll; for 1 OCR-only job, with the lookup of the "
                       "word after it)", flat("\n".join(a.render_presses(a.summarise_log(log)))))
 
     def test_the_waited_bound_counts_what_follows_a_done_line_and_the_press_handling_is_stated(self):
         """audit-b B1b: net_job takes a job's time, logs its done line (an append to log.txt, and one to status.txt
         while that is under 64 KiB), and only then sets job_done. API 25 also signals the control thread; the bound
-        retains the 50 ms fallback poll for older logs and adds both appends at their most measured time.
+        retains the 50 ms fallback poll for older logs and adds both appends at their most measured time. Since #360
+        the debug build holds the done line (and the job's lines before it) and writes them after job_done: such a
+        done line (", N held") adds the poll only.
         A running job whose done line comes before the
         press's `open:` line ended during the press's own handling: not counted. A press job's times run from its
         start, after the press's own handling, which the line says."""
@@ -2713,9 +2747,12 @@ class PressesAndRereads(unittest.TestCase):
         # The early preparation branch has no done log: the final publication is the
         # foreground/OCR job whose done line the analyser reads.
         done = net_job.rindex("job_done = 1;")
-        self.assertLess(net_job.index('vjo_log("job %d done rc=%d in %d ms'), done)
+        self.assertLess(net_job.index("vjo_log(done_format, idx, job_rc, (int)((now_us() - t0) / 1000)"), done)
         self.assertLess(net_job.index("(int)((now_us() - t0) / 1000)"), done)
         self.assertIn("vjoNotifyShell();", net_job[done:])
+        # the held lines (the done line's) are written after job_done, by this thread
+        self.assertLess(net_job.index("net_log_hold(); /* a job that held none yet"), done)
+        self.assertGreater(net_job.index("vjo_log_batch_end(&net_held->b);"), done)
         self.assertIn("#define POLL_TIMEOUT_US   50000", worker)
         self.assertIn("#define STATUS_CAP (64 * 1024)", (ROOT / "shell/log_vita.c").read_text(encoding="utf-8"))
         self.assertIn("12.1-46.0 ms per append", (ROOT / "docs/performance.md").read_text(encoding="utf-8"))
@@ -2726,6 +2763,9 @@ class PressesAndRereads(unittest.TestCase):
                 "job 0 done rc=0 in 1000 ms, arena peak 53744, dictionary page 1/1, game 500 ms, log 30 ms in 3 appends\n")
         after = a.summarise_log(BOOT22 + START + running + press("background job still running") + done + CLOSE)
         self.assertEqual(after["presses"]["modes"]["auto"]["waited"], [1142])
+        held = done.replace("in 3 appends\n", "in 3 appends, 1 held\n")  # #360: written after its result
+        after = a.summarise_log(BOOT22 + START + running + press("background job still running") + held + CLOSE)
+        self.assertEqual(after["presses"]["modes"]["auto"]["waited"], [1050])
         # its done line before the press's open: line (the control thread had not seen its end): not counted
         during = a.summarise_log(BOOT22 + START + running + "input block on rc=0 (00000000) t=1 ms\n" + done
                                  + "open: background job still running (stable 1, quiet 0)\n" + CLOSE)

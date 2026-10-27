@@ -51,6 +51,7 @@ extern "C" {
 #include "../include/vjo_ledger_budget.h"
 #include "history.h"
 }
+#include "lookup_shown.h"
 
 #include "../core/region_select.h"
 #include "../core/stick_cursor.h"
@@ -183,6 +184,7 @@ static uint32_t s_hdr_lead;
 #if VJO_DEBUG
 static int64_t s_frame_max_us, s_key_max_us; /* slowest frame; slowest arrow key's row walk */
 static int s_frames, s_moves, s_stick_max; /* largest stick deflection from centre (either stick) */
+static VjoShown s_shown; /* the lookups shown and their press-to-screen times (lookup_shown.h) */
 #define COUNT_MOVE() s_moves++
 #else
 #define COUNT_MOVE() ((void)0)
@@ -553,6 +555,10 @@ static void render(int new_content)
         s_cmap.p = NULL; /* API 46: no text of the cursor's, no char map */
         s_cmap_seq = g_view.cmap_seq;
     }
+#if VJO_DEBUG
+    /* the lookup asked for, shown now for the cursor drawn: its press-to-screen time (no line until the close) */
+    vjo_shown_take(&s_shown, &g_view, cursor_matches);
+#endif
     s_n_entries = l ? l->n_entries : 0;
     if (s_local_cursor_mode) {
         s_n_entries = cursor_matches && s_n_entries ? 1 : 0;
@@ -832,7 +838,7 @@ static void region_hint(int force)
         "or drag on screen · %s cancel · hold □ full screen</font>";
     int x, y, w = 0, h = 0, corner = vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     int64_t now = sceKernelGetProcessTimeWide();
-    char hint[192]; /* the longest is 144 B */
+    char hint[192]; /* the longest is 154 B */
     if (!force && corner == s_hint_box[0] &&
         ((w == s_hint_box[1] && h == s_hint_box[2]) || now - s_hint_us < 100000))
         return;
@@ -849,7 +855,8 @@ static void region_hint(int force)
                         w == s_refused[0] && h == s_refused[1] ? "#ff8a80" : "#b8c0cc", w, h, VJO_RSEL_MIN,
                         VJO_RSEL_MIN, s_btn.cancel_glyph);
     else
-        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffd24a\">Box %d x %d</font><font color=\"#ffffff\">"
+        /* #358: a box drawn, the suggested one or the user's: the question enter answers */
+        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffd24a\">Use this box? %d x %d</font><font color=\"#ffffff\">"
                         " · stick / ◀▶▲▼ opposite corner · %s save · %s undo corner</font>", w, h,
                         s_btn.enter_glyph, s_btn.cancel_glyph);
     set_rich(s_region_hint, hint);
@@ -875,13 +882,16 @@ static void touch_write(int action)
 #endif
 }
 
-static void enter_region_mode(void)
+/* rows: #358's suggested box, drawn from the start (core/region_select.h vjo_rsel_preset), or 0 (□: by hand; a box the
+ * selector refuses too). */
+static void enter_region_mode(uint32_t rows)
 {
     s_mode = MODE_REGION;
     touch_write(vjo_touch_hold(&s_touch));
     s_square_down_us = sceKernelGetProcessTimeWide();
     s_square_clear_armed = 1;
     vjo_rsel_begin(&s_rsel, s_square_down_us);
+    vjo_rsel_preset(&s_rsel, rows);
     ontext_hide(); /* API 46: no marks while the region is drawn */
     if (s_panel)
         s_panel->Hide();
@@ -896,6 +906,9 @@ static void enter_region_mode(void)
 static void leave_region_mode(void)
 {
     s_mode = MODE_OVERLAY;
+    /* #358: the region mode was used in this activation of the game (a suggested box offered, or □): no box is offered
+     * after it until the game next starts or resumes (core/region_select.h VJO_RSEL_TAKEN) */
+    __atomic_store_n(&g_view.suggest, VJO_RSEL_TAKEN, __ATOMIC_RELAXED);
     vjo_stick_cursor_latch(&s_stick); /* a stick still drawing the box does not move the cursor */
     if (s_region_layer)
         s_region_layer->Hide();
@@ -1011,12 +1024,31 @@ static void open_page(void)
 #if VJO_DEBUG
     s_frame_max_us = s_key_max_us = 0;
     s_stick_max = 0;
+    sceClibMemset(&s_shown, 0, sizeof(s_shown));
 #endif
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
     s_arrow_repeat_us = 0;
     s_prev_touch = 1;
     touch_write(vjo_touch_hold(&s_touch)); /* own front input throughout the overlay, not just crops */
 }
+
+#if VJO_DEBUG
+/* The close line: its counts and timings, and the press-to-screen figure (lookup_shown.h). One line of 380 B
+ * at most, longer than vjo_log's 254 B, so formatted here, in a frame of its own: its buffer is on the paf
+ * thread's stack only while it formats, never under close_page's other calls (the deepest chain from frame
+ * stays render's). */
+static __attribute__((noinline)) void log_close_line(void)
+{
+    char line[384];
+    vjo_log_raw(line, sceClibSnprintf(line, sizeof(line),
+                                      "overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
+                                      "%d without layout, slowest key %d us, %d stick moves, %d deferred lookups after %u ms"
+                                      VJO_SHOWN_FORMAT "\n",
+                                      s_frames, s_moves, s_stick_max, (int)(s_frame_max_us / 1000), s_nav.row_moves,
+                                      s_nav.wraps, s_nav.no_layout, (int)s_key_max_us, s_stick.moves, s_stick.lookups,
+                                      s_stick.rest_us / 1000u, VJO_SHOWN_ARGS(&s_shown)));
+}
+#endif
 
 /* handback: the control thread's VJO_TOUCH_* for this close (worker.c
  * close_overlay_for). The hold is given back for what is in front now
@@ -1042,10 +1074,7 @@ static void close_page(int handback)
     s_page = NULL;
     s_panel = s_region_layer = s_region_rect = NULL;
 #if VJO_DEBUG
-    vjo_log("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
-            "%d without layout, slowest key %d us, %d stick moves, %d deferred lookups after %u ms", s_frames,
-            s_moves, s_stick_max, (int)(s_frame_max_us / 1000), s_nav.row_moves, s_nav.wraps, s_nav.no_layout,
-            (int)s_key_max_us, s_stick.moves, s_stick.lookups, s_stick.rest_us / 1000u);
+    log_close_line();
 #endif
     /* The next open keeps this cursor only when it is the worker's and no word
      * of the stick's is due (core/stick_cursor.h vjo_stick_cursor_kept); else it
@@ -1188,7 +1217,8 @@ static void input_header_touch(void)
     s_cursor_byte = (uint32_t)byte;
     s_nav.words.count = 0; /* a tap starts a new navigation path */
     COUNT_MOVE();
-    vjo_dlog("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
+    /* (no line here: an append on this thread, before the tap's lookup, would hold both the game's frame and the
+     * lookup; the lookup's own line says its cursor, and the close line counts the moves: #360) */
     post_cursor_now();
     render(0);
 }
@@ -1305,10 +1335,14 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
      * cursor) to the offline queue; the Rubi app exports it. */
     if ((pressed & s_btn.enter) && s_anki_enabled && s_selected < s_n_entries)
         vjo_anki_post_add(s_list_seq, s_selected);
+    /* #358: a game with no region of its own: the box its whole-screen job suggests, offered once an activation
+     * (core/region_select.h vjo_rsel_take), after this frame's buttons (a press as it comes is the overlay's, never
+     * the question's), and never as cancel closes the overlay */
+    uint32_t offer;
     if (pressed & s_btn.cancel)
         vjo_post_command(VJO_CMD_CLOSED, NULL);
-    if (pressed & SCE_CTRL_SQUARE)
-        enter_region_mode();
+    else if ((offer = vjo_rsel_take(&g_view.suggest)) != 0 || (pressed & SCE_CTRL_SQUARE))
+        enter_region_mode(offer);
 }
 
 static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
@@ -1355,7 +1389,7 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
         VjoRect r = vjo_rsel_rect(x, y, w, h);
         vjo_dlog("region box %d,%d %dx%d", x, y, w, h);
         leave_region_mode();
-        vjo_post_command(VJO_CMD_SET_REGION, &r);
+        vjo_post_command(VJO_CMD_SET_REGION, &r); /* #358: the suggested box too, saved as a drawn one is */
         return;
     }
     if (ev == VJO_RSEL_CANCEL) {

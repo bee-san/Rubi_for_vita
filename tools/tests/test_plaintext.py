@@ -133,12 +133,15 @@ class FrozenPlaintext(unittest.TestCase):
         vocr4 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR4_ASSETS}
         vocr5 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5_ASSETS}
         vocr5v = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5V_ASSETS}
-        for name in (*pins, *vocr3, *lms, *vocr4, *vocr5, *vocr5v):
+        vocr6 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR6_ASSETS}
+        for name in (*pins, *vocr3, *lms, *vocr4, *vocr5, *vocr5v, *vocr6):
             (models / name).write_bytes(payload)
         (models / "ATTRIBUTION.md").write_text("CC BY-SA 4.0 fixture")
         att = {"ATTRIBUTION.md": ("fixture", 20, hashlib.sha256(b"CC BY-SA 4.0 fixture").hexdigest())}
         (models / "MODEL-ATTRIBUTION.md").write_text("CC BY 4.0 fixture")
         model_att = {"MODEL-ATTRIBUTION.md": ("fixture", 17, hashlib.sha256(b"CC BY 4.0 fixture").hexdigest())}
+        (models / "VOCR6-ATTRIBUTION.md").write_text("VOCR6 fixture")
+        vocr6_att = {"VOCR6-ATTRIBUTION.md": ("fixture", 13, hashlib.sha256(b"VOCR6 fixture").hexdigest())}
         (models / release.VOCR_GATE_MODEL).write_bytes(payload)  # API 26: the text-presence gate's
         gate = {release.VOCR_GATE_MODEL: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())}
         (models / "GATE-ATTRIBUTION.md").write_text("gate fixture")
@@ -149,6 +152,7 @@ class FrozenPlaintext(unittest.TestCase):
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
              mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
              mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
+             mock.patch.object(release, "VOCR6_ATTRIBUTION_PIN", vocr6_att), mock.patch.object(release, "VOCR6_ASSETS", vocr6), \
              mock.patch.object(release, "VOCR_GATE_ASSETS", gate), mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
              mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
@@ -204,6 +208,9 @@ class KeyFilteredRelease(unittest.TestCase):
         self.root = Path(tmp.name)
         source = self.root / "source.zip"
         rows = [["食べる", "たべる", "", "v1", 0, ["synthetic frozen verb"], 1, ""]]
+        # a lookup table's word (tools/lookup_tables.txt: 私 わたし), for the table hints
+        rows += [["私", "あたし", "", "", 0, ["synthetic casual I, the longer article"], 1, ""],
+                 ["私", "わたし", "", "", 0, ["synthetic I"], 1, ""]]
         rows += [[f"語彙{i:05d}", "", "", "", 0, [f"filler {i}"], 1, ""] for i in range(1200)]
         with zipfile.ZipFile(source, "w") as zipped:
             zipped.writestr("index.json", json.dumps({"format": 3, "title": "Frozen fixture"}))
@@ -217,6 +224,7 @@ class KeyFilteredRelease(unittest.TestCase):
                 ensure_ascii=False))
         frozen = self.root / "frozen" / prepare.FILENAME
         frozen.parent.mkdir()
+        self.frozen = frozen
         self.hinted = self.root / "hinted.vjdict"  # this converter's --frequency: the hints included
         convert.convert([source], self.hinted, frequency=frequency, key_filter=False)
         # as committed: format 3 from #127's converter, without the hints and the filter
@@ -286,6 +294,37 @@ class KeyFilteredRelease(unittest.TestCase):
         with mock.patch.object(prepare, "load_manifest", return_value=pin):
             prepare.prepare(output, archive)
         self.assertEqual(output.read_bytes(), self.filtered.read_bytes())
+
+    def test_table_postings_adds_the_table_hints(self):
+        """table_postings in the pin (the bundle's, docs/plaintext-dictionaries.json): the hints step writes
+        hints version 2, the lookup tables' bits included, as convert_dictionary --table-hints writes them;
+        the same frozen file pinned without it gets version 1. The reader shows the table's entry."""
+        tabled = self.root / "tabled.vjdict"
+        stats = convert.add_index_hints(self.frozen, tabled, table_hints=True)
+        self.assertEqual(stats, {"hinted_postings": self.hinted_postings, "table_postings": 1})  # 私 わたし
+        convert.add_key_filter(tabled)
+        pin = dict(self.pin, key_filter={"bytes": tabled.stat().st_size, "sha256": prepare.digest(tabled),
+                                         "hinted_postings": stats["hinted_postings"], "table_postings": 1})
+        output = self.root / "tables" / prepare.FILENAME
+        with mock.patch.object(prepare, "load_manifest", return_value=pin):
+            prepare.prepare(output, self.archive)
+            prepare.validate(output, pin)
+        data = output.read_bytes()
+        self.assertEqual(data, tabled.read_bytes())
+        self.assertEqual(data[convert.HINTS_DESCRIPTOR_OFFSET:convert.HINTS_TABLES_OFFSET + 4],
+                         convert.hints_descriptor(convert.lookup_tables()))
+        self.assertEqual(len(data), len(self.filtered.read_bytes()))
+        self.assertNotEqual(data, self.filtered.read_bytes())  # the version 1 pin's file
+        cli = os.environ.get("VJO_CLI", ROOT / "build/host/vjo-cli")
+        for name in ("tables", "out"):
+            if name == "out":  # the version 1 file: the head shows the same
+                output = self.root / "out" / prepare.FILENAME
+                with mock.patch.object(prepare, "load_manifest", return_value=self.pin):
+                    prepare.prepare(output, self.archive)
+            lookup = subprocess.run([str(cli), "--dict", "local", "--local-dir", str(output.parent),
+                                     "--local-dicts", prepare.FILENAME, "--text", "私", "--nav"],
+                                    capture_output=True, text=True, check=True)
+            self.assertIn("synthetic I\n", lookup.stdout, name)  # わたし, not the longer あたし article
 
 
 class CommittedSnapshot(unittest.TestCase):

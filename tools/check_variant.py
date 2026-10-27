@@ -35,8 +35,10 @@ DEBUG_MARKERS = {
         b"game vocr text %u: %s",                     # worker.c: the recognized text
         b"game vocr capture: %s into %s",             # worker.c: a job's capture
         b"job %d done rc=%d in %d ms",                # worker.c: a job's timing
+        b"appends, %d held",                          # worker.c: its lines held until its result (#360)
         b"lookup %s at %u: %d chars",                 # worker.c: a lookup's line
         b"overlay closed: %d frames",                 # overlay.cpp: the open overlay's counts and timings
+        b", lookups shown %u: mean %u ms",            # lookup_shown.h: their press-to-screen figure (#360)
         b"touch region %s: 0x%X t=%u ms",             # overlay.cpp: the touch region's trace
         b"input block on rc=%d",                      # worker.c: the input block's trace
         b"anki: arena peak %u of %u",                 # anki.c

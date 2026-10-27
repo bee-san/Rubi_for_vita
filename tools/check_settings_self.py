@@ -47,10 +47,11 @@ MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # What the app holds besides its heap and its segments, by source (docs/vita-memory.md section
 # 5.4; estimates, not measured on a console): libvita2d a8f15ab's GXM rings, depth and stencil,
 # shader patcher, index and clear buffers, parameter buffer and pool; at most 5 icon textures of
-# 256 KiB (settings/icons.h); the 512 x 512 glyph atlas; the main thread's default 256 KiB stack
-# and the Anki worker's 128 KiB (settings/anki_page.c).
+# 256 KiB (settings/icons.h); the 512 x 512 glyph atlas; the main thread's default 256 KiB stack,
+# the Anki worker's 128 KiB (settings/anki_page.c) and the Stats count's 64 KiB (settings/stats_page.c, #312;
+# the Stats tab's tables are in the segments: its counts, its cache's work memory and its rows, about 2 MiB).
 FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024, "glyph_atlas": 512 * 512,
-         "stacks": 256 * 1024 + 128 * 1024}
+         "stacks": 256 * 1024 + 128 * 1024 + 64 * 1024}
 
 
 class Invalid(ValueError):

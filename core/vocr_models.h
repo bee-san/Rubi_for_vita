@@ -2,7 +2,7 @@
  * metadata of the bee-san/vita-vn-ocr release that published each: its exact
  * size, its shape and the model generation it belongs to (VOCR1 for v0.2.0's
  * models, VOCR3 for v0.2.5-vocr3.1's, VOCR4 for v0.2.5-vocr4.1's, VOCR5 for
- * v0.3.0's), and the two estimates the Rubi app shows for a model size: its
+ * v0.3.0's and their gated blobs', VOCR6 for v0.4.0-vocr6.1's), and the two estimates the Rubi app shows for a model size: its
  * time per textbox and the game memory a job of it needs. A .vocr blob carries no
  * generation of its own (its 64-byte header is all layout, CRC and checkpoint
  * hash), so the pin carries it. The game worker pins the same names with their
@@ -15,7 +15,8 @@
  * each a pinned model; tools/model_tiers.json is the same table. The Rubi
  * app offers them as its Model size and names the local OCR engine after the
  * generation of the model that runs (settings/engine.c): "VOCR5" for this
- * package's three, and a new generation's name as soon as its models are pinned
+ * package's Small and "VOCR6" for its Normal and Large (the sizes may come from two generations: each
+ * names its own), and a new generation's name as soon as its models are pinned
  * here, with no change to the app. Plain C without the OCR runtime: the app
  * links it. */
 #ifndef VJO_VOCR_MODELS_H
@@ -31,12 +32,12 @@ extern "C" {
 typedef struct {
     const char *name;        /* file name in ocr_model_dir */
     const char *generation;  /* "VOCR5": the model generation, the local engine's name */
-    const char *shape;       /* "N": the recognizer's shape (FL10 < H15 < F20 = W20; VOCR5's S < N < L) */
+    const char *shape;       /* "N": the recognizer's shape (FL10 < H15 < F20 = W20; VOCR5's and VOCR6's S < N < L) */
     uint32_t bytes;          /* the release file's exact size */
     /* Estimates (tools/model_tiers.json "est_box_basis"): ms to read a typical
      * full textbox (3 lines of about 640 px, greedy) on the console on one core,
      * calibrated to VOCR3-H15's measured 5.0-5.2 ms per CTC frame (vita-vn-ocr
-     * docs/ctc-lm-decode.md, high bound; VOCR5's: eval/vocr5_protocol.json); and
+     * docs/ctc-lm-decode.md, high bound; the sizes': vita-vn-ocr #146's, vocr6-final-gate); and
      * the game's free USER bytes a first
      * job of it at the full screen needs besides the reserve: its page-rounded
      * weights, workspace and capture block, without the LM, the cascade or the

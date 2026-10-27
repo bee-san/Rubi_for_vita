@@ -4,6 +4,7 @@
 #include "test_tmpdir.h"
 #include "../../settings/preferences.h"
 #include "../../shell/shell.h"
+#include "../../core/regions.h" /* #358: VJO_REGION_* of the Shell's region.ini loads */
 #include "../../include/vjo_vocr_sizes.h"
 #include <psp2/io/fcntl.h>
 #include <errno.h>
@@ -17,6 +18,7 @@ static VjoArena arena;
 static int read_fail, write_fail, close_fail, sync_fail, syncs, rename_fail, rename_fail_after, renames;
 static int write_fd = -1, handles;
 static size_t written;
+static int whole_writes; /* #358: a write takes all its bytes, as the Shell's one-call vjo_file_write needs */
 static int expected_results = 2; /* the fixture's local_dictionary_results */
 static int native(int n) { return n < 0 ? (int)(0x80010000u | errno) : n; }
 int sceIoOpen(const char *p, int flags, unsigned mode)
@@ -37,7 +39,7 @@ int sceIoRead(int fd, void *p, size_t len) { return native(read(fd, p, len > 13 
 int sceIoWrite(int fd, const void *p, size_t len)
 {
     if (write_fail && written >= 21) return -1;
-    int n = (int)write(fd, p, len > 7 ? 7 : len);
+    int n = (int)write(fd, p, len > 7 && !whole_writes ? 7 : len);
     if (n > 0) written += n;
     return native(n);
 }
@@ -1213,6 +1215,74 @@ static void test_a_bom_led_line_is_the_same_setting_to_every_writer(void)
     TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.n_warnings == 0);
 }
 
+/* region.ini's text ("-" without the file). */
+static const char *region_text(void)
+{
+    static char text[256];
+    FILE *f = fopen(VJO_PREFERENCES_REGION_PATH, "rb");
+    size_t n = f ? fread(text, 1, sizeof(text) - 1, f) : 0;
+    if (!f) return "-";
+    fclose(f);
+    text[n] = 0;
+    return text;
+}
+
+/* #358: Suggest a text box, kept in region.ini, through the actual Shell's region.ini code (shell/files.c): OFF is
+ * the line for every game, "region = full", so that a game without its own reads its whole screen with a region found
+ * (VJO_REGION_ALL: no box offered, shell/worker.c push_region); ON drops it (VJO_REGION_NONE). Every game's own line
+ * is kept by both and by the Shell's own saves; a region.ini that cannot be read is never rewritten, and a failed
+ * write or rename leaves the file as it was (a save cut short between its renames is put back by the next load). */
+static void test_suggest_lives_in_region_ini_and_the_shell_reads_it(void)
+{
+    VjoRect r, q = {100, 40000, 30000, 20000};
+    reset();
+    unlink(VJO_PREFERENCES_REGION_PATH);
+    unlink(VJO_PREFERENCES_REGION_PATH ".bak");
+    TEST_CHECK(vjo_preferences_suggest(&arena) == 1); /* no file: on */
+    TEST_CHECK(vjo_preferences_save_suggest(1, &arena) == 0 && !strcmp(region_text(), "-")); /* on: nothing written */
+    TEST_CHECK(vjo_region_load("PCSG00415", &r, &arena) == VJO_REGION_NONE);
+    TEST_CHECK(vjo_preferences_save_suggest(0, &arena) == 0 && vjo_preferences_suggest(&arena) == 0);
+    TEST_CHECK_(!strcmp(region_text(), "region = full\n"), "'%s'", region_text());
+    TEST_CHECK(vjo_region_load("PCSG00415", &r, &arena) == VJO_REGION_ALL && r.w == 0);
+    /* the Shell saves a game's box: the line for every game stays */
+    whole_writes = 1;
+    TEST_CHECK(vjo_region_save("PCSG00415", &q, &arena) == 0);
+    whole_writes = 0;
+    TEST_CHECK(vjo_region_load("PCSG00415", &r, &arena) == VJO_REGION_GAME && !memcmp(&r, &q, sizeof(r)));
+    TEST_CHECK(vjo_region_load("PCSB00001", &r, &arena) == VJO_REGION_ALL && vjo_preferences_suggest(&arena) == 0);
+    /* ON: the line goes, the game's stays, and nothing else is left beside it */
+    TEST_CHECK(vjo_preferences_save_suggest(1, &arena) == 0 && vjo_preferences_suggest(&arena) == 1);
+    TEST_CHECK_(!strcmp(region_text(), "PCSG00415 = 100,40000,30000,20000\n"), "'%s'", region_text());
+    TEST_CHECK(access(VJO_PREFERENCES_REGION_PATH ".bak", F_OK) != 0 && access(VJO_PREFERENCES_REGION_PATH ".tmp", F_OK) != 0);
+    TEST_CHECK(vjo_region_load("PCSB00001", &r, &arena) == VJO_REGION_NONE);
+    TEST_CHECK(vjo_region_load("PCSG00415", &r, &arena) == VJO_REGION_GAME);
+    /* only 0 or 1 */
+    TEST_CHECK(vjo_preferences_save_suggest(2, &arena) == -1 && vjo_preferences_suggest(&arena) == 1);
+    /* unreadable: -1, never rewritten */
+    read_fail = 1;
+    TEST_CHECK(vjo_preferences_suggest(&arena) == -1 && vjo_preferences_save_suggest(0, &arena) == -1);
+    read_fail = 0;
+    TEST_CHECK(!strcmp(region_text(), "PCSG00415 = 100,40000,30000,20000\n"));
+    /* a write that fails partway, or a rename: the file as it was */
+    write_fail = 1;
+    written = 0;
+    TEST_CHECK(vjo_preferences_save_suggest(0, &arena) == -1);
+    write_fail = 0;
+    TEST_CHECK(!strcmp(region_text(), "PCSG00415 = 100,40000,30000,20000\n") && vjo_preferences_suggest(&arena) == 1);
+    rename_fail = renames + 2; /* the new file's rename, after the old one's to the backup */
+    TEST_CHECK(vjo_preferences_save_suggest(0, &arena) == -1);
+    rename_fail = 0;
+    TEST_CHECK(!strcmp(region_text(), "PCSG00415 = 100,40000,30000,20000\n") && vjo_preferences_suggest(&arena) == 1);
+    /* cut short between its renames: only the backup there; the next load puts it back */
+    TEST_CHECK(rename(VJO_PREFERENCES_REGION_PATH, VJO_PREFERENCES_REGION_PATH ".bak") == 0);
+    TEST_CHECK(vjo_preferences_suggest(&arena) == 1 && !strcmp(region_text(), "PCSG00415 = 100,40000,30000,20000\n"));
+    TEST_CHECK(vjo_preferences_save_suggest(0, &arena) == 0 &&
+               !strcmp(region_text(), "PCSG00415 = 100,40000,30000,20000\nregion = full\n"));
+    TEST_CHECK(handles == 0);
+    unlink(VJO_PREFERENCES_REGION_PATH);
+    unlink(VJO_PREFERENCES_REGION_PATH ".tmp");
+}
+
 TEST_LIST = {
     {"settings_save_drops_removed_anki_settings", test_settings_save_drops_removed_anki_settings},
     {"a_bom_led_line_is_the_same_setting_to_every_writer", test_a_bom_led_line_is_the_same_setting_to_every_writer},
@@ -1235,6 +1305,7 @@ TEST_LIST = {
     {"old_app_config_from_101_loads_as_VOCR_with_one_warning_and_a_save_repairs_it", test_old_app_config_loads_as_vocr_and_a_save_repairs_it},
     {"shell_runs_on_the_defaults_and_never_writes_config_ini", test_shell_runs_on_the_defaults_without_writing_config_ini},
     {"shell_reads_a_stamp_file_s_first_line_whole", test_file_line_and_exists},
+    {"suggest_a_text_box_lives_in_region_ini_and_the_actual_Shell_reads_it", test_suggest_lives_in_region_ini_and_the_shell_reads_it},
     {NULL, NULL}
 };
 

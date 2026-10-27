@@ -18,21 +18,19 @@
 #define FL10_JOB_BYTES 856064u  /* 659,456 + 131,072 + 65,536 */
 #define H15_JOB_BYTES 1413120u  /* 1,159,168 + 188,416 + 65,536 */
 #define W20_JOB_BYTES 1871872u  /* 1,560,576 + 245,760 + 65,536 (F20's shape) */
-/* VOCR5's three shapes (vita-vn-ocr eval/vocr5_protocol.json "estimates": one core,
- * vita-vn-ocr #85's runtime without credit for its prefetch, 333 MHz, a box of
- * 240 frames + 0.1 s for the finder, calibrated to VOCR3-H15's measured console
- * rate: 631 / 921 / 2,077 ms), with the head gate on (API 42, ocr_head_gate's default;
- * vita-vn-ocr docs/headgate.md: its estimated saving per such box, -122 / -137 / -163 ms,
- * by the same method) subtracted, and for Normal and Large the two-level head on too
- * (ocr_head_gate = on, the default, has both; vita-vn-ocr docs/head2level.md: its saving beyond the
- * gate's, at the development share of frames that escape, -62 / -94 ms) subtracted.
- * Estimates, not console measurements. */
-#define VOCR5_S_BOX_MS 509u
-#define VOCR5_N_BOX_MS 722u
-#define VOCR5_L_BOX_MS 1820u
+/* The three tiers' blobs (include/vjo_vocr_sizes.h), each with the paths ocr_head_gate = on (the default) gives
+ * it: VOCR5-S with its head gate, VOCR6-N and VOCR6-L with their two-level head (no gate). Their times are
+ * vocr6-final-gate's (vita-vn-ocr #146, eval/vocr6_gate_final_20261027.json): vita/a9_layers.py under qemu on the
+ * shipped blobs, calibrated to VOCR3-H15's measured console rate, one core at 333 MHz without credit for the
+ * weights' prefetch, a nominal box of 3 lines of 80 CTC frames + 0.1 s for the finder, at the development share of
+ * frames each path skips: Small 627 -> 519 ms with its gate, Normal 918 -> 789 ms and Large 2,073 -> 1,872 ms
+ * with their two-level head. Estimates, not console measurements. */
+#define VOCR5_S_BOX_MS 519u
+#define VOCR6_N_BOX_MS 789u
+#define VOCR6_L_BOX_MS 1872u
 #define VOCR5_S_JOB_BYTES 1019904u  /* 823,296 + 131,072 + 65,536 */
-#define VOCR5_N_JOB_BYTES 1445888u  /* 1,191,936 + 188,416 + 65,536 (the w8g2 blob: one weights page more) */
-#define VOCR5_L_JOB_BYTES 2813952u  /* 2,478,080 + 270,336 + 65,536 (and its arena: one workspace page more) */
+#define VOCR6_N_JOB_BYTES 1441792u  /* 1,187,840 + 188,416 + 65,536 (no gate section: a weights page fewer than VOCR5-N's) */
+#define VOCR6_L_JOB_BYTES 2813952u  /* 2,478,080 + 270,336 + 65,536 (VOCR5-L's pages) */
 /* VOCR5-V (vita-vn-ocr #99), the vertical model: VOCR5-S's shape without its head gate (its blob has none), so
  * v0.3.0's VOCR5-S estimate for the same CTC frames, 631 ms; its workspace adds the rotation buffer
  * (core/vocr_ocr.h VJO_VOCR_ROTATE_BYTES, 57,344 B). No model size runs it, so the Rubi app shows neither figure. */
@@ -44,11 +42,12 @@
 #include VJO_VOCR_MODEL_INFO_TEST
 #else
 static const VjoVocrModelInfo infos[] = {
-    /* v0.3.0 (vita-vn-ocr eval/vocr5_protocol.json): the Small, Normal and Large tiers, with their head gate
-     * (v0.3.5-headgate.1), Normal and Large with their two-level head too (v0.3.6-head2level.1; API 42). */
+    /* The three tiers: Small VOCR5-S (vita-vn-ocr v0.3.0, eval/vocr5_protocol.json) with its head gate
+     * (v0.3.5-headgate.1, API 42); Normal and Large VOCR6-N and VOCR6-L (v0.4.0-vocr6.1, docs/vocr6.md) with their
+     * two-level head. Two generations: each file's own. */
     {VJO_VOCR5_S_NAME, "VOCR5", "S", VJO_VOCR5_S_BYTES, VOCR5_S_BOX_MS, VOCR5_S_JOB_BYTES},
-    {VJO_VOCR5_N_NAME, "VOCR5", "N", VJO_VOCR5_N_BYTES, VOCR5_N_BOX_MS, VOCR5_N_JOB_BYTES},
-    {VJO_VOCR5_L_NAME, "VOCR5", "L", VJO_VOCR5_L_BYTES, VOCR5_L_BOX_MS, VOCR5_L_JOB_BYTES},
+    {VJO_VOCR6_N_NAME, "VOCR6", "N", VJO_VOCR6_N_BYTES, VOCR6_N_BOX_MS, VOCR6_N_JOB_BYTES},
+    {VJO_VOCR6_L_NAME, "VOCR6", "L", VJO_VOCR6_L_BYTES, VOCR6_L_BOX_MS, VOCR6_L_JOB_BYTES},
     /* v0.2.5-vocr3.1 (vita-vn-ocr #67): the Normal and Small tiers before VOCR5. */
     {VJO_VOCR3_H15_NAME, "VOCR3", "H15", VJO_VOCR_H15_BYTES, H15_BOX_MS, H15_JOB_BYTES},
     {VJO_VOCR3_FL10_NAME, "VOCR3", "FL10", VJO_VOCR_FL10_BYTES, FL10_BOX_MS, FL10_JOB_BYTES},

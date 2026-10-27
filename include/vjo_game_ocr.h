@@ -254,6 +254,14 @@ typedef struct {
 /* API 26: the text-presence gate's weights (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME), for a request with
  * VJO_GAME_OCR_S_GATE only. */
 #define VJO_GAME_OCR_OPEN_GATE 17u
+/* A MAGES SC3 hook's charset (core/hook_sc3.h, docs/native-hooks.md "SC3 text"): the calling game's own,
+ * VJO_GAME_OCR_SC3_DIR <title ID>.sc3, by the title ID the kernel reads for the caller's process (no path from the
+ * caller), any OCR job's, at most VJO_GAME_OCR_SC3_BYTES (one read through the staging buffer); Open answers the
+ * file's size. No API change: a kernel without it refuses the open (VJO_ERR_ARG) and the worker's SC3 sites give no
+ * text, as without the file. */
+#define VJO_GAME_OCR_OPEN_SC3 18u
+#define VJO_GAME_OCR_SC3_DIR "ux0:data/VitaJPOverlay/hooks/"
+#define VJO_GAME_OCR_SC3_BYTES 16384u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
 #define VJO_GAME_OCR_WEIGHTS_NONE 0u     /* no line found, or the job failed first */
@@ -288,7 +296,9 @@ enum {
                             checked << 4 (VJO_GCHECK_TIER) | 0x40 (forced by the self-test); arg 0 for the
                             largest requested tier, 1 for a smaller one; sum = the worker's own resident
                             bytes the check counted as free (released first); the reserve is the tier's
-                            (VJO_GAME_RESERVE_*: of the cascade's tier with the cascade) */
+                            (VJO_GAME_RESERVE_*: of the cascade's tier with the cascade). A check that passed
+                            followed by the next model's (not forced): the first one's weights were refused
+                            once the job's blocks were taken (#324), and its try's blocks left the log */
     VJO_GSTEP_ALLOC,     /* kind VJO_GAME_OCR_MEM_*, arg VJO_GITEM_*; rc the block uid or the error */
     VJO_GSTEP_FREE,      /* arg VJO_GITEM_* */
     VJO_GSTEP_PASS,      /* a pass over the region: kind VJO_GAME_OCR_SRC_*, arg captures, bytes copied */
@@ -412,8 +422,9 @@ enum {
 #define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
 #define VJO_GITEM_SHOT 8u      /* "VjoGameShot": a shot's colour strip, encoder and JPEG (API 23) */
-#define VJO_GITEM_FRAME 9u     /* "VjoGameVocrFrame": the region from one frame, a paused job's (API 52) */
-#define VJO_GITEM_COUNT 10u
+#define VJO_GITEM_SC3 9u       /* "VjoGameSc3": an SC3 hook's charset, from the first job until the worker stops */
+#define VJO_GITEM_FRAME 10u    /* "VjoGameVocrFrame": the region from one frame, a paused job's (API 52) */
+#define VJO_GITEM_COUNT 11u /* test/combined: main's SC3 (9) and #355's FRAME (10) */
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */
@@ -500,6 +511,14 @@ typedef struct {
      * failed result carries them too, with text_from and hook_flags 0 (it has no text). */
     uint32_t text_from, hook_flags, hook_score, hook_streams;
     uint32_t hook_mode, hook_installed, hook_refused;
+    /* API 52 (#358), the text box suggested on first use: a successful job of rows on the whole frame (its region
+     * the frame's every pixel) returns where its lines say the dialogue is (core/region_suggest.h): a band across
+     * the screen's whole width down to its bottom, as its rows on the 960 x 544 screen the overlay draws on (the
+     * pixels the kernel reads for it as region.ini keeps it; 0: none, another job's, or no line that looks like
+     * dialogue). The Shell offers it in a game with no region of its own (no region.ini line: the Rubi app's Suggest
+     * a text box OFF writes the line for every game), checked as a user's box is (core/region_select.h
+     * vjo_rsel_preset). */
+    uint32_t suggest_rows;
     /* UTF-8 OCR text on success; every failed result carries empty text. API 20:
      * the text is normalised (core/textnorm.h) and the recognizer's own text
      * follows its NUL (vjo_text_raw), for the log. */

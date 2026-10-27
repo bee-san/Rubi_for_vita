@@ -11,6 +11,7 @@
 #include <vita2d.h>
 
 #include "anki_export.h"
+#include "app_prefs.h"
 #include "preferences.h"
 #include "../core/stick_scroll.h"
 /* As in main.c: no vita2d_fini in the system application. */
@@ -37,7 +38,8 @@ static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H}
 static int top_row; /* the first row in view */
 
 static VjoConfig cfg;           /* the settings shown (main thread) */
-static int writable, selected;
+static VjoAppPrefs app;         /* the app's own (app.ini, settings/app_prefs.h), shown (main thread) */
+static int writable, app_writable, selected;
 static int stick_move;          /* the left stick's move for the next frame (vjo_anki_page_stick) */
 static VjoExportCounts counts = {-1, -1};
 static char note[200];          /* the page's own status (saves) */
@@ -46,6 +48,7 @@ static int note_error;
 /* The worker (lock): one export at a time. */
 static SceUID lock = -1, worker = -1;
 static int all, running, finished, cancelled;
+static VjoAppPrefs job_app;     /* the app's settings the export follows, as the page had them at its start */
 static char progress[160], result[480];
 static int result_error;
 static unsigned char export_mem[VJO_EXPORT_MEM] __attribute__((aligned(16)));
@@ -77,6 +80,7 @@ static int worker_main(SceSize args, void *argp)
     static const VjoExportUi ui = {NULL, set_progress, stopped};
     VjoArena arena;
     VjoExportResult r;
+    VjoAppPrefs prefs;
     char msg[360];
     int what;
     size_t n;
@@ -84,9 +88,10 @@ static int worker_main(SceSize args, void *argp)
     (void)argp;
     sceKernelLockMutex(lock, 1, NULL);
     what = all;
+    prefs = job_app;
     sceKernelUnlockMutex(lock, 1);
     vjo_arena_init(&arena, export_mem, sizeof(export_mem));
-    vjo_export_run(&arena, what, &ui, &r, msg, sizeof(msg));
+    vjo_export_run(&arena, what, &prefs, &ui, &r, msg, sizeof(msg));
     vjo_log("anki: export (%s) rc=%d: %d cards, %d moved, %d kept, %d unreadable, %d too large, %d left, "
             "%d stopped, %d swept, %u bytes, arena peak %u, %d without screenshots",
             what ? "all" : "queued", r.rc, r.cards, r.moved, r.kept, r.unreadable, r.too_large, r.left, r.stopped,
@@ -111,6 +116,7 @@ static void start(int every)
     if (lock < 0 && (lock = sceKernelCreateMutex("VjoAnkiPage", 0, 0, NULL)) < 0)
         return;
     all = every;
+    job_app = app;
     finished = cancelled = 0;
     snprintf(progress, sizeof(progress), "Reading the cards…");
     /* CPU3 at a system priority, as the main thread (settings/sysapp.c). */
@@ -179,6 +185,7 @@ void vjo_anki_page_show(VjoArena *scratch)
     if (!running)
         vjo_log_enable(0);
     writable = vjo_preferences_load(&cfg, scratch) >= 0;
+    app_writable = vjo_app_prefs_load(&app, scratch) >= 0;
     if (!running) {
         vjo_log_enable(cfg.log_file);
         vjo_export_count(&counts);

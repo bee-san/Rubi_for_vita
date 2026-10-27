@@ -42,6 +42,12 @@ static unsigned opens, closes, reads, bytes_read, loads, delays;
 static int file_open_now;
 static uint64_t clock_value;
 static unsigned spy_lines = 1;
+/* API 52 (#358): the finder's boxes instead (spy_boxes_n of them), and the recognizer's text for each line */
+static VocrLine spy_boxes[VJO_GAME_OCR_LINES];
+static unsigned spy_boxes_n;
+static const char *spy_text = "猫";
+static unsigned spy_runs;        /* the recognizer's runs: a line from the line cache is not run */
+static int cancel_at_job_free;   /* #358: cancelled as the job's memory is freed, after its lines were read */
 static int free_query_error;
 static uint32_t opened_which;
 
@@ -101,6 +107,7 @@ int sceKernelFreeMemBlock(SceUID uid)
         weights_live = 0; weights_frees++; live_bytes -= weights_block; return 0;
     }
     TEST_CHECK(uid == 9 && job_live);
+    if (cancel_at_job_free) cancel_now = 1;
     job_live = 0; job_frees++; live_bytes -= job_block; return 0;
 }
 SceUID sceKernelCreateThread(const char *n, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt) { return 20; }
@@ -239,8 +246,9 @@ int vjoOcrModelClose(uint32_t seq) { TEST_CHECK(seq == 12); if (file_open_now) c
 int vocr_find_lines_rows(const VocrLinesRows *src, int mode, void *arena, size_t bytes, VocrLineSet *out)
 {
     memset(out, 0, sizeof(*out));
-    out->count = spy_lines;
-    for (unsigned i = 0; i < spy_lines; i++) out->lines[i] = (VocrLine){10, 2 + 3*i, 180 - 10*i, 3, 0};
+    out->count = spy_boxes_n ? spy_boxes_n : spy_lines;
+    for (unsigned i = 0; i < out->count; i++)
+        out->lines[i] = spy_boxes_n ? spy_boxes[i] : (VocrLine){10, 2 + 3*i, 180 - 10*i, 3, 0};
     return VOCR_LINES_OK;
 }
 /* API 50: the job's finder is the fixed one (vita-vn-ocr #129); its spy records the flags and finds as above */
@@ -266,7 +274,8 @@ int vocr_init(vocr_ctx *c, const vocr_model *m, const vocr_opts *o, void *arena,
 /* Frames as the runtime counts them: resized width / 8; 1 ms per frame. */
 int vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t cap, vocr_extra *extra)
 {
-    snprintf(text, cap, "猫"); extra->width = img->width; extra->frames = img->width / 8;
+    snprintf(text, cap, "%s", spy_text); extra->width = img->width; extra->frames = img->width / 8;
+    spy_runs++;
     clock_value += 1000u * extra->frames; return VOCR_OK;
 }
 
@@ -294,7 +303,7 @@ static void reset(void)
     job_live = weights_live = job_alloc_failure = weights_alloc_failure = weights_free_failure = 0;
     weights_refusals = 0;
     job_allocs = job_frees = weights_allocs = weights_frees = 0;
-    registered_rc = quit_after_delay = cancel_now = cancel_at_open = cancel_after_reads = 0;
+    registered_rc = quit_after_delay = cancel_now = cancel_at_open = cancel_after_reads = cancel_at_job_free = 0;
     take_calls = take_wait_us = take_quit = 0; take_job = take_perm = 0; complete_failures = 0;
     quit_delays = 0;
     open_failure = size_delta = stat_failure = corrupt = 0; mtime = 0x12345678;
@@ -677,6 +686,57 @@ static void frames_and_lines_are_reported(void)
     TEST_CHECK(!run("FL10_w8.vocr", &out) && !out.frames && !out.recognized && opens == before);
 }
 
+/* API 52 (#358): a job of rows on the whole frame returns the box its lines suggest (core/region_suggest.h), its rows
+ * at the bottom of the 960 x 544 screen; the same screen again, its lines from the line cache, the same box; a job on
+ * part of the frame, one whose lines hold no dialogue and a failed one (cancelled as it reads, or after its lines were
+ * read) return none. */
+static void a_whole_frame_job_suggests_a_box(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    spy_boxes[0] = (VocrLine){10, 30, 150, 8, 0};
+    spy_boxes[1] = (VocrLine){10, 40, 100, 8, 0};
+    spy_boxes_n = 2;
+    spy_text = "ひらがなカタカナ";
+    /* the lines' median height 8: 4 px above the first, 26 of the frame's 60 rows: 235 of the screen's 544, so the
+     * band's 309 rows */
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && out.recognized == 2);
+    TEST_CHECK_(out.suggest_rows == 309, "%u", out.suggest_rows);
+    /* the same screen again: both lines from the line cache, their kana counted from the cached text (core/vocr_ocr.c
+     * line_stat): the same box */
+    {
+        const unsigned before = spy_runs;
+        TEST_CHECK(!run("FL10_w8.vocr", &out) && out.recognized == 2);
+        TEST_CHECK_(spy_runs == before, "%u lines recognized again", spy_runs - before);
+        TEST_CHECK_(out.suggest_rows == 309, "%u", out.suggest_rows);
+    }
+    /* part of the frame: none */
+    VjoGameOcrRequest part = request("FL10_w8.vocr");
+    part.fb_width = W + 40;
+    TEST_CHECK(!vjo_game_ocr_run_request(&part, &out) && out.recognized == 2 && !out.suggest_rows);
+    part = request("FL10_w8.vocr");
+    part.y = 1; part.height = H - 1; part.fb_height = H;
+    TEST_CHECK(!vjo_game_ocr_run_request(&part, &out) && !out.suggest_rows);
+    /* no kana: none (the line cache emptied: the same pixels would give the cached text, as the worker does) */
+    memset(&line_cache, 0, sizeof(line_cache));
+    spy_text = "AUTO";
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && out.recognized == 2 && !out.suggest_rows);
+    /* a failed job, cancelled as it reads: none, and no text */
+    memset(&line_cache, 0, sizeof(line_cache));
+    spy_text = "ひらがなカタカナ";
+    cancel_after_reads = 1;
+    TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_CANCELLED && !out.text[0] && !out.suggest_rows);
+    cancel_after_reads = 0;
+    /* cancelled after its lines were read, as its memory is freed (the cancel the job's end sees): none, no text */
+    memset(&line_cache, 0, sizeof(line_cache));
+    cancel_at_job_free = 1;
+    TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_CANCELLED && !out.text[0] && !out.suggest_rows);
+    TEST_CHECK(spy_runs > 0 && cancel_now);
+    cancel_at_job_free = cancel_now = 0;
+    spy_boxes_n = 0;
+    spy_text = "猫";
+}
+
 /* Bytes the memory check counts for a model's job and weights (page-rounded). */
 static uint32_t capture_of(void) { return PAGE_ROUND(vjo_vocr_capture_bytes(W, H)); }
 /* The job's need: its workspace and its capture block (API 19). */
@@ -903,7 +963,9 @@ static void weights_refused_after_the_check_the_smaller_models_try_copies_its_ow
     weights_refusals = 1;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
     TEST_CHECK(out.fallback == 1 && weights_allocs == 2 && resident.model == vjo_vocr_model("FL10_w8.vocr"));
-    TEST_CHECK_(frame_calls == 2 && !strip_calls && !out.tears && out.captures == 1,
+    /* test/combined: main's #382 keeps the job's capture across the retry: each try's frame copy is one of its
+     * captures */
+    TEST_CHECK_(frame_calls == 2 && !strip_calls && !out.tears && out.captures == 2,
                 "%u frame copies, %u strips, %u tears, %u captures", frame_calls, strip_calls, out.tears, out.captures);
     TEST_CHECK(frame_allocs == 2 && !frame_live && !capture_live && !job_live && !out.cleanup_status);
     const VjoGameOcrStep *ps = pause_step(&out);
@@ -1000,6 +1062,8 @@ TEST_LIST = {
     {"the fallback's own file failure, and another resident model", fallback_file_failure_and_other_resident_model},
     {"the memory check is reported, also when it refuses the job", memory_check_is_reported_also_when_refused},
     {"CTC frames and each line's crop, frames and time are reported", frames_and_lines_are_reported},
+    {"a whole-frame job suggests a box, cached lines too; part of the frame, no dialogue, a failure none (API 52)",
+     a_whole_frame_job_suggests_a_box},
     {"synthetic pins match their generated bytes", synthetic_pins_match_their_bytes},
     {"weights are read and hashed once, then kept for 50 jobs", weights_are_read_once_and_kept},
     {"a changed modification time is read again; a changed size is refused", changed_file_is_read_again},

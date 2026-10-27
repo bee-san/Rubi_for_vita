@@ -16,6 +16,7 @@
 #include "../core/app_stamp.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/regions.h"
+#include "../core/region_select.h" /* #358: the suggested box's word (vjo_rsel_publish) */
 #include "../core/port.h"
 #include "../core/anki.h"
 #include "../core/local_dict.h"
@@ -58,9 +59,8 @@ typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 :
  * next try starts at once, from the second in a row SCREEN_RETRY_MS later,
  * doubling up to SCREEN_RETRY_MAX_MS. The try itself waits in the game for the
  * text to hold still (vocr_run_one's request). Nothing is shown for either,
- * until WAIT_HINT_AFTER in a row: then the open overlay says why it waits
- * (ocr_wait_hint, #358: start_job_kind). test/combined: main's #364 here, not draft #318's
- * stop after three tries (#278's), which #364 supersedes: the tries go on with the hint. */
+ * until a try of the open overlay starts after WAIT_HINT_AFTER in a row: that
+ * one says why it waits (ocr_wait_hint, #358: start_job_kind). */
 #define SCREEN_RETRY_MS      250u
 #define SCREEN_RETRY_MAX_MS 4000u
 #define WAIT_HINT_AFTER 2u /* #358: measured (docs/text-stability.md "Why the overlay waits") */
@@ -237,7 +237,14 @@ static volatile int job_cancelled;
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
  * net thread only appends to the arena, so the control thread may read it */
 static volatile int job_text_ready;
+/* The network thread's log batch (shell/log_vita.c), its buffer on net_main's stack: no job's line
+ * stands between its result and the control thread (owner 2026-10-16, test.3; #360 for the debug
+ * build; docs/release-variants.md "No log append on the result path"). Network thread only. */
+#define NET_LOG_BYTES 2048 /* VJO_LOG_BATCH_LINES (24) lines of 85 B; a job's own: the normal build's none, or 1-5
+                            * of 40-170 B; the debug build's 2-4 of a lookup (at most 255 B each), and an OCR
+                            * job's text, 1-2 lines of at most 205 B a recognized line, its lookup's and done line */
 #if !VJO_DEBUG
+static VjoLogBatch net_log;  /* the network thread's batch; its buffer is on net_main's stack */
 /* The normal build's lines of a job (its short log) never stand between a recognition and its result
  * (owner 2026-10-16, test.3; docs/release-variants.md): the network thread keeps a log batch open (its
  * buffer on net_main's stack), which holds every line it logs, and writes it, one append per file, once
@@ -245,9 +252,7 @@ static volatile int job_text_ready;
  * taken the result (net_main). Jobs started meanwhile keep them. Another thread's line, a configure that
  * changes log_file or a line the batch cannot take writes them at once, on that thread, in their order
  * (shell/log_vita.c). Network thread only. */
-#define NET_LOG_BYTES 2048 /* VJO_LOG_BATCH_LINES (24) lines of 85 B; a job's own: none, or 1-5 of 40-170 B */
 #define LOG_IDLE_US 500000u
-static VjoLogBatch net_log;  /* the network thread's batch; its buffer is on net_main's stack */
 /* At a job's wake: the batch opens unless it is open (its buf, set by the begin and cleared here when
  * it closes: only this thread closes it), so a job takes log_mutex for it only after a write. A begin
  * refused because another thread's batch is open (the ledger table's, microseconds at a game start or
@@ -267,7 +272,28 @@ static void net_log_idle(void)
         net_log.buf = NULL;
     }
 }
-
+#else
+/* The debug build's (#360): a job's lines from the start of a lookup job, and an OCR job's from the end of
+ * its recognition (its text's lines: log_text_lines), are held until the job has published its result;
+ * then net_job writes them at once, one append per file (and its done line with them): the same bytes in
+ * the same order as line by line, within milliseconds. Before, its lookup line and its done line were an
+ * append each (two while status.txt is under 64 KiB) before the result: 17 ms an append, and its done line
+ * came 54 ms after the job's start against its lookup's 32 (medians, test.4's log.txt). The batch is never
+ * open across an exchange with the game worker. Another thread's line, a configure (the debug build's writes
+ * an open batch) or a line the batch cannot take writes the held lines first, in their order
+ * (shell/log_vita.c). A crash before the write loses the held lines: at most 24 lines or 2 KiB. The batch
+ * and its buffer are net_main's, on its stack (net_held: its b.buf is set while the batch is open). */
+typedef struct {
+    VjoLogBatch b;
+    char buf[NET_LOG_BYTES];
+} NetHeld;
+static NetHeld *net_held;
+static void net_log_hold(void)
+{
+    if (!net_held->b.buf) /* a begin refused beside another thread's batch: its lines go out one by one */
+        vjo_log_batch_begin(&net_held->b, net_held->buf, NET_LOG_BYTES);
+}
+static uint32_t job_done_us; /* when the job published its result (job_done): the press-to-screen figure's */
 #endif
 
 static volatile int pending_cmd;
@@ -360,6 +386,11 @@ static void post_local_lookup(uint32_t text_generation)
     sceClibSnprintf(g_view.status, sizeof(g_view.status), "Looking up words…");
     g_view.status_is_error = 0;
     g_view.version++;
+#if VJO_DEBUG
+    /* the press-to-screen figure: this request, from now (lookup_shown.h) */
+    g_view.ask_seq = local_cursor_seq;
+    g_view.ask_us = (uint32_t)sceKernelGetProcessTimeWide();
+#endif
 }
 
 void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
@@ -598,6 +629,12 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     __atomic_store_n(&g_view.open, open, __ATOMIC_RELEASE); /* also read unlocked (overlay frame) */
     g_view.list = list;
     g_view.list_seq++;
+#if VJO_DEBUG
+    /* the press-to-screen figure (lookup_shown.h): the lookup result shown is the single arena's, for the
+     * cursor its job looked up; its job published it at job_done_us (the network thread, before job_done) */
+    g_view.shown_seq = list == &cache_data[0].list ? job_cursor_seq : 0;
+    g_view.done_us = job_done_us;
+#endif
     sceClibSnprintf(g_view.status, sizeof(g_view.status), "%s", status ? status : "");
     g_view.status_is_error = is_error;
     g_view.local_cursor_mode = local_text_valid && list &&
@@ -1245,13 +1282,13 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
 #if VJO_DEBUG
 /* The recognized text, a log line per line (60 characters each at most): what
  * the recognizer read (the game worker keeps it after the normalised text) and,
- * where it differs, what is shown and looked up. */
+ * where it differs, what is shown and looked up. They are the first lines the
+ * job holds until its result is published (net_log_hold, net_job). */
 static void log_text_lines(const char *text, size_t cap)
 {
-    char line[184], batch_buf[1536];
-    VjoLogBatch batch;
+    char line[184];
     const char *raw = vjo_text_raw(text, cap), *shown = text;
-    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf)); /* one append for the text's lines */
+    net_log_hold();
     for (unsigned i = 0; *raw || *shown; i++) {
         size_t n = 0, m = 0, same;
         while (raw[n] && raw[n] != '\n') n++;
@@ -1267,7 +1304,6 @@ static void log_text_lines(const char *text, size_t cap)
         raw += n + (raw[n] == '\n');
         shown += m + (shown[m] == '\n');
     }
-    vjo_log_batch_end(&batch);
 }
 
 /* The self-test (docs/self-test.md), its job's only work (selftest_job_due):
@@ -1528,9 +1564,13 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     return rc;
 }
 
-/* One job on the network thread, then its done line: with the time in exchanges with
- * the game worker and in the log's file appends meanwhile (every thread's); the rest is
- * the Shell's own and the lookup (docs/first-ocr.md; tools/analyse_timeline.py reads it). */
+/* One job on the network thread, then its done line: with the time in exchanges with the game worker
+ * and in the log's file appends meanwhile, every thread's, before this line (docs/first-ocr.md;
+ * tools/analyse_timeline.py reads it); the rest is the Shell's own and the lookup. In the debug build
+ * the job's own lines this thread holds (net_log_hold: a lookup's, an OCR job's text and lookup lines)
+ * and this one are written after the result, so they are in no job's appends: `N held` counts those still
+ * held when this line is logged (another thread's line, or a batch filled up, wrote earlier ones before the
+ * result; 0 with no batch open, refused beside another thread's, or when this line might not fit in it). */
 static void net_job(void)
 {
     if (job_prepare) {
@@ -1550,6 +1590,8 @@ static void net_job(void)
     int64_t t0 = now_us();
     uint32_t appends0, appends1, log_us0 = vjo_log_io(&appends0), log_us1;
     job_game_us = 0;
+    if (job_cursor_only)
+        net_log_hold(); /* a lookup's lines (its workspace's, its own) wait for its result */
 #endif
     job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
                              : run_job(&results[idx], &cache_data[idx]);
@@ -1581,16 +1623,30 @@ static void net_job(void)
     }
 #endif
 #if VJO_DEBUG
+    /* (in the data segment: the debug Shell's last text page is nearly full, docs/memory-ledger.md) */
+    static const char done_format[] VJO_DATA_TABLE(job_done_format) =
+        "job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, log %u ms in %u "
+        "appends, %d held";
+    net_log_hold(); /* a job that held none yet (a failed recognition, no text): its done line */
     log_us1 = vjo_log_io(&appends1);
-    vjo_log("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, log %u ms in %u "
-            "appends", idx, job_rc, (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak,
+    vjo_log(done_format, idx, job_rc, (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak,
             cache_data[idx].page + 1, vjo_overlay_page_count(&cache_data[idx]),
             (unsigned)(job_game_us / 1000), (unsigned)((log_us1 - log_us0) / 1000),
-            (unsigned)(appends1 - appends0));
+            (unsigned)(appends1 - appends0),
+            /* (none when no batch is open, or when this line may not fit: then the held go out before the result) */
+            net_held->b.buf && net_held->b.n < VJO_LOG_BATCH_LINES && net_held->b.used <= NET_LOG_BYTES - 255
+                ? net_held->b.n : 0);
+    job_done_us = (uint32_t)now_us();
 #endif
     __sync_synchronize(); /* results are visible before job_done */
     job_done = 1;
     vjoNotifyShell();
+#if VJO_DEBUG
+    /* The held lines, now that the result is out: one append per file. Formatted before (the lookup's
+     * line reads the arena, which the control thread may reset now); written by this thread at once. */
+    vjo_log_batch_end(&net_held->b);
+    net_held->b.buf = NULL;
+#endif
 #ifdef VJO_WITH_VOCR
     /* Display/input never wait on storage. Only this thread can overwrite the
      * OCR result, and it cannot execute the next job until append returns. */
@@ -1690,6 +1746,10 @@ static int net_main(SceSize args, void *argp)
 {
 #if !VJO_DEBUG
     char held_buf[NET_LOG_BYTES];
+#else
+    NetHeld held; /* a job's held lines (net_log_hold) */
+    held.b.buf = NULL; /* closed: the batch opens in a job */
+    net_held = &held;
 #endif
     (void)args;
     (void)argp;
@@ -1733,16 +1793,22 @@ static int net_busy(void)
 /* #358 (the owner: "Say why the user is waiting"): what the open overlay says, with ocr_wait_hint on, as it starts a
  * try at its text once WAIT_HINT_AFTER jobs in a row found the text changed under every read (screen_changed_streak,
  * note_screen_changed; the press's own tries, or Automatically's before it): why it still is recognizing, and what
- * helps. Not an error: the tries go on, and a read shows its text. In the data segment (the normal Shell's code room). */
-#define WAIT_HINT_TEXT                                                                                                 \
-    "Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ "  \
-    "to draw a region around just the text."
+ * helps. A region drawn with □ helps only where it can leave the moving thing out (an icon beside the text), not an
+ * icon inside a line, a picture behind the text or text still typing: so the fix is said as a condition (audit F1).
+ * Not an error: the tries go on, and a read shows its text. In the data segment (the normal Shell's code room). */
+#define WAIT_HINT_TEXT \
+    "Recognizing… Something in the region keeps moving (an animated icon? text still typing?). If a region around " \
+    "just the text leaves it out, press □ to draw one."
+#if VJO_DEBUG /* test/combined: the debug Shell's data pages are full with every draft (16 B over): .rodata */
+static const char WAIT_HINT[] = WAIT_HINT_TEXT;
+#else
 static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) = WAIT_HINT_TEXT;
+#endif
 /* API 52: the same, and the pause (docs/game-pause.md), while ocr_pause is off in a game it works in: it reads the
  * region from one frame, which an animated icon cannot change. Never in the PSP emulator's process (game_static_fb),
  * where the kernel refuses it. */
-/* test/combined: in .rodata (the code segment), not the data segment: with every draft the normal Shell's data pages
- * were full (69,888 B in 69,632), its code pages had room (SceShell's pages may only shrink: AGENTS.md rule 1) */
+/* test/combined: in .rodata (the code segment), not the data segment: with every draft the Shell's data
+ * pages are full and its code pages have room (SceShell's pages may only shrink: AGENTS.md rule 1) */
 static const char WAIT_HINT_PAUSE[] =
     WAIT_HINT_TEXT " Or turn on Pause the game to read in the Rubi app.";
 /* API 52: the active game is the PSP emulator's (VJO_GAME_STATIC_FB, activate_game): no pause, so no WAIT_HINT_PAUSE */
@@ -1936,6 +2002,10 @@ static void push_region(void)
     VjoRect r;
     int found = vjo_region_load(title_id, &r, &scratch);
     vjoSetRegion(found && r.w ? &r : NULL);
+    /* #358: a game with no region line at all (not even "full", nor region.ini's line for every game, which the Rubi
+     * app's Suggest a text box OFF writes as "region = full") reads its whole screen, and is offered the box its jobs
+     * suggest (on_job_done) once in this activation; one with a region, none. Another game's box goes either way. */
+    __atomic_store_n(&g_view.suggest, found ? VJO_RSEL_TAKEN : 0u, __ATOMIC_RELAXED);
     if (found && r.w) game_region = r;
     else sceClibMemset(&game_region, 0, sizeof(game_region));
     vjo_log("region: %s%s", found == VJO_REGION_GAME ? "this game's" : found ? "all games'" : "none",
@@ -2101,6 +2171,9 @@ static void close_overlay_for(int why)
     /* The next job may reuse the shown arena; an open republishes it. */
     g_view.list = NULL;
     g_view.local_cursor_mode = 0;
+#if VJO_DEBUG
+    g_view.ask_seq = 0; /* a lookup not shown yet goes with the close: a reopen's figure is its own */
+#endif
     g_view.version++;
     vjo_view_unlock();
     vjo_dlog("overlay close (%s) t=%u ms: input block off rc=%d", names[why], vjo_log_ms(), rc);
@@ -2374,29 +2447,30 @@ static void on_cursor_done(void)
  * second in a row SCREEN_RETRY_MS later, doubling up to SCREEN_RETRY_MAX_MS;
  * a job that reads its screen ends the run. #353: the third in a row says so in
  * the log (both builds), with the lines its game worker had recognized and that
- * are not shown (the string in the data segment: the normal Shell's code room);
- * the open overlay says why it waits from WAIT_HINT_AFTER on (#358,
- * start_job_kind). */
+ * are not shown; the open overlay says why it waits from WAIT_HINT_AFTER on
+ * (#358, start_job_kind). For the debug Shell's room the line is short and in the
+ * data segment, its call where the streak is still in a register, and the pace's
+ * zero folded into its shift (the same waits). */
 #ifdef VJO_WITH_VOCR
-/* test/combined: in .rodata, as WAIT_HINT_PAUSE (the data pages full with every draft) */
+/* test/combined: in .rodata (the code segment), not the data segment: with every draft the Shell's data
+ * pages are full and its code pages have room (SceShell's pages may only shrink: AGENTS.md rule 1) */
 static const char SCREEN_MOVING_LOG[] =
-    "ocr: the screen changed under every read of %d jobs in a row, the last with %u line(s) recognized and not "
-    "shown: an animated icon or a moving picture in the region? (docs/text-stability.md)";
+    "ocr: screen changed under 3 jobs in a row; %u line(s) not shown";
 #endif
 static void note_screen_changed(const char *what)
 {
-    uint32_t wait_ms = screen_changed_streak ? SCREEN_RETRY_MS << (screen_changed_streak - 1) : 0;
+    uint32_t wait_ms = SCREEN_RETRY_MS * ((1u << screen_changed_streak) >> 1); /* 0, then doubling */
     if (wait_ms > SCREEN_RETRY_MAX_MS)
         wait_ms = SCREEN_RETRY_MAX_MS;
     if (screen_changed_streak < 8)
         screen_changed_streak++;
+#ifdef VJO_WITH_VOCR
+    if (screen_changed_streak == 3) /* (the network thread's result: read after job_done) */
+        vjo_log(SCREEN_MOVING_LOG, (unsigned)vocr_result.recognized);
+#endif
     screen_retry_until = now_us() + (int64_t)wait_ms * 1000;
     vjo_dlog("%s dropped: the screen changed under it (%d in a row), next try in %u ms", what,
             screen_changed_streak, (unsigned)wait_ms);
-#ifdef VJO_WITH_VOCR
-    if (screen_changed_streak == 3) /* (the network thread's result: read after job_done) */
-        vjo_log(SCREEN_MOVING_LOG, screen_changed_streak, (unsigned)vocr_result.recognized);
-#endif
 }
 
 /* A refresh ended (#81 request 4). Whatever happened, the shown text stays
@@ -2481,6 +2555,9 @@ static void on_refresh_done(void)
                 cache_ok = 0; /* the arena's entry is the old text's */
                 local_header = (VjoEntryList){.header = local_text};
                 /* As post_local_lookup: the new text and its pending lookup, at once. */
+#if VJO_DEBUG
+                g_view.ask_seq = 0; /* a word asked for in the old text is no press of the new one's */
+#endif
                 g_view.list = &local_header;
                 g_view.cursor_byte = local_cursor_byte;
                 g_view.text_generation = local_text_generation;
@@ -2600,6 +2677,12 @@ static void on_job_done(void)
     }
     screen_changed_streak = 0; /* this job read its screen */
     screen_retry_until = 0;
+#ifdef VJO_WITH_VOCR
+    /* #358: the box this job on the whole screen suggests, for a game with no region of its own (the overlay offers it
+     * once an activation): the newest screen's, none when its lines hold no dialogue (a box of an earlier screen is
+     * never offered for this one); the network thread is done with the result */
+    vjo_rsel_publish(&g_view.suggest, vocr_result.suggest_rows);
+#endif
     ocr_failed = d->failed_stage == VJO_STAGE_OCR;
     backoff_note(&ocr_backoff, ocr_failed);
     if (!ocr_failed) /* OCR works again: the refreshes need not wait for theirs either */
@@ -2811,6 +2894,8 @@ static void on_command(void)
         if (vjo_region_save(title_id, cmd == VJO_CMD_SET_REGION ? &r : NULL, &scratch) < 0)
             vjo_log("region.ini: write failed");
         push_region();
+        /* #358: no box is offered after it in this activation, a region.ini that could not be written too (no line) */
+        __atomic_store_n(&g_view.suggest, VJO_RSEL_TAKEN, __ATOMIC_RELAXED);
         cache_ok = 0;
         retire_local_text(1);
         /* #358: the old region's tears say nothing of the new one's: the wait hint (the region drawn as it asks)
@@ -2909,9 +2994,13 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     backoff_note(&dict_backoff, 0);
     backoff_note(&refresh_backoff, 0);
     vjoSetGameActive(pid, mode);
-    vjo_log("game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s", title_id,
-            vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
-            cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
+    {
+        /* once a game start: in the data segment, for the normal Shell's code room (#358) */
+        static const char started[] VJO_DATA_TABLE(worker_game_started) =
+            "game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s";
+        vjo_log(started, title_id, vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
+                cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
+    }
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);
     check_app(); /* after the game is active: its file reads never delay that */

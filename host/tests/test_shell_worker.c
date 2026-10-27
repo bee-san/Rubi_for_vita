@@ -110,7 +110,9 @@ int vjoGetVersion(void) { return VJO_API_VERSION; }
 int vjoRegisterShell(void) { return 0; }
 int vjoWaitEvent(uint32_t mask, uint32_t *out, uint32_t timeout) { *out = 0; return -1; }
 static unsigned shell_notifications;
-int vjoNotifyShell(void) { shell_notifications++; return 0; }
+/* A test's look at the moment the network thread tells the control thread (job_done, job_text_ready). */
+static void (*on_notify)(void);
+int vjoNotifyShell(void) { shell_notifications++; if (on_notify) on_notify(); return 0; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opt)
 {
     TEST_CHECK(strcmp(name, "VjoVocr") && strcmp(name, "VjoGameVocr"));
@@ -135,6 +137,25 @@ static int test_wait_event_flag(SceUID uid, unsigned int bits, unsigned int mode
 #include "../../shell/strip_view.c" /* the strip view model worker.c publishes through */
 #include "../../core/stick_cursor.h" /* the overlay's left stick (#138): its close against this worker */
 #include "../../core/text_rows.h"
+#include "../../shell/lookup_shown.h" /* the overlay's press-to-screen figure (#360) */
+
+/* run_job and run_cursor_job as a test runs them, outside net_job: the debug build's lines they hold
+ * (net_log_hold, #360) go out as net_job's end writes them after the result, so no batch is left open
+ * across the next job's exchange (exchange_batch_ok). */
+static void net_log_end_t(void)
+{
+#if VJO_DEBUG
+    vjo_log_batch_end(&net_held->b);
+    net_held->b.buf = NULL;
+#endif
+}
+static int run_job_t(VjoArena *a, VjoOverlayData *out) { int rc = run_job(a, out); net_log_end_t(); return rc; }
+static int run_cursor_job_t(VjoArena *a, VjoOverlayData *out)
+{
+    int rc = run_cursor_job(a, out);
+    net_log_end_t();
+    return rc;
+}
 
 /* audit-overlay-shell-slim-1 A5: the overlay's thread posts a cursor move at the
  * n-th cmd_lock acquisition from now (vjo_post_cursor runs on Paf's thread). */
@@ -247,13 +268,33 @@ static VjoLogBatch *open_batch;
 static int batch_lines_held, batch_bytes_held, batch_cap;
 static unsigned log_appends, batched_lines;
 /* Each append: its lines, the thread that made it, whether a job was running (job_running: the control
- * thread had not taken its result yet), the network thread's phase then (net_phase), and the overlay's
+ * thread had not taken its result yet), the network thread's phase then (net_phase), whether its job had
+ * published its result (job_done: an append after it is not in the result's path), and the overlay's
  * view version (g_view.version: an append before a result is shown has a smaller one). */
 #define APPEND_LOG 4096
-typedef struct { unsigned lines; int thread, job_running, in_result_path, recognizing; unsigned view; } AppendSeen;
+typedef struct { unsigned lines; int thread, job_running, in_result_path, recognizing, job_done; unsigned view; } AppendSeen;
 static AppendSeen appends_seen[APPEND_LOG];
 static unsigned appends_recorded, result_path_appends, recognizing_appends, lines_appended, most_lines_appended;
 static unsigned lines_logged, net_lines_logged, most_lines_held;
+/* log.txt as the appends write it (#360): every line written since reset, in the order written; line k
+ * since reset is the log_lines ring's lines_logged - k lines back from its newest (a test may set log_count
+ * back to 0: the ring's index and lines_logged move together). The ring holds 32 lines, more than a batch
+ * holds (VJO_LOG_BATCH_LINES), so a written line's text is always there. */
+static char file_text[32768];
+static size_t file_len;
+static void file_note(unsigned lines)
+{
+    for (unsigned k = lines_appended; k < lines_appended + lines; k++) {
+        const char *line = log_lines[(log_count - lines_logged + k) % 32];
+        size_t n = strlen(line);
+        if (file_len + n + 1 < sizeof(file_text)) {
+            memcpy(file_text + file_len, line, n);
+            file_text[file_len + n] = '\n';
+            file_len += n + 1;
+            file_text[file_len] = 0;
+        }
+    }
+}
 /* The network thread's place in a job: NET_IDLE (no job, or one not submitted yet), NET_RECOGNIZING (the
  * game has the job: its submission was taken, its result not read yet) or NET_RESULT (the result is
  * known: read from the game, or the submission refused; a lookup's whole run), until job_done. The
@@ -262,13 +303,15 @@ enum { NET_IDLE, NET_RECOGNIZING, NET_RESULT };
 static int net_phase;
 static void note_append(unsigned lines)
 {
-    AppendSeen a = {lines, test_thread, job_running, test_thread == NET_THREAD && net_phase == NET_RESULT,
-                    test_thread == NET_THREAD && net_phase == NET_RECOGNIZING, g_view.version};
+    AppendSeen a = {lines, test_thread, job_running,
+                    test_thread == NET_THREAD && net_phase == NET_RESULT && job_running && !job_done,
+                    test_thread == NET_THREAD && net_phase == NET_RECOGNIZING, job_done, g_view.version};
     if (appends_recorded < APPEND_LOG)
         appends_seen[appends_recorded] = a;
     appends_recorded++;
     result_path_appends += (unsigned)a.in_result_path;
     recognizing_appends += (unsigned)a.recognizing;
+    file_note(lines);
     lines_appended += lines;
     if (lines > most_lines_appended) most_lines_appended = lines;
     log_appends++;
@@ -285,9 +328,9 @@ static void note_batch_append(void)
 int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap)
 {
     net_log_locks += test_thread == NET_THREAD;
-    if (open_batch || !b || cap <= 0) return 0;
+    if (open_batch || !b || !buf || cap <= 0) return 0; /* as shell/log_vita.c: no buffer, no batch */
     open_batch = b; batch_cap = cap; batch_lines_held = batch_bytes_held = 0; batch_owner = test_thread;
-    b->buf = buf; b->n = 0; /* as shell/log_vita.c sets them: buf only when it opens */
+    b->buf = buf; b->n = b->used = 0; /* as shell/log_vita.c sets them: buf only when it opens */
     return 1;
 }
 void vjo_log_batch_end(VjoLogBatch *b)
@@ -296,7 +339,7 @@ void vjo_log_batch_end(VjoLogBatch *b)
     if (!b || open_batch != b) return;
     if (batch_lines_held) note_batch_append();
     batch_lines_held = batch_bytes_held = 0;
-    b->n = 0;
+    b->n = b->used = 0;
     open_batch = NULL;
 }
 void vjo_log(const char *fmt, ...)
@@ -318,7 +361,7 @@ void vjo_log(const char *fmt, ...)
     if (batch_owner != test_thread) { /* another thread's line: the batch's lines first, then this one */
         if (batch_lines_held) note_batch_append();
         batch_lines_held = batch_bytes_held = 0;
-        open_batch->n = 0;
+        open_batch->n = open_batch->used = 0;
         note_append(1);
         return;
     }
@@ -326,12 +369,14 @@ void vjo_log(const char *fmt, ...)
     if (batch_lines_held < VJO_LOG_BATCH_LINES && batch_cap - batch_bytes_held >= n) {
         batch_lines_held++; batch_bytes_held += n;
         open_batch->n = batch_lines_held;
+        open_batch->used = batch_bytes_held;
         if ((unsigned)batch_lines_held > most_lines_held) most_lines_held = (unsigned)batch_lines_held;
         return;
     }
     if (batch_lines_held) note_batch_append(); /* the batch so far goes out first */
     batch_lines_held = 1; batch_bytes_held = n;
     open_batch->n = 1;
+    open_batch->used = n;
 }
 /* shell/log_vita.c's vjo_log_configure: the open batch's lines go out first, on the caller's thread; in
  * the normal build only when log_file changes (with it kept, a held batch stays held). */
@@ -355,7 +400,7 @@ static void configure_stub(const VjoConfig *c)
  * runs. Only a timed wait (a line held) ends without a job, so the harness's idle step calls it only
  * then: an empty batch stays open, as net_main's untimed wait keeps it (audit-t3-log-path-d's N6). */
 #if !VJO_DEBUG
-static char net_log_test_buf[NET_LOG_BYTES];
+static char net_log_test_buf[NET_LOG_BYTES]; /* net_main's held_buf */
 static int net_wait_timed; /* the wait net_main goes back to: timed iff its batch held a line then */
 static void net_job_begin(void) { net_log_wake(net_log_test_buf); }
 static void net_job_end(void) { net_wait_timed = net_log.n != 0; }
@@ -407,8 +452,26 @@ static const char *logged(const char *needle)
 #else
 #define DLOGGED(needle) (logged(needle) == NULL)
 #endif
-int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
-int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
+/* #358: region.ini's line for every game, "region = full" (the Rubi app's Suggest a text box OFF) */
+static int saved_region_all_full;
+int vjo_region_load(const char *id, VjoRect *out, VjoArena *a)
+{
+    if (!saved_region.w) {
+        memset(out, 0, sizeof(*out));
+        return saved_region_all_full ? VJO_REGION_ALL : 0;
+    }
+    *out = saved_region;
+    return VJO_REGION_GAME;
+}
+/* #358: the saves (the last one's rect; NULL: the full screen) */
+static int region_saves, region_save_failure;
+static VjoRect region_saved_rect;
+int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a)
+{
+    region_saves++;
+    region_saved_rect = r ? *r : (VjoRect){0, 0, 0, 0};
+    return region_save_failure ? -1 : 0;
+}
 /* The Rubi app's stamps and its eboot.bin (shell/files.c), scripted (core/app_stamp.h). */
 static char app_installed[64], app_record[64];
 static int app_installed_rc, app_record_rc, app_eboot;
@@ -711,6 +774,8 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out);
 /* API 31: the next results' text_from, hook_flags, hook_score, hook_streams, hook_mode, hook_installed and
  * hook_refused (zero: a game where the worker hooked nothing) */
 static uint32_t fake_hook[7];
+/* API 52 (#358): the next successful results' suggested band, its rows (0: none) */
+static uint32_t fake_suggest_rows;
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
 {
     int rc = fake_ocr_read(seq, out);
@@ -862,6 +927,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
     fake_game_result.hook_score = fake_hook[2]; fake_game_result.hook_streams = fake_hook[3];
     fake_game_result.hook_mode = fake_hook[4]; fake_game_result.hook_installed = fake_hook[5];
     fake_game_result.hook_refused = fake_hook[6];
+    fake_game_result.suggest_rows = fake_game_result.rc == VJO_OK ? fake_suggest_rows : 0; /* (a failure: none) */
     *out = fake_game_result;
     return 0;
 }
@@ -875,7 +941,11 @@ static void reset(void)
     game_static_fb = 0; /* API 52: a native game (WAIT_HINT_PAUSE) until a test starts the PSP emulator's */
 #ifdef VJO_WITH_VOCR
     memset(fake_hook, 0, sizeof(fake_hook));
+    fake_suggest_rows = 0; /* #358: no box suggested */
 #endif
+    g_view.suggest = 0; /* #358: no game's box */
+    saved_region_all_full = region_save_failure = 0;
+    region_saves = 0;
     /* the logger stub: no batch open, no append recorded; the harness runs as the control thread */
     open_batch = NULL;
     batch_lines_held = batch_bytes_held = 0;
@@ -883,7 +953,14 @@ static void reset(void)
 #if !VJO_DEBUG
     memset(&net_log, 0, sizeof(net_log)); /* closed, as at the worker's start */
     net_wait_timed = 0;
+#else
+    static NetHeld test_held; /* net_main's, on its stack */
+    test_held.b.buf = NULL; /* closed, as net_main starts it */
+    net_held = &test_held;
 #endif
+    file_len = 0;
+    file_text[0] = 0;
+    on_notify = NULL;
     appends_recorded = result_path_appends = recognizing_appends = lines_appended = most_lines_appended = 0;
     lines_logged = net_lines_logged = most_lines_held = 0;
     net_phase = NET_IDLE;
@@ -1426,7 +1503,7 @@ static int run_vocr_job(void)
 #if !VJO_DEBUG
     net_job_begin();
 #endif
-    rc = run_job(&results[0], &cache_data[0]);
+    rc = run_job_t(&results[0], &cache_data[0]);
     net_phase = NET_IDLE;
 #if !VJO_DEBUG
     net_job_end();
@@ -1687,7 +1764,7 @@ static void test_vocr_config(void)
     const char ini[] = "ocr_backend = VOCR\nvocr_model = FL10_w8.vocr\n";
     const char bad[] = "vocr_model = ../H15_w8.vocr\nvocr_model = H15_w8.bin\nvocr_model =\n";
     vjo_config_defaults(&c);
-    /* Normal (VOCR5-N) by default; a job runs Small (VOCR5-S) when the game's memory has no room for it. */
+    /* Normal (VOCR6-N) by default; a job runs Small (VOCR5-S) when the game's memory has no room for it. */
     TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.log_file == 1);
     TEST_CHECK(!strcmp(vjo_vocr_tier_model(c.vocr_tier), VJO_VOCR_TIER2_NAME) &&
                !strcmp(vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL), VJO_VOCR_TIER1_NAME) &&
@@ -1842,7 +1919,7 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     unsigned before = vocr_allocs;
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg; vjo_arena_reset(&results[0]);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* one job, Normal left out */
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK); /* one job, Normal left out */
     TEST_CHECK(vocr_allocs == before + 1 && !strcmp(fake_game_request.model, VJO_VOCR_TIER1_NAME));
     TEST_CHECK(fake_game_request.tiers == 1u && !fake_game_request.fallback[0]);
     mem_free();
@@ -1850,7 +1927,7 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     fake_missing_model = NULL;
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg; vjo_arena_reset(&results[0]);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK);
     TEST_CHECK(!strcmp(fake_game_request.model, VJO_VOCR_TIER2_NAME) && fake_game_request.tiers == 3u);
     mem_free();
     /* Large chosen and Normal's file bad: Large stays in this game's ladder, Normal is left out (when
@@ -1865,7 +1942,7 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     mem_free();
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg; vjo_arena_reset(&results[0]);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK);
     TEST_CHECK(fake_game_request.tiers == 5u && !strcmp(fake_game_request.model, VJO_VOCR_TIER3_NAME));
     /* the worker went from Large to Small: two tiers down, Small read the text */
     TEST_CHECK(logged("tier large did not fit in this game (need 19777216, free 91238400); using small") != NULL);
@@ -1887,7 +1964,7 @@ static void test_vocr_transient_model_failure_is_not_sticky(void)
         fake_missing_model = NULL;
         TEST_ASSERT(mem_alloc() == 0);
         job_cfg = cfg; vjo_arena_reset(&results[0]);
-        TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK && vocr_allocs == 3);
+        TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK && vocr_allocs == 3);
         TEST_CHECK(!strcmp(fake_game_request.model, VJO_VOCR_TIER2_NAME) && fake_game_request.tiers == 3u);
         mem_free();
     }
@@ -1911,7 +1988,7 @@ static void test_vocr_model_error_retry_limits(void)
     TEST_ASSERT(mem_alloc() == 0);
     fake_memory_fallback = 0; fake_missing_model = NULL;
     job_cfg = cfg; vjo_arena_reset(&results[0]);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK && fake_game_request.tiers == 2u); /* Normal alone */
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK && fake_game_request.tiers == 2u); /* Normal alone */
     mem_free();
     reset();
     fake_missing_model = VJO_VOCR_TIER2_NAME; fake_cancel_on_model_error = 1;
@@ -3068,7 +3145,7 @@ static void test_character_open_reuses_background_text(void)
     /* Opening between recognition and completion starts only point lookup.
      * The real mutex stubs reject recursively reacquiring cmd_lock. */
     cursor_setup(); start_job("background still finishing", 0);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK);
     open_overlay(); TEST_CHECK(cursor_waiting && job_running && !job_cursor_only);
     on_job_done(); TEST_ASSERT(job_running && job_cursor_only);
     finish_current_job(); check_current_definition("cat", 0);
@@ -3110,7 +3187,7 @@ static void test_word_background_lookup_and_reopen_cache(void)
 
     cursor_setup(); stable_pending = 1; auto_prefetch();
     TEST_ASSERT(job_running && job_lookup);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK);
     reads_before = cursor_reads;
     open_overlay(); /* lookup finished, completion has not been processed */
     TEST_CHECK(job_running && !cursor_waiting && !job_cursor_only);
@@ -3427,7 +3504,9 @@ static void test_character_scene_change_keeps_the_shown_text(void)
         TEST_CHECK(job_running && !job_cursor_only && !g_view.list);
         job_running = 0;
     }
-    for (int cmd = VJO_CMD_SET_REGION; cmd <= VJO_CMD_CLEAR_REGION; cmd++) {
+    static const int region_cmds[] = {VJO_CMD_SET_REGION, VJO_CMD_CLEAR_REGION};
+    for (unsigned k = 0; k < 2; k++) {
+        int cmd = region_cmds[k];
         cursor_saved_text(); open_overlay(); finish_current_job();
         uint32_t generation = local_text_generation;
         VjoRect r = {2, 4, 100, 50};
@@ -3439,6 +3518,93 @@ static void test_character_scene_change_keeps_the_shown_text(void)
         job_running = 0;
     }
 }
+/* #358, the text box suggested on first use: a job on the whole screen of a game with no region line at all puts the
+ * band its result carries in the view once the job is done (on_job_done), the newest screen's: one without dialogue
+ * takes an earlier screen's out. A game with a region line (its own, or region.ini's "full" for every game: the Rubi
+ * app's Suggest a text box OFF) gets none, nor one whose box the overlay took in this activation
+ * (core/region_select.h VJO_RSEL_TAKEN), until it next starts or resumes (push_region). The overlay's enter saves the
+ * box as a drawn one is (VJO_CMD_SET_REGION): the overlay closes, and the game has its region. */
+static void test_the_suggested_box_reaches_the_view_once_an_activation(void)
+{
+    const VjoRect r = vjo_rsel_rect(0, 544 - 169, 960, 169);
+    unsigned scene = 3;
+    cursor_setup();
+    saved_region.w = 0;
+    push_region();
+    TEST_CHECK(g_view.suggest == 0);
+    fake_suggest_rows = 169;
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+#define NEXT_SCREEN() /* Auto's job on a newly settled screen, the overlay closed */ \
+    do { \
+        state.scene = state.capture_scene = state.region_scene = scene++; \
+        stable_pending = 1; auto_prefetch(); \
+        TEST_ASSERT(job_running); \
+        finish_current_job(); \
+    } while (0)
+    NEXT_SCREEN();
+    TEST_CHECK_(g_view.suggest == 169, "%u", g_view.suggest);
+    /* a later screen without dialogue: its job's result has no box, and takes the earlier screen's out */
+    fake_suggest_rows = 0;
+    NEXT_SCREEN();
+    TEST_CHECK_(g_view.suggest == 0, "%u", g_view.suggest);
+    /* the next screen's box; the overlay takes it (shell/overlay.cpp): none after it in this activation */
+    fake_suggest_rows = 170;
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == 170 && vjo_rsel_take(&g_view.suggest) == 170);
+    fake_suggest_rows = 169;
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN && !vjo_rsel_take(&g_view.suggest));
+    /* the game resumes (activate_game's push_region): its next box is offered again */
+    push_region();
+    TEST_CHECK(g_view.suggest == 0);
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == 169);
+    /* a game with a region of its own: none, and its jobs' boxes are not taken */
+    saved_region = (VjoRect){100, 200, 30000, 8000};
+    push_region();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    /* region.ini's line for every game ("region = full"): none either */
+    saved_region.w = 0;
+    saved_region_all_full = 1;
+    push_region();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN && logged("region: all games', full screen"));
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    saved_region_all_full = 0;
+    /* the box taken with the overlay open and saved by its enter, as a drawn one is: the overlay closes, the game's
+     * region is the box, none after it */
+    push_region();
+    NEXT_SCREEN();
+    open_overlay();
+    if (job_running) finish_current_job();
+    TEST_CHECK(ov == OV_OPEN && vjo_rsel_take(&g_view.suggest) == 169);
+    region_saves = 0;
+    saved_region = r; /* what region.ini holds once saved (the stub's save keeps no file) */
+    vjo_post_command(VJO_CMD_SET_REGION, &r); on_command();
+    TEST_CHECK(region_saves == 1 && !memcmp(&region_saved_rect, &r, sizeof(r)) && logged("region set for PCSG00415"));
+    TEST_CHECK(ov == OV_CLOSED && !__atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE));
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN); /* push_region: the box is this game's region now */
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    /* a region.ini that cannot be written: the game keeps its whole screen (no line), and is not asked again in this
+     * activation */
+    saved_region.w = 0;
+    push_region();
+    NEXT_SCREEN();
+    TEST_CHECK(vjo_rsel_take(&g_view.suggest) == 169);
+    region_save_failure = 1;
+    vjo_post_command(VJO_CMD_SET_REGION, &r); on_command();
+    TEST_CHECK(region_saves == 2 && logged("region.ini: write failed") && g_view.suggest == VJO_RSEL_TAKEN);
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    region_save_failure = 0;
+#undef NEXT_SCREEN
+    fake_suggest_rows = 0;
+    saved_region.w = 0;
+}
+
 static void test_character_command_priority_and_generation_boundaries(void)
 {
     cursor_saved_text(); open_overlay(); finish_current_job();
@@ -3612,7 +3778,7 @@ static void test_dictionary_pages_read_one_entry_each(void)
     /* Closing during a page read drops it; reopening reads that page again. */
     TEST_CHECK(vjo_post_page(0, generation)); on_command();
     TEST_ASSERT(job_running); close_overlay(); TEST_CHECK(job_cancelled);
-    job_rc = run_cursor_job(&results[0], &cache_data[0]); job_done = 1; on_job_done();
+    job_rc = run_cursor_job_t(&results[0], &cache_data[0]); job_done = 1; on_job_done();
     TEST_CHECK(!job_running && !g_view.list && !paged_live);
     open_overlay(); TEST_ASSERT(job_running && job_cursor_only && job_page == 0);
     finish_current_job(); check_page("main. dog", 3, 0, 2);
@@ -3651,7 +3817,7 @@ static void test_dictionary_count_change_relooks_up_without_ocr(void)
     close_overlay(); retire_local_text(1); cache_ok = 0; /* as a region change */
     stable_pending = 1; auto_prefetch();
     TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK);
     loaded.local_dictionary_results = 3;
     open_overlay(); /* reloads config while the prepared lookup finishes */
     job_done = 1; on_job_done();
@@ -3662,7 +3828,7 @@ static void test_dictionary_count_change_relooks_up_without_ocr(void)
     close_overlay(); retire_local_text(1); cache_ok = 0;
     stable_pending = 1; auto_prefetch();
     TEST_ASSERT(job_running && job_lookup && job_cfg.local_dictionary_results == 3);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK);
     loaded.local_dictionary_results = 2; apply_config();
     job_done = 1; on_job_done();
     TEST_CHECK(!job_running && !cache_ok);
@@ -3723,7 +3889,7 @@ static void test_shell_result_oom_preserves_recognition(void)
     backoff_note(&ocr_backoff, 1); /* previous OCR failure must be cleared */
     start_job("Shell result refusal after recognition", 1);
     int idx = job_idx;
-    TEST_CHECK(run_job(&results[idx], &cache_data[idx]) == VJO_E_OOM);
+    TEST_CHECK(run_job_t(&results[idx], &cache_data[idx]) == VJO_E_OOM);
     VjoOverlayData *d = &cache_data[idx];
     TEST_CHECK(d->failed_stage == VJO_STAGE_DICT && d->err.dict == VJO_DICT_LOCAL);
     TEST_CHECK(d->ocr_text && !strcmp(d->ocr_text, fake_recognized_text));
@@ -3746,7 +3912,7 @@ static void test_shell_result_oom_preserves_recognition(void)
     fake_recognized_text = "次の文";
     start_job("Shell memory recovered", 0);
     TEST_CHECK(!g_view.list && !has_result_memory());
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     on_job_done();
     TEST_CHECK(!strcmp(g_view.strip_text, "次の文") && !ocr_backoff.until);
     TEST_CHECK(!has_result_memory() && vocr_allocs == vocr_frees);
@@ -3766,7 +3932,7 @@ static void test_shell_result_oom_keeps_max_worker_text(void)
         fake_recognized_text = longest;
         fail_alloc = 1;
         start_job("maximum recognized text under Shell pressure", 1);
-        TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_OOM);
+        TEST_CHECK(run_job_t(&results[job_idx], &cache_data[job_idx]) == VJO_E_OOM);
         VjoOverlayData *d = &cache_data[job_idx];
         TEST_CHECK(d->failed_stage == VJO_STAGE_DICT);
         TEST_CHECK(d->sentence && !strcmp(d->sentence, longest));
@@ -3783,7 +3949,7 @@ static void test_local_phases_and_recovery(void)
     for (int i = 0; i < 50; i++) {
         start_job("local phase check", 0);
         TEST_CHECK(!has_result_memory() && g_view.list == NULL);
-        TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+        TEST_CHECK(run_job_t(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
         TEST_CHECK(!has_result_memory() && !results[0].size && !results[1].size);
         TEST_CHECK(!user_allocs && !heap_allocs);
         TEST_CHECK(vocr_allocs == vocr_frees && !vocr_live);
@@ -3791,12 +3957,12 @@ static void test_local_phases_and_recovery(void)
     }
     fail_vocr_user = fail_vocr_paf = 1;
     start_job("local allocation refusal", 0);
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_OOM);
+    TEST_CHECK(run_job_t(&results[job_idx], &cache_data[job_idx]) == VJO_E_OOM);
     TEST_CHECK(!has_result_memory() && !vocr_live);
     job_running = 0;
     fail_vocr_user = fail_vocr_paf = 0;
     start_job("local recovered", 0);
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     job_running = 0;
     mem_free();
     TEST_CHECK(!has_result_memory() && user_allocs == user_frees && heap_allocs == heap_frees);
@@ -3810,14 +3976,14 @@ static void test_local_lookup_single_arena(void)
     ov = OV_OPEN;
     start_job("local lookup", 1);
     TEST_CHECK(job_idx == 0 && !g_view.list);
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     TEST_CHECK(has_result_memory() && results[0].size + vjo_local_session_size() == 64 * 1024);
     TEST_CHECK(!results[1].base && !results[1].size);
     on_job_done();
     TEST_CHECK(cache_ok && active == 0 && g_view.list == &cache_data[0].list);
     start_job("local OCR only replaces cached lookup", 0);
     TEST_CHECK(job_idx == 0 && !has_result_memory() && !g_view.list && !cache_ok);
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     TEST_CHECK(!has_result_memory());
     job_running = 0;
     phases_checked = 0;
@@ -3842,7 +4008,7 @@ static void test_audit_exit_during_lookup_frees_the_arena_after_the_job(void)
     TEST_ASSERT(job_running && job_lookup && !job_cursor_only && !job_refresh && job_idx == 0);
     TEST_CHECK(!has_result_memory()); /* opening takes no memory */
     /* the network thread: OCR in the game, then the lookup's arena */
-    job_rc = run_job(&results[job_idx], &cache_data[job_idx]);
+    job_rc = run_job_t(&results[job_idx], &cache_data[job_idx]);
     TEST_CHECK(job_rc == VJO_OK && has_result_memory() && results[0].size + vjo_local_session_size() == LOCAL_RESULT_ARENA_SIZE);
     on_game_exit(); /* before the control thread saw job_done */
     TEST_CHECK(has_result_memory() && audit_live() == 1); /* still the job's */
@@ -3861,7 +4027,7 @@ static void test_audit_exit_during_cursor_job_frees_the_arena_after_the_job(void
     vjo_post_cursor(3, local_text_generation);
     on_command();
     TEST_ASSERT(job_running && job_cursor_only);
-    job_rc = run_cursor_job(&results[0], &cache_data[0]);
+    job_rc = run_cursor_job_t(&results[0], &cache_data[0]);
     on_game_exit();
     TEST_CHECK(has_result_memory() && audit_live() == 1);
     job_done = 1;
@@ -3884,7 +4050,7 @@ static void test_audit_refresh_has_no_arena(void)
     control_tick(VJO_EV_REGION_STABLE);
     TEST_ASSERT(job_running && job_refresh && job_idx == 1 && !job_lookup);
     TEST_CHECK(!results[1].base && !results[1].size);
-    job_rc = run_job(&results[1], &cache_data[1]);
+    job_rc = run_job_t(&results[1], &cache_data[1]);
     TEST_CHECK(job_rc == VJO_OK && !results[1].base && !results[1].size && !results[1].used && !results[1].peak);
     TEST_CHECK(results[0].base == base && results[0].used == used && heap_allocs + user_allocs == allocs);
     TEST_CHECK(cache_data[1].ocr_text != NULL && !cache_data[1].list.n_entries && !cache_data[1].pages);
@@ -3906,7 +4072,7 @@ static void test_audit_cursor_posted_while_publishing(void)
     cursor_setup();
     open_overlay();
     TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
-    job_rc = run_job(&results[0], &cache_data[0]);
+    job_rc = run_job_t(&results[0], &cache_data[0]);
     job_done = 1;
     uint32_t seq = local_cursor_seq;
     race_on_lock = 1; /* the first cmd_lock taken from here: on_job_done's publish */
@@ -4371,10 +4537,12 @@ static void test_selftest_waits_for_text_in_the_region(void)
 #endif
 
 /* Nothing about a changed screen reaches the user (#81 request 4), but the open overlay's wait hint after
- * WAIT_HINT_AFTER torn jobs in a row (#358: test_open_overlay_says_why_it_waits). */
+ * WAIT_HINT_AFTER torn jobs in a row (#358: test_open_overlay_says_why_it_waits), which is allowed by its text
+ * (not by the words it happens to avoid) and is never an error. */
 static void check_quiet(void)
 {
-    TEST_CHECK(!g_view.status_is_error && !strstr(g_view.status, "changed") && !strstr(g_view.status, "reopen"));
+    TEST_CHECK(!g_view.status_is_error && (!strcmp(g_view.status, WAIT_HINT) ||
+                                           (!strstr(g_view.status, "changed") && !strstr(g_view.status, "reopen"))));
     TEST_CHECK(g_view.strip_kind != VJO_STRIP_ERROR && !strstr(g_view.strip_text, "changed"));
 }
 
@@ -4476,10 +4644,9 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
     TEST_ASSERT(job_running && !open_retry);
     /* #353: the third failure in a row says so in the log (both builds), with the lines its game worker had
      * recognized; the overlay's status is #358's */
-    TEST_CHECK(logged("ocr: the screen changed under every read") == NULL);
+    TEST_CHECK(logged("ocr: screen changed under") == NULL);
     finish_current_job(); /* the third: 500 ms */
-    TEST_CHECK(logged("ocr: the screen changed under every read of 3 jobs in a row, the last with 2 line(s) "
-                      "recognized and not shown") != NULL);
+    TEST_CHECK(logged("ocr: screen changed under 3 jobs in a row; 2 line(s) not shown") != NULL);
     test_now += 500000; control_tick(0);
     TEST_ASSERT(job_running);
     finish_current_job();
@@ -4522,6 +4689,38 @@ static void check_shown(const char *text, const char *meaning, uint32_t cursor)
     check_quiet();
 }
 
+/* As finish_current_job, with the job cancelled for a newer screen (cancel_outdated_job, a region or a game change)
+ * after the game answered and before the control thread takes the result; with sentence, its sentence was shown
+ * first (on_job_text). A job cancelled before its read never reads (VJO_E_CANCELLED): this one's result is the
+ * game's, VJO_E_SCREEN_CHANGED with fake_screen_changes. */
+static void finish_current_job_cancelled(int sentence)
+{
+    TEST_ASSERT(job_running);
+    test_thread = NET_THREAD;
+    net_phase = NET_IDLE;
+#if !VJO_DEBUG
+    net_job_begin();
+#endif
+    net_job();
+#if !VJO_DEBUG
+    net_job_end();
+#endif
+    test_thread = CTL_THREAD;
+    TEST_ASSERT(job_done);
+    if (sentence) {
+        TEST_ASSERT(job_text_ready);
+        on_job_text();
+        TEST_ASSERT(view_job_text && g_view.list == &job_text_list);
+    }
+    job_cancelled = 1;
+    on_job_done();
+#if !VJO_DEBUG
+    test_thread = NET_THREAD;
+    net_idle_write();
+    test_thread = CTL_THREAD;
+#endif
+}
+
 /* The open overlay waits for its text and says only "Recognizing…" (as it always did). */
 static void check_waiting(const char *status)
 {
@@ -4532,18 +4731,23 @@ static void check_waiting(const char *status)
 /* #358 (the owner: "Say why the user is waiting. After a few seconds of 'Recognizing…' on torn reads, name the cause
  * and the fix"): once WAIT_HINT_AFTER (2) jobs in a row found the screen changed under every read, the open overlay's
  * next tries say why it still is recognizing and what helps (WAIT_HINT, from the data segment), never as an error,
- * until a read shows its text. One torn read never does; Automatically's torn jobs before the press count (the press
- * says why at once); a try cancelled after it showed its sentence keeps it; ocr_wait_hint = off says "Recognizing…"
- * all along; a region drawn as it asks, or a new game, starts over; a refresh's torn reads leave the shown text alone;
- * the subtitle strip never shows it. API 52: with ocr_pause off (the default) in a game the pause works in, the hint
- * also names it (WAIT_HINT_PAUSE); with it on, or in a PSP game (which the kernel never pauses), it does not. */
+ * until a read shows its text. One torn read never does. Automatically's torn jobs before the press count: a press in
+ * the pace's gap starts a try that says why at once, one while Automatically's next try runs says "Recognizing…"
+ * until that try ends, and the overlay's own next try says why. A try cancelled after it showed its sentence keeps
+ * it; a torn try cancelled after the game answered counts for no screen. ocr_wait_hint = off says "Recognizing…" all
+ * along; a region drawn as it asks, or a new game, starts over; a refresh's torn reads leave the shown text alone;
+ * the subtitle strip never says why, with the overlay open or closed. */
 static void test_open_overlay_says_why_it_waits(void)
 {
+    /* still trying; the cause (an icon, or text still typing); the fix as a condition (audit F1: □ cannot leave out an
+     * icon inside a line, a picture behind the text or a line still typing) */
     TEST_CHECK(strstr(WAIT_HINT, "Recognizing…") == WAIT_HINT && strstr(WAIT_HINT, "keeps moving") &&
-               strstr(WAIT_HINT, "□") && strlen(WAIT_HINT) < sizeof(g_view.status)); /* still trying; the cause, the fix */
+               strstr(WAIT_HINT, "typing") && strstr(WAIT_HINT, "If a region around just the text leaves it out") &&
+               strstr(WAIT_HINT, "□") && strlen(WAIT_HINT) < sizeof(g_view.status));
+    /* test/combined, #355: the same, and the pause; it fits the status */
     TEST_CHECK(!strncmp(WAIT_HINT_PAUSE, WAIT_HINT, strlen(WAIT_HINT)) &&
                !strcmp(WAIT_HINT_PAUSE + strlen(WAIT_HINT), " Or turn on Pause the game to read in the Rubi app.") &&
-               strlen(WAIT_HINT_PAUSE) < sizeof(g_view.status)); /* the same, and the pause; it fits the status */
+               strlen(WAIT_HINT_PAUSE) < sizeof(g_view.status));
 
     /* Three torn reads after the press, then one that reads its screen. */
     cursor_setup();
@@ -4584,7 +4788,8 @@ static void test_open_overlay_says_why_it_waits(void)
     check_current_definition("cat", 0);
     close_overlay(); mem_free();
 
-    /* Automatically's two torn jobs while the overlay is closed show nothing; the press after them says why at once. */
+    /* Automatically's two torn jobs while the overlay is closed show nothing; a press in the pace's gap (no job runs)
+     * starts a try of its own, which says why at once. */
     cursor_setup();
     fake_screen_changes = 3;
     stable_pending = 1; control_tick(0);
@@ -4613,32 +4818,66 @@ static void test_open_overlay_says_why_it_waits(void)
     open_overlay(); finish_current_job(); finish_current_job();
     test_now += 250000; control_tick(0);
     TEST_ASSERT(job_running);
-    check_waiting(WAIT_HINT_PAUSE);
-    test_thread = NET_THREAD;
-    net_phase = NET_IDLE;
-#if !VJO_DEBUG
-    net_job_begin();
-#endif
-    net_job();
-#if !VJO_DEBUG
-    net_job_end();
-#endif
-    test_thread = CTL_THREAD;
-    TEST_ASSERT(job_text_ready && job_done);
-    on_job_text();
-    TEST_ASSERT(view_job_text && g_view.list == &job_text_list);
-    job_cancelled = 1; /* a newer screen (cancel_outdated_job) */
-    on_job_done();
+    check_waiting(WAIT_HINT_PAUSE); /* test/combined: #355, the pause off */
+    finish_current_job_cancelled(1); /* its sentence shown, then cancelled for a newer screen */
     TEST_ASSERT(job_running && !view_job_text);
-    check_waiting(WAIT_HINT_PAUSE);
-#if !VJO_DEBUG
-    test_thread = NET_THREAD;
-    net_idle_write();
-    test_thread = CTL_THREAD;
-#endif
+    check_waiting(WAIT_HINT_PAUSE); /* test/combined: #355, the pause off */
     finish_current_job();
     check_current_definition("cat", 0);
     close_overlay(); mem_free();
+
+    /* A press while Automatically's next try runs (the common case: that try starts once the pace allows) says
+     * "Recognizing…" until the try ends; it tore too, so the overlay's own next try, after the pace, says why
+     * (audit F4: not at once). */
+    cursor_setup();
+    fake_screen_changes = 3;
+    stable_pending = 1; control_tick(0); finish_current_job();
+    control_tick(0); finish_current_job();
+    TEST_CHECK(screen_changed_streak == 2 && !job_running);
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running && job_prepares); /* Automatically's third try */
+    open_overlay();
+    TEST_CHECK(ov == OV_OPEN_OLD_JOB);
+    check_waiting("Recognizing…");
+    finish_current_job(); /* torn: the overlay's try waits out the 500 ms pace */
+    TEST_CHECK(!job_running && open_retry && screen_changed_streak == 3);
+    check_waiting("Recognizing…");
+    test_now += 500000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT_PAUSE); /* test/combined: #355, the pause off */
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* A torn try cancelled for a newer screen after the game answered counts for no screen (on_job_done): the count
+     * stays at 1, the next try starts at once and says "Recognizing…" (audit F5). */
+    cursor_setup();
+    fake_screen_changes = 2;
+    open_overlay(); finish_current_job();
+    TEST_ASSERT(job_running && screen_changed_streak == 1);
+    finish_current_job_cancelled(0); /* torn too, and cancelled */
+    TEST_CHECK(screen_changed_streak == 1);
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* The subtitle strip never says why: with the overlay closed and the count at 2, Select + R's strip says
+     * "Recognizing…" while its job runs (audit F5). */
+    cursor_setup();
+    fake_screen_changes = 2;
+    stable_pending = 1; control_tick(0); finish_current_job();
+    control_tick(0); finish_current_job();
+    TEST_CHECK(screen_changed_streak == 2 && ov == OV_CLOSED && !job_running);
+    control_tick(VJO_EV_SUBTITLE); /* Select + R */
+    TEST_CHECK_(subtitles && g_view.strip_kind == VJO_STRIP_STATUS && !strcmp(g_view.strip_text, "Recognizing…"),
+                "strip '%s' (kind %d)", g_view.strip_text, g_view.strip_kind);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+    subtitles = 0;
+    mem_free();
 
     /* ocr_wait_hint = off: "Recognizing…" all along, as before #358. */
     cursor_setup();
@@ -4686,9 +4925,9 @@ static void test_open_overlay_says_why_it_waits(void)
     VjoRect drawn = {10, 10, 200, 60};
     vjo_post_command(VJO_CMD_SET_REGION, &drawn); control_tick(0); /* saved: the overlay closes, the try cancelled */
     TEST_CHECK(ov == OV_CLOSED && job_running && job_cancelled && !screen_changed_streak && !screen_retry_until);
-    finish_current_job(); /* cancelled before its read: it counts for no region */
-    TEST_CHECK(!screen_changed_streak && !screen_retry_until);
-    fake_screen_changes = 1; /* the new region: one torn read, then the text */
+    finish_current_job(); /* cancelled before its read: VJO_E_CANCELLED, no read (the third torn result is left) */
+    TEST_CHECK(!screen_changed_streak && !screen_retry_until && fake_screen_changes == 1);
+    /* the new region: that one torn read, then the text */
     open_overlay();
     TEST_ASSERT(job_running);
     check_waiting("Recognizing…");
@@ -5423,7 +5662,7 @@ static void finish_by_tick(void)
     TEST_ASSERT(job_running);
     if (job_prepare) { net_job(); control_tick(0); return; }
     int idx = job_idx;
-    job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx]) : run_job(&results[idx], &cache_data[idx]);
+    job_rc = job_cursor_only ? run_cursor_job_t(&results[idx], &cache_data[idx]) : run_job_t(&results[idx], &cache_data[idx]);
     job_done = 1;
     control_tick(0);
 }
@@ -5605,7 +5844,7 @@ static void test_a_move_before_the_end_of_the_job_an_opening_waits_for(void)
         TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
         open_overlay(); /* before the job has read the text */
         TEST_CHECK(ov == OV_OPEN_OLD_JOB && view_waiting && !strcmp(g_view.status, "Recognizing…"));
-        TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* the network thread: text, then the word */
+        TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK); /* the network thread: text, then the word */
         on_job_text(); /* the control thread: the text at once */
         TEST_ASSERT(g_view.list && !strcmp(g_view.list->header, "猫犬鳥") && g_view.local_cursor_mode);
         vjo_post_cursor(3, local_text_generation); on_command(); /* Right, while the job ends */
@@ -6095,7 +6334,7 @@ static void test_the_previous_games_text_is_never_the_strips(void)
     identify_rc = -1;
     TEST_ASSERT(game_active() && !strcmp(title_id, "PCSG00202") && job_cancelled && !local_text_valid);
     job_cancelled = 0; /* the answer was in: the text is published after the retirement */
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(run_job_t(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     job_cancelled = 1;
     state.stable = 0; /* nothing has settled in game B */
     job_done = 1; control_tick(0); /* the stale job's end shows nothing and retires its text */
@@ -6166,7 +6405,7 @@ static void test_an_opening_during_autos_job_on_a_changed_screen_gets_its_own(vo
         TEST_ASSERT(job_running && !job_cursor_only && job_lookup == !ocr_only);
         open_overlay(); /* L + R before the job ends */
         TEST_CHECK(ov == OV_OPEN_OLD_JOB && view_waiting && !strcmp(g_view.status, "Recognizing…"));
-        TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* it read scene 2 */
+        TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK); /* it read scene 2 */
         next_scene(8); /* then the game moved on */
         fake_recognized_text = "犬";
         log_count = 0;
@@ -6268,7 +6507,7 @@ static void test_a_region_drawn_during_an_ocr_job_drops_its_old_regions_result(v
         TEST_ASSERT(job_running && !job_cursor_only && job_lookup);
         open_overlay(); /* L + R during it: the opening waits for it */
         TEST_CHECK(ov == OV_OPEN_OLD_JOB && view_waiting);
-        TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* it has read the old region: 猫犬鳥 */
+        TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK); /* it has read the old region: 猫犬鳥 */
         job_done = 1;
         vjo_post_command(VJO_CMD_SET_REGION, &r); /* Enter, before the control thread takes the result */
         fake_recognized_text = "鳥"; /* the new region's text */
@@ -6384,7 +6623,7 @@ static void test_a_region_drawn_between_a_jobs_answer_and_its_publish_never_brin
             between_answer_and_publish = region_drawn_now; /* Enter, once the game has answered: 猫犬鳥 */
             int idx = job_idx;
             test_thread = NET_THREAD;
-            job_rc = run_job(&results[idx], &cache_data[idx]);
+            job_rc = run_job_t(&results[idx], &cache_data[idx]);
             test_thread = CTL_THREAD;
             TEST_ASSERT(!between_answer_and_publish && job_cancelled && ov == OV_CLOSED);
             fake_recognized_text = "鳥"; /* the new region's text, for the jobs after it */
@@ -6677,33 +6916,269 @@ static void test_subtitles_on_during_the_selftest_job(void)
 
 #if VJO_DEBUG /* the debug build's log lines (the normal build's: test_normal_build_*) */
 /* A job's done line (net_job): the time in exchanges with the game worker, each
- * job's own, and the log's appends meanwhile, in the format tools/analyse_timeline.py
- * reads (docs/first-ocr.md). */
+ * job's own, the log's appends meanwhile, and the lines held until its result (#360:
+ * the text's one line and this one), in the format tools/analyse_timeline.py reads
+ * (docs/first-ocr.md). */
 static void test_the_done_line_has_the_exchange_and_log_times(void)
 {
     reset();
     fake_recognized_text = "猫";
     fake_exchange_us = 7000;
     for (int k = 0; k < 2; k++) {
-        int idx = -1, rc = -1, ms = -1, page = -1, pages = -1, end = -1;
+        int idx = -1, rc = -1, ms = -1, page = -1, pages = -1, end = -1, held = -1;
         unsigned peak = 0, game = 0, log_ms = 0, appends = 0;
         const char *line;
         raw_state.done_seq = 11;
         job_cfg = cfg;
         job_idx = 0; job_cursor_only = 0; job_cancelled = job_captured = 0; job_done = 0;
         net_job();
-        TEST_CHECK(job_done && job_rc == VJO_OK);
+        TEST_CHECK(job_done && job_rc == VJO_OK && !open_batch && !net_held->b.buf); /* written: none held after */
         line = logged("job 0 done rc=0 in ");
         TEST_ASSERT(line != NULL);
         TEST_CHECK(sscanf(line, "job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, "
-                          "log %u ms in %u appends%n", &idx, &rc, &ms, &peak, &page, &pages, &game, &log_ms,
-                          &appends, &end) == 9);
+                          "log %u ms in %u appends, %d held%n", &idx, &rc, &ms, &peak, &page, &pages, &game, &log_ms,
+                          &appends, &held, &end) == 10);
         TEST_CHECK(end > 0 && (line[end] == '\0' || line[end] == '\n')); /* to its last word */
         TEST_CHECK(idx == 0 && !rc && ms >= 7 && game == 7 && log_ms == 3 && appends == 2); /* each job's own */
+        TEST_CHECK(held == 1); /* "game vocr text 0: 猫", written with this line after job_done */
+        TEST_CHECK(strstr(file_text, "game vocr text 0: 猫\njob 0 done rc=0 in ") != NULL); /* in their order */
         TEST_MSG("%s", line);
         log_count = 0;
         mem_free();
     }
+}
+
+/* #360: at the network thread's notification of a job's end (job_done), what log.txt holds of its lines,
+ * and the control thread taking the result there and then, as on the console it can while the network
+ * thread goes on to write the held lines. */
+static size_t done_file_len;
+static unsigned done_lines_logged, done_lines_written, done_appends;
+static int done_shown_entries; /* the entries the view showed once the control thread took the result */
+static void take_the_result_at_job_done(void)
+{
+    if (test_thread != NET_THREAD || !job_done)
+        return; /* (a job's text, job_text_ready, or another thread's notification) */
+    done_file_len = file_len;
+    done_lines_logged = lines_logged;
+    done_lines_written = lines_appended;
+    done_appends = appends_recorded;
+    test_thread = CTL_THREAD;
+    on_job_done();
+    done_shown_entries = g_view.list == &cache_data[0].list ? g_view.list->n_entries : -1;
+    test_thread = NET_THREAD;
+}
+/* Whether log.txt's bytes [from, to) hold needle (file_text: the lines as the appends wrote them). */
+static int file_has_between(size_t from, size_t to, const char *needle)
+{
+    const char *p = strstr(file_text + from, needle);
+    return p && (size_t)(p - file_text) + strlen(needle) <= to;
+}
+/* The network thread's job, with the control thread taking its result at job_done. */
+static void net_job_taken_at_job_done(void)
+{
+    TEST_ASSERT(job_running && (posted & NET_EV_JOB));
+    posted &= ~NET_EV_JOB;
+    done_file_len = 0;
+    done_shown_entries = -2;
+    on_notify = take_the_result_at_job_done;
+    test_thread = NET_THREAD;
+    net_phase = job_cursor_only ? NET_RESULT : NET_IDLE;
+    net_job();
+    net_phase = NET_IDLE;
+    test_thread = CTL_THREAD;
+    on_notify = NULL;
+    TEST_CHECK(!job_running && !net_held->b.buf && !open_batch); /* taken, and nothing held after the job */
+}
+
+/* #360: the debug build's lookup holds its lookup line and its done line until it has published its
+ * result: when the control thread can take it (job_done), neither is in log.txt, and the word is shown;
+ * then the network thread writes both, in their order, in one append, out of the result's path. */
+static void test_debug_build_writes_a_lookups_lines_after_its_result(void)
+{
+    const char *lookup, *done;
+    cursor_saved_text(); open_overlay(); finish_current_job();
+    TEST_ASSERT(local_text_valid && !job_running);
+    vjo_post_cursor(3, local_text_generation); on_command();
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3);
+    unsigned appends0 = appends_recorded, logged0 = lines_logged;
+    size_t file0 = file_len;
+    net_job_taken_at_job_done();
+    /* at job_done: both lines logged, neither written; the control thread shows the word then */
+    TEST_CHECK(done_lines_logged == logged0 + 2 && done_lines_written == logged0 && done_appends == appends0);
+    TEST_CHECK(done_file_len == file0 && !file_has_between(file0, done_file_len, "lookup cursor at 3:"));
+    TEST_CHECK(done_shown_entries == 1); /* 犬 ("dog") on screen before its lines are written */
+    /* then: one append of both, the lookup's line first, the done line saying it held one */
+    TEST_ASSERT(appends_recorded == appends0 + 1);
+    TEST_CHECK(appends_seen[appends0].lines == 2 && appends_seen[appends0].thread == NET_THREAD &&
+               !appends_seen[appends0].in_result_path && !appends_seen[appends0].job_running);
+    lookup = strstr(file_text + done_file_len, "lookup cursor at 3: 1 chars");
+    done = strstr(file_text + done_file_len, "job 0 done rc=0 in ");
+    TEST_ASSERT(lookup && done);
+    TEST_CHECK(lookup < done && strchr(lookup, '\n') + 1 == done); /* in their order, back to back */
+    TEST_CHECK(strstr(done, " appends, 1 held\n") != NULL);
+    TEST_CHECK(lines_appended == lines_logged); /* nothing left held */
+    TEST_MSG("%s", file_text + done_file_len);
+    printf("\n  written after the result:\n%s", file_text + done_file_len);
+    close_overlay();
+    mem_free();
+}
+
+/* #360: an OCR job's lines after its recognition (its text's, its result arena's, its first word's lookup)
+ * and its done line are held until its result is published, then written in one append; its recognition's
+ * own lines (vocr_run_one's batch) go out as before, ahead of them. */
+static void test_debug_build_writes_an_ocr_jobs_lines_after_its_result(void)
+{
+    const char *text, *lookup, *done;
+    cursor_setup();
+    fake_recognized_text = "猫犬鳥";
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_AUTO;
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_WORD; /* Auto + Whole word: the first word too */
+    history_rtc_fail = 1; /* no history.csv line: the control thread takes the result before it (and resets job_done) */
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
+    unsigned appends0 = appends_recorded;
+    size_t file0 = file_len;
+    net_job_taken_at_job_done();
+    /* the recognition's batch was written before job_done; the text's lines were not */
+    TEST_CHECK(done_appends > appends0 && file_has_between(file0, done_file_len, "game vocr rc=0 "));
+    TEST_CHECK(!file_has_between(file0, done_file_len, "game vocr text 0: "));
+    /* then one append, of every line held: the text's, the lookup's and the done line, in their order */
+    TEST_ASSERT(appends_recorded == done_appends + 1);
+    TEST_CHECK(!appends_seen[done_appends].in_result_path && appends_seen[done_appends].thread == NET_THREAD);
+    TEST_CHECK(appends_seen[done_appends].lines == done_lines_logged - done_lines_written &&
+               appends_seen[done_appends].lines >= 3);
+    text = strstr(file_text + done_file_len, "game vocr text 0: 猫犬鳥");
+    lookup = strstr(file_text + done_file_len, "lookup first word at 0: ");
+    done = strstr(file_text + done_file_len, "job 0 done rc=0 in ");
+    TEST_ASSERT(text && lookup && done);
+    TEST_CHECK(text == file_text + done_file_len && text < lookup && lookup < done); /* in their order */
+    TEST_CHECK(lines_appended == lines_logged);
+    TEST_MSG("%s", file_text + done_file_len);
+    printf("\n  written after the result:\n%s", file_text + done_file_len);
+    mem_free();
+}
+
+/* #360: an OCR job whose held lines fill the 2 KiB batch: the batch writes what it holds before the next line
+ * (an append before the result, as the normal build's batch does when full) and goes on holding; the done line
+ * says how many it still held, and every line is written once, in its order. */
+static void test_debug_build_a_full_batch_goes_on_holding(void)
+{
+    static char text[16 * 200];
+    const char *done;
+    size_t n = 0;
+    cursor_setup();
+    for (int line = 0; line < 12; line++) { /* 12 lines of 60 characters: 18 + 180 B a log line */
+        for (int c = 0; c < 60; c++) {
+            memcpy(text + n, "猫", 3);
+            n += 3;
+        }
+        text[n++] = '\n';
+    }
+    text[n - 1] = 0;
+    fake_recognized_text = text;
+    fake_lines = 12;
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_AUTO;
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_WORD;
+    history_rtc_fail = 1;
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
+    size_t file0 = file_len;
+    net_job_taken_at_job_done();
+    /* the batch filled at its 10th text line (10 x 199 B; an 11th does not fit 2,048 B): written before the result */
+    TEST_CHECK(file_has_between(file0, done_file_len, "game vocr text 9: "));
+    TEST_CHECK(!file_has_between(file0, done_file_len, "game vocr text 10: "));
+    done = strstr(file_text + done_file_len, "job 0 done rc=0 in ");
+    TEST_ASSERT(done != NULL);
+    /* still held when the done line was logged: the lines written after the result before it (text lines 10 and
+     * 11, raw and shown here, the workspace line and the lookup's) */
+    {
+        unsigned before = 0, held = 0;
+        for (const char *p = file_text + done_file_len; p < done; p++)
+            before += *p == '\n';
+        TEST_CHECK(sscanf(strstr(done, " appends, ") + 10, "%u held", &held) == 1);
+        TEST_CHECK(held == before && before >= 4);
+        TEST_MSG("%u held, %u written after the result before the done line", held, before);
+    }
+    TEST_CHECK(strstr(file_text + done_file_len, "game vocr text 10: ") == file_text + done_file_len);
+    TEST_CHECK(lines_appended == lines_logged && !open_batch);
+    TEST_MSG("%s", done);
+    mem_free();
+}
+
+/* #360: the press-to-screen figure (shell/lookup_shown.h). A post records its cursor_seq and the time; the
+ * control thread publishes the lookup's result with its cursor_seq and its job's job_done time; the overlay's
+ * render (here: the test, under the view lock as render holds it) takes the figure once, only for the result
+ * of the latest request, drawn for the cursor it asked for; a close forgets a request not shown yet. */
+static void test_debug_build_lookup_shown_figure(void)
+{
+    VjoShown s;
+    char line[128];
+    memset(&s, 0, sizeof(s));
+    cursor_saved_text(); open_overlay(); finish_current_job();
+    uint32_t generation = local_text_generation;
+    TEST_CHECK(!vjo_shown_take(&s, &g_view, 1)); /* the opening's own lookup: nothing asked for */
+    /* 1. a move: 30 ms of lookup, then 12 ms to the frame */
+    test_now = 50000000;
+    vjo_post_cursor(3, generation);
+    TEST_CHECK(g_view.ask_seq == local_cursor_seq && g_view.ask_us == 50000000u && g_view.shown_seq != g_view.ask_seq);
+    TEST_CHECK(!vjo_shown_take(&s, &g_view, 1)); /* "Looking up words…": not its result */
+    on_command(); TEST_ASSERT(job_running && job_cursor_only);
+    test_now += 30000;
+    finish_current_job();
+    TEST_CHECK(g_view.shown_seq == g_view.ask_seq && g_view.done_us == (uint32_t)test_now);
+    test_now += 12000;
+    TEST_CHECK(vjo_shown_take(&s, &g_view, 1) && s.n == 1 && s.sum_ms == 42 && s.max_ms == 42 && s.after_ms == 12);
+    TEST_CHECK(!g_view.ask_seq && !vjo_shown_take(&s, &g_view, 1) && s.n == 1); /* once */
+    /* 2. two moves before the first's result: the first is never shown, the second from its own post */
+    vjo_post_cursor(6, generation); on_command(); TEST_ASSERT(job_running);
+    test_now += 5000;
+    vjo_post_cursor(0, generation); /* while the first runs */
+    uint32_t second = (uint32_t)test_now;
+    test_now += 20000;
+    finish_current_job(); /* the first's result is not published: the second's job starts */
+    TEST_ASSERT(job_running && job_cursor_byte == 0);
+    TEST_CHECK(g_view.shown_seq != g_view.ask_seq && !vjo_shown_take(&s, &g_view, 1));
+    test_now += 25000;
+    finish_current_job();
+    test_now += 8000;
+    TEST_CHECK(vjo_shown_take(&s, &g_view, 1) && s.n == 2);
+    TEST_CHECK(s.sum_ms == 42 + ((uint32_t)test_now - second) / 1000u && s.max_ms == 53 && s.after_ms == 12 + 8);
+    /* 3. drawn for another cursor (the stick moved on before its result): forgotten, never counted later */
+    vjo_post_cursor(6, generation); on_command(); finish_current_job();
+    TEST_CHECK(g_view.ask_seq && g_view.shown_seq == g_view.ask_seq);
+    TEST_CHECK(!vjo_shown_take(&s, &g_view, 0) && !g_view.ask_seq); /* the stick's cursor is elsewhere */
+    TEST_CHECK(!vjo_shown_take(&s, &g_view, 1) && s.n == 2); /* back on the word: no late figure */
+    /* 4. a close forgets a request whose result was published but not drawn: a reopen's saved word is no figure */
+    vjo_post_cursor(3, generation); on_command(); finish_current_job();
+    TEST_CHECK(g_view.ask_seq && g_view.shown_seq == g_view.ask_seq);
+    close_overlay();
+    TEST_CHECK(!g_view.ask_seq);
+    open_overlay();
+    if (job_running) finish_current_job();
+    TEST_CHECK(!vjo_shown_take(&s, &g_view, 1) && s.n == 2);
+    /* 5. the process time's low 32 bits wrap between the post and the frame */
+    vjo_post_cursor(6, generation);
+    g_view.ask_us = 0xFFFFF000u; /* 4,096 us before the wrap */
+    on_command(); finish_current_job();
+    g_view.done_us = 0x00000800u; /* published 2,048 us after it */
+    {
+        uint64_t keep = test_now;
+        test_now = 0x100004000ull; /* 16,384 us after it: 20 ms after the post, 14 after the result */
+        TEST_CHECK(vjo_shown_take(&s, &g_view, 1) && s.n == 3);
+        test_now = keep;
+    }
+    TEST_CHECK(s.sum_ms == 42 + 53 + 20 && s.max_ms == 53 && s.after_ms == 20 + 14);
+    /* the close line's figure: the means of the three, the largest */
+    snprintf(line, sizeof(line), VJO_SHOWN_FORMAT, VJO_SHOWN_ARGS(&s));
+    TEST_CHECK(!strcmp(line, ", lookups shown 3: mean 38 ms (11 ms after the result), max 53 ms"));
+    TEST_MSG("%s", line);
+    memset(&s, 0, sizeof(s)); /* none shown: means of 0, no division */
+    snprintf(line, sizeof(line), VJO_SHOWN_FORMAT, VJO_SHOWN_ARGS(&s));
+    TEST_CHECK(!strcmp(line, ", lookups shown 0: mean 0 ms (0 ms after the result), max 0 ms"));
+    s.n = s.sum_ms = s.max_ms = s.after_ms = UINT32_MAX; /* 58 B of text and its numbers: at most 4 x 10 */
+    TEST_CHECK(snprintf(line, sizeof(line), VJO_SHOWN_FORMAT, VJO_SHOWN_ARGS(&s)) == 58 + 10 + 1 + 1 + 10);
+    close_overlay();
+    mem_free();
 }
 #endif
 
@@ -8270,7 +8745,7 @@ static void test_vocr_a_shared_bad_model_leaves_out_both_its_sizes(void)
     /* this game's next job: Small only */
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg; vjo_arena_reset(&results[0]);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK && fake_game_request.tiers == 1u &&
+    TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK && fake_game_request.tiers == 1u &&
                !strcmp(fake_game_request.model, VJO_VOCR_TIER1_NAME));
     mem_free();
     /* Normal chosen, the same file bad: Small at once, and Large left out too */
@@ -8395,6 +8870,11 @@ TEST_LIST = {
 #endif
 #if VJO_DEBUG
     {"the_done_line_has_the_exchange_and_log_times", test_the_done_line_has_the_exchange_and_log_times},
+    {"debug_build_writes_a_lookups_lines_after_its_result", test_debug_build_writes_a_lookups_lines_after_its_result},
+    {"debug_build_writes_an_ocr_jobs_lines_after_its_result",
+     test_debug_build_writes_an_ocr_jobs_lines_after_its_result},
+    {"debug_build_a_full_batch_goes_on_holding", test_debug_build_a_full_batch_goes_on_holding},
+    {"debug_build_lookup_shown_figure", test_debug_build_lookup_shown_figure},
 #endif
 #if VJO_DEBUG
     {"selftest_runs_after_the_first_text_in_its_own_job", test_selftest_runs_after_the_first_text_in_its_own_job},
@@ -8437,6 +8917,7 @@ TEST_LIST = {
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
     {"character_scene_change_keeps_the_shown_text_and_region_change_retires_it", test_character_scene_change_keeps_the_shown_text},
+    {"the_suggested_box_reaches_the_view_once_an_activation", test_the_suggested_box_reaches_the_view_once_an_activation},
     {"character_commands_preserve_close_region_priority_and_nonzero_generations", test_character_command_priority_and_generation_boundaries},
     {"dictionary_pages_read_one_entry_each_in_the_single_arena", test_dictionary_pages_read_one_entry_each},
     {"dictionary_count_change_looks_up_again_without_OCR", test_dictionary_count_change_relooks_up_without_ocr},

@@ -47,6 +47,18 @@ static uint32_t expected_model_size;
 static unsigned done_events, waits, stats;
 static int expect_fallback;
 static const char *expect_lm; /* API 20: the LM file Open should name */
+static const char *expect_sc3; /* the SC3 charset's title whose file Open should name */
+/* kernel/loader.c's title lookup (an SC3 charset's open): the title the caller's process has, NULL: unreadable */
+static const char *sc3_title;
+static unsigned sc3_title_reads;
+int loader_title(SceUID pid, char *title, SceSize len)
+{
+    sc3_title_reads++;
+    TEST_CHECK(pid == caller && len >= 10 && !title[0]);
+    if (!sc3_title) return (int)0x80010002u;
+    snprintf(title, len, "%s", sc3_title);
+    return 0;
+}
 static int done_pending, wait_runs_worker, stat_error;
 static SceIoStat file_stat;
 /* The game's frame, as the display hook sees it (32 x 32 A8B8G8R8, pitch 40). */
@@ -371,6 +383,7 @@ SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && !file_live);
     char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,
                                  expect_lm ? expect_lm : expect_fallback ? request.fallback : request.model);
+    if (expect_sc3) snprintf(expected, sizeof(expected), "%s%s.sc3", VJO_GAME_OCR_SC3_DIR, expect_sc3);
     TEST_CHECK(!strcmp(path, expected) && flags == SCE_O_RDONLY);
     model_opens++; interrupt_io();
     if (open_error) return open_error;
@@ -2127,6 +2140,60 @@ static void model_permissions_paths_and_bounds(void)
     TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && !model_opens);
     TEST_CHECK(!vjoOcrModelClose(seq));
 }
+/* A MAGES SC3 hook's charset (VJO_GAME_OCR_OPEN_SC3): the calling game's own file, named by the title ID the loader
+ * reads for its process, never by a path from the caller; any length up to VJO_GAME_OCR_SC3_BYTES, which Open
+ * answers and the reads keep to; refused for a title the loader cannot read or that is not a title ID, and in a
+ * shot, without opening anything. */
+static void sc3_charset_opens_by_the_callers_title(void)
+{
+    static const char *const bad[] = {NULL, "pcsg00146", "PCSG0014", "PCSG001466", "../../tai", "PCSG0014/", ""};
+    static unsigned char bytes[VJO_GAME_OCR_SC3_BYTES + 1u];
+    static const struct { uint32_t size; int ok; } sizes[] = {
+        {5364u, 1}, {VJO_GAME_OCR_SC3_BYTES, 1}, {VJO_GAME_OCR_SC3_BYTES + 1u, 0}, {0u, 0}};
+    VjoGameOcrModelInfo info;
+    for (unsigned k = 0; k < sizeof bad / sizeof bad[0]; k++) {
+        setup(); uint32_t seq = submit(); take(seq);
+        sc3_title = bad[k]; sc3_title_reads = 0;
+        TEST_CHECK_(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SC3, NULL) == VJO_ERR_ARG && !model_opens && !file_live &&
+                    sc3_title_reads == 1, "title %s", bad[k] ? bad[k] : "(unreadable)");
+        TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+    }
+    for (unsigned k = 0; k < sizeof sizes / sizeof sizes[0]; k++) {
+        setup(); uint32_t seq = submit(); take(seq);
+        sc3_title = expect_sc3 = "PCSG00146";
+        expected_model_size = sizes[k].size;
+        memset(&info, 0, sizeof info);
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SC3, &info) == VJO_ERR_BUSY);
+        model_tick();
+        if (!sizes[k].ok) {
+            TEST_CHECK_(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SC3, &info) == VJO_ERR_FORMAT && model_opens == 1,
+                        "a %u-byte file is refused", (unsigned)sizes[k].size);
+        } else {
+            TEST_CHECK_(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SC3, &info) == (int)sizes[k].size && model_opens == 1 &&
+                        info.bytes == sizes[k].size, "a %u-byte file opens at its size", (unsigned)sizes[k].size);
+            /* one read of the whole file through the staging buffer; none past its end, nor another file's open */
+            TEST_CHECK(vjoOcrModelRead(seq, 0, sizes[k].size, bytes) == VJO_ERR_BUSY);
+            model_tick();
+            TEST_CHECK(vjoOcrModelRead(seq, 0, sizes[k].size, bytes) == (int)sizes[k].size && bytes[1] == 1);
+            TEST_CHECK(vjoOcrModelRead(seq, 1, sizes[k].size, bytes) == VJO_ERR_ARG);
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG);
+        }
+        close_model(seq);
+        TEST_CHECK(!vjoOcrComplete(&message));
+    }
+    /* a shot opens no model, a charset neither */
+    setup();
+    VjoGameOcrRequest r = shot_request();
+    caller = 3;
+    TEST_ASSERT(vjoOcrSubmit(&r) > 0);
+    caller = 7;
+    TEST_ASSERT(vjoOcrTake(&r) == 0);
+    sc3_title = "PCSG00146";
+    TEST_CHECK(vjoOcrModelOpen(r.seq, VJO_GAME_OCR_OPEN_SC3, NULL) == VJO_ERR_ARG && !model_io.seq && !model_opens);
+    message.size = sizeof(message); message.seq = r.seq; message.text[0] = 0;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    sc3_title = expect_sc3 = NULL;
+}
 static void removed_models_are_refused(void)
 {
     TEST_CHECK(sizeof(model_stage)==32768);
@@ -2428,7 +2495,7 @@ static void gate_weights_open_only_with_the_gate(void)
                 close_model(seq);
                 expect_lm = NULL;
             }
-            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE + 1u, NULL) == VJO_ERR_ARG);
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SC3 + 1u, NULL) == VJO_ERR_ARG);
             TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
         }
 }
@@ -2509,7 +2576,7 @@ static void model_tiers_open_by_tier_only(void)
     }
 }
 
-/* The Large size's file (test_tier_pins.h: VOCR5-L's 2,473,696 B), the largest pin: the broker opens it at
+/* The Large size's file (test_tier_pins.h: VOCR6-L's 2,475,680 B), the largest pin: the broker opens it at
  * exactly that length and reads it to its last byte in 32 KiB pieces; a file one byte
  * longer (or shorter) is refused at the open, before any byte reaches the game. */
 static void the_large_size_opens_at_its_pinned_length_only(void)
@@ -3009,9 +3076,10 @@ TEST_LIST = {
     {"an LM tier opens by its pinned name, up to the request's tier", lm_tiers_open_up_to_the_requested_tier},
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"API 26: the gate's weights open by their pinned name, only with the gate", gate_weights_open_only_with_the_gate},
+    {"an SC3 hook's charset opens by the caller's own title ID, up to its limit", sc3_charset_opens_by_the_callers_title},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
     {"API 47: the vertical model opens only for a job with a vertical mode, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
-    {"the Large size's file opens at its pinned length only (VOCR5-L: 2,473,696 B)", the_large_size_opens_at_its_pinned_length_only},
+    {"the Large size's file opens at its pinned length only (VOCR6-L: 2,475,680 B)", the_large_size_opens_at_its_pinned_length_only},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},
     {"exact_pin_keeps_canonical_path_and_final_chunk_bounds",exact_pin_keeps_canonical_path_and_final_chunk_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},

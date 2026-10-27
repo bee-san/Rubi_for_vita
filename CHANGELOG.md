@@ -31,15 +31,48 @@ been reported.
   characters, so with the setting on every read recognizes (also in hooked games) and skips the line cache.
   Off, nothing of it runs; the game worker's code is one page (4,096 B) larger in each game that is ON, SceShell's
   pages are unchanged. Nothing of it has run on a console. It builds on closed draft #271 (API 37).
+- **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
+  △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
+  games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the
+  **Last 14 days** as bars; **This year** as a heatmap of characters a day; **All games**; and a row per game, the one
+  read last first, with today, in all, its cards mined and cards per 10,000 characters, and the last day read.
+  **Daily goal**: Off (the default), 2,000 to 50,000 characters or 15 to 120 minutes a day, in the app's own
+  `app.ini`; a day at the goal counts for the streak, or with no goal any day with reading. No sessions. The count
+  runs on its own thread and is kept in `stats_cache.bin`, so the next one reads only what was added; a replaced or
+  shorter `history.csv`, another time zone or `reading_time`, or a damaged cache counts it again. 20 MB of history
+  took 40 ms on a computer [measured on the host]; the Vita's time is unmeasured. The tab bar lays itself out from its
+  labels for the fifth tab. Only the app changes: the Shell, the game worker, the kernel and the RCO are byte-identical
+  to main's in both builds. Not run on a console yet.
+
+- **A text box suggested on first use** (#358; API 52; [first-box.md](docs/first-box.md)). A game with no box of its
+  own is read on its whole screen, picture and buttons included, which first-time users took for recognition that did
+  not work. Now the first time the overlay is open over such a game's text, it opens the region mode with a box drawn
+  around the dialogue and asks **Use this box?**: Enter saves it as the game's region, as a box drawn with □ is, and
+  the overlay closes; the stick moves its corner, Cancel draws your own. Asked once each time the game starts or
+  resumes, and never once the game has a box; a box drawn with □ asks the same question (its hint began "Box").
+  The game worker finds the dialogue among the lines its job on the whole frame recognized (the block of lines with
+  the most kana and kanji, from the last screen read) and suggests the screen's width from just above it to the
+  bottom; a menu of stacked items can be offered a band too.
+  Measured on a computer on the hooked pages of 20 games the rule was not chosen on: the box holds 96.6 % of the
+  dialogue lines of the same game's later screens and reads 0.89 other lines a screen against the whole screen's 3.45
+  (0.21 with Japanese, against 0.83). It is ON by default; the Rubi app's **Suggest a text box** OFF (OCR & lookup)
+  writes `region = full` in `region.ini`, the line for every game without its own. Not run on a console yet.
+  The worker takes 1,040 B more of its pages and the normal Shell 24 B of code and 88 B of data; no module takes a
+  page more, and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
 - The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
-  row (an animated icon or a moving picture in the region), its next try says "Recognizing… Something in the region
-  keeps moving (an animated icon?), so the text never holds still. Press □ to draw a region around just the text."
-  instead of "Recognizing…" alone, until a read shows the text. Before, it said "Recognizing…" for as long as the
-  user waited. With an animated icon, on the host's spinner bench (184 hooked regions, est.), it shows 2.75 s after
-  L + R (median; 4.8 s at most); in the owner's CLANNAD logs no wait for text met a torn read, so it would have shown
-  in none of them. A region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
-  "Recognizing…" (on by default;
-  [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)). Not run on a console yet.
+  row (an animated icon, a moving picture or text still typing in the region), its next try says "Recognizing…
+  Something in the region keeps moving (an animated icon? text still typing?). If a region around just the text
+  leaves it out, press □ to draw one." instead of "Recognizing…" alone, until a read shows the text. Before, it said
+  "Recognizing…" for as long as the user waited.
+  - **When:** with an animated icon, on the host's spinner bench (184 hooked regions, 23 scenarios, est.), 2.85 s after
+    L + R (median; 4.8 s at most). In the owner's CLANNAD logs no wait for text met a torn read, so it would have shown
+    in none of them.
+  - **The fix it names** is a condition: a region drawn with □ leaves out an icon beside the text, not one inside a
+    line, a picture behind the text or a line still typing (the audit's follow-up; #364 said "Press □" outright).
+    Pause the game to read joins it with #355.
+  - **The setting:** a region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
+    "Recognizing…" (on by default; [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)).
+  - Not run on a console yet.
 - A native text hook for 極限脱出ＡＤＶ 善人シボウデス (Zero Escape: Virtue's Last Reward, `PCSG00020`, APP_VER
   01.00), where users reported OCR never worked and took forever. Its LunaTranslator site could never install: the
   eboot is linked at a fixed 0x81000000, so Luna's address is that address, and Rubi's table read it as an offset
@@ -74,6 +107,15 @@ been reported.
   the farm's hook for the title (did the farm prove this console's build?).
 - `tools/install_ftp.sh --collect` fetches `hooks.log` too (it did not), writes `hook-request.md` into the collect's
   folder and zip and prints its one line.
+- Native hooks for MAGES/5pb.'s SC3 engine: STEINS;GATE 比翼恋理のだーりん (`PCSG00146`), ROBOTICS;NOTES ELITE
+  (`PCSG00352`) and CHAOS;CHILD (`PCSG00555`), 1.00, get verified entries at their page function. Their script
+  text is glyph indices into each game's own font, so the hook reads a page through its SC3 end token (its 0x00
+  bytes are line breaks and glyphs) and the worker decodes it with the game's charset, a file the release installs in
+  `ux0:data/VitaJPOverlay/hooks/` and the kernel opens for that game by its title ID; the speaker's name on its own
+  line, ruby's base without its reading. In those games the worker holds an 8 or 16 KiB block for the charset; the
+  modules keep their pages ([native-hooks.md](docs/native-hooks.md#sc3-text)). **Proven in the Vita3K emulator
+  only, not run on a console** (the psandvita farm's 1,498, 606 and 395 approved pages); without the file the games
+  read by OCR as before.
 
 ### Changed (draft #318, test build only)
 
@@ -108,26 +150,75 @@ been reported.
   the UID error for a missing block. It now accepts exactly that error behind a readable, non-wrapping mapping
   (#278's fix), runs with Automatic or Every game (OCR only turns it off), logs Rubi's PSP text profile check and
   each job's text source, and writes format 4 to `psp_probe.log`. Not run on a console in this form.
+- **Native hooks: an active string-copy stream no longer loses its slot to a new caller in a race** (#366). When all
+  12 CALL streams are held by other callers, a new caller takes the one written least recently. Two races gave it the
+  newest one instead. A caller that wrote while the new one searched got a stamp after the clock reading the search
+  began with, so its stream looked about 2^32 old. And a stream written, or taken by another new caller, after the
+  search had chosen it was taken anyway. The stream that lost its slot (any not kept for agreeing with OCR, so the
+  dialogue's too before it agreed) started its hits over and took a slot back at its next copy; its text was never
+  wrong. The search now compares the stamps in the clock's serial order, as the job does, without reading the clock,
+  and checks its choice under the stream's lock: a stream written since is no longer the oldest, and the new caller's
+  copy is dropped, as for a busy stream. The stamps and lengths, which the search and the worker's hook watch read
+  without the lock, are now written atomically. Their plain writes against those atomic reads were a data race in C11
+  terms: ThreadSanitizer found 14 in 5 runs of the race test on `main` and none now (clang 18, the fleet box). A
+  stream that has had text also no longer reads as empty to the watch while a new caller takes it. Tests: the issue's
+  state; a suite that runs each interleaving at the search's own points on every run
+  (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 5 of whose 10 tests fail on `main` with the two
+  seams added; and a check of the watch's reads in the race test, which `main` failed in 151, 187 and 200 runs of
+  200 on two CPUs, four CPUs and unpinned (none on one CPU). The fix passed 3,900 runs of the whole suite (one to four
+  CPUs, unpinned, 8 copies at once, beside busy loops, gcc and clang). Changing `core/hook_stream.c` changes the hook
+  definition SHA-256, so consoles learn each game's hooks again; seven PRs since 0.9.8 have changed it already, so the
+  next release does that anyway. Not run on a console.
+- **A game short of memory reads with the next smaller model** (#324). The console reports a game's free memory in
+  whole MiB (あおかな, `PCSG00700`, on a PCH-2000: each of 78 samples was 1, 2, 3 or 4 MiB), so a job that passed its
+  memory check with less than 1 MiB to spare saw a whole MiB less once it had taken its own blocks: its model's
+  weights were refused and the job failed for memory, with no smaller model tried. Now it gives its blocks back and
+  checks the next smaller model, each at most once. On that console, with a debug test build of 0.9.7 and 1 MiB
+  reserves (#280, not merged), 7 jobs that passed Normal's check read with Small, where 15 had failed before; with
+  `main`'s reserves it has not run on a console. #324's audit: that retry is the same job. It waits no longer than the
+  job's stable-text wait (`ocr_settle_max_ms`): it waited again from the start (by the code, up to the whole limit
+  again for each smaller model); on the host, with text typing out for 1.9 s at 60 Hz, the job took 2.27 s against
+  Small alone's 2.05 s, and now 2.12 s. Its captures and finder time count every try, and the debug build's step log
+  keeps the try that read (a full log of 20 steps had dropped its last steps, such as the text's normalisation; the
+  refused try's blocks are no longer listed). No module takes a page more ([memory ledger](docs/memory-ledger.md)).
+- **SC3 text, #368's audit.** In STEINS;GATE 比翼恋理のだーりん, ROBOTICS;NOTES ELITE and CHAOS;CHILD:
+  - A charset read that timed out (the memory card's file worker stalled for 2 s) is tried again at a later job, as
+    an open is, three tries in all. Before, one such stall at the first job turned the game's hook off for the
+    session, and OCR read it.
+  - A charset close that fails is now the job's error. Before, the job failed with no cause given (I/O 0), so the
+    Shell took the model file for missing or damaged and used a smaller model until the game next started or resumed.
+    Now that happens for that one job only, and the remembered hook (the hook cache) is read at the next job, where
+    before it was not read for the rest of the session.
+  - A charset block the worker could not give back is freed before it takes another (nearly unreachable).
+  - The app's Install page names the data files it copies and where they go: "the data files (… MB: the OCR models,
+    the names dictionary and the text hooks' charsets) to ux0:data/VitaJPOverlay", and for a repair their folder, for
+    example "Copy 1 data file to ux0:data/VitaJPOverlay/hooks". It used to say "the OCR models … to
+    ux0:data/VitaJPOverlay/ocr" for all of them.
+
+  Host-tested, not run on a console. No module takes a page more ([memory ledger](docs/memory-ledger.md)).
+
 - An animated icon or a moving picture in the OCR region no longer keeps the text from being shown (#353, from a
   user's report: a spinning "wait" icon in the region, the overlay empty while the log had read the dialogue). An
   icon with more frames than the stable-text wait keeps of a row (16) never settled, so every job tore and was
   dropped, and the overlay said "Recognizing…" for as long as one waited. Once the region keeps changing, a job now
   watches its found lines' own pixels: a change elsewhere sends the line finder again, other lines (text typing on, a
   new line) are watched in their place, and at the wait's limit the lines are read anyway, then found again once they
-  would have settled (twice `ocr_settle_ms` after they were found): a line that typed on meanwhile ends the job, and
-  the next one reads it whole. On 184 hooked pages of 46 games with such an icon or picture, through the kernel's
-  change detection, the job and the Shell's decisions on a computer (`host/spinner_bench.c`, `tools/spinner_eval.py`;
-  times estimated, no console run): shown in 0-5 of the 184 before, 179-181 now (the still pages' text in 177-181),
-  median 0.3-1.8 s and 90 % within 1.6-2.5 s after L + R; no region shown before is lost, and an icon that rests
-  between its turns is shown in 13 and 7 more regions. Of the 1,777 runs that showed the whole line before, 4 (text
-  typed slowly, or with pauses) now show part of it first, and the whole line 0.4-2.3 s later
-  ([details](docs/text-stability.md#animated-icons-and-moving-pictures-353)). No new memory: the line checksums take
-  the row states' place in the job's capture block (its size unchanged); the debug worker keeps 56 B of its last code
-  page ([ledger](docs/memory-ledger.md#the-line-watch-353)).
-- The log says when text was recognized but never shown: the third job in a row whose screen changed under every
-  read logs (both builds) `ocr: the screen changed under every read of 3 jobs in a row, the last with N line(s)
-  recognized and not shown` (the overlay says why it waits: #358, above). The debug build's `gstep job settle` says
-  what the line watch did (its kind), and `tools/analyse_selftest.py --collect` sums it.
+  would have settled (twice `ocr_settle_ms` after they were found): a line that typed on meanwhile (by more than a
+  quarter of its height) ends the job, and the next one reads it whole. On 184 hooked pages of 46 games with such an
+  icon or picture, through the kernel's change detection, the job and the Shell's decisions on a computer
+  (`host/spinner_bench.c`, `tools/spinner_eval.py`; times estimated, no console run): shown in 0-5 of the 184
+  before, 179-181 now (the still pages' text in 177-181), median 0.3-1.8 s and 90 % within 1.6-2.5 s after L + R; no
+  region shown before is lost, and an icon that rests between its turns is shown in 13 and 7 more regions. Of the
+  1,777 runs that showed the whole line before, 4 (text
+  typed slowly, or with pauses) now show part of it first, and the next job reads the whole line 0.4-2.3 s later
+  ([details](docs/text-stability.md#animated-icons-and-moving-pictures-353)). No new block or allocation: the line
+  checksums take the row states' place in the job's capture block (its size unchanged). The watch's code takes the
+  worker one page more, 4 KiB in each game that is ON, in both builds: 196,608 B of module pages (204,800 B in the
+  debug build) ([ledger](docs/memory-ledger.md#the-line-watch-353)).
+- The log says when text was recognized but never shown: the third job in a row whose screen changed under every read
+  logs (both builds) `ocr: screen changed under 3 jobs in a row; N line(s) not shown` (the overlay says why it waits:
+  #358, above). The debug build's `gstep job settle` says what the line watch did (its kind), and
+  `tools/analyse_selftest.py --collect` sums it.
 
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
@@ -143,10 +234,14 @@ been reported.
   so while one thread held the oldest slot's lock off the CPU, every other caller's hits were dropped and no slot
   changed hands (12 to 29 runs in 1,000 on one to four CPUs, measured on the fleet box). And the job thread often
   read before the game threads began: in `concurrent` it read nothing in 378 of 500 runs on one CPU, so a torn read
-  could not have been seen. The threads now start together at a barrier and race until the checks have something
-  to check (every caller has had a slot, the job has read text), and a failed check prints the race's counters. A
-  race put in on purpose (the key check under the slot's lock removed) is caught more often: in 49 runs of 1,000
-  on four CPUs (7 before), 772 unpinned (366 before).
+  could not have been seen. The threads now start together at a barrier and race until the checks have something to
+  check (every caller has had a slot, the job has read text). A slow or starved run takes longer: a race can end
+  without that only after 10 s and 20,000 more hits of every thread. A failed check prints the race's counters. Each
+  caller offers one text of its own, so a hit written into another caller's stream is counted even when the job does
+  not read it in time, and `concurrent`'s writers share one clock across three slots, as the worker's slots do. Races
+  put in on purpose are caught more often, on two and four CPUs, each run beside one of the old test: the key check
+  under the slot's lock removed, in 154 and 748 runs of 1,000 (the old test: 0 and 17); a clock increment that is not
+  atomic, in 363 and 486 of 500 (the old test: none).
 - **CLANNAD's hooked lines show 岡崎 and 朋也 instead of `*A` and `*A*B`.** CLANNAD's hook reads each line before the
   game puts the protagonist's names in: its script writes them as the name variables `＊Ａ` (the family name) and
   `＊Ｂ` (the given name), which Rubi showed as `*A`, so `「ありゃ、岡崎、どこいくんだよっ」` came out as `「ありゃ、*A、どこいくんだよっ」`.
@@ -166,6 +261,11 @@ been reported.
   debug build's `hooks.log` shows each site's offset and verdict, with its bytes when refused. Not run on a console.
   STEINS;GATE: no Vita release has a hook entry, in Luna's table or Rubi's
   ([hook-titles.md](docs/hook-titles.md#steinsgate-no-hook-entry-in-any-release)).
+- **Docs: L and R no longer page the dictionaries, and △ shows this game.** The README's settings table and the
+  guide still described the L or R tap that paged between the dictionaries' entries, which 0.9.6 replaced with
+  entries stacked below the word (the right stick scrolls to them; #289), and the guide said △'s totals were
+  across games, where △ shows today and the total of the game being played (the roadmap #310's "found along the
+  way"). Docs only.
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
   read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
@@ -177,6 +277,46 @@ been reported.
 
 ### Changed
 
+- **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1): VOCR5-N's and VOCR5-L's shapes,
+  fine-tuned again on the owner's hooked PS Vita and PSP games, replace VOCR5-N and VOCR5-L as the Normal (the default)
+  and Large model sizes (`VOCR6_N_w8_2l.vocr`, 1,187,616 B; `VOCR6_L_w8_2l.vocr`, 2,475,680 B). Small stays VOCR5-S:
+  VOCR6's Small read the hooked games better but other games a little worse (VOCR5's development score, +0.070
+  points, resolved). Measured on a computer through
+  Rubi's shipped path (dialogue CER, 95 % intervals):
+  - the hooked games' held-out pages: Normal 1.008 → 0.936 % (−0.072 points, −0.111 to −0.038), Large 0.990 → 0.917 %
+    (−0.073, −0.118 to −0.036), three seeds each;
+  - other games level: VOCR5's development score 1.482 → 1.451 (Normal) and 1.439 → 1.442 (Large), neither resolved;
+  - CLANNAD's lines 0.66 → 0.44 % and 0.60 → 0.36 %, read once; but every VOCR6 model has seen CLANNAD's glyph raster
+    in two hooked games (Grisaia Spinout, Little Busters!), so that is not an unseen-game result;
+  - vita-test + psp-test, read once: fixed lines 0.49 → 0.49 % and 0.47 → 0.43 %, whole dialogue 2.83 → 2.63 % and
+    2.72 → 2.52 % (PSP alone not better); Collar x Malice, a vita-test game's release, and Key's games were trained on;
+  - Small changes only through its cascade, which now reads with VOCR6-N: other games level, CLANNAD's pages worse
+    (5.84 → 6.16 %, +0.32 points, resolved).
+
+  Their blobs carry the two-level head and no head gate (vita-vn-ocr rejected the gate on VOCR6's logits): with
+  `ocr_head_gate = on` they run the two-level head alone, and `ocr_head_gate = gate` now reads them with the full head.
+  Estimated box times, one core at 333 / 444 MHz: Small 0.52 / 0.41 s, Normal 0.79 / 0.62 s, Large 1.87 / 1.46 s (the
+  app shows 0.5, 0.8 and 1.9 s; about 30 and 80 ms more for Normal and Large than VOCR5's with both paths, which had a
+  gate). A Normal job with the 2 MB LM (`ocr_lm = 2000k`) decodes with VOCR6-N's own settings for it (vita-vn-ocr #151:
+  LM weight 0.4, bonus 1.5 nats, both line flags); every other size and LM tier keeps its settings, the default 1 MB
+  LM's included. Normal's weights block is a page smaller (1,187,840 B), Large's the same (2,478,080 B), and no budget
+  changes: the game worker's code is 128 B larger in both builds, in the same pages, and the Shell and the kernel are
+  unchanged (measured on both Vita builds). VOCR6's attribution ships as `ocr/VOCR6-ATTRIBUTION.md`: non-commercial use only, trained
+  on copyrighted game data, which is not redistributed. An update leaves 0.9.8's `VOCR5_N_w8g2.vocr` and
+  `VOCR5_L_w8g2.vocr` (3,666,880 B) in `ux0:data/VitaJPOverlay/ocr/`: nothing reads them any more, so they may be
+  deleted. Nothing of VOCR6 has run on a console ([details](docs/vita-vn-ocr.md#models)).
+- **The debug build shows a looked-up word without waiting for its log lines** (#360, change 2). Its lookup wrote
+  its `lookup …` line and its `job N done` line to the memory card before it published the word: in the owner's
+  test.4 log a cursor lookup's done line came 53.5 ms after its start against the lookup's own 32 ms (medians, 338
+  lookups), at 17 ms an append, so about 34 ms of every word step were the two lines (est.). The network thread now
+  holds a job's lines (a lookup's, and an OCR job's text, first-word lookup and done line; its recognition's own lines
+  go out as before) in a 2 KiB batch on its stack and writes them right after the result is out, one append per file,
+  the same lines in the same order; the done line ends `…, N held`. The lookups' results are unchanged (byte-identical
+  at all 64,579 taps of the dictionary corpus). The overlay's close line also gives a press-to-screen figure, `lookups
+  shown N: mean M ms (A ms after the result), max X ms`, from each lookup's press to the frame that drew its word,
+  counted without a log line on the overlay's thread; and a header tap no longer logs its cursor from that thread.
+  The normal build is unchanged (its plugins byte for byte). Not run on a console yet
+  ([details](docs/release-variants.md#the-debug-builds-job-lines-after-the-result-360)).
 - The debug build's `hooks.log` names the game's version (`APP_VER`) for every game whose table sites are tried; it
   read `param.sfo` only for a game with a Luna site or an entry that names its version, and logged `APP_VER 0000`
   for the others, the games a hook request is mostly for. The hooks installed are the same in both builds: `APP_VER`
@@ -201,6 +341,19 @@ been reported.
   entry refused as `tai` or `full`: a bug report), reads a reply that quotes the log, warns when `log.txt` shows the
   log is from an earlier session, and exits 2 with a message, never a traceback, on a damaged zip, an unwritable
   `--out` or a malformed farm `rubi-hook.json`.
+- **Dictionary lookups of the commonest words read less** (#360, change 4): 私, 中, 日, 頭, こう and the other words of
+  the lookup's two short tables (common readings, usual spellings) are ranked without reading each of their entries.
+  Their tap read every entry's first 160 bytes, 16 reads for 私, because the tables compare the entries' spellings and
+  readings; the bundled dictionary now marks the one entry a table names (posting hints version 2, two spare bits of
+  each posting, 99 postings; [format](docs/local-dictionaries.md#binary-format-version-3-with-frequency-ranks)). The
+  entries shown are the same at every one of the 64,579 taps of 5,000 real lines (host); there, after change 3, a
+  cursor lookup makes 5.67 reads instead of 5.98, and the 2.7% of taps that read 4 to 17 entries' heads (17.0 reads:
+  私 22) make 6.2 (私 5.1; est. 64 -> 32 ms on the console at test.4's 2.98 ms a read). The two tables move to
+  `tools/lookup_tables.txt`, which the converter reads too (the Shell's bytes for them are unchanged; the reader's
+  code takes 0 B more text in the normal Shell and 16 B in the debug one). Your own dictionaries get the marks with
+  `convert_dictionary.py --frequency … --table-hints`; a file with them is refused by Rubi 0.9.8 and older, so it is
+  not the default. The bundled dictionary's SHA-256 changes (`docs/plaintext-dictionaries.json`). Not run on a
+  console yet.
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
   tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a
@@ -320,8 +473,13 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   On vita-vn-ocr's synthetic counter lines (#109: 九ヶ月, 三ヶ所 …) the 1 MB LM keeps the small ke slightly less
   often than ctclm.2's (3,015 against 3,104 of 3,969 crops), mostly where the region's edge cuts into the line
   ([details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)); the loss comes from the new decoder settings, which
-  vita-vn-ocr retunes for VOCR6. These figures are VOCR5 v0.3.0's without the head gate; the default combination,
-  the gated blobs with `ocr_head_gate = on` and these settings, is unmeasured. The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
+  vita-vn-ocr retunes for VOCR6. These figures are VOCR5 v0.3.0's without the head gate. The default combination,
+  the gated blobs with `ocr_head_gate = on` and these settings, was measured after this release (vita-vn-ocr #151, on
+  a computer): VOCR5-N as this release runs it keeps the counter in 2,940 of the 3,969 crops against 3,015 with the
+  gate off (75 lost, none gained: crops cut 2-10 px into the line's first character, where the gate skips the edge
+  frames the counter re-decode needs, so nothing is read again), and on real development and held-out lines its
+  objective (half the held-out pages' CER, half the development score) moves by +0.004 to +0.012 points (Large's
+  resolved worse, and Normal's held-out pages alone, +0.007 points; [details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)). The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
   replace (982,320 and 3,603,552 B), so the game's LM block shrinks by 180,224 B at most. An update leaves
   ctclm.2's `vocr_lm_o3_1000k.vlm` and `vocr_lm_o3_4000k.vlm` (about 4.8 MB) in `ux0:data/VitaJPOverlay/ocr/`:
   nothing reads them any more, so they may be deleted

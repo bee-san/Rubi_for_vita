@@ -17,3 +17,11 @@
 #define vjoOcrHookCache lat_kernel_hook_cache
 #define vjoOcrHookLine lat_kernel_hook_line
 #include "../kernel/game_ocr.c"
+
+/* An SC3 charset's open (VJO_GAME_OCR_OPEN_SC3) asks the loader for the caller's title ID: this harness has no
+ * loader, so that open is refused, as with a loader that is off. */
+__attribute__((weak)) int loader_title(SceUID pid, char *title, SceSize len)
+{
+    (void)pid; (void)title; (void)len;
+    return -1;
+}

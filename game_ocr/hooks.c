@@ -25,6 +25,7 @@
 
 #include "hooks.h"
 #include "../core/hook_place.h"
+#include "../core/hook_sc3.h"
 #include "../core/hook_stream.h"
 #include "../core/psp_text.h"
 #include "../core/sfo.h"
@@ -64,6 +65,12 @@ static SceUID site_uid[VJO_HOOK_SITE_STREAMS];
  * dropped and counted), so the game's stack carries no text buffer. */
 static uint8_t scratch[VJO_HOOK_RAW_BYTES];
 static uint32_t scratch_lock;
+/* A MAGES SC3 site (core/hook_sc3.h): its title's charset pin, set as the site is hooked, and the charset the worker's
+ * thread loads at its first job (vjo_hooks_sc3_set, game_ocr/main.c hooks_sc3_load): its count little-endian 16-bit
+ * code points. Until then the site's text is empty. Read and written in the worker's thread only. */
+static const VjoSc3Pin *sc3_pin;
+static const uint8_t *sc3_table;
+static uint32_t sc3_count;
 
 /* PSP text (core/psp_text.h): in the PSP emulator's process nothing is hooked; with Every game the worker reads
  * the running PSP game's page buffer itself, at job time (vjo_hooks_psp_poll), into slot 0 (stream 1), a table
@@ -246,7 +253,8 @@ static const struct {
 
 /* VjoHookRead: up to max bytes at the game's address addr, never past the end of the memory block
  * that holds it, and only from a readable one. unit 1 or 2: stops after the first NUL unit (copied,
- * counted); 0: exactly max or nothing. One syscall (the block's bounds). */
+ * counted); 0: exactly max or nothing; VJO_HOOK_READ_SPAN: max, or the block's bytes up to its end, NUL
+ * bytes included. One syscall (the block's bounds). */
 static unsigned read_game(void *ud, uint32_t addr, void *dst, unsigned max, unsigned unit)
 {
     SceKernelMemBlockInfo mb;
@@ -298,11 +306,14 @@ static void site_hit(unsigned i, const uint32_t *regs)
         enc = si->ver->encoding;
         unit = enc == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
         /* the text's pointer there, or a cell record's count: one exact 4-byte read (none: no text) */
-        word = si->ver->read && read_game(NULL, addr + (si->ver->read == VJO_PLACE_READ_CELLS ? VJO_PLACE_CELLS_COUNT
-                                                                                            : 0u), w, 4, 0) == 4
+        word = (si->ver->read == VJO_PLACE_READ_DEREF || si->ver->read == VJO_PLACE_READ_CELLS) &&
+                       read_game(NULL, addr + (si->ver->read == VJO_PLACE_READ_CELLS ? VJO_PLACE_CELLS_COUNT : 0u), w,
+                                 4, 0) == 4
                    ? (uint32_t)w[0] | (uint32_t)w[1] << 8 | (uint32_t)w[2] << 16 | (uint32_t)w[3] << 24
                    : 0u;
-        if (si->ver->read == VJO_PLACE_READ_CELLS) { /* exactly its cells, as CP932 bytes */
+        if (si->ver->read == VJO_PLACE_READ_SC3) { /* to its end token: its 0x00 bytes are line breaks and glyphs */
+            n = vjo_sc3_span(scratch, read_game(NULL, addr, scratch, sizeof(scratch), VJO_HOOK_READ_SPAN));
+        } else if (si->ver->read == VJO_PLACE_READ_CELLS) { /* exactly its cells, as CP932 bytes */
             if (word > sizeof(scratch) / 2u) word = sizeof(scratch) / 2u;
             n = word && read_game(NULL, addr + VJO_PLACE_CELLS_DATA, scratch, word * 2u, 0) == word * 2u
                     ? vjo_place_cells(scratch, word)
@@ -507,6 +518,8 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
         DLOG("verified +%X %s r%u%s", (unsigned)v->off, v->thumb ? "thumb" : "arm", (unsigned)v->reg,
              same ? ", Luna's text" : "");
         if (r == VJO_PLACE_OK) r = hook_site(tai->modid, v->off, v->thumb, same, v);
+        /* an SC3 site's text needs its game's charset, which the worker's thread loads at its first job */
+        if (r == VJO_PLACE_OK && v->encoding == VJO_HOOK_ENC_SC3) sc3_pin = vjo_sc3_pin(title_id);
         site_result(r, v->off, code, code_size);
     }
     for (unsigned i = 0; i < nl; i++) {
@@ -735,6 +748,28 @@ uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *byt
     return __atomic_load_n(&s->seq, __ATOMIC_ACQUIRE);
 }
 
+const VjoSc3Pin *vjo_hooks_sc3_want(void)
+{
+    return sc3_table ? NULL : sc3_pin;
+}
+
+int vjo_hooks_sc3_set(const uint8_t *file, uint32_t bytes)
+{
+    br_sha256_context hash;
+    uint8_t digest[32];
+    sc3_table = NULL;
+    sc3_count = 0;
+    /* exactly the pinned file: its size and SHA-256 (the header is the tool's, so it is right with them) */
+    if (!file || !sc3_pin || bytes != sc3_pin->bytes || bytes < VJO_SC3_HEADER || bytes > VJO_SC3_MAX_BYTES) return 0;
+    br_sha256_init(&hash);
+    br_sha256_update(&hash, file, bytes);
+    br_sha256_out(&hash, digest);
+    if (sceClibMemcmp(digest, sc3_pin->sha256, sizeof(digest))) return 0;
+    sc3_table = file + VJO_SC3_HEADER;
+    sc3_count = (bytes - VJO_SC3_HEADER) / 2u;
+    return 1;
+}
+
 size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
 {
     size_t n;
@@ -751,6 +786,8 @@ size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
         const VjoPlaceVerified *v = site_info[s->id - 1u].ver;
         n = vjo_luna_text_filter(s->site, v->filter, v->encoding, s->raw, s->n, s->encoding, out, cap);
     } else if (s->site) n = vjo_luna_text(s->site, s->raw, s->n, s->encoding, out, cap);
+    else if (s->encoding == VJO_HOOK_ENC_SC3)
+        n = sc3_table ? vjo_sc3_decode(sc3_table, sc3_count, s->raw, s->n, out, cap) : 0; /* no charset: no text */
     else n = vjo_hook_decode(s->encoding, s->raw, s->n, out, cap, NULL);
     /* One clean text for selection, display, mining and history's character count. */
     return vjo_hook_clean(out, n);

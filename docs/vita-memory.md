@@ -167,7 +167,7 @@ SceShell is a user-mode system application spawned with the system-application b
 | | | result arena 64 KiB (the local dictionary's; the network's 2 × 256 KiB and connection pool went with Google Lens), Anki save 128 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [guide.md, 'Memory and troubleshooting'] |
 | | | Anki thread stack 16 KiB + TLS (64 KiB until the network went), only while an Anki job runs (with `anki_mining = on`: counting the queue on every overlay open, saving) | Shell partition | transient | [`shell/anki.c`] |
 | `VitaJPOverlay_OCR.suprx` | loaded by the kernel into each game ON in `games.ini` since #138 (`*TITLEID`, one section per game, before; `*ALL` up to the installer's `--title`) | module pages in each enabled game only. Under `*ALL` they were in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured]; not loaded outside the registered games since `--title` [source: taihen-parser `parser.c`], nor outside the enabled ones since #138 [source: `kernel/loader.c`] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
-| | in an enabled game | an Anki card's screenshot (API 23): one block of 450,560 B (`VjoGameShot`: the JPEG encoder, a strip of 64 colour rows, the JPEG) only while it runs, never beside an OCR job's blocks; worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 823,296 B (VOCR5-S: Small), 1,191,936 B (VOCR5-N: Normal; 1,187,840 B before API 42's two-level blob) or 2,478,080 B (VOCR5-L: Large, with its head gate and two-level head since API 42; 2,473,984 B before; 659,456, 1,159,168 and 1,560,576 B for VOCR3-FL10, VOCR3-H15 and VOCR4-W20 before VOCR5); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [guide.md, 'Memory and troubleshooting'] |
+| | in an enabled game | an Anki card's screenshot (API 23): one block of 450,560 B (`VjoGameShot`: the JPEG encoder, a strip of 64 colour rows, the JPEG) only while it runs, never beside an OCR job's blocks; worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 823,296 B (VOCR5-S: Small), 1,187,840 B (VOCR6-N: Normal; VOCR5-N's two-level blob took 1,191,936 B from API 42 to 0.9.8) or 2,478,080 B (VOCR6-L: Large, with its two-level head, as VOCR5-L's with its gate and two-level head since API 42; 2,473,984 B before; 659,456, 1,159,168 and 1,560,576 B for VOCR3-FL10, VOCR3-H15 and VOCR4-W20 before VOCR5); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [guide.md, 'Memory and troubleshooting'] |
 
 Permanent pages held in SceShell's partition: 540,672 B at API 16 against 503,808 B at API 13;
 the 36,864 B growth coincides with the build that stopped booting (#59) [measured: PR #60,
@@ -323,7 +323,12 @@ Facts:
   Kernel-Reference, 'sceKernelAllocMemBlock'].
 - The game worker today: free `sizeMain` − the reserve (4, 8 or 16 MiB by model size since API 21)
   must cover the page-rounded weights and workspace, or that size is refused before anything is
-  allocated and the next smaller one is tried [`game_ocr/main.c`].
+  allocated and the next smaller one is tried [`game_ocr/main.c`]. A size that passed can still
+  have its weights refused: the weights' block checks the free memory again once the job's own
+  blocks are taken, and the console reports it in whole MiB (every one of 78 samples in あおかな,
+  `PCSG00700`, on a PCH-2000 was 1, 2, 3 or 4 MiB [measured: #324]), so the second look can see a
+  whole MiB less. The job then gives its blocks back and checks the next smaller size, each size
+  at most once, within the same job's stable-text wait (#324 and its audit).
 
 Rules:
 
@@ -342,6 +347,12 @@ Rules:
   test.3 they went at once, and #81's run read H15 four times in one game process
   (docs/first-ocr.md). A job that found no line reads them if the job's memory check allowed it
   (the cascade's model included, before any line is doubted): they are held from then on.
+  One block is the exception, by design: `VjoGameSc3`, an SC3 hook's charset (8 or 16 KiB, in
+  three MAGES games only: STEINS;GATE 比翼恋理のだーりん, ROBOTICS;NOTES ELITE, CHAOS;CHILD;
+  [native-hooks.md](native-hooks.md#sc3-text)). It is held from the first job until the worker
+  stops (the game's exit), through inactivity and refused allocations, and taken only with
+  `VJO_GAME_RESERVE_HOOK_ONLY` (1 MiB) free beside it: reading it again needs a claimed job's
+  broker, and a trusted SC3 hook answers with it, without OCR, from that job's line on.
 - Never use the host game's `malloc` or libc heap (256 KiB default) [SDK:
   Memory_Management-Tutorial, 'Configuring the libc Default Heap'].
 - Worker threads: default priority and `SCE_KERNEL_THREAD_CPU_AFFINITY_MASK_DEFAULT` put a thread
@@ -457,8 +468,9 @@ measured on the console]:
 | Icon textures (five current-page icons, at most 256 KiB each, `settings/icons.h`) | at most 1.25 MiB |
 | Anki export arena (2 MiB, `settings/anki_export.h` `VJO_EXPORT_MEM`; the app has no SceNet pool since the AnkiConnect page was removed), config scratch, game list | about 2.2 MiB |
 | PSP rows (`settings/psp.c`): a bubble target's blocks and PARAM.SFO, two taiHEN configurations | 306,800 B |
+| Stats tab (#312, `settings/stats_page.c`, `core/stats.h`): its counts (512 games, 16,384 game-days, 16,384 cards: 958,576 B), the work memory its count reads history.csv and the cache with (1 MiB) and its rows (111,184 B); the count's thread stack (64 KiB) | about 2.1 MiB |
 | Code, stacks, PVF atlas | about 2 MiB |
-| **Total** | **about 25 MiB of 50 MiB** |
+| **Total** | **about 27 MiB of 50 MiB** |
 
 The Games search uses a bounded 257-byte UTF-8 query and two 65-unit UTF-16 buffers on the
 app's stack (`settings/search.c`), not the Shell or a game's memory. The native IME module is

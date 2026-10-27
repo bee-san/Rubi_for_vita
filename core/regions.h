@@ -30,4 +30,9 @@ int vjo_region_format(char *dst, size_t cap, const char *key, const VjoRect *r);
  * NUL-terminated text, NULL on OOM. */
 char *vjo_region_update(VjoArena *a, const char *text, size_t len, const char *key, const VjoRect *r);
 
+/* region.ini text without key's lines (#358: the Rubi app's Suggest a text box ON drops the line for all other games,
+ * VJO_REGION_FALLBACK, that OFF writes as "region = full"); other non-blank lines are kept, as
+ * vjo_region_update keeps them. Returns the new NUL-terminated text, NULL on OOM. */
+char *vjo_region_drop(VjoArena *a, const char *text, size_t len, const char *key);
+
 #endif

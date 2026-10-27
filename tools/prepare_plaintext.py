@@ -8,9 +8,11 @@ named in its page 0; every entry carries its Jiten global frequency rank
 Use --source /path/to/plaintext-dicts for offline builds. Otherwise use the
 CI checkout in .refs/plaintext-dicts, or authenticated gh for the pinned commit.
 No conversion, latest-branch fetch, or dictionary update happens during builds:
-the frozen file is checked against its pin, then gets the key filter
-(tools/convert_dictionary.py add_key_filter, deterministic: an index of what is
-already there) and is checked against that pin ("key_filter").
+the frozen file is checked against its pin, then gets the posting hints (with
+the lookup tables' bits: hints version 2) and the key filter
+(tools/convert_dictionary.py add_index_hints and add_key_filter, deterministic:
+an index of what is already there) and is checked against that pin
+("key_filter").
 """
 import argparse
 import hashlib
@@ -91,8 +93,10 @@ def prepare(output, source=None):
         if "key_filter" in manifest:
             # Deferred import: the converter is only needed for this step.
             from convert_dictionary import add_index_hints, add_key_filter
-            if manifest["key_filter"].get("hinted_postings"):
-                add_index_hints(extracted)
+            pin = manifest["key_filter"]
+            if pin.get("hinted_postings"):
+                # table_postings: hints version 2, with the lookup tables' bits (tools/lookup_tables.txt)
+                add_index_hints(extracted, table_hints="table_postings" in pin)
             add_key_filter(extracted)
         validate(extracted, manifest)
         os.replace(extracted, output)

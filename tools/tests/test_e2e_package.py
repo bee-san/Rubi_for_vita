@@ -220,6 +220,9 @@ class E2EPackageEdges(unittest.TestCase):
         model_attribution = b"the model sizes' attribution"
         model_att = {"MODEL-ATTRIBUTION.md": ("https://fixture.invalid/m", len(model_attribution),
                                               hashlib.sha256(model_attribution).hexdigest())}
+        vocr6_attribution = b"VOCR6's attribution"
+        vocr6_att = {"VOCR6-ATTRIBUTION.md": ("https://fixture.invalid/6", len(vocr6_attribution),
+                                              hashlib.sha256(vocr6_attribution).hexdigest())}
         gate_attribution = b"the gate's attribution"
         gate_att = {"GATE-ATTRIBUTION.md": ("https://fixture.invalid/g", len(gate_attribution),
                                             hashlib.sha256(gate_attribution).hexdigest())}
@@ -254,6 +257,10 @@ class E2EPackageEdges(unittest.TestCase):
              ["MODEL-ATTRIBUTION.md is the model sizes' pinned attribution"]),
             ("the model sizes' attribution missing", {}, {"MODEL-ATTRIBUTION.md": None},
              ["MODEL-ATTRIBUTION.md is the model sizes' pinned attribution"]),
+            ("VOCR6's attribution altered", {}, {"VOCR6-ATTRIBUTION.md": b"VOCR6's attributioN"},
+             ["VOCR6-ATTRIBUTION.md is VOCR6's pinned attribution"]),
+            ("VOCR6's attribution missing", {}, {"VOCR6-ATTRIBUTION.md": None},
+             ["VOCR6-ATTRIBUTION.md is VOCR6's pinned attribution"]),
             ("the gate's attribution missing", {}, {"GATE-ATTRIBUTION.md": None},
              ["GATE-ATTRIBUTION.md is the text-presence gate's pinned attribution"]),
             ("the vertical model's attribution altered", {}, {"VERTICAL-ATTRIBUTION.md": b"the vertical model's attributioN"},
@@ -270,6 +277,8 @@ class E2EPackageEdges(unittest.TestCase):
                 mock.patch.object(release, "VOCR_LM_ATTRIBUTION", "ATTRIBUTION.md"), \
                 mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
                 mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION", "MODEL-ATTRIBUTION.md"), \
+                mock.patch.object(release, "VOCR6_ATTRIBUTION_PIN", vocr6_att), \
+                mock.patch.object(release, "VOCR6_ATTRIBUTION", "VOCR6-ATTRIBUTION.md"), \
                 mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
                 mock.patch.object(release, "VOCR_GATE_ATTRIBUTION", "GATE-ATTRIBUTION.md"), \
                 mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
@@ -277,6 +286,7 @@ class E2EPackageEdges(unittest.TestCase):
             for what, kwargs, files, want in cases:
                 ocr = {name: data for name, data in {"m.vocr": blob, "LM-ATTRIBUTION.md": attribution,
                                                      "MODEL-ATTRIBUTION.md": model_attribution,
+                                                     "VOCR6-ATTRIBUTION.md": vocr6_attribution,
                                                      "GATE-ATTRIBUTION.md": gate_attribution,
                                                      "VERTICAL-ATTRIBUTION.md": vertical_attribution, **files}.items()
                        if data is not None}

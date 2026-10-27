@@ -36,6 +36,14 @@ SETTINGS = {"vocr_lm_o3_500k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_1000k.vlm":
             "vocr_lm_o3_2000k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_4000k.vlm": (600, 2500, LM_BOS),
             "vocr_lm_o3_1000k.vlm": (500, 3500, LM_EOS), "vocr_lm_o3_4000k.vlm": (500, 3500, LM_EOS)}
 BETA = {name: beta for name, (_, beta, _) in SETTINGS.items()}
+# a job model's own settings for an LM, where they differ from its tier's (core/vocr_ocr.c lm_retuned: vita-vn-ocr
+# #151, VOCR6-N with the 2000k LM); the worker's decoder and its cascade's take them
+MODEL_SETTINGS = {("VOCR6_N_w8_2l.vocr", "vocr_lm_o3_2000k.vlm"): (400, 1500, LM_BOS | LM_EOS)}
+
+
+def settings(model, lm):
+    """(alpha, beta, flags) a job on `model` decodes `lm` with (core/vocr_ocr.c vjo_vocr_lm_settings)."""
+    return MODEL_SETTINGS.get((model, lm), SETTINGS[lm])
 # the four pinned tiers (tools/prepare_ocr.py, the default); ctclm.2's old 1000k / 4000k only by --lm
 PINNED = ("vocr_lm_o3_500k.vlm", "vocr_lm6_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm", "vocr_lm6_o3_4000k.vlm")
 SETS = ("tv", "dn_ink", "dn_grad")
@@ -73,18 +81,28 @@ def main(argv=None):
     lms = args.lm or list(PINNED)
     every = models + ([args.cascade] if args.cascade and args.cascade not in models else [])
     rt = {m: Vocr(str(args.models / m), mode="w8i", max_width=1024) for m in every}
-    dec = {(m, lm): VocrLM(rt[m], str(args.models / lm), beam=8, topk=8, alpha=SETTINGS[lm][0], beta=BETA[lm], gate=8000,
-                           flags=SETTINGS[lm][2], bracket=8000) for m in every for lm in lms}
+    dec = {}
 
-    def read(m, img):
-        """(per decoder the text, the confidence, frames, host us of the run, host us per LM decode)."""
+    def decoder(reader, lm, job):
+        """The decoder of `reader`'s top-K in a job on model `job`: its settings for lm (settings(): the worker decodes
+        a cascade's re-reads with the job's model's)."""
+        alpha, beta, flags = settings(job, lm)
+        key = (reader, lm, alpha, beta, flags)
+        if key not in dec:
+            dec[key] = VocrLM(rt[reader], str(args.models / lm), beam=8, topk=8, alpha=alpha, beta=beta, gate=8000,
+                              flags=flags, bracket=8000)
+        return dec[key]
+
+    def read(m, img, job=None):
+        """(per decoder the text, the confidence, frames, host us of the run, host us per LM decode); job: the model
+        whose job reads (the cascade's re-reads), else m."""
         t0 = time.perf_counter()
         out = rt[m].run_topk(img, 8)
         run_us = (time.perf_counter() - t0) * 1e6
         texts, dec_us = {"greedy": out["text"]}, {}
         for lm in lms:
             t1 = time.perf_counter()
-            texts[lm] = dec[(m, lm)].decode(out["topv"], out["topc"], out["blank"]) if out["text"] else ""
+            texts[lm] = decoder(m, lm, job or m).decode(out["topv"], out["topc"], out["blank"]) if out["text"] else ""
             dec_us[lm] = (time.perf_counter() - t1) * 1e6
         return texts, conf_of(out), out["frames"], run_us, dec_us
 
@@ -127,6 +145,8 @@ def main(argv=None):
             "precision": round(sum(f and w for f, w in zip(flagged, wrong)) / max(1, sum(flagged)), 4)}
         if args.cascade and args.cascade != m:
             big = cascade_reads[args.cascade]
+            if any(settings(m, lm) != settings(args.cascade, lm) for lm in lms):  # m's own settings for its re-reads
+                big = [read(args.cascade, r["img"], m) for r in rows]
 
             def cascade_at(threshold, rule, keys, idx=None):
                 """CER per decoder when lines under threshold are read again; rule: keep the larger's
@@ -179,6 +199,8 @@ def main(argv=None):
     doc = {"what": __doc__.split("\n\n")[0], "sets": sets, "dialogue_lines": len(rows), "ref_chars": ref_chars,
            "decoder": {"beam": 8, "topk": 8, "alpha": {lm: SETTINGS[lm][0] for lm in lms},
                        "beta": {lm: BETA[lm] for lm in lms}, "gate": 8000,
+                       "model_settings": {f"{m} {lm}": list(v) for (m, lm), v in MODEL_SETTINGS.items()
+                                          if m in models and lm in lms},
                        "flags": {lm: "BOS" if SETTINGS[lm][2] == LM_BOS else "EOS" for lm in lms}, "bracket": 8000},
            "host": "times: host us (shared box); the A9 is not measured", "models": report}
     text = json.dumps(doc, indent=1, ensure_ascii=False) + "\n"

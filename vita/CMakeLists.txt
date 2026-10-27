@@ -318,10 +318,10 @@ if(VJO_WITH_VOCR)
     # and the arena it encodes into
     ${ROOT}/core/jpegsw.c ${ROOT}/core/shottrim.c ${ROOT}/core/arena.c
     # API 31: the native text hooks (docs/native-hooks.md), in the game's process only: the hook
-    # engine, the site check, the stream slots, Luna's table and the hook text decoder
+    # engine, the site check, the stream slots, Luna's table and the hook text decoder; MAGES' SC3 text
     ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
     ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
-    ${ROOT}/core/sfo.c
+    ${ROOT}/core/hook_sc3.c ${ROOT}/core/sfo.c
     # PSP text (core/psp_text.h): the worker's read-only page reads in the PSP emulator's process, both builds
     ${ROOT}/core/psp_text.c
     # API 46: the char map's writer (core/charmap.c; core/charmap_build.c is vjo_vocr's) and the UTF-8 it reads
@@ -335,6 +335,8 @@ if(VJO_WITH_VOCR)
   # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
   # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
   set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # MAGES' SC3 text (core/hook_sc3.c): a hit's span and the job's decoder, for size too.
+  set_source_files_properties(${ROOT}/core/hook_sc3.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
   # control code built for size, with Luna's PSP table (core/hook_luna_psp.inc) as its data.
   if(VJO_DEBUG)
@@ -420,16 +422,23 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
+# The Stats tab (settings/stats_page.c, #312): history.csv counted with the Triangle view's own reading-time rule
+# (core/history_lines.c's vjo_reading_time_add, the Shell's; of it the link keeps what the tab calls), per game and
+# per day (core/stats.c) and the record reader (core/history_read.c); the goal is app.ini's (settings/app_prefs.c).
+set(VJO_SETTINGS_STATS_SRC
+  ${ROOT}/settings/stats_page.c ${ROOT}/core/stats.c ${ROOT}/core/history_read.c
+  ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c ${ROOT}/core/text_rows.c)
 set(VJO_SETTINGS_SRC
-  ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c
+  ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c ${ROOT}/settings/app_prefs.c
   ${ROOT}/settings/icons.c ${ROOT}/settings/search.c ${ROOT}/settings/text_layout.c ${ROOT}/core/linebreak.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
   ${ROOT}/settings/applog.c
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
   ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
   ${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
+  ${ROOT}/core/regions.c # #358: Suggest a text box, region.ini's line for every game (settings/preferences.c)
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
-  ${VJO_SETTINGS_ANKI_SRC})
+  ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_STATS_SRC})
 # API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, the worker's verified table
 # itself (core/hook_place.c: of it only vjo_place_title_verified, vjo_place_verified and the table stay
 # linked), and the games of Luna's
@@ -662,6 +671,10 @@ add_custom_target(release
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt ${STAGE}/ux0/data/VitaJPOverlay/
+  # The SC3 hooks' charsets (docs/native-hooks.md "SC3 text"), which the game worker reads through the kernel's broker
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay/hooks
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/sc3-charsets/PCSG00146.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00352.sc3
+    ${ROOT}/third_party/sc3-charsets/PCSG00555.sc3 ${STAGE}/ux0/data/VitaJPOverlay/hooks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${ROOT}/docs/ocr-history.md ${STAGE}/docs/
   # Keep the guide's feature and recovery links usable in the downloaded ZIP.
   COMMAND ${CMAKE_COMMAND} -E copy

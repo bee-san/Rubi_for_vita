@@ -23,7 +23,7 @@
 #   tools/install_ftp.sh --add-kernel-plugin NoPowerLimits.skprx 192.168.1.50
 #     (also uploads another kernel plugin to ur0:tai/ and adds it under *KERNEL;
 #      --uninstall leaves such plugins in place)
-#   tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8g2.vocr --set vocr_tier=normal 192.168.1.50
+#   tools/install_ftp.sh --vocr-model ocr/VOCR6_N_w8_2l.vocr --set vocr_tier=normal 192.168.1.50
 #     (also uploads vita-vn-ocr weights to ux0:data/VitaJPOverlay/ocr/, for a
 #      build made with VJO_WITH_VOCR: each model size's file, tools/model_tiers.json;
 #      see docs/vita-vn-ocr.md)
@@ -121,6 +121,7 @@ if [ -n "$PACKAGE_DIR" ]; then
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vtd \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/MODEL-ATTRIBUTION.md \
+               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/VOCR6-ATTRIBUTION.md \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/GATE-ATTRIBUTION.md \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/VERTICAL-ATTRIBUTION.md; do
     [ -f "$model" ] && VOCR_MODELS+=("$model")
@@ -504,6 +505,14 @@ if [ -n "$PACKAGE_DIR" ]; then
     put "$f" "ux0:/data/VitaJPOverlay/dictionaries/$(basename "$f")"
   done
 fi
+# The SC3 hooks' charsets (docs/native-hooks.md "SC3 text"): the package's, else this checkout's. The game worker
+# checks each one's size and SHA-256 before it uses it.
+SC3_DIR=third_party/sc3-charsets
+[ -z "$PACKAGE_DIR" ] || SC3_DIR=$PACKAGE_DIR/ux0/data/VitaJPOverlay/hooks
+for f in "$SC3_DIR"/*.sc3; do
+  [ -f "$f" ] || continue
+  put "$f" "ux0:/data/VitaJPOverlay/hooks/$(basename "$f")"
+done
 # The Rubi app: its VPK, installed in VitaShell (the box at the end says whether it still has to be), and
 # the record of it the Shell plugin compares the installed app with. Without a stamp (a source build whose VPK
 # was not built) the record is emptied, as boot.txt is: "no record" is unknown to the plugins, never another

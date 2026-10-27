@@ -1,7 +1,9 @@
 /* The native hooks' stream slots (docs/native-hooks.md): static, fixed-size, written by game threads
  * inside hooked functions and read by the worker's job thread. Pure C (GCC atomic builtins), no
- * allocation, no platform calls, no waiting: every access takes the slot's try-lock, and a busy
- * slot is skipped (a hit is then dropped and counted; a job reads it again at the next job). */
+ * allocation, no platform calls, no waiting: a text is stored and copied out under the slot's
+ * try-lock, and a busy slot is skipped (a hit is then dropped and counted; a job reads it again at the
+ * next job). The fields also used without the lock are atomics: key (a CALL caller's claim and search),
+ * kept (vjo_stream_keep), seq and n (the replacement's scan, the worker's hook watch: #366). */
 #ifndef VJO_HOOK_STREAM_H
 #define VJO_HOOK_STREAM_H
 
@@ -14,7 +16,7 @@ typedef struct {
     uint32_t lock;     /* 0 free, 1 held (a game thread writing, or the job reading) */
     uint32_t key;      /* 0 unused; a site's segment-0 offset + 1, or a CALL caller's return address */
     uint32_t kind;     /* VJO_HOOK_KIND_* */
-    uint32_t seq;      /* the streams' clock at this slot's last new text; 0: never had text */
+    uint32_t seq;      /* the streams' clock at this slot's last new text; 0: never had text (once it has, never 0) */
     uint32_t hits;     /* hits stored or identical, since the game started (since its caller took it) */
     uint32_t hash;     /* FNV-1a of raw[0..n) */
     uint32_t encoding; /* VJO_HOOK_ENC_* of raw */
@@ -51,12 +53,14 @@ VjoStreamSlot *vjo_stream_caller(VjoStreamSlot *slots, unsigned n, uint32_t key)
 
 /* Hook time, CALL source (audit-hooks F2): n bytes at src from caller key (nonzero) into its slot among
  * the count CALL slots, as vjo_stream_offer: the slot holding key, else the first unused one (claimed for
- * key), else, when every slot holds another caller, the least recently written one (the oldest seq; one
- * that never had text first) that is not kept: under its try-lock its key becomes key, its hits and text
- * key's (a new seq), and call_replaced counts it. Never waits: that slot busy, or every slot kept, drops
- * the hit (call_dropped). Under the slot's lock the key is checked again, so a hit of a caller whose slot
- * was just given to another one is dropped too (call_dropped), never written into the other's stream.
- * 1 new text, 0 identical, -1 dropped. */
+ * key), else, when every slot holds another caller, the least recently written one (the earliest seq in the
+ * clock's serial order; one that never had text first) that is not kept: under its try-lock its key becomes
+ * key, its hits and text key's (a new seq), and call_replaced counts it. Never waits: that slot busy, or every
+ * slot kept, drops the hit (call_dropped). Under the slot's lock the choice is checked again: kept since, or
+ * written since the scan read it (its caller's new text, another new caller that took it: no longer the least
+ * recently written, #366), the hit is dropped too (call_dropped); and the key is checked again, so a hit of a
+ * caller whose slot was just given to another one is dropped too (call_dropped), never written into the
+ * other's stream. 1 new text, 0 identical, -1 dropped. */
 int vjo_stream_offer_caller(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint32_t key,
                             const uint8_t *src, unsigned n, unsigned encoding);
 

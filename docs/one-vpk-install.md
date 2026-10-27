@@ -71,7 +71,8 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/ur0/tai/VitaJPOverlay_Shell.suprx` | `ur0:tai/` | 75,904 (debug 83,908) |
 | `payload/ur0/tai/VitaJPOverlay_OCR.suprx` | `ur0:tai/` | 63,552 (debug 64,764) |
 | `payload/ur0/data/VitaJPOverlay/vitajpoverlay.rco` | `ur0:data/VitaJPOverlay/` | 6,000 |
-| `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`, `MODEL-ATTRIBUTION.md`, the text-presence gate's `textgate_p8_c8_w8.vtd` and `GATE-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 11,730,126 (with API 26's gate, +5,246; VOCR5's 11,724,880; 10,614,250 before) |
+| `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`, `MODEL-ATTRIBUTION.md`, `VOCR6-ATTRIBUTION.md` (since VOCR6's Normal and Large), the text-presence gate's `textgate_p8_c8_w8.vtd` and `GATE-ATTRIBUTION.md`, the vertical model and `VERTICAL-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 12,386,777 (14 files: VOCR6's Normal and Large, VOCR5-S [measured: the payload of #373's packages, `af3b1bc`]; 11,730,126 at API 26, with VOCR5's three and the gate; VOCR5's 11,724,880; 10,614,250 before) |
+| `payload/ux0/data/VitaJPOverlay/hooks/` (`PCSG00146.sc3`, `PCSG00352.sc3`, `PCSG00555.sc3`: the SC3 hooks' charsets, [native-hooks.md](native-hooks.md#sc3-text)) | `ux0:data/VitaJPOverlay/hooks/` | 27,828 |
 | `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 157,298,688 (Bee's Ultimate Dictionary, #153; 143,425,536 before) |
 | `payload/ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict` | copied to `ux0:data/VitaJPOverlay/dictionaries/` | 10,358,784 (PSP/Vita VNDB names; file size pinned in docs/vndb-names.json) |
 | `payload/ux0/data/VitaJPOverlay/config.ini` | written only when there is none | 3,552 |
@@ -101,8 +102,8 @@ The app accepts a manifest only when it is exactly its own build's (R4); anythin
 
 - its file set equals a list compiled into the app (`include/vjo_payload.h`): the three plugins, the
   RCO, the files of `ocr/` (the models and LMs, by the kernel broker's names,
-  `tools/docs_model_names.py`; the text-presence gate's weights; their attributions), the
-  dictionary, each with its kind (`copy`, or `move` for the dictionary only), and `template` for
+  `tools/docs_model_names.py`; the text-presence gate's weights; their attributions), the SC3 hooks'
+  charsets in `hooks/`, the dictionary, each with its kind (`copy`, or `move` for the dictionary only), and `template` for
   `config.ini` only; a test checks the list against `package_release.py`'s;
 - no destination twice; sizes parse as 64-bit decimals without overflow; hashes are 64 hex digits;
 - `api`, `app_version`, `variant` and `worker` equal the app's compiled values (`VJO_API_VERSION`,
@@ -236,6 +237,12 @@ If a game does not start: turn it OFF on the Games page, or hold L while you sta
 [Update]  [Uninstall]
 ×: Update   Left/Right: action   Up/Down: scroll   ○: exit
 ```
+
+That is 0.8.1's plan, whose data files were the OCR models only. Since #368's audit, the first step names every data
+file and the one folder it goes to: "…and the data files (… MB: the OCR models, the names dictionary and the text
+hooks' charsets) to ux0:data/VitaJPOverlay; a file that already matches is not written again." A repair of data
+files alone names their folder when they share one, as in "Copy 1 data file to ux0:data/VitaJPOverlay/hooks (the
+plugins already match).", and otherwise names ux0:data/VitaJPOverlay.
 
 **Reading it.** The plan box holds about ten lines. A plan or a result longer than its box scrolls a
 line at a time with Up/Down (or the left stick) and a box at a time with L/R (as L/R page the Games

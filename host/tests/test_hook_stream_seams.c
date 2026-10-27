@@ -1,0 +1,233 @@
+/* The CALL slots' replacement (core/hook_stream.c, replace()) at each point where another thread can act, one
+ * interleaving at a time (#366). This suite includes core/hook_stream.c with VJO_STREAM_SEAM defined, and at a seam
+ * (the scan about to read slot i; the scan's choice made, before its try-lock) it runs one step of another thread on
+ * this one: a caller's store, another caller's replacement, the job keeping or reading a slot. Single-threaded and
+ * exact: each interleaving happens on every run, where the threaded races of test_hook_stream.c hit a window a few
+ * loads wide only now and then. The worker builds the seams as nothing. */
+#include "acutest.h"
+
+#include <string.h>
+
+static void seam_scan(unsigned i);
+static void seam_chosen(unsigned i);
+#define VJO_STREAM_SEAM(point, i) seam_##point(i)
+#include "../../core/hook_stream.c"
+
+#define KEY_A 0xA0u
+#define KEY_B 0xB0u
+#define KEY_C 0xC0u /* the new caller whose hit the tests follow */
+#define KEY_D 0xD0u
+
+enum { AT_SCAN = 1, AT_CHOSEN };
+static struct {
+    int point;          /* AT_SCAN: before the scan reads slot `at`; AT_CHOSEN: the scan chose slot `at` */
+    unsigned at;
+    void (*step)(void); /* the other thread's step; NULL once it has run */
+    unsigned ran;       /* steps run: a test checks its interleaving happened */
+} seam;
+
+static void seam_run(int point, unsigned i)
+{
+    void (*step)(void) = seam.step;
+    if (!step || seam.point != point || seam.at != i) return;
+    seam.step = NULL; /* once: the step's own offers pass the seams untouched */
+    seam.ran++;
+    step();
+}
+static void seam_scan(unsigned i) { seam_run(AT_SCAN, i); }
+static void seam_chosen(unsigned i) { seam_run(AT_CHOSEN, i); }
+
+static VjoStreamSlot slots[2];
+static VjoStreamClock c;
+
+static int offer(uint32_t key, const char *text)
+{
+    return vjo_stream_offer_caller(slots, 2, &c, key, (const uint8_t *)text, (unsigned)strlen(text), 0);
+}
+
+static void reset(uint32_t clock)
+{
+    memset(slots, 0, sizeof(slots));
+    memset(&c, 0, sizeof(c));
+    memset(&seam, 0, sizeof(seam));
+    c.clock = clock;
+}
+
+/* A, then B, store a text: both slots held, A's the least recently written (seq clock + 1, B's clock + 2). */
+static void setup(uint32_t clock)
+{
+    reset(clock);
+    TEST_ASSERT(offer(KEY_A, "aaaa") == 1 && slots[0].key == KEY_A);
+    TEST_ASSERT(offer(KEY_B, "bbbb") == 1 && slots[1].key == KEY_B);
+}
+
+static void arm(int point, unsigned at, void (*step)(void))
+{
+    seam.point = point;
+    seam.at = at;
+    seam.step = step;
+}
+
+/* The other thread's steps */
+static void a_writes(void) { TEST_CHECK(offer(KEY_A, "aaa2") == 1); }
+static void b_writes(void) { TEST_CHECK(offer(KEY_B, "bbb2") == 1); }
+static void d_takes_a(void) { TEST_CHECK(offer(KEY_D, "dddd") == 1 && slots[0].key == KEY_D); }
+static void c_takes_a(void) { TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[0].key == KEY_C); } /* C's other thread */
+static void job_keeps_a(void) { vjo_stream_keep(&slots[0]); }
+static void job_locks_a(void) { TEST_CHECK(vjo_stream_try_lock(&slots[0]) == 1); } /* the job reading it */
+static void a_writes_c_takes_b(void)
+{
+    a_writes();
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[1].key == KEY_C);
+}
+
+static int locks_free(void) { return slots[0].lock == 0 && slots[1].lock == 0; }
+
+/* No step: C takes A's slot, the least recently written (the seams change nothing by themselves). */
+static void test_no_step(void)
+{
+    setup(0);
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && seam.ran == 0);
+    TEST_CHECK(slots[0].key == KEY_C && slots[0].seq == 3 && slots[0].hits == 1 && !memcmp(slots[0].raw, "cccc", 4));
+    TEST_CHECK(slots[1].key == KEY_B && c.call_replaced == 1 && c.call_dropped == 0 && locks_free());
+}
+
+/* #366's first finding, as it happens: B stores while C's scan runs, before the scan reads A's slot, and before it
+ * reads B's. B's seq is then after the clock's value as the scan began: main read the clock once, there, so B's age
+ * wrapped to about 2^32 and C took B's slot, the newest. C takes A's. */
+static void test_scan_meets_a_store(void)
+{
+    for (unsigned at = 0; at < 2; at++) {
+        TEST_CASE_("B stores before the scan reads slot %u", at);
+        setup(0);
+        arm(AT_SCAN, at, b_writes);
+        TEST_CHECK(offer(KEY_C, "cccc") == 1 && seam.ran == 1);
+        TEST_CHECK_(slots[0].key == KEY_C && slots[1].key == KEY_B && !memcmp(slots[1].raw, "bbb2", 4),
+                    "C takes A's slot: slot 0 key %#x, slot 1 key %#x", (unsigned)slots[0].key,
+                    (unsigned)slots[1].key);
+        TEST_CHECK(c.call_replaced == 1 && c.call_dropped == 0 && locks_free());
+    }
+}
+
+/* The same across the clock's wrap: A at 0xFFFFFFFE, B at 0xFFFFFFFF, and B's store during the scan takes 1 (0 is
+ * skipped). In the clock's serial order B's 1 is the newest, so C takes A's slot. */
+static void test_scan_meets_a_store_across_wrap(void)
+{
+    setup(0xFFFFFFFDu);
+    TEST_ASSERT(slots[0].seq == 0xFFFFFFFEu && slots[1].seq == 0xFFFFFFFFu);
+    arm(AT_SCAN, 0, b_writes);
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && seam.ran == 1);
+    TEST_CHECK_(slots[0].key == KEY_C && slots[0].seq == 2 && slots[1].key == KEY_B && slots[1].seq == 1,
+                "C takes A's slot: slot 0 key %#x, slot 1 key %#x", (unsigned)slots[0].key, (unsigned)slots[1].key);
+    TEST_CHECK(c.call_replaced == 1 && locks_free());
+}
+
+/* The scan chose A's slot (the least recently written), and A stores before C takes the slot's lock: A's is now the
+ * newest. Under the lock C finds A's seq changed and drops its hit (call_dropped), as when the slot is busy; main
+ * took A's slot. Also with A's store as the scan reads B's slot, after it read A's. C's next hit takes B's slot, the
+ * least recently written by then. */
+static void test_chosen_then_written(void)
+{
+    static const struct {
+        int point;
+        unsigned at;
+    } when[] = {{AT_CHOSEN, 0}, {AT_SCAN, 1}};
+    for (unsigned k = 0; k < 2; k++) {
+        TEST_CASE(k ? "A stores as the scan reads B's slot" : "A stores after the scan chose its slot");
+        setup(0);
+        arm(when[k].point, when[k].at, a_writes);
+        TEST_CHECK(offer(KEY_C, "cccc") == -1 && seam.ran == 1);
+        TEST_CHECK_(slots[0].key == KEY_A && !memcmp(slots[0].raw, "aaa2", 4) && slots[0].seq == 3,
+                    "A keeps its slot: slot 0 key %#x", (unsigned)slots[0].key);
+        TEST_CHECK(slots[1].key == KEY_B && !memcmp(slots[1].raw, "bbbb", 4));
+        TEST_CHECK(c.call_replaced == 0 && c.call_dropped == 1 && c.dropped == 1 && locks_free());
+        TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[1].key == KEY_C && slots[0].key == KEY_A);
+        TEST_CHECK(c.call_replaced == 1);
+    }
+}
+
+/* The scan chose A's slot, and D, another new caller, takes it before C's try-lock: D's stream is the newest. C drops
+ * its hit; main took the slot from D at once (D lost the slot it had just taken: call_replaced 2). */
+static void test_chosen_then_replaced(void)
+{
+    setup(0);
+    arm(AT_CHOSEN, 0, d_takes_a);
+    TEST_CHECK(offer(KEY_C, "cccc") == -1 && seam.ran == 1);
+    TEST_CHECK_(slots[0].key == KEY_D && !memcmp(slots[0].raw, "dddd", 4) && slots[0].hits == 1,
+                "D keeps the slot it took: slot 0 key %#x", (unsigned)slots[0].key);
+    TEST_CHECK(c.call_replaced == 1 && c.call_dropped == 1 && locks_free());
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[1].key == KEY_C && slots[0].key == KEY_D && c.call_replaced == 2);
+}
+
+/* B claimed its slot, but its first text was dropped: seq 0, never had text, so the least recently written. The scan
+ * chose it, and B's first text lands before C's try-lock. C drops its hit; main took B's slot, by then the newest. */
+static void test_chosen_then_first_text(void)
+{
+    reset(0);
+    TEST_ASSERT(offer(KEY_A, "aaaa") == 1 && slots[0].seq == 1);
+    TEST_ASSERT(vjo_stream_caller(slots, 2, KEY_B) == &slots[1] && slots[1].seq == 0);
+    arm(AT_CHOSEN, 1, b_writes);
+    TEST_CHECK(offer(KEY_C, "cccc") == -1 && seam.ran == 1);
+    TEST_CHECK_(slots[1].key == KEY_B && slots[1].seq == 2 && !memcmp(slots[1].raw, "bbb2", 4),
+                "B keeps its slot: slot 1 key %#x", (unsigned)slots[1].key);
+    TEST_CHECK(c.call_replaced == 0 && c.call_dropped == 1 && locks_free());
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[0].key == KEY_C && slots[1].key == KEY_B);
+}
+
+/* As before #366: the scan chose A's slot, and another thread of C's caller takes it first. C's hit is then stored in
+ * C's own slot (here identical: a hit only), not dropped. */
+static void test_chosen_then_same_caller(void)
+{
+    setup(0);
+    arm(AT_CHOSEN, 0, c_takes_a);
+    TEST_CHECK(offer(KEY_C, "cccc") == 0 && seam.ran == 1);
+    TEST_CHECK(slots[0].key == KEY_C && slots[0].hits == 2 && slots[1].key == KEY_B);
+    TEST_CHECK(c.call_replaced == 1 && c.call_dropped == 0 && locks_free());
+}
+
+/* As before: kept after the scan chose it (the stream agreed with OCR): dropped; C's next hit takes B's slot. */
+static void test_chosen_then_kept(void)
+{
+    setup(0);
+    arm(AT_CHOSEN, 0, job_keeps_a);
+    TEST_CHECK(offer(KEY_C, "cccc") == -1 && seam.ran == 1 && c.call_dropped == 1 && c.call_replaced == 0);
+    TEST_CHECK(slots[0].key == KEY_A && slots[0].kept == 1 && locks_free());
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[1].key == KEY_C && slots[0].key == KEY_A);
+}
+
+/* As before: the job holds the chosen slot's lock (reading it): dropped, never waiting; once the job is done, C's next
+ * hit takes it (still the least recently written). */
+static void test_chosen_then_busy(void)
+{
+    setup(0);
+    arm(AT_CHOSEN, 0, job_locks_a);
+    TEST_CHECK(offer(KEY_C, "cccc") == -1 && seam.ran == 1 && c.call_dropped == 1);
+    TEST_CHECK(slots[0].key == KEY_A && slots[0].lock == 1);
+    vjo_stream_unlock(&slots[0]);
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[0].key == KEY_C && c.call_replaced == 1 && locks_free());
+}
+
+/* As before: A stores after the scan chose its slot, and another thread of C's caller then takes B's: one slot is
+ * enough, so C's hit is dropped and A keeps its slot. */
+static void test_chosen_then_caller_elsewhere(void)
+{
+    setup(0);
+    arm(AT_CHOSEN, 0, a_writes_c_takes_b);
+    TEST_CHECK(offer(KEY_C, "cccc") == -1 && seam.ran == 1);
+    TEST_CHECK(slots[0].key == KEY_A && slots[1].key == KEY_C && !memcmp(slots[0].raw, "aaa2", 4));
+    TEST_CHECK(c.call_replaced == 1 && c.call_dropped == 1 && locks_free());
+}
+
+TEST_LIST = {
+    {"no_step", test_no_step},
+    {"scan_meets_a_store", test_scan_meets_a_store},
+    {"scan_meets_a_store_across_wrap", test_scan_meets_a_store_across_wrap},
+    {"chosen_then_written", test_chosen_then_written},
+    {"chosen_then_replaced", test_chosen_then_replaced},
+    {"chosen_then_first_text", test_chosen_then_first_text},
+    {"chosen_then_same_caller", test_chosen_then_same_caller},
+    {"chosen_then_kept", test_chosen_then_kept},
+    {"chosen_then_busy", test_chosen_then_busy},
+    {"chosen_then_caller_elsewhere", test_chosen_then_caller_elsewhere},
+    {NULL, NULL},
+};

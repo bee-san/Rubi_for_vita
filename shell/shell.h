@@ -51,6 +51,15 @@ typedef struct {
     unsigned version;         /* bumps whenever content changes */
     unsigned list_seq;        /* bumps with every published list */
     const VjoEntryList *list; /* NULL while recognizing / on error */
+#if VJO_DEBUG
+    /* The press-to-screen figure (#360; the debug build's overlay close line, lookup_shown.h): the
+     * cursor_seq of the lookup the overlay asked for and has not drawn yet (0: none) and the process time
+     * of its post, in us (worker.c post_local_lookup); the cursor_seq of the lookup result last published
+     * and when its job published it (job_done; worker.c view_publish). A request's cursor_seq is newer than
+     * any result's published before it, so only its own result matches it. The overlay takes the figure,
+     * and clears ask_seq, in the render that draws that result (overlay.cpp render). */
+    uint32_t ask_seq, ask_us, shown_seq, done_us;
+#endif
     char status[256];         /* "Recognizing…", an error, or "" */
     int status_is_error;
     int local_cursor_mode;    /* local dictionary: select UTF-8 positions for point lookups */
@@ -103,6 +112,11 @@ typedef struct {
     char strip_text[VJO_STRIP_MAX]; /* "" = no strip drawn */
     int strip_kind;           /* VJO_STRIP_* */
     int strip_busy;           /* a recognition is running */
+    /* #358, the text box suggested on first use (core/region_select.h VJO_RSEL_TAKEN): the band the newest job on the
+     * whole screen of a game with no region of its own suggests (VjoGameOcrResult.suggest_rows: the screen's bottom
+     * rows, its whole width), offered once an activation (vjo_rsel_take). One word, stored whole without the lock.
+     * Last, so that no other field moves. */
+    uint32_t suggest;
 } VjoView;
 
 extern VjoView g_view;
@@ -119,7 +133,7 @@ const char *vjo_view_notice(void);
 enum {
     VJO_CMD_NONE = 0,
     VJO_CMD_CLOSED,          /* overlay closed by the cancel button */
-    VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command) */
+    VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command); #358's suggested box too */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
     /* (after CURSOR: a cursor move or a page takes their slot, worker.c vjo_post_cursor) */
@@ -308,9 +322,11 @@ void vjo_status_close(void);
  * meanwhile writes them out first). For a burst of lines formatted from data
  * at hand only, never across a wait, I/O or a call that may log at length: a
  * crash loses the batch's unwritten lines. begin and end in one function.
- * The one exception is the normal build's network thread: it keeps its batch
+ * The exceptions are the network thread's: the normal build's keeps its batch
  * open across its jobs' waits, exchanges and reads, so that none of their
- * lines is written before their results are taken (shell/worker.c net_main).
+ * lines is written before their results are taken (shell/worker.c net_main);
+ * the debug build's holds a job's lines across its lookup's reads (never an
+ * exchange with the game) until the job has published its result (net_job).
  * There a crash loses at most 24 lines (VJO_LOG_BATCH_LINES) or 2 KiB.
  * Returns 1 when the batch is open, 0 when another one is (lines then go out
  * one by one, as always). */

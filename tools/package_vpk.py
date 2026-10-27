@@ -69,7 +69,8 @@ def payload_files():
     names = dict(re.findall(r'^#define (VJO_\w+_NAME) "([^"]+)"', sizes, re.M))
     for alias, target in re.findall(r"^#define (VJO_VOCR_(?:TIER\d|VERTICAL)_NAME) (VJO_\w+_NAME)$", sizes, re.M):
         names[alias] = names[target]
-    strings = {"VJO_PAYLOAD_DATA": "ux0:data/VitaJPOverlay/", "VJO_PAYLOAD_OCR": "ux0:data/VitaJPOverlay/ocr/"}
+    strings = {"VJO_PAYLOAD_DATA": "ux0:data/VitaJPOverlay/", "VJO_PAYLOAD_OCR": "ux0:data/VitaJPOverlay/ocr/",
+               "VJO_PAYLOAD_HOOKS": "ux0:data/VitaJPOverlay/hooks/"}
     block = header[header.index("#define VJO_PAYLOAD_FILE_LIST(X)"):header.index("#define VJO_PAYLOAD_COUNT_ONE")]
     out = []
     for args, kind in re.findall(r"X\((.+?), VJO_PAYLOAD_(COPY|MOVE|TEMPLATE)\)", block):

@@ -109,10 +109,12 @@ else()
 endif()
 
 
-# core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h). core/charmap_build.c (API 46):
-# the char map the worker writes after it (core/charmap.h; its reader core/charmap.c and core/utf.c are the
-# worker's own sources on the Vita, vjo_core's on the host).
-add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c" "${VJO_ROOT}/core/charmap_build.c")
+# core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h). core/region_suggest.c (API 52,
+# #358): the text box a job on the whole frame suggests, and each line's kana count it reads. core/charmap_build.c
+# (API 46): the char map the worker writes after the text (core/charmap.h; its reader core/charmap.c and
+# core/utf.c are the worker's own sources on the Vita, vjo_core's on the host).
+add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c"
+  "${VJO_ROOT}/core/region_suggest.c" "${VJO_ROOT}/core/charmap_build.c")
 target_link_libraries(vjo_vocr PUBLIC vjo_vocr_rt)
 target_compile_options(vjo_vocr PRIVATE -Wall -Wextra -ffunction-sections -fdata-sections)
 if(VJO_BUILD_VITA)
@@ -122,5 +124,6 @@ if(VJO_BUILD_VITA)
   # built for size, the worker's pages. The per-pixel work, the recognizer and
   # the decoder, is the runtime's (vjo_vocr_rt, -O2).
   set_source_files_properties("${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c"
-    "${VJO_ROOT}/core/charmap_build.c" PROPERTIES COMPILE_OPTIONS "-Os")
+    "${VJO_ROOT}/core/region_suggest.c" "${VJO_ROOT}/core/charmap_build.c" PROPERTIES
+    COMPILE_OPTIONS "-Os")
 endif()

@@ -948,7 +948,10 @@ LOG = {
     "overlay": re.compile(r"^overlay closed: (\d+) frames, (\d+) word moves, stick (\d+), slowest frame (\d+) ms"
                           r"(?:, (\d+) row moves, (\d+) wraps, (\d+) without layout(?:, slowest key (\d+) us"
                           # #138: the left stick's cursor moves, and the lookups made once it rested
-                          r"(?:, (\d+) stick moves, (\d+) deferred lookups after (\d+) ms)?)?)?"),
+                          r"(?:, (\d+) stick moves, (\d+) deferred lookups after (\d+) ms"
+                          # #360 (shell/lookup_shown.h): the lookups shown, the mean ms from their press (the
+                          # post) to the frame that drew them and from their result's publication, the largest
+                          r"(?:, lookups shown (\d+): mean (\d+) ms \((\d+) ms after the result\), max (\d+) ms)?)?)?)?"),
     # #104 (shell/worker.c close_overlay_for, shell/overlay.cpp close_page): why each close happened, and the
     # touch region given back over the game or left to SceShell's LiveArea
     "close_why": re.compile(r"^overlay close \((in game|game left|foreground changed)\) t=(\d+) ms: input block off rc=(-?\d+)"),
@@ -1046,8 +1049,9 @@ def trigger(reason):
 # shell/selftest.c vjo_selftest_stage_begin: a self-test stage, whose job's lines follow (shell/worker.c
 # run_selftest_stages); its records' copies ("gstep textbox ...", "line textbox ...") are not the job's lines
 STAGE_BEGIN = re.compile(r"^stage (\w+) begin ")
-# shell/worker.c: since #116, which came after API 22 (#93), each Shell job's done line counts its log appends
-DONE_APPENDS = re.compile(r"^job \d+ done rc=-?\d+ in \d+ ms, .* in \d+ appends$")
+# shell/worker.c: since #116, which came after API 22 (#93), each Shell job's done line counts its log appends (since
+# #360 the debug build's then says how many of its lines it held until its result: ", N held")
+DONE_APPENDS = re.compile(r"^job \d+ done rc=-?\d+ in \d+ ms, .* in \d+ appends(?:, \d+ held)?$")
 BOOST_API = 22  # ocr_boost_clock and its clock step came with API 22 (docs/ocr-speed.md); an older build logs none
 BOOST_MHZ = 444  # game_ocr/main.c BOOST_MHZ: a clock at it or above is left as it is (rc 1)
 
@@ -1953,6 +1957,14 @@ PRESS_POLL_MS = 50
 # most measured).
 PRESS_DONE_APPENDS, PRESS_APPEND_MS = 2, 46
 PRESS_DONE_GAP_MS = PRESS_DONE_APPENDS * PRESS_APPEND_MS + PRESS_POLL_MS
+# The debug build since #360 writes a job's held lines with its done line after job_done; its done line says how
+# many it held (`, N held`), and only the poll is left between its time and the control thread's seeing the end.
+DONE_HELD = re.compile(r", \d+ held$")
+
+
+def done_gap_ms(line):
+    """From a done line's time to the control thread's seeing its job's end, at most (est.)."""
+    return PRESS_POLL_MS if DONE_HELD.search(line) else PRESS_DONE_GAP_MS
 # A press's own handling before its job's clock starts (open_overlay, start_job_kind's job_started_us): its input
 # block, `open:` and `job start` lines, 3 appends (status.txt full) to 6, at 12.1-46.0 ms each, and config.ini's
 # re-read (apply_config): est. 0.04-0.3 s
@@ -2029,8 +2041,8 @@ def presses_and_rereads(text):
         m = JOB_BEGIN.match(line)
         if m:
             job = {"line": n, "why": m.group(1), "kind": m.group(2) or "", "text_ms": None, "text_line": None,
-                   "done_ms": None, "done_line": None, "rc": None, "raw": {}, "shown": {}, "settle": None,
-                   "cancelled": False}
+                   "done_ms": None, "done_line": None, "gap": PRESS_DONE_GAP_MS, "rc": None, "raw": {}, "shown": {},
+                   "settle": None, "cancelled": False}
             if m.group(1) != "self-test":
                 win["jobs"].append(job)
                 if press is not None and m.group(1) in PRESS_REASONS:
@@ -2038,7 +2050,7 @@ def presses_and_rereads(text):
             continue
         m = JOB_END.match(line)
         if m and job is None:  # a cursor lookup (start_cursor_job logs no start)
-            cursor = {"rc": int(m.group(2)), "done_ms": int(m.group(3)), "done_line": n}
+            cursor = {"rc": int(m.group(2)), "done_ms": int(m.group(3)), "done_line": n, "gap": done_gap_ms(line)}
             if (press is not None and press["running"] is not None and last_end is press["running"]
                     and press["cursor"] is None):
                 press["cursor"] = cursor  # the first done line after the running job's: its word's lookup
@@ -2074,6 +2086,7 @@ def presses_and_rereads(text):
         m = JOB_END.match(line)
         if m:
             job["rc"], job["done_ms"], job["done_line"] = int(m.group(2)), int(m.group(3)), n
+            job["gap"] = done_gap_ms(line)
             last_end, job = job, None
     out = {"modes": {}, "pairs": 0, "same": 0, "early": [], "text_jobs": 0, "windows": 0, "normal_boots": normal_boots}
     for w in windows:
@@ -2187,8 +2200,8 @@ def press_kind(p):
         if c is None or c["rc"] != 0:
             return ("closed_before",) if closed_before(c["done_line"] if c else None) else ("unclear",)
         return (("closed_before",) if closed_before(c["done_line"])
-                else ("waited", r["done_ms"] + PRESS_DONE_GAP_MS + c["done_ms"] + PRESS_DONE_GAP_MS, 1))
-    return ("closed_before",) if closed_before(r["done_line"]) else ("waited", r["done_ms"] + PRESS_DONE_GAP_MS, 0)
+                else ("waited", r["done_ms"] + r["gap"] + c["done_ms"] + c["gap"], 1))
+    return ("closed_before",) if closed_before(r["done_line"]) else ("waited", r["done_ms"] + r["gap"], 0)
 
 
 def _secs(values):
@@ -2219,8 +2232,8 @@ def render_presses(lg):
                         if m["waited_ocr_only"] else "")
             L.append(f"    {len(m['waited'])} waited for a job still running: the word at most {_secs(m['waited'])} after "
                      f"the press (est.: that job's whole time, begun before the press, as the log has no time for a job's "
-                     f"start; then its done line's {PRESS_DONE_APPENDS} appends at up to {PRESS_APPEND_MS} ms each and "
-                     f"the Shell's "
+                     f"start; then its done line's {PRESS_DONE_APPENDS} appends at up to {PRESS_APPEND_MS} ms each (none "
+                     f"where it held its lines until its result, #360) and the Shell's "
                      f"{PRESS_POLL_MS} ms poll{ocr_only})")
         if m["read_text"]:
             settle = (f"; of it, waiting for the text to hold still {_secs(m['read_settle'])}" if m["read_settle"] else "")
@@ -2618,6 +2631,14 @@ def summarise_log(text):
                     st["moves"] += int(m.group(9))
                     st["deferred_lookups"] += int(m.group(10))
                     st["rest_ms"] = sorted(set(st["rest_ms"]) | {int(m.group(11))})
+                if m.group(12) is not None:  # #360: each close's means, weighted by its lookups (each mean floored)
+                    sh = s.setdefault("lookups_shown", {"closes": 0, "n": 0, "ms": 0, "after_ms": 0, "max_ms": 0})
+                    n = int(m.group(12))
+                    sh["closes"] += 1
+                    sh["n"] += n
+                    sh["ms"] += n * int(m.group(13))
+                    sh["after_ms"] += n * int(m.group(14))
+                    sh["max_ms"] = max(sh["max_ms"], int(m.group(15)))
             elif key == "close_why":
                 c = s.setdefault("closes", {"in game": 0, "game left": 0, "foreground changed": 0, "touch_left": 0,
                                             "block_fail": 0})
@@ -2698,7 +2719,9 @@ def summarise_log(text):
 def overlay_summary(lg):
     """The overlay's close lines: openings, the slowest frame and, from builds with row navigation (#81),
     the arrow keys over the header's displayed rows; from builds with the left stick's cursor (#138), its
-    moves and the lookups made once the cursor rested (stick_lookup_ms)."""
+    moves and the lookups made once the cursor rested (stick_lookup_ms); from builds with the press-to-screen
+    figure (#360), the lookups shown, the mean ms from their press to the frame that drew them, of it after
+    their result's publication, and the largest."""
     t = f"  overlay opened {len(lg['overlay'])}x, slowest frame {max(lg['overlay'])} ms"
     ar = lg.get("arrows")
     if ar:
@@ -2710,6 +2733,13 @@ def overlay_summary(lg):
         lo, hi = st["rest_ms"][0], st["rest_ms"][-1]  # stick_lookup_ms, sorted: one value, or the range seen
         t += (f"; left stick ({st['closes']} of them): {st['moves']} cursor moves, {st['deferred_lookups']} "
               f"deferred lookups (after {lo if lo == hi else f'{lo}-{hi}'} ms at rest)")
+    sh = lg.get("lookups_shown")
+    if sh and sh["n"]:  # the means are each close's, floored: the combined one is at most 1 ms low
+        t += (f"; lookups shown ({sh['closes']} of them): {sh['n']}, from the press to the frame that drew the word "
+              f"{sh['ms'] / sh['n']:.0f} ms mean ({sh['after_ms'] / sh['n']:.0f} ms of it after the result), "
+              f"{sh['max_ms']} ms at most")
+    elif sh:
+        t += f"; lookups shown ({sh['closes']} of them): none"
     c = lg.get("closes")
     if c:  # #104: a close with the game gone must leave SceShell's touch region alone
         t += (f"; closed {c['in game']}x in game, {c['game left']}x as the game left (PS or exit; touch region "

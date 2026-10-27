@@ -48,7 +48,8 @@ Its `sources.json` verifies all three original ZIPs before processing. Prepare
 an existing artifact with `tools/prepare_plaintext.py`; the Vita reads only the
 resulting `.vjdict`. This combined file counts as one dictionary for paging.
 Preparing checks the frozen file's SHA-256, adds the posting hints (only when
-`key_filter` has `hinted_postings`: the frozen file predates them) and the
+`key_filter` has `hinted_postings`: the frozen file predates them; with
+`table_postings` too, version 2's, the lookup tables' bits included) and the
 [key filter](#key-filter), and checks the result against its own pin
 (`key_filter` in `plaintext-dictionaries.json`). A frozen file that
 `--frequency` already gave its hints must be pinned without `hinted_postings`:
@@ -125,8 +126,8 @@ Enable `daijirin.vjdict` alone to prefer its bilingual definitions, or put it
 before `jmdict.vjdict` in `local_dictionaries` to retain plain JMdict as a
 fallback. Use the actual installed filenames. This changes dictionary lookup
 without changing the OCR engine. The local overlay performs one lookup at the
-selected character and displays one entry at a time; set **Dictionaries shown**
-to 2 to page to JMdict's entry with Down (see below).
+selected character and shows the best match first; with **Dictionaries shown**
+at 2, JMdict's entry for the same word follows below it (see below).
 
 Nested English and Japanese text becomes plain text. Ruby annotation text,
 styles and link destinations are omitted; the base characters and visible link
@@ -168,6 +169,14 @@ python3 tools/convert_dictionary.py Jitendex.zip -o main.vjdict --frequency jite
 The report's `frequency` part counts the ranked entries and how they matched.
 Format 3 needs this build or later; earlier plugins refuse it with a format
 error, and this build still reads formats 1 and 2 (without ranks).
+
+`--table-hints` (with `--frequency`) also marks the entries of the lookup's
+two short tables of common readings and usual spellings, so their words (私,
+中, こう …) are ranked without reading each entry
+([posting hints](#frequency-ranks), version 2). Rubi 0.9.8 and older refuse such
+a file ("Invalid or incomplete local dictionary"), which is why it is not the
+default; leave it out for a file an older Rubi reads too. The bundled dictionary
+has them.
 
 ## The popup
 
@@ -407,7 +416,7 @@ which for the bundled Daijirin4 is reading order, not frequency (私 lists
 あたい first, 先生 シーサン). The lookup therefore ranks a key's postings, reading
 only each one's spelling and reading (one bounded head read): first a short
 built-in list of common readings of very frequent words (私 → わたし, 僕 → ぼく,
-こう → 斯う; `preferred_readings` in `core/local_dict.c`, every pair checked to
+こう → 斯う; `preferred_readings` in `tools/lookup_tables.txt`, every pair checked to
 exist in the bundle), then the spelling as written, then an entry that has a
 reading (Daijirin4's kanji-character articles have none), then, in a
 dictionary with [frequency ranks](#frequency-ranks), the more frequent entry
@@ -454,16 +463,24 @@ Format 3 is format 2 with these additions, so it needs nothing in memory:
 - optional **posting hints**: every posting's last u16 holds what the ranking
   reads from its payload's head (the spelling is the key, it normalizes to the
   key, the entry has a reading, and the frequency key below), so a key's
-  postings are ranked without reading their heads. The head is still read for a
-  key with a preferred reading or a usual spelling, and for katakana or
-  full-width text whose entry's spelling only normalizes to the key.
-  `--frequency` writes them; `tools/prepare_plaintext.py` adds them to the
-  bundled file (`convert_dictionary.add_index_hints`, deterministic). Files
-  without them, and readers that predate them, rank as before. On the bundled
+  postings are ranked without reading their heads. With version 1 of the hints
+  the head is still read for a key with a preferred reading or a usual
+  spelling; **version 2** (the table hints) also marks, in two spare bits of each
+  posting's rule bits, the entry that a table names for its key, so those keys
+  (私, 中, 頭, こう …: 2.7% of the taps of 5,000 real lines read 4 to 17 heads
+  without them) are ranked without their heads too. In every file the head is
+  read for katakana or full-width text whose entry's spelling only normalizes
+  to the key. `--frequency` writes version 1, and `--table-hints` version 2;
+  `tools/prepare_plaintext.py` adds version 2 to the bundled file
+  (`convert_dictionary.add_index_hints`, deterministic). Files without them, and
+  readers that predate them, rank as before; a reader that predates version 2
+  (Rubi 0.9.8 and older) refuses a file that has it. On the bundled
   file the hints take a lookup's payload-head reads from 2.6-4.1 to 0.2-1.1,
   with every shown entry identical (`tools/dict_lookup_bench.py`,
-  `reports/dict-lookup-speed.md`). The exact bits are in
-  [version 3's format](#binary-format-version-3-with-frequency-ranks).
+  `reports/dict-lookup-speed.md`), and the table hints 0.39 to 0.10 a cursor
+  lookup (both bundled dictionaries; 0.33 to 0.04 for the bundled file alone;
+  `tools/dict_stage_report.py` on 64,579 taps, every one identical). The exact
+  bits are in [version 3's format](#binary-format-version-3-with-frequency-ranks).
 
 Ranking uses it as a tie-break only, after the flags above (a preferred
 reading, the text as written, katakana as hiragana, a reading): first a
@@ -503,7 +520,7 @@ longest article was a rarer reading: 良い よい (was いい), 奥 おく (お
 the more frequent of several spellings of one reading: わたし 私 (was 渡し),
 おまえ お前 (御前), せい 所為 (姓). Where the ranks alone pick a rarer word, a short
 list of usual spellings decides, in files with ranks only (`usual_spellings` in
-`core/local_dict.c`, every pair checked in the bundle): kana text whose word has
+`tools/lookup_tables.txt`, every pair checked in the bundle): kana text whose word has
 no entry spelled in kana ranks the kanji spellings by how often each is written
 (いつか would show ５日, not 何時か; なくなる 亡くなる, not 無くなる), and Jiten ranks
 kana text by its parser's lemma, so kana やめる is 辞める "to resign" at rank 135
@@ -620,8 +637,8 @@ bundled dictionary is one.
   text without control characters, then NUL padding to byte 127. The runtime
   reads it with the 64-byte header, in the same read, as it reads the rest of
   page 0: bytes 128..159 and 256..4095 are the optional [key filter](#key-filter)'s,
-  160..167 the optional posting hints' (below), and 192..255 the dictionary's
-  title, as in version 2. Bytes 168..191 are not read.
+  160..171 the optional posting hints' (below), and 192..255 the dictionary's
+  title, as in version 2. Bytes 172..191 are not read.
 - Every payload starts with a u32 frequency word, then the three strings as in
   version 2. Bits 0-23 are the rank (1 = the most frequent; 0 = the list does
   not rank the entry). Bit 24 marks a borrowed rank: a kanji spelling ranked
@@ -629,7 +646,8 @@ bundled dictionary is one.
   for the converter's report; bits 28-31 are zero. A payload is at least 8
   bytes.
 - **Posting hints** (optional). Page-0 bytes 160..167 hold magic `VJPH` and a
-  u32 version=1; a reader refuses any other version. Without the magic, a
+  u32 version, 1 or 2 (below); a reader refuses any other version, and a reader
+  of version 1 only (Rubi 0.9.8 and older) refuses version 2. Without the magic, a
   posting's last u16 is not read (version 2 requires it to be zero; version 3
   allows any value). With it, the u16 of a posting of key K holds:
   - bit 0, S: the entry's spelling is K, byte for byte;
@@ -654,6 +672,34 @@ bundled dictionary is one.
   i + 1 < w and byte i + 1 is not NUL. `posting_hint` in
   `tools/convert_dictionary.py` is the reference writer, and `rank_posting` in
   `core/local_dict.c` the reader.
+
+  **Version 2, the table hints.** Page-0 bytes 168..171 hold a u32, the id of
+  the lookup tables the bits below were made with: FNV-1a-32 (offset basis
+  0x811C9DC5, prime 0x01000193) over the bytes of `preferred_readings` then
+  `usual_spellings`, each table as its pairs (key, NUL, value, NUL) and one more
+  NUL (`tools/lookup_tables.txt`; `core/lookup_tables.inc` has the bytes and
+  `LOOKUP_TABLES_ID`). Every posting's u16 rule bits (bits 0-6: the inflection
+  rules) may then have bit 11, P: K is a key of `preferred_readings` and its
+  value V is the entry's spelling or reading, and bit 7, U: the same for
+  `usual_spellings`. "Is the spelling" is S's comparison with V for K, inside
+  the head window; "is the reading" means the reading, from byte i + 1 of the
+  window, is V followed by its NUL, the NUL inside the window. Bits 8-10 and
+  12-15 are zero, as are bits 7-15 of a key's own rule bits (its index record's).
+  A reader whose tables have this id ranks the table keys' postings from the
+  hints and these bits; one whose tables differ ignores the bits and reads
+  their heads, as with version 1. A posting of version 1, or of a file without
+  hints, has neither bit; this reader ignores the two bits in any file that is
+  not version 2 of its own tables, and fails a lookup that reads any other rule
+  bit past bit 6 (a format error, in every file). `table_bits` in `tools/convert_dictionary.py` is the
+  reference writer. Like the other hints the bits are trusted: a file whose
+  bits are wrong shows the entries they say, not what its heads would rank
+  first, as a wrong frequency key does.
+
+  The converter writes version 1 unless `--table-hints` is given, so a file
+  converted for an older Rubi stays readable by it; the bundled dictionary has
+  version 2, and the plugin that reads it comes with it. After an update the
+  Shell plugin that is still loaded until the Vita restarts predates version 2,
+  so until that restart its lookups say the dictionary is invalid.
 
 ### Binary format, version 2 (default)
 
@@ -708,7 +754,7 @@ read it as before.
   count; u32 reserved=0.
 - **Directory.** From byte 256 of page 0: one u32 per block, the block's first
   prefix. The first is 0, the rest increase. Bytes 160..191 are not the filter's
-  (format 3's posting hints use 160..167), nor are bytes 192..255: a dictionary
+  (format 3's posting hints use 160..171), nor are bytes 192..255: a dictionary
   title may use them (bee-san/plaintext-dicts).
 - **Blocks.** Page-aligned, 4 KiB each, and they end the file (the header's file
   size includes them). Each is a 32,768-bit Bloom filter, bit `i` being byte

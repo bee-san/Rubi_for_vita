@@ -93,6 +93,8 @@ static void test_budget_table_is_consistent(void)
     }
     TEST_CHECK(VJO_WORST_KERNEL <= VJO_LIMIT_KERNEL);
     TEST_CHECK(VJO_WORST_GAME_JOB <= VJO_LIMIT_GAME_JOB);
+    /* an SC3 hook's charset block: its largest file, page-rounded (core/hook_sc3.h, the kernel's open's limit) */
+    TEST_CHECK(VJO_BUDGET_GAME_SC3 == VJO_GAME_OCR_SC3_BYTES && VJO_BUDGET_GAME_SC3 % VJO_LEDGER_PAGE == 0);
     TEST_CHECK(VJO_BUDGET_GAME_WEIGHTS <= VJO_LIMIT_GAME_WEIGHTS && VJO_BUDGET_GAME_WORKSPACE <= VJO_LIMIT_GAME_WORKSPACE);
     /* page-rounded figures are page-rounded */
     TEST_CHECK(VJO_BUDGET_SHELL_MODULE_PAGES % VJO_LEDGER_PAGE == 0 && VJO_BUDGET_WORKER_IN_SHELL_PAGES % VJO_LEDGER_PAGE == 0 &&
@@ -105,7 +107,7 @@ static void test_budget_table_is_consistent(void)
     TEST_CHECK(VJO_VOCR_TIER1_BYTES <= VJO_VOCR_TIER2_BYTES && VJO_VOCR_TIER2_BYTES <= VJO_VOCR_TIER3_BYTES);
     TEST_CHECK(VJO_VOCR_TIER1_BYTES != VJO_VOCR_TIER2_BYTES || !strcmp(VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME));
     TEST_CHECK(VJO_VOCR_TIER2_BYTES != VJO_VOCR_TIER3_BYTES || !strcmp(VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME));
-    /* the Large size's release file (test_tier_pins.h; VOCR5-L's 2,473,696 B: 2,473,984 B), page-rounded, under
+    /* the Large size's release file (test_tier_pins.h; VOCR6-L's 2,475,680 B: 2,478,080 B), page-rounded, under
      * the 2.5 MB weights limit (the owner's ceiling) */
     TEST_CHECK(VJO_BUDGET_GAME_WEIGHTS == (test_tier_pins[2].bytes + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE &&
                VJO_LIMIT_GAME_WEIGHTS == 2502656u &&

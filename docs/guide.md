@@ -38,7 +38,7 @@ mode, or an SD2Vita's card). Nothing is sent from the Vita; there is no
 AnkiConnect or AnkiWeb sync.
 
 Text is recognized on the Vita, offline, by the local engine, named after the
-generation of the model it runs (**VOCR5** in this package), automatically or
+generation of the model it runs (**VOCR6** for Normal and Large in this package, **VOCR5** for Small), automatically or
 when the overlay opens. In the **Rubi** app (press **Select** for the
 OCR & lookup page), **Model size** chooses its recognizer: **Small**
 (fastest), **Normal** (the default, balanced) or **Large** (most accurate), each
@@ -56,9 +56,10 @@ build with Google Lens is the tag `archive/online-last` (branch `archive/online`
 
 The engine's name comes from the pinned metadata of the model it runs
 (`core/vocr_models.c`, also written per model into the package's
-`package-manifest.json`), not from the app: VOCR5 for each of this package's
-three sizes (vita-vn-ocr's v0.3.0 release, with the head gates and two-level heads of its v0.3.6-head2level.1;
-before it VOCR3 for Small and Normal
+`package-manifest.json`), not from the app: VOCR6 for this package's Normal and Large
+(vita-vn-ocr's v0.4.0-vocr6.1 pre-release, retrained on the owner's hooked games, with their two-level heads) and
+VOCR5 for its Small (vita-vn-ocr's v0.3.0 release, with its head gate); VOCR5 for all three sizes in 0.8.0 to 0.9.8,
+and before it VOCR3 for Small and Normal
 and VOCR4 for Large). A release that pins a new generation's models as the sizes
 shows that generation's name, with no change to the app; a size that keeps an
 earlier generation's model shows that one's. A `.vocr` file itself carries no
@@ -310,10 +311,9 @@ app when it starts.
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position (held: repeats). **Up on the text's top row shows this game's earlier line** (with **Read text: Automatically**), dimmed between its neighbours: more Up goes further back, up to 32 lines; Down on an earlier line's last row goes to the line after it, and past the newest back to the current text ([line history](line-history.md)) |
 | Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right a character at a time in reading order across the rows, in Whole word mode too (the shown word is not skipped, and its left never retraces a Right), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too. With **Japanese characters only** ON it lands only on kana and kanji, OFF on every visible character, punctuation and Latin included. Once the cursor rests for `stick_lookup_ms` (200 ms), not at each step, the word starting at its character is looked up and, in Whole word mode, highlighted ([left stick](touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
-| Triangle | **Total characters read, characters/hour and total time played** across recorded games, above the line's OCR/hook diagnostics. Time estimates active reading: each line counts the time to the next, at most 2.5 times what your pace would take for it (`reading_time = adaptive` in `config.ini`, the default, from the Vita's next start; `15s` is 0.9.7's 15-second cutoff, no setting in the app: [reading time](ocr-history.md#reading-time)); speed uses timed lines only. Triangle again brings the entry back. The first press may show `counting…` while history is counted in background windows; subsequent presses read cached totals. [Details](ocr-history.md#total-characters-read). |
+| Triangle | The line's source (hook or OCR), then **characters read, reading time and characters/hour** of this game: today, and its total. Time estimates active reading: each line counts the time to the next, at most 2.5 times what your pace would take for it (`reading_time = adaptive` in `config.ini`, the default, from the Vita's next start; `15s` is 0.9.7's 15-second cutoff, no setting in the app: [reading time](ocr-history.md#reading-time)); speed uses timed lines only. Triangle again brings the entry back. The first press may show `counting…` while history is counted in background windows; subsequent presses read cached totals. [Details](ocr-history.md#total-characters-read). |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
-| L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
 | Cancel | Close the overlay |
 
@@ -330,7 +330,7 @@ earlier dialogue, the lines `history.csv` keeps ([ocr-history.md](ocr-history.md
 top row shows the line before it, in white between the last row of the line before that and the
 first row of the line after it, both dimmed, and the body's first line says how far back it is
 (`Earlier line -2`). Everything works on it as on the current text: the cursor, taps, the left stick,
-lookups, the dictionaries' pages and Enter, whose card has that line as its sentence and **no
+lookups, the other dictionaries' entries below the word and Enter, whose card has that line as its sentence and **no
 screenshot** (Rubi keeps no frame of an earlier line; the status line says so). Down past the newest
 earlier line comes back to the current text, its cursor where it was; closing the overlay does too.
 Up and Down between lines are the d-pad's: the left stick stops at the text's first and last rows.
@@ -417,7 +417,8 @@ reported console run. The behaviour below is checked on the host.
   no hook number, source-status label or Triangle source picker. Technical source details remain in
   the debug log.
 - **The Games page** tags a game with a hook entry: `Hook` for one of Rubi's own verified entries (CLANNAD,
-  アマツツミ and the 26 Vita3K-farm games of 0.9.7: the worker's own table, so each new entry is tagged), `Luna hook`
+  アマツツミ and the 26 Vita3K-farm games of 0.9.7, then the three MAGES SC3 games, STEINS;GATE 比翼恋理のだーりん,
+  ROBOTICS;NOTES ELITE and CHAOS;CHILD: the worker's own table, so each new entry is tagged), `Luna hook`
   for a ported site in LunaTranslator's table (its entries are not checked by Rubi; the worker installs one only where
   the game's code there looks as the entry expects). The seven titles above, whose every site in the
   table is unported, have no tag.
@@ -466,13 +467,39 @@ for a press, `ocr_settle_max_ms` in the background;
 the text still does not show after a few seconds, a region drawn around the text
 alone, leaving the icon out, is read at once.
 
+#### The box Rubi suggests
+
+A game with no box of its own (no line for it in `region.ini`, not even a full screen saved with Square held) is
+read on its whole screen, which reads the picture, the buttons and the menus as well as the dialogue. So the first
+time the overlay is open over that game's text, Rubi offers a box: the region mode opens by itself with the box drawn
+around the screen's dialogue and asks **Use this box?** Enter saves it as this game's region, as a box drawn with
+Square is: the overlay closes, and from the next L + R the game reads the box only. The stick and the d-pad move its
+bottom right corner first (Enter then saves the box as it is); Cancel takes its corner back to draw your own, and
+Cancel again leaves the region mode, the game still on its whole screen. The question comes once each time the game
+starts or resumes (not again after Cancel, nor after a box drawn with Square), and never once the game has a box
+(any box, or the full screen with Square held). A box drawn with Square asks **Use this box?** too.
+
+The box is the screen's width, from just above the dialogue's first line to the screen's bottom, so the longer and
+the extra lines of the screens after it fit too. The game worker finds the dialogue among the lines it read on the
+whole screen: the lines with Japanese in them at a dialogue line's height, grouped into blocks of lines that follow
+each other closely, the block with the most Japanese, from the last screen read. On the hooked pages of 42 games,
+read on a computer, the box holds 96.6 % of the dialogue lines of the same game's later screens (the half of the
+games the rule was not chosen on) and reads a quarter of the whole screen's other lines. Where no block looks like
+dialogue (a logo, a picture), nothing is offered; a menu or a choice list of stacked items can be, a band from its
+first item down, so press Cancel there and wait for a screen of dialogue ([first-box.md](first-box.md): the rule, its
+measurement and its limits). The Rubi app's **Suggest a text box** OFF (OCR & lookup page) writes `region = full` in
+`region.ini`, the line for every game without its own, so that such a game reads its whole screen and is offered
+nothing; ON takes the line out. An install older than a box for each game may hold one box for every game
+(`region = x,y,w,h`): the app shows **Suggest a text box** OFF for it, and ON deletes that line. Not run on a console
+yet.
+
 ## Per-game settings
 
 The **Rubi** app shows five games per page, with compact titles, visible
 IDs and ON/OFF badges. The last page may have fewer games. Games are listed by letter (#,
 A–Z, kana by row, then other characters), alphabetically within it, capital
-and small letters together. Tap the **Games**, **OCR & lookup**
-or **Anki** tab, or press Select, to change pages. Choices save automatically to
+and small letters together. Tap the **Games**, **OCR & lookup**, **Anki**, **Stats**
+or **Install** tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
 Icons load one per frame for the current page only, with at most five textures
 kept. Changing pages releases the previous page's icons; a card
@@ -482,7 +509,7 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Control | Action |
 | --- | --- |
 | Up / Down | Select a game (held: repeats) |
-| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, after a sixth of a second 60 rows a second, at whatever rate the app draws; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup and Anki pages, where it stops at the first and last card while Up / Down wrap round |
+| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, after a sixth of a second 60 rows a second, at whatever rate the app draws; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup, Anki and Stats pages, where it stops at the first and last card while Up / Down wrap round |
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
 | L + R together, or touch the search field | Open the Vita keyboard and search all indexed games by title or title ID. Latin matching ignores case; Japanese text is matched as entered. The Enabled/Disabled filter still applies. Cancel keeps the current search; accept an empty query or touch Clear to show all games again |
 | Touch Prev / Next | Change the five-game page; the page number is shown between them |
@@ -491,7 +518,7 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
-| Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](anki.md#setup-and-use) pages |
+| Select or touch a page tab | Switch between the Games, OCR & lookup, [Anki](anki.md#setup-and-use), [Stats](#stats) and Install pages |
 | Cancel | Exit |
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
@@ -500,11 +527,15 @@ reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting,
 dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
 switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
 and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
-**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)), and (API 52)
-**Pause the game to read** (`ocr_pause`, OFF by default, the last card: [pause](game-pause.md)).
+**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)),
+**Suggest a text box** (ON by default: [the box Rubi suggests](#the-box-rubi-suggests); kept in
+`region.ini`, so it applies when a game next starts or resumes), and in this test build (test/combined) the drafts'
+**Overlay on the game's text** (`overlay_on_text`) and **Pause the game to read** (`ocr_pause`, OFF by default, the
+last card: [pause](game-pause.md)).
 Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
-Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection, two skip and pause cards,
+Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection, two skip, Suggest, overlay and
+pause cards,
 Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, Automatic/Every
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
@@ -518,10 +549,10 @@ ready when you press) or only once the overlay opens (**Only when I press L + R*
 `toggle_button`: nothing runs until you press, and the press waits for the reading); the Speed
 boost (`ocr_boost_clock`, ON by default) runs the ARM clock at 444 MHz only while text is read
 ([docs/auto-vs-press.md](auto-vs-press.md)). Each size button shows its estimated time for a 3-line
-textbox and the game memory a job of it takes (`0.7 s, 1.4 MB` for Normal), from
+textbox and the game memory a job of it takes (`0.8 s, 1.4 MB` for Normal), from
 the models' pinned metadata. The
 card's last line names the size and its model file (`Normal: default, balanced.
-VOCR5-N found.`), or reports that file missing; it never says that a game ran a
+VOCR6-N found.`), or reports that file missing; it never says that a game ran a
 smaller size. Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored. Start reloads
 the saved preferences. Other config values, including dictionary priority,
@@ -683,23 +714,21 @@ log_file = on
 
 `vocr_tier` is the local engine's model size, the Rubi app's Model size:
 `small` runs VOCR5-S (821,584 B of int8 weights: FL10's topology with 4,987
-classes), `normal` (the default) VOCR5-N (1,189,408 B: H15's topology with 5,631
-classes) and `large` VOCR5-L (2,477,472 B: a late-wide shape, 5,631 classes), the
-three recognizers of vita-vn-ocr's VOCR5 round (its v0.3.0 release, each with its
-1,792 B head gate, and Normal's and Large's with their two-level head, in v0.3.6-head2level.1;
-selection and scores in that repository's `docs/vocr5.md`, `docs/headgate.md` and
-`docs/head2level.md`). Each is inside the owner's weights ceiling for its size (Small < 1 MB,
-Normal <= 1.6 MB, Large <= 2.5 MB). Their estimated times for a 3-line textbox are 0.5 s
-(Small), 0.7 s (Normal) and 1.8 s (Large) on one core at 333 MHz with the pinned runtime
-(vita-vn-ocr #85's kernels, no credit for their weight prefetch, with the head gate and the
-two-level head, `ocr_head_gate = on`: 0.6, 0.9 and 2.1 s with `off`), calibrated to
-VOCR3-H15's measured 4.94 ms per CTC frame on the console (v0.8.0-test.1); at 444 MHz, the
-clock a job raises by default, 0.4, 0.6 and 1.4 s, and less again with lines read in parallel
+classes, vita-vn-ocr's VOCR5 round, its v0.3.0 release with a 1,792 B head gate), `normal` (the default) VOCR6-N
+(1,187,616 B: H15's topology with 5,631 classes) and `large` VOCR6-L (2,475,680 B: a late-wide shape, 5,631 classes),
+vita-vn-ocr's VOCR6 recognizers (its v0.4.0-vocr6.1 pre-release: VOCR5-N's and VOCR5-L's shapes fine-tuned again on the
+owner's hooked PS Vita and PSP games, each with a two-level head and no gate; selection and scores in that
+repository's `docs/vocr5.md`, `docs/vocr6.md`, `docs/headgate.md` and `docs/head2level.md`). Each is inside the owner's
+weights ceiling for its size (Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB). Their estimated times for a 3-line
+textbox are 0.5 s (Small), 0.8 s (Normal) and 1.9 s (Large) on one core at 333 MHz with the pinned runtime (no credit
+for its weight prefetch, with Small's head gate and Normal's and Large's two-level head, `ocr_head_gate = on`: 0.6, 0.9
+and 2.1 s with `off`), calibrated to VOCR3-H15's measured 4.94 ms per CTC frame on the console (v0.8.0-test.1); at
+444 MHz, the clock a job raises by default, 0.4, 0.6 and 1.5 s, and less again with lines read in parallel
 ([OCR speed](ocr-speed.md)). On a console, test.4's logs measured VOCR5-N at 2.61 ms per CTC
 frame (10 jobs) and VOCR5-L at 4.98-5.10 ms (8 jobs), at 444 MHz, each a job's recognition time
 over its frames (`tools/analyse_selftest.py --collect`,
-[#191](https://github.com/bee-san/Rubi_for_vita/issues/191)); no console run has reported Small
-yet, and the box times above stay estimates.
+[#191](https://github.com/bee-san/Rubi_for_vita/issues/191)); VOCR6 has VOCR5's shapes, but no console has run it (nor
+Small), and the box times above stay estimates.
 A job runs the chosen size when the
 game's free memory has room for it beside that size's reserve (4, 8 or 16 MiB),
 else the next smaller size, silently: `log.txt` has a line `tier large did not
@@ -727,8 +756,9 @@ every row of the region has held still for `ocr_settle_ms` (150 ms by default,
 or `ocr_settle_press_ms` (1000; `0`: the same limit) when the open overlay waits
 for it ([first-ocr.md](first-ocr.md)), and a blinking "next" icon does not hold it up; on the console
 it has read no dialogue line early ([text stability](text-stability.md)). When the text changed under
-every read of two jobs in a row (an animated icon in the region, say), the open overlay says so as it
-tries again, and what helps: a region drawn around just the text (`ocr_wait_hint = off` keeps
+every read of two jobs in a row (an animated icon in the region, or text still typing), the open overlay says so as
+it tries again, and what helps where it can: a region drawn around just the text, if that leaves the moving thing
+out (`ocr_wait_hint = off` keeps
 "Recognizing…"; [why the overlay waits](text-stability.md#why-the-overlay-waits-358)). `ocr_skip_blank_lines = on`
 skips found lines with no text-like ink; it is off by default, because once it
 keeps soft text (a PSP game shown 2x, an upscaled render) it finds next to
@@ -745,7 +775,7 @@ Each line is decoded with a beam search and a character language model
 (`ocr_lm = 1000k` by default; `4000k`, `2000k`, `500k` or `off`). The LM is
 vita-vn-ocr's, CC BY-SA 4.0. The game keeps the largest LM that fits its memory
 resident, and reads greedily when none does. A line read with low confidence
-is read again by the next model size up (VOCR5-L for Normal, VOCR5-N for
+is read again by the next model size up (VOCR6-L for Normal, VOCR6-N for
 Small; Large has none), when its model fits too, whose reading is shown, while the job
 stays within `ocr_cascade_ms` (2000; `0` turns it off). On the host's
 development dialogue lines the two brought VOCR3-H15, the Normal size before
@@ -964,6 +994,38 @@ overlay or the app uses the network for Anki. `anki_host` and
 app's next save remove them. See [docs/anki.md](anki.md) for the fields, the queue, the package
 and memory.
 
+### Stats
+
+The Rubi app's **Stats** page shows your reading from `ux0:data/VitaJPOverlay/history.csv`, the lines the overlay
+keeps with **Read text: Automatically** ([OCR history](ocr-history.md)), and the cards in the Anki queue. It counts
+them as the overlay's △ view does, with `config.ini`'s `reading_time` (adaptive, the default:
+[reading time](ocr-history.md#reading-time)), so each game's **Today** and **In all** are the numbers △ shows in that
+game: today in this game, and this game's total. Days are the Vita's own calendar days, in its time zone. There are
+no sessions: a day, a game and all games.
+
+| Row | What it shows |
+| --- | --- |
+| **Today** | All games today: characters, reading time and characters per hour; the daily goal's bar; the streak, the days in a row that count (ending today, or yesterday while today does not count yet) and the best |
+| **Daily goal** | Off (the default), 2,000, 5,000, 10,000, 20,000 or 50,000 characters, or 15, 30, 60 or 120 minutes of reading a day. Left/Right (or a tap on its sides) choose, Enter goes round. A day counts for the streak when it meets the goal, or with no goal when anything was read |
+| **Last 14 days** | A bar of characters a day, today's at the right, a day at the goal in the accent colour, the goal's line across them; Left/Right choose a day (L/R a week) and the row says its characters, time and characters/hour |
+| **This year** | A heatmap of the year's days, a column a week from Sunday, in four shades by the year's best day; Left/Right choose a day, L/R a week, or tap one |
+| **All games** | The totals of every game, the cards mined and the cards per 10,000 characters, and the lines recorded |
+| A row per game | Its name and the last day read; today's characters, time and characters/hour; in all the same, its cards (by the title ID the card was mined in) and cards per 10,000 characters. The game read last comes first |
+
+- **Start** counts again; the page counts what is new each time it is shown. The first count reads all of
+  `history.csv` on a thread of its own (the status line says how far it is); then the counts are kept in
+  `ux0:data/VitaJPOverlay/stats_cache.bin`, and the next count reads only the lines added since. A `history.csv` that
+  is not the one counted (replaced or shorter), another time zone, another `reading_time` or a damaged cache is
+  counted again from its start. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
+  AMD EPYC 9R14 core; the Vita's time is unmeasured: the app runs on its CPU3 while the game is suspended].
+- **The goal** is kept in the app's own settings file, `ux0:data/VitaJPOverlay/app.ini`
+  (`stats_daily_goal = off | 2000_characters | … | 120_minutes`), never in `config.ini`: the overlay does not read it.
+- The page only reads `history.csv` and the cards; it writes `stats_cache.bin` and `app.ini` only. A line read across
+  midnight is its first day's, with its time, as `tools/reading_stats.py` counts it; △'s **Today** leaves such a line
+  out. A record a power loss cut is skipped, as △ skips it.
+- It counts at most 512 games (more count in **All games** only), 16,384 days of games and 16,384 cards (its
+  memory: about 2.1 MiB of the app's own, [vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)).
+
 ## Memory and troubleshooting
 
 If Adrenaline or a PSP bubble immediately returns to LiveArea, its Shell
@@ -982,11 +1044,11 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 192,512 B of module pages (200,704 B in the debug build; API 31's native hooks and
+holds the worker's 196,608 B of module pages (204,800 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
-two-level head 8,192 B, API 47's vertical text 4,096 B and API 50's line finder fixes with vita-vn-ocr f8a1856's
-runtime 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+two-level head 8,192 B, API 47's vertical text 4,096 B, API 50's line finder fixes with vita-vn-ocr f8a1856's
+runtime 8,192 B and #353's line watch 4,096 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
@@ -1006,8 +1068,8 @@ gives OCR nothing. If the game's `USER_RW` refuses that block the worker tries
 CDRAM, then phycont, then a kernel strip of at most 64 KiB for one call, and
 logs each attempt ([docs/ingame-capture.md](ingame-capture.md)). The
 worker frees each job's workspace before returning text. The verified weights stay in their own `USER_RW` block between jobs
-(821,584 B for VOCR5-S, 1,189,408 B for VOCR5-N and 2,477,472 B for VOCR5-L,
-held as 823,296, 1,191,936 and 2,478,080 B page-rounded blocks; the worker takes
+(821,584 B for VOCR5-S, 1,187,616 B for VOCR6-N and 2,475,680 B for VOCR6-L,
+held as 823,296, 1,187,840 and 2,478,080 B page-rounded blocks; the worker takes
 no larger one) and are read and
 SHA-256 checked again only when the model file's size or modification time
 changes, or the model changes. A job that finds no line (a title screen, a
@@ -1036,12 +1098,12 @@ of a free-memory figure. An error before the check has no memory figures.
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
 only these names in `ux0:data/VitaJPOverlay/ocr`:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
-(VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
-`VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
-`H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
-(VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5, release
-v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+the recognizers `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (VOCR6, release
+v0.4.0-vocr6.1); `VOCR5_S_w8g.vocr` (VOCR5, release v0.3.6-head2level.1);
+`VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1);
+`FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0);
+`VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5,
+release v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
 (release v0.3.7-lm6.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,
@@ -1081,8 +1143,9 @@ jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
 reads only the selected position and shows zero or one entry. With Dictionaries
 shown above 1 it also keeps a 208-byte table locating the other dictionaries'
-entries in the same arena; an L or R tap releases the shown entry and reads one
-other payload, so several definitions are never resident together.
+entries in the same arena, and reads each one's payload after the best match's
+in that arena; one that does not fit is left out, with those after it
+([Dictionaries shown](local-dictionaries.md#dictionaries-shown)).
 The previous local result is retired before it is reused. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
@@ -1116,7 +1179,9 @@ before it, except that a burst of lines formatted at once (a job's result, about
 append, as a file append costs the console 12-46 ms (#81's self-test timestamps). The normal build
 holds a job's few lines until its result is taken (shown, or kept for the overlay's next open) and writes
 them after half a second with no job, one append per file (a crash before that loses them: at most 24 lines;
-[no append on the result path](release-variants.md#no-log-append-on-the-result-path)); `kernel.txt`
+[no append on the result path](release-variants.md#no-log-append-on-the-result-path)); the debug build holds a
+lookup's lines, and an OCR job's after its recognition, until it has published its result, and writes them right
+after it, one append per file ([#360](release-variants.md#the-debug-builds-job-lines-after-the-result-360)); `kernel.txt`
 holds up to 256 KB per boot (the previous boot's is
 `kernel.prev.txt`). `bash tools/install_ftp.sh --collect VITA_IP` fetches all of
 it read-only into one timestamped folder and zip, with its audio source URL and
@@ -1338,12 +1403,13 @@ sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0
 ([attribution](plaintext-attribution.txt)). The beam + LM decoder's character
 LMs (bee-san/vita-vn-ocr v0.3.7-lm6.2; the 1 MB and 4 MB ones also carry n-gram counts of the owner's
 hooked console captures): CC BY-SA 4.0, with their sources and changes in
-`ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' VOCR5 recognizers
-(bee-san/vita-vn-ocr v0.3.0, with their head gates and two-level heads in v0.3.6-head2level.1) were trained in
-part on NVIDIA's OCR-Synthetic-Multilingual-v1
-(CC BY 4.0) and on non-commercial fonts and text: their attribution and terms, including that
-the weights are for non-commercial use only, are in `ocr/MODEL-ATTRIBUTION.md`, which ships
-beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
+`ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' recognizers, VOCR5-S (bee-san/vita-vn-ocr
+v0.3.0, with its head gate in v0.3.6-head2level.1) and VOCR6-N and VOCR6-L (v0.4.0-vocr6.1, VOCR5 checkpoints
+fine-tuned again), were trained in part on NVIDIA's OCR-Synthetic-Multilingual-v1
+(CC BY 4.0) and on non-commercial fonts and text, and VOCR6's also on the owner's hooked game captures (copyrighted
+game data, used for training only and not redistributed): their attribution and terms, including that
+the weights are for non-commercial use only, are in `ocr/MODEL-ATTRIBUTION.md` (VOCR5's) and
+`ocr/VOCR6-ATTRIBUTION.md` (VOCR6's), which ship beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
 (`ocr/textgate_p8_c8_w8.vtd`, bee-san/vita-vn-ocr v0.3.2-textgate.1; every package ships them,
 whether `ocr_text_gate` is on or off) were trained on non-commercial fonts and text and on VNDB
 screenshots: they are for non-commercial use only too, and their attribution is in

@@ -54,7 +54,7 @@ when a job may recognize, in every job of both modes:
 - **Tears.** A row that changes after the wait is a tear. The job reads again, up to 3 tries
   (`VJO_VOCR_TRIES`), then fails with `VJO_E_SCREEN_CHANGED` and is retried later.
 - **The limit.** A job waits at most `ocr_settle_max_ms` = 2000 ms over all its tries (`ocr_vertical = auto`'s
-  column try included, API 47), or
+  column try included, API 47, and the next smaller model's after a model's weights were refused, #324), or
   `ocr_settle_press_ms` = 1000 ms for a press (since test.3). Then it reads anyway.
 - **An icon with more frames than that, or a moving picture** (#353): the job watches its found lines'
   own pixels instead of the whole region
@@ -269,21 +269,44 @@ learned model would have to wait out too.
 ## Why the overlay waits (#358)
 
 **The owner's item** (#358): "Say why the user is waiting. After a few seconds of 'Recognizing…' on torn reads,
-name the cause and the fix: shrink the box, or turn on Pause the game to read." A job whose screen changed under
-every read ends `VJO_E_SCREEN_CHANGED` and is dropped quietly (#81 request 4), and the Shell tries again at
-`note_screen_changed`'s pace (at once, then 250 ms, doubling to 4 s). Until now the open overlay said
-"Recognizing…" all along, however long that went on: with an animated icon in the region, until the user gave up
-(#353).
+name the cause and the fix: shrink the box, or turn on Pause the game to read."
+- A job whose screen changed under every read ends `VJO_E_SCREEN_CHANGED` and is dropped quietly (#81 request 4).
+- The Shell tries again at `note_screen_changed`'s pace: at once, then 250 ms, doubling to 4 s.
+- Until #364 the open overlay said "Recognizing…" all along, however long that went on. With an animated icon in the
+  region, that meant until the user gave up (#353).
 
 **What it says now.** As the open overlay starts a try at its text (`shell/worker.c` `start_job_kind`), once the
-last 2 jobs in a row ended that way (`WAIT_HINT_AFTER`; the press's own tries, or Automatically's just before the
-press), it says:
+last 2 jobs in a row ended that way (`WAIT_HINT_AFTER`; the press's own tries, or Automatically's before the press),
+it says:
 
-> Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ to
-> draw a region around just the text.
+> Recognizing… Something in the region keeps moving (an animated icon? text still typing?). If a region around just
+> the text leaves it out, press □ to draw one.
 
-- **Not an error.** The tries go on at the same pace, and the first that reads its screen shows its text and word in
+- **Not an error.** The tries go on at the same pace. The first try that reads its screen shows its text and word in
   place of the hint. It is the overlay's status line (dim, as "Recognizing…"), never the subtitle strip's.
+- **When.** At the overlay's next try once two jobs in a row tore, so from the third try of a press's own:
+  - **On the host bench:** a median 2.85 s after L + R (est.: the bench's times, below).
+  - **On the console:** no press has torn yet. Its 16 torn background jobs took 0.75-3.16 s each (median 2.45 s),
+    with twice a press's wait budget (`ocr_settle_max_ms` 2 s against `ocr_settle_press_ms`' 1 s), so a press's two
+    torn tries should take less (unmeasured).
+  - **After two torn background jobs, a press in the pace's gap** (no job running) starts a try that says it at once.
+  - **A press while Automatically's next try runs**, the more common case (that try starts as soon as the pace
+    allows), says "Recognizing…" until that try ends. If it tore too, the overlay's own next try, after the pace,
+    says why. If it read, its text shows.
+- **The fix, as a condition.** A region drawn with □ helps only where it can leave the moving thing out: an icon
+  beside the text, or a picture moving outside the lines. It cannot leave out an icon inside a line's box (right after
+  its last character), a picture moving behind the glyphs, or a line still typing out. Of the bench's 2,404 runs
+  that never show text on `main` (below):
+  - **□ can help in 1,292:** 556 with an icon beside the text, 552 with one beside a line that types, 184 with a
+    picture moving outside the lines;
+  - **□ cannot help in 1,112:** 560 with the icon in a line, 184 with a picture behind it, 368 with an icon that
+    follows the typing.
+
+  So the hint says the fix as a condition ("if a region around just the text leaves it out"), and names typing as a
+  cause, which is what the slow-typing runs that show it first are (below).
+- **Pause the game to read** (#355, a draft) is the fix for the rest in a Vita game: a frozen frame cannot tear. The
+  hint names it once #355 is on `main`, only while the setting is off, and never in the PSP emulator, whose frames
+  the kernel never pauses. See "With #355 and #359" below for how its clause fits.
 - **When.** From the third try in a row: with a press, two torn tries take about 3 s; a press that comes after two
   torn background jobs says it at once, since Rubi already saw the text change under two reads.
 - **The fixes it names.** A region drawn around the text alone leaves an icon beside it out. And with
@@ -293,43 +316,76 @@ press), it says:
   pauses (`game_static_fb`, the emulator's process).
 - **Starting over.** A region saved or cleared (□) starts the count over, as a new game does: the old region's tears
   say nothing of the new one's, and its next press says "Recognizing…" until two of its own jobs tear.
+- **Held over, in Only when I press L + R.** Nothing reads the screen between presses there, so a count of 2 from
+  one press holds until a read, a region or a new game. The next press then says why from its first try. On a page
+  with the same icon that is still true; on another page, that try's read replaces the hint. In Automatically, the
+  background jobs after the close count again, or a read ends the run.
 - **Off.** `ocr_wait_hint = off` in `config.ini` keeps "Recognizing…" all along, as before (on by default).
 
-**Why 2.** `tools/wait_hint_replay.py` replays the rule for 1, 2 and 3 torn jobs in a row:
-- **On the owner's console** (CLANNAD, every debug build of API 20 or later: test.2-test.4, the test.4 collect's
-  `log.old.txt` and `log.txt`): none of the 75 openings that waited for a recognition met a torn job, so the hint would
-  have shown in none of them, whatever the count. The 376 background jobs had 16 torn ones, in 15 runs: 14 single, 1
-  double, each followed by a read. A wait through them would have met the hint after 15 of the runs with 1 (each
-  until the next job's result, a median 1.96 s later), after 1 with 2 (the double, 987 ms before its read), and after
-  none with 3.
-- **On the host** (rubi-spinner's #353 bench, `host/spinner_bench.c`: 184 hooked dialogue regions of 46 titles,
-  15 scenarios, L + R 3 s after the page, 20 s; `main` 892cfb9's timelines; times are the bench's estimates): all
-  1,668 runs that never show text (an icon with more frames than a row's ring holds, a picture moving in the box)
-  were torn, and every one gets the hint, after L + R:
+**Why 2.** `tools/wait_hint_replay.py` replays the rule for 1, 2 and 3 torn jobs in a row.
+- **On the owner's console:**
+  - **The data:** CLANNAD, every debug build of API 20 or later (test.2-test.4), from the test.4 collect's
+    `log.old.txt` and `log.txt`.
+  - **The waits:** none of the 75 openings that waited for a recognition met a torn job, so the hint would have shown
+    in none of them, whatever the count.
+  - **The tears:** the 376 background jobs had 16 torn ones, in 15 runs (14 single, 1 double), each followed by a
+    read. A wait through those runs would have met the hint after 15 of them with 1 (each until the next job's
+    result, a median 1.96 s later), after 1 with 2 (the double, 987 ms before its read), and after none with 3.
+- **On the host:**
+  - **The bench:** rubi-spinner's `host/spinner_bench.c`, as #359 commits its run at f630b69 (`full-main23` /
+    `full-fix11`: their scenario fields match its `docs/benchmarks/spinner-20261027.json`, all 575). That is 184
+    hooked dialogue regions of 46 titles in 23 scenarios, L + R 3 s after the page, then 20 s (the bench's estimated
+    times). Its `main` is 892cfb9's stable-text wait and scene tracker, the same code as on 2a92864.
+  - **The runs that never show text** (2,404) were all torn, and every one gets the hint. The last column is the 563
+    runs that show text after a wait:
 
-  | in a row | the hint, after L + R (median / 90th percentile / slowest) | of the 104 runs that show text after a wait: the hint first (< 1 s before the text) |
+  | in a row | the hint, after L + R (median / 90th percentile / slowest) | of the 563: the hint first (< 1 s before the text) |
   |---|---|---|
-  | 1 | 1.19 / 1.47 / 2.39 s | 22 (0) |
-  | **2** | **2.75 / 3.15 / 4.80 s** | 22 (4) |
-  | 3 | 4.50 / 5.15 / 9.35 s | 5 (1) |
+  | 1 | 1.24 / 1.59 / 2.76 s | 137 (34) |
+  | **2** | **2.85 / 3.30 / 4.80 s** | 67 (18) |
+  | 3 | 4.65 / 5.30 / 9.35 s | 19 (7) |
 
-  Of the 22, 21 have an icon that turns and rests and 1 the 24-frame icon: the hint is true there (an icon is in the
-  region), and shows a median 2.2 s before the text with 2. The still page, the typing line and the 8-frame icon never
-  show it.
-- **So 2:** "a few seconds" (2.75 s) with an icon, and on the console once in 15 runs of torn reads, never in a wait
-  the owner made. 1 would follow 14 single tears that the next job read; 3 waits 1.75 s longer for the same runs.
+  - **The 67 with 2:**
+    - 38 type a character every 15 frames, 2 every 10 frames, and 5 type with a half-second pause after every 5
+      characters;
+    - 21 have an icon that turns and rests, 1 has the 24-frame icon.
+    - Something is moving in each, and the hint shows a median 1.7 s before the text.
+  - **Never:** the still page, the normal typing line and the 8-frame icon.
+- **So 2:** "a few seconds" (2.85 s) with an icon, and on the console once in 15 runs of torn reads, never in a wait
+  the owner made. 1 would follow 14 single tears that the next job read; 3 waits 1.8 s longer for the same runs.
 
-**With #353's line watch** (its bench on #353's final code, after its audit's fixes, the same 2,760 runs;
-`tools/wait_hint_replay.py --bench`): 7 runs never show text, and the hint shows in each (with 2, 6.6 / 7.2 / 7.9 s
-after L + R); of the 1,711 runs that show text after a wait, the hint would come first in 45 with 1 torn job in a row
-and in 6 with 2 (a median 2.2 s and at most 9.3 s before the text).
+**With #359's line watch** (#353; its run at f630b69, the same 4,232 runs; with 2):
+- **11 runs never show text,** and the hint shows in all 11 (6.60 / 9.65 / 9.65 s after L + R).
+- **45 of the 2,913 runs that show text after a wait** get the hint first (11 under 1 s before the text): 37 of them
+  type slowly with nothing else moving (35 a character every 15 frames).
+- An earlier run of #359's (fix9, superseded by its audit) gave 2 runs and 3 of 1,724.
 
-**Its cost.** No allocation, thread or static buffer: one `VjoConfig` field, 96 B of the normal Shell's code (104 B
-of the debug one's), and the hint's 153 B and the key's 14 B in the data segment, where "Recognizing…" went too
-([memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358)).
+**With #355 and #359.** Their Shell changes do not fit beside this one on today's `main` (8da24c8) as they are.
+- **The measurement:** `main` with this change, plus #355 at 9e44739 and #359 at f630b69's Shell change (its log
+  line), each built in both variants (`tools/check_memory_ledger.py`'s module rows). Those heads predate #376 and
+  #368, so the scratch merges were resolved for the build only.
+- **The clause #364 asked of #355 cannot have a second copy.** #355 as it is keeps one: `WAIT_HINT_PAUSE`, the whole
+  hint and " Or turn on Pause the game to read in the Rubi app.". With #359 too, the normal Shell takes 172,032 B of
+  pages against its 163,840 B budget.
+- **One copy is enough.** Make the clause a format, `"%s Or turn on Pause the game to read."`, and have
+  `start_job_kind` write the hint into it (in a buffer on the control thread's stack) only when the pause would help
+  (`!cfg.ocr_pause && !game_static_fb`). That keeps the normal Shell's data in its page, measured before #376
+  (90,100 + 73,680 B, ledger pass in both builds).
+- **The debug Shell's code has no room for either sibling now.** #376 took 280 B of it (102,092 → 102,372 B, 28 B
+  left), and each sibling adds more:
+  - #359's Shell part alone: 102,404 B, 4 B past its page;
+  - #355 alone with no clause: 102,436 B.
+  - So both need room found in the debug Shell first; [memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358)
+    has the rows.
+
+**Its cost on `main`.** No allocation, thread or static buffer:
+- one `VjoConfig` field, `ocr_wait_hint`, read by the Shell only;
+- 96 B of the normal Shell's code (104 B of the debug one's). That is net: "Recognizing…" left the code segment for
+  the data segment, where the hint's 163 B and the key's 14 B are too.
+- [memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358) has the rows.
 
 **Not run on a console.** The rule and its text are host-tested (`host/tests/test_shell_worker.c`
-`open_overlay_says_why_it_waits`); whether the hint reads well over a game, and when it shows there, waits for the
+`open_overlay_says_why_it_waits`). Whether the hint reads well over a game, and when it shows there, waits for the
 owner's test build.
 
 ## Animated icons and moving pictures (#353)
@@ -381,8 +437,10 @@ Once the region keeps changing, the job judges the text by the found lines' own 
   of those lines are no tears from then on, a change of another line still is. Once they are read, the finder runs
   again, no sooner than twice `ocr_settle_ms` after it found them (the span the wait and its check take together
   without the watch), and once more `ocr_settle_ms` later if they were not alike then (an icon beside a line can
-  change how the finder cuts it while it turns): lines that are not what they were (text that typed on, a new line)
-  end the job as a screen change, and the next one reads them.
+  change how the finder cuts it while it turns): lines that are not what they were (text that typed on by more than
+  a quarter of a line's height, a new line) end the job as a screen change, and the next one reads them. Typing that
+  moved a line's end by less is not seen, and the second look passes a line whose box the finder cuts as it did
+  before, typed on or not (audit-rubi-spinner-b G1: 1 of the 4 short reads below).
 - **Alike.** The same count and polarity, each box within a quarter of its height on every edge (2 px at least):
   less than a character, so a line that typed on is another line. A line whose pixels changed may move by half its
   height on its sides and start (an icon drawn in its box), but its end keeps the quarter: a line typing on changes
@@ -395,7 +453,8 @@ Once the region keeps changing, the job judges the text by the found lines' own 
   a row hold the checksum), the finder's runs the finder's own arena (the recognizer is done with it, or not set up
   yet). On the worker's 32 KiB stack the job's frame grows from 1,512 to 2,616 B (`run_job`, with the line sets it
   watches), and a finder's run takes `look_alike`'s 360 B on its way (`arm-vita-eabi-gcc -Os -fstack-usage`, the
-  build's flags); its code is in the module's pages ([memory-ledger.md](memory-ledger.md#the-line-watch-353)).
+  build's flags). Its code, 2,640 B, takes the worker one page more, 4,096 B in each game that is ON, in both builds
+  ([memory-ledger.md](memory-ledger.md#the-line-watch-353)).
 
 **What it gives** (the 184 regions, 23 scenarios, eight of them audit-rubi-spinner's typing ones; median / 90th
 percentile / slowest time from L + R to the text, est.; "same": the still page's text exactly; "shorter": a read
@@ -430,15 +489,17 @@ shorter than the still page's, as a line read half typed is):
   against `main`, region by region, the time is 0.27 s and 0.13 s shorter on the mean; 17 and 10 regions take more
   than 0.3 s longer (by 2.3 s and 1.1 s at most: `main`'s job happened to read in a rest), 18 and 8 more than 0.3 s
   less. The slow and pausing typewriters that `main` shows take 0.02-0.16 s longer on the mean (a line read anyway
-  is looked at again before it is given).
+  is looked at again before it is given); region by region 12-53 of the 181 take more than 0.3 s longer, by at most
+  0.6 s (every 15 frames), 1.3 s (every 10), 0.9 s (with pauses) and 4.6 s (with pauses, an 8-frame icon following).
 - **Shorter reads.** 28 runs give a read shorter than the still page's where `main` did not: 24 in regions `main`
   never shows at all (an icon of many frames or a moving picture), and 4 of the 1,777 where `main` showed the whole
-  line, later:
-  the slowest typewriter in 1 region, typing that pauses under an 8-frame icon following it in 2, the 10-frame
-  typewriter in 1 (where `main` read another region short). In those 4 the next job (Automatically's) read the whole
-  line 0.4-2.3 s later.
-- **The jobs.** Over the 20 s an icon of many frames or a moving picture took `main` 1,295-1,376 jobs over the 184
-  regions, 1,295-1,371 of them ending with the screen changed; this change 185-204, 1-20 of them.
+  line, later: the slowest typewriter in 1 region (the second look passed its line, cut as before while it typed
+  on), typing that pauses under an 8-frame icon following it in 2 (a pause longer than the wait's window, `main`'s
+  gap below, while the line was read anyway), and the 10-frame typewriter in 1 (as many bytes as the still read,
+  its last character read differently). In those 4 the next job (Automatically's) read the whole line 0.4-2.3 s
+  later.
+- **The jobs.** Over the 20 s an icon of many frames or a moving picture took `main` 1,293-1,376 jobs over the 184
+  regions, 1,293-1,371 of them ending with the screen changed; this change 185-205, 1-20 of them.
 - **The report's symptom** (lines recognized, then dropped, and nothing shown): 13 and 7 regions on `main` with the
   icon that rests (2 each with the 24-frame one); here 11 runs of the 4,232, 1 or 2 in 10 scenarios, each one of
   the 1-5 regions a scenario never shows.
@@ -447,13 +508,11 @@ shorter than the still page's, as a line read half typed is):
   slowest, a slow typewriter followed by a smooth icon), the still read's text wherever nothing moves inside a
   line's box.
 
-**The hint.** A job whose screen changed under every read is still dropped quietly (#81 request 4), but the third
-in a row logs, in both builds, `ocr: the screen changed under every read of 3 jobs in a row, the last with N
-line(s) recognized and not shown: an animated icon or a moving picture in the region?` (`shell/worker.c`
-`note_screen_changed`; the string is in the data segment). What the open overlay says while it waits is #358's
-([above](#why-the-overlay-waits-358)). The debug build's
-`gstep job settle` says what the watch did (kind: 1 its lines watched, + 2 read anyway, + 4 × the finder's runs;
-`tools/analyse_selftest.py --collect` sums them).
+**The hint.** A job whose screen changed under every read is still dropped quietly (#81 request 4), but the third in a
+row logs, in both builds, `ocr: screen changed under 3 jobs in a row; N line(s) not shown` (`shell/worker.c`
+`note_screen_changed`; the string is in the data segment). Why, and what helps, is what the open overlay says while it
+waits: #358's hint ([above](#why-the-overlay-waits-358)). The debug build's `gstep job settle` says what the watch did
+(kind: 1 its lines watched, + 2 read anyway, + 4 × the finder's runs; `tools/analyse_selftest.py --collect` sums them).
 
 **Limits.**
 - **Not run on a console.** The times are the host model's (frames, the finder's and the recognizer's estimated
@@ -462,18 +521,27 @@ line(s) recognized and not shown: an animated icon or a moving picture in the re
   read after the last character, or nothing). A text-line spotter that never boxes an icon (vita-vn-ocr's VOCR6
   work, #125) would leave it outside the lines, and the watch then waits it out like an icon beside the text.
 - **A picture moving behind the glyphs** changes their pixels: the lines are read anyway at the limit.
-- **A page turned while the lines are read anyway** with the same layout (as many lines, as long) is not seen
-  by the last check: in audit-rubi-spinner's runs of a page turned while a picture moves behind the text, 11 of 987
-  read lines of both pages. The Shell's own check of the screen (its scene) then refreshes the open overlay.
+- **A page turned while the lines are read anyway** with the same layout (as many lines, as long, or one line more
+  or fewer of at most two characters, which the look passes over as an icon) is not seen by the last check: of
+  audit-rubi-spinner's runs of a page turned while a picture moves behind the text, 7 of 987 read lines of both
+  pages on the final code (11 before its F1 fix, `main` 0; audit-rubi-spinner-b's rerun). The Shell's own check of
+  the screen (its scene) then refreshes the open overlay.
 - **A slow typewriter** whose pause between two characters is longer than the wait's window and the reading together
   (`ocr_settle_ms`, 150 ms by default, and the read) is read as far as it has typed, on `main` as here; the next job,
-  once it types on, reads more. Faster than that, the line never holds still: a line read anyway that typed on ends
-  the job as a screen change (the policy tests' `a_slow_typewriter_is_never_read_half_typed`, a character every 8, 10
-  or 15 frames, with and without an icon).
+  once it types on, reads more. Faster than that, the line never holds still: a line read anyway that has typed on by
+  more than a quarter of its height when it is looked at again ends the job as a screen change (the policy tests'
+  `a_slow_typewriter_is_never_read_half_typed`, a character every 8, 10 or 15 frames, with and without an icon). Less
+  typing than that, or a box the finder cuts as before at the second look, is given as read. The bench hides a
+  line's untyped part with one grey a row, which the finder can take into the line's box, so its box check sees less
+  of the typing than on a real screen: its counts are pessimistic for this change (audit-rubi-spinner-b G3).
+- **A job that reads anyway takes longer:** its looks once read add up to 3 × `ocr_settle_ms` and two finder's runs,
+  past its waiting budget; in the bench a press's job took at most 5.6 s (`main` 4.0 s) and a background job 6.7 s
+  (3.8 s) (audit-rubi-spinner-b, est.). It sees a cancellation after each pause (2 × `ocr_settle_ms` at most).
 - **In-sample.** The watch's rules (half the budget, a quarter and half a line's height) were chosen on these 184
   regions. On 92 other pages of the same 46 titles (halfway between the measured ones, as audit-rubi-spinner held
   them out), the final code shows 89-91 of the 92 with an icon of many frames or a moving picture (`main` 0-3), a
-  median 0.4-1.9 s, a 90th percentile 1.6-2.6 s and at most 9.8 s after L + R; no region `main` showed is lost, and
+  median 0.4-1.9 s, a 90th percentile 1.6-3.2 s (1.6-2.6 s without the typing scenarios) and at most 9.8 s after
+  L + R; no region `main` showed is lost, and
   1 of the 889 runs `main` showed whole is read short first. The bench charges the finder's runs to the job at its
   end, not while the frames play on, and plays 60 frames a second only.
 - **The kernel's tracker** is unchanged: with such an icon the region may never settle, and Automatically reads it

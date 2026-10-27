@@ -5,7 +5,9 @@
  * burst, from data it already holds, are written with one open/write/close per
  * file, byte for byte what line-by-line writes give, in the same order. The
  * normal build's network thread keeps its batch open across its jobs, until its
- * results are taken (shell/worker.c net_main): a crash loses at most that batch. */
+ * results are taken (shell/worker.c net_main), and the debug build's holds a job's
+ * lines until the job has published its result (net_job; both files are written
+ * then, status.txt first, as for any batch): a crash loses at most that batch. */
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/clib.h>

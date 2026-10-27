@@ -50,6 +50,7 @@ static struct {
  * shot's JPEG crosses it too, a chunk at a time (API 23). */
 static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
 typedef char vjo_hook_cache_stage_check[VJO_GAME_OCR_HOOK_CACHE_BYTES <= sizeof(model_stage) ? 1 : -1];
+typedef char vjo_sc3_stage_check[VJO_GAME_OCR_SC3_BYTES <= sizeof(model_stage) ? 1 : -1]; /* a charset: one read */
 typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage) ? 1 : -1];
 /* exFAT's first file extension while a game ran took 20.9 s on the console;
  * overwriting reserved space took 6 ms. Keep one maximum-sized spare on disk,
@@ -941,9 +942,9 @@ int vjoOcrCancel(uint32_t seq)
 
 static uint32_t model_size(const char *name)
 {
-    if (!strcmp(name, VJO_VOCR5_N_NAME)) return VJO_VOCR5_N_BYTES;
+    if (!strcmp(name, VJO_VOCR6_N_NAME)) return VJO_VOCR6_N_BYTES;
     if (!strcmp(name, VJO_VOCR5_S_NAME)) return VJO_VOCR5_S_BYTES;
-    if (!strcmp(name, VJO_VOCR5_L_NAME)) return VJO_VOCR5_L_BYTES;
+    if (!strcmp(name, VJO_VOCR6_L_NAME)) return VJO_VOCR6_L_BYTES;
     if (!strcmp(name, VJO_VOCR3_H15_NAME)) return VJO_VOCR_H15_BYTES;
     if (!strcmp(name, VJO_VOCR3_FL10_NAME)) return VJO_VOCR_FL10_BYTES;
     if (!strcmp(name, "FL10_w8.vocr")) return VJO_VOCR_FL10_BYTES;
@@ -1050,6 +1051,27 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
         /* A failed copy can be repeated: the open file still reports itself. */
         if (rc > 0 && model_info_out_locked(info)) rc = VJO_ERR_COPY;
         return rc;
+    }
+    /* A MAGES SC3 hook's charset (core/hook_sc3.h): the calling game's own, by the title ID of its process (the
+     * caller names no path), at most VJO_GAME_OCR_SC3_BYTES; the file worker takes its size as it opens it. */
+    if (which == VJO_GAME_OCR_OPEN_SC3) {
+        char title[32];
+        memset(title, 0, sizeof(title));
+        if (loader_title(pid, title, sizeof(title)) < 0) return VJO_ERR_ARG;
+        for (unsigned i = 0; i < 9; i++)
+            if (!((title[i] >= 'A' && title[i] <= 'Z') || (title[i] >= '0' && title[i] <= '9'))) return VJO_ERR_ARG;
+        if (title[9]) return VJO_ERR_ARG;
+        model_io.seq = seq;
+        model_io.pid = pid;
+        model_io.which = which;
+        model_io.size = VJO_GAME_OCR_SC3_BYTES;
+        memcpy(model_io.path, VJO_GAME_OCR_SC3_DIR, sizeof(VJO_GAME_OCR_SC3_DIR) - 1);
+        memcpy(model_io.path + sizeof(VJO_GAME_OCR_SC3_DIR) - 1, title, 9);
+        memcpy(model_io.path + sizeof(VJO_GAME_OCR_SC3_DIR) + 8, ".sc3", sizeof(".sc3"));
+        model_io.operation = MODEL_OPEN;
+        model_io.phase = MODEL_QUEUED;
+        model_wake_locked();
+        return VJO_ERR_BUSY;
     }
     /* Only the two names the Shell submitted for this job, each a pinned model,
      * or (API 20) a pinned LM up to the tier the request allows, or the
@@ -1529,7 +1551,7 @@ static void shot_spare_prepare(void)
 
 void game_ocr_model_tick(void)
 {
-    int operation, rc, stat_rc = 0, shot, saved, hook_cache;
+    int operation, rc, stat_rc = 0, shot, saved, hook_cache, sc3;
     SceUID fd;
     uint32_t offset, bytes, size, written;
     uint64_t mtime = 0;
@@ -1567,6 +1589,7 @@ void game_ocr_model_tick(void)
     shot = model_io.shot;
     saved = model_io.saved;
     hook_cache = model_io.which == HOOK_CACHE_WHICH;
+    sc3 = model_io.which == VJO_GAME_OCR_OPEN_SC3;
     memcpy(path, model_io.path, sizeof(path));
     model_io.phase = MODEL_RUNNING;
     VJO_UNLOCK();
@@ -1585,7 +1608,9 @@ void game_ocr_model_tick(void)
         rc = fd;
         if (fd >= 0) {
             SceOff length = ksceIoLseek(fd, 0, SCE_SEEK_END);
-            rc = length < 0 ? (int)length : length == size ? (int)size : VJO_ERR_FORMAT;
+            /* a pinned model's size exactly; an SC3 charset's up to its limit (its pin is the worker's to check) */
+            rc = length < 0 ? (int)length : length == size || (sc3 && length > 0 && length < size) ? (int)length
+                                                                                                    : VJO_ERR_FORMAT;
             if (rc > 0) {
                 /* The game keys its resident weights on this. Without it they
                  * are read and checked again for every job, as before. */
@@ -1670,6 +1695,7 @@ void game_ocr_model_tick(void)
     if (operation == MODEL_OPEN) {
         model_io.stat_rc = stat_rc;
         model_io.mtime = mtime;
+        if (rc > 0) model_io.size = (uint32_t)rc; /* the reads' bound: an SC3 charset's own size */
     }
     if (operation == SHOT_WRITE && rc > 0) {
         model_io.written = offset + bytes;

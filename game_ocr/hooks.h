@@ -13,6 +13,7 @@
 
 #include "../include/vjo_game_ocr.h"
 #include "../core/hook_luna.h"
+#include "../core/hook_sc3.h"
 #include "../core/hook_text.h"
 
 #define VJO_HOOK_RAW_BYTES 512u /* a stream's raw text, at most (a hit copies no more) */
@@ -94,9 +95,18 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out);
  * across a write may mix two texts' fields. */
 uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *bytes);
 
+/* MAGES SC3 sites (core/hook_sc3.h): the charset file a hooked one needs (its title's pin) while none is set, else
+ * NULL (no SC3 site is hooked, its title has no pin, or the charset is set). */
+const VjoSc3Pin *vjo_hooks_sc3_want(void);
+
+/* The worker's thread: the charset file read for vjo_hooks_sc3_want's pin, bytes long at file (memory the worker
+ * keeps until it stops): kept, 1, when it is exactly that pinned file (its size and SHA-256); else 0, as for file NULL,
+ * which forgets a charset set before. Without one an SC3 site's text is empty (vjo_hooks_text), so OCR reads. */
+int vjo_hooks_sc3_set(const uint8_t *file, uint32_t bytes);
+
 /* Job time: a snapshot's raw text as UTF-8, NUL-terminated, in out (cap bytes): vjo_luna_text for a
- * Luna site (its filter), vjo_hook_decode otherwise, then vjo_hook_clean for both.
- * Returns the bytes before the NUL. */
+ * Luna site (its filter), vjo_sc3_decode with the game's charset for an SC3 site (none set: no text),
+ * vjo_hook_decode otherwise, then vjo_hook_clean for all. Returns the bytes before the NUL. */
 size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap);
 
 #endif

@@ -70,12 +70,24 @@
 #ifndef VJO_TEST_HOOK_LINE
 #define vjoOcrHookLine(seq, bytes) ((void)(seq), (void)(bytes), -1)
 #endif
+#ifndef VJO_TEST_SC3
+#define vjo_hooks_sc3_want() ((const VjoSc3Pin *)NULL)
+#define vjo_hooks_sc3_set(file, bytes) ((void)(file), (void)(bytes), 0)
+#endif
 #else
 #define IMPORT_READY(fn) VJO_IMPORT_READY(fn)
 #endif
 
 static SceUID worker = -1, workspace_uid = -1, weights_uid = -1, capture_uid = -1, line_uid = -1, lm_uid = -1;
 static SceUID cascade_uid = -1;
+/* A MAGES SC3 hook's charset (hooks_sc3_load): its block, held from the first job until the worker stops, and the
+ * reads tried this session (SC3_TRIES at most: only a cancelled or timed-out one is tried again). */
+#define SC3_TRIES 3u
+static SceUID sc3_uid = -1;
+static uint32_t sc3_bytes_held;
+static unsigned sc3_tries;
+_Static_assert(VJO_SC3_MAX_BYTES == VJO_GAME_OCR_SC3_BYTES && VJO_SC3_MAX_BYTES <= VJO_BUDGET_GAME_SC3,
+               "an SC3 charset: the kernel's limit, the worker's, and its block's budget");
 /* API 23: a shot's block (its colour strip, the encoder and the JPEG), only while a shot runs. */
 static SceUID shot_uid = -1;
 static uint32_t shot_bytes_held;
@@ -100,7 +112,9 @@ static void *line_base;
  * fields (workspace_bytes, resident_bytes, capture_bytes, the step log) rather
  * than printed here. */
 enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_HELPERS, GL_SHOT,
-       GL_FRAME, GL_COUNT };
+       GL_SC3, GL_FRAME, GL_COUNT };
+/* test/combined: every item recorded (core/ledger.c ignores the ones past VJO_LEDGER_MAX_ITEMS) */
+typedef char gl_count_fits_the_ledger[GL_COUNT <= VJO_LEDGER_MAX_ITEMS ? 1 : -1];
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
     [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
@@ -112,6 +126,7 @@ static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_CASCADE] = {"VjoGameVocrCascade", VJO_LEDGER_POOL_GAME},
     [GL_HELPERS] = {"VjoGameVocrHelper stacks+TLS", VJO_LEDGER_POOL_GAME},
     [GL_SHOT] = {"VjoGameShot", VJO_LEDGER_POOL_GAME},
+    [GL_SC3] = {"VjoGameSc3", VJO_LEDGER_POOL_GAME},
     [GL_FRAME] = {"VjoGameVocrFrame", VJO_LEDGER_POOL_GAME},
 };
 VjoLedger g_game_ledger;
@@ -664,26 +679,36 @@ static uint32_t which_file(const char *path)
     return open_which;
 }
 
-static int file_open(void *ud, const char *path, VjoFile *out)
+/* The claimed job's file `which` (VJO_GAME_OCR_OPEN_*) through the kernel's broker, its BUSY answers waited out
+ * (MODEL_WAIT_US): its size, a native error, or BROKER_CANCELLED. Ownership is taken before the request is queued:
+ * a timed-out Open may still finish, and only file_close gives it back. */
+#define BROKER_CANCELLED (-0x7FFFFFFF)
+static int broker_open(uint32_t which, VjoGameOcrModelInfo *info)
 {
-    (void)ud;
-    if (model_owned || !path || !out || cancelled(NULL)) return -1;
-    /* Reserve ownership before enqueue: a timed-out Open may still finish.
-     * The kernel resolves only this claimed job's pinned model path. */
+    uint64_t started = sceKernelGetProcessTimeWide();
+    int size;
     model_seq = active_seq;
     model_owned = 1;
-    uint64_t started = sceKernelGetProcessTimeWide();
-    VjoGameOcrModelInfo info;
-    uint32_t which = which_file(path);
-    int size;
     do {
-        if (cancelled(NULL)) return -1;
-        sceClibMemset(&info, 0, sizeof(info));
-        size = vjoOcrModelOpen(model_seq, which, &info);
+        if (cancelled(NULL)) return BROKER_CANCELLED;
+        sceClibMemset(info, 0, sizeof(*info));
+        size = vjoOcrModelOpen(model_seq, which, info);
         if (size != VJO_ERR_BUSY) break;
         if (sceKernelGetProcessTimeWide()-started >= MODEL_WAIT_US) { size = VJO_ERR_TIMEOUT; break; }
         sceKernelDelayThread(MODEL_POLL_US);
     } while (1);
+    return size;
+}
+
+static int file_open(void *ud, const char *path, VjoFile *out)
+{
+    (void)ud;
+    if (model_owned || !path || !out || cancelled(NULL)) return -1;
+    /* The kernel resolves only this claimed job's pinned model path. */
+    VjoGameOcrModelInfo info;
+    uint32_t which = which_file(path);
+    int size = broker_open(which, &info);
+    if (size == BROKER_CANCELLED) return -1;
     if (size <= 0) {
         /* API 26: the gate's weights are optional: a job that cannot read them reads as without the gate (its
          * step says why), so their failed open is drained at once rather than holding the job's own files. */
@@ -864,7 +889,8 @@ static uint32_t resident_bytes(void)
  * drops them before its recognition, so their FREE steps need no slot. */
 static unsigned blocks_kept(void)
 {
-    return (resident.model && weights_uid >= 0) + (lm_res.lm && lm_uid >= 0) + (cascade_res.model && cascade_uid >= 0);
+    return (resident.model && weights_uid >= 0) + (lm_res.lm && lm_uid >= 0) + (cascade_res.model && cascade_uid >= 0) +
+           (sc3_uid >= 0);
 }
 
 /* The job workspace's bytes after the model's own, with the LM (lm) and the
@@ -1857,7 +1883,8 @@ static void hooks_cache_prepare(uint32_t pick)
     uint8_t data[VJO_HOOK_CACHE_BYTES];
     VjoHookLearned learned;
     int n;
-    if (pick != VJO_HOOK_PICK_AUTO || !hk.installed || hk.cache_attempted) return;
+    /* a broker still held (a charset whose close failed, hooks_sc3_load) refuses the cache: tried at a later job */
+    if (pick != VJO_HOOK_PICK_AUTO || !hk.installed || hk.cache_attempted || model_owned) return;
     hk.cache_key.mode = hk.mode;
     hk.cache_attempted = 1;
     /* Not in the PSP emulator's process: its title and executable are the emulator's, which runs one PSP game
@@ -1892,6 +1919,57 @@ static void hooks_cache_save(void)
     if (n < 0 || cancelled(NULL)) return;
     if (vjo_hook_cache_put(data, (size_t)n, &hk.cache_key, has ? &learned : NULL) > 0)
         (void)hooks_cache_io(VJO_GAME_OCR_HOOK_CACHE_SAVE, data);
+}
+
+/* The charset's block given back, if one is recorded (0); < 0: its free failed, and it stays recorded. */
+static int sc3_release(void)
+{
+    if (sc3_uid < 0) return 0;
+    if (game_memblock_free(GL_SC3, VJO_GITEM_SC3, sc3_uid, sc3_bytes_held) < 0) return -1;
+    sc3_uid = -1;
+    sc3_bytes_held = 0;
+    return 0;
+}
+
+/* MAGES SC3 sites (game_ocr/hooks.c, docs/native-hooks.md "SC3 text"): their game's charset, which their text needs,
+ * at the first job (the kernel's broker is a claimed job's): VJO_GAME_OCR_OPEN_SC3 opens
+ * ux0:data/VitaJPOverlay/hooks/<title ID>.sc3, the calling game's own, into a USER_RW block of its size
+ * (VJO_BUDGET_GAME_SC3 at most), kept until the worker stops, beside VJO_GAME_RESERVE_HOOK_ONLY as a trusted hook's
+ * pass is (the charset is what lets those sites answer without OCR). No file, another file than the pinned one or a
+ * failed read: the block goes back, the sites give no text, OCR reads the game, and it is not tried again; an open
+ * or a read cancelled or timed out is tried at a later job (SC3_TRIES in all), and with no memory free beside the
+ * reserve nothing is tried (again at the next job). A block an earlier try could not give back (its base unreadable,
+ * its free refused) is freed before another is taken, never left behind; while that free fails nothing is taken. */
+static void hooks_sc3_load(void)
+{
+    const VjoSc3Pin *pin = vjo_hooks_sc3_want();
+    VjoGameOcrModelInfo info;
+    void *base = NULL;
+    SceUID leaked;
+    uint32_t held, mem;
+    int previous_error = io_error, size, ok = 0;
+    if (!pin || sc3_tries >= SC3_TRIES || model_owned || sc3_release()) return;
+    if ((int64_t)free_user() - (int64_t)VJO_GAME_RESERVE_HOOK_ONLY < (int64_t)PAGE_ROUND(pin->bytes)) return;
+    sc3_tries++;
+    sc3_uid = game_memblock_alloc(GL_SC3, VJO_GITEM_SC3, "VjoGameSc3", pin->bytes, LADDER_USER, &base, &leaked, &held,
+                                  &mem);
+    if (sc3_uid < 0) {
+        /* a block whose base could not be read nor freed stays recorded: freed at the next try, or at the stop */
+        sc3_uid = leaked;
+        return;
+    }
+    sc3_bytes_held = held;
+    size = broker_open(VJO_GAME_OCR_OPEN_SC3, &info);
+    if (size == (int)pin->bytes && !file_read(NULL, 0, base, pin->bytes)) ok = vjo_hooks_sc3_set(base, pin->bytes);
+    /* #368's audit F1: a read that timed out (file_read's io_error; the job's own is 0 here, its first use of the
+     * broker) is tried again, as an open that timed out is */
+    if (ok || !(size == BROKER_CANCELLED || size == VJO_ERR_TIMEOUT || io_error == VJO_ERR_TIMEOUT || cancelled(NULL)))
+        sc3_tries = SC3_TRIES;
+    file_close(NULL);
+    /* A charset that cannot be read is not the job's model error. A close that failed is (#368's audit F2, as
+     * hooks_cache_io): the broker is still the charset's, so the job's own files cannot open, and the job says why. */
+    if (!model_owned) io_error = previous_error;
+    if (!ok) (void)sc3_release();
 }
 
 /* Every result's hook fields; a job that failed shows no text, from any stream, and leaves the
@@ -2008,6 +2086,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     uint32_t hook_pre = 0, hook_pre_flags = 0;
     if (hk.installed) {
         if (hook_pick && hook_pick <= VJO_HOOK_STREAMS) vjo_hooks_keep(hook_pick, 0); /* pinned: keeps its CALL slot */
+        hooks_sc3_load(); /* an SC3 site's charset, before its text is read */
         if (!hooks_snapshot(hook_pick, trust)) {
             int attempted = hk.cache_attempted;
             hooks_cache_prepare(hook_pick);
@@ -2354,13 +2433,26 @@ retry_smaller:
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
+    /* #324: the check passed, yet the model's weights could not be had: out of memory before any were read or
+     * held (every job-level VJO_E_OOM comes before them: core/vocr_ocr.c's weights block, the finder's arena, the
+     * workspace or the capture; an LM's or the cascade's only sets lm_rc / cascade_rc). weights_alloc checks the
+     * game's free memory again once this job's own blocks are taken, and the console reports that memory in whole
+     * MiB (every sample of あおかな, PCSG00700, 2026-10-26: 1, 2, 3 or 4 MiB), so the second look can see a whole MiB
+     * less than the check did: a job that passed with less than 1 MiB to spare finds its weights refused, whatever
+     * its tier's reserve. A smaller model may still fit: give back this job's blocks and check again from the next
+     * one (retry_smaller), each at most once, as a model that did not fit the check would have been. */
+    const int smaller = rc == VJO_E_OOM && !stats.stuck && !forced && used + 1u < n && !cancelled(NULL);
     /* API 47, auto: the rows looked like vertical text (nothing was read: no weights, no line), or its columns'
      * model cannot be read here (absent, short, failing its hash: this game's jobs read rows from now on). The
-     * same request again, as columns or as rows, after this try's blocks are freed; its capture and finder
-     * time are the job's too. */
-    if (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) /* only a checked try: at most one retry */
-                         || (rc == VJO_E_OCR_MODEL && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO))) {
-        if (rc == VJO_E_VERTICAL) {
+     * same request again, as columns or as rows (again). Either retry is the same job (#324's audit): after this
+     * try's blocks are freed, its capture, finder time and stable-text wait are the job's too, the next try waits
+     * only for what is left of it (retried), the freed blocks' steps leave the log (steps_drop_blocks), and the
+     * capture is kept: its PASS and SIG steps are logged once, its source mode stays. */
+    if (smaller || (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) /* a checked try: one retry */
+                                     || (rc == VJO_E_OCR_MODEL && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO)))) {
+        if (smaller) {
+            try_from = used + 1u;
+        } else if (rc == VJO_E_VERTICAL) {
             step_add(VJO_GSTEP_FIND, 2, stats.lines, 0, 0, stats.dark, stats.find_us, 0);
         } else {
             step_add(VJO_GSTEP_FIND, 3, stats.lines, io_error, 0, 0, stats.find_us, 0);
@@ -2375,32 +2467,23 @@ retry_smaller:
         tried_settle_us += stats.settle_us;
         tried_settle_passes += stats.settle_passes;
         retried = 1;
-        vertical = rc == VJO_E_VERTICAL;
-        check = 0;
+        if (!smaller) { /* (a smaller model's try is of rows: a job of columns has one model) */
+            vertical = rc == VJO_E_VERTICAL;
+            check = 0;
+        }
         sceClibMemset(&stats, 0, sizeof(stats));
         if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
         steps_drop_blocks(try_steps);
+        if (smaller) {
+            /* #355 (API 52), test/combined: a new check, so a new try of the pause: its own frame block (cleanup
+             * gave this one back) and copy. The game waited for this try's copy (kept in the step); its frame is
+             * not the job's, as its strips are not. */
+            paused_us += pz.us;
+            sceClibMemset(&pz, 0, sizeof(pz));
+            pause_frames = 0;
+            goto retry_smaller;
+        }
         goto again;
-    }
-    /* The check passed, yet the model's weights could not be had: out of memory before any were read or
-     * held. weights_alloc checks the game's free memory again once this job's own blocks are taken, and the
-     * console reports that memory in whole MiB (every sample of あおかな, PCSG00700, 2026-10-26: 1, 2, 3 or
-     * 4 MiB), so the second look can see a whole MiB less than the check did: a job that passed with less
-     * than 1 MiB to spare finds its weights refused, whatever its tier's reserve. A smaller model may still
-     * fit: give back this job's blocks and check again from the next one, each at most once, as a model
-     * that did not fit the check would have been. */
-    if (rc == VJO_E_OOM && !stats.model_loaded && !stats.model_cached && !stats.stuck && !forced &&
-        used + 1u < n && !cancelled(NULL)) {
-        if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
-        try_from = used + 1u;
-        sceClibMemset(&stats, 0, sizeof(stats));
-        capture = (Capture){r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
-        /* API 52: a new check, so a new try of the pause: its own frame block (cleanup gave this one back) and copy.
-         * The game waited for this try's copy (kept in the step); its frame is not the job's, as its strips are not. */
-        paused_us += pz.us;
-        sceClibMemset(&pz, 0, sizeof(pz));
-        pause_frames = 0;
-        goto retry_smaller;
     }
     /* ocr-first: a job that read no line (or only blank ones) reads what the
      * session's first job with text would otherwise read while the user waits
@@ -2525,6 +2608,11 @@ retry_smaller:
         step_add(VJO_GSTEP_GATE, VJO_VOCR_GATE_MODE, stats.gate_stopped, stats.gate_rc,
                  (uint32_t)(stats.gate_score + 129) | (uint32_t)(VJO_VOCR_GATE_T + 129) << 16 |
                      (stats.gate_read ? VJO_GLM_READ : 0u), stats.gate_rows, stats.gate_us + 1u, 0);
+    /* API 52 (#358): a job of rows that read the whole frame says where its dialogue is (core/region_suggest.h);
+     * the Shell offers that box in a game with no region of its own. Its lines' region pixels are the frame's
+     * here; host/page_ocr.c measures the same call (docs/first-box.md). */
+    if (!rc && !r->x && !r->y && r->width == r->fb_width && r->height == r->fb_height)
+        out->suggest_rows = vjo_vocr_suggest(&stats, r->fb_width, r->fb_height);
     /* A helper that could not be joined may still run in the workspace: keep it,
      * and take no more jobs (core/vocr_ocr.h VjoVocrPool). */
     if (stats.stuck) { blocked = 1; hook_owns_workspace = 1; }
@@ -2572,7 +2660,10 @@ done:
         else if (cancelled(NULL)) rc = VJO_E_CANCELLED;
         out->io_error = io_error;
     }
-    if (rc) sceClibMemset(out->text, 0, sizeof(out->text));
+    if (rc) { /* a failed result carries no text, and no box (API 52) */
+        sceClibMemset(out->text, 0, sizeof(out->text));
+        out->suggest_rows = 0;
+    }
     hooks_result(out, rc);
     out->rc = rc; active_seq = 0;
     log_to = NULL;
@@ -2795,8 +2886,11 @@ int vjo_game_ocr_worker_stop(void)
         vjo_vocr_unstick();
     }
     if (cleanup()) return VJO_E_OCR_UNAVAILABLE;
-    /* The game is exiting or the plugin stops: no weights or LM stay behind. */
+    /* The game is exiting or the plugin stops: no weights or LM stay behind, nor an SC3 charset (the worker's
+     * thread, which alone reads it, has ended). */
     if (drop_resident()) return VJO_E_OCR_UNAVAILABLE;
+    if (sc3_uid >= 0) (void)vjo_hooks_sc3_set(NULL, 0);
+    if (sc3_release()) return VJO_E_OCR_UNAVAILABLE;
     if (claim_outstanding) {
         pending_result.cleanup_status = 0; pending_result.rc = VJO_E_CANCELLED;
         sceClibMemset(pending_result.text, 0, sizeof(pending_result.text));

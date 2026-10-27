@@ -79,6 +79,34 @@ static void drawn_box_is_the_captured_crop(void)
         }
 }
 
+/* #358: the text box suggested on first use, the screen's bottom rows drawn from the start (vjo_rsel_preset) and saved
+ * as they are, is cropped as those rows: on the 960 x 544 screen, and on a PSP game's own 480 x 272 frame, half of
+ * them (the game worker's band there has an even number of rows on the screen: core/region_suggest.c
+ * vjo_region_rows, host/tests/test_region_suggest.c), every height from the selector's minimum. A band under the
+ * capture's 32 rows of that frame is grown upward to them, as any region is (capture_crop_of). */
+static void suggested_band_is_the_captured_rows(void)
+{
+    for (uint32_t rows = VJO_RSEL_MIN; rows <= VJO_RSEL_H; rows++) {
+        VjoRegionSelect s;
+        int bx, by, bw, bh;
+        uint32_t x, y, w, h;
+        vjo_rsel_begin(&s, 0);
+        TEST_ASSERT(vjo_rsel_preset(&s, rows) && vjo_rsel_box(&s, &bx, &by, &bw, &bh));
+        VjoRect r = vjo_rsel_rect(bx, by, bw, bh);
+        capture_crop_of(&r, 960, 544, &x, &y, &w, &h);
+        if (x || w != 960 || y != 544 - rows || h != rows) {
+            TEST_CHECK_(0, "%u rows cropped as %u,%u %ux%u on the screen", rows, x, y, w, h);
+            return;
+        }
+        capture_crop_of(&r, 480, 272, &x, &y, &w, &h);
+        const uint32_t psp = rows / 2 < 32 ? 32 : rows / 2;
+        if (!(rows & 1) && (x || w != 480 || y != 272 - psp || h != psp)) {
+            TEST_CHECK_(0, "%u rows cropped as %u,%u %ux%u on a PSP frame", rows, x, y, w, h);
+            return;
+        }
+    }
+}
+
 /* The OCR worker's grey rows (API 19): each format expanded to 8 bits as the
  * colour rows expand it (read_row), then (77 R + 150 G + 29 B) >> 8; a frame of another
  * size or format is refused; a failed copy into the worker is reported. */
@@ -278,5 +306,6 @@ TEST_LIST = {
     {"OCR first pass: g.capture_sig is the expanded region's signature, every format", ocr_first_pass_signature_every_format},
     {"OCR first pass: random regions and strip heights", ocr_first_pass_signature_random_geometry},
     {"a box drawn with the region selector is the captured crop", drawn_box_is_the_captured_crop},
+    {"a suggested band is the captured rows (#358)", suggested_band_is_the_captured_rows},
     {NULL, NULL}
 };

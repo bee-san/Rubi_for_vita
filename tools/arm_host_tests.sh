@@ -117,6 +117,8 @@ build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c 
 # the self-test's memory routes: the debug build's only
 [ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
+# #358: the box suggested on first use (core/region_suggest.c: its 32-bit normalization, the kana count's UTF-8)
+build region_suggest host/tests/test_region_suggest.c core/region_suggest.c core/regions.c core/arena.c
 # API 31: the kernel's text source (its word and the loader's process table, their atomics) and the Shell's
 # triangle cycle and label, the Rubi app's Games tag (Rubi's own entries; Luna's table where
 # hooks/luna-port's file is in the tree).
@@ -145,6 +147,14 @@ build history_lines host/tests/test_history_lines.c core/history_lines.c core/te
   core/text_rows.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
+# The Rubi app's history.csv reader (core/history_read.c) against the Shell's, on random files: 32-bit size_t,
+# the Vita's unsigned char.
+build history_read host/tests/test_history_read.c core/history_read.c core/history_lines.c core/textfilter.c core/utf.c \
+  core/arena.c core/text_rows.c
+# The Rubi app's Stats tab counts (core/stats.c, #312): 32-bit size_t in its windows, its cache's layout and the
+# Shell's count it equals, on the Vita's CPU.
+build stats -DVJO_FIXTURES="\"$PWD/host/fixtures\"" host/tests/test_stats.c core/stats.c core/history_read.c \
+  core/history_lines.c core/textfilter.c core/utf.c core/arena.c core/text_rows.c
 # The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
 build cursor_nav host/tests/test_cursor_nav.c core/text_rows.c core/text_hit.c core/utf.c
 # The Rubi app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
@@ -188,14 +198,22 @@ build psp_text host/tests/test_psp_text.c core/psp_text.c core/hook_luna.c core/
 bg build-hooks_engine "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
   -I third_party/acutest/include -I host/tests -I host/tests/hooks_stubs -I host/tests/game_stubs -DVJO_HOST=1 \
   -I third_party/bearssl/inc -I "$BS" \
-  -DVJO_DEBUG="$VJO_DEBUG" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c \
-  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c core/psp_text.c "$BS/hash/sha2small.c" \
-  "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
+  -DVJO_DEBUG="$VJO_DEBUG" -DVJO_SOURCE_DIR="\"$PWD\"" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c \
+  core/hook_place.c core/hook_stream.c core/hook_luna.c core/hook_re.c core/hook_text.c core/hook_sc3.c core/sfo.c \
+  core/psp_text.c "$BS/hash/sha2small.c" "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
+# MAGES' SC3 text (core/hook_sc3.c): the span and the decoder in 32-bit arithmetic, on the committed charsets.
+build hook_sc3 -I host/tests -I third_party/bearssl/inc -I "$BS" -DVJO_SOURCE_DIR="\"$PWD\"" \
+  host/tests/test_hook_sc3.c core/hook_sc3.c core/hook_place.c core/hook_luna.c core/hook_re.c core/hook_text.c \
+  "$BS/hash/sha2small.c" "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
+# #366: the CALL slots' replacement, one interleaving at a time (its seams), with the A9's atomics and its clock's
+# serial order in 32-bit arithmetic.
+build hook_stream_seams host/tests/test_hook_stream_seams.c core/hook_place.c
 
-TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
+TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select
+       region_suggest)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
-TESTS+=(hook_text hook_luna psp_probe psp_text hooks_engine)
+TESTS+=(touch_hold text_rows text_join linebreak history_lines history_read stats hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
+TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe psp_text hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
@@ -205,10 +223,11 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c &&
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_capture.o" kernel/capture.c &&
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_scene.o" kernel/scene.c &&
+    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_suggest.o" core/region_suggest.c && # #358: the kana count (VJO_HOST)
     "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
       "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
       -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
-      "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
+      "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$OUT/parity_suggest.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
       "$RT/vocr_lines_rows.c" "$RT/vocr_lines_fix.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
       "$RT/vocr_vertical.c" "$RT/vocr_charbox.c" third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
       third_party/bearssl/src/codec/enc32be.c -lm

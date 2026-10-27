@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "fbgrey.h"
+#include "suggest_kana.h" /* #358: a line's kana and kanji (vjo_suggest_kana) */
 #include "vocr.h"
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
@@ -32,14 +33,15 @@ typedef char vjo_vocr_gate_mode_matches_runtime[VJO_VOCR_GATE_MODE == VOCR_TEXTG
 /* A model of columns keeps the column finder's flags in finder_mode's low byte. */
 typedef char vjo_vocr_column_flags_fit[(VOCR_COLUMNS_FLAGS & ~0xFFu) == 0 && (VJO_VOCR_FINDER_COLUMNS & 0xFFu) == 0
                                        ? 1 : -1];
-/* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.3.0 (VOCR5, the
- * three model tiers), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0
+/* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.4.0-vocr6.1 (VOCR6, the
+ * Normal and Large tiers), v0.3.6-head2level.1 (VOCR5-S, the Small tier), v0.2.5-vocr3.1
+ * (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20), v0.3.2-vertical.1 (VOCR5-V) and v0.2.0
  * (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
  * default 4-frame tiles and 16-frame head batches, any line width. */
 /* Every pinned size is within the weights block the game worker allows. */
 typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR_H15_BYTES <= VJO_VOCR_MAX_BYTES &&
                                VJO_VOCR_F20_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR5_S_BYTES <= VJO_VOCR_MAX_BYTES &&
-                               VJO_VOCR5_N_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR5_L_BYTES <= VJO_VOCR_MAX_BYTES &&
+                               VJO_VOCR6_N_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR6_L_BYTES <= VJO_VOCR_MAX_BYTES &&
                                VJO_VOCR5_V_BYTES <= VJO_VOCR_MAX_BYTES
                                ? 1 : -1];
 /* The line finder every pinned model uses: GRAD's rows, plus the textbox rows it
@@ -67,27 +69,29 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #include VJO_VOCR_TEST_MODELS
 #else
 static const VjoVocrModel models[] = {
-    /* VOCR5 (vita-vn-ocr eval/vocr5_protocol.json, v0.3.0): the Small, Normal (the
-     * default) and Large tiers, each its own shape; API 42: their head-gated blobs
-     * (vita-vn-ocr #117, v0.3.5-headgate.1), Normal's and Large's with the two-level head
-     * too (#117 item 2, v0.3.6-head2level.1). The arena is the one a job plans with both on,
-     * the defaults: the gate's frame indices (+48 B, vocr_arena_bytes with VOCR_HEAD_GATE_ON)
-     * and the two-level head's level-1 maxima, escape units and fired frames (+1,456 B with
-     * vocr_opts.two_level); with them off a job plans less (v0.3.0's arena with both off). */
+    /* The three tiers (include/vjo_vocr_sizes.h), the arena each plans with ocr_head_gate's default, on:
+     * Small, VOCR5-S (vita-vn-ocr eval/vocr5_protocol.json, v0.3.0) with its head gate (API 42, vita-vn-ocr #117,
+     * v0.3.5-headgate.1, carried by v0.3.6-head2level.1): v0.3.0's arena and the gate's frame indices (+48 B,
+     * vocr_arena_bytes with VOCR_HEAD_GATE_ON). Normal and Large, VOCR6-N and VOCR6-L (vita-vn-ocr #125,
+     * docs/vocr6.md, v0.4.0-vocr6.1), each with #122's two-level head and no gate: the plain blob's arena and the
+     * two-level head's level-1 maxima, escape units and fired frames (+1,456 B with vocr_opts.two_level). With the
+     * paths off a job plans less (the plain blobs' arenas). */
     {VJO_VOCR5_S_NAME, VJO_VOCR5_S_BYTES,
      {0x76,0xa1,0xbc,0x5d,0xe5,0xcd,0x04,0x19,0xa7,0xed,0xad,0x31,0xbc,0x19,0x8a,0xf8,
       0x01,0x6b,0xda,0x55,0x92,0xa7,0xe5,0x95,0xde,0x75,0x69,0x76,0x71,0xd3,0xe9,0x28},
      124880, VJO_VOCR_FINDER},
-    {VJO_VOCR5_N_NAME, VJO_VOCR5_N_BYTES,
-     {0xf0,0xc8,0xe5,0x2c,0x9c,0x1d,0x9f,0x2a,0x71,0x4d,0x5c,0xa3,0xec,0xfb,0xa9,0xc0,
-      0xb0,0x31,0xee,0x7a,0xc5,0x1a,0x52,0x2a,0x2c,0x29,0xfd,0x55,0x8d,0x51,0x76,0x1b},
-     184448, VJO_VOCR_FINDER},
-    {VJO_VOCR5_L_NAME, VJO_VOCR5_L_BYTES,
-     {0x41,0xc3,0x54,0x3f,0xf8,0xdd,0xdd,0x45,0xdc,0x95,0x3a,0x6a,0x5f,0x5d,0x57,0x9e,
-      0xf9,0xca,0x77,0x9f,0x0e,0x43,0x19,0x64,0x06,0xbe,0x59,0xc1,0xd9,0x85,0xc5,0xb5},
-     262528, VJO_VOCR_FINDER},
+    {VJO_VOCR6_N_NAME, VJO_VOCR6_N_BYTES,
+     {0x92,0x96,0x52,0xe3,0x3d,0xa1,0x0f,0xee,0x3b,0x7b,0xd3,0x99,0x1a,0x55,0x7e,0x8b,
+      0xbf,0x1a,0x16,0xfb,0xa8,0x3e,0xb5,0x77,0x5b,0xbd,0x02,0x98,0xab,0x65,0xc4,0xd6},
+     184400, VJO_VOCR_FINDER},
+    {VJO_VOCR6_L_NAME, VJO_VOCR6_L_BYTES,
+     {0xb0,0x51,0xfd,0x4f,0x3a,0xbe,0x64,0x51,0x92,0x7d,0x74,0xb1,0xd1,0x20,0x9f,0x44,
+      0xa3,0x07,0x2a,0xb7,0x55,0xee,0x9e,0x1b,0x93,0x63,0x36,0x8f,0x00,0xfe,0xb4,0x5b},
+     262480, VJO_VOCR_FINDER},
     /* VOCR3 (vita-vn-ocr #67): H15's and FL10's shapes retrained, the same sizes and
-     * arenas; the Normal and Small tiers before VOCR5, now accepted by name only. */
+     * arenas; the Normal and Small tiers before VOCR5, now accepted by name only (as are
+     * VOCR4-W20 and v0.2.0's, below; VOCR5-N's and VOCR5-L's blobs, the Normal and Large
+     * tiers from API 42 until VOCR6, are not pinned any more). */
     {VJO_VOCR3_H15_NAME, VJO_VOCR_H15_BYTES,
      {0xcb,0x3c,0x61,0xa8,0xf9,0x1f,0x9a,0xee,0xb3,0xef,0xcc,0x0e,0x79,0x31,0x3f,0x66,
       0x41,0x12,0xf2,0x5c,0x4b,0xd5,0x58,0x65,0xba,0xe9,0xdf,0x52,0x52,0x2b,0x36,0x0c},
@@ -132,7 +136,8 @@ static const VjoVocrModel models[] = {
  * (vita-vn-ocr docs/vocr6-lm.md, #127; the release's settings.json): tiers 2 and 4
  * are VOCR6's LMs built with the hooked games' text (LM weight 0.6, bonus 2.5 nats,
  * the start-of-line context, no end-of-line term); tiers 1 and 3 are ctclm.2's,
- * byte for byte, with ctclm.2's settings (docs/ctc-lm-decode.md). A host test's
+ * byte for byte, with ctclm.2's settings (docs/ctc-lm-decode.md). vocr6-final-lm (vita-vn-ocr #151) checked them
+ * on VOCR6's final blobs and kept them all but one job model's for one LM (lm_retuned, below). A host test's
  * model table may bring its own (VJO_VOCR_TEST_LMS: host/tests/test_parallel_models.h). */
 #ifndef VJO_VOCR_TEST_LMS
 static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] = {
@@ -164,17 +169,47 @@ const VjoVocrLm *vjo_vocr_lm_tier(unsigned tier)
     return tier >= 1 && tier <= VJO_VOCR_LM_TIERS ? &lms[tier - 1] : NULL;
 }
 
-/* The decoder settings for an LM (its tier's, lms[]; the same for every model). */
-static void lm_opts(const VjoVocrLm *lm, vocr_lm_opts *o)
+/* The job models whose own decoder settings for an LM differ from its tier's (vjo_vocr_lm_settings): vita-vn-ocr's
+ * check of Rubi's settings on VOCR6's final blobs (vocr6-final-lm, #151, merged as 92a65cf: its record
+ * eval/vocr6_final_lm_result_20261027.json, "rubi", per job model and LM tier; eval/vocr6_final_lm_protocol.json's
+ * pre-registered rule: a grid setting by 2-fold CV, resolved better on the objective and not resolved worse on any
+ * guard, #109's counter set included). It kept every LM tier's settings for VOCR6-N and VOCR6-L (VOCR5-S, Small's,
+ * reported only, keeps them too) but VOCR6-N's with ctclm.2's 2000k LM: LM weight 0.4, bonus 1.5 nats, the
+ * start-of-line context and the end-of-line term (CV objective -0.260 [-0.800, -0.006] points; most of it one junk
+ * line of one game, -0.027 [-0.058, -0.000] without it). The gate (8 nats), the cascade's threshold and the counter
+ * re-decode's are unchanged. A job's cascade decodes its re-reads with the job model's settings, as vocr6-final-lm
+ * scored them (its decode of every tier at one setting). */
+static const struct {
+    const char *model, *lm;
+    int beta, alpha;
+    unsigned flags;
+} lm_retuned[] = {
+    {VJO_VOCR6_N_NAME, VJO_VOCR_LM3_NAME, 1500, 400, VOCR_LM_BOS | VOCR_LM_EOS},
+};
+
+void vjo_vocr_lm_settings(const char *model, const VjoVocrLm *lm, int *alpha, int *beta, unsigned *flags)
+{
+    *alpha = lm ? lm->alpha : 0;
+    *beta = lm ? lm->beta : 0;
+    *flags = lm ? lm->flags : 0u;
+    for (size_t i = 0; model && lm && i < sizeof(lm_retuned) / sizeof(lm_retuned[0]); i++)
+        if (!strcmp(model, lm_retuned[i].model) && !strcmp(lm->name, lm_retuned[i].lm)) {
+            *alpha = lm_retuned[i].alpha;
+            *beta = lm_retuned[i].beta;
+            *flags = lm_retuned[i].flags;
+        }
+}
+
+/* The decoder settings a job on model `job` decodes with `lm` (vjo_vocr_lm_settings: the LM tier's, lms[], or the
+ * job model's own for that LM), for its own lines and its cascade's re-reads. */
+static void lm_opts(const VjoVocrModel *job, const VjoVocrLm *lm, vocr_lm_opts *o)
 {
     memset(o, 0, sizeof(*o));
     o->beam = 8;
     o->topk = VJO_VOCR_LM_TOPK;
     o->max_frames = 0;  /* the model's clamp: 1,024 px / 8 */
-    o->alpha = lm->alpha;
-    o->beta = lm->beta;
+    vjo_vocr_lm_settings(job ? job->name : NULL, lm, &o->alpha, &o->beta, &o->flags);
     o->gate = 8000;
-    o->flags = lm->flags;
     o->bracket = 8000;
 }
 
@@ -508,7 +543,8 @@ static uint32_t clock_us(const VjoPlatform *p)
  * the tear check look at the found lines' own pixels only. */
 #define WATCH_OFF 0
 #define WATCH_ON 1     /* a row's checksum over the lines' columns decides; a change elsewhere sends the finder again */
-#define WATCH_ANYWAY 2 /* the wait's limit passed with the lines found alike twice: their own changes are no tears */
+#define WATCH_ANYWAY 2 /* the lines are read anyway (the wait's limit, or a line that changed under the last try or
+                          after the line phase confirmed it): their own changes are no tears */
 /* A job finds its lines again from a new first pass at most this many times while it waits (each time the finder
  * found other lines than the ones watched: text that types out, a page that changes); then a change is a tear. */
 #define WATCH_FINDS 8u
@@ -1033,8 +1069,8 @@ static int wait_lines(Stream *s, const Finder *f)
  *    then a change is a tear).
  *  - The budget spent while the lines' own pixels kept changing (an icon the finder takes into a line, a picture
  *    moving behind the text): the try's lines (the watched ones if alike, lines_alike loose) are read anyway, their
- *    changes no tears any more. Once read, the finder must find them alike again, settle_us after they were found at
- *    the earliest, as the stable-text wait's span (recognize's final look). */
+ *    changes no tears any more. Once read, the finder must find them alike again, twice settle_us after they were found
+ *    at the earliest, the span of the stable-text wait and its check (recognize's final look). */
 static int watch_verify(Stream *s, const Finder *f, const VocrLineSet *set, const VocrLineSet *raw)
 {
     const int confirmed = s->confirmed && s->have_spans;
@@ -1535,11 +1571,12 @@ static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel 
 }
 
 /* The job's LM decoder, once the model is parsed: the LM's bytes resident and
- * verified, parsed in place, the decoder planned in the LM extras at x0.
- * VJO_OK: ready. VJO_E_CANCELLED / VJO_E_OCR_UNAVAILABLE: the job stops. Any
+ * verified, parsed in place, the decoder planned in the LM extras at x0 with the
+ * job model mi's settings for that LM (lm_opts). VJO_OK: ready.
+ * VJO_E_CANCELLED / VJO_E_OCR_UNAVAILABLE: the job stops. Any
  * other: the job reads greedily (st->lm_rc says why). */
 static int lm_setup(const VjoPlatform *p, const char *dir, const VjoGreySource *im, const VjoVocrPolicy *pol,
-                    unsigned char *x0, const vocr_model *model, VjoVocrStats *st)
+                    const VjoVocrModel *mi, unsigned char *x0, const vocr_model *model, VjoVocrStats *st)
 {
     LmLayout x;
     vocr_lm_opts o;
@@ -1559,7 +1596,7 @@ static int lm_setup(const VjoPlatform *p, const char *dir, const VjoGreySource *
         rc = lm_drop_with(pol->lm_res, VJO_E_OCR_MODEL); /* verified bytes the runtime refuses: every job would */
         return rc == VJO_E_OCR_UNAVAILABLE ? rc : (st->lm_rc = rc);
     }
-    lm_opts(pol->lm, &o);
+    lm_opts(mi, pol->lm, &o);
     need = vocr_lm_workspace_bytes(model, lm, &o);
     if (!need || need > VJO_VOCR_LM_WS_BYTES) return st->lm_rc = VJO_E_OOM;
     if (vocr_lm_init(dc, model, lm, &o, x0 + x.ws, need) != VOCR_OK) return st->lm_rc = VJO_E_OCR_INFERENCE;
@@ -1571,10 +1608,11 @@ static int lm_setup(const VjoPlatform *p, const char *dir, const VjoGreySource *
 /* The cascade's larger model, at the first line it reads again: its weights
  * resident and verified (cascade_res), parsed, its arena planned in the
  * cascade extras at c0, and with the job's LM (parsed already, lm) a decoder
- * for it. VJO_OK: ready. VJO_E_CANCELLED / VJO_E_OCR_UNAVAILABLE: the job
+ * for it, with the job model job's settings for that LM (lm_opts). VJO_OK: ready.
+ * VJO_E_CANCELLED / VJO_E_OCR_UNAVAILABLE: the job
  * stops. Any other: the job goes on without it (st->cascade_rc says why). */
 static int cascade_setup(const VjoPlatform *p, const char *dir, const VjoGreySource *im, const VjoVocrPolicy *pol,
-                         unsigned char *c0, const vocr_lm *lm, VjoVocrStats *st)
+                         const VjoVocrModel *job, unsigned char *c0, const vocr_lm *lm, VjoVocrStats *st)
 {
     const VjoVocrModel *c = pol->cascade;
     CascadeLayout x;
@@ -1603,7 +1641,7 @@ static int cascade_setup(const VjoPlatform *p, const char *dir, const VjoGreySou
         return st->cascade_rc = VJO_E_OCR_INFERENCE;
     if (lm) {
         vocr_lm_opts o;
-        lm_opts(st->lm, &o);
+        lm_opts(job, st->lm, &o);
         need = vocr_lm_workspace_bytes(model, lm, &o);
         if (!need || need > VJO_VOCR_LM_WS_BYTES) return st->cascade_rc = VJO_E_OOM;
         if (vocr_lm_init((vocr_lm_ctx *)(void *)(c0 + x.lm_ctx), model, lm, &o, c0 + x.lm_ws, need) != VOCR_OK)
@@ -1847,8 +1885,9 @@ uint32_t vjo_vocr_test_line_length(unsigned w, unsigned h, int cols)
 }
 #endif
 
+/* text: the line's text as it is placed (#358: its kana and kanji, core/region_suggest.h). */
 static void line_stat(Lines *L, const Pending *e, unsigned frames, uint16_t flags, uint32_t us, uint32_t cpu_us,
-                      unsigned slot, int cached)
+                      unsigned slot, int cached, const char *text)
 {
     VjoVocrLineStat *ls;
     if (L->st->recognized >= VJO_VOCR_MAX_LINES) return;
@@ -1860,8 +1899,10 @@ static void line_stat(Lines *L, const Pending *e, unsigned frames, uint16_t flag
     ls->us = us; /* without a re-read: frames and time are the job's model's */
     ls->slot = (uint8_t)slot;
     ls->cached = (uint8_t)(cached != 0);
-    ls->pad = 0;
+    ls->kana = vjo_suggest_kana(text);
     ls->cpu_us = cpu_us;
+    ls->x = e->x;
+    ls->y = e->y;
 }
 
 /* Lengths of the queued lines after the one being placed that need no more work
@@ -2065,7 +2106,7 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
             } else {
                 if (!L->casc_ready) {
                     uint32_t r0 = clock_us(p);
-                    rc = cascade_setup(p, L->dir, L->im, pol, L->c0,
+                    rc = cascade_setup(p, L->dir, L->im, pol, L->mi, L->c0,
                                        L->lm_on ? (const vocr_lm *)(void *)(L->x0 + L->x.lm) : NULL, st);
                     if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
                     L->casc_ready = !rc;
@@ -2144,7 +2185,7 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
     st->frames += ex->frames;
     st->head_gated += ex->gated;
     st->head_escaped += ex->escaped;
-    line_stat(L, e, ex->frames, flags, line_us, cpu_us, slot, 0);
+    line_stat(L, e, ex->frames, flags, line_us, cpu_us, slot, 0, text + start);
     if (pol->line) {
         VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 0,
                                 text + start, run_us + (clock_us(p) - f0), greedy, flags};
@@ -2201,7 +2242,10 @@ static const vocr_charbox_cal *model_cal(const VjoVocrModel *mi)
     static const vocr_charbox_cal cal[3] = {{-110, {0, 32, 72, 39, -11, -1, 0, 18}},
                                             {0, {0, -45, -32, 48, -23, -4, 0, -6}},
                                             {-36, {0, -12, 4, 38, -16, -10, 0, 8}}};
-    static const char *const names[3] = {VJO_VOCR5_S_NAME, VJO_VOCR5_N_NAME, VJO_VOCR5_L_NAME};
+    /* test/combined: main's #373 made Normal and Large VOCR6-N and VOCR6-L, VOCR5-N's and VOCR5-L's shapes fine-tuned
+     * again: their rows keep VOCR5-N's and VOCR5-L's calibration, unmeasured with VOCR6 (the overlay's measured
+     * accuracy, docs/overlay-on-text.md, is VOCR5's) */
+    static const char *const names[3] = {VJO_VOCR5_S_NAME, VJO_VOCR6_N_NAME, VJO_VOCR6_L_NAME};
     for (unsigned i = 0; mi && i < 3; i++)
         if (!strcmp(mi->name, names[i])) return &cal[i];
     return NULL;
@@ -2293,7 +2337,7 @@ static int place(Lines *L)
             return RETRY_NOCACHE;
         }
         memcpy(L->text + start, h->text, (size_t)h->len + 1);
-        line_stat(L, e, h->frames, h->flags, 0, 0, 0, 1);
+        line_stat(L, e, h->frames, h->flags, 0, 0, 0, 1, L->text + start);
         st->cached++;
         if (pol->line) {
             VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 0,
@@ -2639,7 +2683,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         if (rc) return rc;
         loaded = 1;
         if (l->lm && pol->lm) {
-            rc = lm_setup(p, dir, im, pol, x0, model, st);
+            rc = lm_setup(p, dir, im, pol, mi, x0, model, st);
             if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
             L->lm_on = !rc;
         }
@@ -2772,7 +2816,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 if (rc) goto fail;
                 loaded = 1;
                 if (l->lm && pol->lm) {
-                    rc = lm_setup(p, dir, im, pol, x0, model, st);
+                    rc = lm_setup(p, dir, im, pol, mi, x0, model, st);
                     if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) goto fail;
                     L->lm_on = !rc;
                 }

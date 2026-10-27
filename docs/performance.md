@@ -241,7 +241,11 @@ vita-vn-ocr's runtime.
    lines (`kernel/main.c:131-160` `kernel_file_flush`, called at `:217`), about 3 per job. Fix:
    one result's lines written with one append, the same bytes in the same order (est. 0.33 s a
    job at 15.7 ms an append, 0.44 s at the jobs' 20.9 ms; twice that while `status.txt` is under
-   64 KiB).
+   64 KiB). A dictionary lookup's own two lines (`lookup …` and its `job N done` line) were two more appends
+   before its word was published: in test.4's log a cursor lookup's done line came 53.5 ms after its start
+   against its lookup's 32 (medians, 338 lookups), at 17 ms an append [measured]; since #360 the debug build
+   writes a job's lines after its result instead
+   ([release-variants.md](release-variants.md#the-debug-builds-job-lines-after-the-result-360)).
 2. **Polled hand-offs: 75 ms per job on average, 150 ms at worst** (fixed by #102). At bcb780e
    the game worker slept 100 ms between `vjoOcrComplete`/`vjoOcrRegister` + `vjoOcrTake` rounds
    (`game_ocr/main.c:1080-1103` there; 50 ms while a claim was outstanding), so a submitted job

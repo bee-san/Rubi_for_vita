@@ -95,6 +95,7 @@ typedef struct {
     int bar_y;                                               /* the focus bar's y (any page), -1 */
     char bar_title[48];                                      /* that card's title (x 42, 30 below its top), "" */
     int anki_rows;                                           /* the stick's moves given to the Anki page so far */
+    int stats_rows;                                          /* and to the Stats page (#312) */
     int loads, frees, waits, icon_opens, icon_reads, scans, glyphs, measures, live;
     long ns;
 } Frame;
@@ -296,7 +297,7 @@ int sceCtrlSetSamplingMode(int mode) { int old = sampling_mode; sampling_mode = 
 /* A test's failed read (e.g. 0x80340020): the SDK leaves the caller's pad as it was. */
 static int peek_error;
 /* The Anki page stub's record (settings_stubs/anki_page_stub.c). */
-extern int vjo_anki_stub_rows;
+extern int vjo_anki_stub_rows, vjo_stats_stub_rows;
 int sceTouchSetSamplingState(int port, int state) { (void)port; (void)state; return 0; }
 static int live_textures(void);
 /* The loop reads the pad first: a frame starts here. */
@@ -335,6 +336,7 @@ int sceDisplayWaitVblankStart(void)
     cur.ns = since(&frame_start);
     cur.live = live_textures();
     cur.anki_rows = vjo_anki_stub_rows;
+    cur.stats_rows = vjo_stats_stub_rows;
     if (frame < MAX_FRAMES) session->shown[frame] = cur;
     frame++;
     return 0;
@@ -1360,7 +1362,7 @@ static void the_frame_interval_is_logged_once(void)
 }
 #endif
 
-/* The list keys act on the Games page only: on the OCR & lookup, Anki and Install
+/* The list keys act on the Games page only: on the OCR & lookup, Anki, Stats and Install
  * pages Up/Down/L/R leave the list where it was. */
 static void list_keys_only_on_the_games_page(void)
 {
@@ -1381,6 +1383,10 @@ static void list_keys_only_on_the_games_page(void)
     tap(SCE_CTRL_RTRIGGER, 8);
     hold(UP, 30);
     hold(0, 8);
+    tap(SCE_CTRL_SELECT, 8); /* Stats (#312) */
+    tap(DOWN, 8);
+    tap(SCE_CTRL_LTRIGGER, 8);
+    hold(0, 8);
     tap(SCE_CTRL_SELECT, 8); /* Install (docs/one-vpk-install.md) */
     tap(DOWN, 8);
     tap(SCE_CTRL_RTRIGGER, 8);
@@ -1398,16 +1404,16 @@ static void list_keys_only_on_the_games_page(void)
  * first. The d-pad still wraps round there. */
 /* The OCR & lookup page's focused card in frame f: its place among the page's
  * cards (settings/main.c PREF_*), by its title, or -1. */
-#define OCR_CARDS 12
+#define OCR_CARDS 13
 static int ocr_card(const Frame *f)
 {
     static const char *const titles[OCR_CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
                                                   "Japanese characters only", "Highlight", "Dictionaries shown",
                                                   "Text source", /* API 31 */
                                                   "Trusted hooks replace OCR", "Skip OCR on screens without text",
-                                                  "Vertical text", /* API 43, API 47 */
+                                                  "Vertical text", "Suggest a text box", /* main's */ /* API 43, 47; #358 */
                                                   "Overlay on the game's text", /* API 46 (test/combined) */
-                                                  "Pause the game to read"}; /* API 51 */
+                                                  "Pause the game to read"}; /* #355 */
     for (int i = 0; i < OCR_CARDS; i++)
         if (!strcmp(f->bar_title, titles[i])) return i;
     return -1;
@@ -1485,6 +1491,10 @@ static void a_page_change_latches_the_stick(void)
     hold_stick(-128, 1); /* pushed up */
     hold(0, 4);
     int up_push = at - 1;
+    with_stick(SCE_CTRL_SELECT, -128); /* Stats (#312), the stick up */
+    int stats = at - 1;
+    hold_stick(-128, 20);
+    int stats_held = at - 1;
     with_stick(SCE_CTRL_SELECT, -128); /* Install, the stick up */
     with_stick(0, -128);
     with_stick(SCE_CTRL_SELECT, -128); /* Games again, the stick still up */
@@ -1504,6 +1514,8 @@ static void a_page_change_latches_the_stick(void)
                 f[anki_push].anki_rows - f[anki_rest].anki_rows);
     TEST_CHECK_(f[up_push].anki_rows == f[anki_push].anki_rows - 1, "Anki: a push up gives %d",
                 f[up_push].anki_rows - f[anki_push].anki_rows);
+    TEST_CHECK_(f[stats_held].stats_rows == f[stats].stats_rows, "Stats: %d rows from the stick held through Select",
+                f[stats_held].stats_rows - f[stats].stats_rows);
     TEST_CHECK_(selected_of(games_held) == 6, "Games, back with the stick held up: %d", selected_of(games_held));
 }
 

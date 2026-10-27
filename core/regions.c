@@ -107,6 +107,22 @@ int vjo_region_format(char *dst, size_t cap, const char *key, const VjoRect *r)
     return n < 0 || (size_t)n >= cap ? -1 : n;
 }
 
+char *vjo_region_drop(VjoArena *a, const char *text, size_t len, const char *key)
+{
+    const char *p = text, *end = text + len, *val;
+    VjoBuf b;
+    vjo_buf_init(&b, a);
+    while (p < end) {
+        const char *e = line_end(p, end);
+        if (e > p && !line_key(p, e, key, &val)) {
+            vjo_buf_append(&b, p, (size_t)(e - p));
+            vjo_buf_putc(&b, '\n');
+        }
+        p = next_line(e, end);
+    }
+    return b.oom ? NULL : vjo_buf_cstr(&b);
+}
+
 char *vjo_region_update(VjoArena *a, const char *text, size_t len, const char *key, const VjoRect *r)
 {
     const char *p = text, *end = text + len, *val;

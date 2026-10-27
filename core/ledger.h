@@ -19,7 +19,8 @@
 
 /* The most items one process keeps: the Shell's eleven since line history's block
  * (VJO_SL_PAF_HISTORY); the game worker's ten, the kernel's five. */
-#define VJO_LEDGER_MAX_ITEMS 11
+/* test/combined: 12, the game worker's eleven of main (#368's SC3 charset) and draft #355's frame block */
+#define VJO_LEDGER_MAX_ITEMS 12
 
 typedef struct {
     const char *name; /* for logs: "VjoNet stack+TLS" */

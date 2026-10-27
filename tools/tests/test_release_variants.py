@@ -102,7 +102,7 @@ class CheckVariant(unittest.TestCase):
 
     def test_every_marker_is_a_format_string_of_this_tree(self):
         """A marker renamed in the sources but not here would fail every Vita build; catch it on the host."""
-        sources = {"shell": ("shell", "*.c*"), "kernel": ("kernel", "*.c"), "app": ("settings", "*.c")}
+        sources = {"shell": ("shell", "*.[ch]*"), "kernel": ("kernel", "*.c"), "app": ("settings", "*.c")}
         for part, markers in list(variant.DEBUG_MARKERS.items()) + list(variant.NORMAL_MARKERS.items()):
             d, pattern = sources[part]
             text = "".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / d).glob(pattern)))
@@ -347,7 +347,8 @@ class PackageVariants(unittest.TestCase):
         gate_att = b"the gate's attribution fixture"  # API 26: the text-presence gate's
         self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
             "https://fixture.invalid/G", len(gate_att), hashlib.sha256(gate_att).hexdigest())}))
-        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS", "VOCR_GATE_ASSETS")
+        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR6_ASSETS", "VOCR_LM_ASSETS",
+                  "VOCR_GATE_ASSETS")
         for mod in (prepare, release):
             for table in tables:
                 pinned = {name: spec for name in getattr(mod, table)}
@@ -362,6 +363,10 @@ class PackageVariants(unittest.TestCase):
         self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
             "https://fixture.invalid/V", len(vertical_att), hashlib.sha256(vertical_att).hexdigest())}))
         (self.models / prepare.VOCR_VERTICAL_ATTRIBUTION).write_bytes(vertical_att)
+        vocr6_att = b"VOCR6's attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR6_ATTRIBUTION_PIN", {prepare.VOCR6_ATTRIBUTION: (
+            "https://fixture.invalid/V6", len(vocr6_att), hashlib.sha256(vocr6_att).hexdigest())}))
+        (self.models / prepare.VOCR6_ATTRIBUTION).write_bytes(vocr6_att)
         self.dictionary = b"VJDICT2\0synthetic dictionary fixture"
         snapshot = {"bytes": len(self.dictionary), "sha256": hashlib.sha256(self.dictionary).hexdigest()}
         self.enterContext(mock.patch.object(release, "load_manifest", return_value=snapshot))
@@ -389,6 +394,8 @@ class PackageVariants(unittest.TestCase):
             z.writestr("Rubi.vpk", vpk.getvalue())
             z.writestr(release.APP_RECORD, stamp)
             z.writestr("ux0/data/VitaJPOverlay/dictionaries/" + release.FILENAME, self.dictionary)
+            for sc3 in sorted((ROOT / "third_party/sc3-charsets").glob("*.sc3")):  # the SC3 hooks' charsets
+                z.writestr("ux0/data/VitaJPOverlay/hooks/" + sc3.name, sc3.read_bytes())
             z.writestr("README.md", readme)
             z.writestr("tools/install_ftp.sh", b"#!/bin/sh\n")
             for name in ("LICENSE", "docs/plaintext-attribution.txt", "docs/JMdict-LICENSE.html"):

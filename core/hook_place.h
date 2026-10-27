@@ -79,7 +79,8 @@ typedef struct {
      * clean-up still runs first). */
     uint8_t filter;
     /* How the text is read at the register's value + padding (VJO_PLACE_READ_*): the string there, through a
-     * 32-bit pointer there (one more read, as Luna's DATA_INDIRECT), or a page record of 16-bit cells. */
+     * 32-bit pointer there (one more read, as Luna's DATA_INDIRECT), a page record of 16-bit cells, or an SC3
+     * string through its end token. */
     uint8_t read;
     /* The game version the entry was proven in, its param.sfo APP_VER as game_ocr/hooks.c reads it ("01.00" ->
      * 0x0100): another version refuses the entry; an APP_VER that cannot be read leaves it to the module NID and
@@ -99,6 +100,10 @@ typedef struct {
 #define VJO_PLACE_READ_CELLS 2u
 #define VJO_PLACE_CELLS_COUNT 0x14u
 #define VJO_PLACE_CELLS_DATA 0x20u
+/* A MAGES SC3 string (core/hook_sc3.h; the entry's encoding is VJO_HOOK_ENC_SC3): read through its 0xFF end token,
+ * past the 0x00 bytes it holds (line breaks, glyphs' low bytes), at most VJO_HOOK_RAW_BYTES and none past the memory
+ * block; a string whose end is not among them gives no text (vjo_sc3_span). */
+#define VJO_PLACE_READ_SC3 3u
 
 /* The CP932 bytes of n cells at p, in place (they never grow): each cell's low byte, then its high byte
  * unless 0; a cell whose low byte is 0 ends the text. Returns the bytes. */

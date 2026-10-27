@@ -126,7 +126,7 @@ int main(int argc, char **argv)
         printf("\",\"record\":\"%s/%s.json\"}", VJO_EXPORT_QUEUE_DIR, id);
     }
     vjo_arena_init(&A, mem, sizeof(mem));
-    vjo_export_run(&A, 0, &ui, &r, msg, sizeof(msg));
+    vjo_export_run(&A, 0, NULL, &ui, &r, msg, sizeof(msg));
     printf("],\"rc\":%d,\"notes\":%d,\"media\":%d,\"bytes\":%u,\"path\":\"%s\",\"name\":\"%s\",\"message\":\"", r.rc,
            r.cards, r.media, (unsigned)r.bytes, r.path, r.name);
     json_out(msg);
