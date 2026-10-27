@@ -132,6 +132,22 @@ been reported.
   entry refused as `tai` or `full`: a bug report), reads a reply that quotes the log, warns when `log.txt` shows the
   log is from an earlier session, and exits 2 with a message, never a traceback, on a damaged zip, an unwritable
   `--out` or a malformed farm `rubi-hook.json`.
+- **Word lookups find the word located first, all over the line, in every mode** (#360, change 1). The open
+  overlay's lookahead, which located the eight words after the shown one in Auto with Whole word only, now locates
+  every position of the line while the worker is idle, in Character mode and with **Only when I press L + R** too:
+  the words Right reaches first (nearest first), then each character before the cursor, then the rest of the line,
+  20 ms after the last lookup (was 100 ms); a new cursor starts over from where it is, keeping what is located. A
+  located word reads only its definition: on the host, over the 64,579 taps of 5,000 real VN lines with both bundled
+  dictionaries, the share of taps whose word was located went from 80 % to 100 % in Whole word and from 6 % to 100 %
+  in Character mode, 2.03 → 1.04 and 5.66 → 1.04 file reads a lookup (with the cold-path change above; est. 19 → 16
+  and 31 → 16 ms on the console), with every tap's result byte for byte the same. Locators are 12 bytes (were 204: 16 words, now 256 records, 128
+  positions with Dictionaries shown 2) in the same session (6,784 → 6,528 B); no new memory, thread or allocation.
+  Their 32-bit offsets mean a dictionary file must be under 4 GiB: a larger one is refused as an invalid dictionary,
+  and the converter and the FTP installer now refuse one with a clear message (they allowed 2^63 B; the bundled
+  dictionary is 157 MB).
+  A press during a prepare waits for that one prepare (5 reads mean, 24 at most on the corpus: est. 15 and 72 ms).
+  The debug build's overlay close line counts the lookups that found their word located and the cold ones. Not run
+  on a console ([details](reports/dictionary-lookahead-line.md)).
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
   tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a

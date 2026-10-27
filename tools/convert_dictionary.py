@@ -56,6 +56,10 @@ MAX_SCAN_CHARS = 32
 MAX_ENTRY = 8192
 MAX_ROW_CHARS = 8 * 1024 * 1024
 MAX_INDEX_BYTES = 1024 * 1024
+# A file is under 4 GiB: the Shell's word locators keep 32-bit payload offsets (core/local_dict.c
+# Located, #360), and the overlay refuses a larger file as an invalid dictionary.
+MAX_FILE_SIZE = (1 << 32) - 1
+TOO_LARGE = "the dictionary would be 4 GiB or larger; Rubi reads dictionary files under 4 GiB"
 RULES = {"v1": 1, "v5": 2, "vs": 4, "vk": 8, "vz": 16, "adj-i": 32, "iru": 64}
 # Key filter (docs/local-dictionaries.md): page-sized Bloom blocks after all other data,
 # announced in page 0 after the header. Readers that predate it read only the header.
@@ -604,8 +608,8 @@ def write_key_filter(final, keys, size):
     2+ file and announces it in page 0. Returns the new file size and statistics."""
     directory, blocks, stats = build_key_filter(keys)
     offset = (size + PAGE_SIZE - 1) // PAGE_SIZE * PAGE_SIZE
-    if offset + len(blocks) * PAGE_SIZE > 0x7FFFFFFFFFFFFFFF:
-        raise ValueError("dictionary exceeds the supported file size")
+    if offset + len(blocks) * PAGE_SIZE > MAX_FILE_SIZE:
+        raise ValueError(TOO_LARGE)
     final.seek(size)
     final.write(bytes(offset - size))
     for bits in blocks:
@@ -723,8 +727,8 @@ def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
         rules_union |= rules
     db.execute("UPDATE hash_keys SET n=?, off=?, rules=? WHERE key=?", (n, group_off, rules_union, current))
     size = final.tell()
-    if size > 0x7FFFFFFFFFFFFFFF:
-        raise ValueError("dictionary exceeds the supported file size")
+    if size > MAX_FILE_SIZE:
+        raise ValueError(TOO_LARGE)
     final.seek(0)
     version = 2 if frequency_title is None else 3
     final.write(HEADER.pack(MAGIC_V2 if version == 2 else MAGIC_V3, version, HEADER.size, count, HASH_RECORD.size,
@@ -913,8 +917,8 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                         raise ValueError("dictionary has too many index records")
                     data_off = HEADER.size + count * RECORD.size
                     size = data_off + data.tell()
-                    if size > 0x7FFFFFFFFFFFFFFF:
-                        raise ValueError("dictionary exceeds the supported file size")
+                    if size > MAX_FILE_SIZE:
+                        raise ValueError(TOO_LARGE)
                     with tempfile.NamedTemporaryFile(prefix=output.name + ".", suffix=".tmp", dir=output.parent,
                                                      delete=False) as final:
                         final_name = Path(final.name)

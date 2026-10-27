@@ -342,6 +342,9 @@ settled dialogue in the background and prepares its first local match in Whole
 word mode. A completed lookup appears immediately when opening unchanged
 dialogue. Character mode defers dictionary lookup until opening the overlay.
 Selection changes never recapture the screen or rerun OCR. While the overlay is
+open and idle, every word of its text is located ahead (each character in Character mode,
+in either Read text mode), from the cursor's next words outwards, so a step or a tap usually
+reads only its definition ([lookahead over the line](../reports/dictionary-lookahead-line.md)). While the overlay is
 open, its text stays usable for lookups and Anki whatever the screen does, with no
 "dialogue changed" message: in Auto mode a newly settled screen is recognized in the
 background and replaces the text quietly only when it reads a different one

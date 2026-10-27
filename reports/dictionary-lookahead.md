@@ -3,6 +3,9 @@
 This records the implementation committed as `0df7d88`. The subsequent
 [cache experiments](dictionary-cache-experiments.md) retain its session and
 lookahead behavior while reducing scratch usage and redundant payload reads.
+Since #360 the lookahead covers the whole line in every mode, 20 ms after the
+last job, with 12-byte locators: [the successor report](dictionary-lookahead-line.md);
+the scheduler and sizes below are #203's.
 
 Auto with Whole word prepares upcoming selections while the worker is idle. A
 bounded cache keeps entry locations and misses, never full definitions. The first

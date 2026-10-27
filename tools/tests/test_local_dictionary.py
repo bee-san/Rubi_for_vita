@@ -297,6 +297,41 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertEqual(peak(small), peak(large))
         self.assertLess(peak(large), 112 * 1024)
 
+    def test_files_of_4_gib_or_more_are_refused_with_a_clear_error(self):
+        # #360: the overlay's word locators keep 32-bit offsets, so a file must be under 4 GiB; the converter
+        # says so (here with the limit lowered to a small file's size), keeps the previous output, and the FTP
+        # installer refuses such a file too.
+        self.assertEqual(convert.MAX_FILE_SIZE, (1 << 32) - 1)
+        message = "4 GiB or larger; Rubi reads dictionary files under 4 GiB"
+        def ranked(rows):  # format 3: with a frequency list (FrequencyTest's fixture)
+            path = self.directory / "main.vjdict"
+            return path, convert.convert([self.archive(rows)], path, frequency=FrequencyTest.frequency(self, [freq("猫", 10)]))
+        builds = {1: lambda rows: self.build(rows, format_version=1), 2: lambda rows: self.build(rows), 3: ranked}
+        for version, build in builds.items():
+            path, _ = build([term("猫")])
+            original = path.read_bytes()
+            for limit in (len(original) - 1, len(original) // 2):
+                with mock.patch.object(convert, "MAX_FILE_SIZE", limit), self.assertRaisesRegex(ValueError, message):
+                    build([term("猫"), term("犬")])
+                self.assertEqual(path.read_bytes(), original, f"format {version}")
+            with mock.patch.object(convert, "MAX_FILE_SIZE", len(original)):
+                build([term("猫")])  # exactly the limit: written
+            self.assertEqual(path.read_bytes(), original)
+            self.assertTrue(install.inspect(path).endswith(".vjdict"))
+            with mock.patch.object(install, "MAX_FILE_SIZE", len(original) - 1), \
+                    self.assertRaisesRegex(ValueError, "incompatible or incomplete"):
+                install.inspect(path)
+        # The key filter's pages, written last, count too.
+        rows = [term("猫"), *[term(f"語彙{i:05d}", gloss=[f"filler {i}"]) for i in range(1200)]]
+        bare = self.directory / "bare.vjdict"
+        convert.convert([self.archive(rows)], bare, key_filter=False)
+        path, stats = self.build(rows)
+        self.assertGreater(stats.get("filter_blocks", 0), 0)
+        filtered = path.read_bytes()
+        with mock.patch.object(convert, "MAX_FILE_SIZE", bare.stat().st_size), self.assertRaisesRegex(ValueError, message):
+            self.build(rows)
+        self.assertEqual(path.read_bytes(), filtered)
+
     def test_converter_atomic_failure_preserves_previous_output(self):
         path, _ = self.build([term("猫")], format_version=1)
         original = path.read_bytes()

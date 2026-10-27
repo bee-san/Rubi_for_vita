@@ -127,6 +127,29 @@ typedef struct {
     uint32_t filter_blocks, block, lo, hi;
 } Dictionary;
 
+/* One page of a located position, 12 bytes (VjoLocalPage less what the session
+ * knows): its payload's offset and length (minus one), the dictionary, the
+ * conjugation, and the position's cursor byte and span. A position takes one
+ * record a page, or one for a miss, written in a row; its first record holds
+ * `start`, its page count + 1, the others 0. The ring overwrites its oldest
+ * record first, so a position whose first record is still there has all of
+ * them. A page's file size is its session file's (a record lives only while
+ * the session that made it is open), its pos16 the cursor's. Every position
+ * fits: a file is under 4 GiB (parse_header), a text under 4 KiB, an entry at
+ * most 8 KiB, and a span under 128 UTF-16 units (SpanFits). */
+typedef struct {
+    uint32_t entry_off;
+    uint32_t conjugation : 24, dict : 3, start : 4;
+    uint32_t cursor : 12, len16 : 7, entry_len : 13;
+} Located;
+typedef char LocatedFits[(sizeof(Located) == 12 && VJO_LOCAL_LOCATED == 256 && VJO_LOCAL_MAX_DICTS <= 8 &&
+                          VJO_LOCAL_MAX_TEXT <= 4096 && VJO_LOCAL_MAX_ENTRY <= 8192) ? 1 : -1];
+/* A span's UTF-16 units: MAX_SCAN_CHARS characters of 2 units at most, and the line breaks
+ * it crosses where the text's lines join (core/textjoin.h: 1-2 units each, CR LF two). A
+ * break joins only after a line VJO_JOIN_MIN_CHARS wide or wider, so the scan crosses at
+ * most one break before its first full line and one after each later one. */
+typedef char SpanFits[(2 * MAX_SCAN_CHARS + 2 * (1 + MAX_SCAN_CHARS / VJO_JOIN_MIN_CHARS) < 128) ? 1 : -1];
+
 struct VjoLocalSession {
     Dictionary dicts[VJO_LOCAL_MAX_DICTS];
     void *ud;
@@ -138,9 +161,10 @@ struct VjoLocalSession {
      * copied from page 0 as each file opens: every one that fits in what the
      * earlier ones left (Dictionary.pool). */
     uint8_t directory[DIRECTORY_POOL_BLOCKS * 4u];
-    VjoLocalPages located[16];
+    Located located[VJO_LOCAL_LOCATED]; /* a ring: located_next is the oldest once it is full */
     uint32_t text_generation;
-    int located_count, located_next, limit;
+    int located_count, limit;
+    uint8_t located_next;
 };
 typedef char SessionFits[(sizeof(VjoLocalSession) <= 7u * 1024u) ? 1 : -1];
 /* Dictionary.pool takes the padding after hints: the filter's offset is where it would be
@@ -162,6 +186,31 @@ static int session_matches(const VjoPlatform *p, const VjoConfig *cfg)
     const VjoLocalSession *s = p->local_session;
     return s && s->count && s->ud == p->ud && s->file_open == p->file_open &&
         !strcmp(s->dir, cfg->local_dictionary_dir) && !strcmp(s->names, cfg->local_dictionaries);
+}
+
+/* The first record of the position at cursor that the session located for this
+ * text and result limit, or -1. */
+static int located_at(const VjoPlatform *p, const VjoConfig *cfg, int limit, size_t cursor)
+{
+    const VjoLocalSession *s = p->local_session;
+    if (p->local_text_generation && session_matches(p, cfg) && s->text_generation == p->local_text_generation &&
+        s->limit == limit)
+        for (int i = 0; i < s->located_count; i++)
+            if (s->located[i].start && s->located[i].cursor == cursor) return i;
+    return -1;
+}
+
+/* Where a span of `units` UTF-16 units from byte `at` ends (a word's highlight, as client.c's). */
+static size_t span_end(const char *text, size_t len, size_t at, int units)
+{
+    while (at < len && units > 0) units -= vjo_utf16_units(vjo_utf8_next(text, len, &at));
+    return at;
+}
+
+/* Dictionaries shown, as a lookup with page locators uses it. */
+static int result_limit(int limit)
+{
+    return limit < 1 ? 1 : limit > VJO_LOCAL_MAX_DICTS ? VJO_LOCAL_MAX_DICTS : limit;
 }
 
 typedef struct {
@@ -363,7 +412,7 @@ static int parse_header(Dictionary *d, const uint8_t *h, size_t n)
     d->data = u64(h + 32);
     if (u32(h + 12) != HEADER_SIZE || u32(h + 20) != INDEX_SIZE ||
         d->data > d->file.size || u64(h + 40) != d->file.size || !d->count ||
-        d->file.size > INT64_MAX) return VJO_E_LOCAL_FORMAT;
+        d->file.size > UINT32_MAX) return VJO_E_LOCAL_FORMAT; /* 4 GiB or more: the session's locators keep u32 offsets */
     if (d->version == 1) {
         if (memcmp(h, "VJDICT1\0", 8) || u64(h + 24) != HEADER_SIZE ||
             d->data != HEADER_SIZE + (uint64_t)d->count * INDEX_SIZE ||
@@ -1280,7 +1329,7 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                            const char *text, size_t cursor_byte, int limit,
                            VjoLocalPages *pages, VjoDictResult *res, VjoErr *err, int load)
 {
-    size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0, raw_bytes = 0;
+    size_t mark, len = strlen(text), off = 0, bytes = 0, raw_bytes = 0;
     size_t lengths[MAX_SCAN_CHARS + 1];
     uint8_t raws[MAX_SCAN_CHARS + 1];
     int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0;
@@ -1292,13 +1341,12 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     void *outmem = NULL;
     VjoLocalPages located;
     VjoLocalSession *s = p->local_session;
-    int rc = VJO_OK;
+    int rc = VJO_OK, at;
 
     memset(res, 0, sizeof(*res));
     memset(err, 0, sizeof(*err));
     err->dict = VJO_DICT_LOCAL;
-    if (limit < 1 || !pages) limit = 1;
-    if (limit > VJO_LOCAL_MAX_DICTS) limit = VJO_LOCAL_MAX_DICTS;
+    limit = pages ? result_limit(limit) : 1;
     if (!pages) pages = &located;
     memset(pages, 0, sizeof(*pages));
     if (len > VJO_LOCAL_MAX_TEXT) return err->rc = VJO_E_TOO_LARGE;
@@ -1306,17 +1354,17 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     while (off < cursor_byte)
         pos16 += vjo_utf16_units(vjo_utf8_next(text, len, &off));
     if (off != cursor_byte) return err->rc = VJO_E_PARSE;
-    if (p->local_text_generation && session_matches(p, cfg) &&
-        s->text_generation == p->local_text_generation && s->limit == limit) {
-        for (int i = 0; i < s->located_count; i++) {
-            if (s->located[i].cursor_byte != cursor_byte) continue;
-            *pages = s->located[i];
-            return load && pages->count ? vjo_local_read_page(a, p, cfg, pages, 0, res, err) : VJO_OK;
+    pages->cursor_byte = (uint32_t)cursor_byte;
+    pages->pos16 = pos16;
+    if ((at = located_at(p, cfg, limit, cursor_byte)) >= 0) {
+        /* Located: the pages as the search found them (its records in a row). */
+        pages->count = s->located[at].start - 1;
+        for (int j = 0; j < pages->count; j++) {
+            const Located *r = &s->located[(uint8_t)(at + j)];
+            pages->page[j] = (VjoLocalPage){r->entry_off, s->dicts[r->dict].file.size, (uint16_t)(r->entry_len + 1u),
+                                            (uint16_t)r->len16, r->conjugation, r->dict};
         }
-    }
-    if (pages) {
-        pages->cursor_byte = (uint32_t)cursor_byte;
-        pages->pos16 = pos16;
+        return load > 0 && pages->count ? vjo_local_read_page(a, p, cfg, pages, 0, res, err) : VJO_OK;
     }
 
     /* Only inspect the prefix at the selected character. Source UTF-16
@@ -1344,7 +1392,9 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         count++; lengths[count] = bytes; units[count] = source_units; raws[count] = (uint8_t)raw_bytes;
     }
     if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
+    if (load < 0) return 1;    /* vjo_local_located: this one would search (a is NULL) */
 
+    mark = vjo_arena_mark(a);
     if (load) outmem = vjo_arena_alloc(a, VJO_LOCAL_SELECTED_BUDGET);
     w = workspace(a);
     if ((load && !outmem) || !w) {
@@ -1435,14 +1485,18 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     }
 done:
     if (!rc && s && p->local_text_generation) {
+        int n = pages->count ? pages->count : 1;
         if (s->text_generation != p->local_text_generation || s->limit != limit) {
             s->text_generation = p->local_text_generation;
             s->limit = limit;
             s->located_count = s->located_next = 0;
         }
-        s->located[s->located_next] = *pages;
-        s->located_next = (s->located_next + 1) % 16;
-        if (s->located_count < 16) s->located_count++;
+        for (int j = 0; j < n; j++) { /* (a miss: one record, start 1) */
+            const VjoLocalPage *pg = &pages->page[j];
+            s->located[s->located_next++] = (Located){(uint32_t)pg->entry_off, pg->conjugation, pg->dict,
+                j ? 0u : (uint32_t)pages->count + 1u, (uint32_t)cursor_byte, pg->len16, pg->entry_len - 1u};
+            if (s->located_count < VJO_LOCAL_LOCATED) s->located_count++;
+        }
     }
     close_dictionaries(w, p, rc);
     if (rc || !w->n_matches || !load) {
@@ -1462,20 +1516,28 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
     return lookup_pages(a, p, cfg, text, cursor_byte, limit, pages, res, err, 1);
 }
 
-int vjo_local_prepare_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
-                         const char *text, size_t cursor_byte, size_t *matched_end)
+/* prepare_at (load 0: a search, no definition read) and located (load -1: no search; rc 1 when one is
+ * needed), with the located word's end. */
+static int locate(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, const char *text, size_t cursor_byte,
+                  size_t *end, int load)
 {
     VjoLocalPages pages;
     VjoDictResult res;
     VjoErr err;
-    int rc = lookup_pages(a, p, cfg, text, cursor_byte, cfg->local_dictionary_results, &pages, &res, &err, 0);
-    size_t end = cursor_byte, len = strlen(text);
-    int units = 0;
-    if (!rc && pages.count)
-        while (end < len && units < pages.page[0].len16)
-            units += vjo_utf16_units(vjo_utf8_next(text, len, &end));
-    *matched_end = end;
+    int rc = lookup_pages(a, p, cfg, text, cursor_byte, cfg->local_dictionary_results, &pages, &res, &err, load);
+    *end = span_end(text, strlen(text), cursor_byte, rc ? 0 : pages.page[0].len16); /* (a miss: 0 units) */
     return rc;
+}
+
+int vjo_local_prepare_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                         const char *text, size_t cursor_byte, size_t *matched_end)
+{
+    return locate(a, p, cfg, text, cursor_byte, matched_end, 0);
+}
+
+int vjo_local_located(const VjoPlatform *p, const VjoConfig *cfg, const char *text, size_t cursor_byte, size_t *end)
+{
+    return !locate(NULL, p, cfg, text, cursor_byte, end, -1); /* (no arena: nothing is allocated) */
 }
 
 int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,

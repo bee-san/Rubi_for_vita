@@ -191,6 +191,9 @@ console times are estimates at the test.4 fit, 13.1 ms + 2.98 ms a read):
 
 A word the lookahead located still costs 1.04 reads; locating one (its prepare) costs 4.98 reads
 instead of 7.13. Measured with `vjo-dict-stage-bench` and `tools/dict_stage_report.py` (#361).
+Since #360's change 1 the open overlay's lookahead locates the whole line in every mode, so the taps of
+the corpus in order, with the lookahead between them, cost 1.04 reads each in Whole word (2.03 with the
+eight words of before) and in Character mode (5.66): [lookahead over the line](../reports/dictionary-lookahead-line.md).
 
 ### Posting hints
 

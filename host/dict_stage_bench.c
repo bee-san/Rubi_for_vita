@@ -8,12 +8,15 @@
  * word. The lookups are the console's code; the file reads are the host's (warm OS cache: host
  * times measure CPU; the console's cost per read comes from its logs, tools/dict_stage_report.py).
  *
- *   vjo-dict-stage-bench DIR FILENAMES RESULTS cursor|prepared ROUNDS < corpus.tsv > taps.jsonl
+ *   vjo-dict-stage-bench DIR FILENAMES RESULTS cursor|prepared|word|character ROUNDS < corpus.tsv > taps.jsonl
  *
  * cursor: each tap is a cursor lookup with nothing prepared (a d-pad step or a tap right after
  * the text appeared). prepared: Auto's lookahead located the word first (vjo_local_prepare_at,
  * its reads counted apart as background work), as it does for the eight words after the shown
- * one while the worker is idle; the lookup then runs on the located word.
+ * one while the worker is idle; the lookup then runs on the located word. word, character: the
+ * open overlay's taps in order with the worker's lookahead between them in that highlight mode
+ * (lookahead() below: this tree's, or main's before #360 when built against it), the taps' own
+ * reads and, as prepare reads, the background ones before each.
  *
  * Round 0 counts (core/local_dict.c built with VJO_LOCAL_STATS): reads by what they fetch, bytes,
  * distinct 4 KiB pages, file opens, the candidates generated/searched/found, postings ranked from
@@ -33,6 +36,7 @@
 #include "platform_posix.h"
 #include "port.h"
 #include "styled.h"
+#include "text_rows.h"
 #include "utf.h"
 
 #define RESULT_BLOCK (64 * 1024) /* shell/worker.c LOCAL_RESULT_ARENA_SIZE */
@@ -237,19 +241,86 @@ static int run_tap(VjoPlatform *p, const VjoConfig *cfg, const Line *ln, int t, 
     return rc;
 }
 
+/* The lookahead modes (word, character): the open overlay's lookups with shell/worker.c's lookahead
+ * (prepare_words) between them, each pass run to its end (the idle time it needs is assumed): the line's
+ * first word looked up on opening (byte 0) and its pass, then each tap's lookup and the pass from it.
+ * A tap's prepare reads are the background reads of the pass before it. Built with this tree's
+ * core/local_dict.h (VJO_LOCAL_LOCATED, #360): shell/worker.c's pass (Right's words, then each character
+ * before the cursor, then the rest, a located position passed; VJO_LOCAL_LOCATED units, a unit a job and a
+ * unit a step past a located position);
+ * built against main before #360 (no VJO_LOCAL_LOCATED): its pass, Whole word only, the cursor's word
+ * and the next seven Right reaches, and nothing in Character mode. */
+static uint64_t bg_reads, bg_bytes;
+static int bg_prepare(VjoPlatform *p, const VjoConfig *cfg, const char *text, size_t at, size_t *end)
+{
+    VjoArena a;
+    uint64_t r = n_reads, b = n_bytes;
+    int rc;
+    vjo_arena_init(&a, block + vjo_local_session_size(), RESULT_BLOCK - vjo_local_session_size());
+    rc = vjo_local_prepare_at(&a, p, cfg, text, at, end);
+    bg_reads += n_reads - r;
+    bg_bytes += n_bytes - b;
+    return rc;
+}
+static void lookahead(VjoPlatform *p, const VjoConfig *cfg, const char *text, size_t cursor, int word)
+{
+    size_t len = strlen(text), at = cursor, end = cursor, next;
+#ifdef VJO_LOCAL_LOCATED
+    /* shell/worker.c prepare_words' loop: a unit a job, a unit a step past a located position */
+    int phase = 0, left = VJO_LOCAL_LOCATED;
+    while (left-- > 0) {
+        if (!vjo_local_located(p, cfg, text, at, &end)) {
+            if (bg_prepare(p, cfg, text, at, &end)) break; /* a failure ends the pass (worker.c on_job_done) */
+            continue;                                       /* the worker's next tick: at, located */
+        }
+        next = at;
+        vjo_text_row_step(text, len, NULL, at, phase == 1 ? at : !phase && word && end > at ? end : at + 1,
+                          phase == 1 ? -1 : 1, cfg->japanese_only_selection, 0, &next);
+        if (next != at) at = next;
+        else if (++phase > 2) break;
+        else at = cursor;
+    }
+#else
+    for (int left = 8; word && left > 0 && at < len; left--) {
+        VjoWordNavigation nav = {{0}, 0};
+        int row;
+        bg_prepare(p, cfg, text, at, &end);
+        next = vjo_word_step(&nav, text, len, at, end, 1, cfg->japanese_only_selection, NULL, 0, &row);
+        if (next <= at) break;
+        at = next;
+    }
+#endif
+}
+/* The line's first word, looked up as the overlay opens on it (not a tap: no counts), then its pass. */
+static void open_line(VjoPlatform *p, const VjoConfig *cfg, const Line *ln, int word)
+{
+    VjoArena a;
+    VjoOverlayData d;
+    memset(&d, 0, sizeof(d));
+    d.ocr_text = d.filtered = d.sentence = ln->text;
+    d.list.header = ln->text;
+    vjo_arena_init(&a, block + vjo_local_session_size(), RESULT_BLOCK - vjo_local_session_size());
+    vjo_overlay_lookup_at(&a, p, cfg, 0, &d);
+    bg_reads = bg_bytes = 0;
+    lookahead(p, cfg, ln->text, 0, word);
+}
+
 int main(int argc, char **argv)
 {
     VjoConfig cfg;
     PosixPlatform pp = {0};
     VjoPlatform p;
     uint32_t generation = 0;
-    int rounds, prepare;
+    int rounds, prepare, ahead = 0, word = 0;
     if (argc != 6 || (rounds = atoi(argv[5])) < 1 || rounds > 1000) {
-        fprintf(stderr, "usage: vjo-dict-stage-bench DIR FILENAMES RESULTS cursor|prepared ROUNDS < corpus.tsv\n");
+        fprintf(stderr, "usage: vjo-dict-stage-bench DIR FILENAMES RESULTS cursor|prepared|word|character ROUNDS"
+                        " < corpus.tsv\n");
         return 2;
     }
     if (!strcmp(argv[4], "cursor")) prepare = 0;
     else if (!strcmp(argv[4], "prepared")) prepare = 1;
+    else if (!strcmp(argv[4], "word")) prepare = 0, ahead = 1, word = 1;
+    else if (!strcmp(argv[4], "character")) prepare = 0, ahead = 1, word = 0;
     else { fprintf(stderr, "unknown mode %s\n", argv[4]); return 2; }
     vjo_config_defaults(&cfg);
     cfg.dictionary = VJO_DICT_LOCAL;
@@ -315,6 +386,7 @@ int main(int argc, char **argv)
         Line *ln = &lines[i];
         if (!++generation) generation = 1; /* the worker's job_text_generation: a new text */
         p.local_text_generation = generation;
+        if (ahead) open_line(&p, &cfg, ln, word);
         for (int t = 0; t < ln->n_taps; t++) {
             Query *q = new_query();
             VjoOverlayData d;
@@ -323,6 +395,11 @@ int main(int argc, char **argv)
             q->tap = ln->taps[t];
             q->cursor = ln->cursors[t];
             run_tap(&p, &cfg, ln, t, prepare, q, &d, &ns);
+            if (ahead) { /* the pass before this tap (the one from it follows its result: it reuses the arena) */
+                q->prepare_reads = bg_reads;
+                q->prepare_bytes = bg_bytes;
+                bg_reads = bg_bytes = 0;
+            }
             q->ns_total = ns;
             q->digest = digest(q->rc, &d);
             q->entries = d.list.n_entries;
@@ -334,6 +411,7 @@ int main(int argc, char **argv)
                 q->entry_bytes = strlen(e->text);
                 q->ns_styled = styled_build(&d, &q->styled_units);
             }
+            if (ahead) lookahead(&p, &cfg, ln->text, ln->cursors[t], word);
         }
     }
 
@@ -350,6 +428,7 @@ int main(int argc, char **argv)
             Line *ln = &lines[i];
             if (!++generation) generation = 1;
             p.local_text_generation = generation;
+            if (ahead) open_line(&p, &cfg, ln, word);
             for (int t = 0; t < ln->n_taps; t++, k++) {
                 Query *q = &queries[k];
                 VjoOverlayData d;
@@ -360,6 +439,7 @@ int main(int argc, char **argv)
                     fprintf(stderr, "%s at %d: result changed between rounds\n", ln->id, ln->taps[t]);
                     return 1;
                 }
+                if (ahead) lookahead(&p, &cfg, ln->text, ln->cursors[t], word);
             }
         }
     }

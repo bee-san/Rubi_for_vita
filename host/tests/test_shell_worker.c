@@ -2640,33 +2640,40 @@ static void test_anki_stop_failure_keeps_worker(void)
 static unsigned char cursor_dict[1024];
 static size_t cursor_dict_size;
 static unsigned cursor_opens, cursor_reads, cursor_closes;
+static unsigned cursor_page0_reads; /* reads at offset 0: the header or a search's page (a located word reads only its payload) */
 static int cursor_handle_live, read_action;
 static void cursor_u16(unsigned char *p, uint16_t x) { p[0] = x; p[1] = x >> 8; }
 static void cursor_u32(unsigned char *p, uint32_t x) { cursor_u16(p, x); cursor_u16(p + 2, x >> 16); }
 static void cursor_u64(unsigned char *p, uint64_t x) { cursor_u32(p, x); cursor_u32(p + 4, x >> 32); }
-static void cursor_build_dict(void)
+/* keys in byte order (a version 1 index is sorted), one entry each: its spelling, its reading and its meaning */
+static void cursor_build_keys(const char *const *keys, const char *const *meanings, int n)
 {
-    const char *keys[] = {"犬", "猫", "鳥"};
-    const char *meanings[] = {"dog", "cat", "bird"};
-    size_t off = 64 + 3 * 24;
+    size_t off = 64 + (size_t)n * 24;
     memset(cursor_dict, 0, sizeof(cursor_dict));
     memcpy(cursor_dict, "VJDICT1\0", 8);
     cursor_u32(cursor_dict + 8, 1); cursor_u32(cursor_dict + 12, 64);
-    cursor_u32(cursor_dict + 16, 3); cursor_u32(cursor_dict + 20, 24);
+    cursor_u32(cursor_dict + 16, (uint32_t)n); cursor_u32(cursor_dict + 20, 24);
     cursor_u64(cursor_dict + 24, 64); cursor_u64(cursor_dict + 32, off);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < n; i++) {
         unsigned char *record = cursor_dict + 64 + 24 * i;
-        cursor_u64(record, off); cursor_u16(record + 16, 3);
-        memcpy(cursor_dict + off, keys[i], 3); off += 3;
+        size_t key_len = strlen(keys[i]);
+        cursor_u64(record, off); cursor_u16(record + 16, (uint16_t)key_len);
+        memcpy(cursor_dict + off, keys[i], key_len); off += key_len;
         size_t payload = off;
         const char *parts[] = {keys[i], keys[i], meanings[i]};
         for (int j = 0; j < 3; j++) {
-            size_t n = strlen(parts[j]) + 1;
-            memcpy(cursor_dict + off, parts[j], n); off += n;
+            size_t m = strlen(parts[j]) + 1;
+            TEST_ASSERT(off + m <= sizeof(cursor_dict));
+            memcpy(cursor_dict + off, parts[j], m); off += m;
         }
         cursor_u64(record + 8, payload); cursor_u32(record + 20, off - payload);
     }
     cursor_dict_size = off; cursor_u64(cursor_dict + 40, off);
+}
+static void cursor_build_dict(void)
+{
+    static const char *const keys[] = {"犬", "猫", "鳥"}, *const meanings[] = {"dog", "cat", "bird"};
+    cursor_build_keys(keys, meanings, 3);
 }
 static void next_scene(uint32_t scene);
 static int read_fail; /* the dictionary's reads fail (a lookup that fails: rc != 0) */
@@ -2674,6 +2681,7 @@ static int cursor_file_read(void *ud, uint64_t off, void *dst, size_t n)
 {
     (void)ud;
     cursor_reads++;
+    cursor_page0_reads += off == 0;
     TEST_CHECK(cursor_handle_live == 1);
     if (read_action) {
         int action = read_action, thread = test_thread; read_action = 0;
@@ -2707,7 +2715,7 @@ static int cursor_file_open(void *ud, const char *path, VjoFile *out)
 static void cursor_setup(void)
 {
     reset(); cursor_build_dict();
-    cursor_opens = cursor_reads = cursor_closes = 0;
+    cursor_opens = cursor_reads = cursor_closes = cursor_page0_reads = 0;
     cursor_handle_live = read_action = read_fail = 0;
     cfg.non_japanese_filter = loaded.non_japanese_filter = VJO_FILTER_NONE;
     cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_AUTO;
@@ -8133,30 +8141,162 @@ static void test_opening_during_preparation_keeps_the_current_screen(void)
 static void test_input_wins_the_worker_slot_after_one_prepared_word(void)
 {
     cursor_setup(); open_overlay(); finish_current_job();
-    test_now += 100001; control_tick(0);
-    TEST_ASSERT(job_running && job_prepare);
-    finish_current_job(); /* the already selected first word */
-    test_now += 100001; control_tick(0);
-    TEST_ASSERT(job_running && job_prepare && job_cursor_byte == 3);
+    TEST_CHECK(ctl_wait_us() == PREPARE_IDLE_US); /* the open overlay: woken for the lookahead */
+    test_now += PREPARE_IDLE_US - 1; control_tick(0);
+    TEST_CHECK(!job_running); /* not before PREPARE_IDLE_US after the last job */
+    test_now += 1; control_tick(VJO_EV_SHELL);
+    TEST_CHECK(!job_running); /* nor in a wakeup that brought an event */
+    control_tick(0);
+    TEST_ASSERT(job_running && job_prepare && job_cursor_byte == 3); /* the shown word is located: the next */
     const char *shown = g_view.list->entries[0].text;
     TEST_CHECK(strstr(shown, "cat"));
     vjo_post_cursor(6, local_text_generation); control_tick(VJO_EV_SHELL);
     TEST_CHECK(job_prepare && cursor_waiting);
-    finish_current_job();
+    finish_current_job(); /* the press waited for that one prepare only */
     TEST_ASSERT(job_running && job_cursor_only && !job_prepare && job_cursor_byte == 6);
     finish_current_job();
     TEST_CHECK(g_view.cursor_byte == 6 && strstr(g_view.list->entries[0].text, "bird"));
+    /* a command posted but not taken yet holds the next prepare back */
+    vjo_post_cursor(0, local_text_generation);
+    test_now += PREPARE_IDLE_US; prepare_words();
+    TEST_CHECK(!job_running && pending_cmd == VJO_CMD_CURSOR);
+    control_tick(0);
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
+    finish_current_job();
     close_overlay(); mem_free();
-    /* Manual recognition and Character mode leave the worker idle. */
-    for (int mode = 0; mode < 2; mode++) {
+    TEST_CHECK(ctl_wait_us() == POLL_TIMEOUT_US);
+}
+
+/* The lookahead's jobs (each PREPARE_IDLE_US after the last job) until it has none: how many, the
+ * first `max` cursors in order. */
+static int lookahead_until_done(uint32_t *order, int max)
+{
+    int n = 0;
+    for (int i = 0; i < 400; i++) {
+        test_now += PREPARE_IDLE_US;
+        control_tick(0);
+        if (!job_running) return n;
+        TEST_ASSERT(job_prepare);
+        if (n < max) order[n] = job_cursor_byte;
+        n++;
+        finish_current_job();
+    }
+    TEST_CHECK_(0, "the lookahead never ends");
+    return n;
+}
+/* A tap (or an arrow's move) to byte, and its lookup: the dictionary reads it made, and whether
+ * it searched (last_lookup_searched: it read page 0, where a located word reads its payload alone). */
+static unsigned last_lookup_searched;
+static unsigned lookup_reads_at(uint32_t byte)
+{
+    unsigned reads = cursor_reads, page0 = cursor_page0_reads;
+    vjo_post_cursor(byte, local_text_generation);
+    control_tick(VJO_EV_SHELL);
+    TEST_ASSERT(job_running && job_cursor_only && !job_prepare);
+    finish_current_job();
+    TEST_CHECK(g_view.cursor_byte == byte);
+    last_lookup_searched = cursor_page0_reads - page0;
+    return cursor_reads - reads;
+}
+
+/* #360: with the overlay open, every mode prepares the whole line, both ways. After a tap on 犬 (byte
+ * 9, before any idle time: cold), the words Right reaches after it (Whole word: past the located 猫舌;
+ * Character mode: each character), then each character before it (a Left with no Right to retrace),
+ * then the rest; Only when I press L + R as Auto once the press read the text. Then every position is
+ * located: a word reads its definition alone (one read, no search), a miss reads nothing, and a new
+ * cursor finds nothing left to prepare. The debug build's close line counts the lookups. */
+static void test_lookahead_covers_the_line_both_ways_in_every_mode(void)
+{
+    static const char *const keys[] = {"犬", "猫", "猫舌", "鳥"}, *const meanings[] = {"dog", "cat", "cat's tongue", "bird"};
+    /* 猫舌と犬の猫舌: 猫 0, 舌 3, と 6, 犬 9, の 12, 猫 15, 舌 18 */
+    static const struct { int highlight, ocr_mode; uint32_t order[5]; } cases[] = {
+        {VJO_HIGHLIGHT_WORD, VJO_OCR_AUTO, {12, 15, 6, 3, 18}},
+        {VJO_HIGHLIGHT_CHARACTER, VJO_OCR_AUTO, {12, 15, 18, 6, 3}},
+        {VJO_HIGHLIGHT_WORD, VJO_OCR_ON_PRESS, {12, 15, 6, 3, 18}},
+        {VJO_HIGHLIGHT_CHARACTER, VJO_OCR_ON_PRESS, {12, 15, 18, 6, 3}},
+    };
+    static const struct { uint32_t at; unsigned reads; const char *meaning; } line[] = {
+        {6, 0, NULL}, {3, 0, NULL}, {0, 1, "cat's tongue"}, {9, 1, "dog"}, {12, 0, NULL}, {15, 1, "cat's tongue"},
+        {18, 0, NULL}};
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        uint32_t order[8];
+        int n;
+        TEST_CASE_("%s, %s", cases[c].highlight == VJO_HIGHLIGHT_WORD ? "Whole word" : "Character",
+                   cases[c].ocr_mode == VJO_OCR_AUTO ? "Automatically" : "on press");
         cursor_setup();
-        if (!mode) cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_ON_PRESS;
-        else cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
-        open_overlay(); finish_current_job();
-        test_now += 100001; control_tick(0);
-        TEST_CHECK(!job_running);
+        cursor_build_keys(keys, meanings, 4);
+        fake_recognized_text = "猫舌と犬の猫舌";
+        cfg.highlight_mode = loaded.highlight_mode = cases[c].highlight;
+        cfg.ocr_mode = loaded.ocr_mode = cases[c].ocr_mode;
+        open_overlay(); finish_current_job(); /* the text and its first word, 猫舌 */
+        TEST_ASSERT(local_text_valid && g_view.list && g_view.list->n_entries == 1);
+        TEST_CHECK(lookup_reads_at(9) == 1 && last_lookup_searched); /* at once: cold */
+        n = lookahead_until_done(order, 8);
+        TEST_CHECK_(n == 5, "%d prepares", n);
+        for (int i = 0; i < 5 && i < n; i++) TEST_CHECK_(order[i] == cases[c].order[i], "prepare %d at %u", i, order[i]);
+        for (size_t i = 0; i < sizeof(line) / sizeof(line[0]); i++) {
+            unsigned reads = lookup_reads_at(line[i].at);
+            TEST_CHECK_(reads == line[i].reads && !last_lookup_searched, "at %u: %u reads", line[i].at, reads);
+            if (line[i].meaning)
+                TEST_CHECK(g_view.list->n_entries == 1 && strstr(g_view.list->entries[0].text, line[i].meaning));
+            else
+                TEST_CHECK(!g_view.list->n_entries);
+            TEST_CHECK(!lookahead_until_done(order, 8)); /* a new cursor: nothing left to prepare */
+        }
+        close_overlay();
+        TEST_CHECK(DLOGGED("input block off rc=0, lookups 7 located, 1 cold"));
+        test_now += 1000000; control_tick(0);
+        TEST_CHECK(!job_running); /* closed: nothing more */
+        mem_free();
+    }
+}
+
+/* #360: before, the eight words after the shown one were prepared; a tap on a later one was cold. Now
+ * the open overlay's pass covers the line within VJO_LOCAL_LOCATED units, a unit a job and a unit a
+ * step past a located position: from a located cursor, 128 jobs (129 positions: a pass never overwrites
+ * its own locators with Dictionaries shown 2). With the overlay closed (Auto's first word, Whole word)
+ * 15 units: #203's eight positions, that word and seven jobs; opening goes on from there: 8 positions
+ * passed, then 124 jobs (132 positions). Once the line is located, a new cursor's pass walks at most
+ * 256 positions and makes no job. */
+static void test_lookahead_reaches_a_tap_past_eight_words_within_its_budget(void)
+{
+    static char text[3 * 300 + 1];
+    uint32_t order[1];
+    for (int i = 0; i < 300; i++) memcpy(text + 3 * i, i % 3 == 0 ? "猫" : i % 3 == 1 ? "犬" : "鳥", 3);
+    text[3 * 300] = 0;
+    for (int closed_first = 0; closed_first < 2; closed_first++) {
+        int located = closed_first ? 132 : 129; /* characters 0 .. located - 1 */
+        cursor_setup();
+        fake_recognized_text = text;
+        if (closed_first) {
+            stable_pending = 1; control_tick(0);
+            TEST_ASSERT(job_running && !job_prepare);
+            finish_current_job(); /* Auto's job, the overlay closed: the first word looked up */
+            TEST_CHECK(lookahead_until_done(order, 0) == 7);
+            TEST_CHECK(ctl_wait_us() == POLL_TIMEOUT_US); /* closed: the usual poll */
+            open_overlay();
+            TEST_CHECK(!job_running && g_view.list && g_view.list->n_entries == 1); /* the saved word */
+        } else {
+            open_overlay(); finish_current_job();
+        }
+        TEST_CHECK(lookahead_until_done(order, 0) == (closed_first ? 124 : 128));
+        TEST_CHECK(lookup_reads_at(3 * 12) == 1 && !last_lookup_searched);  /* the 13th word */
+        TEST_CHECK(lookup_reads_at(3 * (located - 1)) == 1 && !last_lookup_searched); /* the pass's last */
+        TEST_CHECK(lookup_reads_at(3 * located) == 1 && last_lookup_searched);         /* past it: cold */
+        /* from there a new pass: what is located is passed, the rest prepared */
+        TEST_CHECK(lookahead_until_done(order, 1) == 128 && order[0] == 3u * (located + 1));
         close_overlay(); mem_free();
     }
+    /* a line every position of which is located: a new cursor's pass makes no job, and stops */
+    cursor_setup();
+    fake_recognized_text = "猫犬鳥猫犬鳥";
+    open_overlay(); finish_current_job();
+    TEST_CHECK(lookahead_until_done(order, 0) == 5);
+    for (uint32_t at = 0; at < 18; at += 3) {
+        lookup_reads_at(at);
+        TEST_CHECK(!lookahead_until_done(order, 0) && !prepare_left);
+    }
+    close_overlay(); mem_free();
 }
 #endif
 
@@ -8249,6 +8389,8 @@ TEST_LIST = {
     {"auto_prepares_words_without_replacing_the_shown_entry", test_auto_prepares_words_without_replacing_the_shown_entry},
     {"opening_during_preparation_keeps_the_current_screen", test_opening_during_preparation_keeps_the_current_screen},
     {"input_wins_the_worker_slot_after_one_prepared_word", test_input_wins_the_worker_slot_after_one_prepared_word},
+    {"lookahead_covers_the_line_both_ways_in_every_mode", test_lookahead_covers_the_line_both_ways_in_every_mode},
+    {"lookahead_reaches_a_tap_past_eight_words_within_its_budget", test_lookahead_reaches_a_tap_past_eight_words_within_its_budget},
     {"session_log_appends", test_session_log_appends},
     {"every_job_post_finds_job_running", test_every_job_post_finds_job_running},
 #endif

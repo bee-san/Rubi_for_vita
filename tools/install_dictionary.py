@@ -14,7 +14,7 @@ import secrets
 import sys
 import time
 
-from convert_dictionary import HEADER, MAGIC, MAGIC_V2, MAGIC_V3, RECORD, PAGE_SIZE
+from convert_dictionary import HEADER, MAGIC, MAGIC_V2, MAGIC_V3, MAX_FILE_SIZE, RECORD, PAGE_SIZE
 
 DATA_DIR = "/ux0:/data/VitaJPOverlay"
 DICT_DIR = DATA_DIR + "/dictionaries"
@@ -31,7 +31,7 @@ def inspect(path):
             raise ValueError(f"{path}: incomplete dictionary header")
         magic, version, header, count, stride, index, data, size, r1, r2 = HEADER.unpack(raw)
         common_valid = (header == HEADER.size and stride == RECORD.size and count > 0
-                        and data <= size and size == path.stat().st_size and size <= 0x7FFFFFFFFFFFFFFF)
+                        and data <= size and size == path.stat().st_size and size <= MAX_FILE_SIZE)
         v1_valid = (version == 1 and magic == MAGIC and index == HEADER.size
                     and data == header + count * stride and r1 == 0 and r2 == 0)
         v2_valid = (version in (2, 3) and magic == (MAGIC_V2 if version == 2 else MAGIC_V3) and index == PAGE_SIZE

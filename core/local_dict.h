@@ -11,7 +11,7 @@
 #define VJO_LOCAL_MAX_MATCHES 8
 #define VJO_LOCAL_RESULT_BUDGET (64u * 1024u)
 #define VJO_LOCAL_SCRATCH_BUDGET (48u * 1024u)
-/* Handles, a filter directory and bounded text locators; no definitions. Reserve this
+/* Handles, a filter directory and compact word locators; no definitions. Reserve this
  * inside the existing result allocation, separately from the resettable
  * lookup arena. Use naturally aligned storage, zero it before first use;
  * close is idempotent.
@@ -24,6 +24,17 @@ void vjo_local_session_close(VjoLocalSession *session);
  * matched_end is the source byte end, or cursor_byte for a miss. */
 int vjo_local_prepare_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                          const char *text, size_t cursor_byte, size_t *matched_end);
+/* The session's word locators: VJO_LOCAL_LOCATED records of 12 bytes, one a
+ * located page (a miss takes one), the oldest overwritten first: at least 128
+ * positions with Dictionaries shown 2, 32 with 8. 1 when a lookup at
+ * cursor_byte needs no search now: the session located it for
+ * p->local_text_generation, cfg's dictionaries and its Dictionaries shown, or
+ * nothing starts there (the text's end, a space or punctuation); *end is then
+ * the located word's source byte end (cursor_byte for a miss or nothing). 0:
+ * a lookup there searches. Reads no file; only between lookups. */
+#define VJO_LOCAL_LOCATED 256
+int vjo_local_located(const VjoPlatform *p, const VjoConfig *cfg, const char *text, size_t cursor_byte,
+                      size_t *end);
 /* One maximum-size payload plus its vocabulary, token, meaning pointer, the
  * frequency list's name and the dictionary's title (64 bytes each at most)
  * and alignment: 232 of the 256 bytes on a 64-bit host, 208 on the Vita

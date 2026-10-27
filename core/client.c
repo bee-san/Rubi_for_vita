@@ -235,6 +235,10 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         "Local OCR model is missing or invalid. Run tools/prepare_ocr.py and copy the complete model to ocr_model_dir.";
     static const char ocr_failed[] VJO_DATA_TABLE(error_ocr_failed) =
         "Local OCR failed. Try a smaller dialogue region; see log.txt for details.";
+    /* (and these two, for the lookahead's locators: docs/memory-ledger.md, #360) */
+    static const char ocr_unavailable[] VJO_DATA_TABLE(error_ocr_unavailable) =
+        "This build has no local OCR. Install a build made with VJO_WITH_VOCR.";
+    static const char ocr_cancelled[] VJO_DATA_TABLE(error_ocr_cancelled) = "Text recognition cancelled.";
     /* Lookups are the local dictionaries' and recognition the game worker's: no network. */
     const char *what = stage == VJO_STAGE_OCR ? "Text recognition" : VJO_DICT_NAME " lookup";
     VjoBuf b;
@@ -279,10 +283,10 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         vjo_buf_puts(&b, ocr_region);
         break;
     case VJO_E_OCR_UNAVAILABLE:
-        vjo_buf_puts(&b, err->detail ? err->detail : "This build has no local OCR. Install a build made with VJO_WITH_VOCR.");
+        vjo_buf_puts(&b, err->detail ? err->detail : ocr_unavailable);
         break;
     case VJO_E_CANCELLED:
-        vjo_buf_puts(&b, "Text recognition cancelled.");
+        vjo_buf_puts(&b, ocr_cancelled);
         break;
     case VJO_E_SCREEN_CHANGED:
         /* No message (#81 request 4): the Shell never shows such a job; it

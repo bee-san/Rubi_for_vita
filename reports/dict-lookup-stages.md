@@ -16,7 +16,10 @@ python3 tools/dict_stage_report.py after.jsonl --before before.jsonl   # IDENTIC
 ```
 
 `prepared` instead of `cursor` locates each word first (`vjo_local_prepare_at`, Auto's lookahead), its
-reads counted apart, and looks the located word up.
+reads counted apart, and looks the located word up. `word` and `character` (#360) take a line's taps in
+order with the worker's lookahead run to its end between them, in that highlight mode (the open overlay,
+each line opened on its first word); their prepare reads are the background reads before each tap
+([lookahead over the line](dictionary-lookahead-line.md)).
 
 ## On the rubi-dict-check corpus (main `892cfb9`, 2026-10-27)
 

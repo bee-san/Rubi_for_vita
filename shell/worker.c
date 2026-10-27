@@ -53,6 +53,13 @@ typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 :
  * REFRESH_IDLE_US; a lookup cancels a refresh in progress. */
 #define REFRESH_GAP_US      2000000LL
 #define REFRESH_IDLE_US     1500000LL
+/* The lookahead (prepare_words) starts this long after the last job's end (100 ms until #360):
+ * longer than a frame at 60 fps (16.7 ms), in which the overlay reads the pad and posts a press
+ * at once (vjo_post_cursor wakes this thread through the kernel event), so the press that follows
+ * a result always finds the worker idle; held arrows repeat 100 ms apart and the stick looks its
+ * word up after 200 ms at rest. A press that comes during a prepare waits for that prepare only
+ * (one position a job). With the overlay open the thread's wait times out after it (ctl_wait_us). */
+#define PREPARE_IDLE_US     20000
 /* VJO_E_SCREEN_CHANGED (the screen changed under every read of a job): the
  * next try starts at once, from the second in a row SCREEN_RETRY_MS later,
  * doubling up to SCREEN_RETRY_MAX_MS. The try itself waits in the game for the
@@ -95,8 +102,7 @@ static int cursor_waiting;
 static int job_cursor_only;
 static int job_prepare;
 static uint32_t prepared_seq, prepare_cursor;
-static int prepare_left;
-static size_t prepared_end;
+static int prepare_left, prepare_phase; /* prepare_words: its pass's jobs left, and where it is in its order */
 static uint32_t job_cursor_byte, job_cursor_seq, job_text_generation;
 /* Dictionary paging at the cursor (local_dictionary_results > 1): the
  * requested page shares the cursor sequence. Page locators live at the start
@@ -223,6 +229,11 @@ static int64_t idle_since_us; /* the last job's end or the overlay's close */
 static int64_t job_game_us;   /* the job's exchanges with the game worker (network thread) */
 #endif
 static int job_prepares;            /* ...the first word, before the overlay opens (log) */
+/* The debug build's close line: the open overlay's word lookups that found their word located
+ * ([1]: no search, by the lookahead or an earlier lookup, or nothing starts there) and the cold
+ * ones ([0]: searched). Counted on the network thread (run_cursor_job), zeroed at the open; the
+ * normal build counts nothing. */
+static unsigned lookups_located[2];
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
 /* The job's capture is done (job_capture_scene, job_capture_seq: its
@@ -1490,6 +1501,12 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     vjo_view_lock(); /* the published list is the static header, never old entries */
     vjo_arena_reset(a);
     vjo_view_unlock();
+#if VJO_DEBUG
+    {
+        size_t end;
+        lookups_located[vjo_local_located(&plat, &job_cfg, local_text, job_cursor_byte, &end)]++;
+    }
+#endif
     rc = vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
     note_pages(rc, out);
     /* Locators were stale (another limit): show the requested page if it exists. */
@@ -1505,8 +1522,9 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
 static void net_job(void)
 {
     if (job_prepare) {
+        size_t end; /* (prepare_words asks the session: vjo_local_located) */
         plat.local_text_generation = job_text_generation;
-        job_rc = vjo_local_prepare_at(&results[0], &plat, &job_cfg, local_text, job_cursor_byte, &prepared_end);
+        job_rc = vjo_local_prepare_at(&results[0], &plat, &job_cfg, local_text, job_cursor_byte, &end);
         __sync_synchronize();
         job_done = 1;
         vjoNotifyShell();
@@ -1620,25 +1638,29 @@ static uint32_t stack_high_water(void)
 /* Not inlined: its thread info stays out of net_main's frame, under every job. */
 static __attribute__((noinline)) void net_stack_paint(void)
 {
+    /* once a boot, at most: in the data segment (it pays for the lookahead's scheduling, #360) */
+    static const char no_info[] VJO_DATA_TABLE(net_stack_no_info) = "VjoNet stack: not painted (no thread info)";
+    static const char other_size[] VJO_DATA_TABLE(net_stack_other_size) =
+        "VjoNet stack: not painted (the kernel reports %d B, not %u)";
+    static const char outside[] VJO_DATA_TABLE(net_stack_outside) =
+        "VjoNet stack: not painted (frame 0x%08X outside 0x%08X + %d)";
     SceKernelThreadInfo info;
     uint8_t here;
     sceClibMemset(&info, 0, sizeof(info));
     info.size = sizeof(info);
     if (sceKernelGetThreadInfo(sceKernelGetThreadId(), &info) < 0 || !info.stack) {
-        vjo_log("VjoNet stack: not painted (no thread info)");
+        vjo_log(no_info);
         return;
     }
     if (info.stackSize != (int)VJO_STACK_SHELL_NET) { /* not the stack this thread was created with */
-        vjo_log("VjoNet stack: not painted (the kernel reports %d B, not %u)", info.stackSize,
-                (unsigned)VJO_STACK_SHELL_NET);
+        vjo_log(other_size, info.stackSize, (unsigned)VJO_STACK_SHELL_NET);
         return;
     }
     /* As addresses: painted only when this frame is inside the reported stack, with room below it. */
     uintptr_t lo = (uintptr_t)info.stack, top = lo + (uintptr_t)info.stackSize, frame = (uintptr_t)&here;
     uintptr_t low = lo + STACK_PAINT_FLOOR; /* the paint's first byte */
     if (frame <= low + STACK_PAINT_GAP || frame >= top) {
-        vjo_log("VjoNet stack: not painted (frame 0x%08X outside 0x%08X + %d)", (unsigned)frame, (unsigned)lo,
-                info.stackSize);
+        vjo_log(outside, (unsigned)frame, (unsigned)lo, info.stackSize);
         return;
     }
     stack_paint((uint8_t *)low, (size_t)(frame - STACK_PAINT_GAP - low), (uint8_t *)top);
@@ -1945,6 +1967,9 @@ static void clear_input_block_error(void)
 static void open_overlay(void)
 {
     prepared_seq = 0;
+#if VJO_DEBUG
+    lookups_located[0] = lookups_located[1] = 0;
+#endif
     VjoState st;
     int block_rc = vjoSetInputBlock(1);
     vjo_dlog("input block on rc=%d (%08X) t=%u ms", block_rc, block_rc, vjo_log_ms());
@@ -2061,7 +2086,8 @@ static void close_overlay_for(int why)
     g_view.local_cursor_mode = 0;
     g_view.version++;
     vjo_view_unlock();
-    vjo_dlog("overlay close (%s) t=%u ms: input block off rc=%d", names[why], vjo_log_ms(), rc);
+    vjo_dlog("overlay close (%s) t=%u ms: input block off rc=%d, lookups %u located, %u cold", names[why],
+             vjo_log_ms(), rc, lookups_located[1], lookups_located[0]);
 #if !VJO_DEBUG
     if (rc < 0)
         vjo_log("input block off refused 0x%08X", (unsigned)rc);
@@ -2413,6 +2439,7 @@ static void on_refresh_done(void)
                 line_debug_accept(&vocr_result, refresh_model);
 #endif
                 advance_generation(&local_text_generation);
+                prepared_seq = 0; /* the lookahead starts over on it (the cursor's sequence stays) */
                 local_page = 0;
                 if (!grown)
                     local_cursor_byte = job_cfg.japanese_only_selection
@@ -2485,15 +2512,8 @@ static void on_job_done(void)
     idle_since_us = now_us();
     if (job_prepare) {
         job_running = job_done = job_prepare = 0;
+        /* a failure or a new text ends the pass; else prepare_words steps on from the word it located */
         if (job_rc || job_cancelled || job_text_generation != local_text_generation) prepare_left = 0;
-        else {
-            VjoWordNavigation nav = {0};
-            int row;
-            size_t next = vjo_word_step(&nav, local_text, sceClibStrnlen(local_text, sizeof(local_text)),
-                                      job_cursor_byte, prepared_end, 1, job_cfg.japanese_only_selection, NULL, 0, &row);
-            prepare_cursor = (uint32_t)next;
-            if (next <= job_cursor_byte) prepare_left = 0;
-        }
         job_cancelled = 0;
         if (restart_old_job(0)) return;
         if (cursor_waiting && ov != OV_CLOSED) start_cursor_job();
@@ -3099,32 +3119,78 @@ static void boot_guard_ok(void)
     }
 }
 
-/* One bounded location-only lookup per idle job, at most eight positions from
- * the current selection. Existing scratch follows the displayed entry; OOM merely
- * stops preparation. The normal cursor job always wins the next worker slot. */
+/* The lookahead (#203, #360): while the worker is idle, one location-only lookup a job
+ * (vjo_local_prepare_at: no definition read), in the order the next lookups want them: the
+ * words Right reaches from the cursor (Whole word: past each located word; Character mode:
+ * each next character), then each character before it (a Left with no Right to retrace goes
+ * one back), then every other character after it (a tap, the stick, Up and Down), nearest
+ * first, to the line's ends. A position the session located (vjo_local_located: the cursor
+ * lookups' too) takes no job; a new cursor starts the order again from it, keeping what is
+ * located (for this text and Dictionaries shown). A pass costs a unit a job and a unit a step
+ * past a located position (a prepared one is passed once located), VJO_LOCAL_LOCATED units in
+ * all: at most 128 jobs, so with Dictionaries shown 1 or 2 (2 is the default) a pass never
+ * overwrites its own records (with more, a long line's first positions may be located again
+ * when they come up), and the walk past located positions takes at most 256 steps of this
+ * thread (a few microseconds each on the host: 0.8 for a 128-character line). The job's scratch
+ * follows the displayed entry; OOM or a failed read ends the pass. A user's command, the
+ * subtitles, a screenshot, the self-test and a refresh go first: a press during a prepare
+ * waits for that one only. #203 prepared in Auto with Whole word only, and said no why; what
+ * holds is the closed overlay's: then only Auto's Whole word keeps a result block (want_lookup:
+ * Character mode looks its first word up on opening), and Only when I press L + R reads nothing
+ * until the press (docs/auto-vs-press.md). So with the overlay closed 15 units: #203's eight
+ * positions from Auto's first word, that word (located) and seven jobs, in the order above;
+ * open, every mode (a pressed text is looked up as an Automatic one). */
 static void prepare_words(void)
 {
-    if (job_running || pending_cmd != VJO_CMD_NONE || now_us() - idle_since_us < 100000 ||
+    size_t at, end;
+    if (job_running || pending_cmd != VJO_CMD_NONE || now_us() - idle_since_us < PREPARE_IDLE_US ||
         !cache_ok || !local_text_valid || local_text_game_generation != game_generation ||
         refresh_pending || subtitles || shot_waiting() || vjo_selftest_stages() ||
-        !has_result_memory() || !game_active() || cfg.ocr_mode != VJO_OCR_AUTO ||
-        cfg.highlight_mode != VJO_HIGHLIGHT_WORD) return;
+        !has_result_memory() || !game_active() ||
+        (ov == OV_CLOSED && (cfg.ocr_mode != VJO_OCR_AUTO || cfg.highlight_mode != VJO_HIGHLIGHT_WORD))) return;
     if (prepared_seq != local_cursor_seq) {
         prepared_seq = local_cursor_seq;
         prepare_cursor = local_cursor_byte;
-        prepare_left = 8;
+        prepare_phase = 0;
+        prepare_left = ov == OV_CLOSED ? 15 : VJO_LOCAL_LOCATED;
     }
-    if (!prepare_left || prepare_cursor >= sceClibStrnlen(local_text, sizeof(local_text))) return;
-    prepare_left--;
-    job_prepare = 1;
-    job_cursor_only = job_refresh = job_cancelled = job_done = job_text_ready = 0;
-    job_cfg = cfg;
-    job_generation = game_generation;
-    job_text_generation = local_text_generation;
-    job_cursor_byte = prepare_cursor;
-    job_running = 1;
-    __sync_synchronize();
-    sceKernelSetEventFlag(net_evf, NET_EV_JOB);
+    plat.local_text_generation = local_text_generation;
+    while (prepare_left > 0) {
+        at = prepare_cursor;
+        prepare_left--; /* a job, or the step past a located position */
+        if (!vjo_local_located(&plat, &cfg, local_text, at, &end)) {
+            job_prepare = 1;
+            job_cursor_only = job_refresh = job_cancelled = job_done = job_text_ready = 0;
+            job_cfg = cfg;
+            job_generation = game_generation;
+            job_text_generation = local_text_generation;
+            job_cursor_byte = (uint32_t)at;
+            job_running = 1;
+            __sync_synchronize();
+            sceKernelSetEventFlag(net_evf, NET_EV_JOB);
+            return;
+        }
+        /* the next position: phase 0 Right's, 1 the character before, 2 the one after */
+        size_t next = at;
+        vjo_text_row_step(local_text, sceClibStrnlen(local_text, sizeof(local_text)), NULL, at,
+                          prepare_phase == 1 ? at : !prepare_phase && cfg.highlight_mode == VJO_HIGHLIGHT_WORD &&
+                          end > at ? end : at + 1,
+                          prepare_phase == 1 ? -1 : 1, cfg.japanese_only_selection, 0, &next);
+        if (next != at)
+            prepare_cursor = (uint32_t)next;
+        else if (++prepare_phase > 2) /* the line's end that way: the next phase, from the cursor */
+            prepare_left = 0;
+        else
+            prepare_cursor = local_cursor_byte;
+    }
+}
+
+/* The control thread's wait for its next event: PREPARE_IDLE_US with the overlay open, so the
+ * lookahead's next job starts then (prepare_words runs after a wait that timed out; a wakeup costs
+ * a few loads when there is nothing to do), POLL_TIMEOUT_US closed. */
+static unsigned ctl_wait_us(void)
+{
+    return ov != OV_CLOSED ? PREPARE_IDLE_US : POLL_TIMEOUT_US;
 }
 
 /* Kernel and local wakeups share the existing event. Handler order gives
@@ -3202,7 +3268,7 @@ static int ctl_main(SceSize args, void *argp)
         uint32_t bits = 0;
         vjoWaitEvent(VJO_EV_TRIGGER | VJO_EV_SUBTITLE | VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET |
                          VJO_EV_GAME_START | VJO_EV_GAME_EXIT | VJO_EV_SHELL,
-                     &bits, POLL_TIMEOUT_US);
+                     &bits, ctl_wait_us());
         control_tick(bits);
     }
     return 0;

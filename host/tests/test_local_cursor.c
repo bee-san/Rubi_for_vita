@@ -2158,6 +2158,248 @@ static void preparation_oom_preserves_the_displayed_result(void)
     vjo_local_session_close(p.local_session);
 }
 
+/* One lookup at cursor through a session (its pages and its entry), next to the same lookup with no
+ * session: they must show the same. Returns the session lookup's reads. */
+static int lookup_as_without_session(VjoArena *a, VjoPlatform *p, const VjoConfig *cfg, const char *text,
+                                     size_t cursor)
+{
+    VjoLocalPages pages, plain;
+    VjoDictResult r, one;
+    VjoErr e;
+    VjoLocalSession *s = p->local_session;
+    uint32_t generation = p->local_text_generation;
+    int before = reads, n, rc;
+    char spelling[64] = "";
+    vjo_arena_reset(a);
+    TEST_ASSERT((rc = vjo_local_lookup_pages(a, p, cfg, text, cursor, cfg->local_dictionary_results, &pages, &r, &e))
+                == VJO_OK);
+    n = reads - before;
+    if (r.n_vocab) snprintf(spelling, sizeof(spelling), "%s", r.vocab[0].meanings[0]);
+    p->local_session = NULL;
+    p->local_text_generation = 0;
+    vjo_arena_reset(a);
+    TEST_ASSERT(vjo_local_lookup_pages(a, p, cfg, text, cursor, cfg->local_dictionary_results, &plain, &one, &e) ==
+                VJO_OK);
+    p->local_session = s;
+    p->local_text_generation = generation;
+    TEST_CHECK_(pages.count == plain.count && pages.cursor_byte == plain.cursor_byte && pages.pos16 == plain.pos16,
+                "at %zu: %d pages, %d searched", cursor, pages.count, plain.count);
+    for (int i = 0; i < pages.count && i < plain.count; i++) {
+        const VjoLocalPage *x = &pages.page[i], *y = &plain.page[i];
+        TEST_CHECK_(x->entry_off == y->entry_off && x->file_size == y->file_size && x->entry_len == y->entry_len &&
+                    x->len16 == y->len16 && x->conjugation == y->conjugation && x->dict == y->dict,
+                    "at %zu, page %d", cursor, i);
+    }
+    TEST_CHECK(r.n_vocab == one.n_vocab && (!one.n_vocab || !strcmp(spelling, one.vocab[0].meanings[0])));
+    TEST_CHECK(!one.n_vocab || (r.tokens[0].pos16 == one.tokens[0].pos16 && r.tokens[0].len16 == one.tokens[0].len16 &&
+                                r.tokens[0].conjugation == one.tokens[0].conjugation));
+    return n;
+}
+
+/* The session's compact locators (#360): a located page is one 12-byte record of VJO_LOCAL_LOCATED in
+ * a ring (a miss one record), so a whole line stays located: 256 positions with one page, 128 with
+ * Dictionaries shown 2, 32 with 8. A located word reads only its payload and shows what a search shows.
+ * The oldest records go first: a position whose first record went is searched again, and its other
+ * pages' records (still there) are never taken for it or another position. */
+static void compact_locators_keep_a_line_and_evict_the_oldest(void)
+{
+    static const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 0}, {"犬", "犬", "いぬ", "dog", 0, 0}};
+    static char text[3 * 300 + 1];
+    char names[VJO_LOCAL_MAX_DICTS][32];
+    static const struct { int dicts, limit, positions, kept; } cases[] = {
+        {1, 1, 300, 256}, {1, 2, 300, 256}, {2, 2, 140, 128}, {8, 8, 40, 32}};
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        size_t size = vjo_local_session_size(), end;
+        int n = cases[c].positions, first_kept = n - cases[c].kept;
+        TEST_CASE_("%d dictionaries, %d shown", cases[c].dicts, cases[c].limit);
+        setup(&a, &p, &cfg);
+        cfg.local_dictionaries[0] = 0;
+        for (int i = 0; i < cases[c].dicts; i++) {
+            snprintf(names[i], sizeof(names[i]), "dict%d.vjdict", i);
+            build(&fixtures[i], names[i], rows, 1, 3);
+            if (i) strcat(cfg.local_dictionaries, ",");
+            strcat(cfg.local_dictionaries, names[i]);
+        }
+        cfg.local_dictionary_results = cases[c].limit;
+        for (int i = 0; i < n; i++) memcpy(text + 3 * i, "猫", 3);
+        text[3 * n] = 0;
+        memset(arena_mem, 0, size);
+        p.local_session = (VjoLocalSession *)arena_mem;
+        p.local_text_generation = 5;
+        vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+        TEST_CHECK(size <= 7u * 1024u);
+        for (int i = 0; i < n; i++) {
+            vjo_arena_reset(&a);
+            TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, text, 3u * (unsigned)i, &end) == VJO_OK);
+            TEST_CHECK(end == 3u * (unsigned)i + 3u);
+        }
+        for (int i = 0; i < n; i++) {
+            int kept = vjo_local_located(&p, &cfg, text, 3u * (unsigned)i, &end);
+            TEST_CHECK_(kept == (i >= first_kept) && (!kept || end == 3u * (unsigned)i + 3u), "position %d: %d", i, kept);
+        }
+        /* located: one read, the shown payload (the other pages are located, not read) */
+        TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, text, 3u * (unsigned)(n - 1)) == 1);
+        TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, text, 3u * (unsigned)first_kept) == 1);
+        /* evicted: searched again, and kept again (the newest) */
+        TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, text, 0) > 1);
+        TEST_CHECK(vjo_local_located(&p, &cfg, text, 0, &end) && end == 3);
+        vjo_local_session_close(p.local_session);
+        TEST_CHECK(opened == closed);
+    }
+
+    /* Orphans: 猫 has a page in each of 8 dictionaries (8 records), 犬 only in the first (one record).
+     * 猫 first, then 248 犬 fill the ring; the 249th takes 猫's first record and leaves its other seven. */
+    {
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        size_t size = vjo_local_session_size(), end;
+        setup(&a, &p, &cfg);
+        cfg.local_dictionaries[0] = 0;
+        for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
+            snprintf(names[i], sizeof(names[i]), "dict%d.vjdict", i);
+            build(&fixtures[i], names[i], rows, i ? 1 : 2, 3);
+            if (i) strcat(cfg.local_dictionaries, ",");
+            strcat(cfg.local_dictionaries, names[i]);
+        }
+        cfg.local_dictionary_results = VJO_LOCAL_MAX_DICTS;
+        memcpy(text, "猫", 3);
+        for (int i = 1; i < 250; i++) memcpy(text + 3 * i, "犬", 3);
+        text[3 * 250] = 0;
+        memset(arena_mem, 0, size);
+        p.local_session = (VjoLocalSession *)arena_mem;
+        p.local_text_generation = 9;
+        vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+        for (int i = 0; i < 249; i++) {
+            vjo_arena_reset(&a);
+            TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, text, 3u * (unsigned)i, &end) == VJO_OK);
+        }
+        TEST_CHECK(vjo_local_located(&p, &cfg, text, 0, &end) && end == 3);
+        TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, text, 0) == 1); /* 8 pages, one payload read */
+        vjo_arena_reset(&a);
+        TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, text, 3u * 249u, &end) == VJO_OK);
+        TEST_CHECK(!vjo_local_located(&p, &cfg, text, 0, &end));
+        for (int i = 1; i < 250; i++) TEST_CHECK_(vjo_local_located(&p, &cfg, text, 3u * (unsigned)i, &end), "犬 %d", i);
+        TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, text, 3) == 1 && lookup_as_without_session(&a, &p, &cfg, text, 3u * 249u) == 1);
+        TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, text, 0) > 1); /* searched again: its 8 pages */
+        /* kept again as the newest: its 8 records took the oldest, its 7 orphans and the first 犬's */
+        TEST_CHECK(vjo_local_located(&p, &cfg, text, 0, &end) && !vjo_local_located(&p, &cfg, text, 3, &end));
+        TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, text, 0) == 1 && lookup_as_without_session(&a, &p, &cfg, text, 6) == 1);
+        vjo_local_session_close(p.local_session);
+        TEST_CHECK(opened == closed);
+    }
+}
+
+/* vjo_local_located (the lookahead's question, #360): no file is read; a position needs no search
+ * once the session located it, for this text, dictionaries and Dictionaries shown, or when nothing
+ * starts there (a space, punctuation, the end), and its end is the located word's. */
+static void located_says_which_lookups_need_no_search(void)
+{
+    static const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 0}, {"猫舌", "猫舌", "ねこじた", "cat's tongue", 0, 0}};
+    const char *text = "猫舌 猫。未知";
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    size_t size = vjo_local_session_size(), end;
+    int before;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", rows, 2, 3);
+    memset(arena_mem, 0, size);
+    p.local_session = (VjoLocalSession *)arena_mem;
+    p.local_text_generation = 3;
+    vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+    before = reads;
+    TEST_CHECK(!vjo_local_located(&p, &cfg, text, 0, &end) && end == 0);
+    TEST_CHECK(vjo_local_located(&p, &cfg, text, 6, &end) && end == 6);   /* the space */
+    TEST_CHECK(vjo_local_located(&p, &cfg, text, 10, &end) && end == 10); /* 。 */
+    TEST_CHECK(vjo_local_located(&p, &cfg, text, strlen(text), &end));    /* the end */
+    TEST_CHECK(!vjo_local_located(&p, &cfg, text, 13, &end));             /* 未: a miss not looked up yet */
+    TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, text, 0, &end) == VJO_OK && end == 6);
+    TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, text, 13, &end) == VJO_OK && end == 13);
+    before = reads;
+    TEST_CHECK(vjo_local_located(&p, &cfg, text, 0, &end) && end == 6);
+    TEST_CHECK(vjo_local_located(&p, &cfg, text, 13, &end) && end == 13);
+    TEST_CHECK(!vjo_local_located(&p, &cfg, text, 3, &end) && !vjo_local_located(&p, &cfg, text, 7, &end));
+    TEST_CHECK(reads == before);
+    p.local_text_generation = 4; /* another text */
+    TEST_CHECK(!vjo_local_located(&p, &cfg, text, 0, &end));
+    p.local_text_generation = 3;
+    TEST_CHECK(vjo_local_located(&p, &cfg, text, 0, &end));
+    cfg.local_dictionary_results = 3; /* other locators */
+    TEST_CHECK(!vjo_local_located(&p, &cfg, text, 0, &end));
+    cfg.local_dictionary_results = 2;
+    strcpy(cfg.local_dictionaries, "other.vjdict"); /* another session */
+    TEST_CHECK(!vjo_local_located(&p, &cfg, text, 0, &end));
+    strcpy(cfg.local_dictionaries, "main.vjdict");
+    p.local_text_generation = 0; /* no locators */
+    TEST_CHECK(!vjo_local_located(&p, &cfg, text, 0, &end) && vjo_local_located(&p, &cfg, text, 6, &end));
+    p.local_text_generation = 3;
+    TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, text, 0) == 1); /* located 猫舌: its payload only */
+    vjo_local_session_close(p.local_session);
+    TEST_CHECK(!vjo_local_located(&p, &cfg, text, 0, &end));
+}
+
+/* The session's locators keep 32-bit payload offsets, so a file of 4 GiB or more is refused as it
+ * opens (a format error, nothing kept open), and one just under 4 GiB is read and located exactly.
+ * The file is the fixture with its payload moved up by big_shift bytes (reads there come from the
+ * fixture's bytes; the header, index and keys stay where they are). */
+static uint64_t big_shift;
+static int big_read(void *ctx, uint64_t off, void *dst, size_t n)
+{
+    Fixture *f = ctx;
+    reads++;
+    if (off >= big_shift) off -= big_shift;
+    if (off > sizeof(f->bytes) || n > sizeof(f->bytes) - (size_t)off) return -1;
+    memcpy(dst, f->bytes + (size_t)off, n);
+    return 0;
+}
+static int big_open(void *ud, const char *path, VjoFile *out)
+{
+    Fixture *f = &fixtures[0];
+    (void)ud; (void)path;
+    f->active++; opened++;
+    *out = (VjoFile){f, big_shift + f->size, big_read, close_file, 0};
+    return 0;
+}
+static void files_of_4_gib_or_more_are_refused(void)
+{
+    static const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
+    for (int refused = 0; refused < 2; refused++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        VjoDictResult r; VjoErr e;
+        size_t size = vjo_local_session_size(), end;
+        uint8_t *record;
+        uint64_t payload;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", &row, 1, 1);
+        /* the file: 4 GiB, or just under it (the shift page-aligned: the reader reads whole pages) */
+        big_shift = refused ? UINT64_C(1) << 32 : (UINT32_MAX - fixtures[0].size) & ~(uint64_t)4095;
+        record = fixtures[0].bytes + 64;
+        payload = big_shift + (record[8] | (uint64_t)record[9] << 8);
+        put64(record + 8, payload);
+        put64(fixtures[0].bytes + 40, big_shift + fixtures[0].size);
+        p.file_open = big_open;
+        memset(arena_mem, 0, size);
+        p.local_session = (VjoLocalSession *)arena_mem;
+        p.local_text_generation = 1;
+        vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+        TEST_CASE(refused ? "4 GiB" : "just under 4 GiB");
+        if (refused) {
+            TEST_CHECK(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &r, &e) == VJO_E_LOCAL_FORMAT && !r.n_vocab);
+            TEST_CHECK(vjo_local_prepare_at(&a, &p, &cfg, "猫", 0, &end) == VJO_E_LOCAL_FORMAT && end == 0);
+            TEST_CHECK(!vjo_local_located(&p, &cfg, "猫", 0, &end) && opened == closed && !a.used);
+            continue;
+        }
+        TEST_ASSERT(payload > UINT32_MAX - 8192 && payload + 4 < UINT32_MAX); /* bit 31 set: kept in 32 bits exactly */
+        TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, "猫", 0, &end) == VJO_OK && end == 3);
+        TEST_CHECK(vjo_local_located(&p, &cfg, "猫", 0, &end) && end == 3);
+        TEST_CHECK(lookup_as_without_session(&a, &p, &cfg, "猫", 0) == 1); /* located: its payload, at its offset */
+        vjo_arena_reset(&a);
+        TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &r, &e) == VJO_OK && r.n_vocab == 1);
+        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "cat"));
+        vjo_local_session_close(p.local_session);
+        TEST_CHECK(opened == closed);
+    }
+    big_shift = 0;
+}
+
 static void candidate_growth_fails_without_truncating_a_lookup(void)
 {
     const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 0},
@@ -2371,6 +2613,9 @@ TEST_LIST = {
     {"candidate_growth_fails_without_truncating_a_lookup", candidate_growth_fails_without_truncating_a_lookup},
     {"prepared_words_keep_output_and_read_only_the_selected_payload", prepared_words_keep_output_and_read_only_the_selected_payload},
     {"preparation_oom_preserves_the_displayed_result", preparation_oom_preserves_the_displayed_result},
+    {"compact_locators_keep_a_line_and_evict_the_oldest", compact_locators_keep_a_line_and_evict_the_oldest},
+    {"located_says_which_lookups_need_no_search", located_says_which_lookups_need_no_search},
+    {"files_of_4_gib_or_more_are_refused", files_of_4_gib_or_more_are_refused},
     {"session_owns_all_eight_dictionaries_and_closes_a_failed_page", session_owns_all_eight_dictionaries_and_closes_a_failed_page},
     {"session_reuses_handles_headers_and_dictionary_pages", session_reuses_handles_headers_and_dictionary_pages},
     {"session_discards_changed_config_and_failed_files", session_discards_changed_config_and_failed_files},

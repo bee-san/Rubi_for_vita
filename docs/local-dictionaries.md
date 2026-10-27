@@ -297,25 +297,34 @@ fits in what the earlier ones left (256 blocks in all; the bundled files' 226 + 
 fit). A lookup then reads no page 0, whichever file it searches; a file whose
 directory does not fit reads its page 0 through the page cache at each lookup, as
 every file did before (when the session kept one directory, the two bundled files
-evicted each other's: 1.88 page-0 reads a lookup). The session keeps 16
-word-location records too, including misses. Together these occupy 6,784 bytes
-inside the existing 64 KiB allocation [measured Vita build;
-[lookup report](../reports/dictionary-lookahead.md); the pool took the single
-directory's bytes and its bookkeeping the padding of each file's record, so the
-size did not change]. Definitions and the four page
+evicted each other's: 1.88 page-0 reads a lookup). The session keeps 256
+word-location records of 12 bytes too, one a located page (a miss takes one): 128
+positions with Dictionaries shown 2, 32 with 8, the oldest overwritten first. Together
+these occupy 6,528 bytes inside the existing 64 KiB allocation [measured Vita build;
+[lookup report](../reports/dictionary-lookahead-line.md); the pool took the single
+directory's bytes and its bookkeeping the padding of each file's record]. A record
+keeps a payload's 32-bit offset, so a dictionary file of 4 GiB or more is refused
+(below). Definitions and the four page
 buffers are not retained in this cache. Auto keeps the session with its recognized
 text, including while preparing words before the overlay opens. Closing the overlay
 ends it after any in-flight lookup. Freeing results, a new full OCR job, a changed
 dictionary directory/list or platform, or a dictionary I/O/format error also releases it.
 
-Auto with Whole word prepares up to eight positions starting at the current word, one per idle job
-after 100 ms without foreground work [source: `shell/worker.c`]. It uses the normal
+While the overlay is open, every mode (Whole word or Character, Read text Automatically or
+Only when I press L + R) locates the line's positions while the worker is idle, one per job,
+20 ms after the last one: the positions Right reaches from the cursor (nearest first), then
+each character before it, then the rest of the line; a position already located takes no job,
+and a new cursor starts again from itself, keeping what is located [source: `shell/worker.c`
+`prepare_words`]. With the overlay closed, Auto with Whole word covers the eight positions
+it did before, its first word and seven more, the words Right reaches first. A pass makes at most
+128 jobs, and after a cursor move it walks at most 256 positions. It uses the normal
 matching and navigation rules, keeps the displayed definition intact and yields
 between words. A prepared hit reads only its definition; a prepared miss reads
 nothing. User lookups, refreshes, subtitles, Anki screenshots and self-tests take
 priority. If scratch will not fit beside the displayed entry, preparation stops
 and selections use the normal lookup. Text generations and result limits scope
-the cache; a changed text or dictionary cannot reuse another's locators.
+the cache; a changed text or dictionary cannot reuse another's locators. The debug
+build's overlay close line counts the lookups that found their word located and the cold ones.
 As the installation instructions require, finish replacing dictionaries with games
 closed; files must not be modified during an open session. A new lookup after the
 close opens and validates fresh files. The stateless host/core API is unchanged when
@@ -329,7 +338,7 @@ zero leaves locator caching disabled.
 | Other dictionaries' page locators (Dictionaries shown 2–8) | 208 bytes in the result arena; none for 1 |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
-| Session, filter directories and word locators | 6,784 bytes inside that 64 KiB allocation on Vita [measured]; at most 7 KiB [compile-time bound] |
+| Session, filter directories and word locators | 6,528 bytes inside that 64 KiB allocation on Vita [measured]; at most 7 KiB [compile-time bound] |
 | Network worker result arenas | none since Google Lens and the Hachidori relay were removed (they were two 256 KiB arenas, plus a connection pool) |
 | Persistent recognized text / UI character copy | 4 KiB each |
 | Enabled dictionary files | 8 |
@@ -691,7 +700,10 @@ Payloads are three UTF-8 NUL-terminated strings: spelling, reading, definition.
 Spelling and reading indexes share payloads. Rule bits are v1=1, v5=2, vs=4,
 vk=8, vz=16, adj-i=32, iru=64. Opening a dictionary reads only its first page
 (the header, the key filter's descriptor and version 3's posting hints'); pages,
-offsets, bounds and payloads are validated as they are accessed.
+offsets, bounds and payloads are validated as they are accessed. A file must be
+under 4 GiB (the Shell's word locators keep 32-bit offsets, #360; the bundled
+dictionary is 157 MB): a larger one is refused as an invalid dictionary, and the
+converter and `tools/install_dictionary.py` refuse to write or upload one.
 
 #### Key filter
 
