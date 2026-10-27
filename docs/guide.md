@@ -1079,7 +1079,7 @@ and lookup, and saves them as Anki cards: a word you type, or a word of an earli
 | Square | Earlier lines: the next game |
 | Cancel | An open line: back to the list; else exit the app |
 
-The page uses no network, and its own memory is static: about 420 KiB of the app's 50 MiB
+The page uses no network, and its own memory is static: about 430 KiB of the app's 50 MiB
 ([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)); leaving the page closes the dictionaries'
 files. The many characters it draws and measures make the app load its font again now and then, with an empty glyph
 atlas (libvita2d's holds about 500, an estimate), each time leaving 4 KiB of its heap behind. Earlier lines lists at

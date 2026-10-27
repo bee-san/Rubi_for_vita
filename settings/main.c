@@ -176,8 +176,8 @@ static float text_scale(float pixels) { return pixels / font_em; }
  * 8 MiB heap, 4 KiB at up to 363 glyphs (so the switch at 350), 8 KiB past that (a drawing font a frame overfills,
  * a measuring font past its switches for the frame) [source: libvita2d a8f15ab int_htab.c, and the pinned libvita2d.a's
  * int_htab.o].
- * About 2,000 switches (some 700,000 new characters drawn or measured in one run) would use up the heap; the log
- * counts them. A font's atlas texture is made through the link's wrapper (settings/vita2d_textures.c), so freeing it
+ * About 2,000 switches (some 700,000 new characters drawn or measured in one run) would use up the heap (an estimate:
+ * the heap has other users); the log counts them. A font's atlas texture is made through the link's wrapper (settings/vita2d_textures.c), so freeing it
  * frees nothing else. */
 #define GLYPH_SLOTS 1024
 #define GLYPH_SWITCH 350
