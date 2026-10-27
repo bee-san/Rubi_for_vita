@@ -9,6 +9,7 @@
 #include <psp2/io/stat.h>
 #include <string.h>
 #include "anki_queue.h"
+#include "../core/port.h"
 #include "shell.h"
 
 #define QUEUE_DIR VJO_ANKI_QUEUE_DIR
@@ -110,10 +111,12 @@ static int commit(const char *path, const void *data, size_t len)
  * durable. 0 when there is none. */
 static int find(const char *id)
 {
+    /* In the data segment (VJO_DATA_TABLE, core/port.h): the normal Shell's code pages are full (36 B,
+     * docs/memory-ledger.md "PSP text and the PSP probe (format 4)"). */
     static const struct {
         const char *dir, *ext;
         int rc;
-    } where[] = {{QUEUE_DIR, "json", VJO_QUEUE_EXISTS},
+    } where[] VJO_DATA_TABLE(anki_queue_where) = {{QUEUE_DIR, "json", VJO_QUEUE_EXISTS},
                  {VJO_ANKI_EXPORTED_DIR, "json", VJO_QUEUE_ARCHIVED},
                  {QUEUE_DIR, "duplicate.json", VJO_QUEUE_ARCHIVED}};
     char path[PATH_CAP];

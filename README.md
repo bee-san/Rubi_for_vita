@@ -173,7 +173,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries for the same word an L or R tap pages through, 1–8 (2: a word, then the same word as a character's name) | 2 |
-| | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
+| | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (the same, plus PSP text in two PSP games, testing), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
 | | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready as soon as the game writes it ([details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns in every game) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
@@ -201,7 +201,8 @@ Older installs may have kept **OCR only**, so choose Automatic once if needed.
 | **175 Vita title IDs from LunaTranslator's table** | Automatic attempts using 294 ported hook sites, plus string-copy hooks | Experimental: these game-specific hook sites have not been verified on a real Vita. Examples include **TIME TRAVELERS** (`PCSG00062`), **Code:Realize ～創世の姫君～** (`PCSG00402`) and **DRAMAtical Murder** (`PCSG00420`). |
 | **28 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 16 are games of Luna's table: for 15 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita. |
 | Other native Vita games | Automatic tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. OCR is used until a matching source is found. **Every game** makes the same attempts. |
-| PSP games in Adrenaline | OCR only | Native PSP text hooks are not implemented, including in Every game mode. |
+| PSP games in Adrenaline: **Memories Off 6 ～T-wave～** (`NPJH50382`/`ULJM05467`) and **Memories Off ～それから～** (`NPJH50132`/`ULJM05350`) | With **Every game** only: Rubi reads the game's dialogue page from PSP memory, read-only, when the game's ID and code are the expected ones; OCR must agree before the text is shown | Experimental: proven in the PPSSPP emulator only (the farm), not on a real Vita ([PSP text](docs/native-hooks.md#psp-text-adrenaline)). |
+| Other PSP games in Adrenaline | OCR only | PSP text hooks in the game itself (a PSP plugin) are not implemented, in any mode. |
 
 That is **188 Vita title IDs with game-specific hook entries**, including CLANNAD; Automatic also
 tries generic string-copy hooks in other enabled native Vita games.

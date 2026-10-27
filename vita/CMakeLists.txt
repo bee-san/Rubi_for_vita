@@ -319,7 +319,9 @@ if(VJO_WITH_VOCR)
     # engine, the site check, the stream slots, Luna's table and the hook text decoder
     ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
     ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
-    ${ROOT}/core/sfo.c)
+    ${ROOT}/core/sfo.c
+    # PSP text (core/psp_text.h): the worker's read-only page reads in the PSP emulator's process, both builds
+    ${ROOT}/core/psp_text.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
   # For size, as the worker's control code is: 1,992 B of text and rodata at -Os (2,640 B at -O2; measured,
@@ -346,7 +348,7 @@ if(VJO_WITH_VOCR)
   # API 31: the native hooks' engine is control code too (install once, a few checks per hit), built
   # for size: every page of it is in every game that is ON.
   set_source_files_properties(${ROOT}/game_ocr/hooks.c ${ROOT}/core/hook_place.c ${ROOT}/core/hook_stream.c
-    ${ROOT}/core/sfo.c PROPERTIES COMPILE_OPTIONS "-Os")
+    ${ROOT}/core/sfo.c ${ROOT}/core/psp_text.c PROPERTIES COMPILE_OPTIONS "-Os")
   # API 31: the worker reads the text source (vjoGetTextSource) once the kernel exports it; until then
   # its native hooks stay off (game_ocr/main.c text_source: OCR).
   file(STRINGS ${ROOT}/kernel/exports.yml VJO_KERNEL_TEXT_SOURCE REGEX "vjoGetTextSource")

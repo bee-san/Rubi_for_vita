@@ -120,6 +120,8 @@ class Collect(unittest.TestCase):
         (data / "config.ini").write_text(CONFIG, encoding="utf-8")
         (data / "games.ini").write_text("default = on\n")
         (data / "region.ini").write_text("PCSG00415 = 1536,48188,62600,15059\n")
+        (data / "hooks.log").write_text("hooks: mode 1, 0 sites\n")
+        (data / "psp_probe.log").write_text("psp probe 2: process PSPEMUCFW\n")
         (data / "anki_queue/exported").mkdir()
         (data / "anki_queue/exported/00112233445566778899aabbccddeeff.json").write_text('{"version":3}\n')
         (data / "anki").mkdir()
@@ -233,7 +235,7 @@ class Collect(unittest.TestCase):
             blob = b"".join(z.read(n) for n in names)
         d = folder.name + "/ux0/data/VitaJPOverlay/"
         for rel in ("log.txt", "log.old.txt", "selftest-report.txt", "status.txt", "kernel.txt", "kernel.prev.txt",
-                    "config.ini", "games.ini", "region.ini",
+                    "config.ini", "games.ini", "region.ini", "hooks.log", "psp_probe.log",
                     "anki_queue/0123456789abcdef0123456789abcdef.json",
                     "anki_queue/exported/00112233445566778899aabbccddeeff.json",
                     "anki_queue/fedcba9876543210fedcba9876543210.json.tmp"):

@@ -11,7 +11,9 @@
  *     with the register observer (game_ocr/hooks_observer.S), only where core/hook_place.c accepts
  *     the site.
  * Hook time (a game thread) only copies bounded raw bytes into a static slot under its try-lock:
- * no allocation, no lock wait, and no syscall in the CALL path. Decoding happens at job time. */
+ * no allocation, no lock wait, and no syscall in the CALL path. Decoding happens at job time.
+ * In the PSP emulator's process nothing is hooked; PSP text (core/psp_text.h) is the worker's own read of a
+ * PSP game's page buffer, at job time, into a site's slot (vjo_hooks_psp_poll). */
 #include <stdarg.h>
 #include <bearssl_hash.h>
 #include <psp2/io/fcntl.h>
@@ -24,11 +26,13 @@
 #include "hooks.h"
 #include "../core/hook_place.h"
 #include "../core/hook_stream.h"
+#include "../core/psp_text.h"
 #include "../core/sfo.h"
 #include "../include/vjo_api.h"
 #include "../include/vjo_import.h"
 
 _Static_assert(VJO_STREAM_RAW == VJO_HOOK_RAW_BYTES, "stream slots hold a stream's raw text");
+_Static_assert(VJO_PSP_TEXT_MAX == VJO_HOOK_RAW_BYTES, "a PSP page fits a stream's raw text");
 
 /* The CALL source's imports: library NID, function NID (the old text/main.c's; each checked against
  * vita-headers e66ebe9 db/360/SceLibc.yml and SceLibKernel.yml). */
@@ -60,6 +64,14 @@ static SceUID site_uid[VJO_HOOK_SITE_STREAMS];
  * dropped and counted), so the game's stack carries no text buffer. */
 static uint8_t scratch[VJO_HOOK_RAW_BYTES];
 static uint32_t scratch_lock;
+
+/* PSP text (core/psp_text.h): in the PSP emulator's process nothing is hooked; with Every game the worker reads
+ * the running PSP game's page buffer itself, at job time (vjo_hooks_psp_poll), into slot 0 (stream 1), a table
+ * site's slot that no hook writes there. psp_profile: the profile whose game and code the last poll found (its
+ * text in slot 0), else NULL. Only the worker's thread touches these. */
+static int psp_text_on;
+static const VjoPspProfile *psp_profile;
+static uint32_t psp_status; /* the last poll's VJO_PSP_TEXT_* (the debug build's probe logs it) */
 
 extern void vjo_hooks_observer_0(void), vjo_hooks_observer_1(void), vjo_hooks_observer_2(void),
     vjo_hooks_observer_3(void), vjo_hooks_observer_4(void), vjo_hooks_observer_5(void),
@@ -518,9 +530,19 @@ static void start(const char *title_id, unsigned word, int psp)
 {
     tai_module_info_t tai;
     SceKernelModuleInfo mi;
-    if (psp || !title_id || !title_id[0]) {
-        DLOG("nothing: %s\n", psp ? "the PSP emulator's process" : "no title ID");
-        return; /* nothing in the PSP emulator in this version */
+    if (psp) {
+        /* Nothing is hooked in the PSP emulator. Every game (and the table sites, hook_sites = on) also turns on
+         * PSP text: the worker's own read of a profiled PSP game's page at job time (vjo_hooks_psp_poll); nothing
+         * is read here, before any game runs in the emulator. */
+        mem_info_ok = VJO_IMPORT_READY(sceKernelGetMemBlockInfoByAddr);
+        psp_text_on = mem_info_ok && (word & VJO_TEXT_SOURCE_MODE_MASK) == VJO_TEXT_SOURCE_HOOKS &&
+                      !(word & VJO_TEXT_SOURCE_NO_SITES);
+        DLOG("the PSP emulator's process: no hooks; PSP text %s\n", psp_text_on ? "on (Every game)" : "off");
+        return;
+    }
+    if (!title_id || !title_id[0]) {
+        DLOG("nothing: no title ID\n");
+        return;
     }
     if (main_module(&tai, &mi) < 0) {
         DLOG("nothing: no main module (eboot.bin) with a segment 0\n");
@@ -607,6 +629,47 @@ int vjo_hooks_verified(uint32_t id)
 
 /* ---- job time ---- */
 
+/* PSP text's read: Adrenaline's view of PSP RAM (core/psp_text.h vjo_psp_view), through read_game: only inside
+ * the readable mapping sceKernelGetMemBlockInfoByAddr reports for each read, never past its end. The view is
+ * uncached on the Vita side (memory type 0x80, the owner's console, #248), so no ARM cache stands between the
+ * read and RAM; the PSP's own data cache can still hold a line the game has just written (docs/native-hooks.md,
+ * "PSP text"). */
+#ifndef VJO_PSP_VITA_ADDR
+#define VJO_PSP_VITA_ADDR(a) vjo_psp_view(a)
+#endif
+static unsigned psp_read(void *ud, uint32_t psp_addr, void *dst, unsigned max, unsigned unit)
+{
+    return read_game(ud, VJO_PSP_VITA_ADDR(psp_addr), dst, max, unit);
+}
+
+int vjo_hooks_psp_poll(void)
+{
+    static const VjoPspTextOps ops = {NULL, psp_read};
+    uint8_t text[VJO_HOOK_RAW_BYTES];
+    const VjoPspProfile *p;
+    const uint32_t had = n_sites;
+    unsigned n = 0;
+    if (!psp_text_on) return 0;
+    psp_status = vjo_psp_text_poll(&ops, &p, text, sizeof text, &n);
+    if (p != psp_profile) {
+        /* another game in the emulator, its XMB, or code that is not the profile's: slot 0's text was the last
+         * game's, and must never answer for this one. Only this thread uses the slot here: it is free. */
+        if (!vjo_stream_try_lock(&slots[0])) return 0;
+        slots[0].seq = slots[0].n = slots[0].hits = 0;
+        slots[0].key = p ? p->site + 1u : 0u; /* a site's key: its address + 1 (vjo_hooks_snap) */
+        vjo_stream_unlock(&slots[0]);
+        psp_profile = p;
+        n_sites = p ? 1u : 0u; /* stream 1, without a hook: what vjo_hooks_counts reports as installed */
+    }
+    if (psp_status == VJO_PSP_TEXT_OK) vjo_stream_offer(&slots[0], &stream_clock, text, n, p->encoding);
+    return n_sites != had;
+}
+
+uint32_t vjo_hooks_psp_status(void)
+{
+    return psp_text_on ? psp_status : VJO_PSP_TEXT_OFF;
+}
+
 void vjo_hooks_keep(uint32_t id, uint32_t key)
 {
     VjoStreamSlot *s;
@@ -672,7 +735,10 @@ size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
     if (!out || !cap) return 0;
     out[0] = 0;
     if (!s || !s->n || s->n > VJO_HOOK_RAW_BYTES) return 0;
-    if (s->kind == VJO_HOOK_KIND_SITE && s->id >= 1u && s->id <= n_sites && s->id <= VJO_HOOK_SITE_STREAMS &&
+    if (psp_profile && s->id == 1u && s->kind == VJO_HOOK_KIND_SITE && s->key == psp_profile->site) {
+        /* PSP text: the profile's engine filter (core/psp_text.c) */
+        n = vjo_luna_text_filter(NULL, psp_profile->filter, psp_profile->encoding, s->raw, s->n, s->encoding, out, cap);
+    } else if (s->kind == VJO_HOOK_KIND_SITE && s->id >= 1u && s->id <= n_sites && s->id <= VJO_HOOK_SITE_STREAMS &&
         site_info[s->id - 1u].ver && site_info[s->id - 1u].ver->filter &&
         site_info[s->id - 1u].addr - seg_base == s->key) {
         /* a Rubi verified entry's own filter, in place of a Luna site's at its address */
