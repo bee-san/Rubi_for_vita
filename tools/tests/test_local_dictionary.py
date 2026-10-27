@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import convert_dictionary as convert
 import gen_deinflect
+import gen_lookup_tables
 import install_dictionary as install
 
 CLI = Path(os.environ.get("VJO_CLI", ROOT / "build/host/vjo-cli"))
@@ -325,6 +326,46 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertEqual(gen_deinflect.generate(), (ROOT / "core/deinflect.inc").read_text())
         self.assertEqual(gen_deinflect.generate_labels(), (ROOT / "core/conjugation.inc").read_text())
 
+    def test_lookup_tables_inc_is_current(self):
+        """core/lookup_tables.inc is tools/lookup_tables.txt as tools/gen_lookup_tables.py writes it: the C
+        arrays hold exactly the converter's pairs (key, NUL, value, NUL ..., the empty key), and the id is
+        tables_id of them (the C suite checks the reader uses that id)."""
+        inc = (ROOT / "core/lookup_tables.inc").read_text(encoding="utf-8")
+        self.assertEqual(gen_lookup_tables.generate(), inc, "run python3 tools/gen_lookup_tables.py")
+        tables = convert.lookup_tables()
+        self.assertEqual([len(tables[name]) for name in convert.TABLE_NAMES], [70, 15])  # word_lookup's counts
+        for name in convert.TABLE_NAMES:
+            body = re.search(r"static const char %s\[\] VJO_DATA_TABLE\(%s\) =\n(.*?);\n" % (name, name), inc, re.S)
+            text = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', body.group(1)))
+            data = re.sub(r"\\(000|0)", "\0", text).encode("utf-8") + b"\0"  # the literal's own NUL ends it
+            self.assertNotIn("\\", text.replace("\\000", "").replace("\\0", ""))
+            self.assertEqual(data, convert.table_bytes(tables[name]), name)
+        self.assertIn(f"#define LOOKUP_TABLES_ID 0x{convert.tables_id(tables):08x}u", inc)
+        # a NUL before an octal digit keeps the digit out of its escape
+        self.assertEqual(gen_lookup_tables.literal("1\0" "2\0x\0".encode()), "1\\0002\\0x\\0")
+
+    def test_lookup_tables_refuse_what_the_reader_would_not_find(self):
+        """The text file's form is checked: both tables in order, two fields a line, normalized keys (the
+        index's), a key once per table, nothing the C literal would need escaped."""
+        good = "[preferred_readings]\n# a comment\n私 わたし\n\n[usual_spellings]\nやめる 止める\n"
+        path = self.directory / "tables.txt"
+        path.write_text(good, encoding="utf-8")
+        tables = convert.lookup_tables(path)
+        self.assertEqual(tables, {"preferred_readings": {"私".encode(): "わたし".encode()},
+                                  "usual_spellings": {"やめる".encode(): "止める".encode()}})
+        for bad, why in (("[usual_spellings]\nやめる 止める\n", "expected \\[preferred_readings\\]"),
+                         ("[preferred_readings]\n私 わたし\n", "expected the tables"),
+                         ("私 わたし\n[preferred_readings]\n", "in a table"),
+                         ("[preferred_readings]\n私\n[usual_spellings]\n", "a key and its value"),
+                         ("[preferred_readings]\nワタシ 私\n[usual_spellings]\n", "not normalized"),
+                         ("[preferred_readings]\n私 わたし\n私 あたし\n[usual_spellings]\n", "twice"),
+                         ('[preferred_readings]\n私 "わたし"\n[usual_spellings]\n', "control character"),
+                         ("[preferred_readings]\n[usual_spellings]\n[other]\n", "no other table")):
+            with self.subTest(why=why):
+                path.write_text(bad, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, why):
+                    convert.lookup_tables(path)
+
     def test_corrupt_index_does_not_crash_runtime(self):
         path, _ = self.build([term("猫", "ねこ")], format_version=1)
         original = path.read_bytes()
@@ -518,7 +559,7 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertEqual(out[192:256], bytes(plain[192:256]))
         self.assertEqual(out[convert.FILTER_DESCRIPTOR_OFFSET:convert.FILTER_DESCRIPTOR_OFFSET + 4], b"VJKF")
         self.assertEqual(self.shown("out.vjdict"), self.shown("plain.vjdict"))
-        for spot in (159, 168, 191, 256, 4095):  # the filter's own bytes must be empty (160..167: posting hints)
+        for spot in (159, 172, 191, 256, 4095):  # the filter's own bytes must be empty (160..171: posting hints)
             bad = bytearray(plain)
             bad[spot] = 1
             (self.directory / "bad.vjdict").write_bytes(bad)
@@ -768,6 +809,166 @@ class FrequencyTest(unittest.TestCase):
         self.assertEqual(self.lookup(text, "main.vjdict").stdout, self.lookup(text, "plain.vjdict").stdout)
         self.assertIn("katakana cat", self.lookup("ネコ", "main.vjdict").stdout)  # written as the text is
         self.assertIn("hiragana cat", self.lookup("ねこ", "main.vjdict").stdout)
+    # The lookup tables' words (tools/lookup_tables.txt): 私 わたし, こう 斯う (a spelling), 中 なか
+    # (preferred_readings); やめる 止める, 身体 からだ (a reading; usual_spellings). 私 わたしたち only starts
+    # with わたし, and コウ is katakana text's own spelling of こう.
+    TABLE_TERMS = [term("私", "わたし", ["I"]), term("私", "あたし", ["I casual"]), term("私", "わたしたち", ["we"]),
+                   term("こう", "", ["kana so"]), term("斯う", "こう", ["thus"]), term("請う", "こう", ["to ask"]),
+                   term("コウ", "", ["katakana kou"]), term("中", "ちゅう", ["middle"]), term("中", "なか", ["inside"]),
+                   term("辞める", "やめる", ["to quit"], "v1"), term("止める", "やめる", ["to stop"], "v1"),
+                   term("止める", "とめる", ["to halt"], "v1"), term("身体", "しんたい", ["body, formal"]),
+                   term("身体", "からだ", ["body"]), term("人", "ひと", ["person"])]
+    TABLE_FREQ = [freq("私", 1678, "あたし"), freq("私", 32000, "わたし"), freq("こう", 30, kana=True),
+                  freq("斯う", 50000, "こう"), freq("コウ", 20, kana=True), freq("辞める", 500, "やめる"),
+                  freq("止める", 2000, "やめる"), freq("身体", 2603, "しんたい"), freq("身体", 2805, "からだ")]
+    TABLE_MARKED = {("私", "私", "わたし"): convert.RULE_PREFERRED, ("こう", "斯う", "こう"): convert.RULE_PREFERRED,
+                    ("中", "中", "なか"): convert.RULE_PREFERRED, ("やめる", "止める", "やめる"): convert.RULE_USUAL,
+                    ("身体", "身体", "からだ"): convert.RULE_USUAL}
+
+    def postings(self, data):
+        """[(offset of the posting's rules, key, spelling, reading, rules, hint)] of a format 3 file."""
+        out = []
+        for page in range(convert.HEADER.unpack_from(data)[9]):
+            base = convert.PAGE_SIZE * (1 + page)
+            for slot in range(struct.unpack_from("<I", data, base + 4)[0]):
+                _, group, n, key_len, key_rules = convert.HASH_RECORD.unpack_from(data, base + 16 + 24 * slot)
+                self.assertEqual(key_rules & ~convert.RULE_BITS, 0)  # a key's own rules never hold them
+                for j in range(n):
+                    entry_off, entry_len, rules, hint = convert.POSTING.unpack_from(data, group + key_len + 16 * j)
+                    spelling, reading = data[entry_off + 4:entry_off + entry_len].split(b"\0")[:2]
+                    out.append((group + key_len + 16 * j + 12, data[group:group + key_len].decode(), spelling.decode(),
+                                reading.decode(), rules, hint))
+        return out
+
+    def test_table_hints_mark_exactly_the_tables_entries(self):
+        """--table-hints (hints version 2): rule bit 11 on each posting whose entry is preferred_readings'
+        value for its key, bit 7 on usual_spellings', spelled or read so (as rank_posting's spelled_or_read
+        finds it), and nothing else: the file is the default (version 1) file with those bits, version 2 and
+        the tables' id in page 0. add_index_hints adds them to a file without hints byte for byte the same
+        (tools/prepare_plaintext.py's step for the bundle); a format 2 file gets none."""
+        archive, frequency = self.archive(self.TABLE_TERMS), self.frequency(self.TABLE_FREQ)
+        v1, v2 = self.directory / "v1.vjdict", self.directory / "v2.vjdict"
+        self.assertNotIn("table_postings", convert.convert([archive], v1, frequency=frequency))
+        stats = convert.convert([archive], v2, frequency=frequency, table_hints=True)
+        self.assertEqual((stats["hints_version"], stats["table_postings"]), (2, len(self.TABLE_MARKED)))
+        one, two = v1.read_bytes(), v2.read_bytes()
+        tables_id = convert.tables_id(convert.lookup_tables())
+        self.assertEqual(two[160:172], b"VJPH" + struct.pack("<II", 2, tables_id))
+        self.assertEqual(one[160:172], b"VJPH" + struct.pack("<II", 1, 0))
+        marked = {}
+        for (at, key, spelling, reading, rules, hint), old in zip(self.postings(two), self.postings(one)):
+            self.assertEqual((at, key, spelling, reading, hint), (old[0], old[1], old[2], old[3], old[5]))
+            self.assertEqual(old[4] & ~convert.RULE_BITS, 0)  # the default file: no table bits
+            self.assertEqual(rules & convert.RULE_BITS, old[4])  # the deinflection bits as they were
+            if rules & ~convert.RULE_BITS:
+                marked[(key, spelling, reading)] = rules & ~convert.RULE_BITS
+        self.assertEqual(marked, self.TABLE_MARKED)
+        # every other byte as in the version 1 file
+        patched = bytearray(one)
+        patched[160:172] = two[160:172]
+        for at, *_ , rules, _ in self.postings(two):
+            patched[at:at + 2] = struct.pack("<H", rules)
+        self.assertEqual(bytes(patched), two)
+        # the bundle's step: hints (and the bits) added to a file that has none, as the converter writes them
+        bare = bytearray(two)
+        bare[160:172] = bytes(12)
+        for at, *_ , rules, _ in self.postings(two):
+            bare[at:at + 4] = struct.pack("<HH", rules & convert.RULE_BITS, 0)
+        (self.directory / "bare.vjdict").write_bytes(bare)
+        added = convert.add_index_hints(self.directory / "bare.vjdict", self.directory / "added.vjdict", table_hints=True)
+        self.assertEqual(added, {"hinted_postings": len(self.postings(two)), "table_postings": len(self.TABLE_MARKED)})
+        self.assertEqual((self.directory / "added.vjdict").read_bytes(), two)
+        self.assertEqual(convert.add_index_hints(self.directory / "bare.vjdict", self.directory / "one.vjdict"),
+                         {"hinted_postings": len(self.postings(two))})
+        self.assertEqual((self.directory / "one.vjdict").read_bytes(), one)
+        # a file whose postings have table bits already is refused, as one with hints is
+        kept = bytearray(two)
+        kept[160:172] = bytes(12)
+        for at, *_ in self.postings(two):
+            kept[at + 2:at + 4] = bytes(2)
+        (self.directory / "kept.vjdict").write_bytes(kept)
+        with self.assertRaisesRegex(ValueError, "table bits"):
+            convert.add_index_hints(self.directory / "kept.vjdict", self.directory / "never.vjdict", table_hints=True)
+        self.assertFalse((self.directory / "never.vjdict").exists())
+        with self.assertRaisesRegex(ValueError, "frequency dictionary"):
+            convert.convert([archive], self.directory / "v2-format2.vjdict", format_version=2, table_hints=True)
+
+    def test_table_bits_follow_both_tables_and_the_head_window(self):
+        """A key in both tables: each table's own bit, both on an entry that is both values. The value is
+        compared as rank_posting compares it: the whole spelling, or the whole reading up to its NUL, inside
+        the head window (the first min(length - 4, 160) bytes after the frequency word)."""
+        tables = self.directory / "tables.txt"
+        tables.write_text("[preferred_readings]\n私 わたし\n中 なか\n[usual_spellings]\n私 あたし\n中 なか\n", encoding="utf-8")
+        with mock.patch.object(convert, "LOOKUP_TABLES", tables):
+            path, stats = self.build_ranked(self.TABLE_TERMS, self.TABLE_FREQ, table_hints=True)
+            parsed = convert.lookup_tables()
+        marked = {(key, spelling, reading): rules & ~convert.RULE_BITS
+                  for _, key, spelling, reading, rules, _ in self.postings(path.read_bytes()) if rules & ~convert.RULE_BITS}
+        self.assertEqual(marked, {("私", "私", "わたし"): convert.RULE_PREFERRED, ("私", "私", "あたし"): convert.RULE_USUAL,
+                                  ("中", "中", "なか"): convert.RULE_PREFERRED | convert.RULE_USUAL})
+        self.assertEqual(stats["table_postings"], 3)
+        self.assertEqual(path.read_bytes()[168:172], struct.pack("<I", convert.tables_id(parsed)))
+        self.assertNotEqual(convert.tables_id(parsed), convert.tables_id(convert.lookup_tables()))
+        P, U = convert.RULE_PREFERRED, convert.RULE_USUAL
+        word = struct.pack("<I", 412)
+        a = "あ".encode()
+        def bits(key, rest, length=None):
+            payload = word + rest
+            return convert.table_bits(key, payload, len(payload) if length is None else length, parsed)
+        self.assertEqual(bits("私".encode(), "私".encode() + b"\0" + "わたし".encode() + b"\0x\0"), P)
+        self.assertEqual(bits("私".encode(), "わたし".encode() + b"\0\0x\0"), P)  # the spelling is the value
+        self.assertEqual(bits("私".encode(), "私".encode() + b"\0" + "わたしたち".encode() + b"\0x\0"), 0)  # starts with it
+        self.assertEqual(bits("私".encode(), "わたしたち".encode() + b"\0\0x\0"), 0)
+        reading = "私".encode() + b"\0" + "わたし".encode() + b"\0"  # its NUL is byte 13 of the window
+        self.assertEqual(bits("私".encode(), reading + b"x\0", 4 + 14), P)
+        self.assertEqual(bits("私".encode(), reading + b"x\0", 4 + 13), 0)  # the reading's NUL is past the window
+        self.assertEqual(bits("私".encode(), a * 53 + b"a\0" + "わたし".encode() + b"\0x\0"), 0)  # no NUL in the window
+        self.assertEqual(bits("中".encode(), "中".encode() + b"\0" + "なか".encode() + b"\0x\0"), P | U)
+        self.assertEqual(bits("人".encode(), "人".encode() + b"\0" + "なか".encode() + b"\0x\0"), 0)  # not a table key
+
+    def test_table_hints_rank_the_tables_words_without_their_heads(self):
+        """The reader (vjo-dict-bench's counters, core/local_dict.c built with VJO_LOCAL_STATS): on the
+        version 2 file a table word's postings are ranked from their hints and bits (no head read), where
+        the version 1 file reads each one's head; every lookup shows what the file without hints shows.
+        Katakana text whose entry only normalizes to the key (コウ for こう) still reads that one head."""
+        bench = os.environ.get("VJO_DICT_BENCH")
+        if not bench:
+            self.skipTest("VJO_DICT_BENCH is set by CTest")
+        # long articles, about a page each: a head the version 1 file reads is a read of its own
+        terms = [[*t[:5], [t[5][0] + "; " + "x" * 3000], *t[6:]] for t in self.TABLE_TERMS]
+        archive, frequency = self.archive(terms), self.frequency(self.TABLE_FREQ)
+        convert.convert([archive], self.directory / "v2.vjdict", frequency=frequency, table_hints=True)
+        convert.convert([archive], self.directory / "v1.vjdict", frequency=frequency)
+        plain = bytearray((self.directory / "v1.vjdict").read_bytes())
+        plain[convert.HINTS_DESCRIPTOR_OFFSET:convert.HINTS_DESCRIPTOR_OFFSET + 8] = bytes(8)  # the head path
+        (self.directory / "plain.vjdict").write_bytes(plain)
+        lines = self.directory / "lines.tsv"
+        lines.write_text("# id\tmodel\t-\t-\t-\ttext\nwords\tfixture\t-\t-\t-\t私は中でこうやめて身体を\n"
+                         "katakana\tfixture\t-\t-\t-\tコウ\n", encoding="utf-8")
+        def run(name):
+            proc = subprocess.run([bench, str(self.directory), name, str(lines), "words", "1"],
+                                  capture_output=True, text=True, check=True)
+            return [json.loads(row) for row in proc.stdout.splitlines() if '"summary"' not in row]
+        plain, one, two = run("plain.vjdict"), run("v1.vjdict"), run("v2.vjdict")
+        self.assertEqual([q["digest"] for q in two], [q["digest"] for q in plain])
+        self.assertEqual([q["digest"] for q in one], [q["digest"] for q in plain])
+        words = [k for k, q in enumerate(two) if q["id"] == "words"]
+        self.assertGreaterEqual(len(words), 5)
+        for k in words:
+            self.assertEqual((two[k]["ranked"], two[k]["reads_by"]["head"]), (0, 0), two[k])
+            self.assertEqual(two[k]["hinted"], one[k]["ranked"] + one[k]["hinted"])
+        self.assertGreater(sum(one[k]["ranked"] for k in words), 4)  # version 1: the table words' heads
+        self.assertGreater(sum(one[k]["reads_by"]["head"] for k in words), 4)
+        for k in words:  # the heads' reads go; the shown entry is one read of its own (a head read may have held it)
+            self.assertEqual(two[k]["reads_by"]["payload"], two[k]["entries"])
+            self.assertEqual(two[k]["reads"], one[k]["reads"] - one[k]["reads_by"]["head"] - one[k]["reads_by"]["payload"]
+                             + two[k]["entries"])
+        self.assertLess(sum(two[k]["reads"] for k in words), sum(one[k]["reads"] for k in words))
+        katakana = [k for k, q in enumerate(two) if q["id"] == "katakana"]
+        self.assertEqual([(two[k]["ranked"], one[k]["ranked"]) for k in katakana], [(1, 4)])
+        for text in ("こう", "コウ"):  # 斯う, the preferred spelling, before コウ written as the text is
+            self.assertIn("thus", self.lookup(text, "v2.vjdict").stdout)
+
 
     def test_every_entry_gets_a_rank_or_the_unranked_zero(self):
         terms = [term("猫", "ねこ", ["cat"]), term("猫", "ネコ", ["cat in katakana reading"]),

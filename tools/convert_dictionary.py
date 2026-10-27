@@ -76,10 +76,20 @@ FILTER_MIN_BUCKETS = 4
 # Posting hints (version 3): each posting's last u16 ranks it without reading its payload's
 # head (core/local_dict.c rank_posting), announced by HINTS_MAGIC at page-0 byte 160.
 HINTS_MAGIC = b"VJPH"
-HINTS_DESCRIPTOR = struct.Struct("<4sI")  # magic, version 1
+HINTS_DESCRIPTOR = struct.Struct("<4sI")  # magic, version (1; 2 with the table bits)
 HINTS_DESCRIPTOR_OFFSET = 160
 HINT_SPELLING, HINT_NORMALIZED, HINT_READING, HINT_FREQ_SHIFT = 1, 2, 4, 3
 HEAD_BYTES = 160  # the reader's head window after the frequency word (core/local_dict.c HEAD_BYTES)
+# Hints version 2, the table hints (--table-hints): a posting's rule bits 7 and 11 say that its entry
+# is the value usual_spellings or preferred_readings (tools/lookup_tables.txt) names for its key, so
+# such a key is ranked without its heads too; page-0 bytes 168..171 hold the tables' id (tables_id). A
+# reader of version 1 refuses the file, which is why the converter writes version 1 by default.
+HINTS_TABLES = struct.Struct("<I")
+HINTS_TABLES_OFFSET = 168
+RULE_BITS = sum(RULES.values())  # the deinflection rule bits a posting's rules always carry
+RULE_USUAL, RULE_PREFERRED = 1 << 7, 1 << 11
+LOOKUP_TABLES = Path(__file__).resolve().parent / "lookup_tables.txt"
+TABLE_NAMES = ("preferred_readings", "usual_spellings")
 
 
 def normalize(text):
@@ -488,15 +498,88 @@ def posting_hint(key, payload_head, entry_len):
     return hint
 
 
-def add_index_hints(path, output=None):
+def lookup_tables(path=None):
+    """{table: {key: value}} of tools/lookup_tables.txt (UTF-8 bytes, in the file's order): the word
+    lookup's preferred_readings and usual_spellings, the source of core/lookup_tables.inc
+    (tools/gen_lookup_tables.py) and of the table bits. Both tables, in TABLE_NAMES order; a key is
+    normalized, as the index's keys are, and at most once in its table; no key or value holds a
+    control character, '"', '\\' or '?' (the C string literal's)."""
+    path, tables, table = Path(path or LOOKUP_TABLES), {}, None
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        where, line = f"{path.name}:{number}", line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            expected = TABLE_NAMES[len(tables)] if len(tables) < len(TABLE_NAMES) else None
+            if line != f"[{expected}]":
+                raise ValueError(f"{where}: expected " + (f"[{expected}]" if expected else "no other table"))
+            table = tables[expected] = {}
+            continue
+        fields = line.split()
+        if table is None or len(fields) != 2:
+            raise ValueError(f"{where}: expected a key and its value, in a table")
+        if any(ord(c) < 0x20 or ord(c) == 0x7F or c in '"\\?' for field in fields for c in field):
+            raise ValueError(f"{where}: a control character, '\"', '\\' or '?'")
+        key, value = (field.encode("utf-8") for field in fields)
+        if normalize(fields[0]) != key:
+            raise ValueError(f"{where}: the key {fields[0]} is not normalized (the index has {normalize(fields[0]).decode()})")
+        if max(len(key), len(value)) > MAX_KEY or key in table:
+            raise ValueError(f"{where}: {fields[0]} is longer than {MAX_KEY} bytes or twice in its table")
+        table[key] = value
+    if tuple(tables) != TABLE_NAMES:
+        raise ValueError(f"{path.name}: expected the tables " + ", ".join(TABLE_NAMES))
+    return tables
+
+
+def table_bytes(pairs):
+    """A table as the C array holds it: key, NUL, value, NUL for each pair, then the empty key."""
+    return b"".join(key + b"\0" + value + b"\0" for key, value in pairs.items()) + b"\0"
+
+
+def tables_id(tables):
+    """FNV-1a-32 of both tables' arrays (core/lookup_tables.inc LOOKUP_TABLES_ID): the tables a file's
+    table bits were made with, in its page 0; a reader built with other tables ranks their keys from
+    the heads, as version 1 does."""
+    h = 0x811C9DC5
+    for byte in b"".join(table_bytes(tables[name]) for name in TABLE_NAMES):
+        h = ((h ^ byte) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def table_bits(key, payload_head, entry_len, tables):
+    """A version 3 posting's table bits (hints version 2): RULE_PREFERRED when its entry is
+    preferred_readings' value for key, RULE_USUAL when it is usual_spellings', as rank_posting's
+    spelled_or_read finds it in the head window (payload_head as for posting_hint): the spelling is
+    the value, or the reading is, its NUL inside the window."""
+    n = min(entry_len, 4 + HEAD_BYTES) - 4
+    head = payload_head[4:4 + n]
+    end = head.find(b"\0")
+    bits = 0
+    for bit, name in ((RULE_PREFERRED, "preferred_readings"), (RULE_USUAL, "usual_spellings")):
+        value = tables[name].get(key)
+        if end >= 0 and value is not None and (head[:end] == value or head[end + 1:end + 2 + len(value)] == value + b"\0"):
+            bits |= bit
+    return bits
+
+
+def hints_descriptor(tables=None):
+    """Page 0's bytes 160..171: version 1, or with tables version 2 and the tables' id."""
+    if tables is None:
+        return HINTS_DESCRIPTOR.pack(HINTS_MAGIC, 1) + bytes(HINTS_TABLES.size)
+    return HINTS_DESCRIPTOR.pack(HINTS_MAGIC, 2) + HINTS_TABLES.pack(tables_id(tables))
+
+
+def add_index_hints(path, output=None, table_hints=False):
     """Writes the posting hints into an existing version 3 file without them (deterministic;
-    entries, index and payloads unchanged, readers that predate them ignore the u16)."""
+    entries, index and payloads unchanged, readers that predate them ignore the u16). With
+    table_hints, version 2's: the postings' table bits too (tools/lookup_tables.txt)."""
     path, output = Path(path), Path(output or path)
+    tables = lookup_tables() if table_hints else None
     with path.open("rb") as stream:
         page0 = stream.read(PAGE_SIZE)
         if page0[:8] != MAGIC_V3:
             raise ValueError(f"{path}: posting hints need a version 3 dictionary")
-        if any(page0[HINTS_DESCRIPTOR_OFFSET:HINTS_DESCRIPTOR_OFFSET + HINTS_DESCRIPTOR.size]):
+        if any(page0[HINTS_DESCRIPTOR_OFFSET:HINTS_TABLES_OFFSET + HINTS_TABLES.size]):
             raise ValueError(f"{path}: page 0's hint descriptor bytes are not empty")
         pages = HEADER.unpack_from(page0)[9]
         with tempfile.NamedTemporaryFile(prefix=output.name + ".", suffix=".tmp", dir=output.parent,
@@ -504,7 +587,7 @@ def add_index_hints(path, output=None):
             try:
                 stream.seek(0)
                 shutil.copyfileobj(stream, final, length=1024 * 1024)
-                postings = 0
+                postings = marked = 0
                 for page in range(pages):
                     stream.seek(PAGE_SIZE * (1 + page))
                     block = stream.read(PAGE_SIZE)
@@ -515,16 +598,18 @@ def add_index_hints(path, output=None):
                         key = stream.read(length)
                         raw = stream.read(n * POSTING.size)
                         for j in range(n):
-                            entry_off, entry_len, _, old = POSTING.unpack_from(raw, j * POSTING.size)
-                            if old:
-                                raise ValueError(f"{path}: a posting already has a hint")
+                            entry_off, entry_len, rules, old = POSTING.unpack_from(raw, j * POSTING.size)
+                            if old or rules & ~RULE_BITS:
+                                raise ValueError(f"{path}: a posting already has a hint or table bits")
                             stream.seek(entry_off)
-                            hint = posting_hint(key, stream.read(min(entry_len, 4 + HEAD_BYTES)), entry_len)
-                            final.seek(group + length + j * POSTING.size + 14)
-                            final.write(struct.pack("<H", hint))
+                            head = stream.read(min(entry_len, 4 + HEAD_BYTES))
+                            bits = table_bits(key, head, entry_len, tables) if tables else 0
+                            final.seek(group + length + j * POSTING.size + 12)
+                            final.write(struct.pack("<HH", rules | bits, posting_hint(key, head, entry_len)))
                             postings += 1
+                            marked += bool(bits)
                 final.seek(HINTS_DESCRIPTOR_OFFSET)
-                final.write(HINTS_DESCRIPTOR.pack(HINTS_MAGIC, 1))
+                final.write(hints_descriptor(tables))
                 final.flush()
                 os.fsync(final.fileno())
                 os.chmod(final.name, path.stat().st_mode & 0o777)
@@ -532,7 +617,7 @@ def add_index_hints(path, output=None):
                 Path(final.name).unlink(missing_ok=True)
                 raise
     os.replace(final.name, output)
-    return {"hinted_postings": postings}
+    return {"hinted_postings": postings, **({"table_postings": marked} if tables else {})}
 
 
 def filter_prefix(key):
@@ -651,8 +736,8 @@ def add_key_filter(path, output=None):
             raise ValueError(f"{path}: not a version 2 or later dictionary")
         if page0[FILTER_DESCRIPTOR_OFFSET:FILTER_DESCRIPTOR_OFFSET + 4] == FILTER_MAGIC:
             raise ValueError(f"{path}: already has a key filter")
-        # Not the filter's: the posting hints' descriptor (160..167) and a dictionary title (192..255).
-        hints_end = HINTS_DESCRIPTOR_OFFSET + HINTS_DESCRIPTOR.size
+        # Not the filter's: the posting hints' descriptor (160..171) and a dictionary title (192..255).
+        hints_end = HINTS_TABLES_OFFSET + HINTS_TABLES.size
         if (any(page0[FILTER_DESCRIPTOR_OFFSET:HINTS_DESCRIPTOR_OFFSET]) or any(page0[hints_end:FILTER_TITLE_GAP[0]])
                 or any(page0[FILTER_DIRECTORY_OFFSET:])):
             raise ValueError(f"{path}: page 0's bytes {FILTER_DESCRIPTOR_OFFSET}..{HINTS_DESCRIPTOR_OFFSET - 1}, "
@@ -681,8 +766,9 @@ def add_key_filter(path, output=None):
     return {"bytes": end, **stats}
 
 
-def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
-    """Version 2 (or, with frequency_title, version 3: the same layout)."""
+def write_v2(db, data, final, count, frequency_title=None, key_filter=True, tables=None):
+    """Version 2 (or, with frequency_title, version 3: the same layout, with the posting hints;
+    with tables too, hints version 2: the postings' table bits)."""
     # Sorting and all per-key metadata live on the computer's disk, not the Vita.
     db.execute("CREATE INDEX lookup_order ON lookups(key, priority, score, seq)")
     unique = db.execute("SELECT COUNT(DISTINCT key) FROM lookups").fetchone()[0]
@@ -706,7 +792,7 @@ def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
     final.seek(data_off)
     data.seek(0)
     shutil.copyfileobj(data, final, length=1024 * 1024)
-    current, group_off, n, rules_union = None, 0, 0, 0
+    current, group_off, n, rules_union, marked = None, 0, 0, 0, 0
     for key, entry_off, rules, length in db.execute(
             "SELECT key, entry_off, rules, size FROM lookups ORDER BY key, priority, score, seq"):
         if key != current:
@@ -714,11 +800,15 @@ def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
                 db.execute("UPDATE hash_keys SET n=?, off=?, rules=? WHERE key=?", (n, group_off, rules_union, current))
             current, group_off, n, rules_union = key, final.tell(), 0, 0
             final.write(key)
-        hint = 0
+        hint = bits = 0
         if frequency_title is not None:  # version 3: rank the posting without its head
             data.seek(entry_off)
-            hint = posting_hint(key, data.read(min(length, 4 + HEAD_BYTES)), length)
-        final.write(POSTING.pack(data_off + entry_off, length, rules, hint))
+            head = data.read(min(length, 4 + HEAD_BYTES))
+            hint = posting_hint(key, head, length)
+            bits = table_bits(key, head, length, tables) if tables else 0
+            marked += bool(bits)
+        # the key's own rules (its hash record's) never hold the table bits
+        final.write(POSTING.pack(data_off + entry_off, length, rules | bits, hint))
         n += 1
         rules_union |= rules
     db.execute("UPDATE hash_keys SET n=?, off=?, rules=? WHERE key=?", (n, group_off, rules_union, current))
@@ -732,7 +822,7 @@ def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
     if frequency_title is not None:
         final.write(FREQ_TITLE.pack(frequency_title.encode("utf-8")))
         final.seek(HINTS_DESCRIPTOR_OFFSET)
-        final.write(HINTS_DESCRIPTOR.pack(HINTS_MAGIC, 1))
+        final.write(hints_descriptor(tables))
     records = iter(db.execute("SELECT hash, off, n, key, rules FROM hash_keys ORDER BY bucket, hash, key"))
     overflow = buckets
     for bucket, number in enumerate(page_counts):
@@ -754,6 +844,8 @@ def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
                 page_number = overflow
                 overflow += 1
     result = {"bytes": size, "unique_keys": unique, "hash_buckets": buckets, "index_pages": pages}
+    if tables:
+        result.update(hints_version=2, table_postings=marked)
     if key_filter and buckets >= FILTER_MIN_BUCKETS:
         keys = ((bytes(key), int.from_bytes(h, "big")) for key, h in db.execute("SELECT key, hash FROM hash_keys"))
         size, filter_stats = write_key_filter(final, keys, size)
@@ -762,14 +854,19 @@ def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
 
 
 def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_version=None,
-            deduplicate=False, frequency=None, key_filter=True):
-    """frequency: a rank-based Yomitan frequency ZIP; it makes the output format 3."""
+            deduplicate=False, frequency=None, key_filter=True, table_hints=False):
+    """frequency: a rank-based Yomitan frequency ZIP; it makes the output format 3. table_hints (format 3):
+    hints version 2, with the lookup tables' bits (tools/lookup_tables.txt); a Rubi that predates them
+    refuses the file, so they are not the default."""
     if format_version is None:
         format_version = 2 if frequency is None else 3
     if format_version not in (1, 2, 3):
         raise ValueError("format-version must be 1, 2 or 3")
     if (format_version == 3) != (frequency is not None):
         raise ValueError("format 3 needs a frequency dictionary, and a frequency dictionary needs format 3")
+    if table_hints and format_version != 3:
+        raise ValueError("table hints are format 3's posting hints: they need a frequency dictionary")
+    tables = lookup_tables() if table_hints else None
     output = Path(output)
     if output.suffix != ".vjdict":
         raise ValueError("output filename must end in .vjdict")
@@ -920,7 +1017,7 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                         final_name = Path(final.name)
                         if format_version >= 2:
                             stats.update(write_v2(db, data, final, count, freq["title"] if freq else None,
-                                                  key_filter))
+                                                  key_filter, tables))
                             size = stats["bytes"]
                         else:
                             final.write(HEADER.pack(MAGIC, 1, HEADER.size, count, RECORD.size,
@@ -959,6 +1056,10 @@ def main():
                              "(the default with --frequency); 1: legacy binary-search format")
     parser.add_argument("--frequency", type=Path,
                         help="rank-based Yomitan frequency dictionary ZIP: every entry gets a rank (0 = unranked)")
+    parser.add_argument("--table-hints", action="store_true",
+                        help="with --frequency: posting hints version 2, which also rank the words of the lookup "
+                             "tables (tools/lookup_tables.txt: 私, 中, こう...) without reading their entries; "
+                             "Rubi 0.9.8 and older refuse such a file")
     parser.add_argument("--temp-dir", type=Path, help="scratch disk for sorting large dictionaries")
     parser.add_argument("--deduplicate", action="store_true",
                         help="keep each spelling/reading pair only from its first input dictionary; preserve its senses")
@@ -976,7 +1077,8 @@ def main():
         parser.error("give the input ZIPs and -o OUTPUT")
     try:
         stats = convert(args.inputs, args.output, args.max_definition_bytes, args.temp_dir,
-                        args.format_version, args.deduplicate, args.frequency, not args.no_key_filter)
+                        args.format_version, args.deduplicate, args.frequency, not args.no_key_filter,
+                        args.table_hints)
     except (ValueError, OSError, sqlite3.Error, RuntimeError) as exc:
         parser.exit(1, f"Conversion failed: {exc}\n")
     print(json.dumps(stats, ensure_ascii=False, indent=2))
