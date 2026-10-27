@@ -64,6 +64,20 @@ been reported.
   `＊Ｂ` (the given name), which Rubi showed as `*A`, so `「ありゃ、岡崎、どこいくんだよっ」` came out as `「ありゃ、*A、どこいくんだよっ」`.
   The hook's own text filter now writes the names; CLANNAD has no name entry, so they are always 岡崎朋也. Seen in 16
   of 1,347 hooked lines of a console's history (Rubi 0.9.8).
+- Native hooks (#349): TIME TRAVELERS' (`PCSG00062`) Luna hook was never installed. Its two sites, `0x8119ADDA` and
+  `0x811A6052`, are Vita3K's guest addresses (Luna added them before its `addr_offset`), and Rubi read every Luna
+  address as `address − 0x80004000`: past the end of the game's 0x31258C-byte segment 0 at 0x81000000 (public
+  Vita3K logs), so both were refused as `range` before a byte was read, on every console. Such an address is the
+  game's own only in a fixed-address executable, so the generator now marks the 7 sites whose executable a public
+  Vita3K log shows as fixed-address (TIME TRAVELERS ×2, PCSG00139, PCSG00172, PCSG00216, PCSG00272 ×2:
+  [the list and its evidence](docs/hook-titles.md#sites-at-vita3ks-guest-address)), and for those, when that reading
+  is outside segment 0 and segment 0 is at 0x81000000, the worker reads `address − 0x81000000` (`+0x19ADDA`,
+  `+0x1A6052`); the placement check then decides on the game's bytes as for any Luna site. Every other site is read
+  as before: the 8 that relocatable executables have at or above 0x81000000 stay refused (their addresses are
+  another module's). Whether the game's bytes there pass the check is not known (no dump of the game here): the
+  debug build's `hooks.log` shows each site's offset and verdict, with its bytes when refused. Not run on a console.
+  STEINS;GATE: no Vita release has a hook entry, in Luna's table or Rubi's
+  ([hook-titles.md](docs/hook-titles.md#steinsgate-no-hook-entry-in-any-release)).
 
 ### Changed
 
