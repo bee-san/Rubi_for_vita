@@ -391,6 +391,15 @@
  * the build log's module rows, both builds, main 3d095b4 (after VOCR6, #373, #369, #387, #386 and #385; #390 after
  * it changes no module) and this change, tools/fast_gate.sh's vitasdk image].
  * Its weights are a block of their own (VJO_BUDGET_GAME_SPOT), never static; data/bss keep their pages. */
+/* #316's audit fixes (PCSG00628's !X escapes and u9829. as 15 more ops of its filter and their 109 B of strings, in the
+ * data segment; CP932 0xA0 decoded only in VJO_HOOK_ENC_CP932_A0, the two MSGSET entries' encoding, and vjo_hook_clean's
+ * U+F8F0 drop gone; an r15 entry only with segment 0 at 0x81000000): worker text 179,712 B debug unchanged (512 B of
+ * room left) and 170,780 -> 170,764 B normal (1,268 B), data/bss 36,416 -> 36,704 B and 36,408 -> 36,696 B
+ * (r_PCSG00628 132 -> 312 B, r628_esc 109 B [arm-vita-eabi-nm -S]), the same pages [measured: the build log's module
+ * rows, both builds, main 9ad8eb5 and this change, tools/fast_gate.sh's vitasdk image]. On main 3d095b4, with 40 B
+ * of the debug worker's last text page left, its first form took 96 B, a page past this budget: the decoder's flag as
+ * a parameter cost 48 B there, as an encoding the two entries name with a select in its 0xA0 branch 14 B (+16 B in
+ * all). The kernel and Shell SELF files are byte-identical to main's. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else

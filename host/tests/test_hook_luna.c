@@ -12,6 +12,7 @@
 #include "acutest.h"
 #include "hook_luna.h"
 #include "hook_re.h"
+#include "textnorm.h" /* rubi_shown: the text as the worker shows it */
 
 #include "hook_luna_table.inc" /* the test's own copy of the table, the enums */
 #include "hook_re_vectors.inc"
@@ -80,7 +81,7 @@ static unsigned encode(unsigned enc, const char *utf8, uint8_t *raw, unsigned ca
             } else {
                 raw[w++] = (uint8_t)cp, raw[w++] = (uint8_t)(cp >> 8);
             }
-        } else if (enc == VJO_HOOK_ENC_CP932) {
+        } else if ((enc & ~VJO_HOOK_DECODE_A0) == VJO_HOOK_ENC_CP932) { /* (VJO_HOOK_ENC_CP932_A0 too) */
             if (cp < 0x80) raw[w++] = (uint8_t)cp;
             else if (cp >= 0xFF61 && cp <= 0xFF9F) raw[w++] = (uint8_t)(0xA1 + cp - 0xFF61);
             else if (cp < 0x10000 && rev932[cp]) raw[w++] = (uint8_t)(rev932[cp] >> 8), raw[w++] = (uint8_t)rev932[cp];
@@ -931,6 +932,20 @@ static void rubi_to(unsigned f, unsigned enc, const char *in, const char *want)
     TEST_MSG("got  [%s]", out);
 }
 
+/* The same in CP932 with its 0xA0 kept (PCSG00628's entry), as the worker shows the text (core/textnorm.h:
+ * full-width ASCII forms as ASCII, ！ as !): want */
+static void rubi_shown(unsigned f, const char *in, const char *want)
+{
+    uint8_t raw[1024];
+    char out[1024];
+    unsigned n = encode(VJO_HOOK_ENC_CP932_A0, in, raw, sizeof raw); /* (PCSG00628's entry's encoding) */
+    vjo_luna_text_filter(NULL, f, VJO_HOOK_ENC_CP932_A0, raw, n, VJO_HOOK_ENC_CP932_A0, out, sizeof out);
+    vjo_text_normalize(out, NULL);
+    TEST_CHECK_(!strcmp(out, want), "filter 0x%02X, shown: [%s]", f, in);
+    TEST_MSG("want [%s]", want);
+    TEST_MSG("got  [%s]", out);
+}
+
 /* Rubi's filters (core/hook_luna.c, docs/native-hooks.md#rubis-filters), on examples from the farm's
  * hook bytes (bee-san/psandvita hooks/vita/<title>/RUBI-HOOK.md and hook-text-artifacts.jsonl). */
 static void rubi_filters(void)
@@ -987,15 +1002,31 @@ static void rubi_filters(void)
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "rvzen01.ｿｳｶﾟ", "そうか？");
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "r静かだ", "静かだ");
     /* a 0xA0 byte: the blank cell the game draws (farm page 82: 東京都　陵南学園。, 9 glyphs) */
-    rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "r東京都\xef\xa3\xb0陵南学園｡", "東京都　陵南学園。");
+    rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932_A0, "r東京都\xef\xa3\xb0陵南学園｡", "東京都　陵南学園。");
     rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "$t猫@｢セブンズ･カオスﾅのニャ！｣", "猫「セブンズ・カオスなのニャ！」");
     /* PCSG00628: the voice after the name, a ruby with a line break before its base, waits, the 0xA0 blank,
      * !X literals (farm events 20, 148, 207) */
-    rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "月詠rvKY_tu_0417_012.｢･･ﾞﾟ\xef\xa3\xb0ﾅぜ｣|y", "月詠\n「……！？　なぜ」");
+    rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932_A0, "月詠rvKY_tu_0417_012.｢･･ﾞﾟ\xef\xa3\xb0ﾅぜ｣|y", "月詠\n「……！？　なぜ」");
     rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "rｿｼﾃ､bうたたね.r<転寝>ｦ[―――]k｡", "そして、\n転寝を―――。");
     rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "r“bヴィジター.<!V!I!S!I!T!O!R>”", "“VISITOR”");
-    /* main.snr's z<n>. (a size) and u<n>. (a code point), dropped; a voice ID's u after the name stays the voice's */
-    rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "堂元rv0428_03_Tu_0018.｢z140.ﾏﾃ!!u9829.｣", "堂元\n「まて！」");
+    /* main.snr's z<n>. (a size), dropped, and u9829. (♥, by its decimal code point) after an escaped !; a voice ID's u
+     * after the name stays the voice's */
+    rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "堂元rv0428_03_Tu_0018.｢z140.ﾏﾃ!!u9829.｣", "堂元\n「まて！♥」");
+    /* #316's audit F1, synthetic lines: !X is X before any other code (the farm's RUBI-HOOK.md for main.snr: lowercase
+     * ASCII is otherwise always a code, literal brackets are ![ and !], !! is !), shown as the worker shows it */
+    rubi_shown(VJO_RF_PCSG00628, "r!S!k!y", "Sky");                  /* k y: click waits */
+    rubi_shown(VJO_RF_PCSG00628, "r!T!r!u!e", "True");               /* r: a line break; u: a code point */
+    rubi_shown(VJO_RF_PCSG00628, "r!b!u!z!z!.", "buzz.");            /* b: ruby; z: a size; .: a code's end */
+    rubi_shown(VJO_RF_PCSG00628, "r![!A!]", "[A]");                  /* [ ]: a dash run's group */
+    rubi_shown(VJO_RF_PCSG00628, "r!<!A!>", "<A>");                  /* < >: ruby's base */
+    rubi_shown(VJO_RF_PCSG00628, "r!|あ", "|あ");                     /* |: a click wait */
+    rubi_shown(VJO_RF_PCSG00628, "r!L!v!2!.", "Lv2.");               /* the farm's shape (!L!v!1!.) */
+    rubi_shown(VJO_RF_PCSG00628, "名rv01_02.｢!k!y!z!u｣", "名\n「kyzu」");
+    rubi_shown(VJO_RF_PCSG00628, "r!!!v!!", "!v!");                  /* !! is !, then !v */
+    rubi_shown(VJO_RF_PCSG00628, "rあu9829.い", "あ♥い");              /* the farm's u9829. = ♥ */
+    rubi_shown(VJO_RF_PCSG00628, "r!u9829.", "u9829.");              /* escaped: the letters */
+    rubi_shown(VJO_RF_PCSG00628, "rあu1234.い", "あい");               /* another code point: dropped, as before */
+    rubi_shown(VJO_RF_PCSG00628, "r“bヴィジター.<!V!I!S!I!T!O!R>”", "“VISITOR”"); /* as before (event 148) */
     /* PCSG00380: the dash pieces, the player's default names (farm pages 37, 158), the page's last line break */
     rubi_to(VJO_RF_PCSG00380, VJO_HOOK_ENC_CP932, "㌫㍊も、\n「おい、㌫㊤㊥㊦」\n", "北條紗希も、\n「おい、北條―――」");
     /* PCSG00415 CLANNAD: the name variables, from a console's history.csv (Rubi 0.9.8, the verified site's lines) */
@@ -1052,6 +1083,110 @@ static void rubi_filters(void)
                0);
     TEST_CHECK(vjo_luna_text_filter(NULL, VJO_LUNA_NONE, VJO_HOOK_ENC_UTF8, raw, n, VJO_HOOK_ENC_UTF8, out,
                                     sizeof out) == n && !strcmp(out, "台詞"));
+}
+
+/* #316's audit F2: a lone CP932 0xA0 byte (Shift_JIS leaves it undefined) is the blank cell of the two MSGSET entries
+ * (their encoding VJO_HOOK_ENC_CP932_A0, their filters' A0_BLANK) and nothing anywhere else, as before #316: every Luna
+ * site and every filter in CP932 gives the text it gives without the byte, for any text. The audit's examples (#316 gave PCSG00449's site an
+ * empty text, PCSG00402's a code), then every ported CP932 site and every filter on token strings made here, the byte
+ * between whole characters; each text cleaned as the worker cleans it (vjo_hook_clean). */
+static size_t text_a0(const VjoLunaSite *s, unsigned f, const uint8_t *raw, unsigned n, char *out, size_t cap)
+{
+    size_t len = s ? vjo_luna_text(s, raw, n, VJO_HOOK_ENC_CP932, out, cap)
+                   : vjo_luna_text_filter(NULL, f, VJO_HOOK_ENC_CP932, raw, n, VJO_HOOK_ENC_CP932, out, cap);
+    return vjo_hook_clean(out, len);
+}
+static size_t text_a0_entry(unsigned f, const uint8_t *raw, unsigned n, char *out, size_t cap) /* CP932_A0 */
+{
+    size_t len = vjo_luna_text_filter(NULL, f, VJO_HOOK_ENC_CP932_A0, raw, n, VJO_HOOK_ENC_CP932_A0, out, cap);
+    return vjo_hook_clean(out, len);
+}
+
+/* A token string in CP932 (whole characters: ASCII codes, kana, kanji, marks, half-width kana) with lone 0xA0 bytes
+ * between them (at least one), and the same string without them; *x the xorshift32 state */
+static void a0_pair(uint32_t *x, uint8_t *with, unsigned *nw, uint8_t *without, unsigned *no)
+{
+    static const char *const toks[] = {
+        "\\", "@", "#", "%", "$", "^", "[", "]", "<", ">", "/", ",", ".", "|", "_", "*", "{", "}", "(", ")", "-", ":",
+        "n", "r", "k", "w", "c", "v", "b", "s", "t", "N", "P", "1", "0", " ", "\n",
+        "\x82\xa0", "\x83\x41", "\x88\x9f", "\x81\x40", "\x81\x75", "\x81\x76", "\x81\x42", "\x81\x41", "\x81\x79",
+        "\x81\x7a", "\x81\x96", "\x82\x60", "\x81\x5b", "\x81\x63", "\xb1", "\xde", "\xa5", "\xa4"}; /* あア亜　「」。、【】＊Ａー…ｱﾞ･､ */
+    unsigned ntok, a0s = 0;
+    *nw = *no = 0;
+    *x ^= *x << 13, *x ^= *x >> 17, *x ^= *x << 5;
+    ntok = 2 + *x % 14;
+    for (unsigned t = 0; t < ntok; t++) {
+        const char *tok;
+        *x ^= *x << 13, *x ^= *x >> 17, *x ^= *x << 5;
+        if (*x % 4 == 0 || (t == ntok - 1 && !a0s)) with[(*nw)++] = 0xA0, a0s++;
+        tok = toks[(*x >> 8) % (sizeof toks / sizeof toks[0])];
+        for (size_t c = 0; tok[c]; c++) with[(*nw)++] = (uint8_t)tok[c], without[(*no)++] = (uint8_t)tok[c];
+    }
+}
+
+static void a0_only_where_named(void)
+{
+    uint8_t with[96], without[96];
+    char a[512], b[512];
+    char first[1200] = "";
+    uint32_t x = 316u; /* the same strings every run */
+    unsigned compared = 0, differ = 0, sites = 0, filters = 0, nw, no;
+    const VjoLunaSite *s;
+    /* the audit's examples */
+    s = site("PCSG00449", 0x80015842u);
+    if (s) {
+        text_a0(s, 0, (const uint8_t *)"%1@\xa0", 4, a, sizeof a);
+        TEST_CHECK_(!strcmp(a, "%1"), "PCSG00449: [%s]", a);
+    }
+    s = site("PCSG00402", 0x800879DEu);
+    if (s) {
+        text_a0(s, 0, (const uint8_t *)"#\xa0v\x82\xa0,k", 7, a, sizeof a);
+        TEST_CHECK_(!strcmp(a, "あ,k"), "PCSG00402: [%s]", a);
+    }
+    /* the two entries that keep it (VJO_HOOK_ENC_CP932_A0): their filters' blank cell */
+    text_a0_entry(VJO_RF_PCSG00540, (const uint8_t *)"r\x93\x8c\xa0\x8b\x9e", 6, a, sizeof a);
+    TEST_CHECK_(!strcmp(a, "東　京"), "RF_PCSG00540: [%s]", a);
+    text_a0_entry(VJO_RF_PCSG00628, (const uint8_t *)"r\x93\x8c\xa0\x8b\x9e", 6, a, sizeof a);
+    TEST_CHECK_(!strcmp(a, "東　京"), "RF_PCSG00628: [%s]", a);
+    for (unsigned k = 0; k < 2; k++) { /* their entries' text without the byte is the same less the blank */
+        unsigned f = k ? VJO_RF_PCSG00628 : VJO_RF_PCSG00540;
+        text_a0_entry(f, (const uint8_t *)"r\x93\x8c\x8b\x9e", 5, b, sizeof b);
+        TEST_CHECK_(!strcmp(b, "東京"), "filter 0x%02X without the byte: [%s]", f, b);
+    }
+    /* every title's ported CP932 sites */
+    for (unsigned t = 0; vjo_luna_title(t); t++) {
+        const VjoLunaSite *all;
+        unsigned ns = vjo_luna_sites(vjo_luna_title(t), &all);
+        for (unsigned i = 0; i < ns; i++) {
+            if (!vjo_luna_ported(&all[i]) || all[i].encoding != VJO_HOOK_ENC_CP932) continue;
+            sites++;
+            for (unsigned k = 0; k < 40; k++, compared++) {
+                a0_pair(&x, with, &nw, without, &no);
+                text_a0(&all[i], 0, with, nw, a, sizeof a);
+                text_a0(&all[i], 0, without, no, b, sizeof b);
+                if (strcmp(a, b) && !differ++)
+                    snprintf(first, sizeof first, "%s 0x%08X: [%s] with the byte, [%s] without", vjo_luna_title(t),
+                             (unsigned)all[i].addr, a, b);
+            }
+        }
+    }
+    /* every filter, Luna's and Rubi's, in CP932: the two MSGSET filters too, which keep the byte only in their
+     * entries' VJO_HOOK_ENC_CP932_A0 */
+    for (unsigned f = 1; f < VJO_RF_END; f++) {
+        if (f >= VJO_LF_COUNT && f < VJO_RF_BASE) continue;
+        filters++;
+        for (unsigned k = 0; k < 40; k++, compared++) {
+            a0_pair(&x, with, &nw, without, &no);
+            text_a0(NULL, f, with, nw, a, sizeof a);
+            text_a0(NULL, f, without, no, b, sizeof b);
+            if (strcmp(a, b) && !differ++)
+                snprintf(first, sizeof first, "filter 0x%02X: [%s] with the byte, [%s] without", f, a, b);
+        }
+    }
+    TEST_CHECK_(differ == 0, "%u of %u texts (%u CP932 sites, %u filters) differ with a lone 0xA0", differ, compared,
+                sites, filters);
+    TEST_MSG("the first: %s", first);
+    TEST_CHECK(sites >= 150 && filters >= 100);
 }
 
 static void regex_limits(void)
@@ -1123,5 +1258,6 @@ TEST_LIST = {
     {"regex_vectors", regex_vectors},
     {"regex_limits", regex_limits},
     {"rubi_filters", rubi_filters},
+    {"a lone CP932 0xA0: the MSGSET entries' blank, nothing elsewhere", a0_only_where_named},
     {NULL, NULL},
 };

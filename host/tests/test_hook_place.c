@@ -237,9 +237,10 @@ static void test_verified_amatsutsumi(void)
 }
 
 /* Every entry of Rubi's list: a 9-character title whose entries are contiguous, a register that holds an
- * address (r0-r12, sp, lr), an encoding, a site aligned for its instruction set, 8-16 recorded bytes and at
- * least the whole patch at its address (12 at a Thumb address = 2 mod 4), a read kind, a filter this build
- * has, an APP_VER of two BCD bytes or none; one entry per (title, NID, offset). */
+ * address (r0-r12, sp, lr) or 15 (the site's own address: a static at a fixed distance from the code), an
+ * encoding, a site aligned for its instruction set, 8-16 recorded bytes and at least the whole patch at its
+ * address (12 at a Thumb address = 2 mod 4), a read kind, a filter this build has, an APP_VER of two BCD bytes
+ * or none; one entry per (title, NID, offset). */
 static void test_verified_table(void)
 {
     const VjoPlaceVerified *all, *first;
@@ -248,8 +249,13 @@ static void test_verified_table(void)
     for (unsigned i = 0; i < n; i++) {
         const VjoPlaceVerified *v = &all[i];
         TEST_CHECK_(v->title && strlen(v->title) == 9, "entry %u", i);
-        TEST_CHECK_(v->reg <= 15 && v->encoding > VJO_HOOK_ENC_AUTO && v->encoding < VJO_HOOK_ENC_COUNT, "%s +%X", v->title,
-                    (unsigned)v->off);
+        TEST_CHECK_(v->reg <= 15 && ((v->encoding > VJO_HOOK_ENC_AUTO && v->encoding < VJO_HOOK_ENC_COUNT) ||
+                                     v->encoding == VJO_HOOK_ENC_CP932_A0), "%s +%X", v->title, (unsigned)v->off);
+        /* CP932's 0xA0 kept (VJO_HOOK_ENC_CP932_A0) for the two whose filters make it the blank their games draw only
+         * (#316's audit F2: every other text drops the byte) */
+        TEST_CHECK_((v->encoding == VJO_HOOK_ENC_CP932_A0) ==
+                        (v->filter == VJO_RF_PCSG00540 || v->filter == VJO_RF_PCSG00628), "%s: CP932_A0 and its filter",
+                    v->title);
         TEST_CHECK_(v->read != VJO_PLACE_READ_CELLS || v->encoding == VJO_HOOK_ENC_CP932, "%s: cells are CP932",
                     v->title);
         /* an SC3 string is read through its end token and decoded with its game's charset, nothing else */
@@ -269,6 +275,40 @@ static void test_verified_table(void)
             TEST_CHECK_(strcmp(all[j].title, v->title) || all[j].module_nid != v->module_nid || all[j].off != v->off,
                         "%s +%X twice", v->title, (unsigned)v->off);
     }
+}
+
+/* #316's audit F4: an entry whose register is 15 (PCSG00380's: foaf4's page record, a static 0x98E152 past its site)
+ * reads the static the farm saw only where the eboot is loaded as it was linked, segment 0 at 0x81000000: elsewhere
+ * its bytes may still match, and it is refused as relocated. Every other entry's text is in a register, wherever
+ * its segment 0 is. */
+static void test_verified_fixed_address(void)
+{
+    static uint8_t code[0x4E000];
+    const VjoPlaceVerified *all, *v = NULL, *other = NULL;
+    unsigned n = vjo_place_verified("PCSG00380", &all);
+    for (unsigned i = 0; i < n; i++)
+        if (all[i].reg == 15) v = &all[i];
+    TEST_ASSERT_(v != NULL && v->off + v->sig_len <= sizeof code, "PCSG00380's r15 entry");
+    memcpy(code + v->off, v->sig, v->sig_len);
+    TEST_CHECK(vjo_place_check_verified(v, code, sizeof code, 0x81000000u, v->module_nid) == VJO_PLACE_OK);
+    for (unsigned k = 0; k < 3; k++) {
+        static const uint32_t elsewhere[3] = {0x81010000u, 0x80000000u, 0x98100000u};
+        int r = vjo_place_check_verified(v, code, sizeof code, elsewhere[k], v->module_nid);
+        TEST_CHECK_(r != VJO_PLACE_OK && !strcmp(vjo_place_reason(r), "relocated"), "segment 0 at %08X: %s",
+                    (unsigned)elsewhere[k], vjo_place_reason(r));
+    }
+    /* other bytes are another build, wherever it is: the signature says so first */
+    code[v->off] ^= 1;
+    TEST_CHECK(vjo_place_check_verified(v, code, sizeof code, 0x81010000u, v->module_nid) == VJO_PLACE_SIGNATURE);
+    code[v->off] ^= 1;
+    /* an entry with its text in a register: anywhere */
+    n = vjo_place_verified("PCSG00628", &all);
+    for (unsigned i = 0; i < n; i++)
+        if (all[i].reg != 15) other = &all[i];
+    TEST_ASSERT(other != NULL && other->off + other->sig_len <= sizeof code);
+    memcpy(code + other->off, other->sig, other->sig_len);
+    TEST_CHECK(vjo_place_check_verified(other, code, sizeof code, 0x81010000u, other->module_nid) == VJO_PLACE_OK);
+    TEST_CHECK(vjo_place_check_verified(other, code, sizeof code, 0x81000000u, other->module_nid) == VJO_PLACE_OK);
 }
 
 /* A page record's cells as CP932 bytes, in place: double-byte cells whole, a single-byte one alone, a 0 cell
@@ -393,6 +433,7 @@ TEST_LIST = {
     {"verified", test_verified},
     {"verified: アマツツミ, a site inside a function", test_verified_amatsutsumi},
     {"verified: every entry of the list", test_verified_table},
+    {"verified: r15 entries only with segment 0 at its link address", test_verified_fixed_address},
     {"a page record's cells", test_cells},
     {"prefilter", test_prefilter},
     {"pointer_array", test_pointer_array},

@@ -54,6 +54,8 @@ REASONS = {
     "version": "the entry is for another game version (APP_VER)",
     "full": "all 8 site slots were taken",
     "tai": "taiHEN refused the hook",
+    "relocated": "the entry reads a static at a fixed distance from its code, and the game's segment 0 is not at "
+                 "0x81000000, where the entry was proven",
 }
 # game_ocr/hooks.c call_imports: (library NID, function NID) -> name
 IMPORTS = {(0xBE43BB07, 0x7205BFDB): "memcpy", (0xBE43BB07, 0x85B924B7): "strcpy",
@@ -467,6 +469,10 @@ def assess(log, tables=None, farm=None, readings=None):
         verdict = (f"Rubi's verified entry matches this build but was not installed ({reasons}: taiHEN refused it, "
                    "or all site slots were taken)")
         steps.append("That is a bug of Rubi, not a hook request: send this log in an issue.")
+    elif refused_entries and all(s["reason"] == "relocated" for s in refused_entries):
+        verdict = ("Rubi's verified entry matches this build, but it reads a static at a fixed distance from its code "
+                   "and this game's segment 0 is not at 0x81000000, where the farm proved it (relocated)")
+        steps.append("The entry needs another way to find its text in this game: send this log in an issue.")
     elif refused_entries:
         reasons = ", ".join(sorted({s["reason"] for s in refused_entries}))
         verdict = f"Rubi's verified entry is refused here ({reasons}): this console runs another build of the game"

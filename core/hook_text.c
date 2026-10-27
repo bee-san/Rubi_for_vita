@@ -144,7 +144,8 @@ size_t vjo_hook_decode(unsigned encoding, const uint8_t *src, size_t n, char *ds
     if (encoding == VJO_HOOK_ENC_AUTO) encoding = looks_utf8(src, n) ? VJO_HOOK_ENC_UTF8 : VJO_HOOK_ENC_CP932;
     if (used) *used = encoding;
     if (!dst || !cap) return 0;
-    if (encoding != VJO_HOOK_ENC_UTF8 && encoding != VJO_HOOK_ENC_UTF16LE && encoding != VJO_HOOK_ENC_CP932) n = 0;
+    if (encoding != VJO_HOOK_ENC_UTF8 && encoding != VJO_HOOK_ENC_UTF16LE && encoding != VJO_HOOK_ENC_CP932 &&
+        encoding != VJO_HOOK_ENC_CP932_A0) n = 0;
     while (i < n) {
         uint32_t cp = 0;
         size_t step = 1;
@@ -184,10 +185,10 @@ size_t vjo_hook_decode(unsigned encoding, const uint8_t *src, size_t n, char *ds
                     step = 2;
                 }
                 /* else: a lead byte without its trail byte, dropped alone */
-            } else if (b == 0xA0) {
-                cp = VJO_HOOK_CP932_A0; /* Windows' cp932: what Luna's filters see; vjo_hook_clean drops it */
+            } else if (b == 0xA0) { /* Windows' cp932's U+F8F0 in VJO_HOOK_ENC_CP932_A0, for its filter; else dropped */
+                cp = encoding == VJO_HOOK_ENC_CP932 ? 0u : VJO_HOOK_CP932_A0;
             }
-            /* 0x80 and 0xFD-0xFF: dropped */
+            /* 0x80, 0xA0 (Shift_JIS leaves it undefined) but in VJO_HOOK_ENC_CP932_A0, and 0xFD-0xFF: dropped */
         }
         if (cp) {
             char o[4];
@@ -238,11 +239,6 @@ size_t vjo_hook_clean(char *text, size_t n)
             }
         }
         if ((c < 0x20 && c != '\n' && c != '\r' && c != '\t') || c == 0x7F) continue;
-        /* the decoder's CP932 0xA0 (U+F8F0, EF A3 B0) that no filter turned into what its game draws */
-        if (c == 0xEF && i + 1 < n && (unsigned char)text[i] == 0xA3 && (unsigned char)text[i + 1] == 0xB0) {
-            i += 2;
-            continue;
-        }
         text[w++] = (char)c;
     }
     text[w] = 0;
