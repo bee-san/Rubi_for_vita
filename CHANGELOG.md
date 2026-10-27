@@ -15,23 +15,23 @@ been reported.
 
 - **An alternative line finder, vita-vn-ocr's text spotter on the whole screen** (`ocr_finder = spotter` in
   `config.ini`; off by default: `grad`, Rubi's finder, stays). textspot7's pick (vita-vn-ocr #128): a small network
-  trained on the owner's hooked PS Vita and PSP pages finds the text on the game's whole screen, then a post-pass keeps
-  the lines whose centre is in your region, joins the pieces of one line and grows each line over the ink at its ends;
-  the recognizer reads those lines as before. On vita-vn-ocr's host measurements (the pick before its final
+  trained on the owner's hooked PS Vita and PSP pages finds the text on the game's whole screen, then a post-pass
+  keeps the lines whose centre is in your region, joins the pieces of one line and grows each line over the ink at its
+  ends; the recognizer reads those lines as before. On vita-vn-ocr's host measurements (the pick before its final
   retraining) its page-path dialogue error on unseen development games is 1.18 % against 2.38 % for Rubi's finder with
   the line fixes, but that difference is not resolved (its 95 % interval crosses 0), which is why it is off by default
-  (on a fresh confirmation set: 1.92 % against 4.29 %, resolved; nothing of it has run on a console). The screen is read through the same strips as your
-  region, each row checked, so a screen that changes while it is read starts the job again. Its weights (52,176 B)
-  are a file beside the models, read once into the game's memory and kept, as the LM is; when they are missing, wrong
-  or there is no memory for them, or the spotter refuses, the job reads with Rubi's finder as before, and never steps
-  down a model size. Until the pick's release is pinned, its pin is a placeholder, so no package carries the weights
-  and `spotter` reads with Rubi's finder. Memory (exact bytes, [memory
-  ledger](docs/memory-ledger.md#the-spotter-finder-api-53-vita-vn-ocr-128)): its block, 57,344 B, and its part of
-  the job's scratch, at most 313,392 B (the largest job 128,816 B more), only in jobs that use it; its code, 16 KiB more
+  (on a fresh confirmation set: 1.92 % against 4.29 %, resolved; nothing of it has run on a console). The screen is
+  read through the same strips as your region, each row checked, so a screen that changes while it is read starts the
+  job again. Its weights (52,176 B) are a file beside the models, read once into the game's memory and kept, as the LM
+  is; when they are missing, wrong or there is no memory for them, or the spotter refuses, the job reads with Rubi's
+  finder as before, and never steps down a model size. Until the pick's release is pinned, its pin is a placeholder,
+  so no package carries the weights and `spotter` reads with Rubi's finder. Memory (exact bytes, [memory
+  ledger](docs/memory-ledger.md#the-spotter-finder-api-53-vita-vn-ocr-128)): its block, 57,344 B, and its part of the
+  job's scratch, at most 313,392 B (the largest job 128,816 B more), only in jobs that use it; its code, 16 KiB more
   of the OCR worker's pages in every game that is ON, whichever finder it uses (208,896 B; 20 KiB more, 221,184 B, in
-  the debug build). Its time is estimated at 264 ms for the spotter and at most 34 ms for the post-pass per screen at 333 MHz
-  (vita-vn-ocr's cycle model), and reading the screen about 110-260 ms of strip waits (an estimate from the measured
-  strip times) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-53); API 53).
+  the debug build). Its time is estimated at 264 ms for the spotter and at most 33.5 ms for the post-pass per screen
+  at 333 MHz (vita-vn-ocr's cycle model), and reading the screen about 110-260 ms of strip waits (an estimate from the
+  measured strip times) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-53); API 53).
 
 ### Fixed
 

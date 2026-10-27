@@ -1536,8 +1536,8 @@ and 0.43 s for a full screen of 5 lines (v0.8.0-test.1's logs, measured; the own
 **The frame's capture is unmeasured on a console (estimate).** A strip costs about one of the game's frames: each is
 copied by the display hook from the next frame the game shows (11-26 ms a strip on the console, #81's logs;
 [first OCR](first-ocr.md): 21.9 ms). The frame is 10 strips (59 rows each), so its pass adds about 110-260 ms of
-strip waits beside the region's own first pass (a dialogue box: two strips), and each line's dark flag and growth read
-its rows again (about a strip each where they are not held). A full-screen region's one pass replaces GRAD's two
+strip waits beside the region's own first pass (a dialogue box: two or three strips), and each line's dark flag and
+growth read its rows again (about a strip each where they are not held). A full-screen region's one pass replaces GRAD's two
 (20 strips). The spotter's network computes on each strip as it arrives, so its 264 ms and the waits partly overlap
 (unmeasured).
 
