@@ -129,6 +129,11 @@ been reported.
   debug build's `hooks.log` shows each site's offset and verdict, with its bytes when refused. Not run on a console.
   STEINS;GATE: no Vita release has a hook entry, in Luna's table or Rubi's
   ([hook-titles.md](docs/hook-titles.md#steinsgate-no-hook-entry-in-any-release)).
+- **Docs: L and R no longer page the dictionaries, and △ shows this game.** The README's settings table and the
+  guide still described the L or R tap that paged between the dictionaries' entries, which 0.9.6 replaced with
+  entries stacked below the word (the right stick scrolls to them; #289), and the guide said △'s totals were
+  across games, where △ shows today and the total of the game being played (the roadmap #310's "found along the
+  way"). Docs only.
 
 ### Changed
 

@@ -310,10 +310,9 @@ app when it starts.
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position (held: repeats). **Up on the text's top row shows this game's earlier line** (with **Read text: Automatically**), dimmed between its neighbours: more Up goes further back, up to 32 lines; Down on an earlier line's last row goes to the line after it, and past the newest back to the current text ([line history](line-history.md)) |
 | Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right a character at a time in reading order across the rows, in Whole word mode too (the shown word is not skipped, and its left never retraces a Right), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too. With **Japanese characters only** ON it lands only on kana and kanji, OFF on every visible character, punctuation and Latin included. Once the cursor rests for `stick_lookup_ms` (200 ms), not at each step, the word starting at its character is looked up and, in Whole word mode, highlighted ([left stick](touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
-| Triangle | **Total characters read, characters/hour and total time played** across recorded games, above the line's OCR/hook diagnostics. Time estimates active reading: each line counts the time to the next, at most 2.5 times what your pace would take for it (`reading_time = adaptive` in `config.ini`, the default, from the Vita's next start; `15s` is 0.9.7's 15-second cutoff, no setting in the app: [reading time](ocr-history.md#reading-time)); speed uses timed lines only. Triangle again brings the entry back. The first press may show `counting…` while history is counted in background windows; subsequent presses read cached totals. [Details](ocr-history.md#total-characters-read). |
+| Triangle | The line's source (hook or OCR), then **characters read, reading time and characters/hour** of this game: today, and its total. Time estimates active reading: each line counts the time to the next, at most 2.5 times what your pace would take for it (`reading_time = adaptive` in `config.ini`, the default, from the Vita's next start; `15s` is 0.9.7's 15-second cutoff, no setting in the app: [reading time](ocr-history.md#reading-time)); speed uses timed lines only. Triangle again brings the entry back. The first press may show `counting…` while history is counted in background windows; subsequent presses read cached totals. [Details](ocr-history.md#total-characters-read). |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
-| L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
 | Cancel | Close the overlay |
 
@@ -322,7 +321,7 @@ earlier dialogue, the lines `history.csv` keeps ([ocr-history.md](ocr-history.md
 top row shows the line before it, in white between the last row of the line before that and the
 first row of the line after it, both dimmed, and the body's first line says how far back it is
 (`Earlier line -2`). Everything works on it as on the current text: the cursor, taps, the left stick,
-lookups, the dictionaries' pages and Enter, whose card has that line as its sentence and **no
+lookups, the other dictionaries' entries below the word and Enter, whose card has that line as its sentence and **no
 screenshot** (Rubi keeps no frame of an earlier line; the status line says so). Down past the newest
 earlier line comes back to the current text, its cursor where it was; closing the overlay does too.
 Up and Down between lines are the d-pad's: the left stick stops at the text's first and last rows.
@@ -1086,8 +1085,9 @@ jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
 reads only the selected position and shows zero or one entry. With Dictionaries
 shown above 1 it also keeps a 208-byte table locating the other dictionaries'
-entries in the same arena; an L or R tap releases the shown entry and reads one
-other payload, so several definitions are never resident together.
+entries in the same arena, and reads each one's payload after the best match's
+in that arena; one that does not fit is left out, with those after it
+([Dictionaries shown](local-dictionaries.md#dictionaries-shown)).
 The previous local result is retired before it is reused. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
