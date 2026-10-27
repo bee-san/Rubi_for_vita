@@ -29,27 +29,28 @@
   "counts": {
    "correct": 11083,
    "kanji tokens": 14265,
-   "missing": 2463,
+   "missing": 2466,
    "noref": 117,
-   "right by adjudication": 577,
+   "right by adjudication": 572,
    "with reference": 14148,
-   "wrong": 25,
-   "wrong (differs from sudachi)": 602
+   "wrong": 27,
+   "wrong (differs from sudachi)": 599
   },
   "per_1000": {
    "correct": 783.36,
-   "missing": 174.09,
-   "wrong": 1.77,
+   "missing": 174.3,
+   "wrong": 1.91,
    "unreviewed": 0.0,
-   "wrong (differs from sudachi)": 42.55,
-   "right by adjudication": 40.78
+   "wrong (differs from sudachi)": 42.34,
+   "right by adjudication": 40.43
   },
   "adjudicated": {
-   "sudachi wrong": 218,
+   "sudachi wrong": 213,
    "both right": 359,
-   "sudachi": 23,
+   "sudachi": 25,
    "neither": 2
-  }
+  },
+  "note": "the code after audit-rubi-rm1 follow-up (the 通りに rule), the corrected adjudication"
  },
  "test_yomitan_raw": {
   "counts": {
@@ -72,38 +73,63 @@
   }
  },
  "test_yomitan_sample": {
+  "units_differing": 1341,
   "units_sampled": 300,
   "seed": 20261027,
-  "wrong_units": 142,
-  "token_share_wrong": 0.4603,
-  "wrong_per_1000": 45.7,
+  "resamples": 10000,
+  "unjudged": 0,
+  "wrong_units": 143,
+  "tokens_sampled": 315,
+  "wrong_tokens": 147,
+  "token_share_wrong": 0.4667,
+  "wrong_per_1000": 46.36,
   "wrong_per_1000_95ci_bootstrap": [
-   40.0,
-   51.4
+   40.5,
+   52.1
   ],
-  "right_by_adjudication_per_1000": 53.6
+  "right_by_adjudication_per_1000": 52.98,
+  "as_first_counted": {
+   "wrong_units": 142,
+   "wrong_tokens": 145,
+   "wrong_per_1000": 45.7,
+   "wrong_per_1000_95ci_bootstrap": [
+    40.0,
+    51.4
+   ]
+  }
  },
  "test_rubi_at_protocol_commit": {
-  "commit": "cf2e273",
-  "per_1000": {
-   "correct": 783.08,
-   "missing": 174.3,
-   "wrong": 1.84,
-   "unreviewed": 0.0,
-   "wrong (differs from sudachi)": 42.62,
-   "right by adjudication": 40.78
-  },
   "counts": {
    "correct": 11079,
    "kanji tokens": 14265,
    "missing": 2466,
    "noref": 117,
-   "right by adjudication": 577,
+   "right by adjudication": 573,
    "with reference": 14148,
-   "wrong": 26,
+   "wrong": 30,
    "wrong (differs from sudachi)": 603
   },
-  "rebased_as": "e6810d8"
+  "per_1000": {
+   "correct": 783.08,
+   "missing": 174.3,
+   "wrong": 2.12,
+   "unreviewed": 0.0,
+   "wrong (differs from sudachi)": 42.62,
+   "right by adjudication": 40.5
+  },
+  "adjudicated": {
+   "sudachi wrong": 214,
+   "both right": 359,
+   "sudachi": 28,
+   "neither": 2
+  },
+  "commit": "cf2e273",
+  "rebased_as": "e6810d8",
+  "as_first_counted": {
+   "wrong": 26,
+   "wrong_per_1000": 1.84,
+   "right_by_adjudication": 577
+  }
  },
  "measured_on": {
   "base": "9ad8eb5",
@@ -123,8 +149,43 @@
   "seconds_mean": 0.52,
   "seconds_median": 0.49,
   "seconds_p95": 1.11,
-  "reads": 295476,
-  "reads_with_256k_block_cache_simulated": 180853,
-  "estimate": "host counts with the console fit of docs/lookup-performance.md; not timed on a console"
+  "reads": 295633,
+  "reads_with_256k_block_cache_simulated": 180943,
+  "estimate": "host counts with the console fit of docs/lookup-performance.md; not timed on a console",
+  "lookups": 51854,
+  "code": "after audit-rubi-rm1 follow-up"
+ },
+ "test_as_merged_407": {
+  "counts": {
+   "correct": 11083,
+   "kanji tokens": 14265,
+   "missing": 2463,
+   "noref": 117,
+   "right by adjudication": 573,
+   "with reference": 14148,
+   "wrong": 29,
+   "wrong (differs from sudachi)": 602
+  },
+  "per_1000": {
+   "correct": 783.36,
+   "missing": 174.09,
+   "wrong": 2.05,
+   "unreviewed": 0.0,
+   "wrong (differs from sudachi)": 42.55,
+   "right by adjudication": 40.5
+  },
+  "adjudicated": {
+   "sudachi wrong": 214,
+   "both right": 359,
+   "sudachi": 27,
+   "neither": 2
+  }
+ },
+ "adjudication_corrections": {
+  "by": "audit-rubi-rm1 F1",
+  "places": [
+   "通り どおり after a verb (2 places): sudachi",
+   "声高らか こわだからか: sudachi (also Yomitan's rendering)"
+  ]
  }
 }

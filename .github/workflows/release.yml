@@ -191,8 +191,8 @@ jobs:
       # -j twice the processors: the tools' Python suites (one test per module, tools_*, the slowest first)
       # spend much of their time waiting on the programs and the FTP mock they run. The normal build leaves
       # the suites that never read the build (label variant_free) to the debug build's job; a change to the
-      # hooks' verified-entry table alone leaves out the tools' suites (label tools), whose programs have no
-      # hook table in them.
+      # hooks' verified-entry table alone leaves out the tools' suites whose programs do not read it (label
+      # tools: all but tools_hook_request and tools_hook_farm).
       - name: ctest (parallel)
         run: ctest --test-dir build/host -j$(( $(nproc) * 2 )) --output-on-failure $SELECT
         env:

@@ -49,6 +49,23 @@ class Verdicts(unittest.TestCase):
     def test_display(self):
         self.assertEqual(compare.display(compare.render("友達", 0, 2, [(0, 1, "とも")])), "とも＊")
 
+    def test_a_partial_units_readings_agree_where_they_lie(self):
+        # audit-rubi-rm1 F10: each reading of a partly read unit is checked against Sudachi's tokens where it lies
+        tokens = [(0, 3, "ジュギョウチュウ")]
+        agree = lambda readings: compare.readings_agree("授業中", 0, 3, tokens, readings)  # noqa: E731
+        self.assertTrue(agree([(0, 2, "じゅぎょう")]))      # from the token's start: a prefix
+        self.assertFalse(agree([(0, 2, "じゅうぎょう")]))   # not one: wrong, though .+ would take the rest
+        self.assertTrue(agree([(2, 3, "ちゅう")]))          # to its end: a suffix
+        self.assertFalse(agree([(2, 3, "なか")]))
+        self.assertTrue(agree([(1, 2, "ぎょう")]))
+        self.assertFalse(agree([(1, 2, "かい")]))
+        # over whole tokens: their reading
+        two = [(0, 2, "トモダチ"), (2, 4, "イッショ")]
+        self.assertTrue(compare.readings_agree("友達一緒", 0, 4, two, [(0, 2, "ともだち")]))
+        self.assertFalse(compare.readings_agree("友達一緒", 0, 4, two, [(0, 2, "ゆうたつ")]))
+        # how one token's reading splits between its kanji is not checked: such a unit is only ever missing
+        self.assertTrue(compare.readings_agree("大学", 0, 2, [(0, 2, "ダイガク")], [(0, 1, "だいが")]))
+
 
 class EndToEnd(unittest.TestCase):
     def test_counts_and_adjudication(self):
@@ -72,6 +89,35 @@ class EndToEnd(unittest.TestCase):
             self.assertEqual(c.get("wrong", 0), 0)
             self.assertEqual(r["per_1000_kanji_tokens"]["missing"], 250.0)
             self.assertEqual((d / "p.tsv").read_text(), "")
+
+
+class Adjudication(unittest.TestCase):
+    def test_a_place_with_a_rendering_judges_only_that_rendering(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "adj.tsv"
+            path.write_text("@a:3\tsudachi\tどおり\n@b:0\tboth\n通り\tどおり\tとおり\tsystem\n", encoding="utf-8")
+            patterns, places = compare.load_adjudication(path)
+            self.assertEqual(compare.place_verdict(places, "a:3", "どおり"), "sudachi")
+            self.assertIsNone(compare.place_verdict(places, "a:3", "とおり"))  # another system's rendering there
+            self.assertEqual(compare.place_verdict(places, "b:0", "なんでも"), "both")
+            self.assertEqual(patterns[("通り", "どおり", "とおり")], "system")
+
+
+class Sample(unittest.TestCase):
+    def test_a_seeded_sample_and_its_interval_are_reproducible(self):
+        # audit-rubi-rm1 F11: the protocol's sample of Yomitan's units, drawn and estimated by committed code
+        units = [(f"l{i}:0", 1 + i % 2, "sudachi" if i % 3 == 0 else "system") for i in range(400)]
+        a = compare.sample_estimate(units, 50, 7, 500, 100.0)
+        b = compare.sample_estimate(units, 50, 7, 500, 100.0)
+        self.assertEqual(a, b)
+        sampled, est = a
+        self.assertEqual(sampled, compare.random.Random(7).sample(units, 50))
+        wrong = sum(n for _, n, v in sampled if v == "sudachi")
+        self.assertEqual(est["wrong_tokens"], wrong)
+        self.assertAlmostEqual(est["wrong_per_1000"], round(100.0 * wrong / est["tokens_sampled"], 2))
+        lo, hi = est["wrong_per_1000_95ci_bootstrap"]
+        self.assertTrue(lo <= est["wrong_per_1000"] <= hi)
+        self.assertEqual(est["unjudged"], 0)
 
 
 if __name__ == "__main__":

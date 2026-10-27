@@ -166,6 +166,7 @@ int main(int argc, char **argv)
                 {"counters", offsetof(VjoReadingRules, counters)}, {"variants", offsetof(VjoReadingRules, variants)},
                 {"anchor", offsetof(VjoReadingRules, anchor)}, {"compounds", offsetof(VjoReadingRules, compounds)},
                 {"parts", offsetof(VjoReadingRules, parts)}, {"phrases", offsetof(VjoReadingRules, phrases)},
+                {"particles", offsetof(VjoReadingRules, particles)},
                 {"shorter", offsetof(VjoReadingRules, shorter)}, {"names", offsetof(VjoReadingRules, names)},
                 {"inline", offsetof(VjoReadingRules, inline_readings)}};
             unsigned f = 0;

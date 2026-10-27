@@ -11,6 +11,12 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- Opening the overlay confirms that the text is ready: its OCR read skips the stability wait. On an unsettled
+  screen, a running background read yields to a new read without the wait. Background reads and quiet refreshes
+  keep their stability checks; completed results still reopen from the cache.
+
 ### Added
 
 - **PSP text in Adrenaline (testing, off by default):** with **Text source → Every game**, Rubi's game worker reads
@@ -125,14 +131,21 @@ been reported.
     Yomitan places them (`行[い]って`, `来[こ]ない`); the mined word keeps its own reading and its `<b>`. A word whose
     reading the dictionaries cannot be sure of gets none (今日, 方 alone, a single kanji in a compound, a name VNDB
     romanizes otherwise, a counter after a number). On 3,000 real visual-novel lines the rules were not chosen on,
-    1.8 readings per 1,000 kanji tokens were wrong and 174 missing, against about 46 wrong and 34 missing for
+    1.9 readings per 1,000 kanji tokens were wrong (2.1 at the measurement, recounted after its audit) and 174
+    missing, against about 46 wrong and 34 missing for
     Yomitan's `{sentence-furigana}` over the same dictionaries
     ([reports/sentence-readings.md](reports/sentence-readings.md); host measurements, the threshold for ON fixed
     before the measurement). An export then takes about 0.5 s more a card (an estimate: 17 lookups and 98 reads a
     sentence on the host); its progress counts every card.
   The Shell, the game worker and the kernel are unchanged: the code is the app's (`core/sentence_reading.c`,
   through the Look up page's `settings/app_platform.c`), with 200 KiB of static memory for the lookups. Not run on a
-  console yet.
+  console yet. After its audit: the game tag drops the whitespace, then `::` (`A: :B` is `Game::AB`, as GSM's);
+  Cancel stops one card's readings before their next lookup (a long sentence takes hundreds); a highlight inside a
+  character takes the whole character, so `<b>` is always closed; 通りに, which the longest match reads どおりに
+  after a verb too, gets no reading; three verdicts of the measurement corrected (2.12 wrong per 1,000 at the
+  protocol's commit, not 1.84; the default stays ON), `tools/sentence_readings/compare.py` checks a part read
+  unit's readings where they lie and draws Yomitan's sample itself; tests for a record's own readings, the
+  dictionaries closed after an export, the progress, and unreadable dictionaries tried once.
 - **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
   △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
   games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the
@@ -325,15 +338,17 @@ been reported.
     Their plain writes against those atomic reads were a data race in C11 terms: ThreadSanitizer found 13-14 in 5 runs
     of the race test on `main` (two measurements) and none now (clang 18, the fleet box). A stream that has had text
     no longer reads as empty to the watch while a new caller takes it.
-  - **One stream per caller** (#366's audits): a keep (a stream that agreed with OCR, or a diagnostic pin) takes the
-    stream's lock, as an agreeing one already did, so it never lands while a new caller is taking the stream, where it
+  - **One stream per caller** (#366's audits): a diagnostic pin (no current Shell sends one) takes the stream's lock,
+    as an agreeing stream's keep already did, so a keep never lands while a new caller is taking the stream, where it
     could let that caller's other thread take a second one. Should a caller still hold two, the job shows the one it
-    writes: it showed the other one's old line, with trust on every job and without OCR (the host's job tests).
+    writes, whenever it can read that one: it showed the other one's old line, with trust on every job and without OCR
+    (the host's job tests).
   - **The wait:** a new caller still waits while the least recently written stream is busy and every other caller
-    keeps the CPUs busy. On the host's hammer test, on three or four CPUs, its longest wait was 0.21-0.48 s against
-    0.04-0.05 s before #366, whose quick takes were then mostly the newest stream's; on one CPU about 0.45 s for both;
-    with callers that sleep between copies, no longer than before. Passing a busy stream over ended the wait, but gave
-    callers with two threads two streams (223 to 3,880 times in 20 runs of 500 ms), so it was not taken
+    keeps the CPUs busy. On the host's hammer test (12 callers copying in tight loops; three measurements), on three
+    or four CPUs its longest wait was 0.15-0.49 s against 0.04-0.16 s before #366, whose quick takes were then mostly
+    the newest stream's; on one CPU about 0.45 s for both; with callers that sleep between copies, at most 17 ms for
+    both, but for one run of 40 ms against 4 ms. Passing a busy stream over ended the wait, but gave callers with two
+    threads two streams (223 to 5,980 times in 20 runs of 500 ms, two measurements), so it was not taken
     ([details](docs/native-hooks.md)).
   - **Tests:** the issue's state; a suite that runs each interleaving at the search's own points on every run
     (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 7 of whose 15 tests fail on `main` with its four
@@ -343,8 +358,8 @@ been reported.
     copies at once, beside busy loops, gcc and clang). The release and acquire orders compile to the same x86 code, so
     no host test can show them.
   - **Learned hooks reset once:** `core/hook_stream.c` is an input of the hook definition SHA-256, so consoles learn
-    each game's hooks again; twelve PRs since 0.9.8, up to this one, have changed it, so the next release does that
-    anyway.
+    each game's hooks again; this fix's three PRs are among the thirteen merged since 0.9.8 that changed it (by #410),
+    so the next release does that anyway.
 - **A game short of memory reads with the next smaller model** (#324). The console reports a game's free memory in
   whole MiB (あおかな, `PCSG00700`, on a PCH-2000: each of 78 samples was 1, 2, 3 or 4 MiB), so a job that passed its
   memory check with less than 1 MiB to spare saw a whole MiB less once it had taken its own blocks: its model's

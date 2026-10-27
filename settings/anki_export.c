@@ -1186,36 +1186,54 @@ typedef char VjoExportSessionFits[sizeof(session_mem) >= 7u * 1024u ? 1 : -1]; /
 
 void vjo_export_game_tag(const char *game, char *out, size_t cap)
 {
-    size_t n = game ? strlen(game) : 0, i = 0, used;
+    size_t n = game ? strlen(game) : 0, i = 0, used, kept = 0, colons = 0;
     static const char prefix[] = "Game::";
     out[0] = '\0';
     if (!n || cap <= sizeof(prefix))
         return;
     memcpy(out, prefix, sizeof(prefix));
     used = sizeof(prefix) - 1;
+    /* Anki splits tags on whitespace (ASCII and U+3000), and "::" would nest the tag: as GSM's _prepare_anki_tags
+     * (.replace(" ", "").replace("::", "")), the whitespace goes first (control characters too), then each "::" of
+     * what is left, so "A: :B" is Game::AB; a run of colons keeps one when it is odd, as Python's replace does */
     while (i < n) {
         size_t at = i;
         uint32_t c = vjo_utf8_next(game, n, &i);
-        /* Anki splits tags on whitespace (ASCII and U+3000), and "::" would nest the tag: both go, as GSM's
-         * _prepare_anki_tags removes " " and "::"; control characters too */
         if (c <= 0x20 || c == 0x7F || c == 0x3000 || c == 0xA0 || (c >= 0x2000 && c <= 0x200B))
             continue;
-        if (c == ':' && i < n && game[i] == ':') {
-            i++;
+        if (c == ':') { /* written once the run of colons ends */
+            colons++;
             continue;
         }
+        if (colons % 2) {
+            if (used + 1 >= cap)
+                break;
+            out[used++] = ':';
+        }
+        colons = 0;
         if (used + (i - at) >= cap)
             break;
         memcpy(out + used, game + at, i - at);
         used += i - at;
+        kept++;
     }
+    if (i >= n && colons % 2 && used + 1 < cap) /* (the title's last run of colons) */
+        out[used++] = ':', kept++;
     out[used] = '\0';
-    if (used == sizeof(prefix) - 1)
+    if (!kept)
         out[0] = '\0'; /* nothing of the title is left: no tag */
 }
 
 /* VjoApkgOps.sentence_furigana: readings over the note's sentence, from the dictionaries (NULL: the record's
  * own, when it has some, or the setting is off, or the dictionaries cannot be read). */
+/* The export's Cancel inside one card's readings (VjoReadingStats.stopped): a long sentence takes hundreds of lookups
+ * (about 20 s by the console fit, an estimate), and the package's writer asks only between notes. */
+static int readings_stopped(void *ud)
+{
+    const Out *o = (const Out *)ud;
+    return o->ui->stopped && o->ui->stopped(o->ui->ud);
+}
+
 static const char *note_sentence_furigana(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note)
 {
     Out *o = (Out *)ud;
@@ -1688,6 +1706,8 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
     vjo_app_platform(&o.platform);
     memset(session_mem, 0, sizeof(session_mem));
     o.platform.local_session = (VjoLocalSession *)session_mem;
+    o.readings.stopped = readings_stopped;
+    o.readings.stopped_ud = &o;
     if ((o.fd = sceIoOpen(tmp, SCE_O_RDWR | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0) {
         io_fail("open", tmp, o.fd);
         snprintf(msg, cap, "Cannot create a file in %s (memory card full?). Nothing was changed.", VJO_EXPORT_DIR);

@@ -52,8 +52,9 @@ typedef struct {
     int counters;   /* a counter after a number gets no reading, nor the number */
     int variants;   /* a spoken shortening of the reading (ほんとに of 本当に) is no other reading */
     int anchor;     /* a match from kana gives way to the lookup at its first kanji (ガ目, この家) */
-    int compounds;  /* in a compound the lookup split, every entry of the word, or of its first run, counts */
+    int compounds;  /* a single kanji in a compound the lookup split gets none (中 of 授業中, 君 of 春原君) */
     int parts;      /* a run of kanji of a longer word, as a word of its own (今日 of 今日は) */
+    int particles;  /* the word of an unranked entry that ends in a particle after kana (通り of 通りに) */
     int phrases;    /* a later run with its kana (開ける of 目を開ける) */
     int shorter;    /* a rare inflected match one character shorter (扱い of 扱いだ) */
     int names;      /* another dictionary's name entry of the same text whose romanized readings differ (VNDB's) */
@@ -67,7 +68,7 @@ typedef struct {
     unsigned words;     /* matched words with kanji */
     unsigned read;      /* ... given their reading */
     unsigned ambiguous; /* ... none: another entry as frequent reads them otherwise */
-    unsigned compound;  /* ... none: in a compound, another entry reads them otherwise */
+    unsigned compound;  /* ... none: a single kanji in a compound the lookup split */
     unsigned part;      /* ... none: a run of their kanji, as a word, reads it otherwise */
     unsigned phrase;    /* ... none: a later run with its kana reads it otherwise */
     unsigned shorter;   /* ... none: one character shorter, a common word reads them otherwise */
@@ -83,6 +84,10 @@ typedef struct {
      * or the counter's name above); NULL in the app. */
     void (*trace)(void *ud, const char *why, const char *text, size_t n, const char *spelling, const char *reading);
     void *trace_ud;
+    /* Optional (the export's Cancel): asked before each lookup; nonzero stops the parse, which then fails with
+     * VJO_E_CANCELLED, so that one long sentence never holds a Cancel back for more than a lookup. NULL: never. */
+    int (*stopped)(void *ud);
+    void *stopped_ud;
 } VjoReadingStats;
 
 /* The readings of the kanji of text[from, to) (its other bytes are never looked up), into out (at most cap,
@@ -108,9 +113,10 @@ int vjo_word_rubies(const char *surface, size_t n, const char *after, size_t aft
 void vjo_furigana_html(VjoBuf *b, const char *text, size_t len, const VjoRuby *r, int nr, int hl_start, int hl_end);
 
 /* A card's SentenceFurigana (HTML, into a): its sentence joined as its Sentence field is (core/textjoin.h),
- * the mined word in <b> with the card's own reading, every other word's reading from the dictionaries
- * (vjo_sentence_rubies). "" when the sentence gets no reading; NULL on OOM or when the lookups failed (*rc
- * says which: VJO_E_*). scratch as above, plus the sentence's readings (a few KiB). */
+ * the mined word in <b> with the card's own reading (a highlight inside a character takes the whole character),
+ * every other word's reading from the dictionaries (vjo_sentence_rubies). "" when the sentence gets no reading;
+ * NULL on OOM, when the lookups failed or st->stopped stopped them (*rc says which: VJO_E_*, VJO_E_CANCELLED).
+ * scratch as above, plus the sentence's readings (a few KiB). */
 char *vjo_sentence_furigana(VjoArena *a, VjoArena *scratch, const VjoPlatform *p, const VjoConfig *cfg,
                             const VjoReadingRules *rules, const VjoAnkiNote *n, VjoReadingStats *st, int *rc);
 
