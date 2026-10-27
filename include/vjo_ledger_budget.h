@@ -342,10 +342,11 @@
  * allocation. */
 /* API 51, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
 /* API 52, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
- * memory check and step; core/vocr_ocr.c's frozen region): debug text 160,888 -> 162,008 B (1,832 B of room left) and
- * data/bss 35,328 -> 35,392 B, normal 151,988 -> 153,076 B (2,572 B) and 35,320 -> 35,384 B, the same pages
- * [measured: check_memory_ledger.py's module rows, both builds, main 48d6a3b and this change, tools/fast_gate.sh's
- * vitasdk image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's; no thread. */
+ * memory check, its step and the cap's switch; core/vocr_ocr.c's frozen region): debug text 161,016 ->
+ * 162,344 B (1,496 B of room left) and data/bss 35,328 -> 35,400 B, normal 152,084 -> 153,412 B
+ * (2,236 B) and 35,320 -> 35,392 B, the same pages [measured: check_memory_ledger.py's module rows, both
+ * builds, main 199fe31 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is
+ * VJO_BUDGET_GAME_FRAME's; no thread. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
