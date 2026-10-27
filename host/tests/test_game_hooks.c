@@ -1141,8 +1141,9 @@ static void verified_site_answers_when_ocr_has_no_memory(void)
 /* A Rubi verified site answers from its first line without OCR: no model opened, no line found or recognized,
  * and (API 49) no pixel read: its capture is the trusted line's scene (VJO_ROWS_HOOK), with no block, in a game
  * that leaves 3 MiB (under the OCR reserve: without the bit, 0.9.7's path refuses OCR and answers unconfirmed only
- * after its memory check) and in one with room. A kernel that refuses that capture (the region shows another
- * screen) gets API 43's first pass beside the hook-only reserve. */
+ * after its memory check) and in one with room. A kernel that refuses that capture (API 51: only while the region
+ * has no screen yet; API 49 refused it whenever the region showed another scene) gets API 43's first pass beside the
+ * hook-only reserve. */
 static void trusted_verified_site_answers_without_ocr(void)
 {
     VjoGameOcrResult out;
@@ -1181,8 +1182,9 @@ static void trusted_verified_site_answers_without_ocr(void)
 }
 
 /* A Luna site in a game short of memory: 0.9.7's answer keeps the 4 MiB OCR reserve for its pass and is refused;
- * a trusted answer needs no memory at all (API 49: no pass) and shows the line, and when the kernel refuses its
- * capture without pixels, its pass keeps the hook-only reserve (refused in a game without room even for that). */
+ * a trusted answer needs no memory at all (API 49: no pass; API 51: on another scene too) and shows the line, and
+ * when the kernel refuses its capture without pixels (a region without a screen yet), its pass keeps the hook-only
+ * reserve (refused in a game without room even for that). */
 static void trusted_luna_site_in_a_tight_game(void)
 {
     VjoGameOcrResult out;

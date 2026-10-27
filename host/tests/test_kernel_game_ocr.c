@@ -1260,8 +1260,9 @@ static void take_waits_the_asked_time(void)
 
 /* API 49: a trusted source's line (VJO_HOOK_LINE_TRUSTED) wakes the Shell even while the last line still draws, and
  * its scene is g.hook_scene; an untrusted line after it is not (0 again). VJO_ROWS_HOOK then publishes a trusted
- * answer's capture as that scene, with no rows armed, no frame waited for and no signature: refused (FORMAT) once
- * the region shows another scene, and (ARG) with rows, a destination, other flags or for a full-frame job. */
+ * answer's capture as that scene, with no rows armed, no frame waited for and no signature, and (API 51) once the
+ * region shows another scene, as that one, the same way: refused (FORMAT) only while the region has no screen yet,
+ * and (ARG) with rows, a destination, other flags or for a full-frame job. */
 static void trusted_hook_line_reads_at_once(void)
 {
     VjoGameOcrRows q;
@@ -1292,18 +1293,33 @@ static void trusted_hook_line_reads_at_once(void)
     TEST_CHECK(capture_events == 1 && !hook_frames && !g.capture_sig.w && !locks && !syscall_depth);
     message.size = sizeof(message); message.seq = seq;
     TEST_CHECK(vjoOcrComplete(&message) == 0);
-    /* an untrusted line since: no hook scene; a trusted answer's capture then reads the pass */
+    /* an untrusted line since: no hook scene. While the region has no screen (no frame's signature yet: this test
+     * feeds none) a trusted answer's capture is refused and the worker reads the pass; API 51: once it has one,
+     * the capture is the untrusted line's scene, without pixels (the pass found that scene too) */
     model_clock += 1000;
     TEST_CHECK(vjoOcrHookLine(7, 24) == 1 && !g.hook_scene); /* the last one still draws: nobody woken */
     seq = submit(); take(seq); caller = 7; q.seq = seq;
-    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 1);
+    TEST_CHECK(!g.tracker.ref.w && vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 1);
+    g.tracker.ref.w = request.width; g.tracker.ref.h = request.height; /* a frame's signature set the screen */
+    g.capture_sig.w = 1;
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == 0 && info.rc == 0 && !info.armed);
+    TEST_CHECK(g.capture_scene == g.tracker.id && g.capture_scene == before + 2 && !g.capture_sig.w);
+    TEST_CHECK(capture_events == 2 && !hook_frames && rows.state == ROWS_IDLE && !locks && !syscall_depth);
     message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
-    /* a trusted line, then the region shows another screen (a menu over it): refused */
+    /* a trusted line, then the region shows another screen (a menu over it): API 49 refused it (the worker read the
+     * pass, a strip beside a 1 MiB reserve); API 51 publishes the menu's scene */
     g.tracker.stable = 1; g.tracker.hook_drawn = 1;
     TEST_CHECK(vjoOcrHookLine(8, 24 | VJO_HOOK_LINE_TRUSTED) == 0 && g.hook_scene == g.tracker.id);
     g.tracker.hook_us = 0; g.tracker.id++; /* what scene_update does on a larger change once the line is drawn */
     seq = submit(); take(seq); caller = 7; q.seq = seq;
-    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 1);
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == 0 && !info.armed && capture_events == 3);
+    TEST_CHECK(g.capture_scene == g.tracker.id && g.hook_scene == g.tracker.id - 1u && !hook_frames);
+    TEST_CHECK(g.region_seq == request.capture_seq && g.done_seq == request.capture_seq);
+    message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* the region set again (scene_reset): no screen, and no trusted line since: refused, the worker reads the pass */
+    scene_reset(&g.tracker);
+    seq = submit(); take(seq); caller = 7; q.seq = seq;
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 3);
     message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
     /* a full-frame job never stands for the region */
     TEST_CHECK(vjoOcrHookLine(9, 24 | VJO_HOOK_LINE_TRUSTED) == 0);
@@ -1313,7 +1329,7 @@ static void trusted_hook_line_reads_at_once(void)
         seq = (uint32_t)vjoOcrSubmit(&r); TEST_CHECK((int)seq > 0); take(seq);
     }
     caller = 7; q.seq = seq;
-    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG && capture_events == 1);
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG && capture_events == 3);
     message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
     caller = 3;
 }
