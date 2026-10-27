@@ -22,8 +22,8 @@ same licence as this project: [LICENSE](LICENSE) is LunaTranslator's own copy.
   - `vita3k.cpp`: how Luna loads the table (an `unordered_map` with `emplace`: the first entry of an
     address wins), matches a title ID and normalises an address (`addr_offset`), read for the address
     mapping (Luna's address − 0x80004000 = the offset in the game executable's first segment; an entry
-    older than `addr_offset`, f237a9f4, can be Vita3K's guest address, − 0x81000000 where segment 0 is at
-    0x81000000: `vjo_luna_offset`, #349);
+    older than `addr_offset`, f237a9f4, can be Vita3K's guest address, which in a fixed-address executable is
+    − 0x81000000: the sites marked `VJO_LUNA_F_GUEST` by the generator's `GUEST_SITES`, `vjo_luna_offset`, #349);
   - `ppsspp_1.cpp`: its PSP table, listed in `docs/hook-titles.md` only;
   - `stringfilters.cpp`: the semantics of `StringFilter`, `CharFilter`, `StringFilterBetween` and the
     other helpers the filters call, and `katakanaMap` (`remapkatakana`), which the generator copies into

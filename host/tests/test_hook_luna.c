@@ -284,11 +284,12 @@ static void lookups(void)
     TEST_CHECK(site("PCSG00917", 0x8002CC56u)->padding == 8);
 }
 
-/* Luna's address, read two ways (vjo_luna_offset): VJO_LUNA_SEG0's space first, else, with segment 0 at
- * VJO_LUNA_GUEST_SEG0, the address itself, for an entry Luna recorded at Vita3K's guest address (core/hook_luna.h).
- * Segment 0 below is app0:eboot.bin's as public Vita3K logs show it ("Loaded module segment 0 @ [load - end / link
- * address] (size: N)" in the vita3k.log of each title's Vita3K/compatibility issue): every one of these sites is past
- * the end of segment 0 less VJO_LUNA_SEG0, so main refused it as range on any console. */
+/* Luna's address, read two ways (vjo_luna_offset): VJO_LUNA_SEG0's space first, else, only for a site marked
+ * VJO_LUNA_F_GUEST (Luna recorded it at Vita3K's guest address in a fixed-address executable: core/hook_luna.h,
+ * tools/gen_luna_vita.py GUEST_SITES) and segment 0 at VJO_LUNA_GUEST_SEG0, the address less that. Segment 0 below is
+ * app0:eboot.bin's as public Vita3K logs show it ("Loaded module segment 0 @ [load - end / link address] (size: N)"
+ * in the vita3k.log of each title's Vita3K/compatibility issue): every one of these sites is past the end of segment 0
+ * less VJO_LUNA_SEG0, so main refused it as range on any console. */
 static void address_readings(void)
 {
     static const struct {
@@ -296,26 +297,32 @@ static void address_readings(void)
         uint32_t addr, seg, size, off; /* seg: segment 0's address; off: VJO_LUNA_NO_OFFSET for neither */
         unsigned issue;                /* github.com/Vita3K/compatibility/issues/N */
     } logged[] = {
-        /* fixed-address executables: Vita3K loads segment 0 at its link address 0x81000000, as a console must */
+        /* fixed-address executables (a Vita3K before 11dc3b8b loaded them, and only them, at their link address
+         * 0x81000000, where a console must): marked, read at the guest address */
         {"PCSG00062", 0x8119ADDAu, 0x81000000u, 0x31258Cu, 0x19ADDAu, 400}, /* TIME TRAVELERS, APP_VER 01.00 */
         {"PCSG00062", 0x811A6052u, 0x81000000u, 0x31258Cu, 0x1A6052u, 400},
         {"PCSG00062", 0x8119ADDAu, 0x81000000u, 0x306C90u, 0x19ADDAu, 400}, /* 01.01 */
         {"PCSG00062", 0x811A6052u, 0x81000000u, 0x306C90u, 0x1A6052u, 400},
-        {"PCSG00139", 0x81161B0Eu, 0x81000000u, 0x583FD8u, 0x161B0Eu, 222},
+        {"PCSG00139", 0x81161B0Eu, 0x81000000u, 0x583FD8u, 0x161B0Eu, 222}, /* 1.00 */
+        {"PCSG00139", 0x81161B0Eu, 0x81000000u, 0x5A0398u, 0x161B0Eu, 469}, /* 1.04 */
         {"PCSG00172", 0x810A2486u, 0x81000000u, 0x150554u, 0xA2486u, 1825}, /* the farm hooked it there */
         {"PCSG00216", 0x81003DB0u, 0x81000000u, 0x16446Cu, 0x3DB0u, 1018},
         {"PCSG00272", 0x8105A176u, 0x81000000u, 0x1F0554u, 0x5A176u, 452},
         {"PCSG00272", 0x8103416Cu, 0x81000000u, 0x1F0554u, 0x3416Cu, 452},
-        {"PCSG00708", 0x81558104u, 0x81000000u, 0xFECA70u, 0x558104u, 650},
-        {"PCSG00708", 0x81558264u, 0x81000000u, 0xFECA70u, 0x558264u, 650},
-        /* relocatable ones (Vita3K loaded them low; linked at 0x81000000): the reading where a console loads them
-         * at 0x81000000, which no console run has shown */
-        {"PCSG00787", 0x810286C8u, 0x81000000u, 0xCE687u, 0x286C8u, 1662},
-        {"PCSG01046", 0x81E1F5C8u, 0x81000000u, 0x104D054u, 0xE1F5C8u, 842},
-        {"PCSG01046", 0x81E4A514u, 0x81000000u, 0x104D054u, 0xE4A514u, 842},
-        {"PCSG01049", 0x81F38A40u, 0x81000000u, 0x103A434u, 0xF38A40u, 2092},
-        /* segment 0 elsewhere (PCSG00614 is linked at 0x810007C0; Vita3K 0.1.6 loaded PCSG00397 at 0x81700150):
-         * Vita3K's guest address is not taken there */
+        /* PCSG00272's other 1.00 build is relocatable (0x1F4C90 bytes, at 0x80004000 in Vita3K 0.2.0 3588, #2478):
+         * the mark cannot tell the builds apart, so where a console loads it at 0x81000000 the guest offsets are
+         * read there too, unrelated code that only the placement check guards */
+        {"PCSG00272", 0x8105A176u, 0x81000000u, 0x1F4C90u, 0x5A176u, 2478},
+        /* relocatable executables (Vita3K loaded them low, or, from 11dc3b8b, PCSG00708's Unity eboot at 0x81000000
+         * with e_type 0xFE04): not marked, so with segment 0 at 0x81000000 (where a console may load them) they are
+         * refused as on main. Their addresses are another module's (PCSG00708: its Mono AOT module) */
+        {"PCSG00708", 0x81558104u, 0x81000000u, 0xFECA70u, VJO_LUNA_NO_OFFSET, 650},
+        {"PCSG00708", 0x81558264u, 0x81000000u, 0xFECA70u, VJO_LUNA_NO_OFFSET, 650},
+        {"PCSG00787", 0x810286C8u, 0x81000000u, 0xCE687u, VJO_LUNA_NO_OFFSET, 1662},
+        {"PCSG01046", 0x81E1F5C8u, 0x81000000u, 0x104D054u, VJO_LUNA_NO_OFFSET, 842},
+        {"PCSG01046", 0x81E4A514u, 0x81000000u, 0x104D054u, VJO_LUNA_NO_OFFSET, 842},
+        {"PCSG01049", 0x81F38A40u, 0x81000000u, 0x103A434u, VJO_LUNA_NO_OFFSET, 2092},
+        /* segment 0 elsewhere (PCSG00614 is linked at 0x810007C0; Vita3K 0.1.6 loaded PCSG00397 at 0x81700150) */
         {"PCSG00614", 0x8100F0CAu, 0x810007C0u, 0xB19C0u, VJO_LUNA_NO_OFFSET, 1454},
         {"PCSG00397", 0x8189E60Cu, 0x81700150u, 0x316E10u, VJO_LUNA_NO_OFFSET, 908},
         /* in segment 0 in neither reading: refused as before */
@@ -323,26 +330,42 @@ static void address_readings(void)
         {"PCSG01034", 0x8276B2CEu, 0x81000000u, 0x1102CD4u, VJO_LUNA_NO_OFFSET, 2036},
         {"PCSG01268", 0x828BB50Cu, 0x81000000u, 0x1288CF4u, VJO_LUNA_NO_OFFSET, 895},
     };
+    /* the marked sites, exactly (GUEST_SITES) */
+    static const struct {
+        const char *id;
+        uint32_t addr;
+    } guest[] = {{"PCSG00062", 0x8119ADDAu}, {"PCSG00062", 0x811A6052u}, {"PCSG00139", 0x81161B0Eu},
+                 {"PCSG00172", 0x810A2486u}, {"PCSG00216", 0x81003DB0u}, {"PCSG00272", 0x8105A176u},
+                 {"PCSG00272", 0x8103416Cu}};
     const VjoLunaSite *all = NULL, *s;
-    unsigned n;
+    VjoLunaSite g, u;
+    unsigned n, marked = 0;
     for (unsigned k = 0; k < sizeof logged / sizeof logged[0]; k++) {
         s = site(logged[k].id, logged[k].addr);
         if (!s) continue;
         TEST_CHECK_(logged[k].addr - VJO_LUNA_SEG0 >= logged[k].size, "%s 0x%08X: main's reading is past the end",
                     logged[k].id, (unsigned)logged[k].addr);
-        TEST_CHECK_(vjo_luna_offset(s->addr, logged[k].seg, logged[k].size) == logged[k].off,
+        TEST_CHECK_(vjo_luna_offset(s, logged[k].seg, logged[k].size) == logged[k].off,
                     "%s 0x%08X in segment 0 of 0x%X bytes at 0x%08X (Vita3K/compatibility#%u): +0x%X", logged[k].id,
                     (unsigned)logged[k].addr, (unsigned)logged[k].size, (unsigned)logged[k].seg, logged[k].issue,
-                    (unsigned)vjo_luna_offset(s->addr, logged[k].seg, logged[k].size));
+                    (unsigned)vjo_luna_offset(s, logged[k].seg, logged[k].size));
+    }
+    for (unsigned i = 0; i < VJO_LUNA_SITES; i++) marked += (vjo_luna_table[i].flags & VJO_LUNA_F_GUEST) != 0;
+    TEST_CHECK_(marked == sizeof guest / sizeof guest[0], "%u sites marked", marked);
+    for (unsigned k = 0; k < sizeof guest / sizeof guest[0]; k++) {
+        s = site(guest[k].id, guest[k].addr);
+        TEST_CHECK_(s && (s->flags & VJO_LUNA_F_GUEST) && s->ported, "%s 0x%08X marked", guest[k].id,
+                    (unsigned)guest[k].addr);
     }
 
-    /* TIME TRAVELERS' two sites: Thumb (2 mod 4), r7 and r8, CP932, Luna's filter, no version named; a verified
-     * entry at one of their offsets would take its text processing (vjo_luna_site_at), at main's reading none */
+    /* TIME TRAVELERS' two sites: Thumb (2 mod 4), r7 and r8, CP932, Luna's filter, no version named, marked; a
+     * verified entry at one of their offsets would take its text processing (vjo_luna_site_at), at main's none */
     n = vjo_luna_sites("PCSG00062", &all);
     TEST_ASSERT(n == 2);
     for (unsigned i = 0; i < 2; i++) {
         TEST_CHECK((all[i].addr & 3u) == 2u && all[i].reg == 7u + i && all[i].encoding == VJO_HOOK_ENC_CP932);
-        TEST_CHECK(all[i].ported && all[i].version == 0 && all[i].filter == VJO_LF_PCSG00062 && !all[i].flags);
+        TEST_CHECK(all[i].ported && all[i].version == 0 && all[i].filter == VJO_LF_PCSG00062);
+        TEST_CHECK(all[i].flags == VJO_LUNA_F_GUEST);
     }
     TEST_CHECK(vjo_luna_site_at(all, n, 0x19ADDAu, 0x0100, 0x81000000u, 0x31258Cu) == &all[0]);
     TEST_CHECK(vjo_luna_site_at(all, n, 0x1A6052u, 0x0101, 0x81000000u, 0x306C90u) == &all[1]);
@@ -351,34 +374,50 @@ static void address_readings(void)
     TEST_CHECK(!vjo_luna_site_at(all, n, 0x1A6052u, 0x0100, 0x81000000u, 0x1A0000u)); /* past a shorter segment */
     TEST_CHECK(!vjo_luna_site_at(all, n, 0x19ADDAu, 0x0100, 0x82000000u, 0x31258Cu)); /* the segment elsewhere */
 
-    /* the rule's edges: VJO_LUNA_SEG0's reading first (a segment that holds both); bit 0 ignored; the end
-     * excluded; the guest address only with segment 0 at VJO_LUNA_GUEST_SEG0; an empty segment holds nothing */
-    TEST_CHECK(vjo_luna_offset(0x81100000u, 0x81000000u, 0x1200000u) == 0x10FC000u);
-    TEST_CHECK(vjo_luna_offset(0x81100000u, 0x81000000u, 0x10FC000u) == 0x100000u);
-    TEST_CHECK(vjo_luna_offset(0x8119ADDBu, 0x81000000u, 0x31258Cu) == 0x19ADDAu);
-    TEST_CHECK(vjo_luna_offset(0x8000854Bu, 0x81000000u, 0x31258Cu) == 0x454Au);
-    TEST_CHECK(vjo_luna_offset(0x8000854Bu, 0x81700150u, 0x31258Cu) == 0x454Au); /* main's reading: any segment */
-    TEST_CHECK(vjo_luna_offset(0x8131258Cu, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
-    TEST_CHECK(vjo_luna_offset(0x8131258Au, 0x81000000u, 0x31258Cu) == 0x31258Au);
-    TEST_CHECK(vjo_luna_offset(0x8119ADDAu, 0x81001000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
-    TEST_CHECK(vjo_luna_offset(0x8119ADDAu, 0x80FFF000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
-    TEST_CHECK(vjo_luna_offset(0x80FFFFFEu, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
-    TEST_CHECK(vjo_luna_offset(0x80003FF0u, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
-    TEST_CHECK(vjo_luna_offset(0x80004000u, 0x81000000u, 0) == VJO_LUNA_NO_OFFSET);
-    TEST_CHECK(vjo_luna_offset(0xFFFFFFFFu, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
+    /* the rule's edges, on a marked site g and an unmarked u: VJO_LUNA_SEG0's reading first (a segment that holds
+     * both) and for both; bit 0 ignored; the end excluded; the guest address only for g with segment 0 at
+     * VJO_LUNA_GUEST_SEG0; an empty segment holds nothing */
+    memset(&g, 0, sizeof g);
+    g.flags = VJO_LUNA_F_GUEST;
+    u = g;
+    u.flags = VJO_LUNA_F_FULL_STRING;
+#define OFF(site_, a_, seg_, size_) ((site_).addr = (a_), vjo_luna_offset(&(site_), (seg_), (size_)))
+    TEST_CHECK(OFF(g, 0x81100000u, 0x81000000u, 0x1200000u) == 0x10FC000u);
+    TEST_CHECK(OFF(u, 0x81100000u, 0x81000000u, 0x1200000u) == 0x10FC000u);
+    TEST_CHECK(OFF(g, 0x81100000u, 0x81000000u, 0x10FC000u) == 0x100000u);
+    TEST_CHECK(OFF(u, 0x81100000u, 0x81000000u, 0x10FC000u) == VJO_LUNA_NO_OFFSET);
+    TEST_CHECK(OFF(g, 0x8119ADDBu, 0x81000000u, 0x31258Cu) == 0x19ADDAu);
+    TEST_CHECK(OFF(g, 0x8000854Bu, 0x81000000u, 0x31258Cu) == 0x454Au);
+    TEST_CHECK(OFF(u, 0x8000854Bu, 0x81700150u, 0x31258Cu) == 0x454Au); /* main's reading: any segment */
+    TEST_CHECK(OFF(g, 0x8131258Cu, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
+    TEST_CHECK(OFF(g, 0x8131258Au, 0x81000000u, 0x31258Cu) == 0x31258Au);
+    TEST_CHECK(OFF(g, 0x8119ADDAu, 0x81001000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
+    TEST_CHECK(OFF(g, 0x8119ADDAu, 0x80FFF000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
+    TEST_CHECK(OFF(g, 0x80FFFFFEu, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
+    TEST_CHECK(OFF(g, 0x80003FF0u, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
+    TEST_CHECK(OFF(g, 0x80004000u, 0x81000000u, 0) == VJO_LUNA_NO_OFFSET);
+    TEST_CHECK(OFF(g, 0x81000000u, 0x81000000u, 0) == VJO_LUNA_NO_OFFSET);
+    TEST_CHECK(OFF(g, 0xFFFFFFFFu, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
+#undef OFF
+    TEST_CHECK(vjo_luna_offset(NULL, 0x81000000u, 0x31258Cu) == VJO_LUNA_NO_OFFSET);
 
-    /* table-wide: a site below 0x81000000 has main's offset wherever segment 0 holds it (at 0x81000000, of up to
-     * 0xFFC000 bytes, the two readings never both fit); a site at 0x81000000 or above that main placed, too */
+    /* table-wide: main's offset wherever segment 0 holds it; a site at 0x81000000 or above in a segment 0 at
+     * 0x81000000 that holds only its guest offset: that offset when marked, else nothing; never with segment 0
+     * elsewhere; no site below 0x81000000 is marked */
     for (unsigned i = 0; i < VJO_LUNA_SITES; i++) {
-        const uint32_t a = vjo_luna_table[i].addr & ~1u, o = a - VJO_LUNA_SEG0;
-        if (a < 0x81000000u) {
-            TEST_CHECK_(vjo_luna_offset(a, 0x81000000u, o + 16u) == o, "site %u", i);
-            TEST_CHECK_(vjo_luna_offset(a, 0x81000000u, 0xFFC000u) == (o < 0xFFC000u ? o : VJO_LUNA_NO_OFFSET),
-                        "site %u", i);
+        const VjoLunaSite *t = &vjo_luna_table[i];
+        const uint32_t a = t->addr & ~1u, o = a - VJO_LUNA_SEG0;
+        TEST_CHECK_(vjo_luna_offset(t, 0x81000000u, o + 16u) == o, "site %u", i);
+        TEST_CHECK_(vjo_luna_offset(t, 0x81700000u, o + 16u) == o, "site %u", i);
+        if (a >= 0x81000000u) {
+            const uint32_t go = a - 0x81000000u;
+            TEST_CHECK_(vjo_luna_offset(t, 0x81000000u, go + 16u) ==
+                            ((t->flags & VJO_LUNA_F_GUEST) ? go : VJO_LUNA_NO_OFFSET),
+                        "site %u (%s 0x%08X)", i, vjo_luna_ids[t->title], (unsigned)t->addr);
+            TEST_CHECK_(vjo_luna_offset(t, 0x81001000u, go + 16u) == VJO_LUNA_NO_OFFSET, "site %u", i);
         } else {
-            TEST_CHECK_(vjo_luna_offset(a, 0x81000000u, o + 16u) == o, "site %u", i);
-            TEST_CHECK_(vjo_luna_offset(a, 0x81000000u, a - 0x81000000u + 16u) ==
-                            (o < a - 0x81000000u + 16u ? o : a - 0x81000000u),
+            TEST_CHECK_(!(t->flags & VJO_LUNA_F_GUEST), "site %u", i);
+            TEST_CHECK_(vjo_luna_offset(t, 0x81000000u, 0xFFC000u) == (o < 0xFFC000u ? o : VJO_LUNA_NO_OFFSET),
                         "site %u", i);
         }
     }

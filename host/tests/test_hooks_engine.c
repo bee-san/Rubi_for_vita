@@ -1750,10 +1750,13 @@ static void test_farm_excerpts(void)
  * 0x306C90). Less VJO_LUNA_SEG0 the sites are 0x1196DDA and 0x11A2052, past the segment's end: main refused both as
  * range without reading a byte of them. Luna's entry (2025-09-24) predates its addr_offset (2026-05-20): the
  * addresses are Vita3K's guest addresses, +0x19ADDA and +0x1A6052 of that segment, where the placement check now
- * reads the bytes. Zeros there (as for a block inside a function, which a console run may show) refuse both as no
- * entry, with the bytes in the debug log; a function's entry at both hooks both, and a hit's text goes through Luna's
- * filter. With segment 0 anywhere but 0x81000000 the guest address is not read. The game's own bytes there are not
- * known here (no dump of it): its console run decides. */
+ * reads the bytes (the generator marks both VJO_LUNA_F_GUEST: the logs show a fixed-address executable). Zeros there
+ * (as for a block inside a function, which a console run may show) refuse both as no entry, with the bytes in the
+ * debug log; a function's entry at both hooks both, and a hit's text goes through Luna's filter. With segment 0
+ * anywhere but 0x81000000 the guest address is not read, nor for a relocatable executable's unmarked site. The game's
+ * own bytes there are not known here (no dump of it): its console run decides. The test maps 0x81000000 itself
+ * (MAP_FIXED_NOREPLACE: an address already taken fails the test cleanly, nothing is overwritten); under x86-64 ASan
+ * that address is shadow memory (0x7fff8000-0x8fff6fff), so the test cannot run in such a build. */
 static void test_luna_own_address(void)
 {
     enum { TT_SEG0 = 0x81000000u, TT_SIZE = 0x31258Cu, TT_MAP = 0x315000u }; /* TT_MAP: segment 0 a page higher too */
@@ -1862,18 +1865,19 @@ static void test_luna_own_address(void)
 #endif
     }
 
-    /* the same code with segment 0 one page higher (a relocated executable): Vita3K's guest address is not the
-     * game's there, so neither site is read at all */
+    /* segment 0 one page higher (not where a fixed-address executable is): no guest reading. The entries are where
+     * a rule that read the address less any segment base would look (0x8119ADDA itself, +0x199DDA of this segment),
+     * so such a rule would hook them, in both builds */
     reset();
     memset(tt, 0, TT_MAP);
-    put_site_at(tt + PAGE, 0x19ADDAu, 1, NULL);
-    put_site_at(tt + PAGE, 0x1A6052u, 1, NULL);
+    put_site_at(tt, 0x19ADDAu, 1, NULL);
+    put_site_at(tt, 0x1A6052u, 1, NULL);
     mod.seg0 = tt + PAGE;
     mod.seg0_size = TT_SIZE;
     set_sfo("01.00");
     vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
     vjo_hooks_counts(NULL, &inst, &refused);
-    TEST_CHECK(n_offs == 0 && inst >> 16 == 0 && refused == 2);
+    TEST_CHECK(n_offs == 0 && offset_calls == 0 && inst >> 16 == 0 && refused == 2);
 #if VJO_DEBUG
     {
         char outcomes[64];
@@ -1881,6 +1885,31 @@ static void test_luna_own_address(void)
         TEST_CHECK_(!strcmp(outcomes, "range,range"), "outcomes %s", outcomes);
     }
 #endif
+
+    /* a relocatable executable's site at or above 0x81000000 (PCSG00787's 0x810286C8, not marked: its address is not
+     * the eboot's own) in a segment 0 at 0x81000000 of its logged 0xCE687 bytes, with a function's entry at the
+     * guest offset 0x286C8: not read there, refused as range as on main; its other sites and its verified entry
+     * find zeros. Nothing is hooked, in both builds */
+    {
+        const VjoLunaSite *l;
+        unsigned nl = vjo_luna_sites("PCSG00787", &l), k = 0;
+        while (k < nl && l[k].addr != 0x810286C8u) k++;
+        TEST_ASSERT_(k < nl && l[k].ported && !(l[k].flags & VJO_LUNA_F_GUEST), "PCSG00787's site 0x810286C8, unmarked");
+        reset();
+        memset(tt, 0, TT_MAP);
+        put_site_at(tt, 0x286C8u, 1, NULL);
+        mod.seg0 = tt;
+        mod.seg0_size = 0xCE687u;
+        set_sfo("01.00");
+        vjo_hooks_start("PCSG00787", VJO_TEXT_SOURCE_AUTO, 0);
+        vjo_hooks_counts(NULL, &inst, &refused);
+        TEST_CHECK_(n_offs == 0 && offset_calls == 0 && inst >> 16 == 0 && refused == 1u + nl, "%u sites, %u refused",
+                    (unsigned)(inst >> 16), (unsigned)refused);
+#if VJO_DEBUG
+        TEST_CHECK(strstr(logbuf, "luna 810286C8 r0 refused: range\n bytes \n") != NULL);
+        TEST_MSG("%s", logbuf);
+#endif
+    }
 }
 
 /* VJO_PLACE_READ_CELLS: the record at the register + padding (here r15, the site's own address); exactly its

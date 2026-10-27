@@ -19,7 +19,9 @@ and how Luna uses it (vita3k.cpp, texthook.cc at the pin):
 - the encoding: CP932 unless CODEC_UTF8 / CODEC_UTF16; the flags USING_CHAR, DATA_INDIRECT,
   FULL_STRING; offset is the guest register r0-r15, padding is added to its value;
 - hookfunc and filterfun map to core/hook_luna.c's ports (FUNCS, FILTERS below); a site is
-  refused (ported 0) when one of them is not ported, when it is USING_CHAR, or when shadowed.
+  refused (ported 0) when one of them is not ported, when it is USING_CHAR, or when shadowed;
+- Rubi's mark VJO_LUNA_F_GUEST goes on the sites of GUEST_SITES (below): Luna recorded them at Vita3K's
+  guest address in a fixed-address executable, which the worker then also reads less 0x81000000 (#349).
 The sites are sorted by title ID (the title list's order), each title's sites contiguous and
 in the table's order, so vjo_luna_sites() returns them as one slice. ppsspp_1.cpp's PSP table
 is parsed the same way for the doc only.
@@ -51,6 +53,34 @@ PINNED = {
 }
 SEG0 = 0x80004000  # core/hook_luna.h VJO_LUNA_SEG0
 GUEST_SEG0 = 0x81000000  # core/hook_luna.h VJO_LUNA_GUEST_SEG0 (vjo_luna_offset's second reading)
+# The sites Luna recorded at Vita3K's guest address in a fixed-address executable (#349): VJO_LUNA_F_GUEST, the only
+# sites vjo_luna_offset reads at address - GUEST_SEG0. Each needs a public Vita3K log (Vita3K/compatibility) whose
+# Vita3K predates 11dc3b8b (2026-05-27, "Whenever possible, do not relocate modules"): such a build loaded only a
+# fixed-address executable at its link address and a relocatable one elsewhere, so an eboot.bin segment 0 at
+# 0x81000000 there is fixed-address, as on a console, and the site inside it only at its guest address. A relocatable
+# executable's Luna address at or above 0x81000000 is another module's (PCSG00708's Unity eboot: its Mono AOT module)
+# and gets no second reading. Value: the evidence, for docs/hook-titles.md.
+GUEST_SITES = {
+    ("PCSG00062", 0x8119ADDA): "[#400](https://github.com/Vita3K/compatibility/issues/400): `tt1_rom` at 0x81000000, "
+                               "0x31258C bytes (1.00, Vita3K 0.1.8 3217), 0x306C90 (01.01, 0.1 1403)",
+    ("PCSG00062", 0x811A6052): "the same",
+    ("PCSG00139", 0x81161B0E): "[#222](https://github.com/Vita3K/compatibility/issues/222), "
+                               "[#469](https://github.com/Vita3K/compatibility/issues/469): `GMV_Rom` at 0x81000000, "
+                               "0x583FD8 bytes (1.00, 0.1.4 2408), 0x5A0398 (1.04, 0.1.3 2265 to 0.1.6 2897)",
+    ("PCSG00172", 0x810A2486): "[#1825](https://github.com/Vita3K/compatibility/issues/1825): `malievita` at "
+                               "0x81000000, 0x150554 bytes (1.00, 0.1.8 3242); the psandvita farm hooked 0x810A2486 "
+                               "there in Vita3K and read the game's lines",
+    ("PCSG00216", 0x81003DB0): "[#1018](https://github.com/Vita3K/compatibility/issues/1018): `advengine` at "
+                               "0x81000000, 0x16446C bytes (1.00, 0.1.6 2895)",
+    ("PCSG00272", 0x8105A176): "[#452](https://github.com/Vita3K/compatibility/issues/452), "
+                               "[#2517](https://github.com/Vita3K/compatibility/issues/2517): `eboot` at 0x81000000, "
+                               "0x1F0554 bytes (1.00, 0.1 1825 and 0.2.0 3596). "
+                               "[#2478](https://github.com/Vita3K/compatibility/issues/2478) shows another 1.00 build, "
+                               "relocatable (0x1F4C90 bytes, at 0x80004000 in 0.2.0 3588): there the guest offsets are "
+                               "unrelated code, which only the placement check guards, should a console load that "
+                               "build at 0x81000000",
+    ("PCSG00272", 0x8103416C): "the same",
+}
 BLOB = "../third_party/LunaTranslator/"  # the vendored copies (docs/hook-titles.md links into them)
 
 # Luna's hookfuncs (text_fun): name -> (C index name, ported, what the port does or why not).
@@ -450,6 +480,12 @@ def vita_sites():
             sys.exit(f"line {s['line']}: register {s['reg']}")
         if s["addr"] < SEG0:
             sys.exit(f"line {s['line']}: address below VJO_LUNA_SEG0")
+        s["guest"] = (s["id"], s["addr"]) in GUEST_SITES
+        if s["guest"] and s["addr"] < GUEST_SEG0:
+            sys.exit(f"line {s['line']}: GUEST_SITES lists 0x{s['addr']:08X}, below VJO_LUNA_GUEST_SEG0")
+    for key in GUEST_SITES:  # every listed site is in the table, once
+        if sum((s["id"], s["addr"]) == key for s in sites) != 1:
+            sys.exit("GUEST_SITES: %s 0x%08X is not one site of the table" % key)
     titles = sorted({s["id"] for s in sites})
     index = {t: i for i, t in enumerate(titles)}
     order = sorted(range(len(sites)), key=lambda k: (index[sites[k]["id"]], k))
@@ -510,7 +546,7 @@ def render_inc():
     out.append("")
     out.append("static const VjoLunaSite vjo_luna_table[VJO_LUNA_SITES] = {")
     for s in sites:
-        flags = " | ".join("VJO_LUNA_F_" + f for f in s["flags"]) or "0"
+        flags = " | ".join(["VJO_LUNA_F_" + f for f in s["flags"]] + (["VJO_LUNA_F_GUEST"] if s["guest"] else [])) or "0"
         func = "VJO_LH_" + FUNCS[s["func"]][0] if s["func"] else "VJO_LH_NONE"
         filt = "VJO_LF_" + FILTERS[s["filter"]][0] if s["filter"] else "VJO_LF_NONE"
         out.append(
@@ -607,18 +643,19 @@ def render_doc():
     out.append("## Vita titles")
     out.append("")
     out.append("Seg-0 offset: the site's offset in the game executable's first segment, Luna's address \u2212 0x80004000 "
-               "(not yet seen on a console). An address at or above 0x81000000 shows two: that one, taken when segment 0 "
-               "is that large, else, when segment 0 is at 0x81000000, the address \u2212 0x81000000 (an entry Luna "
-               "recorded at Vita3K's guest address: `vjo_luna_offset`, core/hook_luna.h). Version: the game version "
-               "Luna's comment names (the site is tried only in that version; a site without one only when no site of "
-               "its title names the game's version). Reg: the register that holds the text's address at the site.")
+               "(not yet seen on a console). A site that Luna recorded at Vita3K's guest address in a fixed-address "
+               "executable (listed [below](#sites-at-vita3ks-guest-address)) shows a second one, the address \u2212 "
+               "0x81000000, which the worker takes when the first is outside segment 0 and segment 0 is at 0x81000000 "
+               "(`vjo_luna_offset`, core/hook_luna.h). Version: the game version Luna's comment names (the site is "
+               "tried only in that version; a site without one only when no site of its title names the game's "
+               "version). Reg: the register that holds the text's address at the site.")
     out.append("")
     out.append("| Title ID | Region | Game (Luna's comment) | Address | Seg-0 offset | Version | Reg | Padding | "
                "Encoding | Flags | Hookfunc | Filter | Luna's note | Status |")
     out.append("| --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |")
     for s in sites:
         off = "0x%X" % (s["addr"] - SEG0)
-        if s["addr"] >= GUEST_SEG0:
+        if s["guest"]:
             off += " or 0x%X" % (s["addr"] - GUEST_SEG0)
         out.append("| %s | %s | %s | [0x%08X](%svita3k_1.cpp#L%d) | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
             s["id"], REGION.get(s["id"][:4], "?"), md(s["game"]), s["addr"], BLOB, s["line"], off,
@@ -641,6 +678,23 @@ def render_doc():
     for t in titles:
         if len(names[t]) > 1:
             out.append(f"- {t}: " + "; ".join(md(n) for n in names[t]))
+    out.append("")
+    out.append("### Sites at Vita3K's guest address")
+    out.append("")
+    out.append("Luna recorded these before its `addr_offset` (f237a9f4, 2026-05-20), at Vita3K's guest address, in "
+               "an executable that a public Vita3K log (Vita3K/compatibility; a Vita3K before 11dc3b8b, which loaded "
+               "only a fixed-address executable at its link address) shows as fixed-address at 0x81000000: "
+               "`VJO_LUNA_F_GUEST`, the only sites read at the address \u2212 0x81000000 (#349). The other sites at or "
+               "above 0x81000000 that are past segment 0 in Luna's space are read there only, and refused (`range`): "
+               "in a relocatable executable such an address is another module's (PCSG00708's is in its Unity Mono "
+               "AOT module), and the rest have no log that shows their executable.")
+    out.append("")
+    out.append("| Title ID | Game | Address | Guest offset | Evidence |")
+    out.append("| --- | --- | --- | --- | --- |")
+    for s in sites:
+        if s["guest"]:
+            out.append("| %s | %s | 0x%08X | 0x%X | %s |" % (s["id"], md(s["game"]), s["addr"], s["addr"] - GUEST_SEG0,
+                                                            GUEST_SITES[(s["id"], s["addr"])]))
     out.append("")
     out.append("## Rubi's own entry")
     out.append("")

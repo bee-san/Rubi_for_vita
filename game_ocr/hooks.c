@@ -495,8 +495,8 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
     }
     for (unsigned i = 0; i < nl; i++) {
         const VjoLunaSite *l = &sites[i];
-        /* Luna's space, or the address itself (an entry recorded at Vita3K's guest address: core/hook_luna.h) */
-        const uint32_t off = vjo_luna_offset(l->addr, seg_base, code_size);
+        /* Luna's space, or a marked site's guest address in a fixed-address executable (core/hook_luna.h) */
+        const uint32_t off = vjo_luna_offset(l, seg_base, code_size);
         int r = VJO_PLACE_OK, thumb = 0;
         if (off == VJO_LUNA_NO_OFFSET) DLOG("luna %08X r%u", (unsigned)l->addr, (unsigned)l->reg);
         else DLOG("luna %08X r%u +%X", (unsigned)l->addr, (unsigned)l->reg, (unsigned)off);

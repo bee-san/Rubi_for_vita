@@ -212,19 +212,27 @@ Two lists name them:
   ported by hooks-luna-port; [hook-titles.md](hook-titles.md)). Luna's addresses are Vita3K's: the
   offset into segment 0 is `addr - 0x80004000` (`VJO_LUNA_SEG0`), which matches the CLANNAD Vita3K run
   but is unproven on a console. Entries older than Luna's `addr_offset` (f237a9f4, 2026-05-20) can hold
-  Vita3K's guest address instead, which is the game's own for an executable whose segment 0 is at
-  0x81000000. So when `addr - 0x80004000` is outside segment 0 and segment 0 is at 0x81000000, the offset
-  is `addr - 0x81000000` (`vjo_luna_offset`, #349). TIME TRAVELERS' two sites are the case that showed it:
-  `0x8119ADDA - 0x80004000` is past the end of its 0x31258C-byte segment 0 (public Vita3K logs), so main
-  refused both as `range` on every console, while `+0x19ADDA` and `+0x1A6052` are inside it. In the public
-  Vita3K logs of 160 of the table's titles, 245 of the 250 sites below 0x81000000 are inside segment 0 in
-  the first reading (the second never applies to them), and 15 sites of 10 titles at or above it only in the
-  second: 7 of executables Vita3K loads at their link address 0x81000000 (fixed-address ones), 8 of
-  relocatable ones, for which the reading holds where a console loads them at 0x81000000 (unseen). 9 sites at
-  or above it are in neither, two of them where Vita3K had segment 0 elsewhere (PCSG00614 linked at
-  0x810007C0, PCSG00397 loaded at 0x81700150), which the rule leaves out. An entry is tried only when it is
-  ported (`ported`) and its game version matches the game's `APP_VER` (`vjo_luna_version_ok`; `APP_VER` is
-  read once from `app0:sce_sys/param.sfo`).
+  Vita3K's guest address instead. A Vita3K before 11dc3b8b (2026-05-27) loaded a fixed-address executable at its
+  link address 0x81000000, where a console must load it too, and a relocatable one elsewhere (0x00105000,
+  0x80004000), and from 0.2.1 4033 Luna normalises every main module, so the guest address is the game's own only
+  in a fixed-address executable. The generator marks the sites whose executable a public Vita3K log shows as
+  fixed-address at 0x81000000 (`VJO_LUNA_F_GUEST`: [hook-titles.md](hook-titles.md#sites-at-vita3ks-guest-address)
+  lists them with their evidence), and for those only, when `addr - 0x80004000` is outside segment 0 and segment
+  0 is at 0x81000000, the offset is `addr - 0x81000000` (`vjo_luna_offset`, #349). TIME TRAVELERS' two sites are
+  the case that showed it: `0x8119ADDA - 0x80004000` is past the end of its fixed-address 0x31258C-byte segment
+  0 (public Vita3K logs), so main refused both as `range` on every console, while `+0x19ADDA` and `+0x1A6052` are
+  inside it. In the public Vita3K logs of 160 of the table's titles, 245 of the 250 sites below 0x81000000 are
+  inside segment 0 in Luna's space, as main reads them. Of the sites at or above 0x81000000, 7 (5 titles: TIME
+  TRAVELERS ×2, PCSG00139, PCSG00172, PCSG00216, PCSG00272 ×2, all ported) are marked. 8 more (PCSG00451 ×2,
+  PCSG00708 ×2, PCSG00787, PCSG01046 ×2, PCSG01049) are inside segment 0 only at their guest offset, but in
+  relocatable executables, where that offset is unrelated code: their addresses are another module's (PCSG00708's
+  Unity eboot: its Mono AOT module, per the psandvita farm's notes; the farm never saw PCSG01046's fire at its
+  guest address). They stay refused as `range`, as on main, as do 9 that fit neither reading and those of the 2
+  titles without a log (PCSG00020, PCSG01144). PCSG00272 also has a relocatable 1.00 build (Vita3K/compatibility
+  #2478); the mark cannot tell its builds apart, so there the placement check alone guards the guest offsets,
+  should a console load that build at 0x81000000. An entry is tried only when it is ported (`ported`) and its game
+  version matches the game's `APP_VER` (`vjo_luna_version_ok`; `APP_VER` is read once from
+  `app0:sce_sys/param.sfo`).
 
 The site's offset must lie in segment 0 with the bytes taiHEN saves (16), and a Luna site must pass the
 placement check (`vjo_place_check`), because taiHEN's offset hook (libsubstitute) overwrites 8 bytes at
@@ -919,15 +927,21 @@ Hardware is paused; these are for the test issue (#230):
     trusted` and a job each), and the overlay shows the last. With the overlay open and the game on auto: each line
     replaces the text as it starts. Close the game and start it again: the first line is trusted at once (no OCR job
     before it). `history.csv` has one record a line.
-15. #349, a Luna entry at Vita3K's guest address (the debug build, `text_source = auto`): TIME TRAVELERS
-    (`PCSG00062`). `hooks.log` shows `main module tt1_rom NID … seg0 81000000+31258C APP_VER 0100` (01.01:
-    `+306C90 APP_VER 0101`) and the two sites at their offsets, `luna 8119ADDA r7 +19ADDA` and
-    `luna 811A6052 r8 +1A6052`, each `hooked` or refused with its 16 bytes (`entry` or `window`: then the NID,
-    `APP_VER` and those bytes are what a verified entry needs). Hooked: a dialogue line opens in the overlay
-    from the hook (Triangle: Source Hook, flags with SITE and NO_OCR) and matches the screen, ruby and colour
-    tags removed; a choice or a menu shows the last line. A segment 0 anywhere but 0x81000000 logs both as
-    `range`. Any game of the other eight titles the rule unlocks (PCSG00139, PCSG00172, PCSG00216, PCSG00272,
-    PCSG00708, PCSG01046, PCSG01049, with PCSG00787's fifth site) shows the same in its `hooks.log`.
+15. #349, a Luna entry at Vita3K's guest address (the debug build, `text_source = auto`, `hook_trust = on`, the
+    default): TIME TRAVELERS (`PCSG00062`). `hooks.log` shows `main module tt1_rom NID … seg0 81000000+31258C
+    APP_VER 0100; 0 verified, 2 Luna sites` (with the 01.01 update: `+306C90 APP_VER 0101`) and the two sites at their
+    offsets, `luna 8119ADDA r7 +19ADDA` and `luna 811A6052 r8 +1A6052`, each `hooked, stream N` or refused with its
+    16 bytes (`entry` or `window`: then the NID, `APP_VER` and those bytes are what a verified entry needs, with a
+    farm run of the game for its segment 0). Hooked: a dialogue line opens in the overlay from the hook (Triangle:
+    Source Hook; `log.txt`'s job line `flags 0x118`, TRUSTED | SITE | NO_OCR; 0x18 with `hook_trust = off`) and
+    matches the screen, ruby and colour tags removed; a choice or a menu shows the last line. Play through menus, a
+    save and a load and a scene change: a crash or stutter that **OCR only** does not have is what a branch into the
+    12 patched bytes would look like. Learned hook sources start again once in this build (its hook definitions
+    changed: [Which text a job shows](#which-text-a-job-shows)), CLANNAD's too. Send the whole
+    `tools/install_ftp.sh --collect` zip and say which game version is installed. Also CLANNAD's `hooks.log` first
+    line (`main module … seg0 ________+…`) from two game starts: its eboot is relocatable, so its `seg0` shows whether a
+    console loads a relocatable executable at 0x81000000, and whether that moves between starts. PCSG00139,
+    PCSG00172, PCSG00216 and PCSG00272, the other marked titles, show the same lines in their `hooks.log`.
 
 ## PSP probe (debug build)
 
