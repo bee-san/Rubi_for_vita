@@ -171,7 +171,7 @@ class TestPackages(unittest.TestCase):
         subprocess.run([BINARY, "--write", str(cls.out)], check=True)
         cls.expected = json.loads((cls.out / "expected.json").read_text())
         cls.pkg = {name: Package(cls.out / f"{name}.apkg")
-                   for name in ("first", "second", "all", "many", "app", "edited")}
+                   for name in ("first", "second", "all", "many", "app", "edited", "richer")}
 
     def test_zip(self):
         for name, p in self.pkg.items():
@@ -227,6 +227,7 @@ class TestPackages(unittest.TestCase):
         duplicates = {guid_of(i) for i in self.expected["duplicates"]}
         for name, p in self.pkg.items():
             notes = p.notes()
+            game = self.game_tags(name)
             cards = p.db.execute("select id, nid, did, ord, type, queue, due from cards order by id").fetchall()
             self.assertEqual(len(cards), len(notes), name)
             self.assertEqual(len({n[1] for n in notes}), len(notes))  # GUIDs unique
@@ -234,9 +235,11 @@ class TestPackages(unittest.TestCase):
                 fields = flds.split("\x1f")
                 self.assertEqual(len(fields), 22)
                 self.assertEqual(mid, nt)
-                # every tag between spaces; #314's duplicate tag on a card whose word an earlier card has
-                self.assertEqual(tags, " vita-jp-overlay duplicate " if guid in duplicates else " vita-jp-overlay ",
-                                 (name, guid))
+                # every tag between spaces: #314's duplicate tag on a card whose word an earlier card has, then #311's
+                # game tag on a record with a game, in GameSentenceMiner's form
+                want = (" vita-jp-overlay " + ("duplicate " if guid in duplicates else "") +
+                        (game[guid] + " " if guid in game else ""))
+                self.assertEqual(tags, want, (name, guid))
                 self.assertEqual(sfld, strip_html(fields[0]))
                 self.assertEqual(csum, anki_checksum(strip_html(fields[0])))
                 self.assertGreater(nid, 1_600_000_000_000)
@@ -262,6 +265,29 @@ class TestPackages(unittest.TestCase):
         self.assertEqual(tagged(self.pkg["second"]), {dup[1]})
         self.assertEqual(tagged(self.pkg["all"]), set(dup))
         self.assertEqual(tagged(self.pkg["many"]), set())
+
+    def game_tags(self, name):
+        """#311: each note's game tag (GUID: tag), in GameSentenceMiner's form: the version 3 records' SOME GAME, none
+        for the version 1 and 2 records; of the app's cards (#313) the earlier line's CLANNAD, none for a typed word."""
+        if name == "app":
+            return {guid_of(self.expected["app"][1]): "Game::CLANNAD"}
+        old = {guid_of(i) for i in self.expected["first"][2:]}
+        return {n[1]: "Game::SOMEGAME" for n in self.pkg[name].notes() if n[1] not in old}
+
+    def test_richer_notes(self):
+        """#311: a Sentence card (IsSentenceCard x), its game's tag, and with the bundled dictionary readings over
+        its sentence in Anki's furigana syntax, the mined word in <b> with its own reading."""
+        (note,) = self.pkg["richer"].notes()
+        fields = note[6].split("\x1f")
+        self.assertEqual(note[1], guid_of(self.expected["richer"]))
+        self.assertEqual(note[5], " vita-jp-overlay Game::SOMEGAME ")
+        self.assertEqual([fields[i] for i in (13, 14, 15, 16)], ["", "", "x", ""])
+        self.assertEqual(fields[7], "今日は<b>学校</b>へ行って、友達と一緒に勉強した。")
+        if self.expected["readings"]:
+            self.assertEqual(fields[8], "今日は<b>学校[がっこう]</b>へ 行[い]って、 友達[ともだち]と 一緒[いっしょ]に"
+                                        " 勉強[べんきょう]した。")
+        else:
+            self.assertEqual(fields[8], "")
 
     def test_guids_come_from_the_queue_ids(self):
         first = {n[1] for n in self.pkg["first"].notes()}
@@ -385,6 +411,12 @@ r["notes_after_all"] = col.note_count()
 r["notetypes"] = sorted(m["name"] for m in col.models.all())
 r["media_after_all"] = sorted(f for f in os.listdir(col.media.dir()) if f.startswith("vitajp_"))
 log = imp(col, "many"); r["many_new"] = len(log.new)
+# #311: the sentence card: its front the sentence, its back the readings (Anki's furigana filter), its tags
+log = imp(col, "richer"); r["richer_new"] = len(log.new)
+card = col.get_card(col.find_cards('"Expression:学校"')[0])
+r["richer_question"] = card.question(); r["richer_answer"] = card.answer()
+r["richer_tags"] = sorted(card.note().tags)
+r["game_tag_notes"] = len(col.find_notes('"tag:Game::SOMEGAME"'))
 col.close()
 # #313: the Rubi app's cards, in a new profile: both added, no picture on either
 col = new_col()
@@ -484,9 +516,10 @@ class TestAnkiImport(unittest.TestCase):
         self.assertEqual(r["media_after_all"], [f for f in r["media"] if f.startswith("vitajp_")])
 
     def test_the_duplicate_tag_in_anki(self):
-        """#314: Anki's import keeps both tags of the duplicate note, and only vita-jp-overlay on the others."""
-        self.assertEqual(self.r["dup_tags"], [["duplicate", "vita-jp-overlay"]])
-        self.assertEqual(self.r["plain_tags"], [["vita-jp-overlay"]])
+        """#314: Anki's import keeps the duplicate note's tags, and only vita-jp-overlay on the others, beside #311's
+        game tag on the version 3 records' notes (the version 1 and 2 records name no game)."""
+        self.assertEqual(self.r["dup_tags"], [["Game::SOMEGAME", "duplicate", "vita-jp-overlay"]])
+        self.assertEqual(self.r["plain_tags"], [["Game::SOMEGAME", "vita-jp-overlay"], ["vita-jp-overlay"]])
 
     def test_known_words_from_ankis_own_collection(self):
         """#314 stage C: tools/known_words.py on the collection Anki 26.09.3 made from the first package (closed
@@ -501,6 +534,20 @@ class TestAnkiImport(unittest.TestCase):
                 outs.append(out.read_text(encoding="utf-8").split("\n")[1:-1])
         self.assertEqual(outs[0], outs[1])
         self.assertEqual(sorted(outs[0]), sorted(["猫\tねこ", "犬\tいぬ", "部屋\tへや"]))
+
+    def test_a_sentence_card_with_readings_and_its_game_tag(self):
+        """#311: Lapis's Sentence card shows the sentence on its front (its {{kanji:Sentence}}); the back renders
+        SentenceFurigana's readings as <ruby> (with the bundled dictionary); the note has its game's tag."""
+        r = self.r
+        self.assertEqual(r["richer_new"], 1)
+        self.assertIn("front-sentence", r["richer_question"])
+        self.assertIn("<b>学校</b>へ行って", r["richer_question"])
+        self.assertNotIn('class="front-vocab"', r["richer_question"])
+        if self.expected["readings"]:
+            for ruby in ("<ruby><rb>学校</rb><rt>がっこう</rt></ruby>", "<ruby><rb>友達</rb><rt>ともだち</rt></ruby>"):
+                self.assertIn(ruby, r["richer_answer"])
+        self.assertEqual(r["richer_tags"], ["Game::SOMEGAME", "vita-jp-overlay"])
+        self.assertGreater(r["game_tag_notes"], 700)  # every version-3 card's
 
     def test_rendered_card(self):
         self.assertIn("猫", self.r["question"])

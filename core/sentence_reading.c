@@ -76,6 +76,13 @@ static int kana_only(const Cps *r)
     return 1;
 }
 
+/* A character that takes a reading: a kanji, or a digit (５分[ごふん], １本[いっぽん]: a number and its counter as
+ * one entry read as one). */
+static int base(uint32_t c)
+{
+    return vjo_is_kanji(c) || (c >= '0' && c <= '9') || (c >= 0xFF10 && c <= 0xFF19);
+}
+
 static int has_kanji(const char *s, size_t n)
 {
     size_t i = 0;
@@ -110,17 +117,69 @@ static void fit(Fit *f, int i, int j)
             memcpy(f->best, f->end, sizeof(f->end));
         return;
     }
-    if (!vjo_is_kanji(f->w->c[i])) {
+    if (!base(f->w->c[i])) {
         if (j < f->r->n && same_kana(f->w->c[i], f->r->c[j]))
             fit(f, i + 1, j + 1);
         return;
     }
-    while (e < f->w->n && vjo_is_kanji(f->w->c[e]))
+    while (e < f->w->n && base(f->w->c[e]))
         e++;
     for (int k = j + (e - i); k <= f->r->n && f->found < 2; k++) {
         f->end[i] = k;
         fit(f, e, k);
     }
+}
+
+/* Kanji whose dictionary-form reading changes with conjugation, as core/furigana.c's vjo_furigana_rubies reads them
+ * (its table, which the Shell links: kept the same here, in the app's own code, so that the Shell's bytes are not
+ * changed), with 来なさい's き besides: the reading before the n bytes of kana that follow (来ない: こ; 良かった: よ;
+ * 行って: い), or NULL (the dictionary form's). */
+static const char *kuru(const char *next, size_t n)
+{
+    /* 来 read く (来る): き before た/て/ま/ち/なさ (来た, 来ます, 来ちゃう, 来なさい), こ before な/ず/さ/ら/い/よ
+     * and れ except in れば (来ない, 来させる, 来られる, 来い, 来よう, 来れる); else く (来る, 来れば) */
+    static const char *const ki[] = {"た", "て", "ま", "ち", "なさ"};
+    static const char *const ko[] = {"な", "ず", "さ", "ら", "い", "よ"};
+    for (unsigned k = 0; k < sizeof(ki) / sizeof(ki[0]); k++)
+        if (vjo_starts_withn(next, n, ki[k]))
+            return "き";
+    for (unsigned k = 0; k < sizeof(ko) / sizeof(ko[0]); k++)
+        if (vjo_starts_withn(next, n, ko[k]))
+            return "こ";
+    if (vjo_starts_withn(next, n, "れ") && !vjo_starts_withn(next, n, "れば"))
+        return "こ";
+    return NULL;
+}
+
+/* 良い/好い read いい: only the plain form is いい; 良かった, 良く, 良さ are よ. */
+static const char *ii(const char *next, size_t n)
+{
+    return vjo_starts_withn(next, n, "い") ? NULL : "よ";
+}
+
+/* 行く read ゆく: its past and て forms are いった, いって. */
+static const char *yuku(const char *next, size_t n)
+{
+    return vjo_starts_withn(next, n, "っ") ? "い" : NULL;
+}
+
+static const char *conjugated(const char *base, size_t base_len, const char *reading, size_t reading_len,
+                              const char *next, size_t n)
+{
+    static const struct {
+        const char *base, *reading;
+        const char *(*conjugated)(const char *next, size_t n);
+    } irregular[] = {
+        {"来", "く", kuru},
+        {"良", "い", ii},
+        {"好", "い", ii},
+        {"行", "ゆ", yuku},
+    };
+    for (unsigned k = 0; k < sizeof(irregular) / sizeof(irregular[0]); k++)
+        if (base_len == strlen(irregular[k].base) && !memcmp(base, irregular[k].base, base_len) &&
+            reading_len == strlen(irregular[k].reading) && !memcmp(reading, irregular[k].reading, reading_len))
+            return irregular[k].conjugated(next, n);
+    return NULL;
 }
 
 /* 何 read なに as a word of its own: なん before the sounds of た, だ and な rows that follow it in speech (何だ,
@@ -158,7 +217,8 @@ static int place(const char *sb, const Cps *s, const Cps *w, const char *rb, con
     while (stem < s->n && stem < w->n && fold(s->c[stem]) == fold(w->c[stem]))
         stem++;
     if (f.found != 1) {
-        if (stem != s->n || stem != w->n || !cap)
+        /* (no way at all: the reading is not the word's; two: read whole, as the text is the word) */
+        if (!f.found || stem != s->n || stem != w->n || !cap)
             return -1;
         out[0].start = s->off[0];
         out[0].end = s->off[s->n];
@@ -167,27 +227,27 @@ static int place(const char *sb, const Cps *s, const Cps *w, const char *rb, con
         return 1;
     }
     for (int i = 0, j = 0; i < w->n;) {
-        if (!vjo_is_kanji(w->c[i])) {
+        if (!base(w->c[i])) {
             i++;
             j++;
             continue;
         }
         rs[i] = j;
         j = f.best[i];
-        while (i < w->n && vjo_is_kanji(w->c[i]))
+        while (i < w->n && base(w->c[i]))
             i++;
     }
     for (int i = 0; i < s->n;) {
         int e = i, we = i;
         const char *reading, *conj, *nb;
         size_t len, next, nn;
-        if (!vjo_is_kanji(s->c[i])) {
+        if (!base(s->c[i])) {
             i++;
             continue;
         }
-        while (e < s->n && vjo_is_kanji(s->c[e]))
+        while (e < s->n && base(s->c[e]))
             e++;
-        while (we < w->n && vjo_is_kanji(w->c[we]))
+        while (we < w->n && base(w->c[we]))
             we++;
         /* (before the stem's end the two are the same characters, so w's run starts at i too) */
         if (e > stem || we != e || n == cap)
@@ -198,7 +258,7 @@ static int place(const char *sb, const Cps *s, const Cps *w, const char *rb, con
         /* what follows the run: the word's own kana, else the text after the word */
         nb = e < s->n ? sb + next : after;
         nn = e < s->n ? s->off[s->n] - next : after_len;
-        conj = vjo_furigana_conjugated(sb + s->off[i], s->off[e] - s->off[i], reading, len, nb, nn);
+        conj = conjugated(sb + s->off[i], s->off[e] - s->off[i], reading, len, nb, nn);
         if (!conj && s->off[e] - s->off[i] == 3 && !memcmp(sb + s->off[i], "\xE4\xBD\x95", 3) /* 何 */ && len == 6 &&
             !memcmp(reading, "\xE3\x81\xAA\xE3\x81\xAB", 6) /* なに */) {
             int k = reads_nan(nb, nn);
@@ -299,11 +359,11 @@ static int romaji_kana(const char *s, size_t n, char *out, size_t cap)
         char c = s[i] >= 'A' && s[i] <= 'Z' ? (char)(s[i] + 32) : s[i];
         const char *kana = NULL;
         size_t take = 0;
-        if (c == '\'') { /* n' */
-            i++;
-            continue;
-        }
-        if (c == 'n' && (i + 1 == n || !strchr("aiueoy'", s[i + 1] | 32))) {
+        char d = i + 1 < n ? (char)(s[i + 1] | 32) : 0;
+        if (c == 'n' && (s[i + 1 < n ? i + 1 : i] == '\'' && i + 1 < n)) {
+            kana = "ん"; /* n' before a vowel: Shin'ichi */
+            take = 2;
+        } else if (c == 'n' && (!d || !strchr("aiueoy", d))) {
             kana = "ん";
             take = 1;
         } else if (c != 'n' && i + 1 < n && (s[i + 1] | 32) == c && strchr("kstpcgzdbhfjmrw", c)) {
@@ -403,6 +463,18 @@ static int name_disagrees(const char *def, const char *text, size_t n, const cha
     }
     return seen && !agree;
 }
+
+#ifdef VJO_HOST
+int vjo_reading_romaji_kana(const char *s, size_t n, char *out, size_t cap)
+{
+    return romaji_kana(s, n, out, cap);
+}
+
+int vjo_reading_name_disagrees(const char *def, const char *text, size_t n, const char *reading)
+{
+    return name_disagrees(def, text, n, reading);
+}
+#endif
 
 /* ---------------- the sentence ---------------- */
 

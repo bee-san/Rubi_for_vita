@@ -191,6 +191,9 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
+| | **Card type**: what the card's front shows: the word, its sentence, both, or the word with the sentence a tap away ([card types](docs/anki.md#card-type)) | Word |
+| | **Game tag**: each card is tagged with its game, `Game::CLANNAD` | ON |
+| | **Sentence readings**: readings over the sentence's kanji on the card's back, where the dictionaries are sure of them ([how often they are wrong](docs/anki.md#sentence-readings)) | ON |
 | | **Duplicates**: a card of a word you mined before gets Anki's `duplicate` tag (Tag), stays in the queue (Skip) or is exported as before (Keep); the page counts them, "N queued, M already mined" ([details](docs/anki.md#duplicates)) | Tag |
 | | **Cards: N queued**: each card before it is exported, newest first, with its sentence and picture; delete it, fix its sentence or drop its picture ([details](docs/anki.md#the-cards-page)) | |
 | | **Known words**: Import reads `known_words.txt`, which `tools/known_words.py` writes from your Anki collection; their cards get the tag `known` ([details](docs/anki.md#known-words)) | none |

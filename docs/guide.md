@@ -542,12 +542,15 @@ API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and th
 removed engine choice's `ocr_backend` line goes).
 
 On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
-Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), **Duplicates**
-(Tag, Skip or Keep: Enter takes the next, Left/Right the one beside it, a touch the one touched; the Rubi app's
-own `app.ini`, which the overlay never reads: [duplicates](anki.md#duplicates)), **Cards: N queued** (Enter opens
-the [Cards page](anki.md#the-cards-page)), **Known words** (Import: `known_words.txt`, which
+Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), then the
+exported cards' **Card type** (Word, Sentence, Both or Click: Enter takes the next, Left/Right the one beside it,
+a touch the one touched), **Game tag** and **Sentence readings** (ON/OFF), **Duplicates** (Tag, Skip or Keep: as
+Card type: [duplicates](anki.md#duplicates)), all four the Rubi app's own, in `app.ini`, which the overlay never
+reads (`anki_card_type`, `anki_game_tag`, `anki_sentence_readings`, `anki_duplicates`;
+[card type, game tag and sentence readings](anki.md#card-type-game-tag-and-sentence-readings)), **Cards: N queued**
+(Enter opens the [Cards page](anki.md#the-cards-page)), **Known words** (Import: `known_words.txt`, which
 `tools/known_words.py` writes from Anki; [known words](anki.md#known-words)), then
-**Export cards** and **Export all cards**. Eight rows are more than the room above the page's status
+**Export cards** and **Export all cards**. Eleven rows are more than the room above the page's status
 box: they scroll a row at a time as the OCR page's cards do, a bar at the right shows where the view is,
 and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
 
@@ -1031,10 +1034,11 @@ the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Trim black bars** ON/OFF, **Duplicates** (Tag, Skip or Keep), **Cards: N queued** (the
-[Cards page](anki.md#the-cards-page): each queued card, to delete it, fix its sentence or drop its picture before
-it is exported), **Known words** (Import), **Export cards (N queued, M already mined)** and **Export all cards**
-(eight rows, which scroll a row at a time). An export writes the cards as
+ON/OFF, **Trim black bars** ON/OFF, the cards' **Card type**, **Game tag** and **Sentence readings**
+([card type, game tag and sentence readings](anki.md#card-type-game-tag-and-sentence-readings)), **Duplicates**
+(Tag, Skip or Keep), **Cards: N queued** (the [Cards page](anki.md#the-cards-page): each queued card, to delete it,
+fix its sentence or drop its picture before it is exported), **Known words** (Import), **Export cards (N queued, M
+already mined)** and **Export all cards** (eleven rows, which scroll a row at a time). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into

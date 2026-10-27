@@ -8,7 +8,8 @@
  * gives the reading. A match's reading is placed on its text as written, as Yomitan's
  * distributeFuriganaInflected places it (japanese.js): its kanji read as in the dictionary form, up to where
  * the text's inflection starts (行って from 行く: 行[い]って), 来る, 良い/好い and 行く(ゆく) as conjugated
- * (core/furigana.h vjo_furigana_conjugated: 来[こ]ない, 来[き]ます). Kana never takes a reading.
+ * (core/furigana.c's table, the engine's own copy: 来[こ]ない, 来[き]ます, 来[き]なさい). Kana never takes a
+ * reading.
  *
  * No guessing: a word gets no reading when
  * - no dictionary has it (its kanji stay as they are);
@@ -112,5 +113,11 @@ void vjo_furigana_html(VjoBuf *b, const char *text, size_t len, const VjoRuby *r
  * says which: VJO_E_*). scratch as above, plus the sentence's readings (a few KiB). */
 char *vjo_sentence_furigana(VjoArena *a, VjoArena *scratch, const VjoPlatform *p, const VjoConfig *cfg,
                             const VjoReadingRules *rules, const VjoAnkiNote *n, VjoReadingStats *st, int *rc);
+
+#ifdef VJO_HOST
+/* Host tests: Hepburn romaji as hiragana (its length, or -1), and VNDB's name entry against a word's reading. */
+int vjo_reading_romaji_kana(const char *s, size_t n, char *out, size_t cap);
+int vjo_reading_name_disagrees(const char *def, const char *text, size_t n, const char *reading);
+#endif
 
 #endif

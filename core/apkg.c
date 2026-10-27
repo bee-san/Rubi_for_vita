@@ -361,8 +361,13 @@ static int write_note(VjoArena *a, const VjoApkgOps *ops, VjoSqlw *w, const VjoA
         picture = name;
     }
     vjo_apkg_guid(c->id, guid);
-    if (!(flds = vjo_lapis_fields(a, &note, picture, &flds_len)))
-        return 1;
+    {
+        VjoLapisExtra x;
+        x.card_type = ops->card_type;
+        x.sentence_furigana = ops->sentence_furigana ? ops->sentence_furigana(ops->ud, a, c, &note) : NULL;
+        if (!(flds = vjo_lapis_fields(a, &note, picture, &x, &flds_len)))
+            return 1;
+    }
     {
         /* notes.tags: every tag between spaces, " vita-jp-overlay " and the caller's */
         const char *extra = ops->tags ? ops->tags(ops->ud, a, c, &note) : NULL;

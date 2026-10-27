@@ -40,11 +40,4 @@ void vjo_furigana_render(VjoBuf *b, const char *text, size_t from, size_t to, co
  * opening with a space before a base. NULL on OOM. */
 char *vjo_furigana_align(VjoArena *a, const char *surface, size_t n, const char *ruby);
 
-/* A kanji whose dictionary-form reading changes with conjugation (vjo_furigana_rubies' table: 来 く,
- * 良 い, 好 い, 行 ゆ), base_len bytes read reading_len bytes in the dictionary form: its reading before
- * the n bytes of kana that follow it in the text (来ない: こ; 良かった: よ; 行って: い), or NULL (the
- * dictionary form's, or no such kanji). */
-const char *vjo_furigana_conjugated(const char *base, size_t base_len, const char *reading, size_t reading_len,
-                                    const char *next, size_t n);
-
 #endif

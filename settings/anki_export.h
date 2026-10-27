@@ -24,6 +24,7 @@
 #include <stdint.h>
 
 #include "../core/apkg.h"
+#include "../core/config.h"
 #include "app_prefs.h"
 
 #define VJO_EXPORT_DATA_DIR "ux0:data/VitaJPOverlay"
@@ -74,15 +75,23 @@ typedef struct {
 } VjoExportResult;
 
 /* Exports the queue (all: and the archive) into a new package, following the app's own settings (prefs, app.ini:
- * settings/app_prefs.h; NULL: the defaults); a one- or two-sentence result for the screen in msg. Returns r->rc.
+ * settings/app_prefs.h; NULL: the defaults): the cards' type, their game's tag and the readings over their
+ * sentence (#311), looked up in dicts' local_dictionary_dir and local_dictionaries (config.ini's; NULL: no
+ * readings); a one- or two-sentence result for the screen in msg. Returns r->rc.
  *
  * Duplicates (#314, prefs->anki_duplicates): a card is a duplicate when an earlier card, queued or exported, has its
  * word (core/word_key.h): earlier in the package's order, by the record's time, then its ID. Tag gives it the tag
  * `duplicate`; Skip leaves it out of the package (a queued one stays queued, and is checked again by the next
  * export); Keep checks nothing, as before #314. A card's word is kept once read (anki_words.bin), even when its
  * record is damaged later: with Skip, a later card of that word stays queued until that record is fixed or removed. */
-int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExportUi *ui, VjoExportResult *r,
-                   char *msg, size_t cap);
+int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConfig *dicts, const VjoExportUi *ui,
+                   VjoExportResult *r, char *msg, size_t cap);
+
+/* A note's game tag (#311): Game::<title>, without its whitespace (ASCII, U+3000), control characters and "::",
+ * as GameSentenceMiner's (_prepare_anki_tags); "" for no game or nothing left of it. At most cap - 1 bytes, cut on
+ * a character's boundary. */
+#define VJO_EXPORT_TAG_MAX 160
+void vjo_export_game_tag(const char *game, char *out, size_t cap);
 
 /* ---- the words of every card (#314) ---- */
 

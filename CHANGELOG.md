@@ -95,6 +95,26 @@ been reported.
   plain-text export without that column, keeps a plain-text export without HTML as text and leaves out words
   starting with `#`; the import ignores long extra columns; the page says when the known words' index is damaged;
   an unchecked export is shown as an error; Skip counts a card left in both directories once.
+- **Richer Anki cards, made at export** (#311; [docs/anki.md](docs/anki.md#card-type-game-tag-and-sentence-readings)).
+  Three rows on the Rubi app's Anki page, which the next export follows, also for cards queued before; they are the
+  app's own and live in `ux0:data/VitaJPOverlay/app.ini`, which the overlay never reads:
+  - **Card type**: Word (the default, the cards as before), Sentence, Both or Click, Lapis's own card types: the
+    export sets the type's switch (`IsSentenceCard` and the like) to `x`.
+  - **Game tag** (ON): each note has its game's tag beside `vita-jp-overlay`, `Game::CLANNAD`, in GameSentenceMiner's
+    form (the name without its spaces, U+3000 and `::`). A record without a game (versions 1 and 2) has none.
+  - **Sentence readings** (ON): `SentenceFurigana` holds the sentence with the readings of its words, from the
+    overlay's dictionaries, parsed as Yomitan parses a `{sentence-furigana}` and placed on the inflected words as
+    Yomitan places them (`行[い]って`, `来[こ]ない`); the mined word keeps its own reading and its `<b>`. A word whose
+    reading the dictionaries cannot be sure of gets none (今日, 方 alone, a single kanji in a compound, a name VNDB
+    romanizes otherwise, a counter after a number). On 3,000 real visual-novel lines the rules were not chosen on,
+    1.8 readings per 1,000 kanji tokens were wrong and 174 missing, against about 46 wrong and 34 missing for
+    Yomitan's `{sentence-furigana}` over the same dictionaries
+    ([reports/sentence-readings.md](reports/sentence-readings.md); host measurements, the threshold for ON fixed
+    before the measurement). An export then takes about 0.5 s more a card (an estimate: 17 lookups and 98 reads a
+    sentence on the host); its progress counts every card.
+  The Shell, the game worker and the kernel are unchanged: the code is the app's (`core/sentence_reading.c`,
+  through the Look up page's `settings/app_platform.c`), with 200 KiB of static memory for the lookups. Not run on a
+  console yet.
 - **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
   △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
   games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the

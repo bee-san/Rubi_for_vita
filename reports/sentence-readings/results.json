@@ -1,0 +1,129 @@
+{
+ "dev": {
+  "counts": {
+   "correct": 19161,
+   "kanji tokens": 24894,
+   "missing": 4556,
+   "noref": 212,
+   "right by adjudication": 900,
+   "with reference": 24682,
+   "wrong": 65,
+   "wrong (differs from sudachi)": 965
+  },
+  "per_1000": {
+   "correct": 776.31,
+   "missing": 184.59,
+   "wrong": 2.63,
+   "unreviewed": 0.0,
+   "wrong (differs from sudachi)": 39.1,
+   "right by adjudication": 36.46
+  },
+  "adjudicated": {
+   "sudachi wrong": 312,
+   "both right": 588,
+   "sudachi": 42,
+   "neither": 23
+  }
+ },
+ "test": {
+  "counts": {
+   "correct": 11083,
+   "kanji tokens": 14265,
+   "missing": 2463,
+   "noref": 117,
+   "right by adjudication": 577,
+   "with reference": 14148,
+   "wrong": 25,
+   "wrong (differs from sudachi)": 602
+  },
+  "per_1000": {
+   "correct": 783.36,
+   "missing": 174.09,
+   "wrong": 1.77,
+   "unreviewed": 0.0,
+   "wrong (differs from sudachi)": 42.55,
+   "right by adjudication": 40.78
+  },
+  "adjudicated": {
+   "sudachi wrong": 218,
+   "both right": 359,
+   "sudachi": 23,
+   "neither": 2
+  }
+ },
+ "test_yomitan_raw": {
+  "counts": {
+   "correct": 12263,
+   "kanji tokens": 14265,
+   "missing": 476,
+   "noref": 121,
+   "unreviewed": 1405,
+   "with reference": 14144,
+   "wrong": 1405,
+   "wrong (differs from sudachi)": 1405
+  },
+  "per_1000": {
+   "correct": 867.01,
+   "missing": 33.65,
+   "wrong": 99.34,
+   "unreviewed": 99.34,
+   "wrong (differs from sudachi)": 99.34,
+   "right by adjudication": 0.0
+  }
+ },
+ "test_yomitan_sample": {
+  "units_sampled": 300,
+  "seed": 20261027,
+  "wrong_units": 142,
+  "token_share_wrong": 0.4603,
+  "wrong_per_1000": 45.7,
+  "wrong_per_1000_95ci_bootstrap": [
+   40.0,
+   51.4
+  ],
+  "right_by_adjudication_per_1000": 53.6
+ },
+ "test_rubi_at_protocol_commit": {
+  "commit": "cf2e273",
+  "per_1000": {
+   "correct": 783.08,
+   "missing": 174.3,
+   "wrong": 1.84,
+   "unreviewed": 0.0,
+   "wrong (differs from sudachi)": 42.62,
+   "right by adjudication": 40.78
+  },
+  "counts": {
+   "correct": 11079,
+   "kanji tokens": 14265,
+   "missing": 2466,
+   "noref": 117,
+   "right by adjudication": 577,
+   "with reference": 14148,
+   "wrong": 26,
+   "wrong (differs from sudachi)": 603
+  },
+  "rebased_as": "df45363"
+ },
+ "measured_on": {
+  "base": "9ad8eb5",
+  "note": "as rebased: main with #386 lookups; test readings unchanged line for line, one dev line gains a reading"
+ },
+ "export_time_estimate": {
+  "lines": 3000,
+  "lookups_mean": 17.28,
+  "reads_mean": 98.49,
+  "lookups_median": 16,
+  "reads_median": 90,
+  "lookups_p95": 37,
+  "reads_p95": 216,
+  "fit_ms_per_lookup": 13.1,
+  "fit_ms_per_read": 2.98,
+  "seconds_mean": 0.52,
+  "seconds_median": 0.49,
+  "seconds_p95": 1.11,
+  "reads": 295476,
+  "reads_with_256k_block_cache_simulated": 180853,
+  "estimate": "host counts with the console fit of docs/lookup-performance.md; not timed on a console"
+ }
+}
