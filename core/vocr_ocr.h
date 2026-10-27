@@ -384,11 +384,10 @@ typedef struct {
 } VjoVocrLineInfo;
 
 /* API 52 (#358): the text box a job's recognized lines suggest (core/region_suggest.h vjo_region_suggest, on each
- * line's box and kana count), for a job of rows on a whole fb_w x fb_h frame, as VjoGameOcrResult.suggest carries
- * it (vjo_region_screen: x0, y0, x1, y1 on the 960 x 544 screen): 1 with box filled, or 0 with it zeroed (no line
- * like dialogue, or the lines were columns). The game worker's (game_ocr/main.c) and the host tools'
- * (host/page_ocr.c); core/region_suggest.c. */
-int vjo_vocr_suggest(const VjoVocrStats *st, unsigned fb_w, unsigned fb_h, uint16_t box[4]);
+ * line's box and kana count), for a job of rows on a whole fb_w x fb_h frame, as VjoGameOcrResult.suggest_rows
+ * carries it: the band's rows on the 960 x 544 screen (vjo_region_rows), or 0 (no line like dialogue, or the lines
+ * were columns). The game worker's (game_ocr/main.c) and the host tools' (host/page_ocr.c); core/region_suggest.c. */
+uint32_t vjo_vocr_suggest(const VjoVocrStats *st, unsigned fb_w, unsigned fb_h);
 
 /* Weights kept between jobs. The caller supplies their memory: alloc returns
  * 16-byte aligned memory for `bytes`, or NULL (the job then fails with

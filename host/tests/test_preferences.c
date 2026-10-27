@@ -1229,7 +1229,7 @@ static const char *region_text(void)
 
 /* #358: Suggest a text box, kept in region.ini, through the actual Shell's region.ini code (shell/files.c): OFF is
  * the line for every game, "region = full", so that a game without its own reads its whole screen with a region found
- * (VJO_REGION_ALL: no box offered, shell/worker.c region_none); ON drops it (VJO_REGION_NONE). Every game's own line
+ * (VJO_REGION_ALL: no box offered, shell/worker.c push_region); ON drops it (VJO_REGION_NONE). Every game's own line
  * is kept by both and by the Shell's own saves; a region.ini that cannot be read is never rewritten, and a failed
  * write or rename leaves the file as it was (a save cut short between its renames is put back by the next load). */
 static void test_suggest_lives_in_region_ini_and_the_shell_reads_it(void)

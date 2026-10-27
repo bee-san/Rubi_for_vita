@@ -2552,9 +2552,7 @@ class OverlayAppSummary(unittest.TestCase):
     def test_the_line_the_shell_writes_is_read_whole(self):
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
         fmt = "Rubi app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)"
-        # (in the data segment since #358: a VJO_DATA_TABLE string, logged as vjo_log(line, ...))
-        self.assertIn(f'"{fmt}";', worker, "shell/worker.c check_app's line changed: update APP_CHECK")
-        self.assertIn("vjo_log(line, s == VJO_APP_OK", worker)
+        self.assertIn(f'vjo_log("{fmt}",', worker, "shell/worker.c check_app's line changed: update APP_CHECK")
         # an earlier build's line (before the Rubi rename) reads the same
         old = fmt.replace("Rubi app", "overlay app", 1) % ("MISMATCH", "", 0x80010002, 1, self.STAMP, 0x26)
         self.assertEqual(a.APP_CHECK.match(old).group(1, 2, 3), ("MISMATCH", "", "0x80010002"))

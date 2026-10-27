@@ -156,18 +156,33 @@ int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in)
     return ev;
 }
 
-int vjo_rsel_preset(VjoRegionSelect *s, const uint16_t *box)
+int vjo_rsel_preset(VjoRegionSelect *s, uint32_t rows)
 {
-    /* its far corner, the cursor, on the screen (x1, y1 1..960, 1..544); its first corner as it comes: a box is the
-     * two corners' (vjo_rsel_box), drawn clipped, and saved clamped to the screen (vjo_rsel_rect), as a touch's is */
-    if (!box || box[2] - 1u >= VJO_RSEL_W || box[3] - 1u >= VJO_RSEL_H)
+    if (rows - 1u >= VJO_RSEL_H) /* 0, or more than the screen */
         return 0;
     s->anchored = 1;
-    s->ax = box[0];
-    s->ay = box[1];
-    s->x = (box[2] - 1) << 8 | 128;
-    s->y = (box[3] - 1) << 8 | 128;
+    s->ax = 0;
+    s->ay = VJO_RSEL_H - (int)rows;
+    s->x = (VJO_RSEL_W - 1) << 8 | 128;
+    s->y = (VJO_RSEL_H - 1) << 8 | 128;
     return 1;
+}
+
+void vjo_rsel_publish(uint32_t *suggest, uint32_t rows)
+{
+    uint32_t was = __atomic_load_n(suggest, __ATOMIC_RELAXED);
+    while (was != VJO_RSEL_TAKEN &&
+           !__atomic_compare_exchange_n(suggest, &was, rows, 1, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+    }
+}
+
+uint32_t vjo_rsel_take(uint32_t *suggest)
+{
+    uint32_t rows = __atomic_load_n(suggest, __ATOMIC_RELAXED);
+    if (rows - 1u >= VJO_RSEL_H || /* none, or taken */
+        !__atomic_compare_exchange_n(suggest, &rows, VJO_RSEL_TAKEN, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+        return 0;
+    return rows;
 }
 
 void vjo_rsel_cursor(const VjoRegionSelect *s, int *x, int *y)

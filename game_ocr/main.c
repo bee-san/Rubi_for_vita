@@ -2322,7 +2322,7 @@ retry_smaller:
      * the Shell offers that box in a game with no region of its own. Its lines' region pixels are the frame's
      * here; host/page_ocr.c measures the same call (docs/first-box.md). */
     if (!rc && !r->x && !r->y && r->width == r->fb_width && r->height == r->fb_height)
-        vjo_vocr_suggest(&stats, r->fb_width, r->fb_height, out->suggest);
+        out->suggest_rows = vjo_vocr_suggest(&stats, r->fb_width, r->fb_height);
     /* A helper that could not be joined may still run in the workspace: keep it,
      * and take no more jobs (core/vocr_ocr.h VjoVocrPool). */
     if (stats.stuck) { blocked = 1; hook_owns_workspace = 1; }
@@ -2370,7 +2370,7 @@ done:
     }
     if (rc) { /* a failed result carries no text, and no box (API 52) */
         sceClibMemset(out->text, 0, sizeof(out->text));
-        sceClibMemset(out->suggest, 0, sizeof(out->suggest));
+        out->suggest_rows = 0;
     }
     hooks_result(out, rc);
     out->rc = rc; active_seq = 0;

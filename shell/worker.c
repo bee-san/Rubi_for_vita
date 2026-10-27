@@ -16,6 +16,7 @@
 #include "../core/app_stamp.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/regions.h"
+#include "../core/region_select.h" /* #358: the suggested box's word (vjo_rsel_publish) */
 #include "../core/port.h"
 #include "../core/anki.h"
 #include "../core/local_dict.h"
@@ -1950,18 +1951,16 @@ static void apply_config(void)
  * self-test uses it as it is; its full-screen stage asks for the whole frame
  * itself (VJO_GAME_OCR_F_FULL). */
 static VjoRect game_region;
-/* #358: the game has no region line at all (not even "full", nor region.ini's line for every game, which the Rubi
- * app's Suggest a text box OFF writes as "region = full"): its jobs read the whole screen, and the box they suggest
- * is offered (on_job_done). */
-static int region_none;
 
 static void push_region(void)
 {
     VjoRect r;
     int found = vjo_region_load(title_id, &r, &scratch);
     vjoSetRegion(found && r.w ? &r : NULL);
-    region_none = !found;
-    g_view.suggest[2] = 0; /* another game's box, or one this region replaces: never offered (a word: no lock) */
+    /* #358: a game with no region line at all (not even "full", nor region.ini's line for every game, which the Rubi
+     * app's Suggest a text box OFF writes as "region = full") reads its whole screen, and is offered the box its jobs
+     * suggest (on_job_done) once in this activation; one with a region, none. Another game's box goes either way. */
+    __atomic_store_n(&g_view.suggest, found ? VJO_RSEL_TAKEN : 0u, __ATOMIC_RELAXED);
     if (found && r.w) game_region = r;
     else sceClibMemset(&game_region, 0, sizeof(game_region));
     vjo_log("region: %s%s", found == VJO_REGION_GAME ? "this game's" : found ? "all games'" : "none",
@@ -2616,14 +2615,10 @@ static void on_job_done(void)
     screen_changed_streak = 0; /* this job read its screen */
     screen_retry_until = 0;
 #ifdef VJO_WITH_VOCR
-    /* #358: the box this job on the whole screen suggests, for a game with no region of its own (the overlay
-     * offers it once an activation); the network thread is done with the result */
-    if (region_none && vocr_result.suggest[2]) {
-        vjo_view_lock();
-        sceClibMemcpy(g_view.suggest, vocr_result.suggest, sizeof(g_view.suggest));
-        g_view.suggest_gen = game_generation;
-        vjo_view_unlock();
-    }
+    /* #358: the box this job on the whole screen suggests, for a game with no region of its own (the overlay offers it
+     * once an activation): the newest screen's, none when its lines hold no dialogue (a box of an earlier screen is
+     * never offered for this one); the network thread is done with the result */
+    vjo_rsel_publish(&g_view.suggest, vocr_result.suggest_rows);
 #endif
     ocr_failed = d->failed_stage == VJO_STAGE_OCR;
     backoff_note(&ocr_backoff, ocr_failed);
@@ -2824,42 +2819,32 @@ static void on_command(void)
         history_ask(cmd == VJO_CMD_EARLIER ? 1 : -1);
         break;
     case VJO_CMD_SET_REGION:
-    case VJO_CMD_USE_BOX:
     case VJO_CMD_CLEAR_REGION:
         if (!game_active()) { /* the game exited meanwhile */
             close_overlay();
             break;
         }
-        if (cmd != VJO_CMD_CLEAR_REGION) {
-            /* in the data segment, for the normal Shell's code room (#358) */
-            static const char set[] VJO_DATA_TABLE(worker_region_set) = "region set for %s: %u,%u,%u,%u";
-            vjo_log(set, title_id, r.x, r.y, r.w, r.h);
-        }
+        if (cmd == VJO_CMD_SET_REGION)
+            vjo_log("region set for %s: %u,%u,%u,%u", title_id, r.x, r.y, r.w, r.h);
         else
             vjo_log("region for %s: full screen", title_id);
-        if (vjo_region_save(title_id, cmd != VJO_CMD_CLEAR_REGION ? &r : NULL, &scratch) < 0)
+        if (vjo_region_save(title_id, cmd == VJO_CMD_SET_REGION ? &r : NULL, &scratch) < 0)
             vjo_log("region.ini: write failed");
         push_region();
+        /* #358: no box is offered after it in this activation, a region.ini that could not be written too (no line) */
+        __atomic_store_n(&g_view.suggest, VJO_RSEL_TAKEN, __ATOMIC_RELAXED);
         cache_ok = 0;
         retire_local_text(1);
         /* #358: the old region's tears say nothing of the new one's: the wait hint (the region drawn as it asks)
          * and the retry pace start over, as a new game's do (invalidate_game_work) */
         screen_changed_streak = 0;
         screen_retry_until = 0;
+        close_overlay();
         /* A job in progress read the old region (a lookup or a refresh, which the
-         * close below drops, or OCR): its result goes, as the text and the cache did;
+         * close dropped, or OCR): its result goes, as the text and the cache did;
          * an OCR job's would publish the old region's text and lookup again (#182). */
         if (job_running)
             job_cancelled = 1;
-        /* #358: the suggested box: the overlay stays and reads it as an open does (a job that runs, cancelled above,
-         * is followed by the new one: restart_old_job, or the cancelled job's end; else one starts now and says
-         * "Recognizing…"). Closed meanwhile, it is saved as a drawn box is. */
-        if (cmd == VJO_CMD_USE_BOX && ov != OV_CLOSED) {
-            if (job_running) ov = OV_OPEN_OLD_JOB;
-            start_job("overlay opened", 1);
-            break;
-        }
-        close_overlay();
         if (subtitles) {
             if (!job_running) {
                 start_job("region changed", want_lookup());
@@ -2912,13 +2897,9 @@ static void check_app(void)
                     : vjo_app_stamp_api(installed) > vjo_app_stamp_api(package) ? VJO_APP_NOTICE_NEWER : VJO_APP_NOTICE;
     g_view.notice_shown = 0;
     vjo_view_unlock();
-    {
-        /* once an answer: in the data segment, for the normal Shell's code room (#358) */
-        static const char line[] VJO_DATA_TABLE(worker_app_state) =
-            "Rubi app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)";
-        vjo_log(line, s == VJO_APP_OK ? "ok" : s == VJO_APP_MISMATCH ? "MISMATCH" : "unknown", installed, irc, app,
-                package, prc);
-    }
+    vjo_log("Rubi app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)",
+            s == VJO_APP_OK ? "ok" : s == VJO_APP_MISMATCH ? "MISMATCH" : "unknown", installed, irc, app, package,
+            prc);
 }
 
 static void activate_game(SceUID pid, const VjoGameId *id)

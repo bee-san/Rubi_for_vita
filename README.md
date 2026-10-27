@@ -144,7 +144,7 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
 1. **Open it.** In a game, press **L + R** when there is text on the screen. The overlay shows the
    dialogue at the top and a word's entry below it. **L + R** or **Cancel** closes it.
 2. **Set the text box, once per game.** The first time a game's text is shown, Rubi draws a box
-   around its dialogue and asks **Use this box?** Press **Enter** to take it
+   around its dialogue and asks **Use this box?** Press **Enter** to save it as the game's box
    ([how it is found](docs/first-box.md)), or **Cancel** to draw your own. Or later: press **□**: a
    cursor appears. Move it with the left stick (or the d-pad, a pixel at a time), press **Enter** at
    one corner of the dialogue box, then again at the opposite corner. A tight box needs less memory

@@ -15,8 +15,9 @@
 /* A line at x, y of w x h px whose text holds `kana` kana and kanji. */
 #define L(x, y, w, h, kana) ((VjoSuggestLine){(uint16_t)(x), (uint16_t)(y), (uint16_t)(w), (uint16_t)(h), (uint16_t)(kana)})
 
-/* The pixels the kernel reads for a normalized rect (kernel/capture.c: the origin floored, the far edge
- * ceiled) on a fw x fh frame. */
+/* A normalized rect's pixels on a fw x fh frame, its origin floored and its far edge ceiled: for a band the frame's
+ * width down to its bottom, the rows the kernel's crop reads (kernel/capture.c capture_crop_of floors the origin and
+ * ceils the size; host/tests/test_kernel_capture.c crops the band saved from the region selector). */
 static void pixels(const VjoRect *r, unsigned fw, unsigned fh, unsigned *x0, unsigned *y0, unsigned *x1, unsigned *y1)
 {
     *x0 = (unsigned)((uint64_t)r->x * fw / 65536u);
@@ -94,12 +95,17 @@ static void dialogue_above_the_buttons(void)
 static void the_group_with_the_most_kana_not_the_lowest(void)
 {
     const VjoSuggestLine l[] = {
-        L(60, 380, 800, 36, 24), L(60, 422, 760, 36, 22), /* the dialogue */
-        L(80, 505, 90, 24, 3), L(200, 505, 90, 24, 3),    /* セーブ ロード: 6 in all, lower */
+        L(60, 300, 800, 36, 24), L(60, 342, 760, 36, 22), /* the dialogue: 46 */
+        L(80, 470, 90, 24, 3), L(80, 500, 90, 24, 3),     /* a menu's stacked choices below it: a group of 6, enough */
     };
-    TEST_CHECK(band_top(l, 4, W, H) == 380 - 18);
-    /* alone, buttons side by side are a group each, too few to be dialogue */
-    TEST_CHECK(band_top(l + 2, 2, W, H) == -1);
+    TEST_CHECK_(band_top(l, 4, W, H) == 300 - 18, "%d", band_top(l, 4, W, H));
+    /* alone, the stacked choices are a group (a menu as the first screen): from the first one down */
+    TEST_CHECK_(band_top(l + 2, 2, W, H) == 470 - 12, "%d", band_top(l + 2, 2, W, H));
+    /* buttons side by side are a group each, too few to be dialogue */
+    {
+        const VjoSuggestLine side[] = {L(80, 505, 90, 24, 3), L(200, 505, 90, 24, 3)}; /* セーブ ロード */
+        TEST_CHECK(band_top(side, 2, W, H) == -1);
+    }
 }
 
 static void a_tie_goes_to_the_upper_group(void)
@@ -231,52 +237,59 @@ static void every_box_is_a_region(void)
     TEST_CHECK_(boxes > 100, "%u boxes", boxes);
 }
 
-/* The box as the result carries it (vjo_region_screen): the pixels the kernel reads for it on the 960 x 544 screen,
- * whatever the frame it was found on; nothing for an empty rect. */
-static void the_box_on_the_screen(void)
+/* The band as the result carries it (vjo_region_rows): its rows on the 960 x 544 screen, the ones the kernel reads for
+ * its region, whatever the frame it was found on; 0 for an empty rect. */
+static void the_bands_rows_on_the_screen(void)
 {
-    uint16_t b[4];
     const VjoSuggestLine l[] = {L(118, 391, 722, 32, 28), L(118, 432, 345, 31, 12)};
     VjoRect r;
     TEST_ASSERT(vjo_region_suggest(l, 2, W, H, &r));
-    vjo_region_screen(&r, b);
-    TEST_CHECK_(b[0] == 0 && b[1] == 391 - 16 && b[2] == 960 && b[3] == 544, "%u,%u,%u,%u", b[0], b[1], b[2], b[3]);
-    /* a PSP game's own 480 x 272 frame: twice its pixels on the screen */
+    TEST_CHECK_(vjo_region_rows(&r) == H - (391 - 16), "%u", vjo_region_rows(&r)); /* 169 */
+    /* a PSP game's own 480 x 272 frame: twice its rows on the screen */
     {
         const VjoSuggestLine p[] = {L(59, 195, 361, 16, 28), L(59, 216, 172, 16, 12)};
         TEST_ASSERT(vjo_region_suggest(p, 2, 480, 272, &r));
-        vjo_region_screen(&r, b);
-        TEST_CHECK_(b[0] == 0 && b[1] == 2 * (195 - 8) && b[2] == 960 && b[3] == 544, "%u,%u,%u,%u", b[0], b[1], b[2],
-                    b[3]);
+        TEST_CHECK_(vjo_region_rows(&r) == 2 * (272 - (195 - 8)), "%u", vjo_region_rows(&r)); /* 170 */
+    }
+    /* every band, on either frame: the rows of its pixels on the frame, scaled to the screen; 32 at least */
+    for (unsigned t = 0; t < 600; t++) {
+        const unsigned fh = t < 300 ? 272 : 544, y = t % 300;
+        const VjoSuggestLine one[] = {L(10, y, 400, fh / 20, 9)};
+        const int top = band_top(one, 1, fh * 960 / 544, fh);
+        if (top >= 0 && vjo_region_suggest(one, 1, fh * 960 / 544, fh, &r)) {
+            const uint32_t rows = vjo_region_rows(&r);
+            TEST_CHECK_(rows >= 32 && rows == 544u - (unsigned)top * (544u / fh), "line at %u of %u: top %d, %u rows", y,
+                        fh, top, rows);
+        }
     }
     r = (VjoRect){10, 10, 0, 100};
-    vjo_region_screen(&r, b);
-    TEST_CHECK(!b[0] && !b[1] && !b[2] && !b[3]);
+    TEST_CHECK(vjo_region_rows(&r) == 0);
     r = (VjoRect){10, 10, 100, 0};
-    vjo_region_screen(&r, b);
-    TEST_CHECK(!b[0] && !b[1] && !b[2] && !b[3]);
+    TEST_CHECK(vjo_region_rows(&r) == 0);
 }
 
-/* From a job's stats (the game worker's and host/page_ocr.c's call): its recognized lines' boxes and kana; nothing
- * for a job of columns. */
+/* From a job's stats (the game worker's and host/page_ocr.c's call): its recognized lines' boxes and kana; 0 for none,
+ * and for a job of columns. */
 static void from_a_jobs_stats(void)
 {
     static VjoVocrStats st;
-    uint16_t b[4] = {1, 2, 3, 4};
     memset(&st, 0, sizeof(st));
     st.recognized = 2;
     st.line[0] = (VjoVocrLineStat){.width = 722, .height = 32, .kana = 28, .x = 118, .y = 391};
     st.line[1] = (VjoVocrLineStat){.width = 345, .height = 31, .kana = 12, .x = 118, .y = 432};
-    TEST_CHECK(vjo_vocr_suggest(&st, W, H, b) && b[0] == 0 && b[1] == 375 && b[2] == 960 && b[3] == 544);
+    TEST_CHECK_(vjo_vocr_suggest(&st, W, H) == 169, "%u", vjo_vocr_suggest(&st, W, H));
     st.columns = 1;
-    TEST_CHECK(!vjo_vocr_suggest(&st, W, H, b) && !b[0] && !b[1] && !b[2] && !b[3]);
+    TEST_CHECK(vjo_vocr_suggest(&st, W, H) == 0);
     st.columns = 0;
     st.recognized = 0;
-    b[2] = 9;
-    TEST_CHECK(!vjo_vocr_suggest(&st, W, H, b) && !b[2]);
+    TEST_CHECK(vjo_vocr_suggest(&st, W, H) == 0);
     /* recognized is never taken past the stats' lines */
     st.recognized = 40;
-    TEST_CHECK(vjo_vocr_suggest(&st, W, H, b) && b[1] == 375);
+    TEST_CHECK(vjo_vocr_suggest(&st, W, H) == 169);
+    /* lines without kana (a job's cached lines keep theirs: core/vocr_ocr.c line_stat): none */
+    st.recognized = 2;
+    st.line[0].kana = st.line[1].kana = 0;
+    TEST_CHECK(vjo_vocr_suggest(&st, W, H) == 0);
 }
 
 TEST_LIST = {
@@ -291,7 +304,7 @@ TEST_LIST = {
     {"the median height and the screen's edges", the_median_height_and_the_screen_edges},
     {"at most sixteen lines", at_most_sixteen_lines},
     {"every box is a region", every_box_is_a_region},
-    {"the box on the screen", the_box_on_the_screen},
+    {"the band's rows on the screen", the_bands_rows_on_the_screen},
     {"from a job's stats", from_a_jobs_stats},
     {NULL, NULL}
 };

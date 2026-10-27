@@ -42,10 +42,11 @@ typedef struct {
  * Lines outside the frame are not taken; at most VJO_SUGGEST_LINES of them, in the order given. */
 int vjo_region_suggest(const VjoSuggestLine *line, unsigned n, unsigned fb_w, unsigned fb_h, VjoRect *out);
 
-/* A normalized rect as the pixels the kernel reads for it (kernel/capture.c: the origin floored, the far edge
- * ceiled) on the 960 x 544 screen the overlay draws on: box x0, y0, x1, y1 (VjoGameOcrResult.suggest); all 0 for
- * w or h 0. */
-void vjo_region_screen(const VjoRect *r, uint16_t box[4]);
+/* A suggested box (vjo_region_suggest's: the frame's width, down to its bottom) as its rows on the 960 x 544 screen the
+ * overlay draws on: 544 less its top row there (the normalized top, floored), as VjoGameOcrResult.suggest_rows
+ * carries it; 0 for none (w or h 0). The kernel reads the band's rows of the region region.ini keeps for it
+ * (kernel/capture.c; the audit's round trip: exact at 960 x 544 and 480 x 272). */
+uint32_t vjo_region_rows(const VjoRect *r);
 
 /* vjo_suggest_kana: core/suggest_kana.h (core/vocr_ocr.c's header, without include/vjo_api.h). */
 

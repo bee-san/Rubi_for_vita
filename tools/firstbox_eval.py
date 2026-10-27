@@ -62,11 +62,12 @@ def area(b):
     return b[2] * b[3]
 
 
-def box_pixels(b):
-    """VjoGameOcrResult.suggest's x0, y0, x1, y1 on the 960 x 544 screen as x, y, w, h; None for none (x1 0)."""
-    if not b or not b[2]:
+def box_pixels(rows):
+    """VjoGameOcrResult.suggest_rows (the band's rows at the bottom of the 960 x 544 screen, its whole width) as x, y,
+    w, h; None for none (0)."""
+    if not rows:
         return None
-    return [b[0], b[1], b[2] - b[0], b[3] - b[1]]
+    return [0, H - rows, W, rows]
 
 
 def pages_of(pagepool, titles, exclude, per_title):
@@ -134,7 +135,7 @@ def read_title(binary, models, pages, pages_dir, tool_args):
     for (pid, _, _), r in zip(jobs, results):
         if r["id"] != pid:
             raise RuntimeError(f"{binary}: result {r['id']} for page {pid}")
-        out.append({"rc": r["rc"], "suggest": box_pixels(r.get("suggest")) if not r["rc"] else None,
+        out.append({"rc": r["rc"], "suggest": box_pixels(r.get("suggest_rows")) if not r["rc"] else None,
                     "lines": [{"box": ln["box"], "ja": bool(JA.search(ln["text"]))}
                               for ln in r.get("lines", []) if not ln.get("blank")]})
     return out

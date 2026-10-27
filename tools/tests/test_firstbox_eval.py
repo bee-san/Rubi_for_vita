@@ -61,8 +61,8 @@ class Pages(unittest.TestCase):
         self.assertEqual(t["base"], [94, 758, 1610, 112])  # the pool's base region, 2x
 
     def test_box_pixels(self):
-        self.assertEqual(fe.box_pixels([0, 374, 960, 544]), [0, 374, 960, 170])
-        self.assertIsNone(fe.box_pixels([0, 0, 0, 0]))
+        self.assertEqual(fe.box_pixels(170), [0, 374, 960, 170])
+        self.assertIsNone(fe.box_pixels(0))
         self.assertIsNone(fe.box_pixels(None))
 
 
@@ -124,7 +124,7 @@ class EndToEnd(unittest.TestCase):
                             "    pid, w, h, psp = head.split()\n"
                             "    src.read(int(w) * int(h) * 4)\n"
                             "    print(json.dumps({'id': pid.decode(), 'rc': 0, 'w': int(w), 'h': int(h),\n"
-                            "        'suggest': [0, 375, 960, 544], 'lines': [{'box': [118, 391, 722, 32],\n"
+                            "        'suggest_rows': 169, 'lines': [{'box': [118, 391, 722, 32],\n"
                             "        'blank': 0, 'text': 'あいうえお'}]}), flush=True)\n", encoding="utf-8")
             tool.chmod(tool.stat().st_mode | stat.S_IEXEC)
             out = tmp / "out.json"

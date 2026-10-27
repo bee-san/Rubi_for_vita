@@ -111,32 +111,21 @@ int vjo_region_suggest(const VjoSuggestLine *line, unsigned n, unsigned fb_w, un
     return 1;
 }
 
-void vjo_region_screen(const VjoRect *r, uint16_t box[4])
+uint32_t vjo_region_rows(const VjoRect *r)
 {
-    if (!r->w || !r->h) {
-        box[0] = box[1] = box[2] = box[3] = 0;
-        return;
-    }
-    box[0] = (uint16_t)((uint32_t)r->x * 960u >> 16);
-    box[1] = (uint16_t)((uint32_t)r->y * 544u >> 16);
-    box[2] = (uint16_t)((((uint32_t)r->x + r->w) * 960u + 65535u) >> 16);
-    box[3] = (uint16_t)((((uint32_t)r->y + r->h) * 544u + 65535u) >> 16);
+    return r->w && r->h ? 544u - ((uint32_t)r->y * 544u >> 16) : 0u;
 }
 
-int vjo_vocr_suggest(const VjoVocrStats *st, unsigned fb_w, unsigned fb_h, uint16_t box[4])
+uint32_t vjo_vocr_suggest(const VjoVocrStats *st, unsigned fb_w, unsigned fb_h)
 {
     VjoSuggestLine l[VJO_SUGGEST_LINES];
     VjoRect r;
     unsigned n = st->recognized < VJO_SUGGEST_LINES ? st->recognized : VJO_SUGGEST_LINES;
-    int ok = 0;
-    memset(&r, 0, sizeof(r));
-    if (!st->columns) {
-        for (unsigned i = 0; i < n; i++) {
-            const VjoVocrLineStat *ls = &st->line[i];
-            l[i] = (VjoSuggestLine){ls->x, ls->y, ls->width, ls->height, ls->kana};
-        }
-        ok = vjo_region_suggest(l, n, fb_w, fb_h, &r);
+    if (st->columns)
+        return 0;
+    for (unsigned i = 0; i < n; i++) {
+        const VjoVocrLineStat *ls = &st->line[i];
+        l[i] = (VjoSuggestLine){ls->x, ls->y, ls->width, ls->height, ls->kana};
     }
-    vjo_region_screen(&r, box);
-    return ok;
+    return vjo_region_suggest(l, n, fb_w, fb_h, &r) ? vjo_region_rows(&r) : 0u;
 }

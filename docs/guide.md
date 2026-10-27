@@ -452,23 +452,27 @@ not tested yet.
 
 A game with no box of its own (no line for it in `region.ini`, not even a full screen saved with Square held) is
 read on its whole screen, which reads the picture, the buttons and the menus as well as the dialogue. So the first
-time the overlay shows that game's text, Rubi offers a box: the region mode opens by itself with the box drawn
-around the screen's dialogue and asks **Use this box?** Enter takes it: it is saved as this game's region, as a box
-drawn with Square is, and the overlay reads it at once. The stick and the d-pad move its bottom right corner first
-(Enter then takes the box as it is); Cancel takes its corner back to draw your own, and Cancel again leaves the whole
-screen as it was. The question comes once each time the game starts or resumes, and never again once the game has a
-box (any box, or the full screen with Square held).
+time the overlay is open over that game's text, Rubi offers a box: the region mode opens by itself with the box drawn
+around the screen's dialogue and asks **Use this box?** Enter saves it as this game's region, as a box drawn with
+Square is: the overlay closes, and from the next L + R the game reads the box only. The stick and the d-pad move its
+bottom right corner first (Enter then saves the box as it is); Cancel takes its corner back to draw your own, and
+Cancel again leaves the region mode, the game still on its whole screen. The question comes once each time the game
+starts or resumes (not again after Cancel, nor after a box drawn with Square), and never once the game has a box
+(any box, or the full screen with Square held). A box drawn with Square asks **Use this box?** too.
 
 The box is the screen's width, from just above the dialogue's first line to the screen's bottom, so the longer and
 the extra lines of the screens after it fit too. The game worker finds the dialogue among the lines it read on the
 whole screen: the lines with Japanese in them at a dialogue line's height, grouped into blocks of lines that follow
-each other closely, the block with the most Japanese. On the hooked pages of 42 games, read on a computer, the box
-holds 96.6 % of the dialogue lines of the same game's later screens (the half of the games the rule was not chosen
-on) and reads a quarter of the whole screen's other lines; where no block looks like dialogue (a title screen, a
-menu), nothing is offered ([first-box.md](first-box.md): the rule, its measurement and its limits). The Rubi app's
-**Suggest a text box** OFF (OCR & lookup page) writes `region = full` in `region.ini`, the line for every game
-without its own, so that such a game reads its whole screen and is offered nothing; ON takes the line out. Not run
-on a console yet.
+each other closely, the block with the most Japanese, from the last screen read. On the hooked pages of 42 games,
+read on a computer, the box holds 96.6 % of the dialogue lines of the same game's later screens (the half of the
+games the rule was not chosen on) and reads a quarter of the whole screen's other lines. Where no block looks like
+dialogue (a logo, a picture), nothing is offered; a menu or a choice list of stacked items can be, a band from its
+first item down, so press Cancel there and wait for a screen of dialogue ([first-box.md](first-box.md): the rule, its
+measurement and its limits). The Rubi app's **Suggest a text box** OFF (OCR & lookup page) writes `region = full` in
+`region.ini`, the line for every game without its own, so that such a game reads its whole screen and is offered
+nothing; ON takes the line out. An install older than a box for each game may hold one box for every game
+(`region = x,y,w,h`): the app shows **Suggest a text box** OFF for it, and ON deletes that line. Not run on a console
+yet.
 
 ## Per-game settings
 

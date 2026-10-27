@@ -452,7 +452,7 @@ target_compile_options(vjo-platform-vita-tests PRIVATE -Wall -Wextra -Wno-unused
 add_test(NAME platform_vita COMMAND vjo-platform-vita-tests)
 set_tests_properties(platform_vita PROPERTIES TIMEOUT 60) # a read loop that never ends fails, not hangs
 
-add_executable(vjo-shell-worker-tests host/tests/test_shell_worker.c)
+add_executable(vjo-shell-worker-tests host/tests/test_shell_worker.c core/region_select.c) # #358: its box word
 target_include_directories(vjo-shell-worker-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-shell-worker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 find_package(Threads REQUIRED) # VjoNet's paint runs on a real thread with a known stack
@@ -466,7 +466,7 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-shell-worker-tests vjo_vocr)
 endif()
 add_test(NAME shell_worker COMMAND vjo-shell-worker-tests)
-add_executable(vjo-shell-worker-paf-tests host/tests/test_shell_worker.c)
+add_executable(vjo-shell-worker-paf-tests host/tests/test_shell_worker.c core/region_select.c)
 target_include_directories(vjo-shell-worker-paf-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-shell-worker-paf-tests PRIVATE VJO_PAF_ALLOC=1)
 target_compile_options(vjo-shell-worker-paf-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -905,7 +905,8 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-game-vocr-shared-tests vjo_vocr)
   add_test(NAME game_vocr_shared_tiers COMMAND vjo-game-vocr-shared-tests)
   # the Shell's tier names come from core/config.c, compiled in with the same map
-  add_executable(vjo-shell-worker-shared-tests host/tests/test_shell_worker.c core/config.c core/vocr_models.c)
+  add_executable(vjo-shell-worker-shared-tests host/tests/test_shell_worker.c core/config.c core/vocr_models.c
+    core/region_select.c)
   target_include_directories(vjo-shell-worker-shared-tests PRIVATE third_party/acutest/include host/tests/vita_stubs
     host/tests)
   target_compile_options(vjo-shell-worker-shared-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
