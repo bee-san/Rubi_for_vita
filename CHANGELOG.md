@@ -13,6 +13,17 @@ been reported.
 
 ### Added
 
+- **Duplicates at export** (#314, roadmap 4 stage A; [anki.md](docs/anki.md#duplicates)). Mining a word again from
+  another line made another card, and nothing said so. The export now finds a card **whose word an earlier card
+  has**, queued or exported before: the word is the record's dictionary form and reading (every inflection is one
+  word; katakana count as hiragana, `・` is left out). The Rubi app's new **Duplicates** row (Anki page) says what
+  it does: **Tag** (the default) gives the note Anki's own `duplicate` tag, so no card is lost and Anki's browser
+  finds them (`tag:duplicate`); **Skip** leaves the card in the queue, checked again at each export; **Keep**
+  exports every card as before. The page says **Export cards (12 queued, 3 already mined)**. The choice is in the
+  Rubi app's own settings file, `ux0:data/VitaJPOverlay/app.ini` (#381; the overlay never reads it), and each
+  card's word is cached in `anki_words.bin` (20 B a card) so that a count reads only new records. The overlay,
+  the game worker and the kernel are unchanged (the same module rows). Anki 26.09.3 imports the tag
+  (`test_apkg.py`). Not run on a console yet.
 - **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
   △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
   games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the

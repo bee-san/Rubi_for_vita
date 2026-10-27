@@ -60,14 +60,52 @@ typedef struct {
     int left;        /* over VJO_APKG_MAX_CARDS: the newest, left for the next export */
     int swept;       /* screenshots no card names, removed from the queue (#161) */
     int media;       /* screenshot files in it */
+    int duplicates;  /* #314: cards whose word an earlier card has: tagged duplicate (Tag) or left out (Skip) */
+    int unchecked;   /* #314: 1 when the duplicates could not be checked (memory): no card was tagged */
     uint32_t bytes;  /* its size */
     char path[VJO_EXPORT_PATH_MAX]; /* where it is */
     char name[64];   /* its file name */
 } VjoExportResult;
 
 /* Exports the queue (all: and the archive) into a new package, following the app's own settings (prefs, app.ini:
- * settings/app_prefs.h; NULL: the defaults); a one- or two-sentence result for the screen in msg. Returns r->rc. */
+ * settings/app_prefs.h; NULL: the defaults); a one- or two-sentence result for the screen in msg. Returns r->rc.
+ *
+ * Duplicates (#314, prefs->anki_duplicates): a card is a duplicate when an earlier card, queued or exported, has its
+ * word (core/word_key.h): earlier in the package's order, by the record's time, then its ID. Tag gives it Anki's
+ * `duplicate` tag; Skip leaves it out of the package (a queued one stays queued, and is checked again by the next
+ * export); Keep checks nothing, as before #314. */
 int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExportUi *ui, VjoExportResult *r,
                    char *msg, size_t cap);
+
+/* ---- the words of every card (#314) ---- */
+
+/* A card's word: its key (core/word_key.h), the first 64 bits of its ID (big-endian: its name's first 16 hex
+ * digits), and its record's time (VJO_APKG_NO_TIME for records without one), the package's order. */
+typedef struct {
+    uint64_t key, id;
+    uint32_t time;
+    uint32_t flags; /* VJO_WORD_QUEUED: in the queue (else only in the archive) */
+} VjoWord;
+#define VJO_WORD_QUEUED 1u
+
+typedef struct {
+    VjoWord *w;      /* every card's word, in the arena, sorted by key, then time and ID */
+    int n;
+    int queued;      /* the queue's cards with a word */
+    int duplicates;  /* queued cards whose word an earlier card has (the Anki page's "already mined") */
+    int read;        /* records read (the others' words came from the cache) */
+    int unreadable;  /* records that could not be read: no word (and not cached) */
+} VjoWords;
+
+/* The words of every card in the queue and the archive (into a), from the records, and from the cache of them that
+ * this keeps in ux0:data/VitaJPOverlay/anki_words.bin (written again when a word was read; a missing or damaged
+ * cache is rebuilt from the records). ui may be NULL (no progress, no stop). max_reads: at most this many records
+ * are read (0: every one), so that the Anki page can count on its own thread without waiting long; the words read
+ * are kept in the cache all the same. 0; 1 when more records than max_reads are not in the cache (out has no words);
+ * VJO_E_LOCAL_IO when a directory cannot be read; VJO_E_OOM (no room in a for every card's word); VJO_E_CANCELLED
+ * (ui->stopped). */
+int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords *out);
+/* 1 when an earlier card (by time, then ID) than this one (its word, time and ID) has its word. */
+int vjo_words_earlier(const VjoWords *w, uint64_t key, int64_t time, const uint8_t id[16]);
 
 #endif

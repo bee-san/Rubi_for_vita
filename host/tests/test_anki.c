@@ -9,6 +9,7 @@
 #include "acutest.h"
 #include "anki.h"
 #include "config.h"
+#include "word_key.h"
 
 static uint8_t g_mem[4u << 20];
 static VjoArena A;
@@ -443,7 +444,57 @@ static void test_anki_field_bytes_do_not_depend_on_the_arena(void)
     }
 }
 
+/* #314's word key (core/word_key.h): the SHA-256 of spelling TAB reading, folded, its first 64 bits. The vectors are
+ * Python's hashlib on the folded strings (hashlib.sha256("猫\tねこ".encode()).hexdigest()[:16]): the Rubi app, its
+ * Cards page and any later reader of the key must agree with them. */
+static void test_word_key(void)
+{
+    static const struct { const char *spelling, *reading, *hex; } vec[] = {
+        {"猫", "ねこ", "cd77b2639247e16b"},
+        {"食べる", "たべる", "e128a777deb3b1dd"},
+        {"コーヒー", "コーヒー", "007166c0dae67709"},       /* こーひー TAB こーひー: the long vowel mark as written */
+        {"ジョン・スミス", "ジョン・スミス", "9b4ec991ebd188fe"}, /* じょんすみす TAB じょんすみす */
+        {"ねこ", "", "4877fccd5a1e29f4"},                 /* no reading: the spelling's */
+        {"方", "かた", "9819f44e00a6aba5"},
+        {"方", "ほう", "afd1a4d8b1a2b7a7"},
+    };
+    char hex[VJO_WORD_KEY_HEX];
+    for (unsigned i = 0; i < sizeof(vec) / sizeof(vec[0]); i++) {
+        vjo_word_key_hex(vjo_word_key(vec[i].spelling, vec[i].reading), hex);
+        TEST_CHECK_(!strcmp(hex, vec[i].hex), "%s %s: %s, want %s", vec[i].spelling, vec[i].reading, hex, vec[i].hex);
+    }
+    /* katakana as hiragana, in either string; every inflection is the record's one dictionary form */
+    TEST_CHECK(vjo_word_key("猫", "ネコ") == vjo_word_key("猫", "ねこ"));
+    TEST_CHECK(vjo_word_key("ネコ", "ネコ") == vjo_word_key("ねこ", "ねこ"));
+    TEST_CHECK(vjo_word_key("ヴァイオリン", "ヴァイオリン") == vjo_word_key("ゔぁいおりん", "ゔぁいおりん"));
+    TEST_CHECK(vjo_word_key("ヽヾ", "ヽヾ") == vjo_word_key("ゝゞ", "ゝゞ"));
+    TEST_CHECK(vjo_word_key("ヷ", "ヷ") != vjo_word_key("わ", "わ")); /* ヷ-ヺ have no hiragana: as written */
+    /* the long vowel mark is not a vowel */
+    TEST_CHECK(vjo_word_key("コーヒー", "コーヒー") != vjo_word_key("コオヒイ", "コオヒイ"));
+    TEST_CHECK(vjo_word_key("コーヒー", "コーヒー") == vjo_word_key("こーひー", "こーひー"));
+    /* the middle dot, full or half width, in either string */
+    TEST_CHECK(vjo_word_key("ジョン・スミス", "じょん・すみす") == vjo_word_key("ジョンスミス", "じょんすみす"));
+    TEST_CHECK(vjo_word_key("ｼﾞｮﾝ", "じょん･すみす") == vjo_word_key("ｼﾞｮﾝ", "じょんすみす"));
+    /* a missing reading, or one of dots only, is the spelling's */
+    TEST_CHECK(vjo_word_key("ねこ", "") == vjo_word_key("ねこ", "ねこ"));
+    TEST_CHECK(vjo_word_key("ネコ", NULL) == vjo_word_key("ねこ", "ねこ"));
+    TEST_CHECK(vjo_word_key("ねこ", "・") == vjo_word_key("ねこ", "ねこ"));
+    /* other words stay apart: the reading, the spelling, where the TAB falls */
+    TEST_CHECK(vjo_word_key("見る", "みる") != vjo_word_key("観る", "みる"));
+    TEST_CHECK(vjo_word_key("方", "かた") != vjo_word_key("方", "ほう"));
+    TEST_CHECK(vjo_word_key("ab", "c") != vjo_word_key("a", "bc"));
+    TEST_CHECK(vjo_word_key("猫", "ねこ") != vjo_word_key("猫", "ねこ "));
+    /* bytes that are not UTF-8 as they are, a lone lead byte at the end too */
+    TEST_CHECK(vjo_word_key("\xE3\x82", "x") != vjo_word_key("", "x"));
+    TEST_CHECK(vjo_word_key("\xE3\x83\xBB", "x") == vjo_word_key("", "x")); /* ・ alone */
+    vjo_word_key_hex(0x0123456789abcdefull, hex);
+    TEST_CHECK(!strcmp(hex, "0123456789abcdef"));
+    vjo_word_key_hex(0, hex);
+    TEST_CHECK(!strcmp(hex, "0000000000000000"));
+}
+
 TEST_LIST = {
+    {"word_key", test_word_key},
     {"anki_sentence_and_furigana", test_anki_sentence_and_furigana},
     {"anki_glossaries", test_anki_glossaries},
     {"anki_pitch", test_anki_pitch},

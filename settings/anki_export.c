@@ -9,6 +9,7 @@
 
 #include "../core/anki_queue.h"
 #include "../core/errors.h"
+#include "../core/word_key.h"
 
 void vjo_log(const char *fmt, ...); /* the app's log.txt lines (settings/applog.c) */
 
@@ -215,6 +216,379 @@ static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *not
     return 0;
 }
 
+/* ---------------- the words of every card (#314) ---------------- */
+
+static int status_every(const VjoExportUi *ui, const char *what, int done, int total);
+static int present(const char *path);
+
+/* The cache: a 16-byte head (WORDS_MAGIC, the entries' count and their CRC-32, both big-endian), then each card's
+ * word, sorted by ID: its ID's first 8 bytes, its key (8 bytes) and its time (4), big-endian. A card's ID is its
+ * record's checksum, so an entry never goes stale: it is only dropped once its card is gone from both directories.
+ * The file is the app's alone (neither the Shell nor an export reads it otherwise), outside anki_queue/, and only
+ * ever a copy of what the records say: a damaged, short or unknown one is rebuilt from them. */
+#define WORDS_PATH VJO_EXPORT_DATA_DIR "/anki_words.bin"
+#define WORDS_TEMP WORDS_PATH ".tmp"
+#define WORDS_MAGIC "RubiWd1\n" /* 1: core/word_key.h's key; a new key would be a new magic */
+#define WORDS_HEAD 16
+#define WORDS_ENTRY 20
+#define WORDS_CHUNK 128 /* entries a read or write takes, on the stack (2,560 B) */
+#define WORD_SEEN 0x100u /* (the build's own: the card is in a directory now) */
+
+static uint64_t be_get(const uint8_t *p, int n)
+{
+    uint64_t v = 0;
+    for (int i = 0; i < n; i++)
+        v = v << 8 | p[i];
+    return v;
+}
+
+static void be_put(uint8_t *p, uint64_t v, int n)
+{
+    for (int i = n - 1; i >= 0; i--, v >>= 8)
+        p[i] = (uint8_t)v;
+}
+
+/* A record's time as a word's (and as the package orders it): VJO_APKG_NO_TIME without one; 32 bits, as the Shell
+ * writes it (a hand-made record's larger time is the largest). */
+static uint32_t word_time(int64_t t)
+{
+    return t <= 0 ? (uint32_t)VJO_APKG_NO_TIME : t > (int64_t)0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)t;
+}
+
+/* (key, time, ID) order; by_id: ID order alone */
+static int word_less(const VjoWord *x, const VjoWord *y, int by_id)
+{
+    if (by_id)
+        return x->id < y->id;
+    if (x->key != y->key)
+        return x->key < y->key;
+    return x->time != y->time ? x->time < y->time : x->id < y->id;
+}
+
+static void word_down(VjoWord *w, int n, int i, int by_id)
+{
+    for (;;) {
+        int k = 2 * i + 1;
+        VjoWord t;
+        if (k >= n)
+            return;
+        if (k + 1 < n && word_less(&w[k], &w[k + 1], by_id))
+            k++;
+        if (!word_less(&w[i], &w[k], by_id))
+            return;
+        t = w[i];
+        w[i] = w[k];
+        w[k] = t;
+        i = k;
+    }
+}
+
+/* heapsort: in place, for any number of cards */
+static void word_sort(VjoWord *w, int n, int by_id)
+{
+    for (int i = n / 2 - 1; i >= 0; i--)
+        word_down(w, n, i, by_id);
+    for (int end = n - 1; end > 0; end--) {
+        VjoWord t = w[0];
+        w[0] = w[end];
+        w[end] = t;
+        word_down(w, end, 0, by_id);
+    }
+}
+
+/* The next n bytes of fd into p, read again after a short read: 0, or -1. */
+static int read_all(SceUID fd, void *p, size_t n)
+{
+    size_t done = 0;
+    while (done < n) {
+        int k = sceIoRead(fd, (char *)p + done, (SceSize)(n - done));
+        if (k <= 0)
+            return -1;
+        done += (size_t)k;
+    }
+    return 0;
+}
+
+/* n bytes of p to fd, written again after a short write: 0, or -1 (logged). */
+static int write_all(SceUID fd, const void *p, size_t n)
+{
+    size_t done = 0;
+    while (done < n) {
+        int k = sceIoWrite(fd, (const char *)p + done, (SceSize)(n - done));
+        if (k <= 0)
+            return io_fail("write", WORDS_TEMP, k);
+        done += (size_t)k;
+    }
+    return 0;
+}
+
+/* Entries [at, at + m) of w in the file's form, into buf. */
+static void words_encode(const VjoWord *w, int at, int m, uint8_t *buf)
+{
+    for (int i = 0; i < m; i++) {
+        uint8_t *e = buf + i * WORDS_ENTRY;
+        be_put(e, w[at + i].id, 8);
+        be_put(e + 8, w[at + i].key, 8);
+        be_put(e + 16, w[at + i].time, 4);
+    }
+}
+
+/* The cache's entries into a, in ID order (each one's flags 0): their count; 0 for no cache (none, or one that is
+ * damaged or unknown: logged), with nothing left in a; -1 when its words do not fit in a (the records' would not
+ * either). */
+static int words_load(VjoArena *a, VjoWord **out)
+{
+    uint8_t head[WORDS_HEAD], buf[WORDS_CHUNK * WORDS_ENTRY];
+    size_t mark = vjo_arena_mark(a);
+    SceUID fd = sceIoOpen(WORDS_PATH, SCE_O_RDONLY, 0);
+    SceOff size;
+    uint32_t n = 0, crc = 0;
+    VjoWord *w = NULL;
+    const char *why = NULL;
+    *out = NULL;
+    if (fd < 0) {
+        if (fd != MISSING)
+            io_fail("open", WORDS_PATH, fd);
+        return 0;
+    }
+    size = sceIoLseek(fd, 0, SCE_SEEK_END);
+    if (size < WORDS_HEAD || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0 || read_all(fd, head, WORDS_HEAD) < 0 ||
+        memcmp(head, WORDS_MAGIC, 8))
+        why = "not a cache of this build's";
+    else if ((n = (uint32_t)be_get(head + 8, 4), (uint64_t)size != WORDS_HEAD + (uint64_t)n * WORDS_ENTRY))
+        why = "its size is not its count's";
+    else if (n && !(w = (VjoWord *)vjo_arena_alloc(a, sizeof(*w) * n))) {
+        vjo_log("anki export: %s: %u words, more than memory holds", WORDS_PATH, (unsigned)n);
+        sceIoClose(fd);
+        return -1;
+    }
+    for (uint32_t done = 0; !why && done < n;) {
+        uint32_t k = n - done < WORDS_CHUNK ? n - done : WORDS_CHUNK;
+        if (read_all(fd, buf, (size_t)k * WORDS_ENTRY) < 0) {
+            why = "a read failed";
+            break;
+        }
+        crc = vjo_crc32(crc, buf, (size_t)k * WORDS_ENTRY);
+        for (uint32_t i = 0; i < k; i++, done++) {
+            const uint8_t *e = buf + i * WORDS_ENTRY;
+            w[done].id = be_get(e, 8);
+            w[done].key = be_get(e + 8, 8);
+            w[done].time = (uint32_t)be_get(e + 16, 4);
+            w[done].flags = 0;
+            if (done && w[done].id <= w[done - 1].id) {
+                why = "not in order";
+                break;
+            }
+        }
+    }
+    sceIoClose(fd);
+    if (!why && crc != (uint32_t)be_get(head + 12, 4))
+        why = "its checksum does not match";
+    if (why) {
+        vjo_log("anki export: %s ignored (%s): the words are read from the cards", WORDS_PATH, why);
+        vjo_arena_release(a, mark);
+        return 0;
+    }
+    *out = w;
+    return (int)n;
+}
+
+/* Writes the cache (w: n words in ID order) under its temporary name, then in its place. A failure is logged and
+ * harmless: the next build reads the records again. */
+static void words_save(const VjoWord *w, int n)
+{
+    uint8_t head[WORDS_HEAD], buf[WORDS_CHUNK * WORDS_ENTRY];
+    uint32_t crc = 0;
+    int rc = 0, k;
+    SceUID fd;
+    for (int done = 0; done < n; done += WORDS_CHUNK) { /* the entries' CRC first: the head is written ahead of them */
+        int m = n - done < WORDS_CHUNK ? n - done : WORDS_CHUNK;
+        words_encode(w, done, m, buf);
+        crc = vjo_crc32(crc, buf, (size_t)m * WORDS_ENTRY);
+    }
+    memcpy(head, WORDS_MAGIC, 8);
+    be_put(head + 8, (uint32_t)n, 4);
+    be_put(head + 12, crc, 4);
+    sceIoMkdir(VJO_EXPORT_DATA_DIR, 0777);
+    if ((fd = sceIoOpen(WORDS_TEMP, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0) {
+        io_fail("open", WORDS_TEMP, fd);
+        return;
+    }
+    rc = write_all(fd, head, WORDS_HEAD);
+    for (int done = 0; !rc && done < n; done += WORDS_CHUNK) {
+        int m = n - done < WORDS_CHUNK ? n - done : WORDS_CHUNK;
+        words_encode(w, done, m, buf);
+        rc = write_all(fd, buf, (size_t)m * WORDS_ENTRY);
+    }
+    if ((k = sceIoClose(fd)) < 0 && !rc)
+        rc = io_fail("close", WORDS_TEMP, k);
+    /* never renamed over a file: the old cache goes first (a stop between the two leaves none: rebuilt) */
+    if (!rc && present(WORDS_PATH) == 1 && (k = sceIoRemove(WORDS_PATH)) < 0)
+        rc = io_fail("remove", WORDS_PATH, k);
+    if (!rc && (k = sceIoRename(WORDS_TEMP, WORDS_PATH)) < 0)
+        rc = io_fail("rename", WORDS_TEMP, k);
+    if (rc)
+        sceIoRemove(WORDS_TEMP);
+}
+
+typedef struct {
+    VjoArena *a;
+    VjoWord *c, *w; /* the cache's (in ID order); every word (the cache's, then the new ones after them) */
+    int nc, n;
+    int queue;      /* the directory scanned is the queue */
+    int seen, total, read, unreadable, oom;
+    int max_reads, more; /* more: a record to read past max_reads (the scan stopped there) */
+    const VjoExportUi *ui;
+} Words;
+
+/* The cache's entry of this ID, or -1. */
+static int cached(const Words *b, uint64_t id)
+{
+    int lo = 0, hi = b->nc - 1;
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (b->c[mid].id == id)
+            return mid;
+        if (b->c[mid].id < id)
+            lo = mid + 1;
+        else
+            hi = mid - 1;
+    }
+    return -1;
+}
+
+static int word_of(void *ud, const char *hex)
+{
+    Words *b = (Words *)ud;
+    uint32_t flags = WORD_SEEN | (b->queue ? VJO_WORD_QUEUED : 0u);
+    uint8_t id[16];
+    VjoAnkiNote note;
+    VjoWord *slot;
+    size_t before = vjo_arena_mark(b->a), mark;
+    int i, picture;
+    if (b->ui && status_every(b->ui, "Checking for words mined before", ++b->seen, b->total) < 0)
+        return -1;
+    from_hex(hex, id);
+    if ((i = cached(b, be_get(id, 8))) >= 0) {
+        b->c[i].flags |= flags;
+        return 0;
+    }
+    if (b->max_reads && b->read + b->unreadable >= b->max_reads) {
+        b->more = 1;
+        return -1;
+    }
+    /* a word to read: its place after the others' (the record's work above it is released after it) */
+    if (!(slot = (VjoWord *)vjo_arena_alloc(b->a, sizeof(*slot))) || (b->n && slot != b->w + b->n)) {
+        b->oom = 1;
+        return -1;
+    }
+    if (!b->n)
+        b->w = slot;
+    mark = vjo_arena_mark(b->a);
+    if (read_card(b->a, !b->queue, hex, &note, &picture) < 0) {
+        b->unreadable++;
+        vjo_arena_release(b->a, before); /* its place too */
+        return 0;
+    }
+    slot->key = vjo_word_key(note.spelling, note.reading);
+    slot->id = be_get(id, 8);
+    slot->time = word_time(note.unix_time);
+    slot->flags = flags;
+    vjo_arena_release(b->a, mark);
+    b->n++;
+    b->read++;
+    return 0;
+}
+
+int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords *out)
+{
+    Words b;
+    int queued, archived, rc = 0, n, dropped = 0;
+    size_t base = vjo_arena_mark(a);
+    memset(out, 0, sizeof(*out));
+    memset(&b, 0, sizeof(b));
+    queued = scan(VJO_EXPORT_QUEUE_DIR, NULL, NULL);
+    archived = scan(VJO_EXPORT_ARCHIVE_DIR, NULL, NULL);
+    if (queued < 0 || archived < 0)
+        return VJO_E_LOCAL_IO;
+    b.a = a;
+    b.ui = ui;
+    b.max_reads = max_reads;
+    b.total = queued + archived;
+    if ((b.nc = words_load(a, &b.c)) < 0)
+        return VJO_E_OOM;
+    b.w = b.c;
+    b.n = b.nc;
+    b.queue = 1;
+    /* (a scan that word_of stops returns its count: b says why) */
+    if (scan(VJO_EXPORT_QUEUE_DIR, word_of, &b) < 0)
+        rc = VJO_E_LOCAL_IO;
+    b.queue = 0;
+    if (!rc && !b.oom && !b.more && scan(VJO_EXPORT_ARCHIVE_DIR, word_of, &b) < 0)
+        rc = VJO_E_LOCAL_IO;
+    if (b.oom)
+        rc = VJO_E_OOM;
+    else if (ui && ui->stopped && ui->stopped(ui->ud))
+        rc = VJO_E_CANCELLED;
+    else if (!rc && b.more)
+        rc = 1;
+    if (!b.w)
+        b.n = 0;
+    /* one word per card (a card in both directories, an export stopped between its moves, was read twice) and, once
+     * both directories were read whole, none of a card that is gone; the cache then has what was read */
+    word_sort(b.w, b.n, 1);
+    n = 0;
+    for (int i = 0; i < b.n; i++) {
+        if (n && b.w[n - 1].id == b.w[i].id) {
+            b.w[n - 1].flags |= b.w[i].flags;
+            dropped++;
+            continue;
+        }
+        if (!rc && !(b.w[i].flags & WORD_SEEN)) {
+            dropped++;
+            continue;
+        }
+        b.w[n++] = b.w[i];
+    }
+    if ((b.read || dropped) && rc != VJO_E_OOM && rc != VJO_E_LOCAL_IO)
+        words_save(b.w, n); /* (a stop keeps every word it had and every word it read) */
+    if (rc) {
+        vjo_arena_release(a, base);
+        return rc;
+    }
+    /* the words in (key, time, ID) order: the first of a key's run is its earliest card */
+    word_sort(b.w, n, 0);
+    for (int i = 0; i < n; i++) {
+        b.w[i].flags &= VJO_WORD_QUEUED;
+        out->queued += !!(b.w[i].flags & VJO_WORD_QUEUED);
+        out->duplicates += i && b.w[i].key == b.w[i - 1].key && (b.w[i].flags & VJO_WORD_QUEUED);
+    }
+    out->w = b.w;
+    out->n = n;
+    out->read = b.read;
+    out->unreadable = b.unreadable;
+    vjo_log("anki export: words of %d cards, %d read, %d unreadable; %d queued, %d already mined", n, b.read,
+            b.unreadable, out->queued, out->duplicates);
+    return 0;
+}
+
+int vjo_words_earlier(const VjoWords *w, uint64_t key, int64_t time, const uint8_t id[16])
+{
+    int lo = 0, hi = w->n;
+    uint64_t me = be_get(id, 8);
+    uint32_t t = word_time(time);
+    while (lo < hi) { /* the first word of this key */
+        int mid = lo + (hi - lo) / 2;
+        if (w->w[mid].key < key)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    if (lo >= w->n || w->w[lo].key != key)
+        return 0;
+    return w->w[lo].time != t ? w->w[lo].time < t : w->w[lo].id < me;
+}
+
 /* ---------------- the list of cards ---------------- */
 
 typedef struct {
@@ -223,7 +597,13 @@ typedef struct {
     int n, cap, archive, seen, total;
     int unreadable, left;
     const VjoExportUi *ui;
+    const VjoWords *words; /* #314: every card's word (NULL: Duplicates Keep, or not checked) */
+    int skip;              /* Duplicates Skip: a duplicate is left out */
+    int skipped_queued, skipped_archived; /* duplicates left out: in the queue (they stay), in the archive */
 } List;
+
+/* VjoApkgCard.flags: its note's tags (export_tags) */
+#define CARD_DUPLICATE 1u
 
 static int newer(const VjoApkgCard *x, const VjoApkgCard *y)
 {
@@ -276,6 +656,20 @@ static int list_card(void *ud, const char *hex)
         vjo_arena_release(l->a, mark);
         return 0;
     }
+    from_hex(hex, c.id);
+    c.time = note.unix_time > 0 ? note.unix_time : VJO_APKG_NO_TIME;
+    /* #314: a word an earlier card has: Anki's duplicate tag, or (Skip) not in this package */
+    if (l->words && vjo_words_earlier(l->words, vjo_word_key(note.spelling, note.reading), c.time, c.id)) {
+        if (l->skip) {
+            if (l->archive)
+                l->skipped_archived++;
+            else
+                l->skipped_queued++;
+            vjo_arena_release(l->a, mark);
+            return 0;
+        }
+        c.flags |= CARD_DUPLICATE;
+    }
     if (picture) {
         size_t len;
         int unavailable;
@@ -290,8 +684,6 @@ static int list_card(void *ud, const char *hex)
         }
     }
     vjo_arena_release(l->a, mark);
-    from_hex(hex, c.id);
-    c.time = note.unix_time > 0 ? note.unix_time : VJO_APKG_NO_TIME;
     c.exported = (uint8_t)l->archive;
     c.picture = (uint8_t)!!picture;
     if (l->n < l->cap) {
@@ -398,6 +790,16 @@ static int out_stopped(void *ud)
 {
     const Out *o = (const Out *)ud;
     return o->ui->stopped && o->ui->stopped(o->ui->ud);
+}
+
+/* A note's tags besides vita-jp-overlay (VjoApkgOps.tags): Anki's own `duplicate` (#314: the tag its browser's Find
+ * Duplicates gives) for a card whose word an earlier card has. */
+static const char *export_tags(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note)
+{
+    (void)ud;
+    (void)a;
+    (void)note;
+    return c->flags & CARD_DUPLICATE ? "duplicate" : NULL;
 }
 
 /* ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>[-all]-<N>cards[-k].apkg: a
@@ -605,16 +1007,16 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
     VjoApkgResult pr;
     VjoApkgClock clock;
     VjoAppPrefs defaults;
+    VjoWords words;
     SceDateTime t;
     SceRtcTick tick;
     char tmp[VJO_EXPORT_PATH_MAX + 4];
     int rc, queued, archived = 0, made = 0;
-    size_t base = vjo_arena_mark(a);
+    size_t base = vjo_arena_mark(a), listed;
     if (!prefs) {
         vjo_app_prefs_defaults(&defaults);
         prefs = &defaults;
     }
-    (void)prefs; /* the settings the export follows (#311, #314) read it */
     memset(r, 0, sizeof(*r));
     memset(&l, 0, sizeof(l));
     msg[0] = '\0';
@@ -641,11 +1043,42 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
         snprintf(msg, cap, "Not enough memory for %d cards. Nothing was changed.", l.total);
         return r->rc = VJO_E_OOM;
     }
+    listed = vjo_arena_mark(a);
+    /* #314: every card's word, above the list (released once the list is made: its cards keep their tags) */
+    if (prefs->anki_duplicates != VJO_DUPLICATES_KEEP) {
+        rc = vjo_export_words(a, ui, 0, &words);
+        if (rc == VJO_E_CANCELLED) {
+            snprintf(msg, cap, "Stopped. Nothing was changed.");
+            vjo_arena_release(a, base);
+            return r->rc = rc;
+        }
+        if (rc == VJO_E_OOM && prefs->anki_duplicates == VJO_DUPLICATES_SKIP) {
+            snprintf(msg, cap, "Not enough memory to check every card for duplicates. Nothing was changed; with "
+                               "Duplicates: Keep the cards export unchecked.");
+            vjo_arena_release(a, base);
+            return r->rc = rc;
+        }
+        if (rc && rc != VJO_E_OOM) {
+            snprintf(msg, cap, "Cannot read the queue (see log.txt). Nothing was changed.");
+            vjo_arena_release(a, base);
+            return r->rc = rc;
+        }
+        if (rc) { /* Tag: the cards export without it, and the result says so */
+            vjo_log("anki export: not enough memory for every card's word: no duplicate tags");
+            vjo_arena_release(a, listed);
+            r->unchecked = 1;
+        } else {
+            l.words = &words;
+        }
+    }
+    l.skip = prefs->anki_duplicates == VJO_DUPLICATES_SKIP;
     rc = scan(VJO_EXPORT_QUEUE_DIR, list_card, &l);
     if (rc >= 0 && all) {
         l.archive = 1;
         rc = scan(VJO_EXPORT_ARCHIVE_DIR, list_card, &l);
     }
+    vjo_arena_release(a, listed); /* the words */
+    l.words = NULL;
     if (ui->stopped && ui->stopped(ui->ud)) {
         snprintf(msg, cap, "Stopped. Nothing was changed.");
         vjo_arena_release(a, base);
@@ -653,6 +1086,7 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
     }
     r->unreadable = l.unreadable;
     r->left = l.left;
+    r->duplicates = l.skipped_queued + l.skipped_archived;
     if (rc < 0) {
         snprintf(msg, cap, "Cannot read the queue (see log.txt). Nothing was changed.");
         vjo_arena_release(a, base);
@@ -660,6 +1094,13 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
     }
     vjo_apkg_sort(l.cards, l.n);
     l.n = dedupe(l.cards, l.n);
+    if (!l.n && !l.unreadable && l.skipped_queued) { /* (Skip) every queued card's word was mined before */
+        snprintf(msg, cap, "No new cards: the %d queued %s already mined, and stay%s queued (Duplicates: Skip).",
+                 l.skipped_queued, l.skipped_queued == 1 ? "is a word" : "are words",
+                 l.skipped_queued == 1 ? "s" : "");
+        vjo_arena_release(a, base);
+        return r->rc = VJO_OK;
+    }
     if (!l.n) {
         snprintf(msg, cap, "%d card%s could not be read (see log.txt); they stay queued.", l.unreadable,
                  l.unreadable == 1 ? "" : "s");
@@ -699,6 +1140,7 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
     ops.read = out_read;
     ops.progress = progress;
     ops.stopped = out_stopped;
+    ops.tags = export_tags;
     rc = vjo_apkg_write(a, &ops, l.cards, l.n, &clock, &pr);
     if (!rc) {
         int k = sceIoSyncByFd(o.fd, 0);
@@ -770,6 +1212,7 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
                 r->too_large++;
             else {
                 r->missing_picture += l.cards[i].missing_picture;
+                r->duplicates += !!(l.cards[i].flags & CARD_DUPLICATE); /* tagged */
                 if (!l.cards[i].exported)
                     to_move++;
             }
@@ -801,8 +1244,23 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
         vjo_log("anki export: the final sync failed; the queue is checked again on the next export");
     vjo_arena_release(a, base);
     {
-        char size[24], extra[224] = "";
+        char size[24], extra[320] = "";
         size_text(r->bytes, size, sizeof(size));
+        /* #314 first: what Duplicates did */
+        if (l.skipped_queued)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
+                     " %d already mined stay%s queued (Duplicates: Skip).", l.skipped_queued,
+                     l.skipped_queued == 1 ? "s" : "");
+        if (l.skipped_archived)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
+                     " %d already mined %s not in it (Duplicates: Skip).", l.skipped_archived,
+                     l.skipped_archived == 1 ? "is" : "are");
+        if (!l.skip && r->duplicates)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d tagged duplicate (mined before).",
+                     r->duplicates);
+        if (r->unchecked)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
+                     " Not checked for duplicates: too many cards for memory.");
         if (r->stopped)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
                      " Stopped while clearing: %d stay queued, for the next export too.", r->stopped);

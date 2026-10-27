@@ -181,7 +181,7 @@ build shell_divide host/tests/test_shell_divide.c
 # picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.
 BS=third_party/bearssl/src
 APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c core/textjoin.c core/anki_queue.c core/json.c
-      core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
+      core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c core/word_key.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 # The native hooks (core/hook_text.c, hook_re.c, hook_luna.c): the decoders, the regex VM's 16-bit

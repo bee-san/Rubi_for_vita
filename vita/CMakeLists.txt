@@ -415,7 +415,8 @@ include(${ROOT}/cmake/SettingsPNG.cmake)
 set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
-  ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
+  ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
+  ${ROOT}/core/word_key.c)
 # The Stats tab (settings/stats_page.c, #312): history.csv counted with the Triangle view's own reading-time rule
 # (core/history_lines.c's vjo_reading_time_add, the Shell's; of it the link keeps what the tab calls), per game and
 # per day (core/stats.c) and the record reader (core/history_read.c); the goal is app.ini's (settings/app_prefs.c).

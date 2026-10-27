@@ -169,6 +169,7 @@ class TestPackages(unittest.TestCase):
 
     def test_notes_and_cards(self):
         nt = self.expected["notetype_id"]
+        duplicates = {guid_of(i) for i in self.expected["duplicates"]}
         for name, p in self.pkg.items():
             notes = p.notes()
             cards = p.db.execute("select id, nid, did, ord, type, queue, due from cards order by id").fetchall()
@@ -178,7 +179,9 @@ class TestPackages(unittest.TestCase):
                 fields = flds.split("\x1f")
                 self.assertEqual(len(fields), 22)
                 self.assertEqual(mid, nt)
-                self.assertEqual(tags, " vita-jp-overlay ")
+                # every tag between spaces; #314's duplicate tag on a card whose word an earlier card has
+                self.assertEqual(tags, " vita-jp-overlay duplicate " if guid in duplicates else " vita-jp-overlay ",
+                                 (name, guid))
                 self.assertEqual(sfld, strip_html(fields[0]))
                 self.assertEqual(csum, anki_checksum(strip_html(fields[0])))
                 self.assertGreater(nid, 1_600_000_000_000)
@@ -193,6 +196,17 @@ class TestPackages(unittest.TestCase):
             self.assertEqual(ids, sorted(ids))
             self.assertEqual([c[6] for c in cards], list(range(1, len(cards) + 1)))  # due: their order
         self.assertEqual(len(self.pkg["many"].notes()), self.expected["many"])
+
+    def test_duplicates_are_tagged(self):
+        """#314: Duplicates (Tag, the default): the version 3 猫 after the version 1 one (no time: earlier), and 犬
+        from another line in the second package after the first's; in the cumulative package, the same two."""
+        def tagged(p):
+            return {n[1] for n in p.notes() if "duplicate" in n[5].split()}
+        dup = [guid_of(i) for i in self.expected["duplicates"]]
+        self.assertEqual(tagged(self.pkg["first"]), {dup[0]})
+        self.assertEqual(tagged(self.pkg["second"]), {dup[1]})
+        self.assertEqual(tagged(self.pkg["all"]), set(dup))
+        self.assertEqual(tagged(self.pkg["many"]), set())
 
     def test_guids_come_from_the_queue_ids(self):
         first = {n[1] for n in self.pkg["first"].notes()}
@@ -264,6 +278,9 @@ if m:
     shutil.copyfile(os.path.join(col.media.dir(), m.group(1)), out / "imported.jpg")
 check = col.media.check()
 r["media_missing"] = list(check.missing); r["media_unused"] = list(check.unused)
+# #314: Anki's own tags of the notes: the duplicate one has Anki's duplicate tag beside vita-jp-overlay
+r["dup_tags"] = [sorted(col.get_note(n).tags) for n in col.find_notes("tag:duplicate")]
+r["plain_tags"] = sorted({tuple(sorted(col.get_note(n).tags)) for n in col.find_notes("-tag:duplicate")})
 r["again_new"] = len(imp(col, "first").new)   # the same package again
 # the user edits a note and its card is in review (10 days); importing the same card again changes neither
 edited = col.get_note(col.find_notes('"Expression:猫" "MiscInfo:_*"')[0])
@@ -346,6 +363,11 @@ class TestAnkiImport(unittest.TestCase):
         self.assertTrue(r["deck"])
         self.assertEqual(len([f for f in r["media"] if f.startswith("vitajp_")]), 1)
         self.assertEqual(r["media_after_all"], [f for f in r["media"] if f.startswith("vitajp_")])
+
+    def test_the_duplicate_tag_in_anki(self):
+        """#314: Anki's import keeps both tags of the duplicate note, and only vita-jp-overlay on the others."""
+        self.assertEqual(self.r["dup_tags"], [["duplicate", "vita-jp-overlay"]])
+        self.assertEqual(self.r["plain_tags"], [["vita-jp-overlay"]])
 
     def test_rendered_card(self):
         self.assertIn("猫", self.r["question"])
