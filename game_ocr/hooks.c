@@ -547,7 +547,7 @@ static void start(const char *title_id, unsigned word, int psp)
         return;
     }
     if (!title_id || !title_id[0]) {
-        DLOG("nothing: no title ID\n");
+        DLOG("nothing: %s\n", "no title ID"); /* main's format (tools/hook_request.py reads it) */
         return;
     }
     if (main_module(&tai, &mi) < 0) {
