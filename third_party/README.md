@@ -28,7 +28,7 @@ Vendored sources:
            (native hooks, docs/hook-titles.md). vita3k_1.cpp, vita3k.cpp, ppsspp_1.cpp,
            stringfilters.cpp and LICENSE, unchanged, none compiled; their SHA-256 are in
            LunaTranslator/README.md and checked by the generator
-- yomichan https://github.com/FooSoft/yomichan 2f13cf5d2ad33a627152457a3f120deb76739f60 (GPL-3.0):
+- yomichan https://github.com/FooSoft/yomichan 2f13cf5d2ad33a627152457a3f120deb76739f60 (GPL-3.0-or-later):
            its deinflection rules, ext/data/deinflect.json, the same JSON reformatted one key a line
            (yomichan/README.md)
 - yomitan  https://github.com/yomidevs/yomitan e7334a96106a6c74e6fa75bd33a5ea1219d92712, release
@@ -65,19 +65,22 @@ replaces its global-allocation source with placement operators only, and
 replaces shape-expression evaluation with a rejecting implementation; it
 does not modify the checked-out upstream sources.
 
-Optional vita-vn-ocr backend (`-DVJO_WITH_VOCR=ON`, not vendored):
+Optional vita-vn-ocr backend (`-DVJO_WITH_VOCR=ON`, the default; not vendored):
 
-- Runtime: https://github.com/bee-san/vita-vn-ocr at
-  `72cf4af0905091a0ee329d336889ccf0a8cd38c8`, `runtime/vocr.c`, `vocr.h`,
-  `vocr_lines.c` and `vocr_lines.h` (GPL-3.0-or-later). The build takes them from
-  `VJO_VOCR_SOURCE_DIR` and checks their SHA-256 (`cmake/VocrOCR.cmake`).
-- Weights: the int8 `.vocr` assets of that repository's release v0.2.0
-  (GPL-3.0-or-later), downloaded by `tools/prepare_ocr.py --backend vocr` and
-  checked by size and SHA-256, never committed. Their pretraining used line
-  crops from NVIDIA OCR-Synthetic-Multilingual-v1 (Japanese subset, revision
-  `69696a1cc543ef3a0f8e9892a89c17293e915263`), © NVIDIA Corporation, licensed
-  under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); the release
-  notes carry the full attribution.
+- Runtime: https://github.com/bee-san/vita-vn-ocr at the commit `cmake/VocrOCR.cmake` pins
+  (`VJO_VOCR_COMMIT`), its `runtime/` files listed there (GPL-3.0-or-later, used in Rubi under
+  version 3). The build takes them from `VJO_VOCR_SOURCE_DIR` and checks each one's SHA-256.
+- Weights: the int8 `.vocr` recognizers `tools/prepare_ocr.py` pins, downloaded from that
+  repository's releases and checked by size and SHA-256, never committed. They are data, not
+  Rubi's code, and are not under the GPL: the release's `ATTRIBUTION.md`, which the package
+  ships beside them as `ocr/MODEL-ATTRIBUTION.md`, names what they were trained on and says to use
+  them for non-commercial purposes only (`docs/vita-vn-ocr.md`, "Models"). The text-presence
+  gate's (`ocr/GATE-ATTRIBUTION.md`) and the vertical model's (`ocr/VERTICAL-ATTRIBUTION.md`)
+  terms are the same. Their pretraining used line crops from NVIDIA OCR-Synthetic-Multilingual-v1
+  (Japanese subset, revision `69696a1cc543ef3a0f8e9892a89c17293e915263`), © NVIDIA Corporation,
+  licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). The character language
+  models are CC BY-SA 4.0 (`ocr/LM-ATTRIBUTION.md`). The v0.2.0 weights, which the host tools still
+  accept, were released under GPL-3.0-or-later.
 
 The Meiki single-line trial (MeikiOCR, its LGPL-3.0 converted model and MNN)
 was removed after v0.7.12; this tree no longer builds or ships it. Its pinned

@@ -363,8 +363,8 @@ program and helped debug issues, while I simply vibe coded what she suggested. T
 not be possible without her. She also made the app a system app, so it opens beside a suspended
 game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
-- Based on [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay).
-- **OCR:** VOCR, from [bee-san/vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr) (GPL-3.0). Its
+- Based on [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay) (GPL-3.0).
+- **OCR:** VOCR, from [bee-san/vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr) (GPL-3.0-or-later). Its
   VOCR5 recognizers, the three model sizes (with their head gates and two-level heads, v0.3.6-head2level.1), were trained in part on NVIDIA's
   OCR-Synthetic-Multilingual-v1 (CC BY 4.0) and on fonts and text that are free for non-commercial
   use only, so their weights are for non-commercial use only: their attribution and terms ship
@@ -386,9 +386,9 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   release v12.1.2.12 (commit 51884b6), whose source files Rubi keeps in
   [third_party/LunaTranslator/](third_party/LunaTranslator/README.md)
   ([the games](docs/hook-titles.md)).
-- **Lookups:** [Yomichan](https://github.com/FooSoft/yomichan)'s deinflection rules (GPL-3.0), with
-  [Yomitan](https://github.com/yomidevs/yomitan)'s for spoken forms (しておく, 変わらん, 戻らなきゃ;
-  GPL-3.0-or-later), pinned in [third_party/](third_party/README.md). The dictionary's key filter is modelled on the Bloom
+- **Lookups:** [Yomichan](https://github.com/FooSoft/yomichan)'s deinflection rules, with
+  [Yomitan](https://github.com/yomidevs/yomitan)'s for spoken forms (しておく, 変わらん, 戻らなきゃ), both
+  GPL-3.0-or-later, pinned in [third_party/](third_party/README.md). The dictionary's key filter is modelled on the Bloom
   filter of [hoshidicts](https://github.com/Manhhao/hoshidicts), Manhhao's dictionary library, which
   bee-san's [Hachidori](https://github.com/bee-san/hachidori) app is built on; Rubi has no code of
   either.
@@ -415,8 +415,11 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
 ## License
 
-Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights and the text-presence gate's
+Rubi is free software under the GNU General Public License, version 3 (GPL-3.0, [LICENSE](LICENSE)). It is a fork of
+Dartv/vita-jp-overlay and contains code from LunaTranslator and Lapis, all three GPL-3.0 without "or any later
+version", so Rubi as a whole is GPL version 3. Its GPL-3.0-or-later parts (Yomichan's and Yomitan's rules,
+vita-vn-ocr's runtime, the Adrenaline bridge in `compat/`) are used under version 3, and the other third-party code
+keeps its own licence ([third_party/](third_party/README.md)). The OCR's recognizer weights and the text-presence gate's
 are data files Rubi reads, not part of its code, and are for non-commercial use only
-(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, [details](docs/vita-vn-ocr.md#models)). The dictionary data,
-the language models and the third-party code keep their own licences
-([attribution](docs/plaintext-attribution.txt), [third_party/](third_party/README.md)).
+(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, [details](docs/vita-vn-ocr.md#models)). The dictionary data
+and the language models keep their own licences ([attribution](docs/plaintext-attribution.txt)).

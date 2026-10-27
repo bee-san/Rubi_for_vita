@@ -1520,7 +1520,8 @@ The times are vita-vn-ocr's estimates from the Vita compiler's machine code
 (`vita/a9_cycles.py`), not console measurements. The runtime itself reproduces
 the PC bit for bit in Vita3K. Pretraining used NVIDIA
 OCR-Synthetic-Multilingual-v1 (CC BY 4.0); see the release notes for the full
-attribution. The weights are GPL-3.0-or-later, like this overlay.
+attribution. The v0.2.0 weights are GPL-3.0-or-later (the overlay as a whole is GPL version 3: the
+README's License section); VOCR5's are for non-commercial use only ([Models](#models)).
 
 ## Build
 

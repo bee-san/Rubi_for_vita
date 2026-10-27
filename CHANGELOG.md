@@ -13,6 +13,14 @@ been reported.
 
 ### Changed
 
+- Licence (no change to the app or the plugins; #332): `LICENSE` is the GNU GPL version 3 again, the file the fork
+  started with (`1cfddba`, byte for byte gnu.org's `gpl-3.0.txt`), as the README, its badge and `third_party/` have
+  always said. From 2026-10-26 (`bd130a8`, "Update LICENSE") it held the EUPL 1.2, and 0.9.7's and 0.9.8's zips and
+  VPKs carry that file; Rubi is a fork of Dartv/vita-jp-overlay and contains LunaTranslator's and Lapis's code, all
+  three GPL-3.0 without "or any later version", so the whole is GPL version 3 (the README's License section;
+  [the audit](reports/licence-audit.md), which is not legal advice).
+  Yomichan's rules and vita-vn-ocr's runtime are now listed as GPL-3.0-or-later, as their own notices say, and
+  `third_party/README.md` gives the current OCR weights' terms (non-commercial use only) where it gave v0.2.0's.
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
   tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a
