@@ -101,6 +101,26 @@ been reported.
 
 ### Fixed
 
+- Lookups: what the Yomitan check left (#321; [the report](reports/yomitan-check.md#321-what-remained)). Measured on
+  its 64,579 taps of 5,000 hooked lines: 754 shown entries change, SudachiPy calls 662 better and none worse; on
+  330,517 taps of 27,970 lines of the same games, 3,967 change, 3,499 better and 3 worse. Host only: not run on a
+  console.
+  - **A particle before a katakana word** is the particle: のマンション showed 飲む (`-ん`), にエントリー 煮える,
+    とセンパイ 渡船, はデート 派手 (457 taps). Not before ァ, ッ or ー (はァ, へッ).
+  - **A particle before a form of する** is the particle: 気がした showed 賀する, もせず 模する, 目にした the grammar
+    entry にす, はしない 馳す, 気のせい のす (199 taps). An entry spelled as the whole span stays (がする, もしかして).
+  - **Ranks of another word** are no longer shown: だと showed ダト's #73,969, にす ニス's, イル いる's #37 (223 taps; a
+    spelling-only Jiten row that matched only after kana normalisation, as Yomitan shows none).
+  - **わたし shows 私 first**, the character named わたし below it: a character's name spelled as the text still comes
+    first (なぎさ, いのり, ミユキ in their games), but not before one of the 1,024 most frequent words. `config.ini`
+    `names_first = on` keeps Rubi 0.9.8's order, `off` puts every word first ([the measurement](docs/local-dictionaries.md#names-and-words)).
+  - 行っとく shows 行く, not 行う (`-おく` through `-て`, as Yomitan: 言っとく says `-te → -toku`, as 言っておく);
+    してんの and 言ってんだ say `-te → progressive or perfect`, not `-n`, the negative; かわされた shows 交わす, not 買う
+    (Yomichan's one-step causative passive counts two steps); 手をつかんで shows 手, not 手をつく (`-ん`'s かん left
+    out).
+  - Kept as they are, and why: [what remains](reports/yomitan-check.md#what-remains) (pitch accents, reading ties,
+    the prohibitive な, names' ranks).
+
 - **Native hooks: an active string-copy stream no longer loses its slot to a new caller in a race** (#366). When all
   12 CALL streams are held by other callers, a new caller takes the one written least recently. Two races gave it the
   newest one instead. A caller that wrote while the new one searched got a stamp after the clock reading the search

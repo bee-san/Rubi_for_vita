@@ -146,6 +146,41 @@ same module pages in every build.**
 - **Not added:** the charsets compiled into the worker (27,732 B of tables: about seven more pages in every game that
   is ON [estimate]), or read in the Shell (no room) or by the Rubi app (not running beside a game).
 
+## Lookups: #321
+
+#321's lookups ([the report](../reports/yomitan-check.md#321-what-remained)) are Shell code and data only, and
+the Shell keeps its pages in both builds: the rule table moves to the data segment, which takes a page more while
+the code takes a page fewer.
+
+- **The rule table** (`tools/gen_deinflect.py`): 724 → 711 rules (Yomitan's whole `-おく` for the old `-toku`,
+  16 → 6; Rubi's てん and でん; `-ん`'s かん out), `deinflect_rules` 4,344 → 4,266 B, now `VJO_DATA_TABLE`;
+  `deinflect_strings` 4,549 → 4,483 B, still rodata. A key's bucket is its last byte's, a continuation byte, so
+  `deinflect_offsets` holds 65 offsets, not 257: 514 → 130 B of data. The causative passive's two steps are one
+  compare in `deinflect`.
+- **The lookup** (`lookup_pages`, `-Os`): the particle before a katakana word (once a lookup, on the text's first
+  two characters), the particle before a form of する (per candidate: two compares, then one `memcmp`),
+  `names_first`'s order at a span, and a later shallower candidate replacing a deeper one: `lookup_pages` 5,108 →
+  5,384 B normal, 5,120 → 5,416 B debug; `read_entry`'s hidden rank +16 B; `take_postings`' fewer steps first
+  +2 B. `particle_forms` (44 B) is in the data segment.
+- **`names_first`**: its parse shares `ocr_vertical`'s branch and values (`apply_config` +32 B normal, +28 B debug;
+  the key, 12 B, in the data segment) and a field in each of the three `VjoConfig` copies (4 B each).
+
+Measured with VitaSDK GCC 15.2.0 in the pinned image (`tools/fast_gate.sh`'s; `tools/check_memory_ledger.py`'s
+module rows, text + data/bss; `arm-vita-eabi-nm -S` for the symbols), main `757153c` against this change:
+
+| Shell | main | #321 | Loaded pages |
+|---|---:|---:|---:|
+| Debug | 102,372 + 73,568 B (102,400 + 73,728) | 98,276 + 77,544 B (98,304 + 77,824) | 176,128 B, unchanged |
+| Normal | 90,020 + 73,432 B (90,112 + 73,728) | 85,932 + 77,424 B (86,016 + 77,824) | 163,840 B, unchanged (`--exact`) |
+
+Room left: the debug Shell's code 28 B (as on main), its data 280 B (160 B on main); the normal Shell's code 84 B
+(92 B), its data 400 B (296 B). The kernel, the game worker and the Rubi app are unchanged. The VjoNet thread's
+frames are unchanged (`lookup_pages` 1,584 B, `deinflect` 272 B, `take_postings` 416 B, `read_entry` 64 B;
+`-fstack-usage` with the Shell's flags, both builds). Candidates per span (`deinflect()` on every span the taps
+scan, host, ASan/UBSan, the audit of #320's harness): 1,175,231 → 1,175,510 on the 64,579 taps, 5,810,009 →
+5,811,312 on 330,517, at most 15 and 17 a span either way, none at the 128 cap, the same arena peaks (24,432 and
+27,696 B). No allocation, thread, stack or budget is added; nothing of it has run on a console.
+
 ## Why the overlay waits (#358)
 
 The open overlay's wait hint ([text-stability.md](text-stability.md#why-the-overlay-waits-358)) is Shell code and

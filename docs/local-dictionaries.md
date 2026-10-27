@@ -273,6 +273,26 @@ its start (空 in 空港) is not. A best match too long for the body is clipped 
 again without capturing or recognizing the screen again. Separate files are stacked; a
 combined file built from several ZIPs is one dictionary.
 
+### Names and words
+
+At one span, an entry spelled as the text in a later dictionary comes before a word the first
+dictionary spells otherwise (an entry written as the text beats a homograph, above): kana text that is
+a character's name (なぎさ, いのり, みちる, ミユキ in their games) shows the name first, the word (渚, 祈り)
+below it. Where the word is very frequent this is wrong: the bundled names include a character named
+わたし (XBLAZE LOST:MEMORIES), which came before 私 at every わたし of the text, 89 taps of the 5,000-line
+[Yomitan check](../reports/yomitan-check.md). So `config.ini`'s `names_first` (#321):
+
+- `auto` (the default): the word comes first when it is among the 1,024 most frequent of its frequency
+  list (私 #32), the name first otherwise (渚 #32,728);
+- `on`: the name first, as Rubi 0.9.8 and Yomitan;
+- `off`: the word first.
+
+Measured on that check's 309 taps where a name came first with the word below it, read one by one: the
+name is the text's word in 188 (a character of the game: みちる, ミカゲ, いのり, なぎさ), the word in 109,
+89 of them わたし (12 are neither or unclear). The only word among the 1,024 most frequent was 私, so `auto` keeps the first
+and fixes わたし; `off` would lose about 190 (on 27,970 lines of the same games, `auto` changes 456 taps:
+わたし → 私 449, あたる → 当たる 5, イチ → 一 2). With Dictionaries shown 1, the first is the only one.
+
 Until 0.9.6 the other dictionaries were pages, one at a time, with an L or R tap
 (`L/R Dictionary 2 of 3`). Stacking reads them with the word: when looking it up, the
 worker records where each other dictionary's best entry is on disk (24 bytes per
@@ -392,7 +412,11 @@ Yomitan's for the spoken forms the old rules lack: `しておく`, `変わらん
 `しちゃ駄目`, `戻らなきゃ`, `認めざる`, `返さねば`, `しやがって`, `聞きやしねえ`,
 `いたしまして` and `知らねー` (`third_party/yomitan/`; the bare `な` of the old
 "imperative negative", which Yomitan no longer has, is gone: `失礼な` is 失礼, not
-a verb `失礼` read しつらい, and `するな` highlights `する`). Which of Yomitan's
+a verb `失礼` read しつらい, and `するな` highlights `する`). Since #321, `-おく` is Yomitan's,
+through `-て` (`行っとく` is 行く, `言っとく` -te → -toku, as `言っておく`), the progressive's
+`てる` contracted before の or だ (`してんの`, `言ってんだ`) is the progressive, not `-ん`'s
+negative, and Yomichan's one-step causative passive counts the two steps it contracts (`かわされた`
+is 交わす's passive, not 買う's causative passive). Which of Yomitan's
 rules were taken, and why some were not, was measured on 5,000 lines of hooked
 visual-novel text against Yomitan itself ([the report](../reports/yomitan-check.md)).
 The matched original text length is retained in the entry, while the UI
@@ -424,8 +448,13 @@ dictionary with [frequency ranks](#frequency-ranks), the more frequent entry
 text is (in any dictionary) beats a homograph in an earlier dictionary, an
 exact hit in a later dictionary still beats an inflected hit in an earlier
 one, and otherwise configured dictionary order decides. This is
-bounded matching, not a full Japanese morphological parser: longest match
-can still join a particle to the next word (頭がすっきり shows ガス for がす),
+bounded matching, not a full Japanese morphological parser. Two cases of a particle
+read into the next word are handled (#321): a particle written in hiragana (が, も, は, に, の, か)
+before a form of する or す is the particle unless an entry is spelled as the whole span (気がした:
+が, not 賀する; 目にした: に, not the grammar entry にす; がする and もしかして stay whole), and one of
+が も は に の か と で を へ や な before a katakana word is the particle (のマンション: の, not 飲む's
+`-ん`; とセンパイ: と, not 渡船). Longest match can still join a particle to the next word otherwise
+(頭がすっきり shows ガス for がす),
 and a word spans a line break only where the text's lines join, a sentence the
 game wrapped (not after a short or bracketed speaker's name line or a sentence's end:
 [words split over two lines](touch-lookup.md#words-split-over-two-lines)). On the 134 recognized development lines whose VNs the
@@ -457,7 +486,10 @@ Format 3 is format 2 with these additions, so it needs nothing in memory:
   the 64-byte header, in the same read);
 - every payload starts with a 32-bit little-endian frequency word: bits 0-23
   the rank, bit 24 set when a kanji spelling borrows its word's rank in kana
-  (Jiten's `N㋕`), bits 25-31 for the converter's report. The ranking's head
+  (Jiten's `N㋕`), bits 25-27 how the rank matched. A rank from a spelling-only row that
+  matched only after kana normalisation (bits 25-27 `110`) is shown as none, as Yomitan, which
+  compares spellings exactly, shows none: it is mostly another word's (だと had ダト's #73,969, にす
+  ニス's, イル いる's; 304 taps of the Yomitan check's 64,579, #321); it still ranks the entry. The ranking's head
   read and the shown entry's payload read include it: no extra read, 4 bytes
   more in each.
 - optional **posting hints**: every posting's last u16 holds what the ranking
