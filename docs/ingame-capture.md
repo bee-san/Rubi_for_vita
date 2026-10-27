@@ -62,7 +62,8 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
    in a row logs (both builds) `ocr: the screen changed under every read of 3 jobs in a row, the
    last with N line(s) recognized and not shown` (#353). Since #353 a region that
    keeps changing (an animated icon, a moving picture) is waited on through its lines' own pixels
-   ([text-stability.md](text-stability.md#animated-icons-and-moving-pictures-353)), so this is rare.
+   ([text-stability.md](text-stability.md#animated-icons-and-moving-pictures-353)), so this should be rare (an estimate: on
+   the host, 11 of 4,232 runs with an icon or a moving picture; no console has run it).
 
 Pixel formats: `A8B8G8R8` (0x00000000), `A2B10G10R10` (0x60800000, the top 8 bits of each 10)
 and `A1B5G5R5` (0x50000000, each 5-bit channel `<< 3`), as the JPEG capture already converted

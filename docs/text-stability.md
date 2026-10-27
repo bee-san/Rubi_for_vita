@@ -426,53 +426,75 @@ Once the region keeps changing, the job judges the text by the found lines' own 
   told of, and its finder: lines alike the kept ones are read at once; others are watched again from a new first
   pass (8 times a job at most).
 - **Reading anyway.** When the waiting budget runs out while the lines' own pixels still change (an icon the finder
-  takes into the last line, a picture moving behind the text), the job reads them anyway once the finder has found
-  them alike twice, at least `ocr_settle_ms` apart: the changes of those lines are no tears from then on, a change of
-  another line still is, and once read the finder runs again (and once more `ocr_settle_ms` later) to see that the
-  lines are what they were. Past its budget a job waits at most `ocr_settle_ms` and a finder's run before it reads
-  anyway, and as much after.
+  takes into the last line, a picture moving behind the text), the job reads the lines it found anyway: the changes
+  of those lines are no tears from then on, a change of another line still is. Once they are read, the finder runs
+  again, no sooner than twice `ocr_settle_ms` after it found them (the span the wait and its check take together
+  without the watch), and once more `ocr_settle_ms` later if they were not alike then (an icon beside a line can
+  change how the finder cuts it while it turns): lines that are not what they were (text that typed on, a new line)
+  end the job as a screen change, and the next one reads them.
 - **Alike.** The same count and polarity, each box within a quarter of its height on every edge (2 px at least):
-  less than a character. A line whose pixels changed may end up to 2.5 times its height elsewhere (an icon after
-  its last character: GRAD+refine take it into the box, whose end then moves with its frames; by more than the
-  line's height in 26 of 146 such lines of hooked pages, more than 3 times in 2, with the variable-speed icon). At the
+  less than a character, so a line that typed on is another line. A line whose pixels changed may move by half its
+  height on its sides and start (an icon drawn in its box), but its end keeps the quarter: a line typing on changes
+  its own pixels too (audit-rubi-spinner F1: with 2.5 heights there, a slow typewriter was read half typed). An icon
+  after the last character that GRAD+refine take into the box (its end moving by more than the line's height in 26
+  of 146 such lines of hooked pages, with the icon's frames) then costs a look or a try more. At the
   limit, an icon-sized box that only one find has is passed over (with an icon in the corner, the count of lines the
   finder found changed with the icon's frames in 21-25 of 138 hooked regions; `vjo-spinner-bench --find`).
 - **Its memory.** No block, thread or allocation: the line checksums take the ring's memory (two of its 16-bit words
   a row hold the checksum), the finder's runs the finder's own arena (the recognizer is done with it, or not set up
-  yet). On the worker's 32 KiB stack the job's frame grows from 1,512 to 2,624 B (`run_job`, with the line sets it
+  yet). On the worker's 32 KiB stack the job's frame grows from 1,512 to 2,616 B (`run_job`, with the line sets it
   watches), and a finder's run takes `look_alike`'s 360 B on its way (`arm-vita-eabi-gcc -Os -fstack-usage`, the
   build's flags); its code is in the module's pages ([memory-ledger.md](memory-ledger.md#the-line-watch-353)).
 
-**What it gives** (the 184 regions; median / 90th percentile / slowest time from L + R to the text, est.;
-"same": the still page's text exactly; "chars": characters of the still reads' 4,559 missing):
+**What it gives** (the 184 regions, 23 scenarios, eight of them audit-rubi-spinner's typing ones; median / 90th
+percentile / slowest time from L + R to the text, est.; "same": the still page's text exactly; "shorter": a read
+shorter than the still page's, as a line read half typed is):
 
-| icon or motion | `main` shown | `main` time | this change shown | its time | same | chars |
+| icon or motion | `main` shown | `main` time | this change shown | its time | same | shorter (`main` → this change) |
 |---|---:|---|---:|---|---:|---:|
-| none (still page) | 181 | 0 / 0 / 0 s | 181 | 0 / 0 / 0 s | 184 | 0 |
-| the last line typing out | 181 | 0 / 0 / 0.4 s | 181 | 0 / 0 / 0.4 s | 184 | 0 |
-| 8 frames, after the text / in the corner | 181 / 181 | 0 / 0 / 0.4-0.5 s | 181 / 181 | the same | 180 / 180 | 1 / 2 |
-| turns and rests, after the text | 168 | 0 / 1.3 / 12.4 s | 181 | 0 / 2.1 / 4.9 s | 178 | 1 |
-| turns and rests, in the corner | 174 | 0 / 1.1 / 13.0 s | 181 | 0 / 1.6 / 7.8 s | 178 | 7 |
-| 24 frames, after the text | 5 | 0.9 / 1.3 / 4.7 s | 181 | 0.7 / 1.4 / 4.6 s | 181 | 1 |
-| 24 frames, in the corner | 1 | 0.9 s | 181 | 0.3 / 1.8 / 6.7 s | 178 | 1 |
-| smooth, after the text / in the corner | 0 / 0 | — | 181 / 181 | 1.6 / 2.4 / 5.2 s, 1.3 / 2.5 / 8.0 s | 178 / 179 | 1 / 1 |
-| variable speed, after the text / in the corner | 0 / 0 | — | 181 / 181 | 1.4 / 2.2 / 2.9 s, 1.2 / 2.4 / 4.9 s | 179 / 179 | 3 / 7 |
-| variable speed in the corner, the line typing | 0 | — | 181 | 1.3 / 2.4 / 4.9 s | 179 | 7 |
-| a picture moving outside the text / behind it | 0 / 0 | — | 180 / 181 | 1.8 / 2.4 / 9.2 s, 1.7 / 2.3 / 5.8 s | 178 / 177 | 9 / 10 |
+| none (still page) | 181 | 0.0 / 0.0 / 0.0 s | 181 | 0.0 / 0.0 / 0.0 s | 184 | 0 → 0 |
+| the last line typing out | 181 | 0.0 / 0.0 / 0.4 s | 181 | 0.0 / 0.0 / 0.4 s | 184 | 0 → 0 |
+| 8 frames, after the text / in the corner | 181 / 181 | 0.0 / 0.0 / 0.4 s, 0.0 / 0.0 / 0.5 s | 181 / 181 | 0.0 / 0.0 / 0.4 s, 0.0 / 0.0 / 0.5 s | 180 / 180 | 1 / 1 → 1 / 1 |
+| turns and rests, after the text | 168 | 0.0 / 1.3 / 12.4 s | 181 | 0.0 / 2.2 / 4.9 s | 178 | 0 → 0 |
+| turns and rests, in the corner | 174 | 0.0 / 1.1 / 13.0 s | 181 | 0.0 / 1.6 / 7.8 s | 178 | 2 → 2 |
+| 24 frames, after the text | 5 | 0.9 / 1.3 / 4.7 s | 181 | 0.7 / 2.1 / 12.2 s | 181 | 0 → 0 |
+| 24 frames, in the corner | 1 | 0.9 / 0.9 / 0.9 s | 180 | 0.3 / 1.6 / 8.5 s | 177 | 0 → 1 |
+| smooth, after the text | 0 | — | 180 | 1.6 / 2.5 / 5.4 s | 177 | 0 → 0 |
+| smooth, in the corner | 0 | — | 180 | 1.3 / 2.3 / 9.6 s | 178 | 0 → 1 |
+| variable speed, after the text | 0 | — | 180 | 1.5 / 2.3 / 6.6 s | 179 | 0 → 1 |
+| variable speed, in the corner | 0 | — | 181 | 1.2 / 2.2 / 8.1 s | 179 | 0 → 2 |
+| variable speed in the corner, the line typing | 0 | — | 181 | 1.3 / 2.2 / 8.1 s | 179 | 0 → 2 |
+| a picture moving outside the text | 0 | — | 180 | 1.8 / 2.4 / 10.6 s | 178 | 0 → 3 |
+| a picture moving behind the text | 0 | — | 179 | 1.7 / 2.4 / 7.9 s | 178 | 0 → 4 |
+| slow typewriter, a character every 10 / 15 frames | 181 / 181 | 0.5 / 1.7 / 3.0 s, 1.5 / 3.6 / 6.1 s | 181 / 181 | 0.5 / 2.0 / 4.0 s, 1.5 / 3.8 / 6.1 s | 183 / 182 | 1 / 1 → 1 / 2 |
+| typing with 0.5 s pauses | 181 | 0.0 / 0.8 / 2.7 s | 181 | 0.0 / 1.1 / 3.0 s | 171 | 13 → 13 |
+| slow typewriter (10 frames), variable icon in the corner | 0 | — | 180 | 1.8 / 2.9 / 7.1 s | 176 | 0 → 2 |
+| typing with pauses, variable icon in the corner | 0 | — | 180 | 1.7 / 2.6 / 7.1 s | 177 | 0 → 3 |
+| slow typewriter, a smooth icon following the typed end | 0 | — | 180 | 1.9 / 3.0 / 18.7 s | 178 | 0 → 3 |
+| typing with pauses, a smooth / 8-frame icon following it | 0 / 181 | —, 0.9 / 1.9 / 3.2 s | 180 / 181 | 1.9 / 2.6 / 11.3 s, 0.9 / 2.1 / 6.6 s | 178 / 180 | 0 / 0 → 2 / 2 |
 
 "Shown" counts a read with text: the still page's read has text in 181 of the 184 regions.
 - **No region that `main` showed is lost**, in any scenario, and where nothing moves, or only an 8-frame icon, the
   times and texts are `main`'s region by region. With the icon that rests, 13 and 7 more regions are shown, and
-  against `main`, region by region, the time is 0.29 s and 0.13 s shorter on the mean; 17 and 10 regions take more
-  than 0.3 s longer (by 1.6 s and 1.1 s at most: `main`'s job happened to read in a rest), 18 and 8 more than 0.3 s
-  less.
+  against `main`, region by region, the time is 0.27 s and 0.13 s shorter on the mean; 17 and 10 regions take more
+  than 0.3 s longer (by 2.3 s and 1.1 s at most: `main`'s job happened to read in a rest), 18 and 8 more than 0.3 s
+  less. The slow and pausing typewriters that `main` shows take 0.02-0.16 s longer on the mean (a line read anyway
+  is looked at again before it is given).
+- **Shorter reads.** 28 runs give a read shorter than the still page's where `main` did not: 24 in regions `main`
+  never shows at all (an icon of many frames or a moving picture), and 4 of the 1,777 where `main` showed the whole
+  line, later:
+  the slowest typewriter in 1 region, typing that pauses under an 8-frame icon following it in 2, the 10-frame
+  typewriter in 1 (where `main` read another region short). In those 4 the next job (Automatically's) read the whole
+  line 0.4-2.3 s later.
 - **The jobs.** Over the 20 s an icon of many frames or a moving picture took `main` 1,295-1,376 jobs over the 184
-  regions, 1,295-1,371 of them ending with the screen changed; this change 185-193, 0-9 of them.
+  regions, 1,295-1,371 of them ending with the screen changed; this change 185-204, 1-20 of them.
 - **The report's symptom** (lines recognized, then dropped, and nothing shown): 13 and 7 regions on `main` with the
-  icon that rests (2 each with the 24-frame one), none here but 1 (a picture moving outside the text).
+  icon that rests (2 each with the 24-frame one); here 11 runs of the 4,232, 1 or 2 in 10 scenarios, each one of
+  the 1-5 regions a scenario never shows.
 - **The synthetic box** (917 × 125, three lines of glyph-like strokes; ctest `spinner_bench`, the models lane):
-  `main` shows nothing in 11 of its 15 scenarios; this change shows the text in all 15, within 3.5 s (est.), the
-  still read's text wherever nothing moves inside a line's box.
+  `main` shows nothing in 15 of its 23 scenarios; this change shows the text in all 23, within 3.9 s (est.; the
+  slowest, a slow typewriter followed by a smooth icon), the still read's text wherever nothing moves inside a
+  line's box.
 
 **The hint.** A job whose screen changed under every read is still dropped quietly (#81 request 4), but the third
 in a row logs, in both builds, `ocr: the screen changed under every read of 3 jobs in a row, the last with N
@@ -490,6 +512,17 @@ line(s) recognized and not shown: an animated icon or a moving picture in the re
   work, #125) would leave it outside the lines, and the watch then waits it out like an icon beside the text.
 - **A picture moving behind the glyphs** changes their pixels: the lines are read anyway at the limit.
 - **A page turned while the lines are read anyway** with the same layout (as many lines, as long) is not seen
-  by the last check; the Shell's own check of the screen (its scene) then refreshes the open overlay.
+  by the last check: in audit-rubi-spinner's runs of a page turned while a picture moves behind the text, 11 of 987
+  read lines of both pages. The Shell's own check of the screen (its scene) then refreshes the open overlay.
+- **A slow typewriter** whose pause between two characters is longer than the wait's window and the reading together
+  (`ocr_settle_ms`, 150 ms by default, and the read) is read as far as it has typed, on `main` as here; the next job,
+  once it types on, reads more. Faster than that, the line never holds still: a line read anyway that typed on ends
+  the job as a screen change (the policy tests' `a_slow_typewriter_is_never_read_half_typed`, a character every 8, 10
+  or 15 frames, with and without an icon).
+- **In-sample.** The scenarios' rules (half the budget, a quarter and half a line's height) were chosen on these 184
+  regions. On other pages of the same pool (audit-rubi-spinner's held-out run, the code before its F1 fix) the 90th
+  percentile was 1.5-2.8 s, the slowest 10.7 s (an icon of variable speed in the corner) and 12.4 s (a smooth one
+  after the text). The bench charges the finder's runs to the job at its end, not while the frames play on, and
+  plays 60 frames a second only.
 - **The kernel's tracker** is unchanged: with such an icon the region may never settle, and Automatically reads it
   on its quiet events (a spot of 3 × 3 cells that keeps changing) instead.
