@@ -376,6 +376,7 @@ and copy them to the memory card; up to eight are used, in your order
   [Read text: automatically or on a press](docs/auto-vs-press.md) · [The OCR](docs/vita-vn-ocr.md) ·
   [The one-VPK install](docs/one-vpk-install.md) · [Safe boot](docs/boot-safety.md) ·
   [Vita memory](docs/vita-memory.md) · [Hook requests](docs/hook-requests.md)
+- [The roadmap](docs/roadmap.md): what is left to build, ranked, and what of it is built.
 
 ## Contributing
 
