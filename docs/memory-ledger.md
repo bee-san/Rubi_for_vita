@@ -337,6 +337,20 @@ the last try's steps, the kernel refuses the field's 3) add 240 B of worker text
 keeps; main's rows: `include/vjo_ledger_budget.h`, API 50) and on `b6c715c` (the fast gate's builds)]. No block,
 thread or allocation.
 
+**Vertical text ON prefers columns (API 53, #379).** No block, thread or stack is added. A job of columns now asks
+the tall-line block (`VjoGameVocrLine`, the same one, freed with the job) for a batch of its columns at once, where it
+asked for one column at a time: the batch is at most `VJO_VOCR_COLUMNS_BATCH` = `VJO_VOCR_LINE_MAX_BYTES`, 516,096 B,
+the block's bound and `VJO_BUDGET_GAME_LINE` as before, so the game's worst case is unchanged; refused, the job asks
+for each column alone, as before. On the host's measured regions the batch's block was 22-24 KB on drawn boxes
+(median; 52 KB at most) and 116 KB on whole screens (303 KB at most), where a column's was at most 57,344 B
+([on's rule](vita-vn-ocr.md#ons-rule-api-53-379)). On's rows try first is a job of rows, the size's own blocks, freed
+before its columns try takes the vertical model's, as auto's tries do. Code [measured: `arm-vita-eabi-size -A`, both
+builds' VitaJPOverlay_OCR and VitaJPOverlay_Shell, main `19986c7` and this change, `tools/fast_gate.sh`'s VitaSDK
+image]: the game worker's text 122,554 → 123,432 B (normal) and 126,776 → 127,640 B (debug), the same pages (its code
+segment 153,220 and 162,136 B: 2,428 and 1,704 B of the last page left); the Shell's 66,968 → 66,992 B (normal: its
+code segment 90,036 B, 76 B of the last page left) and 74,544 → 74,624 B (debug: 188 B left), the same pages; their
+data unchanged. The Rubi app's two help strings are its own.
+
 ## Trusted hooks and the OCR-skip switches (API 43)
 
 Trusted hooks answer without OCR ([native-hooks.md](native-hooks.md#trusted-hooks-api-43)): the selection's

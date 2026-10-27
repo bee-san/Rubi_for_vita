@@ -322,6 +322,39 @@ int vjo_vocr_rows_vertical(const void *lines, unsigned n, unsigned w, unsigned h
     return 10u * inside >= 7u * n;
 }
 
+/* API 53, ocr_vertical = on (#379; VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON): the row finder's rows of
+ * horizontal text are its lines, a few of them one under another, each many characters wide; on vertical text it
+ * finds a character of each column side by side, a row each, or a band over the page. The rows are horizontal text
+ * when there are 1 to 4 of them, each at least 3 times as wide as tall and at most 96 px tall (WIDE_ROW), or all but
+ * one, the first or the last (a speaker's name above the lines, a short line or an icon below them), no taller than
+ * the others, beside a row at least 8 times as wide as tall; each next to the one above it (at most twice the taller
+ * one's height between them) and over part of its span; and auto's rule does not take them for vertical text. Chosen
+ * so that none of the 3,715 regions of vertical text measured would be read as rows (docs/vita-vn-ocr.md "Vertical
+ * text"). Integers only, at most 4 rows. */
+#define WIDE_ROW(l) ((l).w >= 3u * (l).h && (l).h <= 96u)
+int vjo_vocr_rows_horizontal(const void *lines, unsigned n, unsigned w, unsigned h)
+{
+    const VocrLine *ln = lines;
+    unsigned wide = 0, odd = 0, tallest = 0, long_row = 0;
+    if (!ln || !n || n > 4u) return 0;
+    for (unsigned i = 0; i < n; i++) {
+        if (i) { /* the finder's rows run top to bottom */
+            const VocrLine *a = &ln[i - 1], *b = &ln[i];
+            unsigned taller = a->h > b->h ? a->h : b->h;
+            if (b->y > a->y + a->h + 2u * taller || b->x >= a->x + a->w || a->x >= b->x + b->w) return 0;
+        }
+        if (!WIDE_ROW(ln[i])) {
+            odd = i;
+            continue;
+        }
+        wide++;
+        if (ln[i].h > tallest) tallest = ln[i].h;
+        long_row |= ln[i].w >= 8u * ln[i].h;
+    }
+    if (wide < n && (n < 2u || wide + 1u < n || (odd && odd + 1u < n) || ln[odd].h > tallest || !long_row)) return 0;
+    return !vjo_vocr_rows_vertical(lines, n, w, h);
+}
+
 static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
 {
     if (!m || !region_ok(w, h)) return -1;
@@ -1142,6 +1175,79 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *s
         *stride = ln->w;
         return buf;
     }
+}
+
+/* #379: a job of columns' columns, fetched in batches (core/vocr_ocr.h VJO_VOCR_COLUMNS_BATCH). */
+#define NOT_GATHERED 0xFFFFFFFFu
+#ifdef VJO_VOCR_TEST_MODELS
+/* Host tests: a smaller batch than the line block's bound, so that a region the tests draw splits into several. */
+static size_t test_batch_bytes = VJO_VOCR_COLUMNS_BATCH;
+void vjo_vocr_test_batch_bytes(size_t bytes);
+void vjo_vocr_test_batch_bytes(size_t bytes)
+{
+    test_batch_bytes = bytes ? bytes : VJO_VOCR_COLUMNS_BATCH;
+}
+#define COLUMNS_BATCH test_batch_bytes
+#else
+#define COLUMNS_BATCH VJO_VOCR_COLUMNS_BATCH
+#endif
+typedef struct {
+    unsigned char *block;             /* the batch's pixels (the source's line buffer), NULL: none */
+    unsigned to;                      /* the set's columns before this one are past the batch */
+    int on;                           /* a batch may still be gathered */
+    uint32_t off[VJO_VOCR_MAX_LINES]; /* each column's pixels in the block, its width a row */
+} Gather;
+
+/* The batch from column `from` on: the columns the rotation buffer holds, in reading order, up to the batch's bytes;
+ * the rows they span read once, a strip at a time (each row checked as always), every column copied out of each
+ * strip. 1: gathered, columns [from, g->to) are in g->block; 0: nothing gathered (one column left, or no block):
+ * from here each column is read as before; -1: the read failed (s->err). */
+static int gather_columns(Stream *s, const VocrLineSet *set, unsigned from, Gather *g)
+{
+    size_t total = 0;
+    unsigned y0 = s->h, y1 = 0, n = 0, i;
+    g->block = NULL;
+    for (i = from; i < set->count; i++) {
+        const VocrLine *c = &set->lines[i];
+        size_t b = (size_t)c->w * c->h;
+        g->off[i] = NOT_GATHERED;
+        if (b > VJO_VOCR_ROTATE_BYTES) continue; /* left out (rotate_skipped) */
+        if (total + b > COLUMNS_BATCH) break; /* the next batch's */
+        g->off[i] = (uint32_t)total;
+        total += b;
+        n++;
+        if (c->y < y0) y0 = c->y;
+        if (c->y + c->h > y1) y1 = c->y + c->h;
+    }
+    g->to = i;
+    if (n >= 2 && s->src->line_buffer) g->block = (unsigned char *)s->src->line_buffer(s->src->ud, total);
+    if (!g->block) { /* one column reads its rows once anyway; a refused block: each column as before */
+        g->on = 0;
+        g->to = from;
+        return 0;
+    }
+    if (total > s->st->line_bytes) s->st->line_bytes = total;
+    for (unsigned y = y0; y < y1;) {
+        unsigned k = y1 - y < s->strip_rows ? y1 - y : s->strip_rows;
+        s->rows = 0;
+        if (stream_read(s, y, k, s->strip) < 0) return -1;
+        for (i = from; i < g->to; i++) {
+            const VocrLine *c = &set->lines[i];
+            unsigned a = c->y > y ? c->y : y, e = c->y + c->h < y + k ? c->y + c->h : y + k;
+            if (g->off[i] == NOT_GATHERED) continue;
+            for (unsigned r = a; r < e; r++)
+                memcpy(g->block + g->off[i] + (size_t)(r - c->y) * c->w, s->strip + (size_t)(r - y) * s->w + c->x,
+                       c->w);
+        }
+        s->y0 = y; /* the strip holds these rows */
+        s->rows = k;
+        y += k;
+    }
+    for (i = from; i < g->to; i++)
+        if (g->off[i] != NOT_GATHERED) s->st->tall += set->lines[i].h > s->strip_rows; /* (as line_pixels counts) */
+    s->st->gathered += n;
+    s->st->gather_batches++;
+    return 1;
 }
 
 /* The recognizer's options of a job: W8I, and with VjoVocrPolicy.head_gate the head gate (vita-vn-ocr #117,
@@ -2044,6 +2150,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->cascade_rc = 0;
     }
     st->cached = st->dispatched = st->run_failures = st->rotate_skipped = 0;
+    st->gathered = st->gather_batches = 0;
     st->gate_ran = st->gate_stopped = st->gate_rows = 0;
     st->counter_lines = 0;
     st->head_gated = st->head_rereads = st->head_escaped = 0;
@@ -2077,8 +2184,12 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                                          ws + l->scratch_off, l->finder, &set);
     /* API 47, auto (VjoVocrPolicy.vertical_check): rows that look like vertical text are not read, and no
      * weights are (nor the gate's score, made for rows): the caller reads the region's columns instead
-     * (game_ocr/main.c). */
-    if (!rc && pol->vertical_check && !cols && vjo_vocr_rows_vertical(set.lines, set.count, w, im->height)) {
+     * (game_ocr/main.c). API 53, on (#379): rows that do not look like horizontal text, the same; checked on the
+     * same rows as auto's (in a region at least as tall as wide, the frozen finder's: a name tag beside the columns
+     * joined to them by the fixes made one wide row of 3 of 863 such boxes of vertical text). */
+    if (!rc && pol->vertical_check && !cols &&
+        (pol->vertical_check == VJO_VOCR_CHECK_ON ? !vjo_vocr_rows_horizontal(set.lines, set.count, w, im->height)
+                                                  : vjo_vocr_rows_vertical(set.lines, set.count, w, im->height))) {
         s->gate = NULL;
         st->find_us = clock_us(p) - t0;
         st->lines = set.count;
@@ -2199,6 +2310,12 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
 
     L->t0 = clock_us(p);
+    /* #379: a job of columns in a region taller than a strip gathers its columns in batches (gather_columns); in one
+     * strip the strip holds every column already */
+    Gather g;
+    g.on = cols && s->strip_rows < im->height;
+    g.to = 0;
+    g.block = NULL;
     for (unsigned i = 0, li = 0; i < set.count; i++) {
         const VocrLine *box = &set.lines[i];
         const unsigned char *box_pixels;
@@ -2210,7 +2327,13 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             st->rotate_skipped++; /* a column larger than the rotation buffer: left out, never read */
             continue;
         }
-        box_pixels = line_pixels(s, box, &box_stride);
+        if (g.on && i >= g.to && gather_columns(s, &set, i, &g) < 0) { rc = stream_error(s, VJO_E_SOURCE); goto fail; }
+        if (g.block && i < g.to) { /* gathered: its rows, its width apart */
+            box_pixels = g.block + g.off[i];
+            box_stride = box->w;
+        } else {
+            box_pixels = line_pixels(s, box, &box_stride);
+        }
         if (s->err) { rc = s->err; goto fail; }
         if (!box_pixels) continue; /* taller than a strip and no line buffer: left out */
         parts.count = 1;

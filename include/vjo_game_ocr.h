@@ -129,7 +129,10 @@
  * smaller model to step down to (the reserve is a request by name's). 2 (auto): the job of rows, as with 0,
  * whose line finder's rows are checked first (core/vocr_ocr.h vjo_vocr_rows_vertical): where they look like
  * vertical text, nothing is recognized and the job reads the region's columns as with 1; where the vertical
- * model cannot be read, its rows as with 0. 3 is refused. A line read as a column carries VJO_GAME_OCR_LINE_COLUMN
+ * model cannot be read, its rows as with 0. API 53 (#379): 1 prefers columns: its rows are checked first as with 2,
+ * and its columns read unless they look like horizontal text (vjo_vocr_rows_horizontal; else they are read as with
+ * 0); with 1 and 2, where the vertical model cannot be read or has no room, the rows as with 0. 3 is refused. A line
+ * read as a column carries VJO_GAME_OCR_LINE_COLUMN
  * in VjoGameOcrLine.flags. The Shell sets the field in the user's jobs (the self-test's stages read rows). Not
  * bits 21-27: API 50's line-finder fixes have 21-23, and VOCR6's spotter finder and draft #326's text overlay
  * (test.17, in flight) the others, so all of them can merge. */
@@ -293,9 +296,12 @@ enum {
     VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's; API 47: kind 1 when they were columns
                             (VJO_GAME_OCR_S_VERTICAL), 2 when they were rows that looked like vertical text (auto: the
                             job read the columns next), 3 when auto's columns could not be read for want of the
-                            vertical model (rc its I/O error, 0: it failed its check; the job read the rows next),
-                            bytes the columns left out, larger than the rotation buffer (core/vocr_ocr.h
-                            VJO_VOCR_ROTATE_BYTES; 0 for rows) */
+                            vertical model (rc its I/O error, 0: it failed its check; the job read the rows next;
+                            API 53, #379: on's too), and since API 53: 2 also when on's rows did not look like
+                            horizontal text, 4 when on's job read rows its check found horizontal, 5 when the
+                            columns had no room (rc VJO_E_OOM: the vertical model's check refused, arg 0, or its
+                            weights after it; the job read the rows next); bytes the columns left out, larger than
+                            the rotation buffer (core/vocr_ocr.h VJO_VOCR_ROTATE_BYTES; 0 for rows) */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
                             line (core/vocr_ocr.h vjo_vocr_warm) */
     VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc, bytes their CTC frames; API 42: kind the share of

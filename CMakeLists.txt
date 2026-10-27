@@ -94,6 +94,10 @@ if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
     find_package(Threads REQUIRED)
     add_executable(vjo-page-ocr host/page_ocr.c)
     target_link_libraries(vjo-page-ocr vjo_vocr vjo_host Threads::Threads)
+    # #379: L + R on a region with an animated icon, frame by frame, with the Shell's retries (docs/vita-vn-ocr.md).
+    add_executable(vjo-vertical-on-bench host/vertical_on_bench.c)
+    target_link_libraries(vjo-vertical-on-bench vjo_vocr vjo_host m)
+    target_compile_options(vjo-vertical-on-bench PRIVATE -Wall -Wextra)
   endif()
 endif()
 

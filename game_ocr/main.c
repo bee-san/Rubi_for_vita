@@ -1861,10 +1861,14 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     /* API 23: a shot carries no model, tiers or other flag but F_FULL, and (API 32) no speed but S_TRIM */
     int shot = (r->flags & VJO_GAME_OCR_F_SHOT) != 0;
     /* API 47: vertical text (config.ini ocr_vertical): on, the vertical model on the region's columns; auto, its
-     * rows unless the finder's rows look like vertical text (check), then its columns (vertical, below) */
+     * rows unless the finder's rows look like vertical text (check), then its columns (vertical, below). API 53
+     * (#379): on prefers columns: its rows first, as auto's, and its columns unless they look like horizontal text
+     * (core/vocr_ocr.h VJO_VOCR_CHECK_ON); both read rows where the vertical model cannot be read (after a file it
+     * could not read, columns_bad, the game's later jobs read rows unchecked) or has no room. */
     unsigned vmode = (r->speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK;
-    int vertical = vmode == VJO_GAME_OCR_VERTICAL_ON;
-    int check = vmode == VJO_GAME_OCR_VERTICAL_AUTO && !columns_bad;
+    int vertical = 0;
+    int check = columns_bad ? 0 : vmode == VJO_GAME_OCR_VERTICAL_AUTO ? VJO_VOCR_CHECK_AUTO
+                                : vmode == VJO_GAME_OCR_VERTICAL_ON ? VJO_VOCR_CHECK_ON : 0;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
         vmode > VJO_GAME_OCR_VERTICAL_AUTO ||
         refine_mode > VJO_GAME_OCR_REFINE_PSP || (r->tiers & ~VJO_VOCR_TIERS_ALL) ||
@@ -2066,7 +2070,8 @@ retry_smaller:
         }
     }
     stats.workspace = use_bytes;
-    if (!fits && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO) { /* auto: no room for its columns, its rows */
+    if (!fits && vertical) { /* no room for its columns (auto; on since API 53): its rows */
+        step_add(VJO_GSTEP_FIND, 5, 0, VJO_E_OOM, 0, 0, 0, 0);
         vertical = 0;
         goto again;
     }
@@ -2155,7 +2160,7 @@ retry_smaller:
         policy.cascade_conf = VJO_GAME_CASCADE_CONF;
     }
     policy.refine = refine;
-    policy.vertical_check = check; /* API 47, auto: the rows checked for vertical text first */
+    policy.vertical_check = check; /* API 47, auto (API 53, on: VJO_VOCR_CHECK_ON): the rows checked first */
     policy.short_lines = 1; /* #194: a box's short last line */
     /* vita-vn-ocr #109: a numeral or a 「 the line lost before a counter (ルッ月 -> 九ヶ月 with
      * core/textnorm.c's rule), from the top-K the LM extras hold; nothing without them */
@@ -2192,20 +2197,25 @@ retry_smaller:
      * MiB (every sample of あおかな, PCSG00700, 2026-10-26: 1, 2, 3 or 4 MiB), so the second look can see a whole MiB
      * less than the check did: a job that passed with less than 1 MiB to spare finds its weights refused, whatever
      * its tier's reserve. A smaller model may still fit: give back this job's blocks and check again from the next
-     * one (retry_smaller), each at most once, as a model that did not fit the check would have been. */
+     * one (retry_smaller), each at most once, as a model that did not fit the check would have been. A job of
+     * columns has one model: its rows instead (API 53, #379, below). */
     const int smaller = rc == VJO_E_OOM && !stats.stuck && !forced && used + 1u < n && !cancelled(NULL);
-    /* API 47, auto: the rows looked like vertical text (nothing was read: no weights, no line), or its columns'
-     * model cannot be read here (absent, short, failing its hash: this game's jobs read rows from now on). The
-     * same request again, as columns or as rows (again). Either retry is the same job (#324's audit): after this
-     * try's blocks are freed, its capture, finder time and stable-text wait are the job's too, the next try waits
-     * only for what is left of it (retried), the freed blocks' steps leave the log (steps_drop_blocks), and the
-     * capture is kept: its PASS and SIG steps are logged once, its source mode stays. */
-    if (smaller || (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) /* a checked try: one retry */
-                                     || (rc == VJO_E_OCR_MODEL && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO)))) {
+    /* API 47, auto: the rows looked like vertical text (nothing was read: no weights, no line); API 53, on (#379):
+     * the rows did not look like horizontal text (the same); or the columns' model cannot be read here (absent,
+     * short, failing its hash: this game's jobs read rows from now on), or, its check passed, its weights could not
+     * be had (auto's and on's columns: the rows, whose sizes check again). The same request again, as columns or as
+     * rows (again). Either retry is the same job (#324's audit): after this try's blocks are freed, its capture,
+     * finder time and stable-text wait are the job's too, the next try waits only for what is left of it (retried),
+     * the freed blocks' steps leave the log (steps_drop_blocks), and the capture is kept: its PASS and SIG steps are
+     * logged once, its source mode stays. A try reached so checks nothing: at most rows, columns, rows. */
+    if (smaller || (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) || (rc == VJO_E_OCR_MODEL && vertical) ||
+                                     (rc == VJO_E_OOM && vertical && !cancelled(NULL))))) {
         if (smaller) {
             try_from = used + 1u;
         } else if (rc == VJO_E_VERTICAL) {
             step_add(VJO_GSTEP_FIND, 2, stats.lines, 0, 0, stats.dark, stats.find_us, 0);
+        } else if (rc == VJO_E_OOM) {
+            step_add(VJO_GSTEP_FIND, 5, stats.lines, rc, 0, 0, stats.find_us, 0);
         } else {
             step_add(VJO_GSTEP_FIND, 3, stats.lines, io_error, 0, 0, stats.find_us, 0);
             if (!io_error || io_error == VJO_ERR_FORMAT || (uint32_t)io_error == 0x80010002u)
@@ -2248,8 +2258,9 @@ retry_smaller:
                  stats.tries > 1 ? stats.retry_at - (uint32_t)job_started_us : 0u, 0, 0, 0);
     if (capture.failed) step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
                                  capture.last.fb_format, capture.pass_us, 0);
-    step_add(VJO_GSTEP_FIND, stats.columns, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, stats.rotate_skipped,
-             stats.dark, stats.find_us, 0);
+    /* kind: 1 columns; API 53, 4: on's rows, which its check found horizontal (the log's line for on's rows) */
+    step_add(VJO_GSTEP_FIND, stats.columns ? 1u : policy.vertical_check == VJO_VOCR_CHECK_ON ? 4u : 0u, stats.lines,
+             rc == VJO_E_OCR_REGION ? rc : 0, stats.rotate_skipped, stats.dark, stats.find_us, 0);
     if (policy.settle_us)
         step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes + tried_settle_passes, /* the job's whole wait (API 47) */
                  stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,

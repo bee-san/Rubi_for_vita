@@ -169,7 +169,7 @@ const char *vjo_config_default_text(void)
            "ocr_boost_clock = on\n"
            "; vocr: vertical text (manga, vertical dialogue): auto reads the region's columns,\n"
            "; right to left, with the vertical model where its rows look like vertical text |\n"
-           "; on reads columns in every game | off reads rows\n"
+           "; on reads columns, but rows where they are lines of text | off reads rows\n"
            "ocr_vertical = " VJO_VERTICAL_DEFAULT_TEXT "\n"
            "\n"
            "; The Rubi app's Read text. auto: recognize text in the background when the\n"

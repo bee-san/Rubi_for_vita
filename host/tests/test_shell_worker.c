@@ -697,7 +697,7 @@ static int32_t fake_missing_io;
 static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
-static int fake_rows_vertical; /* API 47, ocr_vertical = auto: the worker found the rows to be vertical text */
+static int fake_rows_vertical; /* API 47, ocr_vertical = auto (API 53, and on): the region held vertical text */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
 /* A clock step (game_ocr/main.c job_busy): the ARM clock before, while and after, and the boost's rc. */
@@ -825,12 +825,12 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         }
     } else if (fake_memory_fallback && top > 1u) ran = top - 1u;
     const char *ran_model = top ? vjo_vocr_tier_model((int)ran) : fake_game_request.model;
-    /* API 47: a job of columns runs the vertical model, whatever its tiers (game_ocr/main.c): ocr_vertical = on,
-     * or auto where the rows looked like vertical text and the vertical model can be read (else its rows) */
+    /* API 47: a job of columns runs the vertical model, whatever its tiers (game_ocr/main.c): auto where the rows
+     * looked like vertical text and the vertical model can be read (else its rows); API 53 (#379), on the same where
+     * its rows did not look like horizontal text: here, both where the region holds vertical text */
     unsigned vmode = (fake_game_request.speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK;
-    int fake_columns = vmode == VJO_GAME_OCR_VERTICAL_ON ||
-                       (vmode == VJO_GAME_OCR_VERTICAL_AUTO && fake_rows_vertical &&
-                        !(fake_missing_model && !strcmp(fake_missing_model, VJO_VOCR_VERTICAL_NAME)));
+    int fake_columns = (vmode == VJO_GAME_OCR_VERTICAL_ON || vmode == VJO_GAME_OCR_VERTICAL_AUTO) &&
+                       fake_rows_vertical && !(fake_missing_model && !strcmp(fake_missing_model, VJO_VOCR_VERTICAL_NAME));
     if (fake_columns) ran_model = VJO_VOCR_VERTICAL_NAME;
     if (fake_missing_model && !strcmp(ran_model, fake_missing_model)) {
         fake_model_misses++;
@@ -1809,10 +1809,11 @@ static void test_vocr_model_change_invalidates_cache(void)
 
 /* API 47: config.ini ocr_vertical goes into the speed word of every user job as it is (off 0, on 1, auto 2), which
  * keeps the job's tiers, model name and the rest of its flags and speed. The text's Anki cards and the job's log
- * line name the vertical model where its lines were columns (VJO_GAME_OCR_LINE_COLUMN): with on, and with auto where
- * the rows looked like vertical text; else the size's model, as before. A vertical model that fails to open (on)
- * leaves no size out of the game's ladder and is not retried with a smaller size: its file is not theirs. Off (the
- * default) sends no vertical bit. */
+ * line name the vertical model where its lines were columns (VJO_GAME_OCR_LINE_COLUMN): with auto and (API 53, #379:
+ * on prefers columns) on where the region held vertical text; else the size's model, as before. A vertical model
+ * that cannot be read has the worker read the rows, with on as with auto (API 53; before, on failed and no size was
+ * left out); a size's model that fails is left out with on too, as with off and auto. Off (the default) sends no
+ * vertical bit. */
 static void test_vocr_vertical_request(void)
 {
     const uint32_t field = VJO_GAME_OCR_S_VERTICAL;
@@ -1828,7 +1829,7 @@ static void test_vocr_vertical_request(void)
             cfg.ocr_vertical = mode;
             fake_rows_vertical = rows_vertical;
             fake_recognized_text = "猫";
-            int columns = mode == VJO_VERTICAL_ON || (mode == VJO_VERTICAL_AUTO && rows_vertical);
+            int columns = mode != VJO_VERTICAL_OFF && rows_vertical;
             const char *model = columns ? VJO_VOCR_VERTICAL_NAME : VJO_VOCR_TIER2_NAME;
             TEST_CHECK(run_vocr_job() == VJO_OK && cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫"));
             TEST_CHECK_(fake_game_request.flags == off_flags && (fake_game_request.speed & ~field) == off_speed &&
@@ -1844,22 +1845,31 @@ static void test_vocr_vertical_request(void)
 #endif
             mem_free();
         }
-    /* on, its file missing: the job fails once, no size is left out, none is tried instead */
+    /* on and auto, the vertical model's file missing: the worker reads the rows (the size's model names the cards),
+     * and no size is left out: the file is not theirs */
+    for (int mode = VJO_VERTICAL_ON; mode <= VJO_VERTICAL_AUTO; mode++) {
+        reset();
+        cfg.ocr_vertical = mode;
+        fake_rows_vertical = 1;
+        fake_missing_model = VJO_VOCR_VERTICAL_NAME;
+        fake_model_misses = 0;
+        fake_recognized_text = "猫";
+        TEST_CHECK_(run_vocr_job() == VJO_OK && !strcmp(anki_model, VJO_VOCR_TIER2_NAME) && !vocr_unusable &&
+                        !fake_model_misses && logged("is unusable here") == NULL,
+                    "mode %d: cards %s, unusable 0x%X, %u misses", mode, anki_model, vocr_unusable, fake_model_misses);
+        fake_missing_model = NULL;
+        mem_free();
+    }
+    /* on, a size's model missing (horizontal text, read as rows): left out for this game, the next size reads, as
+     * with off and auto (before API 53 on left no size out, its file being the vertical model's) */
     reset();
     cfg.ocr_vertical = VJO_VERTICAL_ON;
-    fake_missing_model = VJO_VOCR_VERTICAL_NAME;
+    fake_missing_model = VJO_VOCR_TIER2_NAME;
     fake_model_misses = 0;
-    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && fake_model_misses == 1 && !vocr_unusable);
-    TEST_CHECK(logged("is unusable here") == NULL);
-    fake_missing_model = NULL;
-    mem_free();
-    /* auto, its file missing: the worker reads the rows (the size's model names the cards) */
-    reset();
-    cfg.ocr_vertical = VJO_VERTICAL_AUTO;
-    fake_rows_vertical = 1;
-    fake_missing_model = VJO_VOCR_VERTICAL_NAME;
     fake_recognized_text = "猫";
-    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(anki_model, VJO_VOCR_TIER2_NAME) && !vocr_unusable);
+    TEST_CHECK_(run_vocr_job() == VJO_OK && fake_model_misses == 1 && (vocr_unusable & 2u) &&
+                    !strcmp(anki_model, VJO_VOCR_TIER1_NAME) && logged("is unusable here") != NULL,
+                "on, Normal missing: cards %s, unusable 0x%X, %u misses", anki_model, vocr_unusable, fake_model_misses);
     fake_missing_model = NULL;
     mem_free();
     /* off again: the sizes as before */
@@ -4915,6 +4925,66 @@ static void test_open_overlay_says_why_it_waits(void)
     TEST_CHECK(screen_changed_streak == 3);
     check_shown("猫犬鳥", "cat", 0);
     subtitles = 0;
+    close_overlay(); mem_free();
+}
+
+/* #379 ("it stays stuck on 'Recognizing…' and the lower bar glitches slightly"): while the open overlay waits for its
+ * text through torn tries, each try left the view as it was yet published it again (the text retired once more, the
+ * status set again: two versions a try), and the overlay drew itself all again at every one, for as long as the tries
+ * went on. A try now publishes only what changes: the first wait's view once, the wait hint once when it comes (#358),
+ * nothing for the tries in between or after; the text that ends the wait as before. With a text shown (a reopen on a
+ * new screen), the try retires it as before. */
+static void test_torn_tries_leave_the_waiting_view_alone(void)
+{
+    cursor_setup();
+    fake_screen_changes = 6;
+    open_overlay();
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    unsigned version = g_view.version, seq = g_view.list_seq;
+    finish_current_job(); /* torn 1: again at once */
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    TEST_CHECK_(g_view.version == version && g_view.list_seq == seq, "try 2: version +%u, list +%u",
+                g_view.version - version, g_view.list_seq - seq);
+    finish_current_job(); /* torn 2: 250 ms; the third try says why, once */
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT);
+    TEST_CHECK_(g_view.version != version, "the hint: version +%u", g_view.version - version);
+    version = g_view.version;
+    seq = g_view.list_seq;
+    const int64_t waits[] = {500, 1000, 2000, 4000};
+    for (int i = 0; i < 4; i++) { /* torn 3-6: each next try changes nothing shown */
+        finish_current_job();
+        TEST_CHECK(!job_running && open_retry);
+        test_now += waits[i] * 1000; control_tick(0);
+        TEST_ASSERT(job_running);
+        check_waiting(WAIT_HINT);
+        TEST_CHECK_(g_view.version == version && g_view.list_seq == seq, "try %d: version +%u, list +%u", i + 4,
+                    g_view.version - version, g_view.list_seq - seq);
+    }
+    finish_current_job(); /* it reads its screen: the text and its word */
+    check_current_definition("cat", 0);
+    TEST_CHECK(g_view.version != version && !g_view.status[0]);
+    check_quiet();
+    close_overlay(); mem_free();
+
+    /* A text shown, the screen changed since: the reopen's try retires it as before, and says "Recognizing…" */
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay();
+    next_scene(30);
+    fake_screen_changes = 1;
+    open_overlay();
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    TEST_CHECK(!local_text_valid);
+    finish_current_job();
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    check_current_definition("cat", 0);
     close_overlay(); mem_free();
 }
 
@@ -8740,6 +8810,7 @@ TEST_LIST = {
 #endif
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
     {"open_overlay_says_why_it_waits", test_open_overlay_says_why_it_waits},
+    {"torn_tries_leave_the_waiting_view_alone (#379)", test_torn_tries_leave_the_waiting_view_alone},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
     {"api49_trusted_hook_line_is_read_at_once", test_trusted_hook_line_is_read_at_once},
     {"history_up_walks_back_and_down_returns", test_history_up_walks_back_and_down_returns},

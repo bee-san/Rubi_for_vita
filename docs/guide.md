@@ -518,7 +518,7 @@ Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, Automat
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
 overlay's next open: Automatic, the default, reads columns where the text box holds vertical text
-and rows elsewhere; ON reads columns in every game). The page is taller
+and rows elsewhere; ON reads columns, but rows where the box plainly holds lines of text). The page is taller
 than the screen: it scrolls a card at a time to keep the selected one whole, the next card shows
 at the bottom, a bar at the right shows where the view is, and a touch on a card cut at the
 bottom only scrolls it into view. Read text (`ocr_mode`, [Use in a game](#use-in-a-game)) reads
@@ -776,7 +776,8 @@ host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 ([finder refinement](vita-vn-ocr.md#finder-refinement-api-20)).
 `ocr_vertical = auto` (the default; the Rubi app's **Vertical text**) reads Japanese set in columns, right to
 left, with vita-vn-ocr's vertical model, where the line finder's rows in the region look like vertical text, and
-rows everywhere else, as `off` does; `on` reads columns in every game. Draw the text box around the columns. On
+rows everywhere else, as `off` does; `on` reads columns, and rows only where they are plainly lines of horizontal
+text (since API 53, #379: before, columns everywhere). Draw the text box around the columns. On
 the host it read a vertical PS Vita VN's dialogue at 4.5-23 % CER, depending on how the box is drawn, and changed
 no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console).
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
