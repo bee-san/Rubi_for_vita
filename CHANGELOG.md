@@ -82,10 +82,14 @@ been reported.
   so while one thread held the oldest slot's lock off the CPU, every other caller's hits were dropped and no slot
   changed hands (12 to 29 runs in 1,000 on one to four CPUs, measured on the fleet box). And the job thread often
   read before the game threads began: in `concurrent` it read nothing in 378 of 500 runs on one CPU, so a torn read
-  could not have been seen. The threads now start together at a barrier and race until the checks have something
-  to check (every caller has had a slot, the job has read text), and a failed check prints the race's counters. A
-  race put in on purpose (the key check under the slot's lock removed) is caught more often: in 49 runs of 1,000
-  on four CPUs (7 before), 772 unpinned (366 before).
+  could not have been seen. The threads now start together at a barrier and race until the checks have something to
+  check (every caller has had a slot, the job has read text). A slow or starved run takes longer: a race can end
+  without that only after 10 s and 20,000 more hits of every thread. A failed check prints the race's counters. Each
+  caller offers one text of its own, so a hit written into another caller's stream is counted even when the job does
+  not read it in time, and `concurrent`'s writers share one clock across three slots, as the worker's slots do. Races
+  put in on purpose are caught more often, on two and four CPUs, each run beside one of the old test: the key check
+  under the slot's lock removed, in 154 and 748 runs of 1,000 (the old test: 0 and 17); a clock increment that is not
+  atomic, in 363 and 486 of 500 (the old test: none).
 - **CLANNAD's hooked lines show 岡崎 and 朋也 instead of `*A` and `*A*B`.** CLANNAD's hook reads each line before the
   game puts the protagonist's names in: its script writes them as the name variables `＊Ａ` (the family name) and
   `＊Ｂ` (the given name), which Rubi showed as `*A`, so `「ありゃ、岡崎、どこいくんだよっ」` came out as `「ありゃ、*A、どこいくんだよっ」`.
