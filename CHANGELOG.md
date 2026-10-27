@@ -106,10 +106,10 @@ been reported.
   checksums take the row states' place in the job's capture block (its size unchanged). The watch's code takes the
   worker one page more, 4 KiB in each game that is ON, in both builds: 196,608 B of module pages (204,800 B in the
   debug build) ([ledger](docs/memory-ledger.md#the-line-watch-353)).
-- The log says when text was recognized but never shown: the third job in a row whose screen changed under every
-  read logs (both builds) `ocr: the screen changed under every read of 3 jobs in a row, the last with N line(s)
-  recognized and not shown` (the overlay says why it waits: #358, above). The debug build's `gstep job settle` says
-  what the line watch did (its kind), and `tools/analyse_selftest.py --collect` sums it.
+- The log says when text was recognized but never shown: the third job in a row whose screen changed under every read
+  logs (both builds) `ocr: screen changed under 3 jobs in a row; N line(s) not shown` (the overlay says why it waits:
+  #358, above). The debug build's `gstep job settle` says what the line watch did (its kind), and
+  `tools/analyse_selftest.py --collect` sums it.
 
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still

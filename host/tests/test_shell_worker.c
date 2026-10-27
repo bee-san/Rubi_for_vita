@@ -4617,10 +4617,9 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
     TEST_ASSERT(job_running && !open_retry);
     /* #353: the third failure in a row says so in the log (both builds), with the lines its game worker had
      * recognized; the overlay's status is #358's */
-    TEST_CHECK(logged("ocr: the screen changed under every read") == NULL);
+    TEST_CHECK(logged("ocr: screen changed under") == NULL);
     finish_current_job(); /* the third: 500 ms */
-    TEST_CHECK(logged("ocr: the screen changed under every read of 3 jobs in a row, the last with 2 line(s) "
-                      "recognized and not shown") != NULL);
+    TEST_CHECK(logged("ocr: screen changed under 3 jobs in a row; 2 line(s) not shown") != NULL);
     test_now += 500000; control_tick(0);
     TEST_ASSERT(job_running);
     finish_current_job();

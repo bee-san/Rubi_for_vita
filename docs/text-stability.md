@@ -501,12 +501,11 @@ shorter than the still page's, as a line read half typed is):
   slowest, a slow typewriter followed by a smooth icon), the still read's text wherever nothing moves inside a
   line's box.
 
-**The hint.** A job whose screen changed under every read is still dropped quietly (#81 request 4), but the third
-in a row logs, in both builds, `ocr: the screen changed under every read of 3 jobs in a row, the last with N
-line(s) recognized and not shown` (`shell/worker.c` `note_screen_changed`; the string is in the data segment). Why,
-and what helps, is what the open overlay says while it waits: #358's hint ([above](#why-the-overlay-waits-358)). The debug build's
-`gstep job settle` says what the watch did (kind: 1 its lines watched, + 2 read anyway, + 4 × the finder's runs;
-`tools/analyse_selftest.py --collect` sums them).
+**The hint.** A job whose screen changed under every read is still dropped quietly (#81 request 4), but the third in a
+row logs, in both builds, `ocr: screen changed under 3 jobs in a row; N line(s) not shown` (`shell/worker.c`
+`note_screen_changed`; the string is in the data segment). Why, and what helps, is what the open overlay says while it
+waits: #358's hint ([above](#why-the-overlay-waits-358)). The debug build's `gstep job settle` says what the watch did
+(kind: 1 its lines watched, + 2 read anyway, + 4 × the finder's runs; `tools/analyse_selftest.py --collect` sums them).
 
 **Limits.**
 - **Not run on a console.** The times are the host model's (frames, the finder's and the recognizer's estimated
