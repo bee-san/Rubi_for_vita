@@ -13,19 +13,19 @@
  * so a site's offset in segment 0 is addr - VJO_LUNA_SEG0. Some entries are not in
  * that space: Luna had no addr_offset before f237a9f4 (2026-05-20), and an entry added
  * before it can be the guest address itself. A Vita3K before 11dc3b8b (2026-05-27)
- * loaded a fixed-address executable at its link address 0x81000000, where a console
- * must load it too, and a relocatable one elsewhere (0x00105000, 0x80004000); from
- * 0.2.1 4033 Luna normalises every main module (-0xFFC000). So such an entry is the
- * site's address on a console only for a fixed-address executable: TIME TRAVELERS'
- * 0x8119ADDA (added 2025-09-24) is +0x19ADDA of its fixed-address 0x31258C-byte
- * segment 0 at 0x81000000 (public Vita3K logs), and less VJO_LUNA_SEG0 it is past the
- * segment's end. In a relocatable executable such an address is another module's
- * (PCSG00708, a Unity eboot: its Mono AOT module). The generator marks the sites the
- * logs show at a fixed-address executable's guest address (VJO_LUNA_F_GUEST), and
- * vjo_luna_offset reads only those both ways. Vita3K hooks a site when its JIT compiles
- * a block that starts there: a function's entry, or a block inside one. Nothing here
- * touches the game: the worker (game_ocr/hooks.c) resolves the offset against the real
- * segment, checks the bytes there and decides. */
+ * loaded a fixed-address executable at its link address (0x81000000 for every marked
+ * game), where a console must load it too, and a relocatable one elsewhere (0x00105000,
+ * 0x80004000); from 0.2.1 4033 Luna normalises every main module (-0xFFC000). So such
+ * an entry is the site's address on a console only for a fixed-address executable:
+ * TIME TRAVELERS' 0x8119ADDA (added 2025-09-24) is +0x19ADDA of its fixed-address
+ * 0x31258C-byte segment 0 at 0x81000000 (public Vita3K logs), and less VJO_LUNA_SEG0
+ * it is past the segment's end. In a relocatable executable such an address is another
+ * module's (PCSG00708, a Unity eboot: its Mono AOT module). The generator marks the
+ * sites the logs show at a fixed-address executable's guest address (VJO_LUNA_F_GUEST),
+ * and vjo_luna_offset reads only those both ways. Vita3K hooks a site when its JIT
+ * compiles a block that starts there: a function's entry, or a block inside one.
+ * Nothing here touches the game: the worker (game_ocr/hooks.c) resolves the offset
+ * against the real segment, checks the bytes there and decides. */
 #ifndef VJO_HOOK_LUNA_H
 #define VJO_HOOK_LUNA_H
 

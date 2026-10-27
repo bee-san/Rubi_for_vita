@@ -301,18 +301,14 @@ static void address_readings(void)
          * 0x81000000, where a console must): marked, read at the guest address */
         {"PCSG00062", 0x8119ADDAu, 0x81000000u, 0x31258Cu, 0x19ADDAu, 400}, /* TIME TRAVELERS, APP_VER 01.00 */
         {"PCSG00062", 0x811A6052u, 0x81000000u, 0x31258Cu, 0x1A6052u, 400},
-        {"PCSG00062", 0x8119ADDAu, 0x81000000u, 0x306C90u, 0x19ADDAu, 400}, /* 01.01 */
+        {"PCSG00062", 0x8119ADDAu, 0x81000000u, 0x306C90u, 0x19ADDAu, 400}, /* 01.01, another build (`eboot`) */
         {"PCSG00062", 0x811A6052u, 0x81000000u, 0x306C90u, 0x1A6052u, 400},
         {"PCSG00139", 0x81161B0Eu, 0x81000000u, 0x583FD8u, 0x161B0Eu, 222}, /* 1.00 */
-        {"PCSG00139", 0x81161B0Eu, 0x81000000u, 0x5A0398u, 0x161B0Eu, 469}, /* 1.04 */
+        {"PCSG00139", 0x81161B0Eu, 0x81000000u, 0x5A0398u, 0x161B0Eu, 222}, /* 1.04 */
         {"PCSG00172", 0x810A2486u, 0x81000000u, 0x150554u, 0xA2486u, 1825}, /* the farm hooked it there */
         {"PCSG00216", 0x81003DB0u, 0x81000000u, 0x16446Cu, 0x3DB0u, 1018},
         {"PCSG00272", 0x8105A176u, 0x81000000u, 0x1F0554u, 0x5A176u, 452},
         {"PCSG00272", 0x8103416Cu, 0x81000000u, 0x1F0554u, 0x3416Cu, 452},
-        /* PCSG00272's other 1.00 build is relocatable (0x1F4C90 bytes, at 0x80004000 in Vita3K 0.2.0 3588, #2478):
-         * the mark cannot tell the builds apart, so where a console loads it at 0x81000000 the guest offsets are
-         * read there too, unrelated code that only the placement check guards */
-        {"PCSG00272", 0x8105A176u, 0x81000000u, 0x1F4C90u, 0x5A176u, 2478},
         /* relocatable executables (Vita3K loaded them low, or, from 11dc3b8b, PCSG00708's Unity eboot at 0x81000000
          * with e_type 0xFE04): not marked, so with segment 0 at 0x81000000 (where a console may load them) they are
          * refused as on main. Their addresses are another module's (PCSG00708: its Mono AOT module) */

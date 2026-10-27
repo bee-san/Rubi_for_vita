@@ -426,16 +426,16 @@ Title IDs whose sites Luna's comments name more than one game for:
 
 ### Sites at Vita3K's guest address
 
-Luna recorded these before its `addr_offset` (f237a9f4, 2026-05-20), at Vita3K's guest address, in an executable that a public Vita3K log (Vita3K/compatibility; a Vita3K before 11dc3b8b, which loaded only a fixed-address executable at its link address) shows as fixed-address at 0x81000000: `VJO_LUNA_F_GUEST`, the only sites read at the address − 0x81000000 (#349). The other sites at or above 0x81000000 that are past segment 0 in Luna's space are read there only, and refused (`range`): in a relocatable executable such an address is another module's (PCSG00708's is in its Unity Mono AOT module), and the rest have no log that shows their executable.
+Luna recorded these before its `addr_offset` (f237a9f4, 2026-05-20), at Vita3K's guest address, in an executable that a public Vita3K log (Vita3K/compatibility; a Vita3K before 11dc3b8b, which loaded only a fixed-address executable at its link address) shows as fixed-address at 0x81000000: `VJO_LUNA_F_GUEST`, the only sites read at the address − 0x81000000 (#349). The other sites at or above 0x81000000 are read in Luna's space only, as on main: 8 are in relocatable executables, where such an address is another module's (PCSG00708's is in its Unity Mono AOT module); PCSG00614's executable is fixed-address but linked at 0x810007C0, and its other entry is the same site in Luna's space; 9 fit segment 0 in neither reading; PCSG00020 and PCSG01144 have no public log.
 
 | Title ID | Game | Address | Guest offset | Evidence |
 | --- | --- | --- | --- | --- |
-| PCSG00062 | TIME TRAVELERS | 0x8119ADDA | 0x19ADDA | [#400](https://github.com/Vita3K/compatibility/issues/400): `tt1_rom` at 0x81000000, 0x31258C bytes (1.00, Vita3K 0.1.8 3217), 0x306C90 (01.01, 0.1 1403) |
+| PCSG00062 | TIME TRAVELERS | 0x8119ADDA | 0x19ADDA | [#400](https://github.com/Vita3K/compatibility/issues/400): `tt1_rom` at 0x81000000, 0x31258C bytes (1.00, Vita3K 0.1.8 3217); 01.01, another build: `eboot`, 0x306C90 bytes (0.1 1403) |
 | PCSG00062 | TIME TRAVELERS | 0x811A6052 | 0x1A6052 | the same |
 | PCSG00139 | フォトカノ Kiss | 0x81161B0E | 0x161B0E | [#222](https://github.com/Vita3K/compatibility/issues/222), [#469](https://github.com/Vita3K/compatibility/issues/469): `GMV_Rom` at 0x81000000, 0x583FD8 bytes (1.00, 0.1.4 2408), 0x5A0398 (1.04, 0.1.3 2265 to 0.1.6 2897) |
 | PCSG00172 | 神咒神威神楽 | 0x810A2486 | 0xA2486 | [#1825](https://github.com/Vita3K/compatibility/issues/1825): `malievita` at 0x81000000, 0x150554 bytes (1.00, 0.1.8 3242); the psandvita farm hooked 0x810A2486 there in Vita3K and read the game's lines |
 | PCSG00216 | るいは智を呼ぶ | 0x81003DB0 | 0x3DB0 | [#1018](https://github.com/Vita3K/compatibility/issues/1018): `advengine` at 0x81000000, 0x16446C bytes (1.00, 0.1.6 2895) |
-| PCSG00272 | DIABOLIK LOVERS LIMITED V EDITION | 0x8105A176 | 0x5A176 | [#452](https://github.com/Vita3K/compatibility/issues/452), [#2517](https://github.com/Vita3K/compatibility/issues/2517): `eboot` at 0x81000000, 0x1F0554 bytes (1.00, 0.1 1825 and 0.2.0 3596). [#2478](https://github.com/Vita3K/compatibility/issues/2478) shows another 1.00 build, relocatable (0x1F4C90 bytes, at 0x80004000 in 0.2.0 3588): there the guest offsets are unrelated code, which only the placement check guards, should a console load that build at 0x81000000 |
+| PCSG00272 | DIABOLIK LOVERS LIMITED V EDITION | 0x8105A176 | 0x5A176 | [#452](https://github.com/Vita3K/compatibility/issues/452), [#2517](https://github.com/Vita3K/compatibility/issues/2517): `eboot` at 0x81000000, 0x1F0554 bytes (1.00, 0.1 1825 and 0.2.0 3596; the log attached to [#2478](https://github.com/Vita3K/compatibility/issues/2478) is another game's, PCSG00476) |
 | PCSG00272 | DIABOLIK LOVERS LIMITED V EDITION | 0x8103416C | 0x3416C | the same |
 
 ## Rubi's own entry
