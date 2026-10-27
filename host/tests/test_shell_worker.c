@@ -330,7 +330,7 @@ int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap)
     net_log_locks += test_thread == NET_THREAD;
     if (open_batch || !b || !buf || cap <= 0) return 0; /* as shell/log_vita.c: no buffer, no batch */
     open_batch = b; batch_cap = cap; batch_lines_held = batch_bytes_held = 0; batch_owner = test_thread;
-    b->buf = buf; b->n = 0; /* as shell/log_vita.c sets them: buf only when it opens */
+    b->buf = buf; b->n = b->used = 0; /* as shell/log_vita.c sets them: buf only when it opens */
     return 1;
 }
 void vjo_log_batch_end(VjoLogBatch *b)
@@ -339,7 +339,7 @@ void vjo_log_batch_end(VjoLogBatch *b)
     if (!b || open_batch != b) return;
     if (batch_lines_held) note_batch_append();
     batch_lines_held = batch_bytes_held = 0;
-    b->n = 0;
+    b->n = b->used = 0;
     open_batch = NULL;
 }
 void vjo_log(const char *fmt, ...)
@@ -361,7 +361,7 @@ void vjo_log(const char *fmt, ...)
     if (batch_owner != test_thread) { /* another thread's line: the batch's lines first, then this one */
         if (batch_lines_held) note_batch_append();
         batch_lines_held = batch_bytes_held = 0;
-        open_batch->n = 0;
+        open_batch->n = open_batch->used = 0;
         note_append(1);
         return;
     }
@@ -369,12 +369,14 @@ void vjo_log(const char *fmt, ...)
     if (batch_lines_held < VJO_LOG_BATCH_LINES && batch_cap - batch_bytes_held >= n) {
         batch_lines_held++; batch_bytes_held += n;
         open_batch->n = batch_lines_held;
+        open_batch->used = batch_bytes_held;
         if ((unsigned)batch_lines_held > most_lines_held) most_lines_held = (unsigned)batch_lines_held;
         return;
     }
     if (batch_lines_held) note_batch_append(); /* the batch so far goes out first */
     batch_lines_held = 1; batch_bytes_held = n;
     open_batch->n = 1;
+    open_batch->used = n;
 }
 /* shell/log_vita.c's vjo_log_configure: the open batch's lines go out first, on the caller's thread; in
  * the normal build only when log_file changes (with it kept, a held batch stays held). */
@@ -6805,6 +6807,53 @@ static void test_debug_build_writes_an_ocr_jobs_lines_after_its_result(void)
     mem_free();
 }
 
+/* #360: an OCR job whose held lines fill the 2 KiB batch: the batch writes what it holds before the next line
+ * (an append before the result, as the normal build's batch does when full) and goes on holding; the done line
+ * says how many it still held, and every line is written once, in its order. */
+static void test_debug_build_a_full_batch_goes_on_holding(void)
+{
+    static char text[16 * 200];
+    const char *done;
+    size_t n = 0;
+    cursor_setup();
+    for (int line = 0; line < 12; line++) { /* 12 lines of 60 characters: 18 + 180 B a log line */
+        for (int c = 0; c < 60; c++) {
+            memcpy(text + n, "猫", 3);
+            n += 3;
+        }
+        text[n++] = '\n';
+    }
+    text[n - 1] = 0;
+    fake_recognized_text = text;
+    fake_lines = 12;
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_AUTO;
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_WORD;
+    history_rtc_fail = 1;
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
+    size_t file0 = file_len;
+    net_job_taken_at_job_done();
+    /* the batch filled at its 10th text line (10 x 199 B; an 11th does not fit 2,048 B): written before the result */
+    TEST_CHECK(file_has_between(file0, done_file_len, "game vocr text 9: "));
+    TEST_CHECK(!file_has_between(file0, done_file_len, "game vocr text 10: "));
+    done = strstr(file_text + done_file_len, "job 0 done rc=0 in ");
+    TEST_ASSERT(done != NULL);
+    /* still held when the done line was logged: the lines written after the result before it (text lines 10 and
+     * 11, raw and shown here, the workspace line and the lookup's) */
+    {
+        unsigned before = 0, held = 0;
+        for (const char *p = file_text + done_file_len; p < done; p++)
+            before += *p == '\n';
+        TEST_CHECK(sscanf(strstr(done, " appends, ") + 10, "%u held", &held) == 1);
+        TEST_CHECK(held == before && before >= 4);
+        TEST_MSG("%u held, %u written after the result before the done line", held, before);
+    }
+    TEST_CHECK(strstr(file_text + done_file_len, "game vocr text 10: ") == file_text + done_file_len);
+    TEST_CHECK(lines_appended == lines_logged && !open_batch);
+    TEST_MSG("%s", done);
+    mem_free();
+}
+
 /* #360: the press-to-screen figure (shell/lookup_shown.h). A post records its cursor_seq and the time; the
  * control thread publishes the lookup's result with its cursor_seq and its job's job_done time; the overlay's
  * render (here: the test, under the view lock as render holds it) takes the figure once, only for the result
@@ -6827,7 +6876,6 @@ static void test_debug_build_lookup_shown_figure(void)
     finish_current_job();
     TEST_CHECK(g_view.shown_seq == g_view.ask_seq && g_view.done_us == (uint32_t)test_now);
     test_now += 12000;
-    TEST_CHECK(!vjo_shown_take(&s, &g_view, 0)); /* the stick moved the cursor since: not on screen */
     TEST_CHECK(vjo_shown_take(&s, &g_view, 1) && s.n == 1 && s.sum_ms == 42 && s.max_ms == 42 && s.after_ms == 12);
     TEST_CHECK(!g_view.ask_seq && !vjo_shown_take(&s, &g_view, 1) && s.n == 1); /* once */
     /* 2. two moves before the first's result: the first is never shown, the second from its own post */
@@ -6844,7 +6892,12 @@ static void test_debug_build_lookup_shown_figure(void)
     test_now += 8000;
     TEST_CHECK(vjo_shown_take(&s, &g_view, 1) && s.n == 2);
     TEST_CHECK(s.sum_ms == 42 + ((uint32_t)test_now - second) / 1000u && s.max_ms == 53 && s.after_ms == 12 + 8);
-    /* 3. a close forgets a request whose result was published but not drawn: a reopen's saved word is no figure */
+    /* 3. drawn for another cursor (the stick moved on before its result): forgotten, never counted later */
+    vjo_post_cursor(6, generation); on_command(); finish_current_job();
+    TEST_CHECK(g_view.ask_seq && g_view.shown_seq == g_view.ask_seq);
+    TEST_CHECK(!vjo_shown_take(&s, &g_view, 0) && !g_view.ask_seq); /* the stick's cursor is elsewhere */
+    TEST_CHECK(!vjo_shown_take(&s, &g_view, 1) && s.n == 2); /* back on the word: no late figure */
+    /* 4. a close forgets a request whose result was published but not drawn: a reopen's saved word is no figure */
     vjo_post_cursor(3, generation); on_command(); finish_current_job();
     TEST_CHECK(g_view.ask_seq && g_view.shown_seq == g_view.ask_seq);
     close_overlay();
@@ -6852,7 +6905,7 @@ static void test_debug_build_lookup_shown_figure(void)
     open_overlay();
     if (job_running) finish_current_job();
     TEST_CHECK(!vjo_shown_take(&s, &g_view, 1) && s.n == 2);
-    /* 4. the process time's low 32 bits wrap between the post and the frame */
+    /* 5. the process time's low 32 bits wrap between the post and the frame */
     vjo_post_cursor(6, generation);
     g_view.ask_us = 0xFFFFF000u; /* 4,096 us before the wrap */
     on_command(); finish_current_job();
@@ -8569,6 +8622,7 @@ TEST_LIST = {
     {"debug_build_writes_a_lookups_lines_after_its_result", test_debug_build_writes_a_lookups_lines_after_its_result},
     {"debug_build_writes_an_ocr_jobs_lines_after_its_result",
      test_debug_build_writes_an_ocr_jobs_lines_after_its_result},
+    {"debug_build_a_full_batch_goes_on_holding", test_debug_build_a_full_batch_goes_on_holding},
     {"debug_build_lookup_shown_figure", test_debug_build_lookup_shown_figure},
 #endif
 #if VJO_DEBUG

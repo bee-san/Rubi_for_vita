@@ -1539,8 +1539,9 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
  * and in the log's file appends meanwhile, every thread's, before this line (docs/first-ocr.md;
  * tools/analyse_timeline.py reads it); the rest is the Shell's own and the lookup. In the debug build
  * the job's own lines this thread holds (net_log_hold: a lookup's, an OCR job's text and lookup lines)
- * and this one are written after the result, so they are in no job's appends: `N held` counts those
- * before this line (with the batch refused beside another thread's, rare, they went out one by one). */
+ * and this one are written after the result, so they are in no job's appends: `N held` counts those still
+ * held when this line is logged (another thread's line, or a batch filled up, wrote earlier ones before the
+ * result; 0 with no batch open, refused beside another thread's, or when this line might not fit in it). */
 static void net_job(void)
 {
     if (job_prepare) {
@@ -1602,7 +1603,10 @@ static void net_job(void)
     vjo_log(done_format, idx, job_rc, (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak,
             cache_data[idx].page + 1, vjo_overlay_page_count(&cache_data[idx]),
             (unsigned)(job_game_us / 1000), (unsigned)((log_us1 - log_us0) / 1000),
-            (unsigned)(appends1 - appends0), net_held->b.n);
+            (unsigned)(appends1 - appends0),
+            /* (none when no batch is open, or when this line may not fit: then the held go out before the result) */
+            net_held->b.buf && net_held->b.n < VJO_LOG_BATCH_LINES && net_held->b.used <= NET_LOG_BYTES - 255
+                ? net_held->b.n : 0);
     job_done_us = (uint32_t)now_us();
 #endif
     __sync_synchronize(); /* results are visible before job_done */

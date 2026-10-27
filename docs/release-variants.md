@@ -280,8 +280,9 @@ press-to-word path were the two lines (est. from those medians: 2 × 17 ms).
 Now the network thread holds them (`shell/worker.c` `net_log_hold`, `NetHeld`: a log batch and its 2 KiB buffer on
 `net_main`'s stack): a lookup's lines from the start of its job, an OCR job's from the end of its recognition (its
 text's lines, its result arena's line, its first word's lookup), and the done line, which says how many lines it held
-before it (`…, log L ms in K appends, N held`: `K` and `L` count the appends of every thread before the done line,
-which the held ones no longer are in). It publishes the result (`job_done`, the control thread notified), then writes
+before it, still held when it was logged (`…, log L ms in K appends, N held`: `K` and `L` count the appends of every
+thread before the done line, which the held ones no longer are in; a line of another thread, or a full batch, writes
+earlier ones before the result, and they are not in `N`). It publishes the result (`job_done`, the control thread notified), then writes
 them at once, one append per file: the same bytes in the same order as line by line, `status.txt` first as for any
 batch (`shell/log_vita.c` `batch_flush_locked`), within milliseconds of the result. The lookup line is formatted into
 the batch before the result is published: it reads the result arena (`out->list.entries[0]`), which the control
@@ -298,10 +299,13 @@ cap) and, with a new result arena, its Paf and workspace lines: about 650 B; an 
 most 202 and 208 B: `log_text_lines`' 60 characters each), its arena's and workspace's lines, its lookup's and its
 done line: a box of 3 lines at most about 1.8 KiB with every line at its longest, typically under 1 KiB; past 2 KiB or
 24 lines the batch writes what it holds and goes on holding (one more append before the result), as the normal
-build's does. Its stack: `net_main`'s frame 312 → 2,448 B, VjoNet's deepest chain 5,664 →
-7,800 B of its 16,384 B stack in the debug build, the normal build's 5,392 B unchanged [measured: `-fstack-usage
--fcallgraph-info=su` of the Shell's and `vjo_core_vita`'s C sources with each object's flags, on main `199fe31` and
-this change, a static lower bound without the SDK's frames; `VjoNet stack: at least N` in `log.txt` gives the console's].
+build's does. Its stack: `net_main`'s frame 312 → 2,440 B, VjoNet's deepest chain 5,664 →
+7,792 B of its 16,384 B stack in the debug build (8,592 B left), the normal build's 5,392 B unchanged, the paf
+thread's deepest chain from its frame callback 1,124 B in both, unchanged (the close line's 384 B buffer is in a frame
+of its own, under none of `close_page`'s other calls) [measured: `-fstack-usage -fcallgraph-info=su` of the Shell's and
+`vjo_core_vita`'s C sources with each object's flags, on main `199fe31` and this change (main `bf5da10` changes no
+Shell source), a static lower bound without the SDK's frames; `VjoNet stack: at least N` in `log.txt` gives the
+console's].
 
 **The press-to-screen figure** (the debug build's close line; `shell/lookup_shown.h`). A lookup the overlay asks for
 (a cursor move, a tap, a dictionary page, a line history step: `post_local_lookup`) records its `cursor_seq` and the
@@ -317,15 +321,17 @@ overlay closed: 3733 frames, 52 word moves, …, 5 deferred lookups after 250 ms
 (illustrative numbers: no console has logged it yet): the lookups whose word was drawn while the overlay was open, the
 mean ms from their press to the render that drew them, the mean of that after their result's publication (the control
 thread's wake and the wait for the next frame: the frame path's share), and the largest. A request replaced before
-its result (a second move) counts once, for the last; a close forgets one not drawn yet; the render sets the text, and
-paf lays it out in the frame or two after (`LAYOUT_RETRY_FRAMES`), which the figure leaves out. No histogram: its
-counters and format cost the debug Shell's last text page more than the 124 B it had left. `--collect`'s analysis sums
+its result (a second move) counts once, for the last; one whose result was drawn for another cursor (the stick moved
+on meanwhile) and one a close forgets before it was drawn count not at all; the render sets the text, and
+paf lays it out in the frame or two after (`LAYOUT_RETRY_FRAMES`), which the figure leaves out. No histogram (≤ 16,
+33, 50, 100 ms): in a measured build its counters and format took 80 B more of the debug Shell's text and 56 B of its
+data, more than the last text page has left (76 B) [measured: the module rows with and without it]. `--collect`'s analysis sums
 the closes (`lookups shown (N of them): …`). The normal build has none of it (no time taken, nothing per lookup).
 
-Memory: no new allocation, thread or budget; the debug Shell 102,092 → 102,292 B of text (the module's pages: 102,400
-B, 108 B left) and 73,408 → 73,560 B of data/bss (73,728, 168 B left), the done line's and the figure's formats in
+Memory: no new allocation, thread or budget; the debug Shell 102,092 → 102,324 B of text (the module's pages: 102,400
+B, 76 B left) and 73,408 → 73,560 B of data/bss (73,728, 168 B left), the done line's and the figure's formats in
 the data segment (`VJO_DATA_TABLE`); the normal build's three plugins byte for byte main's (sha256) [measured: both
-builds' module rows (`tools/check_memory_ledger.py`) in the fast gate's VitaSDK image, main `199fe31` and this change].
+builds' module rows (`tools/check_memory_ledger.py`) in the fast gate's VitaSDK image, main `bf5da10` and this change].
 Host tests: `debug_build_writes_a_lookups_lines_after_its_result`, `debug_build_writes_an_ocr_jobs_lines_after_its_result`
 (at `job_done` none of the held lines is in `log.txt` and the control thread can take the result; then one append, in
 their order), `the_done_line_has_the_exchange_and_log_times`, `debug_build_lookup_shown_figure` (the request, its

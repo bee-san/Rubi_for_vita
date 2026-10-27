@@ -24,13 +24,18 @@ typedef struct {
 } VjoShown;
 
 /* Under the view lock, in a render: when the view shows the result of the lookup the overlay asked
- * for, with the cursor it asked for (cursor_matches), the figure is taken and the request forgotten.
- * 1 when one was taken. */
+ * for, with the cursor it asked for (cursor_matches), the figure is taken and the request forgotten;
+ * drawn for another cursor (the stick moved on meanwhile), it is forgotten uncounted. 1 when one was
+ * taken. */
 static inline int vjo_shown_take(VjoShown *s, VjoView *v, int cursor_matches)
 {
     uint32_t now, ms;
-    if (!v->ask_seq || v->ask_seq != v->shown_seq || !cursor_matches)
+    if (!v->ask_seq || v->ask_seq != v->shown_seq)
         return 0;
+    if (!cursor_matches) {
+        v->ask_seq = 0;
+        return 0;
+    }
     now = (uint32_t)sceKernelGetProcessTimeWide();
     ms = (now - v->ask_us) / 1000u;
     s->n++;
