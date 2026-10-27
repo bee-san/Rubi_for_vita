@@ -535,25 +535,29 @@
 #define VJO_BUDGET_GAME_MODULE_PAGES VJO_BUDGET_WORKER_MODULE_PAGES
 #define VJO_STACK_GAME 32768u                      /* VjoGameVocr */
 #define VJO_BUDGET_GAME_STACK (VJO_STACK_GAME + VJO_LEDGER_TLS)
-/* The largest accepted model, page-rounded: the Large tier's (include/vjo_vocr_sizes.h VJO_VOCR_MAX_BYTES,
- * VOCR5-L's 2,477,472 B since API 42: v0.3.0's 2,473,696 B with its head rows in frequency order, its 1,792 B gate
- * section and its 1,984 B two-level trailer, one page more; game_ocr/main.c refuses a larger weights block). Raised
- * from 1,560,576 B, F20's shape, the largest before VOCR5, then from 2,473,984 B (v0.3.0's VOCR5-L). */
+/* The largest accepted model, page-rounded: the Large tier's (include/vjo_vocr_sizes.h VJO_VOCR_MAX_BYTES; game_ocr/main.c
+ * refuses a larger weights block). VOCR6-L's 2,475,680 B since VOCR6 (vita-vn-ocr #125, v0.4.0-vocr6.1: the plain
+ * blob's 2,473,696 B with its head rows in frequency order and its 1,984 B two-level trailer, no gate section), in the
+ * same 605 pages as VOCR5-L's 2,477,472 B (API 42: v0.3.0's 2,473,696 B with the gate's 1,792 B as well), so no
+ * change. Raised from 1,560,576 B, F20's shape, the largest before VOCR5, then from 2,473,984 B (v0.3.0's VOCR5-L). */
 #define VJO_BUDGET_GAME_WEIGHTS 2478080u
 /* The largest job's workspace at a 960x544 region, page-rounded (host/tests/test_ledger.c
- * computes it): the model's own (vjo_vocr_job_bytes; VOCR5-L 267,440 B, VOCR5-N 189,360 B and H15 187,856 B on the host build since API 42), and with the
+ * computes it): the model's own (vjo_vocr_job_bytes; VOCR6-L 267,456 B and VOCR6-N 189,376 B on the host build at
+ * vita-vn-ocr f8a1856, since VOCR6; VOCR5-L 267,440 B, VOCR5-N 189,360 B and H15 187,856 B at API 42's pin), and with the
  * beam + LM decoder (API 20) its extras (vjo_vocr_lm_job_bytes:
  * the top-K buffers, the decoder's structs and its workspace, bounded by VJO_VOCR_LM_WS_BYTES:
  * 56,928 B on the host build) and the greedy text kept for the log (4,096 B), and with the
  * confidence cascade the cascade's extras (vjo_vocr_cascade_job_bytes: the larger model's arena,
- * structs and decoder; by tiers the next tier up's, VOCR5-L's 317,824 B beside VOCR5-N; by name
+ * structs and decoder; by tiers the next tier up's, VOCR6-L's 317,840 B beside VOCR6-N; by name
  * VOCR4-W20's 296,352 B beside a smaller model), and the finder's boxes refined
  * (vjo_vocr_refine_bytes: 72,400 B at 960x544).
  * API 22 (parallel lines) ends it with the line slots of the most helpers a job takes
  * (vjo_vocr_helpers_bytes, VJO_VOCR_HELPERS_MAX = 2: the caller's slot, a line's pixels, greedy
- * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 254,672 B
- * for VOCR5-N on the host build): 1,218,240 B for VOCR5-N with VOCR5-L's cascade, the largest (1,218,048 B
- * before vita-vn-ocr f8a1856's structs, API 50: on the host its two models and four contexts are 32 B larger each)
+ * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 254,624 B
+ * for VOCR6-N on the host build): 1,218,048 B for VOCR6-N with VOCR6-L's cascade, the largest since VOCR6, in the
+ * same pages (1,218,240 B for VOCR5-N with VOCR5-L's at the same runtime pin: VOCR6's blobs have no gate, 48 B less
+ * arena in each of the job's four contexts; 1,218,048 B before vita-vn-ocr f8a1856's structs, API 50: on the host its
+ * two models and four contexts are 32 B larger each)
  * (1,211,648 B on main, 1,191,680 B with H15 and VOCR4-W20 before VOCR5). API 42 adds 6,400 B: vita-vn-ocr's
  * head gate (48 B in each gated blob's arena) and two-level head (1,456 B more in each two-level blob's) in each of
  * the four contexts such a job plans (its own, the cascade's and the two helpers'), and their fields in the
@@ -595,11 +599,13 @@
  * page-rounded; taken only when the memory check passes with it. API 21: the cascade's model
  * is the next tier up of the job's (Small's is Normal's, Normal's is Large's, Large has none;
  * a request by name's, the host tools', VOCR4-W20), so its largest is the Large tier's
- * (VJO_VOCR_MAX_BYTES, VOCR5-L's 2,477,472 B since API 42; game_ocr/main.c refuses a larger cascade
- * block). Raised from 1,560,576 B, VOCR4-W20's, Large before VOCR5, then from 2,473,984 B (v0.3.0's VOCR5-L).
+ * (VJO_VOCR_MAX_BYTES, VOCR6-L's 2,475,680 B since VOCR6, VOCR5-L's 2,477,472 B since API 42, the same pages;
+ * game_ocr/main.c refuses a larger cascade block). Raised from 1,560,576 B, VOCR4-W20's, Large before VOCR5, then
+ * from 2,473,984 B (v0.3.0's VOCR5-L).
  * A job's own weights and its cascade's are at most Normal's and Large's: the two budgets, each the
- * largest model's, count 1,286,144 B more than any job holds (VOCR5-N's 1,191,936 B weights block beside
- * VOCR5-L's cascade), an over-count kept so that each item's worst case stays its own. */
+ * largest model's, count 1,290,240 B more than any job holds (VOCR6-N's 1,187,840 B weights block beside
+ * VOCR6-L's cascade; 1,286,144 B with VOCR5-N's 1,191,936 B), an over-count kept so that each item's worst case
+ * stays its own. */
 #define VJO_BUDGET_GAME_CASCADE 2478080u
 /* The free USER memory a job leaves to the game beside what it holds, by the
  * largest model tier the job holds (include/vjo_vocr_sizes.h; the job's own model
@@ -669,7 +675,10 @@
  * two text pages (8,192 B, both builds): the job's worst case 10,567,680 -> 10,584,064 B, 11.7 % of that free
  * USER (a real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,297,920 B, is 1,286,144 B
  * less). VOCR6's 4 MB LM (vita-vn-ocr #127, 3,603,552 B against ctclm.2's 3,781,072 B) lowers the LM budget and
- * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. */
+ * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. VOCR6's
+ * Normal and Large (vita-vn-ocr #125) change no budget: Large's block and the workspace keep their pages, and Normal's
+ * weights block is a page smaller, so the real peak (VOCR6-N with VOCR6-L's cascade, the 4 MB LM and both helpers) is
+ * 9,113,600 B, 1,290,240 B under the worst case. */
 #define VJO_LIMIT_GAME_JOB 10604544u
 
 #endif

@@ -286,6 +286,10 @@ class E2E:
         path = ocr / release.VOCR_MODEL_ATTRIBUTION
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
               f"{release.VOCR_MODEL_ATTRIBUTION} is the model sizes' pinned attribution ({release.VOCR_MODEL_ATTRIBUTION_TAG})")
+        _, size, sha = release.VOCR6_ATTRIBUTION_PIN[release.VOCR6_ATTRIBUTION]
+        path = ocr / release.VOCR6_ATTRIBUTION
+        check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
+              f"{release.VOCR6_ATTRIBUTION} is VOCR6's pinned attribution ({release.VOCR6_TAG})")
         _, size, sha = release.VOCR_GATE_ATTRIBUTION_PIN[release.VOCR_GATE_ATTRIBUTION]
         path = ocr / release.VOCR_GATE_ATTRIBUTION
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
@@ -295,7 +299,8 @@ class E2E:
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
               f"{release.VOCR_VERTICAL_ATTRIBUTION} is the vertical model's pinned attribution ({release.VOCR5V_TAG})")
         expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md", release.VOCR_MODEL_ATTRIBUTION,
-                                                    release.VOCR_GATE_ATTRIBUTION, release.VOCR_VERTICAL_ATTRIBUTION}
+                                                    release.VOCR6_ATTRIBUTION, release.VOCR_GATE_ATTRIBUTION,
+                                                    release.VOCR_VERTICAL_ATTRIBUTION}
         other = sorted(rel for rel in (p.relative_to(ocr).as_posix() for p in (ocr.rglob("*") if ocr.is_dir() else ())
                                        if not p.is_dir()) if rel not in expected)
         check(not other, "ocr/ has nothing but the shipped models and their attributions"

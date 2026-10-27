@@ -1,6 +1,6 @@
 /* The text-presence gate on many regions, as the game worker's job runs it (docs/vita-vn-ocr.md, "Text-presence
  * gate"; tools/gate_eval.py): core/vocr_ocr.c's policy with Rubi's finder, the gate in boxes mode at its pinned
- * operating point, and the worker's defaults (VOCR5 Normal, the 1 MB LM, the cascade to Large within 2 s, PSP-only
+ * operating point, and the worker's defaults (Normal, the 1 MB LM, the cascade to Large within 2 s, PSP-only
  * refinement, a box's short last line, the counter re-decode, the head gate and the two-level head), one job a
  * region from stdin.
  *

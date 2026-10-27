@@ -106,7 +106,7 @@ typedef struct {
     int n_more;
     const char *game, *title_id, *platform; /* "CLANNAD", "PCSG00415", "vita" | "psp" */
     int64_t unix_time;      /* when × was pressed, seconds UTC (misc has the Vita's local time); 0 unknown */
-    const char *ocr_engine, *ocr_model; /* "vocr", "VOCR5_N_w8g2.vocr" */
+    const char *ocr_engine, *ocr_model; /* "vocr", "VOCR6_N_w8_2l.vocr" */
 } VjoAnkiNote;
 
 /* The note of entry `entry` of the shown list (always with the sentence's

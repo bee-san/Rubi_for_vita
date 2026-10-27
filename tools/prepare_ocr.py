@@ -4,16 +4,18 @@
 No ONNX/Paddle/Python runtime is needed on the Vita. Run without --ncnn-source
 to prepare the model directory to copy to ux0:data/VitaJPOverlay/ocr.
 
---backend vocr fetches a vita-vn-ocr recognizer (default VOCR5_N_w8g2.vocr, the Normal
-model size's, from the bee-san/vita-vn-ocr v0.3.6-head2level.1 pre-release; VOCR3_H15_w8.vocr and
-VOCR3_FL10_w8.vocr from the v0.2.5-vocr3.1 pre-release, VOCR4_W20_w8.vocr from
+--backend vocr fetches a vita-vn-ocr recognizer (default VOCR6_N_w8_2l.vocr, the Normal
+model size's, from the bee-san/vita-vn-ocr v0.4.0-vocr6.1 pre-release; VOCR5_S_w8g.vocr from v0.3.6-head2level.1,
+VOCR3_H15_w8.vocr and VOCR3_FL10_w8.vocr from the v0.2.5-vocr3.1 pre-release, VOCR4_W20_w8.vocr from
 v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 --backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8g.vocr,
-VOCR5_N_w8g2.vocr, VOCR5_L_w8g2.vocr) and their release's attribution, v0.3.6-head2level.1's ATTRIBUTION.md
-kept as MODEL-ATTRIBUTION.md, and the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
-with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. --backend vocr-tests
+VOCR6_N_w8_2l.vocr, VOCR6_L_w8_2l.vocr) and their releases' attributions, v0.3.6-head2level.1's ATTRIBUTION.md
+kept as MODEL-ATTRIBUTION.md and v0.4.0-vocr6.1's as VOCR6-ATTRIBUTION.md, and the text-presence gate's weights
+(textgate_p8_c8_w8.vtd, v0.3.2-textgate.1) with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which
+a package ships. --backend vocr-tests
 fetches what the host tests read from VJO_VOCR_MODEL_DIR (CMakeLists.txt: their real-model checks): every pinned
-recognizer, the four LMs, v0.3.0's three VOCR5 recognizers in a v0.3.0/ subdirectory (the off-path check's) and the
+recognizer, the four LMs, the off-path check's references (v0.3.0's VOCR5-S in a v0.3.0/ subdirectory, VOCR6's plain
+Normal and Large in v0.4.0-vocr6.1/) and the
 gate's weights (which tools/fast_gate.sh's models lane hands to cmake/VocrGate.cmake); with --check it downloads
 nothing, and says which of them the --output directory lacks or holds other bytes of (exit status 1), as
 tools/fast_gate.sh's models lane asks first.
@@ -104,40 +106,53 @@ VOCR4_ASSETS = {
 }
 VOCR_CASCADE_MODEL = 'VOCR4_W20_w8.vocr'  # the cascade's model of a request by name (host tools)
 
-# VOCR5 (vita-vn-ocr eval/vocr5_protocol.json): the three model sizes, Small, Normal (the default)
-# and Large, each its own shape; release v0.3.0's recognizers with their head gate (vita-vn-ocr #117,
-# docs/headgate.md: v0.3.0's bytes and a 1,792 B gate section), Normal's and Large's also with their
-# two-level head (#117 item 2, docs/head2level.md: the output rows in frequency order, the same gate, a
-# 1,984 B VOC2 trailer), pre-release v0.3.6-head2level.1 (Small's file is v0.3.5-headgate.1's, byte for
-# byte), whose SHA256SUMS lists these hashes.
+# VOCR5-S (vita-vn-ocr eval/vocr5_protocol.json), the Small model size: release v0.3.0's recognizer with its head
+# gate (vita-vn-ocr #117, docs/headgate.md: v0.3.0's bytes and a 1,792 B gate section), pre-release
+# v0.3.6-head2level.1 (v0.3.5-headgate.1's file, byte for byte), whose SHA256SUMS lists this hash. VOCR5-N's and
+# VOCR5-L's blobs of that release (the Normal and Large sizes from API 42 until VOCR6) are not pinned any more.
 VOCR5_TAG = 'v0.3.6-head2level.1'
 VOCR5_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5_TAG}/'
 VOCR5_ASSETS = {
     'VOCR5_S_w8g.vocr': (VOCR5_BASE + 'VOCR5_S_w8g.vocr', 821584,
         '76a1bc5de5cd0419a7edad31bc198af8016bda5592a7e595de75697671d3e928'),
-    'VOCR5_N_w8g2.vocr': (VOCR5_BASE + 'VOCR5_N_w8g2.vocr', 1189408,
-        'f0c8e52c9c1d9f2a714d5ca3ecfba9c0b031ee7ac51a522a2c29fd558d51761b'),
-    'VOCR5_L_w8g2.vocr': (VOCR5_BASE + 'VOCR5_L_w8g2.vocr', 2477472,
-        '41c3543ff8dddd45dc953a6a5f5d579ef9ca779f0e43196406be59c1d985c5b5'),
 }
-VOCR_DEFAULT_MODEL = 'VOCR5_N_w8g2.vocr'  # the default model size's (Normal's), tools/model_tiers.json
-# v0.3.0's VOCR5 recognizers, the three sizes' blobs before their head gate and two-level head: no longer the
-# plugin's (API 42 pins the blobs above), but host/tests/test_vocr.c's off-path check reads them from
-# VJO_VOCR_MODEL_DIR/v0.3.0/ (each size's pinned blob read with ocr_head_gate = off gives their every logit). The
-# pins v0.3.0's (the model sizes' from #167 until #307); the host tests' set only (--backend vocr-tests), never
-# shipped.
+# VOCR6 (vita-vn-ocr #125, docs/vocr6.md, eval/vocr6_protocol.json stage 4): the Normal (the default) and Large
+# model sizes, VOCR5-N's and VOCR5-L's shapes fine-tuned again on the owner's hooked PS Vita and PSP games, each
+# with #122's two-level head (the output rows in frequency order, a 1,984 B VOC2 trailer) and no head gate (#120's
+# rule rejected it on VOCR6's logits), pre-release v0.4.0-vocr6.1, whose SHA256SUMS lists these hashes. Small
+# stays VOCR5-S: VOCR6-S read other games' lines a little worse.
+VOCR6_TAG = 'v0.4.0-vocr6.1'
+VOCR6_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR6_TAG}/'
+VOCR6_ASSETS = {
+    'VOCR6_N_w8_2l.vocr': (VOCR6_BASE + 'VOCR6_N_w8_2l.vocr', 1187616,
+        '929652e33da10fee3b7bd3991a557e8bbf1a16fba83eb5775bbd0298ab65c4d6'),
+    'VOCR6_L_w8_2l.vocr': (VOCR6_BASE + 'VOCR6_L_w8_2l.vocr', 2475680,
+        'b051fd4f3abe6451927d74b1d1209f44a3072ab755ee9e1b9363368f00feb45b'),
+}
+VOCR_DEFAULT_MODEL = 'VOCR6_N_w8_2l.vocr'  # the default model size's (Normal's), tools/model_tiers.json
+# The off-path check's references (host/tests/test_vocr.c): each size's blob before its speed sections, which its
+# pinned blob read with ocr_head_gate = off gives every logit of: v0.3.0's VOCR5-S (Small's, under v0.3.0/) and
+# VOCR6's plain Normal and Large, which v0.4.0-vocr6.1 publishes beside the two-level blobs (under
+# v0.4.0-vocr6.1/). The host tests' set only (--backend vocr-tests), never shipped.
 VOCR5_V030_TAG = 'v0.3.0'
 VOCR5_V030_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5_V030_TAG}/'
 VOCR5_V030_DIR = 'v0.3.0'
 VOCR5_V030_ASSETS = {
     'VOCR5_S_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_S_w8.vocr', 819792,
         'f175bfcb8cec65d69e85dd5f2cf707c9a711ada7203c0d1099cd2d0142978b8d'),
-    'VOCR5_N_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_N_w8.vocr', 1185632,
-        '20be179def8033171435ba62388657b3d3c932b365093737948c636e025e3bdc'),
-    'VOCR5_L_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_L_w8.vocr', 2473696,
-        '50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3'),
+}
+VOCR6_PLAIN_DIR = VOCR6_TAG
+VOCR6_PLAIN_ASSETS = {
+    'VOCR6_N_w8.vocr': (VOCR6_BASE + 'VOCR6_N_w8.vocr', 1185632,
+        '11a306c3f66020ef2ea3aa20cac67f4eb8f5e45a2f59ca7811eda50a17c80dcd'),
+    'VOCR6_L_w8.vocr': (VOCR6_BASE + 'VOCR6_L_w8.vocr', 2473696,
+        'd32744ca9de9413cce6b5728a84319aa7b04040022bab3a4cf9e451544c031e2'),
 }
 VOCR5_V030_TEST_ASSETS = {f'{VOCR5_V030_DIR}/{name}': pin for name, pin in VOCR5_V030_ASSETS.items()}
+VOCR6_PLAIN_TEST_ASSETS = {f'{VOCR6_PLAIN_DIR}/{name}': pin for name, pin in VOCR6_PLAIN_ASSETS.items()}
+# The off-path references by the size whose pinned blob each is read against, smallest first.
+OFF_PATH_REFERENCES = ('v0.3.0/VOCR5_S_w8.vocr', f'{VOCR6_PLAIN_DIR}/VOCR6_N_w8.vocr',
+                       f'{VOCR6_PLAIN_DIR}/VOCR6_L_w8.vocr')
 # VOCR5-V (vita-vn-ocr #99): vertical text in VOCR5-S's shape, reading a column turned 90 degrees
 # anticlockwise. No model size runs it: a job of columns does (config.ini ocr_vertical on or auto). Pre-release
 # v0.3.2-vertical.1, whose SHA256SUMS lists this hash.
@@ -158,12 +173,22 @@ VOCR_VERTICAL_ATTRIBUTION_PIN = {VOCR_VERTICAL_ATTRIBUTION: (VOCR5V_BASE + 'ATTR
 # extends with the head gate's and the two-level head's fits), the licences of what the VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
 # their terms (non-commercial use only). The package ships it beside the weights as
 # ocr/MODEL-ATTRIBUTION.md, and it is kept under that name in a models directory too: the LMs' release
-# names its own attribution ATTRIBUTION.md as well (VOCR_LM_ATTRIBUTION).
+# names its own attribution ATTRIBUTION.md as well (VOCR_LM_ATTRIBUTION). It covers Small's VOCR5-S, and the VOCR5
+# checkpoints VOCR6's Normal and Large start from (VOCR6's own refers to it: "everything v0.3.0's ATTRIBUTION.md lists").
 VOCR_MODEL_ATTRIBUTION = 'MODEL-ATTRIBUTION.md'
 VOCR_MODEL_ATTRIBUTION_TAG = VOCR5_TAG
 VOCR_MODEL_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
 VOCR_MODEL_ATTRIBUTION_PIN = {VOCR_MODEL_ATTRIBUTION: (VOCR5_BASE + VOCR_MODEL_ATTRIBUTION_ASSET, 5536,
     '74b15e8a8ffb01a997ff15bff3ebc137c48a51439732fd838300a9ddff4953c3')}
+# VOCR6's attribution: v0.4.0-vocr6.1's ATTRIBUTION.md (in its SHA256SUMS): what the Normal and Large recognizers
+# were fine-tuned on beyond VOCR5's data (the owner's hooked PS Vita and PSP games, copyrighted game data used for
+# training only; console crops of the same pages; VOCR5's real pools and synthetic replay), their terms
+# (non-commercial use only) and the disclosures for test-set numbers. The package ships it beside the weights as
+# ocr/VOCR6-ATTRIBUTION.md (each release names its attribution ATTRIBUTION.md).
+VOCR6_ATTRIBUTION = 'VOCR6-ATTRIBUTION.md'
+VOCR6_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
+VOCR6_ATTRIBUTION_PIN = {VOCR6_ATTRIBUTION: (VOCR6_BASE + VOCR6_ATTRIBUTION_ASSET, 4222,
+    '44459773ecb1ec7da2e8325c6885221b122f771ccc34ca89d3a578e2b4c02a96')}
 
 # The text-presence gate (vita-vn-ocr #100, docs/textgate.md): 1,540 B of int8 weights in front of the
 # line finder (ocr_text_gate, off by default), pre-release v0.3.2-textgate.1, whose SHA256SUMS lists these
@@ -187,7 +212,8 @@ VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_
 # the pins carry it: core/vocr_models.c per file (the Rubi app names the local OCR engine
 # after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
 # was removed from the overlay after v0.8.0-test.1.
-VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5', VOCR5V_TAG: 'VOCR5'}
+VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5', VOCR5V_TAG: 'VOCR5',
+                   VOCR6_TAG: 'VOCR6'}
 
 # The model sizes the Rubi app offers (config.ini vocr_tier), each a pinned recognizer above:
 # one table for the C pins' tests, the packager and the self-test analyser.
@@ -208,8 +234,8 @@ def model_tiers():
 
 def release_assets(name):
     """(asset table, release tag) of a pinned recognizer."""
-    for assets, tag in ((VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
-                        (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
+    for assets, tag in ((VOCR6_ASSETS, VOCR6_TAG), (VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG),
+                        (VOCR4_ASSETS, VOCR4_TAG), (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError(f'{name} is not a pinned recognizer')
@@ -284,8 +310,9 @@ def fetch_vocr(directory, name, source=None):
 
 
 def fetch_tiers(directory, source=None):
-    """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their release's
-    attribution (MODEL-ATTRIBUTION.md), with the text-presence gate's weights and attribution
+    """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their releases'
+    attributions (MODEL-ATTRIBUTION.md: VOCR5's, Small's and the base VOCR6 starts from; VOCR6-ATTRIBUTION.md:
+    VOCR6's, Normal's and Large's), with the text-presence gate's weights and attribution
     (GATE-ATTRIBUTION.md), and the vertical model (VOCR_VERTICAL_MODEL, config.ini ocr_vertical) and its
     release's attribution (VERTICAL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched
     once."""
@@ -293,6 +320,8 @@ def fetch_tiers(directory, source=None):
     paths = [fetch_vocr(directory, name, source) for name in names]
     paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
                                      VOCR_MODEL_ATTRIBUTION_TAG, source, VOCR_MODEL_ATTRIBUTION_ASSET))
+    paths.append(fetch_release_asset(directory, VOCR6_ATTRIBUTION, VOCR6_ATTRIBUTION_PIN, VOCR6_TAG, source,
+                                     VOCR6_ATTRIBUTION_ASSET))
     paths += fetch_gate(directory, source)
     paths.append(fetch_vocr(directory, VOCR_VERTICAL_MODEL, source))
     paths.append(fetch_release_asset(directory, VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
@@ -317,19 +346,20 @@ def fetch_lms(directory, source=None):
 def test_models():
     """(name, asset table, release tag) of every file the host tests read from VJO_VOCR_MODEL_DIR: each pinned
     recognizer, shipped or not (every release table here, which tools/tests/test_vocr_defaults.py holds equal to
-    the plugin's, core/vocr_ocr.c), the four LMs, v0.3.0's three VOCR5 recognizers in its v0.3.0/ subdirectory
-    (VOCR5_V030_ASSETS: host/tests/test_vocr.c's off-path check), and the text-presence gate's weights, which the
-    host builds take from cmake/VocrGate.cmake (tools/fast_gate.sh's models lane gives it this copy:
-    VJO_VOCR_GATE_BLOB). A name is the file's path under the directory. No attribution: no test reads one."""
-    tables = ((VOCR5_ASSETS, VOCR5_TAG), (VOCR5V_ASSETS, VOCR5V_TAG), (VOCR4_ASSETS, VOCR4_TAG),
-              (VOCR3_ASSETS, VOCR3_TAG), (VOCR_ASSETS, VOCR_TAG), (VOCR_LM_ASSETS, VOCR_LM_TAG),
-              (VOCR5_V030_TEST_ASSETS, VOCR5_V030_TAG), (VOCR_GATE_ASSETS, VOCR_GATE_TAG))
+    the plugin's, core/vocr_ocr.c), the four LMs, the off-path check's references (host/tests/test_vocr.c:
+    v0.3.0's VOCR5-S in v0.3.0/, VOCR6's plain Normal and Large in v0.4.0-vocr6.1/), and the text-presence gate's
+    weights, which the host builds take from cmake/VocrGate.cmake (tools/fast_gate.sh's models lane gives it this
+    copy: VJO_VOCR_GATE_BLOB). A name is the file's path under the directory. No attribution: no test reads one."""
+    tables = ((VOCR6_ASSETS, VOCR6_TAG), (VOCR5_ASSETS, VOCR5_TAG), (VOCR5V_ASSETS, VOCR5V_TAG),
+              (VOCR4_ASSETS, VOCR4_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR_ASSETS, VOCR_TAG),
+              (VOCR_LM_ASSETS, VOCR_LM_TAG), (VOCR5_V030_TEST_ASSETS, VOCR5_V030_TAG),
+              (VOCR6_PLAIN_TEST_ASSETS, VOCR6_TAG), (VOCR_GATE_ASSETS, VOCR_GATE_TAG))
     return [(name, assets, tag) for assets, tag in tables for name in assets]
 
 
 def fetch_test_models(directory, source=None):
     """test_models(), each fetched as the other backends fetch theirs (a valid copy in `directory` is kept); a file
-    in a subdirectory (v0.3.0/) is its release's asset of the file's own name."""
+    in a subdirectory (v0.3.0/, v0.4.0-vocr6.1/) is its release's asset of the file's own name."""
     return [fetch_release_asset(directory, name, assets, tag, source, Path(name).name)
             for name, assets, tag in test_models()]
 
@@ -416,11 +446,11 @@ def main():
     ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-tiers', 'vocr-lm', 'vocr-tests'), default='ncnn',
                     help="vocr-tiers: the three model sizes' recognizers (Small, Normal, Large); "
                          "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md; "
-                         "vocr-tests: every pinned recognizer, the LMs, v0.3.0's three (v0.3.0/) and the gate's "
-                         "weights (VJO_VOCR_MODEL_DIR)")
+                         "vocr-tests: every pinned recognizer, the LMs, the off-path references (v0.3.0/, "
+                         "v0.4.0-vocr6.1/) and the gate's weights (VJO_VOCR_MODEL_DIR)")
     ap.add_argument('--ncnn-source', type=Path)
-    ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS,
-                                               **VOCR5V_ASSETS}),
+    ap.add_argument('--model', choices=sorted({**VOCR6_ASSETS, **VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS,
+                                               **VOCR_ASSETS, **VOCR5V_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
     ap.add_argument('--check', action='store_true',
@@ -452,7 +482,7 @@ def main():
         for path in fetch_tiers(args.output, args.source):
             print('Verified', path.name)
         print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (keep',
-              f'{VOCR_MODEL_ATTRIBUTION}, {VOCR_GATE_ATTRIBUTION} and {VOCR_VERTICAL_ATTRIBUTION}',
+              f'{VOCR_MODEL_ATTRIBUTION}, {VOCR6_ATTRIBUTION}, {VOCR_GATE_ATTRIBUTION} and {VOCR_VERTICAL_ATTRIBUTION}',
               'beside them: their training data\'s licences and their terms)')
         return
     if args.backend == 'vocr':

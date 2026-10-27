@@ -38,7 +38,7 @@ mode, or an SD2Vita's card). Nothing is sent from the Vita; there is no
 AnkiConnect or AnkiWeb sync.
 
 Text is recognized on the Vita, offline, by the local engine, named after the
-generation of the model it runs (**VOCR5** in this package), automatically or
+generation of the model it runs (**VOCR6** for Normal and Large in this package, **VOCR5** for Small), automatically or
 when the overlay opens. In the **Rubi** app (press **Select** for the
 OCR & lookup page), **Model size** chooses its recognizer: **Small**
 (fastest), **Normal** (the default, balanced) or **Large** (most accurate), each
@@ -56,9 +56,10 @@ build with Google Lens is the tag `archive/online-last` (branch `archive/online`
 
 The engine's name comes from the pinned metadata of the model it runs
 (`core/vocr_models.c`, also written per model into the package's
-`package-manifest.json`), not from the app: VOCR5 for each of this package's
-three sizes (vita-vn-ocr's v0.3.0 release, with the head gates and two-level heads of its v0.3.6-head2level.1;
-before it VOCR3 for Small and Normal
+`package-manifest.json`), not from the app: VOCR6 for this package's Normal and Large
+(vita-vn-ocr's v0.4.0-vocr6.1 pre-release, retrained on the owner's hooked games, with their two-level heads) and
+VOCR5 for its Small (vita-vn-ocr's v0.3.0 release, with its head gate); VOCR5 for all three sizes in 0.8.0 to 0.9.8,
+and before it VOCR3 for Small and Normal
 and VOCR4 for Large). A release that pins a new generation's models as the sizes
 shows that generation's name, with no change to the app; a size that keeps an
 earlier generation's model shows that one's. A `.vocr` file itself carries no
@@ -526,10 +527,10 @@ ready when you press) or only once the overlay opens (**Only when I press L + R*
 `toggle_button`: nothing runs until you press, and the press waits for the reading); the Speed
 boost (`ocr_boost_clock`, ON by default) runs the ARM clock at 444 MHz only while text is read
 ([docs/auto-vs-press.md](auto-vs-press.md)). Each size button shows its estimated time for a 3-line
-textbox and the game memory a job of it takes (`0.7 s, 1.4 MB` for Normal), from
+textbox and the game memory a job of it takes (`0.8 s, 1.4 MB` for Normal), from
 the models' pinned metadata. The
 card's last line names the size and its model file (`Normal: default, balanced.
-VOCR5-N found.`), or reports that file missing; it never says that a game ran a
+VOCR6-N found.`), or reports that file missing; it never says that a game ran a
 smaller size. Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored. Start reloads
 the saved preferences. Other config values, including dictionary priority,
@@ -691,23 +692,21 @@ log_file = on
 
 `vocr_tier` is the local engine's model size, the Rubi app's Model size:
 `small` runs VOCR5-S (821,584 B of int8 weights: FL10's topology with 4,987
-classes), `normal` (the default) VOCR5-N (1,189,408 B: H15's topology with 5,631
-classes) and `large` VOCR5-L (2,477,472 B: a late-wide shape, 5,631 classes), the
-three recognizers of vita-vn-ocr's VOCR5 round (its v0.3.0 release, each with its
-1,792 B head gate, and Normal's and Large's with their two-level head, in v0.3.6-head2level.1;
-selection and scores in that repository's `docs/vocr5.md`, `docs/headgate.md` and
-`docs/head2level.md`). Each is inside the owner's weights ceiling for its size (Small < 1 MB,
-Normal <= 1.6 MB, Large <= 2.5 MB). Their estimated times for a 3-line textbox are 0.5 s
-(Small), 0.7 s (Normal) and 1.8 s (Large) on one core at 333 MHz with the pinned runtime
-(vita-vn-ocr #85's kernels, no credit for their weight prefetch, with the head gate and the
-two-level head, `ocr_head_gate = on`: 0.6, 0.9 and 2.1 s with `off`), calibrated to
-VOCR3-H15's measured 4.94 ms per CTC frame on the console (v0.8.0-test.1); at 444 MHz, the
-clock a job raises by default, 0.4, 0.6 and 1.4 s, and less again with lines read in parallel
+classes, vita-vn-ocr's VOCR5 round, its v0.3.0 release with a 1,792 B head gate), `normal` (the default) VOCR6-N
+(1,187,616 B: H15's topology with 5,631 classes) and `large` VOCR6-L (2,475,680 B: a late-wide shape, 5,631 classes),
+vita-vn-ocr's VOCR6 recognizers (its v0.4.0-vocr6.1 pre-release: VOCR5-N's and VOCR5-L's shapes fine-tuned again on the
+owner's hooked PS Vita and PSP games, each with a two-level head and no gate; selection and scores in that
+repository's `docs/vocr5.md`, `docs/vocr6.md`, `docs/headgate.md` and `docs/head2level.md`). Each is inside the owner's
+weights ceiling for its size (Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB). Their estimated times for a 3-line
+textbox are 0.5 s (Small), 0.8 s (Normal) and 1.9 s (Large) on one core at 333 MHz with the pinned runtime (no credit
+for its weight prefetch, with Small's head gate and Normal's and Large's two-level head, `ocr_head_gate = on`: 0.6, 0.9
+and 2.1 s with `off`), calibrated to VOCR3-H15's measured 4.94 ms per CTC frame on the console (v0.8.0-test.1); at
+444 MHz, the clock a job raises by default, 0.4, 0.6 and 1.5 s, and less again with lines read in parallel
 ([OCR speed](ocr-speed.md)). On a console, test.4's logs measured VOCR5-N at 2.61 ms per CTC
 frame (10 jobs) and VOCR5-L at 4.98-5.10 ms (8 jobs), at 444 MHz, each a job's recognition time
 over its frames (`tools/analyse_selftest.py --collect`,
-[#191](https://github.com/bee-san/Rubi_for_vita/issues/191)); no console run has reported Small
-yet, and the box times above stay estimates.
+[#191](https://github.com/bee-san/Rubi_for_vita/issues/191)); VOCR6 has VOCR5's shapes, but no console has run it (nor
+Small), and the box times above stay estimates.
 A job runs the chosen size when the
 game's free memory has room for it beside that size's reserve (4, 8 or 16 MiB),
 else the next smaller size, silently: `log.txt` has a line `tier large did not
@@ -754,7 +753,7 @@ Each line is decoded with a beam search and a character language model
 (`ocr_lm = 1000k` by default; `4000k`, `2000k`, `500k` or `off`). The LM is
 vita-vn-ocr's, CC BY-SA 4.0. The game keeps the largest LM that fits its memory
 resident, and reads greedily when none does. A line read with low confidence
-is read again by the next model size up (VOCR5-L for Normal, VOCR5-N for
+is read again by the next model size up (VOCR6-L for Normal, VOCR6-N for
 Small; Large has none), when its model fits too, whose reading is shown, while the job
 stays within `ocr_cascade_ms` (2000; `0` turns it off). On the host's
 development dialogue lines the two brought VOCR3-H15, the Normal size before
@@ -1010,8 +1009,8 @@ gives OCR nothing. If the game's `USER_RW` refuses that block the worker tries
 CDRAM, then phycont, then a kernel strip of at most 64 KiB for one call, and
 logs each attempt ([docs/ingame-capture.md](ingame-capture.md)). The
 worker frees each job's workspace before returning text. The verified weights stay in their own `USER_RW` block between jobs
-(821,584 B for VOCR5-S, 1,189,408 B for VOCR5-N and 2,477,472 B for VOCR5-L,
-held as 823,296, 1,191,936 and 2,478,080 B page-rounded blocks; the worker takes
+(821,584 B for VOCR5-S, 1,187,616 B for VOCR6-N and 2,475,680 B for VOCR6-L,
+held as 823,296, 1,187,840 and 2,478,080 B page-rounded blocks; the worker takes
 no larger one) and are read and
 SHA-256 checked again only when the model file's size or modification time
 changes, or the model changes. A job that finds no line (a title screen, a
@@ -1040,12 +1039,12 @@ of a free-memory figure. An error before the check has no memory figures.
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
 only these names in `ux0:data/VitaJPOverlay/ocr`:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
-(VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
-`VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
-`H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
-(VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5, release
-v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+the recognizers `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (VOCR6, release
+v0.4.0-vocr6.1); `VOCR5_S_w8g.vocr` (VOCR5, release v0.3.6-head2level.1);
+`VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1);
+`FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0);
+`VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5,
+release v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
 (release v0.3.7-lm6.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,
@@ -1345,12 +1344,13 @@ sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0
 ([attribution](plaintext-attribution.txt)). The beam + LM decoder's character
 LMs (bee-san/vita-vn-ocr v0.3.7-lm6.2; the 1 MB and 4 MB ones also carry n-gram counts of the owner's
 hooked console captures): CC BY-SA 4.0, with their sources and changes in
-`ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' VOCR5 recognizers
-(bee-san/vita-vn-ocr v0.3.0, with their head gates and two-level heads in v0.3.6-head2level.1) were trained in
-part on NVIDIA's OCR-Synthetic-Multilingual-v1
-(CC BY 4.0) and on non-commercial fonts and text: their attribution and terms, including that
-the weights are for non-commercial use only, are in `ocr/MODEL-ATTRIBUTION.md`, which ships
-beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
+`ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' recognizers, VOCR5-S (bee-san/vita-vn-ocr
+v0.3.0, with its head gate in v0.3.6-head2level.1) and VOCR6-N and VOCR6-L (v0.4.0-vocr6.1, VOCR5 checkpoints
+fine-tuned again), were trained in part on NVIDIA's OCR-Synthetic-Multilingual-v1
+(CC BY 4.0) and on non-commercial fonts and text, and VOCR6's also on the owner's hooked game captures (copyrighted
+game data, used for training only and not redistributed): their attribution and terms, including that
+the weights are for non-commercial use only, are in `ocr/MODEL-ATTRIBUTION.md` (VOCR5's) and
+`ocr/VOCR6-ATTRIBUTION.md` (VOCR6's), which ship beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
 (`ocr/textgate_p8_c8_w8.vtd`, bee-san/vita-vn-ocr v0.3.2-textgate.1; every package ships them,
 whether `ocr_text_gate` is on or off) were trained on non-commercial fonts and text and on VNDB
 screenshots: they are for non-commercial use only too, and their attribution is in

@@ -243,7 +243,7 @@ def summary(recs):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--binary", required=True)
-    ap.add_argument("--models", required=True, help="the pinned models (VOCR5 S/N/L, the LMs, the gate's weights)")
+    ap.add_argument("--models", required=True, help="the pinned models (the S/N/L sizes' recognizers, the LMs, the gate's weights)")
     ap.add_argument("--pagepool")
     ap.add_argument("--pages", help="the pages beside the pool (default: ../pages)")
     ap.add_argument("--kinds", default="base,user", help="base: each page's dialogue region; user: the title's one region (user_region); "

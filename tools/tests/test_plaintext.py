@@ -133,12 +133,15 @@ class FrozenPlaintext(unittest.TestCase):
         vocr4 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR4_ASSETS}
         vocr5 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5_ASSETS}
         vocr5v = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5V_ASSETS}
-        for name in (*pins, *vocr3, *lms, *vocr4, *vocr5, *vocr5v):
+        vocr6 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR6_ASSETS}
+        for name in (*pins, *vocr3, *lms, *vocr4, *vocr5, *vocr5v, *vocr6):
             (models / name).write_bytes(payload)
         (models / "ATTRIBUTION.md").write_text("CC BY-SA 4.0 fixture")
         att = {"ATTRIBUTION.md": ("fixture", 20, hashlib.sha256(b"CC BY-SA 4.0 fixture").hexdigest())}
         (models / "MODEL-ATTRIBUTION.md").write_text("CC BY 4.0 fixture")
         model_att = {"MODEL-ATTRIBUTION.md": ("fixture", 17, hashlib.sha256(b"CC BY 4.0 fixture").hexdigest())}
+        (models / "VOCR6-ATTRIBUTION.md").write_text("VOCR6 fixture")
+        vocr6_att = {"VOCR6-ATTRIBUTION.md": ("fixture", 13, hashlib.sha256(b"VOCR6 fixture").hexdigest())}
         (models / release.VOCR_GATE_MODEL).write_bytes(payload)  # API 26: the text-presence gate's
         gate = {release.VOCR_GATE_MODEL: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())}
         (models / "GATE-ATTRIBUTION.md").write_text("gate fixture")
@@ -149,6 +152,7 @@ class FrozenPlaintext(unittest.TestCase):
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
              mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
              mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
+             mock.patch.object(release, "VOCR6_ATTRIBUTION_PIN", vocr6_att), mock.patch.object(release, "VOCR6_ASSETS", vocr6), \
              mock.patch.object(release, "VOCR_GATE_ASSETS", gate), mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
              mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \

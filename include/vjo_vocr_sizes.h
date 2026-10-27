@@ -35,24 +35,26 @@
 #define VJO_VOCR4_W20_NAME "VOCR4_W20_w8.vocr"
 #define VJO_VOCR_CASCADE_NAME VJO_VOCR4_W20_NAME
 #define VJO_VOCR_CASCADE_BYTES VJO_VOCR_F20_BYTES
-/* VOCR5 (bee-san/vita-vn-ocr eval/vocr5_protocol.json, release v0.3.0): the three
- * model tiers' recognizers, each in its own shape, so each its own size (exact
- * train/export.py sizes): Small in FL10's topology with 4,987 classes, Normal in
- * H15's with 5,631, Large late-wide (channels 64/128/256/480/576) with 5,631. API 42:
- * the same recognizers with their head gate (vita-vn-ocr #117, docs/headgate.md,
- * pre-release v0.3.5-headgate.1): v0.3.0's bytes unchanged, then a 1,792 B VOCG gate
- * section (VjoVocrPolicy.head_gate); Normal's and Large's with the two-level head too
- * (vita-vn-ocr #117 item 2, docs/head2level.md, pre-release v0.3.6-head2level.1, which also
- * carries Small's file unchanged): the recognizer with its output rows and vocab in frequency
- * order (every other byte v0.3.0's but the CRC), the same gate, then a 1,984 B VOC2 trailer
- * (VjoVocrPolicy.two_level). Each blob's own sections drive these paths: a later
- * generation's blobs bring theirs, and only these pins change. */
+/* VOCR5-S (bee-san/vita-vn-ocr eval/vocr5_protocol.json, release v0.3.0): the Small tier's
+ * recognizer, FL10's topology with 4,987 classes (exact train/export.py size). API 42: with its
+ * head gate (vita-vn-ocr #117, docs/headgate.md, pre-release v0.3.5-headgate.1, carried byte for
+ * byte by v0.3.6-head2level.1): v0.3.0's bytes unchanged, then a 1,792 B VOCG gate section
+ * (VjoVocrPolicy.head_gate). VOCR6-S was not adopted (vita-vn-ocr docs/vocr6.md: other games'
+ * development score resolved worse), so Small keeps it. */
 #define VJO_VOCR5_S_NAME "VOCR5_S_w8g.vocr"
 #define VJO_VOCR5_S_BYTES 821584u
-#define VJO_VOCR5_N_NAME "VOCR5_N_w8g2.vocr"
-#define VJO_VOCR5_N_BYTES 1189408u
-#define VJO_VOCR5_L_NAME "VOCR5_L_w8g2.vocr"
-#define VJO_VOCR5_L_BYTES 2477472u
+/* VOCR6 (bee-san/vita-vn-ocr #125, docs/vocr6.md, eval/vocr6_protocol.json stage 4; pre-release
+ * v0.4.0-vocr6.1): the Normal and Large tiers' recognizers, VOCR5-N's and VOCR5-L's shapes (H15's
+ * topology, and late-wide with channels 64/128/256/480/576; 5,631 classes each) fine-tuned again on the
+ * owner's hooked PS Vita and PSP games. Each with #122's two-level head (docs/head2level.md: its output
+ * rows and vocab in frequency order, then a 1,984 B VOC2 trailer, VjoVocrPolicy.two_level) and no head
+ * gate (#120's rule rejected it on VOCR6's logits: vocr6-final-gate, vita-vn-ocr #146), so with
+ * ocr_head_gate = on they run the two-level head alone. Each blob's own sections drive these paths: a
+ * later generation's blobs bring theirs, and only these pins change. */
+#define VJO_VOCR6_N_NAME "VOCR6_N_w8_2l.vocr"
+#define VJO_VOCR6_N_BYTES 1187616u
+#define VJO_VOCR6_L_NAME "VOCR6_L_w8_2l.vocr"
+#define VJO_VOCR6_L_BYTES 2475680u
 /* The runtime's two structs a job's workspace holds beside its arena (vocr_model and vocr_ctx, each 16-byte
  * aligned: core/vocr_ocr.c's layout) as the console's compiler lays them out at the pinned runtime: 3,920 B at
  * vita-vn-ocr f8a1856, whose vocr.h has #130's attention op (1,872 + 2,048 B; 3,872 B at 47cf3a3, 3,760 B at
@@ -73,11 +75,13 @@
  * smallest first; tools/model_tiers.json is the same table (its "tiers", in
  * this order), and tools/tests/test_vocr_defaults.py checks the two agree. A
  * tier is a pinned blob: this package's Small is VOCR5-S, its Normal (the
- * default) VOCR5-N and its Large VOCR5-L. A job runs the largest tier the
+ * default) VOCR6-N and its Large VOCR6-L. A job runs the largest tier the
  * request allows that fits the game's free memory beside that tier's reserve
  * (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*), else the next smaller one;
  * the confidence cascade reads doubtful lines again with the next tier up, when
- * that fits too. A later generation's three blobs (or an earlier one's, for a
+ * that fits too. The tiers may come from two generations (Small VOCR5-S, Normal and
+ * Large VOCR6): each blob carries its own generation in the pins (core/vocr_models.c,
+ * tools/prepare_ocr.py VOCR_GENERATION). A later generation's three blobs (or an earlier one's, for a
  * tier whose new candidate did not beat it) replace these through the pins:
  * these six lines, the model's pins where every model is pinned
  * (core/vocr_ocr.c, core/vocr_models.c, kernel/game_ocr.c, tools/prepare_ocr.py),
@@ -100,10 +104,10 @@
 #else
 #define VJO_VOCR_TIER1_NAME VJO_VOCR5_S_NAME
 #define VJO_VOCR_TIER1_BYTES VJO_VOCR5_S_BYTES
-#define VJO_VOCR_TIER2_NAME VJO_VOCR5_N_NAME
-#define VJO_VOCR_TIER2_BYTES VJO_VOCR5_N_BYTES
-#define VJO_VOCR_TIER3_NAME VJO_VOCR5_L_NAME
-#define VJO_VOCR_TIER3_BYTES VJO_VOCR5_L_BYTES
+#define VJO_VOCR_TIER2_NAME VJO_VOCR6_N_NAME
+#define VJO_VOCR_TIER2_BYTES VJO_VOCR6_N_BYTES
+#define VJO_VOCR_TIER3_NAME VJO_VOCR6_L_NAME
+#define VJO_VOCR_TIER3_BYTES VJO_VOCR6_L_BYTES
 #endif
 /* The largest recognizer this build pins (the Large tier's): the most the game
  * worker's weights block and its cascade block take (game_ocr/main.c weights_alloc,

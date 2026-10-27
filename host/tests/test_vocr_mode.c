@@ -197,7 +197,7 @@ static int policy_job(unsigned w, unsigned h, int check, unsigned fix, int gate,
     static unsigned char capture[64 * 1024];
     char text[16];
     void *ws = NULL;
-    size_t size = vjo_vocr_workspace_bytes(VJO_VOCR5_N_NAME, w, h);
+    size_t size = vjo_vocr_workspace_bytes(VJO_VOCR_TIER2_NAME, w, h);
     int rc;
     platform.file_open = gate_or_absent;
     rw = w;
@@ -211,7 +211,7 @@ static int policy_job(unsigned w, unsigned h, int check, unsigned fix, int gate,
         pol.gate_res = &gate_res;
     }
     TEST_ASSERT(size && posix_memalign(&ws, 16, size) == 0);
-    rc = vjo_vocr_ocr_policy(&platform, "absent", VJO_VOCR5_N_NAME, &image, &res, ws, size, capture,
+    rc = vjo_vocr_ocr_policy(&platform, "absent", VJO_VOCR_TIER2_NAME, &image, &res, ws, size, capture,
                              vjo_vocr_capture_bytes(w, h), &pol, text, sizeof(text), st);
     free(ws);
     rw = WIDTH;
@@ -229,7 +229,7 @@ static void test_auto_checks_tall_regions_on_the_frozen_rows(void)
     VjoVocrStats st;
     int rc;
     posix_platform_init(&posix, &posix_plat);
-    selected_model = VJO_VOCR5_N_NAME;
+    selected_model = VJO_VOCR_TIER2_NAME;
     /* a wide region: one pass, with the fixes */
     reset(1);
     rc = policy_job(WIDTH, HEIGHT, 1, VOCR_FIX_DEFAULT, 0, &st);

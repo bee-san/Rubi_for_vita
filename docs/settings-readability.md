@@ -466,17 +466,17 @@ y = 112 (146 with the engine row), and the cards below move up with it
 "estimated" below it, and three 220-pixel buttons, 54 pixels tall and 13 apart
 (from x = 232), Small, Normal and Large, each with a second line, its estimated
 time for a 3-line textbox and the game memory a job of it takes (`0.5 s, 1.0 MB`,
-`0.7 s, 1.4 MB`, `1.8 s, 2.8 MB`, from `core/vocr_models.c`). The chosen size is
+`0.8 s, 1.4 MB`, `1.9 s, 2.8 MB`, from `core/vocr_models.c`). The chosen size is
 filled in the accent colour. The card's last line names the chosen size and its
-model (`Normal: default, balanced. VOCR5-N found.`), or that file missing.
+model (`Normal: default, balanced. VOCR6-N found.`), or that file missing.
 Up/Down select the size row and the three cards (four rows); on the size row
 Left/Right choose the next smaller or larger size and Enter goes round them; a
 touch on a size chooses it, the row's title, the gaps and the status line only
 focus it. The focus bar at the card's left edge is beside the selected row only.
 The status line names the chosen size's model from its pinned metadata (`settings/engine.c`:
-`Large: most accurate. VOCR5-L found.`, or `VOCR5-L missing. Reinstall the package.`), so the
-generation shown follows the size: VOCR5 for each of this package's (a size that keeps an earlier
-generation's model shows that one's). When a game's free memory
+`Large: most accurate. VOCR6-L found.`, or `VOCR6-L missing. Reinstall the package.`), so the
+generation shown follows the size: VOCR6 for this package's Normal and Large, VOCR5 for its Small (a size that keeps an
+earlier generation's model shows that one's). When a game's free memory
 has no room for the chosen size a job runs a smaller one; nothing in the app says
 so (owner 2026-10-15 04:54Z), only `log.txt`. `host/tests/test_settings_app.c`
 drives it: every size's edges and gaps by touch, Down/Left/Right/Enter/Up, the
@@ -488,8 +488,8 @@ and the next save drops the line. `host/tests/test_settings_app.c`
 runs the actual input/draw loop with a scripted controller, touch screen and
 vita2d, and real files: the size buttons, their edges and the gaps (focus only),
 Left, Right and Enter, the removed values, missing and wrong-sized models, an
-unreadable config.ini, and a later model table whose VOCR5 the app names unchanged
-(a missing VOCR5 file reported as `VOCR5-N missing. Reinstall the package.`, though a
+unreadable config.ini, and a later model table whose generations the app names unchanged
+(a missing file reported as `VOCR6-N missing. Reinstall the package.`, though a
 smaller size's file would run).
 Its text widths are stub metrics, not firmware fonts. These scenarios, previews
 and the native checks below predate that change.
