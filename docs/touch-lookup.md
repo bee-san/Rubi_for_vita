@@ -380,6 +380,11 @@ format, with illustrative numbers (no console has logged the stick's fields yet)
 overlay closed: 3733 frames, 2 word moves, stick 127, slowest frame 11 ms, 4 row moves, 1 wraps, 0 without layout, slowest key 128 us, 37 stick moves, 3 deferred lookups after 200 ms
 ```
 
+Since #360 the line ends with the press-to-screen figure, `, lookups shown N: mean M ms (A ms after the result),
+max X ms`: the lookups drawn while the overlay was open, from their press (the post) to the render that drew the word,
+of it after the result's publication, and the slowest
+([release-variants.md](release-variants.md#the-debug-builds-job-lines-after-the-result-360)).
+
 `word moves`, `row moves`, `wraps`, `without layout` and `slowest key` stay the
 arrows', taps' and dictionary pages' (the stick's steps take the arrows' code
 with its `stick` flag, which leaves those counts alone, and are counted among

@@ -12,7 +12,9 @@ two runs' logs unless it is marked est.; the logs are private (only numbers are 
 their reads of the weights, the LM and the cascade's model, the self-test's stage runs, and per job
 the game worker's stages, its frame pacing (API 22) and the Shell's time beside them, with the
 appends that stood between the recognition and the result (`result path:`, est. at the job's own
-cost per append; test.3's are in [release-variants.md](release-variants.md#no-log-append-on-the-result-path)).
+cost per append; test.3's are in [release-variants.md](release-variants.md#no-log-append-on-the-result-path); since
+#360 the debug build writes a job's text, lookup and done lines after its result, and the line says how many it held:
+[release-variants.md](release-variants.md#the-debug-builds-job-lines-after-the-result-360)).
 It reads numbers only, never recognized text.
 
 ## Reading a job's step log
@@ -128,7 +130,9 @@ and then again in `log.txt` and `status.txt` through the line-by-line logger of 
 does not say whether the time went to the exchange (the worker taking the job late: it runs at the
 lowest priority) or to the log's appends. This build's done line splits it:
 `job 0 done rc=0 in T ms, ..., game G ms, log L ms in K appends` (`G`: the exchanges with the game
-worker; `L`: every thread's file appends meanwhile).
+worker; `L`: every thread's file appends meanwhile). Since #360 it ends `…, N held`: the job's lines it held until
+its result (its text's, its lookup's), written with the done line after it, so neither they nor the done line are in
+`K` and `L`.
 
 ## What test.3 changes
 
