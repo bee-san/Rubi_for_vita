@@ -22,6 +22,15 @@ been reported.
   in none of them. A region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
   "Recognizing…" (on by default;
   [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)). Not run on a console yet.
+- Native hooks for MAGES/5pb.'s SC3 engine: STEINS;GATE 比翼恋理のだーりん (`PCSG00146`), ROBOTICS;NOTES ELITE
+  (`PCSG00352`) and CHAOS;CHILD (`PCSG00555`), 1.00, get verified entries at their page function. Their script
+  text is glyph indices into each game's own font, so the hook reads a page through its SC3 end token (its 0x00
+  bytes are line breaks and glyphs) and the worker decodes it with the game's charset, a file the release installs in
+  `ux0:data/VitaJPOverlay/hooks/` and the kernel opens for that game by its title ID; the speaker's name on its own
+  line, ruby's base without its reading. In those games the worker holds an 8 or 16 KiB block for the charset; the
+  modules keep their pages ([native-hooks.md](docs/native-hooks.md#sc3-text)). **Proven in the Vita3K emulator
+  only, not run on a console** (the psandvita farm's 1,498, 606 and 395 approved pages); without the file the games
+  read by OCR as before.
 
 ### Fixed
 

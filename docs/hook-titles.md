@@ -396,6 +396,10 @@ Title IDs whose sites Luna's comments name more than one game for:
 | --- | --- | --- | --- | --- | --- |
 | PCSG00415 | JP | CLANNAD | the CALL source (SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports of the game executable); the register site segment 0 + 0x2CA70 (Luna's space 0x80030A70), r6, module NID 0xC5187D60, 8-byte signature | CP932 (AUTO for the CALL source) | Rubi's own, not in Luna's table: the current CALL source was verified on the owner's Vita with the combined debug test build (2026-10-20); the register site was proven in Vita3K only (note 22) and remains unverified on a console; the normal release build has no reported console run |
 
+Rubi's other verified entries, from the psandvita Vita3K farm (the three MAGES SC3 games among them, whose text
+the worker decodes with each game's charset), are listed with their evidence in
+[native-hooks.md](native-hooks.md#table-sites).
+
 ## Hookfuncs and filters
 
 | Luna's function | Kind | Sites | Port |

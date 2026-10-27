@@ -161,6 +161,15 @@ Two lists name them:
     - PCSG00876 7'scarlet, NID 0x16FEB862, +0x12B60, Thumb, r6, UTF-8, filter `RF_PCSG00876`; 1051 farm pages
     - PCSG01194 参千世界遊戯 ～Re Multi Universe Myself～, NID 0xECD30306, +0x56E24, Thumb, r0, CP932, filter `RF_PCSG01194`; 30 farm pages
 
+  - MAGES/5pb. SC3 engine titles from the psandvita Vita3K farm, Rubi's own sites (proven in Vita3K only; no branch,
+    PC use or IT in the patched bytes, `push.w {r4-r11, lr}; sub sp, #imm; movw r4, #imm`, and no branch or pointer
+    in segment 0 into them, checked on each title's dumped segment 0, whose SHA-256 the farm's `rubi-hook.json`
+    records). The entry of the game's page function, whose r0 is the page's SC3 string: read through its end token
+    (`VJO_PLACE_READ_SC3`) and decoded with the game's charset ([SC3 text](#sc3-text)); no filter, no Luna site:
+    - PCSG00146 STEINS;GATE 比翼恋理のだーりん (module adv7), NID 0x2BAC7A6D, +0x2B018, Thumb, r0, SC3; 1498 farm pages
+    - PCSG00352 ROBOTICS;NOTES ELITE (module robono), NID 0x5409CF98, +0xF1D8, Thumb, r0, SC3; 606 farm pages
+    - PCSG00555 CHAOS;CHILD (module Game), NID 0x5681A30D, +0x2F9BC, Thumb, r0, SC3; 395 farm pages
+
   - From the farm's data bucket (the hooks of its finished titles, with every approved page's hook bytes:
     [farm checks](#farm-checks)), Rubi's own sites, proven in Vita3K only. The bucket has no segment-0 dump,
     so only the recorded 16 bytes were checked: no branch, PC use or IT among the patched instructions
@@ -188,7 +197,7 @@ Two lists name them:
   01.00); another `APP_VER` refuses the entry as `version` (`vjo_place_verified_version`; `APP_VER` is read
   for such an entry also when the title has no Luna site). One that cannot be read leaves the entry to its
   NID and bytes, which pin the build anyway (an update changes the eboot, and so its NID); a Luna site that
-  names its version is refused then, having neither. 25 of the 30 entries name 01.00; CLANNAD's, POSSESSION
+  names its version is refused then, having neither. 28 of the 33 entries name 01.00; CLANNAD's, POSSESSION
   MAGENTA's, 忠臣蔵46+1 V's, 剣が君 for V's and 月に寄りそう乙女の作法's name none (the farm did not record it), so
   their NID and bytes alone decide. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
@@ -200,7 +209,8 @@ Two lists name them:
   4-byte read, as Luna's `DATA_INDIRECT` (`VJO_PLACE_READ_DEREF`; an unreadable pointer gives no text), or a
   page record of 16-bit cells (`VJO_PLACE_READ_CELLS`: a 32-bit count at +0x14, the cells from +0x20, each
   a character's first CP932 byte and its second one or 0; exactly that many cells are read, at most 256,
-  none past the record, and `vjo_place_cells` makes them CP932 bytes). The register may be r15, the site's
+  none past the record, and `vjo_place_cells` makes them CP932 bytes), or an SC3 string through its end token
+  (`VJO_PLACE_READ_SC3`, [SC3 text](#sc3-text)). The register may be r15, the site's
   own address: the padding is then a static's distance from the site. The host test `verified: every entry
   of the list` checks every entry's alignment, recorded bytes against the patch, register, encoding, read,
   filter and `APP_VER`; `the farm's excerpts through each verified entry` runs each entry the farm's bucket
@@ -322,13 +332,11 @@ filters before this change and Rubi's now [measured: `tools/hook_farm.py check` 
 | PCSG00935 | 382 | 382 | 112 | 382 | | |
 
 That is 12,465 of the 12,503 single-hit pages, and the other 38 differ by a default name only. Exactly, before
-the shown form, 12,131 (the rest: full-width `！？` for `!?`, the ends' white space, the 0xA0 blank). The bucket's
-other 19 Vita titles have no entry, for one of these reasons (the hook bucket's inventory: `rubi-bucket-hooks`
-report):
-
-- MAGES' SC3 script text (STEINS;GATE 比翼恋理のだーりん `PCSG00146`, ROBOTICS;NOTES ELITE `PCSG00352`,
-  CHAOS;CHILD `PCSG00555`): the hook's bytes are glyph indices into a charset of 2,666 to 8,000 characters
-  per game, which no read or filter here decodes.
+the shown form, 12,131 (the rest: full-width `！？` for `!?`, the ends' white space, the 0xA0 blank). MAGES' SC3
+titles (STEINS;GATE 比翼恋理のだーりん `PCSG00146`, ROBOTICS;NOTES ELITE `PCSG00352`, CHAOS;CHILD `PCSG00555`) have
+entries since [SC3 text](#sc3-text), checked on the farm's own run data there (`hook_farm.py check` decodes them
+with the committed charsets). The bucket's other 16 Vita titles have no entry, for one of these reasons (the hook
+bucket's inventory: `rubi-bucket-hooks` report):
 - HuneX's page record (帝国海軍恋慕情 `PCSG00547`): the farm polled it from the game's
   `sceCtrlReadBufferPositive` import stub (`mvn r0, #0; bx lr` in the patched bytes) and decodes its glyph
   words with the game's own charset.
@@ -339,6 +347,67 @@ report):
   console.
 - No module NID or bytes recorded: `PCSG00667` (LOVE:QUIZ, at Luna's own site 0x8003ACBA), `PCSG00917`,
   `PCSG00918` (Starry☆Sky Autumn and Winter, Luna's sites too).
+
+### SC3 text
+
+MAGES/5pb.'s adv engines keep their script text as SC3 strings: a glyph is a big-endian 16-bit `0x8000 | index`
+into the game's own font, a byte below 0x80 a control, 0xFF the end. The bytes are no character encoding: only a
+table of that game names a glyph's character (its charset: 2,666, 3,200 and 8,000 glyphs for the three games), and
+0x00 is both a line break and the low byte of many glyphs (0x8100, 0x8200, ...), so a NUL-terminated read cuts a
+page there (13.5 % of STEINS;GATE's story strings have one, by the farm's survey of its scripts; the farm's first
+reader halted at its page 11 on one).
+`core/hook_sc3.{h,c}`, `game_ocr/hooks.c`:
+
+- **The hit** (a game thread, `site_hit`): `read_game` with `VJO_HOOK_READ_SPAN` takes the 512 bytes at r0 (fewer
+  at the memory block's end, NUL bytes included), and `vjo_sc3_span` keeps them through the string's 0xFF end token,
+  walking its tokens as the game's page parser does (a glyph's second byte, a control's two argument bytes for
+  0x0C/0x11/0x12/0x13, an SC3 expression after 0x04/0x15 up to its 0x00), so a 0xFF or 0x00 inside a glyph,
+  argument or expression ends nothing. Only those bytes go to the stream (`VJO_HOOK_ENC_SC3`): its change test
+  hashes the string itself, never the next string in the script buffer after it. A string whose end token is not
+  within the 512 bytes (or the block) gives no hit; the farm's pages are at most 211, 183 and 208 bytes [measured:
+  every hit of the farm's runs].
+- **The text** (job time, `vjo_hooks_text`): `vjo_sc3_decode` with the game's charset. A glyph is its character;
+  one the table cannot name (unknown, or past it) is dropped, never guessed; 0x00 is a line break; the speaker's
+  name (0x01 .. 0x02) a line of its own, as Rubi's other filters write a name; ruby (0x09 base 0x0A reading 0x0B)
+  keeps its base, the word the dictionary looks up; every other control is dropped. Then `vjo_hook_clean`, as for
+  every stream. At most 312, 255 and 282 bytes of UTF-8 for the farm's pages, under `HOOK_TEXT_CAP` (769).
+- **The charsets** (`third_party/sc3-charsets/<title>.sc3`, written by `tools/sc3_charset.py` from the farm's
+  `sc3-charset.json`; their sources, licences and checks in its README): a 32-byte header (`vjosc3`, the title, the
+  module NID, the glyph count) and a 16-bit code point a glyph, 5,364, 6,432 and 16,032 bytes. The release installs
+  them to `ux0:data/VitaJPOverlay/hooks/` (the one-VPK payload, `install_ftp.sh`). Compiled into the worker the three
+  tables (27,732 B) would take about seven more pages in every game that is ON [estimate: the tables' bytes]; on the
+  card each costs memory only in its own game.
+- **The load** (`game_ocr/main.c` `hooks_sc3_load`): at the first job of a game with an SC3 site hooked, before the
+  job's snapshot; a read that was cancelled or timed out again at a later job (three tries in all), any other outcome
+  once a session. The worker cannot always open `ux0:` itself ([worker-loading.md](worker-loading.md)),
+  so the kernel's file broker opens it: `vjoOcrModelOpen` with `VJO_GAME_OCR_OPEN_SC3`, for which the kernel builds
+  the path from the title ID it reads for the calling process (`loader_title`, the loader's
+  `ksceKernelSysrootGetProcessTitleId`; the caller names no path), at most 16,384 B, one read through its staging
+  buffer. Into a `USER_RW` block of its own (`VjoGameSc3`, 8 or 16 KiB, page-rounded), taken only when the game has
+  `VJO_GAME_RESERVE_HOOK_ONLY` free beside it, held until the worker stops. The worker keeps it only when it is
+  exactly the file this build pins (`core/hook_sc3_pins.inc`: its size and SHA-256), so a file from another build or
+  a damaged one is never used. No API change: a kernel without the open answers `VJO_ERR_ARG`, as for a missing file.
+- **What is shown.** The site is a Rubi verified site, so with `hook_trust = on` its text answers without OCR from
+  its first line ([Trusted hooks](#trusted-hooks-api-43)). Until the charset is set (before the session's first job,
+  or when it could not be read: no file, another file, no memory) the site's text is empty, so OCR reads the game as
+  without the hook, and the hook watch reports nothing.
+
+The farm's evidence, Vita3K only: 1,498, 606 and 395 approved pages. Through Rubi's own path on the host
+(`host/hook_farm_check.c`: the span of the hook's bytes, the decoder, `vjo_hook_clean`, and the worker's shown form,
+`core/textnorm.h`), the text of 1,493 of the 1,496 single-hit pages, 589 of 605 and 390 of 390 is the farm's, the text
+an AI reviewer verified against the frame the game drew (its ruby written as the base); the others differ only where
+the charsets were corrected after the pages were made (third_party/sc3-charsets/README.md) [measured: every
+single-hit approved page of the farm's runs `paired-vita-pcsg00146/00352/00555-20261023`].
+`host/tests/test_hook_sc3.c` runs 14 short pages of the three games (`host/tests/fixtures/hook_sc3_farm.inc`,
+`tools/sc3_charset.py --fixtures`) through the span and the decoder, and `host/tests/test_hooks_engine.c` through the
+real entries, the observer, the stream and `vjo_hooks_text`. Limits:
+
+- Proven in Vita3K only. Whether taiHEN places these hooks on a console, and whether the kernel opens the file there,
+  no console run has shown.
+- A trusted line is never checked against the screen: a wrong charset entry shows a wrong character (STEINS;GATE's
+  kanji order was aligned with the PC port's, not read from its font; ROBOTICS;NOTES ELITE's comes from the English
+  patch's table, with its Japanese glyphs restored), and an unknown glyph is missing from the line.
+- One charset a game: another version of a game (another module NID) gets no entry, as for every verified entry.
 
 ### The observer
 
@@ -352,7 +421,8 @@ register + padding, the NUL-terminated string, the string its pointer there poin
 Luna's: `vjo_luna_capture`) with `frame[15]` set to the site's address.
 
 The capture reads game memory only through `read_game`: `sceKernelGetMemBlockInfoByAddr` gives the
-block that holds the address; it must be readable, and no read goes past its end (at most 512 bytes).
+block that holds the address; it must be readable, and no read goes past its end (at most 512 bytes; an SC3
+site's read takes them all, NUL bytes included, and keeps those through the string's end token).
 One hit captures at a time into a static 512-byte buffer (another thread's hit meanwhile is dropped and
 counted), then into the site's stream.
 
@@ -801,6 +871,12 @@ The two `9fa24c5` rows: the PR's head as audited, where hooks-api's `vjoGetTextS
 text to the debug build in the same pages [measured: the module rows of local CI's Vita jobs on 9fa24c5,
 audit-hooks section 3].
 
+An SC3 site ([SC3 text](#sc3-text)) adds the worker's one block outside this rule, `VjoGameSc3`: its game's charset,
+8 or 16 KiB, from the first job until the worker stops, in those three games only; and 1,136 / 1,152 B of text
+(debug / normal) and 296 / 288 B of data/bss to every game's worker, in the same pages (200,704 and 192,512 B)
+[measured: the build log's module rows on main `892cfb9` and this change, both builds; memory-ledger.md "SC3 text"].
+Its hit reads into the same 512-byte capture buffer.
+
 Stack, on the game's thread: a site hit about 564 B at most (the observer's 328 B frame and up to 4 B to
 align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `read_game` 48; the
 memory-block syscall runs on the kernel's stack); a CALL hit about 80 B (the hook 24, `call_hit` 32, then
@@ -906,6 +982,13 @@ Hardware is paused; these are for the test issue (#230):
     trusted` and a job each), and the overlay shows the last. With the overlay open and the game on auto: each line
     replaces the text as it starts. Close the game and start it again: the first line is trusted at once (no OCR job
     before it). `history.csv` has one record a line.
+15. SC3 text (the debug build, STEINS;GATE 比翼恋理のだーりん `PCSG00146` 1.00, `auto`, Automatically): `hooks.log`
+    shows NID 2BAC7A6D and `verified +2B018 thumb r0` hooked; `ux0:data/VitaJPOverlay/hooks/PCSG00146.sc3` is
+    there (5,364 B). The first job's step log has an alloc step of the `sc3` block (8,192 B) and no free step of it;
+    a dialogue line then says `flags 0x118` with the speaker's name on its own line and no reading of a ruby; the
+    game runs through several scenes and a chapter change. With the file removed: the first job allocates and frees
+    the block, no later job tries again, and OCR reads the lines. The same for ROBOTICS;NOTES ELITE `PCSG00352` and
+    CHAOS;CHILD `PCSG00555` (a 16,384 B block).
 
 ## PSP probe (debug build)
 
@@ -1012,6 +1095,9 @@ job path) and `host/tests/hooks_none.c` (nothing installed, for the worker's oth
 `host/hook_trust_bench.c` and `tools/hook_trust_bench.py`.
 The farm checks: `tools/hook_farm.py`, `host/hook_farm_check.c`, `host/tests/fixtures/hook_farm.inc` (generated),
 `tools/tests/test_hook_farm.py`.
+SC3 text: `core/hook_sc3.{h,c}`, `core/hook_sc3_pins.inc` and `third_party/sc3-charsets/` (both written by
+`tools/sc3_charset.py`), `host/tests/test_hook_sc3.c`, `host/tests/fixtures/hook_sc3_farm.inc` (generated),
+`tools/tests/test_sc3_charset.py`; the kernel's open in `kernel/game_ocr.c`, the load in `game_ocr/main.c`.
 The PSP probe: `game_ocr/psp_probe.{h,c}`, `core/psp_probe.{h,c}`, `core/hook_luna_psp.inc` (generated by
 `tools/gen_luna_psp.py`), `host/tests/test_psp_probe.c`, `tools/tests/test_gen_luna_psp.py`.
 History: PRs #7, #10, #12, #13, #16 and the code removed in c35ebf9.
