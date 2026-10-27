@@ -18,6 +18,10 @@ been reported.
   tests' fake memory, fixed in #341), unseen until a release check ran them. It runs when `VJO_VOCR_MODEL_DIR` or
   its cache holds every pinned model the tests read, each checked by size and SHA-256
   (`tools/prepare_ocr.py --backend vocr-tests`, `--check` to only check); `--models on` fetches them first.
+- Packaging (no change to the app or the plugins): a release zip packaged again from the same artifacts and models is
+  the same bytes. 0.9.8's was not: `package-manifest.json` took the time of the run and the names dictionary's staged
+  files the filesystem's order, so the published zip's SHA-256 matched neither the Release run's nor another machine's
+  (same files; the VPKs were the same bytes). Both are fixed (`tools/package_release.py`).
 
 ## [0.9.8] - 2026-10-27
 
@@ -25,10 +29,14 @@ The first pieces of VOCR6, vita-vn-ocr's work on the owner's hooked PS Vita and 
 faster OCR (the head gate and two-level head), a line finder that keeps a line whole across a full-width space, and
 new character language models for the 1 MB and 4 MB tiers. Through Rubi's page path on development data, measured on
 a computer, the finder fix and the new 1 MB LM together take whole-dialogue error from 3.875 % to 1.636 % on held-out
-pages of the hooked games and from 3.036 % to 2.441 % on 93 other games (VOCR5-N; the recognizer itself is still
-VOCR5's). Also: vertical text, trusted hooks that answer without OCR, Yomitan's lookup rules and the adaptive reading
-time. Nothing new here has run on a console yet. Like 0.9.7, this release is the normal build only: `Rubi-0.9.8.vpk`
-(the main download) and `Rubi-0.9.8.zip`.
+pages of the hooked games and from 3.036 % to 2.441 % on 93 other games (VOCR5-N without the head gate; the recognizer
+itself is still VOCR5's). Most of the hooked games' gain is one title, PCSG00854, whose box decoration the finder
+reads as a line that the old LM's reading kept on screen and the new one's does not: without it, 2.330 % to 1.615 %
+(−0.72 points, 95 % interval −1.05 to −0.44, 45 titles). The hooked games' figures are optimistic, as the LM's
+decoder settings were chosen on those pages. On the other games the gain is the finder's: the LM on top of it is level
+(2.340 % → 2.441 %, not resolved). Also: vertical text, trusted hooks that answer without OCR, Yomitan's lookup rules
+and the adaptive reading time. Nothing new here has run on a console yet. Like 0.9.7, this release is the normal
+build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
 
 ### Added
 
@@ -93,18 +101,19 @@ time. Nothing new here has run on a console yet. Like 0.9.7, this release is the
   their rare characters only on the frames that may need one (#122). The sizes now run `VOCR5_S_w8g.vocr`,
   `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (vita-vn-ocr pre-release v0.3.6-head2level.1: v0.3.0's
   recognizers, with a 1,792 B gate each and, for Normal and Large, their output rows in frequency order and a
-  1,984 B trailer; every weight is v0.3.0's), and the runtime pin is vita-vn-ocr `47cf3a3`. On vita-vn-ocr's
-  development data no score was resolved worse; the estimated time per 3-line box at 333 MHz drops from
-  0.63 / 0.92 / 2.08 s to 0.51 / 0.72 / 1.82 s (Small / Normal / Large; estimates, nothing of it has run on a
-  console). A line whose counter re-decode finds a counter, or (two-level head) whose reading holds a
-  full-size カ or ケ before 月, 所, 年, 国 or 条, is read again with the full head (a ヶ the escape missed).
-  `ocr_head_gate = gate` or `two_level` keeps one of the two, `off` neither: the full head on every frame, as
-  before ([details](docs/vita-vn-ocr.md#head-gate-and-two-level-head-api-42)). Memory: the game worker takes
+  1,984 B trailer; every weight is v0.3.0's), and the runtime pin went to vita-vn-ocr `47cf3a3` (`f8a1856` since the
+  line finder's fix below). On vita-vn-ocr's development data no score was resolved worse; the estimated time per
+  3-line box at 333 MHz drops from 0.63 / 0.92 / 2.08 s to 0.51 / 0.72 / 1.82 s (Small / Normal / Large; estimates,
+  nothing of it has run on a console). A line whose counter re-decode finds a counter, or (two-level head) whose
+  reading holds a full-size カ or ケ before 月, 所, 年, 国 or 条, is read again with the full head (a ヶ the escape
+  missed). `ocr_head_gate = gate` or `two_level` keeps one of the two, `off` neither: the full head on every frame,
+  as before ([details](docs/vita-vn-ocr.md#head-gate-and-two-level-head-api-42)). Memory: the game worker takes
   two pages (8,192 B) more in each game that is ON, in both builds; Normal's and Large's weights blocks are a page
   larger, the largest job's workspace two; the Shell's pages are unchanged
   ([measured](docs/memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
-  Install all of this build's plugins together (the VPK's Install does): the game worker and the Shell must
-  both be API 42.
+  An update leaves 0.9.7's `VOCR5_S_w8.vocr`, `VOCR5_N_w8.vocr` and `VOCR5_L_w8.vocr` (4,479,120 B) in
+  `ux0:data/VitaJPOverlay/ocr/`: nothing reads them any more, so they may be deleted. The plugins of this
+  release must all be installed together (API 50, below).
 - **New character LMs for the 1 MB (the default) and 4 MB tiers**, from bee-san/vita-vn-ocr pre-release
   v0.3.7-lm6.2 (#127): built with the text of the owner's hooked PS Vita and PSP captures besides the open
   corpora, and decoded with new settings (LM weight 0.6, a bonus of 2.5 nats a character, each line started

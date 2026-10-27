@@ -516,5 +516,30 @@ class PackageModels(unittest.TestCase):
             self.package_fixture(write_models=False)
         self.assertFalse((self.root / "package.zip").exists())
 
+    def test_the_same_inputs_make_the_same_zip(self):
+        """audit-rubi-rel-098 F4: 0.9.8's zip, packaged again from the release run's artifacts and the pinned
+        models, differed from the published one in package-manifest.json's date (written with the time of the
+        run) and, on another filesystem, in the order of the names dictionary's staged files (rglob's order)
+        and so of package-manifest.json's keys. Packaging the same base again, at another time and with the
+        directories listed the other way round, now gives the same bytes, and the staged files go in sorted."""
+        rglob = Path.rglob
+        ascending = lambda path, pattern: iter(sorted(rglob(path, pattern)))
+        descending = lambda path, pattern: iter(sorted(rglob(path, pattern), reverse=True))
+        with mock.patch.object(Path, "rglob", ascending):
+            first = self.package_fixture().read_bytes()  # its base, dictionary and licence stay in self.root
+        dictionary = self.root / "jmdict.vjdict"
+        snapshot = {"bytes": dictionary.stat().st_size, "sha256": release.digest(dictionary)}
+        again = self.root / "again.zip"
+        with mock.patch.object(Path, "rglob", descending), mock.patch("time.time", return_value=2_000_000_000.0), \
+             mock.patch.object(release, "load_manifest", return_value=snapshot), \
+             contextlib.redirect_stdout(io.StringIO()):
+            release.package(self.root / "base.zip", again, self.models, dictionary, self.root / "fixture-license.txt")
+        self.assertEqual(first, again.read_bytes())
+        with zipfile.ZipFile(io.BytesIO(first)) as archive:
+            self.assertEqual(archive.getinfo("package-manifest.json").date_time, (1980, 1, 1, 0, 0, 0))
+            staged = [n for n in archive.namelist() if n.startswith("third_party/licenses/VNDB-")]
+            self.assertEqual(len(staged), 2)
+            self.assertEqual(staged, sorted(staged))
+
 if __name__ == "__main__":
     unittest.main()

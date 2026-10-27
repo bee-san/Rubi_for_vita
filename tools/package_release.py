@@ -268,8 +268,10 @@ def package_with_dictionary(base, output, models, dictionary, license_file, vers
                     shutil.copyfileobj(src, dst)
                 prepare_vndb.validate(names_file, prepare_vndb.load_manifest())
         prepare_vndb.stage(names_stage)
+        # sorted: rglob gives the directory's own order, which differs between filesystems (the same inputs then
+        # made zips whose entries and package-manifest.json differed in order: audit-rubi-rel-098 F4)
         assets.update({p.relative_to(names_stage).as_posix(): p
-                       for p in names_stage.rglob("*") if p.is_file()})
+                       for p in sorted(names_stage.rglob("*")) if p.is_file()})
         return write_package(base, output, models, assets, conversion, version, source_revision, settings, variant)
 
 
@@ -411,7 +413,11 @@ def write_archive(base, output, assets, manifest, facts, app_vpk, version):
             info.external_attr = 0o100644 << 16
             archive.writestr(info, text)
             manifest["files"]["payload-manifest.txt"] = {"bytes": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest()}
-        archive.writestr("package-manifest.json", json.dumps(manifest, indent=2) + "\n")
+        # the fixed date of every entry this writes (a zip of the same inputs is the same bytes: audit-rubi-rel-098 F4)
+        info = zipfile.ZipInfo("package-manifest.json", (1980, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = 0o100644 << 16
+        archive.writestr(info, json.dumps(manifest, indent=2) + "\n")
 
 
 def main():
