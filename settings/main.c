@@ -412,7 +412,7 @@ static void read_buttons(void)
 }
 
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
-                                  WHITE, DIM, ACCENT, OFF, CARD, &buttons};
+                                  WHITE, DIM, ACCENT, OFF, CARD, &buttons, text_width};
 
 static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
 /* #312: the Stats page (settings/stats_page.c), drawn with these helpers */
@@ -1393,10 +1393,11 @@ static void show_page(int p)
     if (p == PAGE_INSTALL) vjo_install_page_show();
 }
 
-/* Cancel is the page's own (it stops an export; it goes back from an earlier line to the list), not the app's exit. */
+/* Cancel is the page's own, not the app's exit: the Anki page's while a job runs or its Cards page is open (#315:
+ * Cancel stops the job or goes back to the Anki page), the Look up page's from an earlier line (back to the list). */
 static int page_holds_cancel(void)
 {
-    return (page == PAGE_ANKI && vjo_anki_page_busy()) || (page == PAGE_LOOKUP && vjo_lookup_page_holds_cancel());
+    return (page == PAGE_ANKI && vjo_anki_page_holds_cancel()) || (page == PAGE_LOOKUP && vjo_lookup_page_holds_cancel());
 }
 
 /* ---- what the app ran with, in log.txt (log_file = on, the default) ---- */
@@ -1630,7 +1631,13 @@ int main(void)
             vita2d_swap_buffers();
         } else if (page == PAGE_ANKI) {
             vjo_anki_page_stick(stick);
-            vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch);
+            if (vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch)) {
+                /* the Cards page's keyboard ran (#315): its closing button and touch are no new press */
+                previous = UINT32_MAX;
+                touched = 1;
+                repeat_at = sceKernelGetProcessTimeWide() + 350000;
+                vjo_stick_latch(&stick_state);
+            }
         } else if (page == PAGE_STATS) {
             vjo_stats_page_stick(stick);
             vjo_stats_page_frame(&stats_ui, pressed, touch_x, touch_y, &scratch);

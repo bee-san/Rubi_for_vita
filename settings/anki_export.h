@@ -11,6 +11,9 @@
  * Anki adds only what it does not have. After a verified package, the queue's
  * screenshots no card names (a save stopped between its JPEG and its record,
  * or during the JPEG's write) are removed (#161; anki_export.c remove_orphans).
+ * Before it reads the queue, an export finishes or undoes what a stop left of a
+ * Cards page change (#315, settings/cards.h vjo_cards_recover); it never reads
+ * anki_queue/deleted/, where the Cards page's deleted cards are.
  *
  * Every storage call that fails is logged (vjo_log, log.txt) with its error
  * code. All calls are made by one thread at a time. */

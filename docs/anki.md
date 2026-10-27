@@ -30,9 +30,10 @@ directory.
    (`anki_screenshot_trim_bars`): the picture leaves out the black borders
    around the game's picture, as a PSP game shown smaller than the screen has
    them ([black bars](#black-bars)). **Duplicates**, below it, says what an export does with a card of
-   a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)), and **Known words**
-   imports the words you know from Anki ([below](#known-words)). The page's seven rows scroll a row at a
-   time.
+   a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)); **Cards: N queued**
+   opens the [Cards page](#the-cards-page): each card before it is exported, to delete it, fix its
+   sentence or drop its picture; and **Known words** imports the words you know from Anki
+   ([below](#known-words)). The page's eight rows scroll a row at a time.
 2. In a game, open the overlay, select a word and press Enter. The status line
    shows `Saving card…`, then `Saved for Anki`. Enter again on the same
    entry says `Already queued`. In a local character lookup, Enter saves
@@ -91,6 +92,65 @@ collection that has the earlier ones adds nothing twice.
 With `log_file = on` the app writes every storage call that fails, with its
 error code, and each export's counts to `log.txt` (lines starting
 `Rubi app:`).
+
+## The Cards page
+
+**Cards: N queued** on the Anki page opens the queue's cards, newest first (#315). An accidental Enter, an OCR
+mistake in the sentence or a word saved twice no longer has to reach Anki as it is, nor its files be deleted in
+VitaShell.
+
+- **The list.** Each card shows its word, its reading, its game, the date and time of its Enter press, a camera
+  when it has a picture, "Same word as another card" when another card has the same word (#314's word key, as the export's
+  [Duplicates](#duplicates) finds them: katakana as hiragana, a missing reading the spelling's), and "Not
+  exportable" for a record the export would keep (edited by hand, damaged, or a newer build's). Up/Down and the
+  left stick move, L and R jump six cards (a page), Left and Right show the queue or the **exported** cards,
+  Square shows only the cards whose word another card has, Start reads the list again, and Cancel goes back to
+  the Anki page. A touch on a card opens it.
+- **A card.** Enter opens it: its sentence with the word in the accent colour, the first lines of its
+  definition, and its picture, decoded when the card opens and scaled to fit the box beside the text. L and R
+  open the card before or after it; Cancel goes back to the list.
+- **Delete** (twice: the first press asks) moves the card into `anki_queue/deleted/`. The export never reads
+  that folder, nor does the overlay's `Already queued` check, so the word can be saved again.
+  **Triangle** on the list (twice) empties `deleted/` for good.
+- **Fix sentence** opens the Vita's keyboard with the sentence, on several lines (at most 2,048 characters);
+  its done button saves it. The word is found again in the new text (the same occurrence when it occurs as
+  often as before, else the one nearest where it was; a line break inside it may be gone or new). When the word
+  is gone, the card has no bold, and the page says so.
+- **Drop picture** (twice) makes the card one without its picture.
+- **Exported cards** are read only: their notes may be in Anki already, and a changed card is a new note.
+
+A card's ID is its record's checksum, so a fixed card or one without its picture is a new card, with a new ID
+and a new note's GUID; the old card goes into `deleted/`. An edit that leaves the record as it was does nothing.
+Every step keeps the rule that a record never names a picture that is not there:
+
+1. Fix sentence and Drop picture first commit an intent file, `deleted/<old>.fix`, that names the new ID.
+2. Fix sentence copies the old picture to `<new>.jpg.tmp` and renames it to `<new>.jpg` (one left by an earlier,
+   stopped try is kept when it has the same bytes). Nothing renames over a file.
+3. The new record is committed as the overlay's save commits one: a temporary name, a rename, a sync of the
+   memory card.
+4. The old record moves into `deleted/`, then its picture, then the intent file goes.
+
+When the new card is there already (queued, exported, or an earlier build's `<id>.duplicate.json`), steps 2
+and 3 are skipped and only the old card retires. Delete moves the record first, then the picture: a stop
+between the two leaves only a picture no card names, which the export's sweep removes 10 minutes later.
+
+Before the Cards page reads the queue, and before an export does, an intent file left by a stop is settled:
+with the new record there, step 4 is finished; without it, the intent and the new card's picture are removed
+and the old card stays. So the queue holds the old card or the new one, never neither and never both for an
+export. An intent that cannot be settled (a storage error) is kept, and the export says `A change of a card that
+stopped could not be finished (see log.txt). Nothing was changed.` until it is.
+
+Duplicates are found among the cards the page holds at once, the newest 2,000 (a window; L and R past its first
+or last page read the next one).
+
+What the host checks: the storage on real files with a failure injected at each storage call of every change
+(`host/tests/test_cards.c`: the list and its windows, a card's view, each action, an edit that changes nothing,
+a fix whose new card exists, the recovery of each state a stop leaves, the export afterwards), a stop between
+every two steps in a fresh process, then an export straight away and an export 10 minutes later
+(`test_anki_restart.py`: no card lost, each card once in the package, no record naming a missing picture, no
+intent left), the page itself (`test_settings_anki.c`), the picture's decoder with libjpeg where its headers
+are (`test_card_picture.c`), and a fixed card imported by Anki 26.09.3 with its new sentence and its picture
+(`test_apkg.py`). None of it has run on a console yet.
 
 ## The Lapis note
 
@@ -335,6 +395,10 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
   `exported/<id>.jpg`, its screenshot). **Export all cards** reads these too.
 - `<id>.duplicate.json`: a card an earlier build's AnkiConnect send found in
   Anki already; it is kept, not exported.
+- `deleted/<id>.json` and `deleted/<id>.jpg`: a card the Rubi app's [Cards page](#the-cards-page) deleted, or the
+  old card a fixed sentence or a dropped picture replaced; nothing reads them, and Empty deleted removes them.
+  `deleted/<id>.fix`: the intent of a change in progress, which names its new card's ID; the app settles it
+  before its next list or export.
 
 A card is written to a temp file, flushed and renamed, and the memory card's
 directory is synced before Enter reports it; an interrupted save leaves no
@@ -342,9 +406,10 @@ card or the complete one, never a partial one. A card's screenshot is on the
 memory card (renamed from its own temp file, `<id>.jpg.tmp`; the record's
 own sync syncs it too, #194) before its record is written, so a record never names a picture that is not
 there. Files with other names,
-including leftover `.tmp` files, are ignored. Editing a record changes its
-checksum, so the card is kept and reported as unreadable rather than exported.
-Delete a card's `.json` to drop it.
+including leftover `.tmp` files, are ignored. Editing a record by hand changes its
+checksum, so the card is kept and reported as unreadable rather than exported:
+the Cards page fixes a sentence or drops a picture by making the new card, and
+deletes a card into `deleted/`.
 
 ### The record (version 4)
 
@@ -751,9 +816,25 @@ definitions, peaked at 187,111 B and wrote a 606,426 B package. An import of 65,
 [known words](#known-words) peaks at 541,704 B. These are host measurements; a physical Vita has not
 run this code yet.
 
+The [Cards page](#the-cards-page)'s jobs run on that thread with that arena, one at a
+time: one record (at most 32 KiB) and one JPEG (at most 192 KiB) read at a time, and a
+card's picture decoded there by libjpeg into RGB rows of at most 512 × 288 (442,368 B),
+which then go into one texture of that size in main memory, freed when the card closes.
+libjpeg's own working memory comes from newlib's 8 MiB heap and goes back to it after
+each picture: at most 32,592 B for a 960 × 544 screenshot shown at 480 × 272 [measured,
+host, libjpeg-turbo 2.1.5; the Vita's 3.2.0 not measured]; a progressive JPEG's
+coefficient arrays may take up to 4 MiB of it (`VJO_CARD_PICTURE_JPEG_MEM`), else the card
+shows no picture. Its static memory, in the app's segments: the list's table of 2,000 rows
+of 128 B (256,000 B), two card views and the keyboard's buffers, 307,364 B of `.bss` in
+all, and 29,741 B of code; libjpeg's decoder adds about 290 KB of code [measured: the debug
+build's ELF against main `9ad8eb5`'s, arm-vita-eabi-size; section 5.4 of
+[vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)].
+
 ## Not included
 
 No AnkiConnect, AnkiWeb or self-hosted sync and no login: the package is the
-only way cards leave the Vita, and you copy it yourself. A package is not
+only way cards leave the Vita, and you copy it yourself. The Cards page edits a
+queued card's sentence and picture only: not an exported card, not a definition,
+and it merges no duplicates (Lapis has no fields to group them). A package is not
 compressed (a deflated one would be smaller over FTP; the app has zlib, a
 possible follow-up). Cards have no audio.

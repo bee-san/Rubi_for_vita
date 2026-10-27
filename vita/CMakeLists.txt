@@ -412,8 +412,11 @@ include(${ROOT}/cmake/SettingsPNG.cmake)
 # The Anki page (settings/anki_page.c): the export of the queue (settings/anki_export.c) as Lapis
 # notes in an .apkg (core/apkg.c: SQLite, ZIP and the Lapis note type, core/sqlw.c, zipw.c, lapis.c),
 # made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
+# The Cards page (#315, settings/cards_page.c): the queue's cards listed, one deleted, its sentence fixed or its
+# picture dropped (settings/cards.c), its picture decoded by the SDK's libjpeg (settings/card_picture.c).
 set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
+  ${ROOT}/settings/cards.c ${ROOT}/settings/cards_page.c ${ROOT}/settings/card_picture.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/word_key.c)

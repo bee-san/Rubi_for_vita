@@ -13,7 +13,8 @@ priority, a worker off CPU3) built and packaged. This reads, without dependencie
   to settings/sysapp.c's sceUserMainThreadPriority and sceUserMainThreadCpuAffinityMask, read in
   the SELF's own (decompressed) segments;
 - the linked ELF: newlib's heap (_newlib_heap_size_user, else newlib's 128 MiB), which with the
-  SELF's segments and libvita2d's fixed allocations must fit the budget; and every call of
+  SELF's segments and libvita2d's fixed allocations (and the Cards page's picture texture) must fit
+  the budget; and every call of
   sceKernelCreateThread made from settings/sysapp.c's wrapper (the link's --wrap), which puts
   each thread on CPU3, and none of sceKernelChangeThreadCpuAffinityMask;
 - libvita2d's calls of sceGxmVshInitialize and sceSharedFbGetInfo going to settings/sysapp_gfx.c's
@@ -54,9 +55,11 @@ MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # 256 KiB (settings/icons.h); two 512 x 512 glyph atlases (a font whose atlas is full and the one that replaced it,
 # until the next frame: settings/main.c font_tick, #313); the main thread's default 256 KiB stack, the Anki worker's
 # 128 KiB (settings/anki_page.c) and the Stats count's 64 KiB (settings/stats_page.c, #312; the Stats tab's tables are
-# in the segments: its counts, its cache's work memory and its rows, about 2 MiB; so are the Look up tab's, #313).
+# in the segments: its counts, its cache's work memory and its rows, about 2 MiB; so are the Look up tab's, #313);
+# the Cards page's picture (#315), one texture of at most 512 x 288 RGB (settings/card_picture.h
+# VJO_CARD_PICTURE_W/_H, three bytes a pixel; its list and card views are in the segments, libjpeg's work in the heap).
 FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024, "glyph_atlas": 2 * 512 * 512,
-         "stacks": 256 * 1024 + 128 * 1024 + 64 * 1024}
+         "stacks": 256 * 1024 + 128 * 1024 + 64 * 1024, "card_picture": 512 * 288 * 3}
 # libvita2d's glyph atlas texture and the wrapper it is made through (settings/vita2d_textures.c).
 ATLAS_FUNCTION = "texture_atlas_create"
 TEXTURE_FUNCTION = "vita2d_create_empty_texture_format"

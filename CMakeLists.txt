@@ -498,7 +498,8 @@ target_include_directories(vjo-app-queue-tests PRIVATE third_party/acutest/inclu
 target_compile_options(vjo-app-queue-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-app-queue-tests vjo_host)
 add_test(NAME app_queue COMMAND vjo-app-queue-tests)
-add_executable(vjo-apkg-tests host/tests/test_apkg.c settings/app_queue.c)
+add_executable(vjo-apkg-tests host/tests/test_apkg.c settings/app_queue.c settings/cards.c) # (#315: the
+# export settles Cards changes)
 target_include_directories(vjo-apkg-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-apkg-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-apkg-tests vjo_host)
@@ -950,7 +951,9 @@ add_test(NAME settings_install COMMAND vjo-settings-install-tests)
 # memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
 # settings_stubs/anki_page_stub.c.
 add_executable(vjo-settings-anki-tests host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
-  settings/app_prefs.c settings/preferences.c shell/files.c)
+  settings/app_prefs.c settings/preferences.c shell/files.c
+  settings/cards.c settings/cards_page.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
+  host/tests/settings_stubs/card_picture_stub.c)
 target_include_directories(vjo-settings-anki-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
   host/tests/install_stubs host/tests/vita_stubs)
 target_compile_definitions(vjo-settings-anki-tests PRIVATE VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS)
@@ -986,6 +989,27 @@ target_include_directories(vjo-settings-lookup-tests PRIVATE third_party/acutest
 target_compile_options(vjo-settings-lookup-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-settings-lookup-tests vjo_host)
 add_test(NAME settings_lookup COMMAND vjo-settings-lookup-tests)
+# The Cards page's storage (#315, settings/cards.c) on real files, with failures injected: the list and its
+# windows, a card's view, Delete, Empty deleted, Fix sentence (the word found again) and Drop picture, every
+# order of their steps, the intent files' recovery after a stop between any two, and the export after it.
+add_executable(vjo-cards-tests host/tests/test_cards.c settings/cards.c settings/anki_export.c)
+target_include_directories(vjo-cards-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_options(vjo-cards-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-cards-tests vjo_host)
+add_test(NAME cards COMMAND vjo-cards-tests)
+# A card's picture decoded by libjpeg as the app decodes it (settings/card_picture.c): its scale to the
+# page's box, a grey picture, a damaged or cut file returned as an error (setjmp), never an exit; where
+# libjpeg's headers are (the Vita build links the SDK's libjpeg-turbo; CI's runner and the fast gate's
+# image may have none: the test then is not built).
+find_package(JPEG QUIET)
+if(JPEG_FOUND)
+  add_executable(vjo-card-picture-tests host/tests/test_card_picture.c settings/card_picture.c)
+  target_include_directories(vjo-card-picture-tests PRIVATE third_party/acutest/include)
+  target_compile_options(vjo-card-picture-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_link_libraries(vjo-card-picture-tests vjo_host JPEG::JPEG)
+  target_compile_definitions(vjo-card-picture-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+  add_test(NAME card_picture COMMAND vjo-card-picture-tests)
+endif()
 # The same engine on a memory card folder, for the one-VPK e2e (a real VPK extracted as VitaShell installs it).
 add_executable(vjo-install-e2e host/install_e2e.c settings/install.c settings/preferences.c)
 target_include_directories(vjo-install-e2e PRIVATE host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs

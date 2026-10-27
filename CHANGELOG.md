@@ -67,6 +67,24 @@ been reported.
   took 40 ms on a computer [measured on the host]; the Vita's time is unmeasured. The tab bar lays itself out from its
   labels for the fifth tab. Only the app changes: the Shell, the game worker, the kernel and the RCO are byte-identical
   to main's in both builds. Not run on a console yet.
+- A Cards page in the Rubi app (#315): **Cards: N queued** on the Anki page lists the queued cards newest first,
+  with their word, reading, game and date, a camera for a card with a picture and a mark for a word on two cards;
+  Left/Right show the exported cards instead, read only. A card opens with its sentence (the word marked), the first
+  lines of its definition and its picture. A queued card can be deleted (into `anki_queue/deleted/`, which Triangle
+  empties), its sentence fixed with the keyboard (the word found again in the new text) or its picture dropped.
+  Before, a card saved by mistake or with an OCR mistake reached Anki as it was, unless its files were deleted in
+  VitaShell.
+  - **Safe at every step:** a changed card is a new card (its ID is its record's checksum); an intent file
+    (`deleted/<old>.fix`) is committed first, the new picture and record next, the old card retired last. Before
+    the page lists the queue and before an export, a stop's intent is finished or undone, so the export has the old
+    card or the new one, never both and never neither; a record never names a picture that is not there. Tested on
+    the host with a failure at each storage call and a stop between each two steps in a fresh process, and an
+    edited card imported by Anki 26.09.3 with its new sentence and its picture.
+  - **Memory, in the app only** (the Shell, the game worker and the kernel are unchanged): 307,364 B of static
+    memory (the list's 2,000-row table, two card views, the keyboard's buffers) and a picture texture of at most
+    442,368 B while a card is open; libjpeg's decoder adds about 290 KB of code [measured: the ELF] and at most
+    32,592 B of heap for a screenshot [measured, host].
+  - Not run on a console yet.
 
 - **A text box suggested on first use** (#358; API 52; [first-box.md](docs/first-box.md)). A game with no box of its
   own is read on its whole screen, picture and buttons included, which first-time users took for recognition that did

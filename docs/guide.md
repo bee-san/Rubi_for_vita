@@ -542,11 +542,20 @@ removed engine choice's `ocr_backend` line goes).
 On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
 Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), **Duplicates**
 (Tag, Skip or Keep: Enter takes the next, Left/Right the one beside it, a touch the one touched; the Rubi app's
-own `app.ini`, which the overlay never reads: [duplicates](anki.md#duplicates)), **Known words** (Import:
-`known_words.txt`, which `tools/known_words.py` writes from Anki; [known words](anki.md#known-words)), then
-**Export cards** and **Export all cards**. Seven rows are more than the room above the page's status
+own `app.ini`, which the overlay never reads: [duplicates](anki.md#duplicates)), **Cards: N queued** (Enter opens
+the [Cards page](anki.md#the-cards-page)), **Known words** (Import: `known_words.txt`, which
+`tools/known_words.py` writes from Anki; [known words](anki.md#known-words)), then
+**Export cards** and **Export all cards**. Eight rows are more than the room above the page's status
 box: they scroll a row at a time as the OCR page's cards do, a bar at the right shows where the view is,
 and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
+
+The **Cards page** lists the queued cards, newest first: Up/Down and the left stick choose, L/R a page of
+six, Left/Right the queue or the exported cards (read only), Square only the words on two cards, Start reads
+again, Enter opens a card (its sentence with the word marked, its definition, its picture; L/R the card before
+or after it), and Cancel goes back. On a queued card, Left/Right choose **Delete**, **Fix sentence** (the
+keyboard, on several lines; its done button saves) or **Drop picture**, and Enter does it; Delete and Drop
+picture ask for a second press. Triangle on the list (twice) empties `anki_queue/deleted/`, where deleted and
+replaced cards wait ([how each change is made safe](anki.md#the-cards-page)).
 
 Japanese-only selection (**Japanese characters only**) is **OFF by default** (the
 owner's choice, 2026-10-20; ON before): every visible character is selectable, the
@@ -965,9 +974,10 @@ the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Trim black bars** ON/OFF, **Duplicates** (Tag, Skip or Keep), **Known words** (Import),
-**Export cards (N queued, M already mined)** and **Export all cards** (seven rows, which scroll a row at a
-time). An export writes the cards as
+ON/OFF, **Trim black bars** ON/OFF, **Duplicates** (Tag, Skip or Keep), **Cards: N queued** (the
+[Cards page](anki.md#the-cards-page): each queued card, to delete it, fix its sentence or drop its picture before
+it is exported), **Known words** (Import), **Export cards (N queued, M already mined)** and **Export all cards**
+(eight rows, which scroll a row at a time). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into
