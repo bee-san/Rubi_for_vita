@@ -26,16 +26,16 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
   question ("Use this box? %d x %d" for "Box %d x %d": one format, no second copy); and the game's start line, a cold
   log format, is in the data segment (`VJO_DATA_TABLE`), as earlier changes did with others.
 - **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text +
-  data/bss), main `757153c` against this change:
+  data/bss), main `9bb6943` against this change:
 
   | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
   |---|---:|---:|---:|
   | Game worker | 162,472 + 35,872 → 163,528 + 35,880 B | 153,508 + 35,856 → 154,548 + 35,864 B | 200,704 / 192,512 B, unchanged |
-  | Shell | 102,372 + 73,568 → 102,356 + 73,664 B | 90,020 + 73,432 → 90,044 + 73,520 B | 176,128 / 163,840 B, unchanged |
+  | Shell | 102,388 + 73,568 → 102,372 + 73,664 B | 90,020 + 73,432 → 90,044 + 73,520 B | 176,128 / 163,840 B, unchanged |
   | Kernel | 43,356 + 77,764 → 43,356 + 77,772 B | 38,204 + 76,076 → 38,204 + 76,084 B | 122,880 / 118,784 B, unchanged |
 
   The normal Shell keeps 68 B of its last text page (92 B before) and 208 B of its last data page (296 B); the debug
-  Shell 44 B (28 B) and 64 B (160 B); the debug kernel 52 B of its last data page (60 B); the worker 312 B (debug)
+  Shell 28 B (12 B) and 64 B (160 B); the debug kernel 52 B of its last data page (60 B); the worker 312 B (debug)
   and 1,100 B (normal) of its last text page. The Shell's frames: `region_hint` 256 B (its 192-byte hint buffer, as
   before), `leave_region_mode` 8 B, the word's helpers and `vjo_rsel_preset` none (`-fstack-usage`, the normal
   build's flags without LTO).
