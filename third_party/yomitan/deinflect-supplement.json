@@ -5,6 +5,86 @@
    "reason": "imperative negative",
    "kanaIn": "な",
    "kanaOut": ""
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "とく",
+   "kanaOut": "る"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "いとく",
+   "kanaOut": "く"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "いどく",
+   "kanaOut": "ぐ"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "しとく",
+   "kanaOut": "す"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "っとく",
+   "kanaOut": "う"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "っとく",
+   "kanaOut": "つ"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "っとく",
+   "kanaOut": "る"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "んどく",
+   "kanaOut": "ぬ"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "んどく",
+   "kanaOut": "ぶ"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "んどく",
+   "kanaOut": "む"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "じとく",
+   "kanaOut": "ずる"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "しとく",
+   "kanaOut": "する"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "為とく",
+   "kanaOut": "為る"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "きとく",
+   "kanaOut": "くる"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "来とく",
+   "kanaOut": "来る"
+  },
+  {
+   "reason": "-toku",
+   "kanaIn": "來とく",
+   "kanaOut": "來る"
   }
  ],
  "add": {
@@ -21,6 +101,26 @@
    },
    {
     "kanaIn": "でおく",
+    "kanaOut": "で",
+    "rulesIn": [
+     "v5"
+    ],
+    "rulesOut": [
+     "iru"
+    ]
+   },
+   {
+    "kanaIn": "とく",
+    "kanaOut": "て",
+    "rulesIn": [
+     "v5"
+    ],
+    "rulesOut": [
+     "iru"
+    ]
+   },
+   {
+    "kanaIn": "どく",
     "kanaOut": "で",
     "rulesIn": [
      "v5"
@@ -211,14 +311,6 @@
     "rulesIn": [],
     "rulesOut": [
      "v1"
-    ]
-   },
-   {
-    "kanaIn": "かん",
-    "kanaOut": "く",
-    "rulesIn": [],
-    "rulesOut": [
-     "v5"
     ]
    },
    {
@@ -1397,6 +1489,24 @@
     "rulesIn": [],
     "rulesOut": [
      "adj-i"
+    ]
+   }
+  ],
+  "progressive or perfect": [
+   {
+    "kanaIn": "てん",
+    "kanaOut": "て",
+    "rulesIn": [],
+    "rulesOut": [
+     "iru"
+    ]
+   },
+   {
+    "kanaIn": "でん",
+    "kanaOut": "で",
+    "rulesIn": [],
+    "rulesOut": [
+     "iru"
     ]
    }
   ]

@@ -2537,7 +2537,156 @@ static void yomitan_rules_reach_spoken_forms(void)
     TEST_CHECK(opened == closed);
 }
 
+/* The shown entry of text at byte 0 (the Shell's lookup), its highlighted bytes and its conjugation line. */
+static void check_shown(VjoPlatform *p, VjoConfig *cfg, const char *text, const char *spelling, size_t span,
+                        const char *labels)
+{
+    VjoArena a;
+    VjoOverlayData out = {0};
+    uint8_t ui[12000]; VjoArena ua; VjoStyled st;
+    char rendered[4096]; size_t n = 0;
+    TEST_CASE(text);
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    out.sentence = text;
+    TEST_ASSERT(vjo_overlay_lookup_at(&a, p, cfg, 0, &out) == VJO_OK && out.list.n_entries >= 1);
+    TEST_CHECK_(!strcmp(out.list.entries[0].vocab->spelling, spelling), "got %s", out.list.entries[0].vocab->spelling);
+    TEST_CHECK_((size_t)out.list.entries[0].hl_end == span, "span %d", out.list.entries[0].hl_end);
+    vjo_arena_init(&ua, ui, sizeof(ui));
+    TEST_ASSERT(!vjo_styled_init(&st, &ua, VJO_BODY_UNITS, VJO_BODY_SPANS));
+    vjo_styled_entry(&st, &out.list, 0, 27, 21, 0, 1);
+    for (uint32_t u = 0; u < st.len; u++) n += (size_t)vjo_utf8_encode(st.text[u], rendered + n);
+    rendered[n] = 0;
+    const char *line = strstr(rendered, "Conjugation: ");
+    if (labels) {
+        size_t len = strlen(labels);
+        TEST_CHECK_(line && !strncmp(line + 13, labels, len) && (!line[13 + len] || line[13 + len] == '\n'), "%s",
+                    rendered);
+    } else TEST_CHECK_(!line, "%s", rendered);
+}
+
+/* #321, the Yomitan check's remaining lookups: the contracted progressive (てん, not -ん's negative),
+ * 行っとく through -て, the one-step causative passive counted as two steps, a particle before a form of
+ * する or a katakana word and -ん's かん left out. Each fails on main. */
+static void yomitan_check_remaining_lookups(void)
+{
+    const Row rows[] = {
+        {"する", "する", "する", "to do", 4, 10},
+        {"言う", "言う", "いう", "to say", 2, 25},
+        {"行く", "行く", "いく", "to go", 2, 50},
+        {"行う", "行う", "おこなう", "to carry out", 2, 668},
+        {"かう", "買う", "かう", "to buy", 2, 290},
+        {"買う", "買う", "かう", "to buy", 2, 290},
+        {"かわす", "交わす", "かわす", "to dodge", 2, 3099},
+        {"が", "が", "が", "the subject particle", 0, 5},
+        {"がす", "賀す", "がす", "to celebrate", 2, 265936},
+        {"がする", "賀する", "がする", "to celebrate", 4, 134239},
+        {"がする", "がする", "がする", "grammar: a sensation is felt", 0, 130436},
+        {"も", "も", "も", "also", 0, 8},
+        {"もする", "模する", "もする", "to imitate", 4, 10063},
+        {"もし", "もし", "もし", "if", 0, 268},
+        {"に", "に", "に", "the particle に", 0, 3},
+        {"にす", "にす", "にす", "grammar: classical negation", 2, 34211 | 1u << 26 | 1u << 27},
+        {"の", "の", "の", "the particle の", 0, 1},
+        {"のむ", "飲む", "のむ", "to drink", 2, 300},
+        {"はぁ", "はぁ", "はぁ", "huh?", 0, 1072},
+        {"手", "手", "て", "hand", 0, 151},
+        {"手をつく", "手を突く", "てをつく", "to put one's hands down", 2, 7572}};
+    static const struct { const char *text, *spelling, *labels; size_t span; } cases[] = {
+        /* the progressive's てる contracted before の or だ, not -ん's negative */
+        {"してんの", "する", "-te → progressive or perfect", 9},
+        {"言ってんだ", "言う", "-te → progressive or perfect", 12},
+        /* -おく's とく through -て, as Yomitan: 行く's 行って */
+        {"行っとく", "行く", "-te → -toku", 12},
+        {"言っとく", "言う", "-te → -toku", 12},
+        /* the causative passive counts two steps: 交わす's passive, one */
+        {"かわされた", "交わす", "passive → past", 15},
+        {"買わされた", "買う", "causative passive → past", 15},
+        /* a particle and a form of する: the particle, unless an entry is spelled as the span */
+        {"がした", "が", NULL, 3},
+        {"がしたい", "が", NULL, 3},
+        {"もせず", "も", NULL, 3},
+        {"もした", "も", NULL, 3},
+        {"にしておく", "に", NULL, 3},
+        {"がする", "がする", NULL, 9},
+        /* a particle before a katakana word: the particle; before ァ or a long vowel mark, not */
+        {"のマンション", "の", NULL, 3},
+        {"はァ？", "はぁ", NULL, 6},
+        /* -ん's かん is left out: 手を + つかんで */
+        {"手をつかんで", "手", NULL, 3}};
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+        check_shown(&p, &cfg, cases[i].text, cases[i].spelling, cases[i].span, cases[i].labels);
+    TEST_CHECK(opened == closed);
+}
+
+/* #321: a spelling-only frequency row that matched only after kana normalisation (bits 25-27: 110) is
+ * another word's (だと has ダト's): no rank shown, as in Yomitan. Every other kind keeps its rank. */
+static void normalised_spelling_ranks_are_not_shown(void)
+{
+    const Row rows[] = {
+        {"だと", "だと", "だと", "grammar: you say?", 0, 73969 | 1u << 26 | 1u << 27},
+        {"めし", "めし", "めし", "a meal, its own spelling row", 0, 4793 | 1u << 26},
+        {"ぱっと見", "ぱっと見", "ぱっとみ", "a reading row after normalisation", 0, 19403 | 1u << 25 | 1u << 27}};
+    static const struct { const char *text; int rank; } cases[] = {{"だと", VJO_NO_RANK}, {"めし", 4793},
+                                                                   {"ぱっと見", 19403}};
+    for (int hints = 0; hints <= 1; hints++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, 3, 3);
+        if (hints) add_hints(&fixtures[0]);
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            TEST_CASE_("%s, hints %d", cases[i].text, hints);
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_ASSERT(!lookup(&a, &p, &cfg, cases[i].text, 0, &r, &e) && r.n_vocab == 1);
+            TEST_CHECK_(r.vocab[0].rank == cases[i].rank, "rank %d", r.vocab[0].rank);
+        }
+    }
+}
+
+/* #321, names_first: at one span, a name spelled as the text (d1, as vndb-names.vjdict) and a word the
+ * first dictionary spells otherwise. auto (the default): the word first when it is among the 1,024 most
+ * frequent (私, 32), the name first otherwise (渚, 32,728); on: the name first (Rubi 0.9.8); off: the word. */
+static void names_first_orders_a_name_and_a_word(void)
+{
+    const Row d0[] = {{"わたし", "私", "わたし", "I, me", 0, 32}, {"なぎさ", "渚", "なぎさ", "a beach", 0, 32728}};
+    const Row d1[] = {{"わたし", "わたし", "わたし", "a character named Watashi", 0, 0},
+                      {"なぎさ", "なぎさ", "なぎさ", "a character named Nagisa", 0, 0}};
+    static const struct { int mode; const char *text; int first; } cases[] = {
+        {VJO_NAMES_AUTO, "わたしは", 0}, {VJO_NAMES_AUTO, "なぎさは", 1},
+        {VJO_NAMES_ON, "わたしは", 1}, {VJO_NAMES_ON, "なぎさは", 1},
+        {VJO_NAMES_OFF, "わたしは", 0}, {VJO_NAMES_OFF, "なぎさは", 0}};
+    VjoConfig parsed;
+    vjo_config_defaults(&parsed);
+    TEST_CHECK(parsed.names_first == VJO_NAMES_DEFAULT && VJO_NAMES_DEFAULT == VJO_NAMES_AUTO);
+    vjo_config_parse(&parsed, "names_first = on\n", 17);
+    TEST_CHECK(parsed.names_first == VJO_NAMES_ON && parsed.ocr_vertical == VJO_VERTICAL_DEFAULT && !parsed.n_warnings);
+    vjo_config_parse(&parsed, "Names_First = off\nocr_vertical = on\n", 36);
+    TEST_CHECK(parsed.names_first == VJO_NAMES_OFF && parsed.ocr_vertical == VJO_VERTICAL_ON && !parsed.n_warnings);
+    vjo_config_parse(&parsed, "names_first = maybe\n", 20);
+    TEST_CHECK(parsed.names_first == VJO_NAMES_OFF && parsed.n_warnings == 1);
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        for (int limit = 1; limit <= 2; limit++) {
+            VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
+            TEST_CASE_("names_first %d, %s, %d shown", cases[i].mode, cases[i].text, limit);
+            setup(&a, &p, &cfg); set_names(&cfg, 2);
+            cfg.names_first = cases[i].mode;
+            build(&fixtures[0], page_names[0], d0, 2, 3);
+            build(&fixtures[1], page_names[1], d1, 2, 2);
+            TEST_ASSERT(!pages_lookup(&a, &p, &cfg, cases[i].text, 0, limit, &pages, &r, &e));
+            TEST_ASSERT(pages.count == limit && r.n_vocab == 1);
+            TEST_CHECK_(pages.page[0].dict == cases[i].first, "page 0 is d%d", pages.page[0].dict);
+            if (limit == 2) TEST_CHECK(pages.page[1].dict == !cases[i].first);
+            TEST_CHECK(pages.page[0].len16 == 3);
+        }
+    }
+}
+
 TEST_LIST = {
+    {"yomitan_check_remaining_lookups", yomitan_check_remaining_lookups},
+    {"normalised_spelling_ranks_are_not_shown", normalised_spelling_ranks_are_not_shown},
+    {"names_first_orders_a_name_and_a_word", names_first_orders_a_name_and_a_word},
     {"fallback_ranks_homographs_of_equal_steps", fallback_ranks_homographs_of_equal_steps},
     {"fallback_ties_keep_the_first_candidate", fallback_ties_keep_the_first_candidate},
     {"yomitan_rules_reach_spoken_forms", yomitan_rules_reach_spoken_forms},

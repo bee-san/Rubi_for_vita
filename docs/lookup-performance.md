@@ -21,7 +21,8 @@ measurements**, not measured Vita or SD-card latency.
    and a hash collision cannot create a false negative.
 4. **Suffix dispatch.** Deinflection visits only rules with the matching final
    UTF-8 byte, preserving their previous order and every source rule (569 then,
-   724 since #320). It no longer scans the entire rule table for every candidate.
+   724 since #320, 711 since #321; a continuation byte, so 64 buckets since #321).
+   It no longer scans the entire rule table for every candidate.
 
 ## Results
 

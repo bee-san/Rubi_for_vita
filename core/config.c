@@ -60,6 +60,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->hook_trust = 1; /* a trusted hook answers without OCR; off: Rubi 0.9.7's selection (docs/native-hooks.md) */
     c->ocr_vertical = VJO_VERTICAL_DEFAULT; /* docs/vita-vn-ocr.md, "Vertical text" */
     c->ocr_wait_hint = 1; /* the open overlay says why it waits (docs/text-stability.md, #358) */
+    c->names_first = VJO_NAMES_DEFAULT; /* docs/local-dictionaries.md, "Names and words" (#321) */
 }
 
 const char *vjo_config_default_text(void)
@@ -77,6 +78,10 @@ const char *vjo_config_default_text(void)
            "; Dictionaries shown per selected word, 1-8: the best match first, then the same\n"
            "; word in each other dictionary, in the order above. L/R tap pages; one is in memory.\n"
            "local_dictionary_results = 2\n"
+           "; A character's name spelled as the text (わたし) before a word spelled otherwise\n"
+           "; (私): auto (the name second when the word is among the 1,024 most frequent) |\n"
+           "; on (names first, as Rubi 0.9.8) | off (the word first)\n"
+           "names_first = " VJO_NAMES_DEFAULT_TEXT "\n"
            "\n"
            "; Drop OCR lines without Japanese characters, and lines that are only a text\n"
            "; box's border read as long vowels and dashes: none | lines\n"
@@ -504,6 +509,8 @@ static const char head_two_name[] VJO_DATA_TABLE(config_head_two_name) = "two_le
 static const char vertical_key[] VJO_DATA_TABLE(config_vertical_key) = "ocr_vertical";
 /* #358's key, in the data segment too (docs/memory-ledger.md, "Why the overlay waits"). */
 static const char wait_hint_key[] VJO_DATA_TABLE(config_wait_hint_key) = "ocr_wait_hint";
+/* #321's key, in the data segment too (docs/memory-ledger.md, "Lookups: #321"). */
+static const char names_key[] VJO_DATA_TABLE(config_names_key) = "names_first";
 
 static void set_kv(VjoConfig *c, const char *key, const char *val)
 {
@@ -637,9 +644,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const off_on[] VJO_DATA_TABLE(config_off_on_3) = {"off", "on", NULL};
         /* ocr_boost_clock or (#358) ocr_wait_hint: their fifth letters differ, in either case */
         set_choice(c, key, val, (key[4] | 0x20) == 'w' ? &c->ocr_wait_hint : &c->ocr_boost_clock, off_on);
-    } else if (vjo_ieq(key, vertical_key)) {
-        static const char *const modes[] VJO_DATA_TABLE(config_vertical_1) = {"off", "on", "auto", NULL}; /* VJO_VERTICAL_* */
-        set_choice(c, key, val, &c->ocr_vertical, modes);
+    } else if (vjo_ieq(key, vertical_key) || vjo_ieq(key, names_key)) {
+        /* VJO_VERTICAL_* and (#321) VJO_NAMES_*, the same values: ocr_vertical or names_first by the first letter */
+        static const char *const modes[] VJO_DATA_TABLE(config_vertical_1) = {"off", "on", "auto", NULL};
+        set_choice(c, key, val, (key[0] | 0x20) == 'n' ? &c->names_first : &c->ocr_vertical, modes);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))
             c->ocr_mode = VJO_OCR_AUTO;

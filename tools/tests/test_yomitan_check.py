@@ -89,6 +89,17 @@ class PackedTable(unittest.TestCase):
                       labels[b & 63], rules_in[b >> 13], b >> 6 & 127) for i, o, b in rows)
         self.assertEqual(got, want)
         self.assertEqual(len(rows), len(want))
+        # deinflect() reads a key's rules from the bucket of its last byte, a continuation byte: 64 buckets
+        offsets = [int(x) for x in re.search(r"deinflect_offsets\[65\][^{]*\{([^}]*)\}", text).group(1).split(",")
+                   if x.strip()]
+        self.assertEqual(len(offsets), 65)
+        self.assertEqual((offsets[0], offsets[-1]), (0, len(rows)))
+        for bucket in range(64):
+            for i, _, _ in rows[offsets[bucket]:offsets[bucket + 1]]:
+                self.assertEqual(blob[(i & 0x7FF) + (i >> 11) - 1].encode()[-1], 0x80 + bucket)
+        # the reason whose rules count two steps is the causative passive's (#321)
+        two = int(re.search(r"#define DEINFLECT_TWO_STEPS (\d+)u", text).group(1))
+        self.assertEqual(labels[two], "causative passive")
 
     def test_supplement_changes_what_it_says(self):
         old = json.loads((ROOT / "third_party/yomichan/deinflect.json").read_text())
@@ -97,11 +108,18 @@ class PackedTable(unittest.TestCase):
         self.assertNotIn("imperative negative", new)  # the bare な is gone
         added = sum(len(rules) for part in ("add", "rubi") for rules in supplement[part].values())
         self.assertEqual(sum(map(len, old.values())) - len(supplement["remove"]) + added, sum(map(len, new.values())))
-        self.assertEqual(sum(map(len, new.values())), 724)
-        # left out, measured harmful (third_party/yomitan/README.md)
+        self.assertEqual(sum(map(len, new.values())), 711)
+        # left out, measured harmful (third_party/yomitan/README.md); -ん's かん since #321
         ins = {r["kanaIn"] for rules in new.values() for r in rules}
-        self.assertTrue({"んな", "さん", "たん", "はん", "なん"}.isdisjoint(ins))
-        self.assertIn("かん", ins)
+        self.assertTrue({"んな", "さん", "たん", "はん", "なん", "かん"}.isdisjoint(ins))
+        self.assertTrue({"らん", "わん", "せん"} <= ins)
+        # #321: -おく is Yomitan's whole (とく and どく reach the te-form through -て), the old one-step
+        # -toku rules are gone, and Rubi's own contracted progressive てん/でん is there
+        toku = {(r["kanaIn"], r["kanaOut"]) for r in new["-toku"]}
+        self.assertEqual(toku, {("ておく", "て"), ("でおく", "で"), ("とく", "て"), ("どく", "で"),
+                                ("ないでおく", "ない"), ("ないどく", "ない")})
+        progressive = {(r["kanaIn"], r["kanaOut"]) for r in new["progressive or perfect"]}
+        self.assertTrue({("てん", "て"), ("でん", "で")} <= progressive)
 
     def test_limits_fail_loudly(self):
         """A rule set the six-byte rules cannot hold stops the generator (a SystemExit, which python -O
