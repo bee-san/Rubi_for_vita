@@ -10,36 +10,35 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [The box](first-box.md) rides in the result: no block, thread, stack or allocation, and no module takes a page more.
 
 - **The game worker** runs the rule on its job's recognized lines (`core/region_suggest.c`, `-Os` like the job's
-  control code; `vjo_region_suggest`'s frame 240 B and `vjo_vocr_suggest`'s 208 B on the worker's 32 KiB stack,
+  control code; `vjo_region_suggest`'s frame 240 B and `vjo_vocr_suggest`'s 200 B on the worker's 32 KiB stack,
   `-fstack-usage`) and counts each line's kana as it places its text. `VjoVocrLineStat` keeps the line's box and
   kana count (in its pad and 4 B more: 16 lines, 64 B of the job's stats on that stack).
-- **The result** is 8 B longer (`suggest`, four screen coordinates before the text): the kernel's two copies of it
-  are 16 B more of `.bss`.
-- **The Shell** copies the box into its view (8 B and the activation's number) when a job on the whole screen of a
-  game with no region line returns one, and the overlay opens the region mode with it (`vjo_rsel_preset`) once an
-  activation. The setting is the Rubi app's, in `region.ini` (no `config.ini` key: no parse in the Shell, no field
-  in its three `VjoConfig` copies). To keep the normal Shell's text in its pages, three cold log formats (the game's
-  start line, the Rubi app check's and a saved region's) moved into the data segment (`VJO_DATA_TABLE`), as earlier
-  changes did.
-- **Fitting the normal Shell.** With #364's wait hint and #370's lookup before it, the first version was past the
-  normal Shell's last text page and its last data page. The Enter path now starts the open's own job (no second
-  "Recognizing…" publish), the region mode is entered from one place (the □ press and the offer: one inlined copy),
-  the question is "Use this box?" in one font tag (82 B in the data segment, from 175), and `vjo_rsel_preset` checks
-  the box's far corner, the cursor, only: a first corner past the screen is drawn clipped and clamped where the box is
-  saved (`vjo_rsel_rect`), as a touch's is.
+- **The result** is 4 B longer (`suggest_rows`, the band's rows at the screen's bottom, before the text): the
+  kernel's two copies of it are 8 B more of `.bss`.
+- **The Shell** keeps the band in its view as one word (`VjoView.suggest`: none, the newest screen's rows, or taken
+  in this activation; `core/region_select.c` `vjo_rsel_publish` and `vjo_rsel_take`, compare-and-swap, no lock), and
+  the overlay opens the region mode with it (`vjo_rsel_preset`) once an activation. Enter saves it with the region
+  command a box drawn with □ uses (`VJO_CMD_SET_REGION`): no command, publish or job of its own. The setting is the
+  Rubi app's, in `region.ini` (no `config.ini` key: no parse in the Shell, no field in its three `VjoConfig` copies).
+- **Fitting the Shell.** #376 left the debug Shell 28 B of code room, and the first version took 152 B. What made it
+  fit: Enter saves as a drawn box does (the read at once and its command went); the band crosses as one word, not
+  four coordinates, and the view keeps one word, not a box and an activation number; every drawn box's hint asks the
+  question ("Use this box? %d x %d" for "Box %d x %d": one format, no second copy); and the game's start line, a cold
+  log format, is in the data segment (`VJO_DATA_TABLE`), as earlier changes did with others.
 - **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text +
-  data/bss), main `208cdb8` against this change:
+  data/bss), main `757153c` against this change:
 
   | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
   |---|---:|---:|---:|
-  | Game worker | 161,272 + 35,584 → 162,392 + 35,592 B | 152,340 + 35,576 → 153,428 + 35,584 B | 200,704 / 192,512 B, unchanged |
-  | Shell | 102,132 + 73,408 → 102,284 + 73,696 B | 90,020 + 73,416 → 90,108 + 73,716 B | 176,128 / 163,840 B, unchanged |
-  | Kernel | 43,160 + 77,764 → 43,160 + 77,780 B | 38,008 + 76,076 → 38,008 + 76,092 B | 122,880 / 118,784 B, unchanged |
+  | Game worker | 162,472 + 35,872 → 163,528 + 35,880 B | 153,508 + 35,856 → 154,548 + 35,864 B | 200,704 / 192,512 B, unchanged |
+  | Shell | 102,372 + 73,568 → 102,356 + 73,664 B | 90,020 + 73,432 → 90,044 + 73,520 B | 176,128 / 163,840 B, unchanged |
+  | Kernel | 43,356 + 77,764 → 43,356 + 77,772 B | 38,204 + 76,076 → 38,204 + 76,084 B | 122,880 / 118,784 B, unchanged |
 
-  The normal Shell keeps **4 B** of its last text page (92 B before) and 12 B of its last data page (312 B): the next
-  Shell change needs room found first. The debug Shell keeps 116 B and 32 B; the debug kernel 44 B of its last data
-  page; the worker 1,448 B (debug) and 2,220 B (normal) of text. The Shell's frames: `region_hint` 256 B (its 192-byte hint buffer, as before), `enter_region_mode` 16 B
-  (`-fstack-usage`, the overlay's flags without LTO).
+  The normal Shell keeps 68 B of its last text page (92 B before) and 208 B of its last data page (296 B); the debug
+  Shell 44 B (28 B) and 64 B (160 B); the debug kernel 52 B of its last data page (60 B); the worker 312 B (debug)
+  and 1,100 B (normal) of its last text page. The Shell's frames: `region_hint` 256 B (its 192-byte hint buffer, as
+  before), `leave_region_mode` 8 B, the word's helpers and `vjo_rsel_preset` none (`-fstack-usage`, the normal
+  build's flags without LTO).
 
 ## SC3 text: MAGES' script strings (no API change)
 

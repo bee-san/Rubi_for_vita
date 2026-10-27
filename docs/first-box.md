@@ -77,7 +77,7 @@ Not measured: on a console (the time, how the question feels, real games' first 
 42; a menu, a title screen or a choice list as the first screen (the pool's pages all hold dialogue); and a PSP game
 in Adrenaline's 1x screen mode, with black bars around its picture (the pool's PSP pages were read at 2x). The rule
 reads only what the job already returns (no pixel, no allocation): a pass over at most 16 lines after the job's
-recognition, not timed. It adds 1,040 B of code to the worker and 24 B of code and 96 B of data to the normal Shell
+recognition, not timed. It adds 1,040 B of code to the worker and 24 B of code and 88 B of data to the normal Shell
 (below).
 
 ## Limits

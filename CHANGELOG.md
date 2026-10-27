@@ -26,7 +26,7 @@ been reported.
   dialogue lines of the same game's later screens and reads 0.89 other lines a screen against the whole screen's 3.45
   (0.21 with Japanese, against 0.83). It is ON by default; the Rubi app's **Suggest a text box** OFF (OCR & lookup)
   writes `region = full` in `region.ini`, the line for every game without its own. Not run on a console yet.
-  The worker takes 1,040 B more of its pages and the normal Shell 24 B of code and 96 B of data; no module takes a
+  The worker takes 1,040 B more of its pages and the normal Shell 24 B of code and 88 B of data; no module takes a
   page more, and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
 - The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
   row (an animated icon, a moving picture or text still typing in the region), its next try says "Recognizing…
