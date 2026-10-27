@@ -2,12 +2,16 @@
 # The local merge gate (AGENTS.md, "Merge gate"): CI's checks of a change, side by side on this machine, in a
 # few minutes. The working tree is what is checked, uncommitted changes too.
 #
-#   bash tools/fast_gate.sh [--base REV] [--e2e auto|on|off] [--no-arm] [--jobs N] [--out DIR] [--clean]
+#   bash tools/fast_gate.sh [--base REV] [--e2e auto|on|off] [--models auto|on|off] [--no-arm] [--jobs N]
+#                           [--out DIR] [--clean]
 #
 # Lanes, all at once (logs and each lane's script in OUT/logs):
 #   host-debug, host-normal  the host build and ctest -j (CI's `host` job): every suite, with the pinned
 #                            OCR runtime, the frozen dictionary and the Anki import (VJO_REQUIRE_ANKI); the
 #                            normal build leaves the suites labelled variant_free to the debug build's run
+#   models                   what CI never has: the debug host build again, with the pinned release models
+#                            (VJO_VOCR_MODEL_DIR, below), and every suite that reads the build, so their
+#                            real-model checks run (ctest -LE variant_free: the others read no build, no model)
 #   arm-debug, arm-normal    tools/arm_host_tests.sh, the suites on the Vita's CPU under qemu-arm
 #   vita-debug, vita-normal  the Vita build (CI's `vita` job) and every check it runs: kernel instructions,
 #                            syscall ABI, memory ledger, offline imports, module variant, the Rubi app's
@@ -16,12 +20,17 @@
 #                            zips through tools/package_variants.py with the pinned models, then
 #                            tools/e2e_package.py on each (CI's `package` job)
 #
-#   --base REV   what the change is measured against (default: the merge base of HEAD and origin/main)
-#   --e2e WHEN   auto (the default), on or off
-#   --no-arm     leave out the ARM lanes (CI still runs them)
-#   --jobs N     parallel jobs per lane (default: the processors here)
-#   --out DIR    the gate's build directories (default build/gate; reused, so a second run is incremental)
-#   --clean      remove OUT first
+#   --base REV     what the change is measured against (default: the merge base of HEAD and origin/main)
+#   --e2e WHEN     auto (the default), on or off
+#   --models WHEN  auto (the default): the models lane runs when its directory holds every pinned model the
+#                  host tests read at its size and SHA-256 (tools/prepare_ocr.py --backend vocr-tests --check),
+#                  else its line says SKIP and what is missing; on: a missing one fails the gate, and the cache's
+#                  directory (never VJO_VOCR_MODEL_DIR's) is filled first (the public release downloads, each
+#                  checked); off
+#   --no-arm       leave out the ARM lanes (CI still runs them)
+#   --jobs N       parallel jobs per lane (default: the processors here)
+#   --out DIR      the gate's build directories (default build/gate; reused, so a second run is incremental)
+#   --clean        remove OUT first
 #
 # Containers (CONTAINER_ENGINE=docker or podman; the default is whichever runs): tools/gate/host.Dockerfile
 # (Ubuntu 24.04 as CI's runner, its packages, the ARM toolchain, qemu-arm and the pinned anki) and
@@ -34,19 +43,22 @@
 # cache) and VJO_PLAINTEXT_SOURCE (else .refs/plaintext-dicts at docs/plaintext-dictionaries.json's revision,
 # else a sparse clone in the cache over SSH). RUBI_GATE_CACHE (default ~/.cache/rubi-fast-gate) keeps those
 # clones and the pinned models. Without the private dictionary the gate runs what CI runs for a fork's pull
-# request and says so; the e2e then cannot run.
+# request and says so; the e2e then cannot run. The models lane reads VJO_VOCR_MODEL_DIR, else the cache's
+# models directory (the e2e lane's, which keeps the package's models there; `python3 tools/prepare_ocr.py
+# --backend vocr-tests --output DIR` adds the rest once, as --models on does).
 #
 # Prints one line per lane and FAST GATE: PASS or FAIL (also in OUT/result.txt); exit 0 only on PASS,
 # 2 when the gate itself cannot start.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT" || exit 2
-BASE='' E2E=auto ARM=1 JOBS='' OUT=build/gate CLEAN=0
-usage() { sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+BASE='' E2E=auto MODELS=auto ARM=1 JOBS='' OUT=build/gate CLEAN=0
+usage() { sed -n '2,51p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case $1 in
     --base) [ $# -ge 2 ] || usage; BASE=$2; shift 2 ;;
     --e2e) [ $# -ge 2 ] && case $2 in auto|on|off) true ;; *) false ;; esac || usage; E2E=$2; shift 2 ;;
+    --models) [ $# -ge 2 ] && case $2 in auto|on|off) true ;; *) false ;; esac || usage; MODELS=$2; shift 2 ;;
     --no-arm) ARM=0; shift ;;
     --jobs) [ $# -ge 2 ] && [ "$2" -gt 0 ] 2> /dev/null || usage; JOBS=$2; shift 2 ;;
     --out) [ $# -ge 2 ] || usage; OUT=$2; shift 2 ;;
@@ -114,6 +126,30 @@ case $VOCR in /*) ;; *) VOCR=$ROOT/$VOCR ;; esac
 case $DICTS in ''|/*) ;; *) DICTS=$ROOT/$DICTS ;; esac
 if [ "$E2E" = on ] && [ -z "$DICTS" ]; then E2E=blocked; fi
 
+# ---- the real models (the models lane): every pinned one the host tests read, checked before a lane starts
+MODEL_DIR=${VJO_VOCR_MODEL_DIR:-$CACHE/models}
+case $MODEL_DIR in /*) ;; *) MODEL_DIR=$ROOT/$MODEL_DIR ;; esac
+MODELS_WHY=
+if [ "$MODELS" != off ]; then
+  if [ "$MODELS" = on ] && [ -z "${VJO_VOCR_MODEL_DIR:-}" ]; then
+    # into the cache only, under the e2e lane's lock (it fills the same directory)
+    mkdir -p "$MODEL_DIR" &&
+      timeout 900 flock "$CACHE/models.lock" python3 tools/prepare_ocr.py --backend vocr-tests --output "$MODEL_DIR" \
+        > "$LOGS/models-fetch.log" 2>&1 < /dev/null || MODELS_WHY="fetching them failed (${LOGS#"$ROOT"/}/models-fetch.log)"
+  fi
+  if python3 tools/prepare_ocr.py --backend vocr-tests --check --output "$MODEL_DIR" > "$LOGS/models-check.log" 2>&1; then
+    MODELS=run
+  else
+    # a directory the caller names is never written: only the cache's is filled (--models on)
+    hint="--models on fetches them"
+    [ -z "${VJO_VOCR_MODEL_DIR:-}" ] || hint="tools/prepare_ocr.py --backend vocr-tests --output DIR fetches them"
+    count=$(sed -n '$s/ in .*//p' "$LOGS/models-check.log")
+    bad=$(sed '$d' "$LOGS/models-check.log" | head -3 | paste -sd ';' -)
+    MODELS_WHY=${MODELS_WHY:-"${count:-the check failed} (${bad:+$bad; }${LOGS#"$ROOT"/}/models-check.log; $hint)"}
+    if [ "$MODELS" = on ]; then MODELS=fail; else MODELS=skip; fi
+  fi
+fi
+
 # ---- the containers
 ENGINE=${CONTAINER_ENGINE:-}
 if [ -z "$ENGINE" ]; then
@@ -144,6 +180,9 @@ if [ "$ENGINE" != none ]; then
   for d in "$VOCR" ${DICTS:+"$DICTS"} "$(cd "$(git rev-parse --git-common-dir)" && pwd)"; do
     case $d/ in "$ROOT"/*|"$CACHE"/*) ;; *) MOUNTS+=(-v "$d:$d") ;; esac
   done
+  if [ "$MODELS" = run ]; then # the models lane only reads them
+    case $MODEL_DIR/ in "$ROOT"/*|"$CACHE"/*) ;; *) MOUNTS+=(-v "$MODEL_DIR:$MODEL_DIR:ro") ;; esac
+  fi
   USER_ARGS=(--user "$(id -u):$(id -g)")
   [ "$ENGINE" != podman ] || USER_ARGS+=(--userns=keep-id)
 fi
@@ -168,7 +207,7 @@ cleanup() {
   pids=$(jobs -p)
   [ -z "$pids" ] || kill $pids 2> /dev/null
   if [ "$ENGINE" != none ]; then
-    for n in host-debug host-normal arm-debug arm-normal vita-debug vita-normal plaintext e2e; do
+    for n in host-debug host-normal models arm-debug arm-normal vita-debug vita-normal plaintext e2e; do
       "$ENGINE" rm -f "rubi-gate-$$-$n" > /dev/null 2>&1 || true
     done
   fi
@@ -179,13 +218,13 @@ trap 'cleanup; exit 143' TERM HUP
 q() { printf '%q' "$1"; }
 rm -f "$LOGS"/*.rc
 echo "fast gate: $(git rev-parse --short HEAD)${DIRTY:+ + local changes} against $(git rev-parse --short "$BASE")," \
-     "$(printf '%s\n' "$SCOPE" | tr '\n' ' ')e2e=$E2E, $JOBS jobs, ${ENGINE} (logs: ${LOGS#"$ROOT"/})"
+     "$(printf '%s\n' "$SCOPE" | tr '\n' ' ')e2e=$E2E, models=$MODELS, $JOBS jobs, ${ENGINE} (logs: ${LOGS#"$ROOT"/})"
 
 # ---- host: build and every suite, both builds
+anki='export VJO_ANKI_PYTHON=/opt/anki/bin/python VJO_REQUIRE_ANKI=1'
+[ "$ENGINE" != none ] || anki='[ -z "${VJO_ANKI_PYTHON:-}" ] || export VJO_REQUIRE_ANKI=1'
 for v in debug normal; do
   dbg=$([ $v = debug ] && echo ON || echo OFF)
-  anki='export VJO_ANKI_PYTHON=/opt/anki/bin/python VJO_REQUIRE_ANKI=1'
-  [ "$ENGINE" != none ] || anki='[ -z "${VJO_ANKI_PYTHON:-}" ] || export VJO_REQUIRE_ANKI=1'
   select=$([ $v = normal ] && echo "-LE variant_free" || true)
   run_lane host-$v host "
 cmake -S . -B $(q "$OUT/host-$v") -G Ninja -DVJO_DEBUG=$dbg -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
@@ -194,6 +233,16 @@ cmake --build $(q "$OUT/host-$v") -j$JOBS
 $anki
 ctest --test-dir $(q "$OUT/host-$v") -j$JOBS --output-on-failure $select" &
 done
+# ---- the models lane: the debug build with the release models, whose host checks CI's job never runs (#335's
+# failed only there); the variant_free suites read no build, so no model: host-debug's run is theirs
+if [ "$MODELS" = run ]; then
+  run_lane models host "
+cmake -S . -B $(q "$OUT/models-debug") -G Ninja -DVJO_DEBUG=ON -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
+  -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") -DVJO_VOCR_MODEL_DIR=$(q "$MODEL_DIR")
+cmake --build $(q "$OUT/models-debug") -j$JOBS
+$anki
+ctest --test-dir $(q "$OUT/models-debug") -j$JOBS --output-on-failure -LE variant_free" &
+fi
 
 # ---- the ARM lanes: the dictionary they compare lookups on, unpacked once, then both builds
 if [ "$ARM" = 1 ]; then
@@ -280,7 +329,7 @@ summary() { # summary NAME: the lane's PASS/FAIL line and what its log says
   [ -f "$LOGS/$name.rc" ] && read -r rc secs < "$LOGS/$name.rc"
   local log=$LOGS/$name.log
   case $name in
-    host-*) what=$(grep -E 'tests passed, [0-9]+ tests failed' "$log" | tail -1) ;;
+    host-*|models) what=$(grep -E 'tests passed, [0-9]+ tests failed' "$log" | tail -1) ;;
     arm-*) what="$(grep -c -E '^arm .*(cases pass|identical to the host)' "$log" 2> /dev/null) suites pass$(grep -q '^arm TMPDIR: nothing left' "$log" && echo ', TMPDIR clean')" ;;
     vita-*) what=$(grep -E '^memory ledger' "$log" | tail -1) ;;
     e2e) what=$(grep -c -E '^PASS' "$log" 2> /dev/null) && what="$what checks pass" ;;
@@ -296,6 +345,12 @@ summary() { # summary NAME: the lane's PASS/FAIL line and what its log says
 }
 summary host-debug
 summary host-normal
+case $MODELS in
+  run) summary models ;;
+  off) line SKIP models "" "--models off" ;;
+  skip) line SKIP models "" "$MODELS_WHY" ;;
+  fail) fail=1; line FAIL models "" "$MODELS_WHY" ;;
+esac
 if [ "$ARM" = 1 ]; then
   [ -z "$DICTS" ] || [ ! -f "$LOGS/plaintext.rc" ] || [ "$(cut -d' ' -f1 "$LOGS/plaintext.rc")" = 0 ] || summary plaintext
   summary arm-debug
@@ -313,7 +368,7 @@ esac
 total=$(( $(date +%s) - START ))
 verdict=$([ $fail = 0 ] && echo PASS || echo FAIL)
 note=$([ -n "$DICTS" ] || echo ", without the private dictionary")
-result="FAST GATE: $verdict in $((total / 60))m$((total % 60))s ($(git rev-parse --short HEAD)${DIRTY:+ + local changes}, e2e=$E2E$note)"
+result="FAST GATE: $verdict in $((total / 60))m$((total % 60))s ($(git rev-parse --short HEAD)${DIRTY:+ + local changes}, e2e=$E2E, models=$MODELS$note)"
 echo "$result"
 echo "$result" > "$OUT/result.txt"
 exit $fail

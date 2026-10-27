@@ -11,6 +11,14 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
+  pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
+  tests' fake memory, fixed in #341), unseen until a release check ran them. It runs when `VJO_VOCR_MODEL_DIR` or
+  its cache holds every pinned model the tests read, each checked by size and SHA-256
+  (`tools/prepare_ocr.py --backend vocr-tests`, `--check` to only check); `--models on` fetches them first.
+
 ## [0.9.8] - 2026-10-27
 
 The first pieces of VOCR6, vita-vn-ocr's work on the owner's hooked PS Vita and PSP captures (vita-vn-ocr #125):

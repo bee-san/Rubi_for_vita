@@ -1515,7 +1515,8 @@ cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_WITH_VOCR=ON \
   -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr -DVJO_PLAINTEXT_SOURCE=/path/to/plaintext-dicts
 cmake --build build/vita --target release
 
-# Host tools and tests; VJO_VOCR_MODEL_DIR adds the real-model checks
+# Host tools and tests; VJO_VOCR_MODEL_DIR adds the real-model checks (every pinned model they read:
+# python3 tools/prepare_ocr.py --backend vocr-tests --output ocr; tools/fast_gate.sh's models lane runs them)
 cmake -S . -B build/host -G Ninja -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr \
   -DVJO_VOCR_MODEL_DIR=$PWD/ocr
 cmake --build build/host && ctest --test-dir build/host --output-on-failure

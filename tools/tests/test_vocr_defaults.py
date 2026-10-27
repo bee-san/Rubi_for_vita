@@ -527,5 +527,93 @@ class RuntimePinEverywhere(unittest.TestCase):
         docs = (ROOT / "docs" / "vita-vn-ocr.md").read_text(encoding="utf-8")
         self.assertIn(f"git -C /path/to/vita-vn-ocr checkout {pin}", docs)
 
+
+class TestModels(unittest.TestCase):
+    """--backend vocr-tests: what the host tests' VJO_VOCR_MODEL_DIR holds for their real-model checks, the set
+    tools/fast_gate.sh's models lane checks (--check) before it runs them."""
+
+    def test_the_set_is_every_pin_the_plugin_reads(self):
+        """Every recognizer the plugin pins (shipped or not: the tests run FL10, H15, F20, VOCR3's and VOCR4-W20
+        as well as the sizes' and VOCR5-V), its four LMs and the gate's weights, each at the plugin's own size and
+        SHA-256; no attribution and nothing else."""
+        models = {name: assets[name][1:] for name, assets, _ in prepare_ocr.test_models()}
+        self.assertEqual(len(models), len(prepare_ocr.test_models()))  # each file once
+        want = {name: (size, sha) for name, (size, sha, _) in c_table().items()}
+        want.update({name: (size, sha) for name, (size, sha, _) in c_lm_table().items()})
+        _, size, sha = prepare_ocr.VOCR_GATE_ASSETS[prepare_ocr.VOCR_GATE_MODEL]
+        want[prepare_ocr.VOCR_GATE_MODEL] = (size, sha)
+        self.assertEqual(models, want)
+        sizes = macros()
+        for macro in ("VJO_VOCR_TIER1_NAME", "VJO_VOCR_TIER2_NAME", "VJO_VOCR_TIER3_NAME", "VJO_VOCR_CASCADE_NAME",
+                      "VJO_VOCR_VERTICAL_NAME", "VJO_VOCR_GATE_NAME"):
+            self.assertIn(sizes[macro], models, macro)
+        for name in ("FL10_w8.vocr", "H15_w8.vocr"):  # host/tests/test_game_vocr.c's and test_capture_parity.c's
+            self.assertIn(name, models)
+
+    def _fixture(self, tmp, names=("A_w8.vocr", "B_w8.vocr", "c.vlm", "d.vtd")):
+        """Pins of small fixture files in tmp/src, as test_models() gives them."""
+        import hashlib  # noqa: PLC0415
+        src = Path(tmp) / "src"
+        src.mkdir()
+        assets = {}
+        for name in names:
+            data = ("fixture " + name).encode()
+            (src / name).write_bytes(data)
+            assets[name] = ("https://fixture.invalid/" + name, len(data), hashlib.sha256(data).hexdigest())
+        return src, [(name, assets, "v0.0.0-fixture") for name in names]
+
+    def test_check_names_each_file_missing_or_not_the_pinned_one(self):
+        import shutil  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as tmp:
+            src, models = self._fixture(tmp)
+            self.assertEqual(prepare_ocr.check_models(src, models), [])
+            out = Path(tmp) / "out"
+            shutil.copytree(src, out)
+            (out / "A_w8.vocr").unlink()
+            b_size = (out / "B_w8.vocr").stat().st_size
+            (out / "B_w8.vocr").write_bytes((out / "B_w8.vocr").read_bytes() + b"!")  # another size
+            data = (out / "c.vlm").read_bytes()
+            (out / "c.vlm").write_bytes(data[:-1] + b"?")  # the same size, other bytes
+            self.assertEqual(prepare_ocr.check_models(out, models),
+                             ["A_w8.vocr: missing (v0.0.0-fixture)",
+                              f"B_w8.vocr: {b_size + 1} B, not the pinned {b_size} B (v0.0.0-fixture)",
+                              "c.vlm: not the pinned SHA-256 (v0.0.0-fixture)"])
+            self.assertEqual(len(prepare_ocr.check_models(Path(tmp) / "absent", models)), len(models))
+
+    def test_the_cli_checks_without_a_download_and_fetches_from_a_local_copy(self):
+        import contextlib  # noqa: PLC0415
+        import io  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        from unittest import mock  # noqa: PLC0415
+
+        def run(*argv):
+            stdout = io.StringIO()
+            with mock.patch.object(sys, "argv", ["prepare_ocr.py", *argv]), contextlib.redirect_stdout(stdout):
+                try:
+                    prepare_ocr.main()
+                    code = 0
+                except SystemExit as e:
+                    code = e.code
+            return code, stdout.getvalue()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src, models = self._fixture(tmp)
+            out = Path(tmp) / "out"
+            with mock.patch.object(prepare_ocr, "test_models", return_value=models), \
+                 mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
+                code, text = run("--backend", "vocr-tests", "--check", "--output", str(out))
+                self.assertEqual(code, 1)
+                self.assertIn("0 of 4 pinned test models verified in", text)
+                self.assertFalse(out.exists())  # the check makes nothing
+                code, text = run("--backend", "vocr-tests", "--output", str(out), "--from", str(src))
+                self.assertEqual(code, 0, text)
+                self.assertEqual(sorted(p.name for p in out.iterdir()), sorted(name for name, _, _ in models))
+                code, text = run("--backend", "vocr-tests", "--check", "--output", str(out))
+                self.assertEqual((code, text.splitlines()[-1]), (0, f"4 of 4 pinned test models verified in {out}"))
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(run("--backend", "vocr-lm", "--check", "--output", str(out))[0], 2)  # its own set only
+
+
 if __name__ == "__main__":
     unittest.main()

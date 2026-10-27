@@ -1174,8 +1174,10 @@ cmake --build build/vita --target release
 ```
 
 `bash tools/fast_gate.sh` runs all of CI's checks at once, in containers it builds once (docker or
-podman; `tools/gate/`): both builds' host suites (`ctest -j`), the ARM lane, both Vita builds with
-their checks and, when the package's files changed, the package e2e. It is the merge gate
+podman; `tools/gate/`): both builds' host suites (`ctest -j`), the ARM lane, both Vita builds with their checks
+and, when the package's files changed, the package e2e. Where it finds the pinned release models
+(`VJO_VOCR_MODEL_DIR`, else its cache; `python3 tools/prepare_ocr.py --backend vocr-tests --output DIR` fetches
+them), it also runs the host suites with them, which CI cannot (the `models` lane). It is the merge gate
 ([AGENTS.md](https://github.com/bee-san/Rubi_for_vita/blob/main/AGENTS.md#merge-gate-binding-owner-2026-10-26)); its comments list its options.
 `ctest -j` is safe: each test has a `TMPDIR` of its own, and the tools' Python suites are one test
 per module (`tools_<module>`).
