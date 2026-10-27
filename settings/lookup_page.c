@@ -949,12 +949,13 @@ void vjo_lookup_page_show(VjoArena *scratch)
         else
             loaded = cfg; /* config.ini unreadable now: the settings it had */
     }
-    if (!configured || strcmp(loaded.local_dictionaries, cfg.local_dictionaries) ||
-        strcmp(loaded.local_dictionary_dir, cfg.local_dictionary_dir) ||
-        loaded.local_dictionary_results != cfg.local_dictionary_results ||
-        loaded.non_japanese_filter != cfg.non_japanese_filter || loaded.highlight_mode != cfg.highlight_mode ||
-        loaded.japanese_only_selection != cfg.japanese_only_selection || loaded.frequency_badge != cfg.frequency_badge)
-        panel = -1; /* other dictionaries or rules: the text looked up again */
+    /* The text is looked up again at its cursor, with the settings as they are now: the dictionaries, their order
+     * and count, names_first (#321), the filter, the cursor's rules (any of them may have changed meanwhile). */
+    if (panel == MODE_SEARCH)
+        search_cursor = vjo_lookup_cursor();
+    else if (panel == MODE_LINES)
+        line_cursor = vjo_lookup_cursor();
+    panel = -1;
     cfg = loaded;
     configured = 1;
     vjo_lookup_configure(&cfg);
