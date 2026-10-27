@@ -143,8 +143,9 @@ typedef struct {
 int vjo_vocr_rows_vertical(const void *lines, unsigned n, unsigned w, unsigned h);
 /* API 53, config.ini ocr_vertical = on (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON, #379): whether the row
  * finder's n lines on a w x h region look like horizontal text, lines of it one under another, so that on's job reads
- * them as rows; elsewhere it reads the region's columns. Geometry only (core/vocr_ocr.c: the rule;
- * docs/vita-vn-ocr.md "Vertical text": how it was measured). */
+ * them as rows (no line at all in a region wider than tall too: nothing to read, off's job); elsewhere it reads the
+ * region's columns. Geometry only (core/vocr_ocr.c: the rule; docs/vita-vn-ocr.md "Vertical text": how it was
+ * measured). */
 int vjo_vocr_rows_horizontal(const void *lines, unsigned n, unsigned w, unsigned h);
 
 /* The model named `name` (a file name in ocr_model_dir), or NULL. */
@@ -667,7 +668,8 @@ typedef struct {
      * again with line_fix's fixes and read; a wider region is found once, with them. */
     /* API 53 (config.ini ocr_vertical = on, #379): vertical_check VJO_VOCR_CHECK_ON has a job of rows return
      * VJO_E_VERTICAL, reading nothing, wherever its rows do not look like horizontal text
-     * (vjo_vocr_rows_horizontal), and read them where they do: on prefers columns. Its rows are checked as auto's
+     * (vjo_vocr_rows_horizontal: a region wider than tall with no row at all is off's job, nothing to read), and read
+     * them where they do: on prefers columns. Its rows are checked as auto's
      * are (with line_fix, a region at least as tall as wide on the frozen finder's rows, then found again with the
      * fixes and read). VJO_VOCR_CHECK_AUTO (1) is API 47's auto. */
     int vertical_check;

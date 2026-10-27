@@ -353,11 +353,15 @@ int vjo_vocr_rows_vertical(const void *lines, unsigned n, unsigned w, unsigned h
  * when there are 1 to 4 of them, each at least 3 times as wide as tall and at most 96 px tall, each next to the one
  * above it (at most twice the taller one's height between them) and over part of its span, and auto's rule does not
  * take them for vertical text. Chosen so that none of the 3,715 regions of vertical text measured would be read as
- * rows (docs/vita-vn-ocr.md "Vertical text"). Integers only, at most 4 rows. */
+ * rows (docs/vita-vn-ocr.md "Vertical text"). No row at all in a region wider than tall (a text box between two
+ * lines, a CG) is nothing to read, off's job (#385's audit F3: its columns' try read the vertical model's weights at
+ * every blank screen of a horizontal game, and the size's model again at the next text; the 4 such regions of the
+ * 3,715 hold no column either). Integers only, at most 4 rows. */
 int vjo_vocr_rows_horizontal(const void *lines, unsigned n, unsigned w, unsigned h)
 {
     const VocrLine *ln = lines;
-    if (!ln || !n || n > 4u) return 0;
+    if (!n) return w > h;
+    if (!ln || n > 4u) return 0;
     for (unsigned i = 0; i < n; i++) {
         const VocrLine *a = &ln[i ? i - 1u : 0u], *b = &ln[i]; /* the finder's rows run top to bottom */
         unsigned taller = a->h > b->h ? a->h : b->h;

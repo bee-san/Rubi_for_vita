@@ -11,7 +11,8 @@
  * shows it (core/textfilter.c). API 47's vertical text (ocr_vertical): off reads rows; on reads the region's
  * columns with the vertical model (VJO_VOCR_VERTICAL_NAME), no cascade and no refinement, and since API 53 (#379) its
  * rows checked first, read as off where they look like horizontal text ("switched" 0) and columns elsewhere
- * ("switched" 1, as auto's); auto reads rows
+ * ("switched" 1, as auto's), but in a region at least as tall as wide its columns at once, as the worker reads it
+ * (#385's audit F6); auto reads rows
  * checked first (VjoVocrPolicy.vertical_check) and, where they look like vertical text, the columns as on: the
  * worker's retry (game_ocr/main.c, VJO_E_VERTICAL). API 50's line finder fixes (ocr_line_fix): --line-fix on is
  * the worker's default (VOCR_FIX_DEFAULT), junk and all add JUNK and VALLEY; without the option the rows are the
@@ -32,7 +33,8 @@
  * probe), the column finder's columns (the vertical model's flags), and auto's verdict as the job's check gives it
  * (vjo_vocr_rows_vertical; with --line-fix, a region at least as tall as wide is checked on the frozen finder's
  * rows, as the job does, so the printed rows are not the ones checked there), and on's (API 53, "horizontal":
- * vjo_vocr_rows_horizontal on the same rows: 1 reads them as rows). */
+ * vjo_vocr_rows_horizontal on the same rows: 1 reads them as rows; 0 in a region at least as tall as wide, whose
+ * columns on reads at once, #385's audit F6). */
 #define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
 #include <stdint.h>
@@ -232,6 +234,7 @@ static void find_only(const Setup *su, const char *id, VjoGreySource *src)
 #else
     vertical = 0;
 #endif
+    horizontal = horizontal && h < w; /* on reads a region at least as tall as wide as columns at once (#385's F6) */
     double rule_ns = 1e9 * (now_s() - t0);
     t0 = now_s();
 #if HAVE_VERTICAL
@@ -391,7 +394,8 @@ int main(int argc, char **argv)
             continue;
         }
         memset(&first, 0, sizeof(first));
-        if (su.mode == 1 && !HAVE_ON_CHECK) {
+        /* on: a region at least as tall as wide is read as columns at once (#385's audit F6), as the worker does */
+        if (su.mode == 1 && (!HAVE_ON_CHECK || h >= w)) {
             rc = run_one(&job, &plat, su.vertical, &src, &vres, 0, text, sizeof(text), raw, sizeof(raw), &st, &kept,
                          &ws);
         } else {
