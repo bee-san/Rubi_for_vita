@@ -39,8 +39,10 @@ A game's own line finder ([guide](guide.md#a-games-own-page)) is read by the She
 allocation; no module takes a page more; no budget raised.**
 
 - **The Shell:** `games.ini`'s reader with the line finder's five names (`core/games.c` `vjo_games_parse_kind`), the
-  row lookup both reads use (`vjo_games_row_as`, not inlined: two inlined copies were 48 B more of the normal Shell's
-  code [measured]), the second read and the value's place in `cfg` (`apply_config`: `ocr_finder`, and for Rubi's
+  row lookup both reads use (`vjo_games_row_as`, not inlined: LTO's two inlined copies are 32 B more of the code in
+  both builds on main `73db61e`, a page past each build's budget, and were 32 B (normal) and 48 B (debug) on #395's
+  merge [measured: full Vita builds without and with the attribute; on `099b156`, audit-rubi-333's]), the second read
+  and the value's place in `cfg` (`apply_config`: `ocr_finder`, and for Rubi's
   finder `ocr_line_fix`), `title_line_fix` (4 B), and the game's start line's two fields. Its tables are in the data
   segment ("Tables in the data segment" below): the five names (`vjo_line_finder_names`, whose last four are
   `config.c`'s `ocr_line_fix` table now: 24 B for its 20), `ocr_finder`'s two (`vjo_finder_names`, config.c's own table
@@ -48,26 +50,33 @@ allocation; no module takes a page more; no budget raised.**
   start line's format, 1 B longer for its two fields than with the dictionary's name.
 - **Room for it in the Shell's code:** `vjo_title_name` reads the title into its caller's buffer, without its two
   128 B buffers and the debug build's line of both parameters, which a console run answered (in test.1-test.4's logs
-  every one of the 115 game starts had parameter 9 refused, 0x80801000, and parameter 10 the title: the owner's
-  `--collect` logs, counted); the normal build's self-test notice (83 B) is in the data segment.
+  every one of the 55 game starts had parameter 9 refused, 0x80801000, and parameter 10 the title: the owner's
+  `--collect` logs, counted; 115 lines, as each collect's log repeats the one before); the normal build's self-test
+  notice (83 B) is in the data segment.
 - **The kernel:** `games.ini`'s reader is the Shell's (`core/games.c`, built with `VJO_KERNEL`, which leaves the line
   finder's names out): +76 B of code for the names' loop and the row lookup, the same pages. Its two names stay in its
   code pages, which have room, where its data page has less.
 - **The Rubi app** (its own process, not SceShell's): the game page and the file's table, 16,816 B more `.bss` (the
   table's two copies, 8,200 B each, as `games.ini`'s two; the list's status while the page shows its own) and
-  6,020 B (normal) / 6,208 B (debug) more code.
+  6,144 B (normal) / 6,214 B (debug) more code.
 - **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text
-  + data/bss; the app's ELF with `arm-vita-eabi-size`), main `9ad8eb5` (#396) against this change:
+  + data/bss; the app's ELF with `arm-vita-eabi-size`), #395's merge `099b156` against its parent `786dd8b`:
 
-  | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+  | Module | Debug: `786dd8b` → `099b156` | Normal: `786dd8b` → `099b156` | Loaded pages |
   |---|---:|---:|---:|
   | Shell | 98,164 + 77,728 → 98,212 + 77,792 B | 85,900 + 77,552 → 85,940 + 77,696 B | 176,128 / 163,840 B, unchanged |
   | Kernel | 43,432 + 77,780 → 43,508 + 77,780 B | 38,280 + 76,092 → 38,356 + 76,092 B | 122,880 / 118,784 B, unchanged |
-  | Game worker | 179,712 + 36,416 B, unchanged | 170,780 + 36,408 B, unchanged | unchanged |
-  | Rubi app (ELF: text, data, bss) | 642,100, 15,928, 6,830,872 → 648,308, 16,000, 6,847,688 B | 641,700, 15,920, 6,830,840 → 647,720, 15,992, 6,847,656 B | its own process |
+  | Game worker | 179,760 + 36,704 B, unchanged | 170,812 + 36,696 B, unchanged | unchanged |
+  | Rubi app (ELF: text, data, bss) | 961,484, 15,944, 7,138,272 → 967,698, 16,016, 7,155,088 B | 961,080, 15,936, 7,138,240 → 967,224, 16,008, 7,155,056 B | its own process |
 
-  Room left in the last pages: the normal Shell 76 B of code (116 before) and 128 B of data (272); the debug Shell
-  92 B of code (140) and 32 B of data (96); the debug kernel 1,548 B of code and 44 B of data.
+  Room left in the last pages then: the normal Shell 76 B of code (116 before) and 128 B of data (272); the debug Shell
+  92 B of code (140) and 32 B of data (96); the debug kernel 1,548 B of code and 44 B of data. (The same Shell and
+  kernel rows as on main `9ad8eb5`, where the PR measured them; audit-rubi-333 measured these too.)
+- **Its audit's follow-up** (the app puts a file left as its backup back and keeps a hand-edited one, a slid touch
+  does nothing, the page's note beside an older overlay): app code only. On main `73db61e` the Shell's and the
+  kernel's SELFs are byte for byte main's in both builds (`sha256sum`); the app's text 968,372 → 968,768 B (normal)
+  and 968,832 → 969,232 B (debug), its data the same, its `.bss` 7,155,072 → 7,155,088 B (normal) and the same in
+  the debug build.
 - **Time:** at a game's start or resume the Shell opens and reads one more small file (at most 12 KiB; a missing one
   is one failed open), unmeasured on the console. Nothing changes per job or per frame.
 

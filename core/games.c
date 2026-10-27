@@ -43,8 +43,9 @@ void vjo_games_defaults(VjoGames *g)
     g->default_enabled = 1;
 }
 
-/* Not inlined: the Shell calls it twice (games.ini's table, then ocr_line_fix.ini's), and one copy is 48 B less of
- * the normal Shell's code than two (measured, docs/memory-ledger.md "A game's own line finder"). */
+/* Not inlined: the Shell calls it twice (games.ini's table, then ocr_line_fix.ini's), and one copy is 32 B less of
+ * its code than two, which keeps each build's code in its pages (measured, docs/memory-ledger.md "A game's own line
+ * finder"). */
 __attribute__((noinline)) int vjo_games_row_as(const VjoGames *g, const char *id, int psp)
 {
     for (;;) {
