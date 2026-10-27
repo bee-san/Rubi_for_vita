@@ -618,6 +618,16 @@ class Collect(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("  not on the Vita: ux0:/data/VitaJPOverlay/log.old.txt, ux0:/data/VitaJPOverlay/selftest.txt, "
                       "ux0:/tai/config.txt, ux0:/tai/config.txt.vjo-bak\n", r.stdout)
+        # a collect from after #367 (it fetches hooks.log) of a build that wrote none: named as the debug build's
+        record = json.loads((FIXTURES / "collect-test3-app/COLLECT.json").read_text())
+        record["missing"].append("ux0:/data/VitaJPOverlay/hooks.log")
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "vjo-collect-20261016-071743Z"
+            shutil.copytree(FIXTURES / "collect-test3-app", folder)
+            (folder / "COLLECT.json").write_text(json.dumps(record))
+            r = subprocess.run([sys.executable, str(ROOT / "tools/analyse_selftest.py"), "--collect", str(folder)],
+                               capture_output=True, text=True, timeout=60)
+        self.assertIn("ux0:/tai/config.txt.vjo-bak, ux0:/data/VitaJPOverlay/hooks.log (the debug build's)\n", r.stdout)
         self.assertIn("  Rubi app: the plugins' (vjoapp1 api=22 build=c3e781ad58a5ebe3), by the Shell's check at a "
                       "game start of this boot (log.txt:5); this collect could not read it over FTP: its folder could "
                       "not be entered, and this older collect_vita.py read the app only through it (#138)\n", r.stdout)

@@ -897,8 +897,8 @@ each CALL import hooked or not. A Luna site's line has the segment-0 offset its 
 as `range`). No text is in it. The debug build reads `APP_VER` for every game whose table sites are
 tried, for this line (a [hook request](hook-requests.md) needs the player's version, and most requests are for games
 with no entry); the decisions read it only for a Luna site or an entry that names its version, so both builds install
-the same hooks (the engine test `hooks.log names APP_VER for a hook request`; 0.9.8's debug build read it only for
-them, and logged `APP_VER 0000` for other games). `tools/install_ftp.sh --collect` fetches `hooks.log`, and
+the same hooks (the engine test `hooks.log names APP_VER for a hook request`; debug builds before #367,
+v0.9.8-test.2 and older, read it only for them, and logged `APP_VER 0000` for other games). `tools/install_ftp.sh --collect` fetches `hooks.log`, and
 `tools/hook_request.py` reads it: what the console saw, and what a verified entry for the game needs
 ([hook requests](hook-requests.md)). Job results carry the counts; the Shell's debug log
 shows them (hooks-api). API 41: the debug build's `kernel.txt` has a line for each new line the hook watch
