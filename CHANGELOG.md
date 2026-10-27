@@ -428,6 +428,8 @@ been reported.
   entries stacked below the word (the right stick scrolls to them; #289), and the guide said △'s totals were
   across games, where △ shows today and the total of the game being played (the roadmap #310's "found along the
   way"). Docs only.
+- Docs: [the roadmap](docs/roadmap.md), what is left to build, ranked, and the top five of it now built (#311-#315);
+  it was issue #310. Docs only.
 
 ### Changed
 
