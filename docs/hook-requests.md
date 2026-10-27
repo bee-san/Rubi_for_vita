@@ -96,7 +96,8 @@ The reasons: `range` (outside segment 0), `align`, `entry` (not a function's ent
 its first instructions safely), `window` (an instruction there is not on the placement check's allow-list),
 `signature` (a verified entry's module NID or bytes differ: another build of the game), `unported` (it needs code Rubi
 has not ported), `version` (an entry for another `APP_VER`), `full` (all 8 site slots taken), `tai` (taiHEN refused
-it). How the worker decides: [native-hooks.md](native-hooks.md#table-sites).
+it), `relocated` (a verified entry that reads a static at a fixed distance from its code, 真 流行り神's, in a game whose
+segment 0 is not at 0x81000000, where the farm proved it). How the worker decides: [native-hooks.md](native-hooks.md#table-sites).
 
 Debug builds made before [#367](https://github.com/bee-san/Rubi_for_vita/pull/367) (v0.9.8-test.2 and older) read
 `APP_VER` only for a game with a Luna site or an entry that names its version, so for any other game the line says
@@ -109,7 +110,8 @@ Debug builds made before [#367](https://github.com/bee-san/Rubi_for_vita/pull/36
    what is needed: nothing (Rubi's verified entry is installed: a problem with its text is a bug report), a newer
    build (this checkout has entries the player's build had not), or the farm: no entry for the title, LunaTranslator's
    sites refused, or an entry for another build of the game (`signature` or `version`: the module NID and `APP_VER`
-   say which build the player has). An entry that matches but is refused as `tai` or `full` is a bug report.
+   say which build the player has). An entry that matches but is refused as `tai` or `full` is a bug report, and so is
+   one refused as `relocated` (the entry needs another way to find its text there).
 2. **The farm.** The owner's hook farm (bee-san/psandvita, private) runs the Japanese release of the title in the
    Vita3K emulator: it finds or builds a hook at the first text box, and an AI reviewer approves its text page by
    page against the frames the game drew. It takes Japanese visual novels, gives a title a bounded number of

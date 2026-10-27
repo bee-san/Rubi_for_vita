@@ -29,7 +29,8 @@
 #define VJO_STATS_CARDS 16384  /* cards whose game is known (the card cache) */
 #define VJO_STATS_NAME 128     /* a game's name, as history.csv's name column (VjoHistoryRecord.name) */
 #define VJO_STATS_UUID 24      /* "vita-PCSG00415", as VjoReadingScope.uuid */
-#define VJO_STATS_NO_GAME 0xFFFFu
+#define VJO_STATS_NO_GAME 0xFFFFu /* a card whose record names no game (versions 1-2 have none) */
+#define VJO_STATS_UNREAD 0xFFFEu  /* a card whose record could not be read: read again at the next count */
 #define VJO_STATS_DAY_US 86400000000ll
 
 typedef struct {
@@ -56,7 +57,7 @@ typedef struct {
 
 typedef struct {
     uint8_t id[16]; /* the card's ID (core/anki_queue.h: 32 hex digits) */
-    uint16_t game;  /* its game's index, or VJO_STATS_NO_GAME (a record without one, or unreadable) */
+    uint16_t game;  /* its game's index, VJO_STATS_NO_GAME (its record has none) or VJO_STATS_UNREAD */
     uint16_t pad;
 } VjoStatsCard;
 
@@ -72,7 +73,7 @@ typedef struct {
     uint32_t games, days, cards;
     uint64_t records, damaged, untimed; /* records counted; damaged ones skipped; with an invalid time */
     uint64_t dropped;    /* records of games past VJO_STATS_GAMES (their characters are in `other`) */
-    uint64_t days_full;  /* records whose day had no room (VJO_STATS_DAYS) */
+    uint64_t days_full;  /* rollups the full day table dropped (VJO_STATS_DAYS: the oldest go), and records older */
     uint64_t other_chars; /* those records' characters */
     uint32_t cards_unknown, cards_full; /* cards with no game; past VJO_STATS_CARDS */
     VjoStatsGame game[VJO_STATS_GAMES];

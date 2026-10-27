@@ -177,6 +177,7 @@ int vjo_history_append(const VjoHistoryRecord *r)
     int visible = 0, rc, closed, grown;
     uint32_t chars;
     SceOff start;
+    SceIoStat st;
     HistoryWriter w = {.fd = -1};
     char text[72];
     if (!r || !(o = r->result) || o->rc || !r->time_us || !r->title_id[0] ||
@@ -196,20 +197,24 @@ int vjo_history_append(const VjoHistoryRecord *r)
         game = (game ^ (unsigned char)r->title_id[i]) * 16777619u;
     if (previous_text == hash && previous_length == len && previous_game == game) return 0;
     grown = previous_text && prefix == previous_text && previous_game == game && len > previous_length &&
-            r->time_us >= previous_append_us && r->time_us - previous_append_us < GROWN_GAP_US;
-    if (grown) { /* the newest record goes: this one takes its place, its time and its ID */
-        SceIoStat st;
-        sceClibMemset(&st, 0, sizeof(st));
-        st.st_size = previous_start;
-        if (sceIoChstat(HISTORY_PATH, &st, SCE_CST_SIZE) < 0) grown = 0;
-    }
-    us = grown ? previous_us : r->time_us;
+            r->time_us - previous_append_us < GROWN_GAP_US; /* (unsigned: an earlier time is no growth) */
     w.fd = sceIoOpen(HISTORY_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
     if (w.fd < 0) return w.fd;
     start = sceIoLseek(w.fd, 0, SCE_SEEK_END);
     if (start < 0) { sceIoClose(w.fd); return (int)start; }
     total.seq++; /* odd until the record is whole or gone: a count's end of the file is not read meanwhile */
     __sync_synchronize();
+    /* #338's audit F3: the newest record goes (this one takes its place, its time and its ID) only once the file is
+     * open, inside that window, and not while a count reads the file (total.fd: the control thread's, read here only
+     * to leave it alone); the end is read after it, which is where the next write goes whether the console's
+     * SCE_O_APPEND appends at each write or sets the position at the open */
+    sceClibMemset(&st, 0, sizeof(st));
+    st.st_size = previous_start;
+    if (grown && start == previous_end && !total.fd && sceIoChstat(HISTORY_PATH, &st, SCE_CST_SIZE) >= 0)
+        start = sceIoLseek(w.fd, 0, SCE_SEEK_END);
+    else
+        grown = 0;
+    us = grown ? previous_us : r->time_us;
     if (!start) literal(&w, header);
     put(&w, '"');
     literal(&w, r->platform ? r->platform : "vita");
@@ -257,9 +262,7 @@ int vjo_history_append(const VjoHistoryRecord *r)
     if (!rc) rc = sceIoSyncByFd(w.fd, 0);
     closed = sceIoClose(w.fd);
     if (!rc && closed < 0) rc = closed;
-    if (rc < 0) {
-        SceIoStat st;
-        sceClibMemset(&st, 0, sizeof(st));
+    if (rc < 0) { /* back to where this record began (a grown line's: where its earlier record began) */
         st.st_size = start;
         sceIoChstat(HISTORY_PATH, &st, SCE_CST_SIZE);
     } else {

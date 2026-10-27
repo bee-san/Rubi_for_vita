@@ -30,13 +30,31 @@ char *vjo_lapis_field_value(VjoArena *a, int f, const VjoAnkiNote *n, const char
     return vjo_anki_field_value(a, f, n);
 }
 
-char *vjo_lapis_fields(VjoArena *a, const VjoAnkiNote *n, const char *picture, size_t *len)
+int vjo_lapis_card_field(int card_type)
+{
+    switch (card_type) {
+    case VJO_CARD_SENTENCE: return VJO_LAPIS_IS_SENTENCE_CARD;
+    case VJO_CARD_WORD_SENTENCE: return VJO_LAPIS_IS_WORD_AND_SENTENCE_CARD;
+    case VJO_CARD_CLICK: return VJO_LAPIS_IS_CLICK_CARD;
+    default: return -1;
+    }
+}
+
+char *vjo_lapis_fields(VjoArena *a, const VjoAnkiNote *n, const char *picture, const VjoLapisExtra *x, size_t *len)
 {
     VjoBuf b;
     char *v[VJO_LAPIS_FIELDS];
-    for (int f = 0; f < VJO_LAPIS_FIELDS; f++)
-        if (!(v[f] = vjo_lapis_field_value(a, f, n, picture)))
+    int type_field = x ? vjo_lapis_card_field(x->card_type) : -1;
+    for (int f = 0; f < VJO_LAPIS_FIELDS; f++) {
+        if (f == type_field) /* Lapis's templates test the switch for being non-empty: "x", as Lapis's README */
+            v[f] = vjo_arena_strndup(a, "x", 1);
+        else if (f == VJO_LAPIS_SENTENCE_FURIGANA && x && x->sentence_furigana)
+            v[f] = (char *)x->sentence_furigana;
+        else
+            v[f] = vjo_lapis_field_value(a, f, n, picture);
+        if (!v[f])
             return NULL;
+    }
     vjo_buf_init(&b, a);
     for (int f = 0; f < VJO_LAPIS_FIELDS; f++) {
         size_t at;

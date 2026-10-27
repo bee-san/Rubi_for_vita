@@ -9,6 +9,7 @@ with curl as the installer does:
   ux0:data/VitaJPOverlay/  log.txt log.old.txt selftest-report.txt selftest.txt status.txt
                            status.prev.txt kernel.txt kernel.prev.txt config.ini (API keys and
                            the audio source URL redacted before anything is written) games.ini
+                           ocr_line_fix.ini (#333: each game's own line finder, from the Rubi app)
                            region.ini anki_queue/* (every card, screenshot, temp and duplicate file)
                            and anki_queue/exported/* (the cards the Rubi app exported); anki/ (its
                            .apkg packages) is listed only
@@ -28,7 +29,8 @@ with curl as the installer does:
 The directories are listed (Python's ftplib, LIST as --dumps does) into listings/; the
 installed plugins, the RCO, the settings VPK, every OCR model, the beam + LM decoder's LMs,
 their LM-ATTRIBUTION.md, the model sizes' MODEL-ATTRIBUTION.md and VOCR6-ATTRIBUTION.md, the text-presence gate's
-weights (*.vtd) and its GATE-ATTRIBUTION.md and the vertical model's VERTICAL-ATTRIBUTION.md are hashed (downloaded to a
+weights (*.vtd) and its GATE-ATTRIBUTION.md, the vertical model's VERTICAL-ATTRIBUTION.md and the text spotter's
+(*.vtsp, SPOTTER-ATTRIBUTION.md) are hashed (downloaded to a
 temporary file and deleted again, never kept) and compared with package-manifest.json when given.
 Every file keeps its device path under OUT_DIR (ux0/data/VitaJPOverlay/log.txt, ...).
 COLLECT.json lists what was fetched (bytes, sha256), what was missing and every error, in
@@ -67,6 +69,7 @@ APP = f"{APPS}/VJOSET001"  # the Rubi app (Rubi.vpk; JPOverlaySettings.vpk befor
 APP_STAMP, APP_EBOOT = f"{APP}/vjo_app.txt", f"{APP}/eboot.bin"
 FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt", "selftest.txt", "status.txt",
                                   "status.prev.txt", "kernel.txt", "kernel.prev.txt", "config.ini", "games.ini",
+                                  "ocr_line_fix.ini",  # #333: the Rubi app's game pages (shell/game.c reads it)
                                   "region.ini", "vjo_app.txt", "installed.txt",
                                   # the game worker's logs: its record of the native hooks (the debug build's;
                                   # never text; a hook request sends it: docs/hook-requests.md) and the debug
@@ -87,11 +90,13 @@ APP_READS = (("cwd", ()), ("nocwd", ("--ftp-method", "nocwd")))
 # Listed, and what to do with their files: "keep" downloads them, "hash" hashes them only.
 # The ocr folder holds what the package ships there: the weights (*.vocr), the LMs (*.vlm, #89), their
 # attribution, LM-ATTRIBUTION.md, the model sizes' attributions, MODEL-ATTRIBUTION.md and VOCR6-ATTRIBUTION.md,
-# the text-presence gate's weights (*.vtd) and attribution, GATE-ATTRIBUTION.md, and the vertical model's
-# attribution, VERTICAL-ATTRIBUTION.md (package_release.py).
+# the text-presence gate's weights (*.vtd) and attribution, GATE-ATTRIBUTION.md, the vertical model's
+# attribution, VERTICAL-ATTRIBUTION.md, and (API 54) the text spotter's weights (*.vtsp) and attribution,
+# SPOTTER-ATTRIBUTION.md, once a package carries them (package_release.py).
 DIRS = [(f"{DATA}/anki_queue", "keep", None), (f"{DATA}/anki_queue/exported", "keep", None),
         (f"{DATA}/anki", None, None), (DATA, None, None),
-        (f"{DATA}/ocr", "hash", re.compile(r"\.(vocr|vlm|vtd)$|^(LM|MODEL|VOCR6|GATE|VERTICAL)-ATTRIBUTION\.md$")),
+        (f"{DATA}/ocr", "hash",
+         re.compile(r"\.(vocr|vlm|vtd|vtsp)$|^(LM|MODEL|VOCR6|GATE|VERTICAL|SPOTTER)-ATTRIBUTION\.md$")),
         (f"{DATA}/dictionaries", None, None), ("ux0:/data", "keep", re.compile(r"\.psp2dmp$", re.I)),
         ("ur0:/tai", "hash", re.compile(r"^VitaJPOverlay_.*\.(skprx|suprx)$")),
         ("ur0:/data/VitaJPOverlay", "hash", re.compile(r"\.rco$")), ("ux0:/data", "hash", re.compile(r"^(Rubi|JPOverlaySettings)\.vpk$"))]

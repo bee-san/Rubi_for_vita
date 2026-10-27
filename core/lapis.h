@@ -22,7 +22,20 @@ extern const char *const vjo_lapis_notetype;
 /* The HTML of field f for the note: "" when it has nothing for it, NULL on
  * OOM. picture: the card's screenshot's media file name, or NULL. */
 char *vjo_lapis_field_value(VjoArena *a, int f, const VjoAnkiNote *n, const char *picture);
-/* All the note's fields joined by 0x1F, as Anki stores them (notes.flds). */
-char *vjo_lapis_fields(VjoArena *a, const VjoAnkiNote *n, const char *picture, size_t *len);
+
+/* Lapis's card types (#311, the Rubi app's Card type): what the front shows. The export writes "x" into the
+ * type's switch (IsSentenceCard, IsWordAndSentenceCard, IsClickCard); a word card, the default, sets none. */
+enum { VJO_CARD_WORD = 0, VJO_CARD_SENTENCE, VJO_CARD_WORD_SENTENCE, VJO_CARD_CLICK, VJO_CARD_TYPES };
+/* What the export adds to a note besides its record (NULL: nothing). */
+typedef struct {
+    int card_type;                 /* VJO_CARD_* */
+    const char *sentence_furigana; /* SentenceFurigana's HTML instead of the record's (core/sentence_reading.h),
+                                    * NULL: the record's; "" leaves the field empty */
+} VjoLapisExtra;
+/* The Lapis switch field (VJO_LAPIS_IS_*) of a card type, or -1 for a word card. */
+int vjo_lapis_card_field(int card_type);
+/* All the note's fields joined by 0x1F, as Anki stores them (notes.flds), with x's additions (NULL: none). */
+char *vjo_lapis_fields(VjoArena *a, const VjoAnkiNote *n, const char *picture, const VjoLapisExtra *x,
+                       size_t *len);
 
 #endif

@@ -377,7 +377,7 @@ static void exact_adaptive_cadence(void)
 static void restart_confirmation(void)
 {
     VjoHookSelect st;
-    VjoHookLearned saved = {1, 0x1234, 2, 32}, out;
+    VjoHookLearned saved = {1, 0x1234, 2, 32, 0}, out;
     VjoHookCand c = cand(3, 1, 1, LINE1);
     unsigned score;
     uint32_t flags;
@@ -385,20 +385,20 @@ static void restart_confirmation(void)
     c.encoding = saved.encoding;
     TEST_CHECK(vjo_hook_select_restore(&st, &saved));
     TEST_CHECK(st.interval == 32 && st.confirm && !st.locked);
-    TEST_CHECK(vjo_hook_select_learned(&st, &out) && !memcmp(&saved, &out, sizeof(out)));
+    TEST_CHECK(vjo_hook_select_learned(&st, 0, &out) && !memcmp(&saved, &out, sizeof(out)));
     TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
     TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), &c, 1, &score, &flags) == 3);
     TEST_CHECK(st.interval == 32 && !st.confirm && st.unchecked == 0 && st.locked == 3);
     c.text = LINE2; c.n = strlen(LINE2); c.seq = 2;
     TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 3 && st.unchecked == 1);
-    TEST_CHECK(vjo_hook_select_learned(&st, &out) && !memcmp(&saved, &out, sizeof(out)));
+    TEST_CHECK(vjo_hook_select_learned(&st, 0, &out) && !memcmp(&saved, &out, sizeof(out)));
     /* Identity follows the source rather than its slot. */
     c.id = 12; c.text = LINE3; c.n = strlen(LINE3); c.seq++;
     TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 12 && st.locked == 12);
-    TEST_CHECK(vjo_hook_select_learned(&st, &out) && !memcmp(&saved, &out, sizeof(out)));
+    TEST_CHECK(vjo_hook_select_learned(&st, 0, &out) && !memcmp(&saved, &out, sizeof(out)));
     saved.interval = 31;
     TEST_CHECK(!vjo_hook_select_restore(&st, &saved));
-    TEST_CHECK(!vjo_hook_select_learned(&st, &out) && !out.interval);
+    TEST_CHECK(!vjo_hook_select_learned(&st, 0, &out) && !out.interval);
     TEST_CHECK(!vjo_hook_select_restore(&st, NULL));
     saved.interval = 32; saved.site = 2;
     TEST_CHECK(!vjo_hook_select_restore(&st, &saved));
@@ -407,7 +407,7 @@ static void restart_confirmation(void)
 static void startup_disagreement_recovery(void)
 {
     VjoHookSelect st;
-    VjoHookLearned saved = {0, 0x900, 0, 32}, out;
+    VjoHookLearned saved = {0, 0x900, 0, 32, 0}, out;
     VjoHookCand c = cand(9, 1, 0, LINE1);
     unsigned score;
     uint32_t flags;
@@ -419,7 +419,7 @@ static void startup_disagreement_recovery(void)
     c.text = LINE3; c.n = strlen(LINE3); c.seq++;
     TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE3, &c, 1, &score, &flags) == 9);
     TEST_CHECK(st.interval == 8 && !st.misses && !st.confirm && st.unchecked == 0);
-    TEST_CHECK(vjo_hook_select_learned(&st, &out) && out.interval == 8);
+    TEST_CHECK(vjo_hook_select_learned(&st, 0, &out) && out.interval == 8);
     /* Two fresh comparable startup disagreements unlock; an inconclusive line keeps the first. */
     TEST_CHECK(vjo_hook_select_restore(&st, &saved));
     c.text = LINE1; c.n = strlen(LINE1); c.seq++;
@@ -429,7 +429,7 @@ static void startup_disagreement_recovery(void)
     c.text = LINE4; c.n = strlen(LINE4); c.seq++;
     TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, &c, 1, &score, &flags) == 0);
     TEST_CHECK(flags == VJO_HOOK_R_UNLOCK && !st.interval && !st.locked);
-    TEST_CHECK(!vjo_hook_select_learned(&st, &out));
+    TEST_CHECK(!vjo_hook_select_learned(&st, 0, &out));
     /* A stale hook can stay unchanged while the actual screen advances. Empty OCR must not erase
      * the last comparable screen: a new screen is the second disagreement, an unchanged one is not. */
     TEST_CHECK(vjo_hook_select_restore(&st, &saved));
@@ -757,11 +757,11 @@ static void trusted_learned_source_after_four_agreements(void)
     }
     TEST_CHECK_(ocr == 4 && ocr_097 == 6, "%u with trust, %u without", ocr, ocr_097);
     TEST_CHECK(st.strong == 1);
-    /* API 49: export gives the trusted interval for a trusted (strong) source only, and a source restored at it (an
-     * earlier launch's trust, the exact executable) is trusted at once, before any OCR, in the runtime slot this
+    /* API 49: export with trust on marks a strong source at the trusted interval trusted, and a source restored so
+     * (an earlier launch's trust, the exact executable) is trusted at once, before any OCR, in the runtime slot this
      * launch gives it; vjo_hook_select_before still asks its confirmation (hook_trust = off) */
     VjoHookLearned saved;
-    TEST_CHECK(vjo_hook_select_learned(&st, &saved) && saved.interval == 32 && saved.key == 9 * 0x100u);
+    TEST_CHECK(vjo_hook_select_learned(&st, 1, &saved) && saved.interval == 32 && saved.trusted && saved.key == 9 * 0x100u);
     TEST_CHECK(vjo_hook_select_restore(&st, &saved) && st.confirm && !st.locked && st.strong);
     reading(&c, 500);
     c.id = 14; /* another runtime slot this launch */
@@ -771,20 +771,31 @@ static void trusted_learned_source_after_four_agreements(void)
         VjoHookSelect off = st; /* the same restore with hook_trust = off: its confirmation OCR first */
         TEST_CHECK(vjo_hook_select_before(&off, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
     }
-    /* one that reached 32 with weaker agreements (not strong) is exported at 16: restored untrusted, it needs its
-     * close agreement again */
+    /* #338's audit F1: with hook_trust = off the export is 0.9.7's, the interval as it is and nothing trusted, also for
+     * a strong source (API 49 saved a source at 32 that was not strong at 16, whatever the setting) */
+    TEST_CHECK(vjo_hook_select_learned(&st, 0, &saved) && saved.interval == 32 && !saved.trusted);
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved) && !st.strong && st.interval == 32 && st.confirm);
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0 && !flags);
+    /* one that reached 32 with weaker agreements (not strong) is exported at 32, not trusted, whatever the setting:
+     * restored untrusted at 32, it is trusted after its startup confirmation if that agreement is close */
     st.strong = 0;
-    TEST_CHECK(vjo_hook_select_learned(&st, &saved) && saved.interval == 16);
-    TEST_CHECK(vjo_hook_select_restore(&st, &saved) && !st.strong && st.interval == 16);
+    TEST_CHECK(vjo_hook_select_learned(&st, 1, &saved) && saved.interval == 32 && !saved.trusted);
+    TEST_CHECK(vjo_hook_select_learned(&st, 0, &saved) && saved.interval == 32 && !saved.trusted);
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved) && !st.strong && st.interval == 32);
     TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0 && !flags);
     TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
     TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 14);
-    TEST_CHECK(!st.strong && vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0 && !flags);
-    /* a pending disagreement is no trust either: exported at 16 */
+    TEST_CHECK(st.strong && st.interval == 32 && vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 14);
+    /* a pending disagreement is no trust either: exported at 32, not trusted */
     st.interval = 32; st.strong = 0; st.misses = 1;
-    TEST_CHECK(vjo_hook_select_learned(&st, &saved) && saved.interval == 16);
-    st.interval = 8; /* below the trusted interval: exported as it is */
-    TEST_CHECK(vjo_hook_select_learned(&st, &saved) && saved.interval == 8);
+    TEST_CHECK(vjo_hook_select_learned(&st, 1, &saved) && saved.interval == 32 && !saved.trusted);
+    st.interval = 8; st.strong = 1; /* below the trusted interval: exported as it is, not trusted */
+    TEST_CHECK(vjo_hook_select_learned(&st, 1, &saved) && saved.interval == 8 && !saved.trusted);
+    /* a record that says trusted below the trusted interval is not trusted; an unknown trust value is refused */
+    saved.trusted = 1;
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved) && !st.strong && st.interval == 8);
+    saved.trusted = 2;
+    TEST_CHECK(!vjo_hook_select_restore(&st, &saved));
 }
 
 /* The agreement that grants trust must be close (VJO_HOOK_TRUST_SCORE, 900): a source whose checks at 32 agree at

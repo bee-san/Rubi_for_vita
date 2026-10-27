@@ -128,6 +128,12 @@ static VjoPlatform plat;
 static int dict_close_pending; /* control thread: close after an in-flight lookup */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
 static char job_title[12];  /* the job's game (title_id when the job started), for its log lines */
+/* #333: the active game's own line finder (ocr_line_fix.ini, vjo_game_enabled: core/games.h VJO_LINE_FINDER_*),
+ * -1: config.ini's. apply_config puts it in cfg (ocr_finder, and for Rubi's finder ocr_line_fix), so the user's jobs,
+ * same_pipeline and the game's start line all have the values its jobs use.
+ * activate_game sets it at each start or resume, before its apply_config; between two games it may still hold the
+ * last one's, which no job uses (no game is active: title_id is ""). */
+static int title_line_fix = -1;
 /* Scene IDs survive kernel resets. A foreground boundary must also reject
  * results captured for the preceding game, even before a new scene arrives. */
 static uint32_t game_generation;
@@ -1186,6 +1192,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     if (job_cfg.ocr_text_gate && stage < 0) request.speed |= VJO_GAME_OCR_S_GATE;
     /* API 42: vita-vn-ocr #117's head gate and two-level head, ocr_head_gate's VJO_HEAD_* bits, in the user's jobs */
     if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_head_gate << VJO_GAME_OCR_S_HEAD_SHIFT; /* 0-3: config.c */
+    /* API 54: the text spotter as the finder, and its boxes refined, in the user's jobs too */
+    if (job_cfg.ocr_finder && stage < 0)
+        request.speed |= VJO_GAME_OCR_S_SPOT | (job_cfg.ocr_spotter_refine ? VJO_GAME_OCR_S_SPOT_REFINE : 0u);
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
@@ -1214,6 +1223,16 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     job_game_us += now_us() - t0; /* the done line's (net_job) */
 #endif
     vocr_note_capture();
+#if VJO_DEBUG
+    /* The result's lines (about 21: the job, its capture, memory, speed and lines,
+     * the tiers that did not fit, and every game-worker step), formatted from the
+     * result alone, go out with one append per file instead of one each: a file
+     * append costs 12-46 ms on the console (#81's self-test timestamps). The hook's
+     * source line with them (#338's audit F2: it was an append of its own, before the text). */
+    VjoLogBatch batch;
+    char batch_buf[4096];
+    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
+#endif
     if (stage < 0 && !flags && result->seq && rc != VJO_E_CANCELLED &&
         !job_cancelled && job_generation == game_generation) /* a user job's result for this session's pick */
         hook_note(result, request.hook_pick);
@@ -1229,13 +1248,6 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
      * outlives this call. */
     *ran = result->fallback < top ? top - result->fallback : VJO_VOCR_TIER_SMALL;
 #if VJO_DEBUG
-    /* The result's lines (about 21: the job, its capture, memory, speed and lines,
-     * the tiers that did not fit, and every game-worker step), formatted from the
-     * result alone, go out with one append per file instead of one each: a file
-     * append costs 12-46 ms on the console (#81's self-test timestamps). */
-    VjoLogBatch batch;
-    char batch_buf[4096];
-    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
     vjo_log("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
             rc, job_model(result, *ran),
@@ -1267,8 +1279,10 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
         unsigned want = rc != VJO_OK ? 0u : SHORT_FIRST_JOB | (result->lines ? SHORT_FIRST_TEXT : 0u);
         short_activation(job_generation);
         if (failed || (want & ~short_logged)) {
+            /* in the data segment: it pays for #338's audit F3 (shell/history.c) in the normal Shell's full code pages */
+            static const char short_format[] VJO_DATA_TABLE(worker_short_format) = "ocr rc=%d %s: %u lines, %u ms";
             short_logged |= want;
-            vjo_log("ocr rc=%d %s: %u lines, %u ms", rc, job_model(result, *ran), (unsigned)result->lines,
+            vjo_log(short_format, rc, job_model(result, *ran), (unsigned)result->lines,
                     (unsigned)((now_us() - t0) / 1000));
         }
     }
@@ -1360,10 +1374,10 @@ static int run_vocr(VjoOverlayData *out)
      * smaller tier for this job. Only a file that is absent, the wrong length or
      * fails its hash (io 0: rejected after reading) leaves the tier out for this
      * game; a timeout or unavailable storage does not. Every tier with the same
-     * file is left out with it (vocr_same_file). Log only. With ocr_vertical = on a
-     * job's file is the vertical model's, whatever the tier: no tier is left out for
-     * it (auto reads rows where the vertical model cannot be read, API 47). */
-    while (out->err.rc == VJO_E_OCR_MODEL && job_cfg.ocr_vertical != VJO_VERTICAL_ON && ran >= VJO_VOCR_TIER_SMALL &&
+     * file is left out with it (vocr_same_file). Log only. With ocr_vertical = on or
+     * auto the worker reads rows where the vertical model cannot be read (API 53: on
+     * too), so a model that fails is a size's, whatever the setting. */
+    while (out->err.rc == VJO_E_OCR_MODEL && ran >= VJO_VOCR_TIER_SMALL &&
            ran <= VJO_VOCR_TIERS && !vocr_cancelled(NULL)) {
         int file_bad = !vocr_result.io_error || vocr_result.io_error == VJO_ERR_FORMAT ||
                        (uint32_t)vocr_result.io_error == 0x80010002u; /* ENOENT */
@@ -1832,10 +1846,16 @@ static void start_job_kind(const char *why, int lookup, int refresh)
                  : RECOGNIZING;
     if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
-         * after all capture/model/inference allocations have been freed. */
-        retire_local_text(0); /* atomic request exclusion and view detachment */
-        if (ov != OV_CLOSED)
-            view_publish(1, NULL, status, 0);
+         * after all capture/model/inference allocations have been freed. #379: not
+         * again while the open overlay already waits with this status and no text
+         * (a job whose screen changed under it, tried again): that retires nothing,
+         * and the view published again had the overlay draw it all again at every
+         * try, for as long as the tries went on. */
+        if (!view_waiting || local_text_valid || sceClibStrcmp(g_view.status, status)) {
+            retire_local_text(0); /* atomic request exclusion and view detachment */
+            if (ov != OV_CLOSED)
+                view_publish(1, NULL, status, 0);
+        }
         mem_free();
     }
     vjo_dlog("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
@@ -1946,7 +1966,8 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         a->ocr_text_gate != b->ocr_text_gate || a->ocr_head_gate != b->ocr_head_gate ||
         a->ocr_vertical != b->ocr_vertical ||
         a->hook_trust != b->hook_trust || /* API 43: which text a job shows, a hook's or OCR's */
-        a->ocr_line_fix != b->ocr_line_fix)
+        a->ocr_line_fix != b->ocr_line_fix ||
+        a->ocr_finder != b->ocr_finder || a->ocr_spotter_refine != b->ocr_spotter_refine) /* API 54 */
         return 0;
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
            !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);
@@ -1956,6 +1977,11 @@ static void apply_config(void)
 {
     VjoConfig previous = cfg;
     vjo_config_load(&cfg, &scratch);
+    if (title_line_fix >= 0) { /* #333: the game's own, in place of config.ini's: the spotter, or Rubi's finder */
+        cfg.ocr_finder = title_line_fix == VJO_LINE_FINDER_SPOTTER ? VJO_FINDER_SPOTTER : VJO_FINDER_GRAD;
+        if (title_line_fix != VJO_LINE_FINDER_SPOTTER) /* with its fixes (the spotter's fallback keeps config.ini's) */
+            cfg.ocr_line_fix = title_line_fix - VJO_LINE_FINDER_GRAD(0);
+    }
     if (vjo_selftest_armed())
         cfg.ocr_mode = VJO_OCR_AUTO; /* the first settled screen is recognized unasked */
     if (!same_pipeline(&previous, &cfg)) {
@@ -2028,7 +2054,11 @@ static int cancel_outdated_job(const VjoState *st)
         shows_screen(job_capture_scene, job_capture_seq, st))
         return 0;
     job_cancelled = 1;
-    vjo_dlog("job cancelled: the screen changed since its capture");
+    {   /* (in the data segment: the debug Shell's code pages are full, #379) */
+        static const char cancelled_line[] VJO_DATA_TABLE(job_cancelled_line) =
+            "job cancelled: the screen changed since its capture";
+        vjo_dlog("%s", cancelled_line);
+    }
     return 1;
 }
 
@@ -2974,7 +3004,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
         hook_pid = pid;
         hook_logged[0] = 0;
     }
-    if (!vjo_game_enabled(tid, id->psp, &scratch)) {
+    if (!vjo_game_enabled(tid, id->psp, &title_line_fix, &scratch)) {
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
         vjo_log("%s: Rubi disabled; game input passes through", tid);
@@ -2995,11 +3025,15 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     backoff_note(&refresh_backoff, 0);
     vjoSetGameActive(pid, mode);
     {
-        /* once a game start: in the data segment, for the normal Shell's code room (#358) */
+        /* once a game start: in the data segment, for the normal Shell's code room (#358). #333: the line finder this
+         * game's jobs use (its own from ocr_line_fix.ini, else config.ini's), as config.ini names its two keys' values
+         * (ocr_line_fix also the spotter's fallback's); the dictionary's name went: it has been VJO_DICT_NAME in every
+         * build since the online dictionaries' removal (2026-10-15) */
         static const char started[] VJO_DATA_TABLE(worker_game_started) =
-            "game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s";
+            "game %s started: trigger %s, subtitles %s, ocr_mode %s, ocr_finder %s, ocr_line_fix %s";
         vjo_log(started, title_id, vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
-                cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
+                cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press",
+                vjo_finder_names[cfg.ocr_finder], vjo_line_finder_names[VJO_LINE_FINDER_GRAD(cfg.ocr_line_fix)]);
     }
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);
@@ -3191,10 +3225,13 @@ static void background_open(void)
  * build (docs/release-variants.md). */
 void vjo_selftest_init(const VjoConfig *c)
 {
+    /* in the data segment: the normal Shell's code room (#333, docs/memory-ledger.md "A game's own line finder") */
+    static const char armed[] VJO_DATA_TABLE(worker_selftest_armed) =
+        "self-test: armed, but this is the normal build: install the -debug build to run it";
     SceIoStat st;
     (void)c;
     if (sceIoGetstat(VJO_DATA_DIR "/selftest.txt", &st) >= 0)
-        vjo_log("self-test: armed, but this is the normal build: install the -debug build to run it");
+        vjo_log("%s", armed);
 }
 #endif
 #if VJO_DEBUG

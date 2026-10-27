@@ -60,11 +60,15 @@ VjoStreamSlot *vjo_stream_caller(VjoStreamSlot *slots, unsigned n, uint32_t key)
  * written since the scan read it (its caller's new text, another new caller that took it: no longer the least
  * recently written, #366), the hit is dropped too (call_dropped); and the key is checked again, so a hit of a
  * caller whose slot was just given to another one is dropped too (call_dropped), never written into the
- * other's stream. 1 new text, 0 identical, -1 dropped. */
+ * other's stream, and a caller whose other thread took a slot meanwhile takes no second one.
+ * 1 new text, 0 identical, -1 dropped. */
 int vjo_stream_offer_caller(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint32_t key,
                             const uint8_t *src, unsigned n, unsigned encoding);
 
-/* Job time: no other caller may take s from now on (the stream agreed with OCR, or the Shell pinned it). */
+/* Job time: no other caller may take s from now on (the stream agreed with OCR, or the Shell pinned it). Call it
+ * with s's try-lock held (game_ocr/hooks.c vjo_hooks_keep): a new caller taking s holds that lock, so a keep that
+ * landed after its checks could let a thread of the same caller pass s over as kept and take a second slot (#366's
+ * audit-b, F3). */
 void vjo_stream_keep(VjoStreamSlot *s);
 
 /* Job time: copies the slot under its try-lock. 1 copied; 0 empty (no text yet) or busy. */

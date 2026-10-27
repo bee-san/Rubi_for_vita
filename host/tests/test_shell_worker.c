@@ -590,7 +590,16 @@ int vjo_game_identify(SceUID pid, VjoGameId *out)
     if (!identify_rc) *out = identified; else memset(out, 0, sizeof(*out));
     return identify_rc;
 }
-int vjo_game_enabled(const char *id, int psp, VjoArena *a) { enabled_psp = psp; return game_enabled; }
+/* #333: the game's own ocr_line_fix the stub reports (-1: none, config.ini's), and the key it was asked for */
+static int game_line_fix = -1;
+static char enabled_key[VJO_TITLE_ID_SIZE];
+int vjo_game_enabled(const char *id, int psp, int *line_fix, VjoArena *a)
+{
+    enabled_psp = psp;
+    snprintf(enabled_key, sizeof(enabled_key), "%s", id);
+    *line_fix = game_enabled ? game_line_fix : -1; /* as shell/game.c: only an enabled game's file is read */
+    return game_enabled;
+}
 static void activate(SceUID pid, const char *tid, int mode)
 {
     VjoGameId id;
@@ -698,7 +707,7 @@ static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
 static unsigned fake_changed_recognized; /* #353: the lines such a read's last try recognized (its result's) */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
-static int fake_rows_vertical; /* API 47, ocr_vertical = auto: the worker found the rows to be vertical text */
+static int fake_rows_vertical; /* API 47, ocr_vertical = auto (API 53, and on): the region held vertical text */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
 /* A clock step (game_ocr/main.c job_busy): the ARM clock before, while and after, and the boost's rc. */
@@ -827,12 +836,12 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         }
     } else if (fake_memory_fallback && top > 1u) ran = top - 1u;
     const char *ran_model = top ? vjo_vocr_tier_model((int)ran) : fake_game_request.model;
-    /* API 47: a job of columns runs the vertical model, whatever its tiers (game_ocr/main.c): ocr_vertical = on,
-     * or auto where the rows looked like vertical text and the vertical model can be read (else its rows) */
+    /* API 47: a job of columns runs the vertical model, whatever its tiers (game_ocr/main.c): auto where the rows
+     * looked like vertical text and the vertical model can be read (else its rows); API 53 (#379), on the same where
+     * its rows did not look like horizontal text: here, both where the region holds vertical text */
     unsigned vmode = (fake_game_request.speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK;
-    int fake_columns = vmode == VJO_GAME_OCR_VERTICAL_ON ||
-                       (vmode == VJO_GAME_OCR_VERTICAL_AUTO && fake_rows_vertical &&
-                        !(fake_missing_model && !strcmp(fake_missing_model, VJO_VOCR_VERTICAL_NAME)));
+    int fake_columns = (vmode == VJO_GAME_OCR_VERTICAL_ON || vmode == VJO_GAME_OCR_VERTICAL_AUTO) &&
+                       fake_rows_vertical && !(fake_missing_model && !strcmp(fake_missing_model, VJO_VOCR_VERTICAL_NAME));
     if (fake_columns) ran_model = VJO_VOCR_VERTICAL_NAME;
     if (fake_missing_model && !strcmp(ran_model, fake_missing_model)) {
         fake_model_misses++;
@@ -1023,6 +1032,7 @@ static void reset(void)
     posted = user_allocs = user_frees = heap_allocs = heap_frees = 0;
     fail_alloc = fail_base = input_blocked = fail_input_block = input_block_error = 0;
     game_enabled = 1;
+    game_line_fix = title_line_fix = -1; /* #333: no game's own ocr_line_fix */
     running = 1; threads_started = 0;
     vocr_allocs = vocr_frees = vocr_paf_allocs = 0;
     fail_vocr_user = fail_vocr_paf = 0;
@@ -1556,6 +1566,17 @@ static void test_native_hooks_automatic_text_source_and_diagnostics(void)
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO && result.text_from == 9);
     TEST_CHECK(DLOGGED("game vocr source: hook 9, flags 0x0A, score 820, streams 0x00901, pick 0"));
+#if VJO_DEBUG
+    /* #338's audit F2: the debug build's source line goes out in the result's batch, one append per file for both,
+     * before the text is ready (it was an append of its own): a hooked job's lines in one append, as an OCR job's */
+    {
+        unsigned appends0 = log_appends, lines0 = log_count;
+        (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
+        TEST_CHECK_(log_appends - appends0 == 1 && log_count - lines0 >= 2, "%u lines in %u appends",
+                    log_count - lines0, log_appends - appends0);
+        TEST_CHECK(DLOGGED("game vocr source: hook 9, flags 0x0A, score 820, streams 0x00901, pick 0"));
+    }
+#endif
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, 0);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
     (void)vocr_run_one(&result, VJO_GAME_OCR_F_FULL, vocr_tiers(), &ran, -1);
@@ -1806,16 +1827,21 @@ static void test_vocr_model_change_invalidates_cache(void)
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
+    loaded.ocr_finder = !loaded.ocr_finder; /* API 54: and the finder (#333's audit: no game's own here) */
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
     apply_config(); /* the same again: nothing changed */
     TEST_CHECK(cache_ok);
 }
 
 /* API 47: config.ini ocr_vertical goes into the speed word of every user job as it is (off 0, on 1, auto 2), which
  * keeps the job's tiers, model name and the rest of its flags and speed. The text's Anki cards and the job's log
- * line name the vertical model where its lines were columns (VJO_GAME_OCR_LINE_COLUMN): with on, and with auto where
- * the rows looked like vertical text; else the size's model, as before. A vertical model that fails to open (on)
- * leaves no size out of the game's ladder and is not retried with a smaller size: its file is not theirs. Off (the
- * default) sends no vertical bit. */
+ * line name the vertical model where its lines were columns (VJO_GAME_OCR_LINE_COLUMN): with auto and (API 53, #379:
+ * on prefers columns) on where the region held vertical text; else the size's model, as before. A vertical model
+ * that cannot be read has the worker read the rows, with on as with auto (API 53; before, on failed and no size was
+ * left out); a size's model that fails is left out with on too, as with off and auto. Off (the default) sends no
+ * vertical bit. */
 static void test_vocr_vertical_request(void)
 {
     const uint32_t field = VJO_GAME_OCR_S_VERTICAL;
@@ -1831,7 +1857,7 @@ static void test_vocr_vertical_request(void)
             cfg.ocr_vertical = mode;
             fake_rows_vertical = rows_vertical;
             fake_recognized_text = "猫";
-            int columns = mode == VJO_VERTICAL_ON || (mode == VJO_VERTICAL_AUTO && rows_vertical);
+            int columns = mode != VJO_VERTICAL_OFF && rows_vertical;
             const char *model = columns ? VJO_VOCR_VERTICAL_NAME : VJO_VOCR_TIER2_NAME;
             TEST_CHECK(run_vocr_job() == VJO_OK && cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫"));
             TEST_CHECK_(fake_game_request.flags == off_flags && (fake_game_request.speed & ~field) == off_speed &&
@@ -1847,22 +1873,31 @@ static void test_vocr_vertical_request(void)
 #endif
             mem_free();
         }
-    /* on, its file missing: the job fails once, no size is left out, none is tried instead */
+    /* on and auto, the vertical model's file missing: the worker reads the rows (the size's model names the cards),
+     * and no size is left out: the file is not theirs */
+    for (int mode = VJO_VERTICAL_ON; mode <= VJO_VERTICAL_AUTO; mode++) {
+        reset();
+        cfg.ocr_vertical = mode;
+        fake_rows_vertical = 1;
+        fake_missing_model = VJO_VOCR_VERTICAL_NAME;
+        fake_model_misses = 0;
+        fake_recognized_text = "猫";
+        TEST_CHECK_(run_vocr_job() == VJO_OK && !strcmp(anki_model, VJO_VOCR_TIER2_NAME) && !vocr_unusable &&
+                        !fake_model_misses && logged("is unusable here") == NULL,
+                    "mode %d: cards %s, unusable 0x%X, %u misses", mode, anki_model, vocr_unusable, fake_model_misses);
+        fake_missing_model = NULL;
+        mem_free();
+    }
+    /* on, a size's model missing (horizontal text, read as rows): left out for this game, the next size reads, as
+     * with off and auto (before API 53 on left no size out, its file being the vertical model's) */
     reset();
     cfg.ocr_vertical = VJO_VERTICAL_ON;
-    fake_missing_model = VJO_VOCR_VERTICAL_NAME;
+    fake_missing_model = VJO_VOCR_TIER2_NAME;
     fake_model_misses = 0;
-    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && fake_model_misses == 1 && !vocr_unusable);
-    TEST_CHECK(logged("is unusable here") == NULL);
-    fake_missing_model = NULL;
-    mem_free();
-    /* auto, its file missing: the worker reads the rows (the size's model names the cards) */
-    reset();
-    cfg.ocr_vertical = VJO_VERTICAL_AUTO;
-    fake_rows_vertical = 1;
-    fake_missing_model = VJO_VOCR_VERTICAL_NAME;
     fake_recognized_text = "猫";
-    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(anki_model, VJO_VOCR_TIER2_NAME) && !vocr_unusable);
+    TEST_CHECK_(run_vocr_job() == VJO_OK && fake_model_misses == 1 && (vocr_unusable & 2u) &&
+                    !strcmp(anki_model, VJO_VOCR_TIER1_NAME) && logged("is unusable here") != NULL,
+                "on, Normal missing: cards %s, unusable 0x%X, %u misses", anki_model, vocr_unusable, fake_model_misses);
     fake_missing_model = NULL;
     mem_free();
     /* off again: the sizes as before */
@@ -2202,9 +2237,10 @@ static void test_vocr_job_log_is_appended_in_batches(void)
     batched_lines = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK);
     unsigned lines = log_count - lines0, appends = log_appends - appends0;
-    /* rc, capture, memory, speed, cascade speed, lines, 15 steps: 21 in one append; 2 text lines in one */
-    TEST_CHECK(batched_lines == 23);
-    TEST_CHECK(lines - appends == 23 - 2);
+    /* the session's hooks line (#338's audit F2: in the result's batch, as is a hooked job's source line), rc, capture,
+     * memory, speed, cascade speed, lines, 15 steps: 22 in one append; 2 text lines in one */
+    TEST_CHECK(batched_lines == 24);
+    TEST_CHECK(lines - appends == 24 - 2);
     TEST_CHECK(!open_batch);
     TEST_MSG("%u lines, %u appends, %u batched", lines, appends, batched_lines);
     printf("\n  a job's %u log lines: %u appends of log.txt (line by line: %u)\n", lines, appends, lines);
@@ -2280,6 +2316,32 @@ static void test_vocr_request_carries_the_job_policy(void)
                    (fake_game_request.speed & (VJO_GAME_OCR_S_HEAD_GATE | VJO_GAME_OCR_S_TWO_LEVEL)) == want &&
                    !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
         TEST_MSG("ocr_head_gate bits %d: speed 0x%08X", bits, (unsigned)fake_game_request.speed);
+        mem_free();
+    }
+    /* API 54: the text spotter rides in the speed word with ocr_finder = spotter (the default), its refinement's bit
+     * only beside it; ocr_finder = grad sends neither */
+    reset();
+    TEST_CHECK(cfg.ocr_finder == VJO_FINDER_SPOTTER); /* the default */
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_SPOT) &&
+               !(fake_game_request.speed & VJO_GAME_OCR_S_SPOT_REFINE));
+    mem_free();
+    reset();
+    cfg.ocr_finder = VJO_FINDER_GRAD;
+    cfg.ocr_spotter_refine = 1; /* with grad: nothing (GRAD's job) */
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK &&
+               !(fake_game_request.speed & (VJO_GAME_OCR_S_SPOT | VJO_GAME_OCR_S_SPOT_REFINE)));
+    mem_free();
+    for (int refine = 0; refine <= 1; refine++) {
+        reset();
+        cfg.ocr_finder = VJO_FINDER_SPOTTER;
+        cfg.ocr_spotter_refine = refine;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_SPOT) &&
+                   !!(fake_game_request.speed & VJO_GAME_OCR_S_SPOT_REFINE) == refine &&
+                   !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+        TEST_MSG("spotter, refine %d: speed 0x%08X", refine, (unsigned)fake_game_request.speed);
         mem_free();
     }
     /* API 36: the border rule (core/textnorm.h) rides in the speed word with non_japanese_filter = lines, the
@@ -2396,6 +2458,105 @@ static void test_vocr_request_carries_the_job_policy(void)
         job_refresh = 0;
         mem_free();
     }
+}
+
+/* #333: a game's own line finder (ocr_line_fix.ini, read by vjo_game_enabled as the game starts or resumes)
+ * replaces config.ini's in cfg from its activation: the spotter (VJO_LINE_FINDER_SPOTTER: ocr_finder = spotter, with
+ * config.ini's ocr_line_fix for its fallback), or Rubi's finder (ocr_finder = grad) with its own ocr_line_fix. Its
+ * user jobs' speed bits (API 54's spotter bit, API 50's 21-23) and the game's start line say what the jobs use; a
+ * game without one uses config.ini's two keys. same_pipeline compares that: a config.ini change the game's own
+ * replaces keeps the cache, one that its jobs still use (the spotter's fallback's fixes) drops it. The next game
+ * starts from its own value or config.ini's, never the last game's. */
+static void test_a_games_own_line_fix(void)
+{
+    const uint32_t lf = VJO_GAME_OCR_S_LINE_FIX, junk = VJO_GAME_OCR_S_LINE_JUNK, valley = VJO_GAME_OCR_S_LINE_VALLEY;
+    const uint32_t spot = VJO_GAME_OCR_S_SPOT, bits = lf | junk | valley | spot;
+    const uint32_t fixes[4] = {0u, lf, lf | junk, lf | junk | valley};
+    static const char *const names[4] = {"off", "on", "junk", "all"};
+    /* own: -1 none, the spotter, or Rubi's finder with a fix (its value VJO_LINE_FINDER_GRAD(fix)) */
+    static const struct { int own, finder, fix; } cases[] = {
+        {VJO_LINE_FINDER_GRAD(3), VJO_FINDER_SPOTTER, 1}, {VJO_LINE_FINDER_GRAD(0), VJO_FINDER_SPOTTER, 3},
+        {VJO_LINE_FINDER_GRAD(2), VJO_FINDER_GRAD, 0}, {VJO_LINE_FINDER_GRAD(1), VJO_FINDER_SPOTTER, 3},
+        {VJO_LINE_FINDER_SPOTTER, VJO_FINDER_GRAD, 2}, {VJO_LINE_FINDER_SPOTTER, VJO_FINDER_SPOTTER, 0},
+        {-1, VJO_FINDER_SPOTTER, 1}, {-1, VJO_FINDER_GRAD, 3}, {-1, VJO_FINDER_SPOTTER, 0}};
+    for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        reset();
+        loaded.ocr_finder = cases[k].finder;
+        loaded.ocr_line_fix = cases[k].fix;
+        game_line_fix = cases[k].own;
+        unsigned before = log_count;
+        activate(123, "ULJM05674", VJO_GAME);
+        int own = cases[k].own, grad = own >= 0 ? own != VJO_LINE_FINDER_SPOTTER : cases[k].finder == VJO_FINDER_GRAD;
+        int fix = own >= 0 && own != VJO_LINE_FINDER_SPOTTER ? own - VJO_LINE_FINDER_GRAD(0) : cases[k].fix;
+        TEST_CHECK_(game_active() && !strcmp(enabled_key, "ULJM05674") && cfg.ocr_finder == (grad ? VJO_FINDER_GRAD :
+                    VJO_FINDER_SPOTTER) && cfg.ocr_line_fix == fix, "case %u: finder %d, fix %d", k, cfg.ocr_finder,
+                    cfg.ocr_line_fix);
+        char line[160];
+        snprintf(line, sizeof(line), "game ULJM05674 started: trigger l+r, subtitles select+r, ocr_mode auto, "
+                                     "ocr_finder %s, ocr_line_fix %s", grad ? "grad" : "spotter", names[fix]);
+        const char *got = logged("game ULJM05674 started: ");
+        TEST_CHECK_(got && !strcmp(got, line) && log_count > before, "case %u: '%s'", k, got ? got : "(none)");
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & bits) == (fixes[fix] | (grad ? 0u : spot)));
+        TEST_MSG("case %u: speed 0x%08X", k, (unsigned)fake_game_request.speed);
+        mem_free();
+    }
+    /* same_pipeline: config.ini's two keys change under the game's own Rubi's finder (all); then at a resume */
+    reset();
+    loaded.ocr_line_fix = 1;
+    game_line_fix = VJO_LINE_FINDER_GRAD(3);
+    activate(123, "ULJM05674", VJO_GAME);
+    cache_ok = 1;
+    loaded.ocr_line_fix = 2;
+    loaded.ocr_finder = VJO_FINDER_GRAD;
+    apply_config(); /* each overlay open reads config.ini again */
+    TEST_CHECK(cache_ok && cfg.ocr_line_fix == 3 && cfg.ocr_finder == VJO_FINDER_GRAD);
+    loaded.ocr_line_fix = 0;
+    loaded.ocr_finder = VJO_FINDER_SPOTTER;
+    apply_config();
+    TEST_CHECK(cache_ok && cfg.ocr_line_fix == 3 && cfg.ocr_finder == VJO_FINDER_GRAD);
+    /* the Rubi app sets this game's own to the spotter, and the game resumes: the spotter from then on, whose
+     * fallback reads with config.ini's fixes, so their change now drops the cache */
+    game_line_fix = VJO_LINE_FINDER_SPOTTER;
+    on_game_exit();
+    on_game_start();
+    activate(123, "ULJM05674", VJO_GAME);
+    TEST_CHECK(cfg.ocr_finder == VJO_FINDER_SPOTTER && cfg.ocr_line_fix == 0);
+    cache_ok = 1;
+    loaded.ocr_finder = VJO_FINDER_GRAD; /* replaced by the game's own: kept */
+    apply_config();
+    TEST_CHECK(cache_ok && cfg.ocr_finder == VJO_FINDER_SPOTTER);
+    loaded.ocr_line_fix = 2; /* the fallback's: dropped */
+    apply_config();
+    TEST_CHECK(!cache_ok && cfg.ocr_line_fix == 2 && cfg.ocr_finder == VJO_FINDER_SPOTTER);
+    /* another game, without its own: config.ini's (Rubi's finder, junk), and its change drops the cache */
+    game_line_fix = -1;
+    on_game_exit();
+    on_game_start();
+    activate(124, "PCSG00415", VJO_GAME);
+    TEST_CHECK(cfg.ocr_line_fix == 2 && cfg.ocr_finder == VJO_FINDER_GRAD && title_line_fix == -1);
+    cache_ok = 1;
+    loaded.ocr_line_fix = 3;
+    apply_config();
+    TEST_CHECK(!cache_ok && cfg.ocr_line_fix == 3);
+    cache_ok = 1;
+    loaded.ocr_finder = VJO_FINDER_SPOTTER; /* config.ini's finder, which this game has not replaced */
+    apply_config();
+    TEST_CHECK(!cache_ok && cfg.ocr_finder == VJO_FINDER_SPOTTER);
+    /* a game turned OFF has none (its file is not read): the next enabled game's own is read afresh */
+    game_enabled = 0;
+    game_line_fix = VJO_LINE_FINDER_GRAD(2);
+    on_game_exit();
+    on_game_start();
+    activate(125, "PCSA00029", VJO_GAME);
+    TEST_CHECK(!game_active() && title_line_fix == -1);
+    game_enabled = 1;
+    loaded.ocr_finder = VJO_FINDER_SPOTTER;
+    on_game_start();
+    activate(126, "PCSG00940", VJO_GAME);
+    TEST_CHECK(game_active() && title_line_fix == VJO_LINE_FINDER_GRAD(2) && cfg.ocr_line_fix == 2 &&
+               cfg.ocr_finder == VJO_FINDER_GRAD);
+    mem_free();
 }
 
 /* The whole status line the user sees for an OCR-stage error. */
@@ -4976,6 +5137,66 @@ static void test_open_overlay_says_why_it_waits(void)
     close_overlay(); mem_free();
 }
 
+/* #379 ("it stays stuck on 'Recognizing…' and the lower bar glitches slightly"): while the open overlay waits for its
+ * text through torn tries, each try left the view as it was yet published it again (the text retired once more, the
+ * status set again: two versions a try), and the overlay drew itself all again at every one, for as long as the tries
+ * went on. A try now publishes only what changes: the first wait's view once, the wait hint once when it comes (#358),
+ * nothing for the tries in between or after; the text that ends the wait as before. With a text shown (a reopen on a
+ * new screen), the try retires it as before. */
+static void test_torn_tries_leave_the_waiting_view_alone(void)
+{
+    cursor_setup();
+    fake_screen_changes = 6;
+    open_overlay();
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    unsigned version = g_view.version, seq = g_view.list_seq;
+    finish_current_job(); /* torn 1: again at once */
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    TEST_CHECK_(g_view.version == version && g_view.list_seq == seq, "try 2: version +%u, list +%u",
+                g_view.version - version, g_view.list_seq - seq);
+    finish_current_job(); /* torn 2: 250 ms; the third try says why, once */
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT);
+    TEST_CHECK_(g_view.version != version, "the hint: version +%u", g_view.version - version);
+    version = g_view.version;
+    seq = g_view.list_seq;
+    const int64_t waits[] = {500, 1000, 2000, 4000};
+    for (int i = 0; i < 4; i++) { /* torn 3-6: each next try changes nothing shown */
+        finish_current_job();
+        TEST_CHECK(!job_running && open_retry);
+        test_now += waits[i] * 1000; control_tick(0);
+        TEST_ASSERT(job_running);
+        check_waiting(WAIT_HINT);
+        TEST_CHECK_(g_view.version == version && g_view.list_seq == seq, "try %d: version +%u, list +%u", i + 4,
+                    g_view.version - version, g_view.list_seq - seq);
+    }
+    finish_current_job(); /* it reads its screen: the text and its word */
+    check_current_definition("cat", 0);
+    TEST_CHECK(g_view.version != version && !g_view.status[0]);
+    check_quiet();
+    close_overlay(); mem_free();
+
+    /* A text shown, the screen changed since: the reopen's try retires it as before, and says "Recognizing…" */
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay();
+    next_scene(30);
+    fake_screen_changes = 1;
+    open_overlay();
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    TEST_CHECK(!local_text_valid);
+    finish_current_job();
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+}
+
 /* ---- line history (docs/line-history.md) ---- */
 
 /* The overlay on 猫犬鳥 (its first word looked up), this game's earlier lines in history.csv with
@@ -5556,8 +5777,6 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     view_invariant = 0;
 }
 
-/* ocr_mode = on_press recognizes only when the overlay opens: the open
- * overlay keeps its text and runs no refresh, however the screen settles. */
 /* API 49: a trusted hook's line (VjoState.hook_scene, the kernel's while the region shows it) is read at once.
  * Overlay closed: past the subtitles' SUBTITLE_GAP_US and a failure's backoff, which still hold an untrusted
  * screen back. Open: its refresh starts right after the last refresh and lookup (REFRESH_GAP_US, REFRESH_IDLE_US
@@ -5616,6 +5835,8 @@ static void test_trusted_hook_line_is_read_at_once(void)
     mem_free();
 }
 
+/* ocr_mode = on_press recognizes only when the overlay opens: the open
+ * overlay keeps its text and runs no refresh, however the screen settles. */
 static void test_on_press_overlay_never_refreshes(void)
 {
     cursor_setup();
@@ -8803,6 +9024,7 @@ TEST_LIST = {
 #endif
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
     {"open_overlay_says_why_it_waits", test_open_overlay_says_why_it_waits},
+    {"torn_tries_leave_the_waiting_view_alone (#379)", test_torn_tries_leave_the_waiting_view_alone},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
     {"api49_trusted_hook_line_is_read_at_once", test_trusted_hook_line_is_read_at_once},
     {"history_up_walks_back_and_down_returns", test_history_up_walks_back_and_down_returns},
@@ -8951,6 +9173,7 @@ TEST_LIST = {
     {"vocr_job_log_is_appended_in_batches", test_vocr_job_log_is_appended_in_batches},
 #endif
     {"vocr_request_carries_the_job_policy", test_vocr_request_carries_the_job_policy},
+    {"a_games_own_line_fix", test_a_games_own_line_fix},
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"vocr_oom_statistics_are_cached", test_vocr_oom_statistics_are_cached},
     {"vocr_unusable_model_uses_the_fallback", test_vocr_unusable_model_uses_the_fallback},

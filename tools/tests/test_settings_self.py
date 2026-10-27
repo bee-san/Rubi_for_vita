@@ -28,6 +28,9 @@ HEAP = 8 * 1024 * 1024
 GXM_WRAP, GXM_STUB, GXM_CALL = 0x81000140, 0x81000320, CODE + 0x2A0
 FB_WRAP, FB_STUB, FB_CALL = 0x81000180, 0x81000330, CODE + 0x2B0
 GFX_WRAP_SIZE = 0x40
+# libvita2d's texture_atlas_create, settings/vita2d_textures.c's wrapper of vita2d_create_empty_texture_format, and
+# the function itself (#313: a font's atlas freed while the app runs frees nothing else)
+ATLAS, TEX_WRAP, TEX_FN = 0x810001C0, 0x81000200, 0x81000340
 
 
 def code_segment(priority=0x10000100, mask=0x80000, pointers=True, magic=b"PSP2"):
@@ -80,7 +83,20 @@ def gfx_symbols():
     return {"__wrap_sceGxmVshInitialize": (GXM_WRAP | 1, GFX_WRAP_SIZE, ".text"),
             "sceGxmVshInitialize": (GXM_STUB, 16, ".text"),
             "__wrap_sceSharedFbGetInfo": (FB_WRAP | 1, GFX_WRAP_SIZE, ".text"),
-            "sceSharedFbGetInfo": (FB_STUB, 16, ".text")}
+            "sceSharedFbGetInfo": (FB_STUB, 16, ".text"),
+            **atlas_symbols()}
+
+
+def atlas_symbols():
+    return {"texture_atlas_create": (ATLAS | 1, 0x40, ".text"),
+            "__wrap_vita2d_create_empty_texture_format": (TEX_WRAP | 1, 0x20, ".text"),
+            "vita2d_create_empty_texture_format": (TEX_FN | 1, 0x40, ".text")}
+
+
+def atlas_relocations(wrapped=True):
+    """The atlas calls the wrapper (the link's --wrap), which calls the function (its __real_)."""
+    return [(ATLAS + 0x10, "__wrap_vita2d_create_empty_texture_format" if wrapped else "vita2d_create_empty_texture_format",
+             10), (TEX_WRAP + 0x08, "vita2d_create_empty_texture_format", 10)]
 
 
 def gfx_relocations():
@@ -88,7 +104,8 @@ def gfx_relocations():
     calls the wrappers."""
     return [(GXM_WRAP + 0x08, "sceGxmVshInitialize", 30), (GXM_WRAP + 0x20, "sceGxmVshInitialize", 30),
             (FB_WRAP + 0x08, "sceSharedFbGetInfo", 30),
-            (GXM_CALL, "__wrap_sceGxmVshInitialize", 10), (FB_CALL, "__wrap_sceSharedFbGetInfo", 10)]
+            (GXM_CALL, "__wrap_sceGxmVshInitialize", 10), (FB_CALL, "__wrap_sceSharedFbGetInfo", 10),
+            *atlas_relocations()]
 
 
 def make_elf(symbols=None, relocations=None, heap=HEAP, heap_section=".data", gfx=True):
@@ -232,7 +249,8 @@ class SettingsSelf(unittest.TestCase):
         wrappers that make its system start wait for SceShell and fall back (no game running)."""
         report = self.run_check()
         self.assertEqual(report["graphics_calls_through_the_wrappers"],
-                         {"sceGxmVshInitialize": 1, "sceSharedFbGetInfo": 1})
+                         {"sceGxmVshInitialize": 1, "sceSharedFbGetInfo": 1,
+                          "vita2d_create_empty_texture_format (the glyph atlas)": 1})
         for name, place in (("sceGxmVshInitialize", GXM_CALL), ("sceSharedFbGetInfo", FB_CALL)):
             with self.subTest(name):
                 # the link without --wrap=name: libvita2d calls the import, and the wrapper is gc'd
@@ -257,6 +275,31 @@ class SettingsSelf(unittest.TestCase):
                                                "sceGxmVshInitialize": (GXM_STUB, 16, ".text"),
                                                "sceSharedFbGetInfo": (FB_STUB, 16, ".text"),
                                                check.HEAP_SYMBOL: (DATA + 0x24, 4, ".data")}))
+
+    def test_the_glyph_atlas_is_made_through_the_texture_wrapper(self):
+        """settings/vita2d_textures.c (#313): libvita2d's texture_atlas_create calls the wrapper of
+        vita2d_create_empty_texture_format, which clears a plain texture's stale render target and depth buffer,
+        so that a font freed while the app runs frees nothing else."""
+        def elf(symbols, relocations):
+            return make_elf(gfx=False, symbols={
+                **{k: v for k, v in gfx_symbols().items() if k not in atlas_symbols()}, **symbols,
+                "__wrap_sceKernelCreateThread": (WRAP | 1, WRAP_SIZE, ".text"), "sceKernelCreateThread": (STUB, 16, ".text"),
+                check.HEAP_SYMBOL: (DATA + 0x24, 4, ".data")},
+                relocations=[r for r in gfx_relocations() if r not in atlas_relocations()] + relocations +
+                [(WRAP + 0x18, "sceKernelCreateThread", 30)])
+        # the link without --wrap=vita2d_create_empty_texture_format: the atlas calls the function, the wrapper is gc'd
+        no_wrap = {k: v for k, v in atlas_symbols().items() if not k.startswith("__wrap_")}
+        self.fails("__wrap_vita2d_create_empty_texture_format is not defined",
+                   elf_bytes=elf(no_wrap, [(ATLAS + 0x10, "vita2d_create_empty_texture_format", 10)]))
+        # the wrapper there (settings/vita2d_textures.c linked), but the atlas not calling it
+        self.fails("texture_atlas_create calls vita2d_create_empty_texture_format at 0x810001d0, not "
+                   "__wrap_vita2d_create_empty_texture_format", elf_bytes=elf(atlas_symbols(), atlas_relocations(False)))
+        self.fails("texture_atlas_create does not call __wrap_vita2d_create_empty_texture_format",
+                   elf_bytes=elf(atlas_symbols(), atlas_relocations()[1:]))
+        # no font in the app at all
+        self.fails("texture_atlas_create is not in the ELF",
+                   elf_bytes=elf({k: v for k, v in atlas_symbols().items() if k != "texture_atlas_create"},
+                                 atlas_relocations()[1:]))
 
     def test_not_a_self_or_not_an_elf(self):
         self.fails("not a SELF", self_bytes=b"\x7fELF" + b"\0" * 200)

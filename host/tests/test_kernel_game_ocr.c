@@ -1146,11 +1146,11 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x20000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 36: but bit 16) */
     r.speed = 0x100000; TEST_CHECK(vjoOcrSubmit(&r) > 0); /* API 43: bit 20, a trusted hook may answer (S_TRUST) */
-    r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19; API 43: 20; API 50: 21-23) */
-    r.speed = 0x4000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 46: but bit 25) */
+    r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) != VJO_ERR_ARG); /* API 54: bit 24, the text spotter (S_SPOT) */
+    r.speed = 0x4000000; TEST_CHECK(vjoOcrSubmit(&r) != VJO_ERR_ARG); /* API 54: bit 26, its refinement (alone: ignored) */
+    r.speed = 0x8000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: 18-19; API 43: 20; API 50: 21-23) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
-    r.speed = 0x8000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 27 (24, 26 and 27 in flight elsewhere; 21-23 are API 50's, 25 API 46's, 30 #355's), 31 */
-    r.speed = 0x80000000u; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.speed = 0x80000000u; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 31 (27 above; test/combined: 25 is API 46's, 30 #355's) */
     /* API 52: bit 30, the pause for the frame, an OCR job's, never a shot's */
     TEST_CHECK(VJO_GAME_OCR_S_PAUSE == 0x40000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_PAUSE) &&
                !(VJO_GAME_OCR_S_PAUSE & VJO_GAME_OCR_S_SHOT_ALL));
@@ -2500,6 +2500,35 @@ static void gate_weights_open_only_with_the_gate(void)
         }
 }
 
+/* API 54: the text spotter's weights, the same way: a pinned name the kernel knows, at its pinned size, for a request
+ * that asks for the spotter (VJO_GAME_OCR_S_SPOT) only, by tiers or by name; its refinement bit alone opens nothing,
+ * and both bits are known to Submit. */
+static void spot_weights_open_only_with_the_spotter(void)
+{
+    for (unsigned spot = 0; spot <= 2; spot++)
+        for (unsigned tiers = 0; tiers <= 1; tiers++) {
+            setup(); VjoGameOcrRequest r = make_request();
+            r.speed = spot == 1 ? VJO_GAME_OCR_S_SPOT | VJO_GAME_OCR_S_SPOT_REFINE : spot == 2 ? VJO_GAME_OCR_S_SPOT_REFINE : 0u;
+            if (tiers) { strcpy(r.model, VJO_VOCR_TIER1_NAME); r.tiers = 1u; }
+            caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+            if (spot != 1) {
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == VJO_ERR_ARG && !model_opens);
+            } else {
+                expect_lm = VJO_VOCR_SPOT_NAME; expected_model_size = VJO_VOCR_SPOT_BYTES;
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == VJO_ERR_BUSY);
+                model_tick();
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == (int)VJO_VOCR_SPOT_BYTES &&
+                           model_opens == 1);
+                close_model(seq);
+                expect_lm = NULL;
+                /* the gate's file stays the gate's request's */
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE, NULL) == VJO_ERR_ARG);
+            }
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT + 1u, NULL) == VJO_ERR_ARG);
+            TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+        }
+}
+
 /* API 21: a request by tiers names the model sizes its job may run (bit t - 1);
  * the game opens a size's pinned model by its tier, never by a name: the kernel
  * opens exactly the request's tiers, and with a cascade ceiling the tier above
@@ -3077,6 +3106,7 @@ TEST_LIST = {
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"API 26: the gate's weights open by their pinned name, only with the gate", gate_weights_open_only_with_the_gate},
     {"an SC3 hook's charset opens by the caller's own title ID, up to its limit", sc3_charset_opens_by_the_callers_title},
+    {"API 54: the spotter's weights open by their pinned name, only with the spotter", spot_weights_open_only_with_the_spotter},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
     {"API 47: the vertical model opens only for a job with a vertical mode, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
     {"the Large size's file opens at its pinned length only (VOCR6-L: 2,475,680 B)", the_large_size_opens_at_its_pinned_length_only},

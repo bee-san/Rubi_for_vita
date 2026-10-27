@@ -42,6 +42,7 @@ typedef struct {
     uint8_t picture;  /* include the record's screenshot in this package */
     uint8_t skipped;  /* set by vjo_apkg_write: it could not be read again or its note made (no room) */
     uint8_t missing_picture; /* intact record, unavailable JPEG: export text, preserve record and GUID */
+    uint8_t flags;    /* the caller's own (settings/anki_export.c: the note's tags, #314); this file never reads it */
 } VjoApkgCard;
 
 typedef struct {
@@ -61,6 +62,11 @@ typedef struct {
      * single ASCII spaces, none of them with a space, U+3000 or a control character inside (Anki splits tags on
      * spaces), in a; NULL or "" for none. Called once for each note, after load, with its note. */
     const char *(*tags)(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note);
+    /* #311: every note's card type (core/lapis.h VJO_CARD_*; 0, a word card, as before) */
+    int card_type;
+    /* The note's SentenceFurigana HTML (may be NULL: the record's): in a, or "" for none; NULL on failure, which
+     * leaves the record's (the card is still written). Called once for each note, after load. */
+    const char *(*sentence_furigana)(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note);
 } VjoApkgOps;
 
 typedef struct {

@@ -52,6 +52,9 @@ static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
 typedef char vjo_hook_cache_stage_check[VJO_GAME_OCR_HOOK_CACHE_BYTES <= sizeof(model_stage) ? 1 : -1];
 typedef char vjo_sc3_stage_check[VJO_GAME_OCR_SC3_BYTES <= sizeof(model_stage) ? 1 : -1]; /* a charset: one read */
 typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage) ? 1 : -1];
+/* API 54: the spotter's pinned name, as every name the broker opens, fits a request's model field (the copy below) */
+typedef char vjo_spot_name_check[sizeof(VJO_VOCR_SPOT_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                 sizeof(VJO_VOCR_GATE_NAME) <= VJO_GAME_OCR_MODEL_BYTES ? 1 : -1];
 /* exFAT's first file extension while a game ran took 20.9 s on the console;
  * overwriting reserved space took 6 ms. Keep one maximum-sized spare on disk,
  * prepared while the broker is idle. No image or extra buffer is kept here. */
@@ -1078,15 +1081,20 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
      * cascade's pinned model when the request gives it a time ceiling; or (API 21,
      * a request by tiers) the pinned model of one of its tiers, or of the tier
      * above them for the cascade, by its tier; or (API 47) the vertical model,
-     * for a request with a VJO_GAME_OCR_S_VERTICAL mode (on or auto), by tiers or by name. */
+     * for a request with a VJO_GAME_OCR_S_VERTICAL mode (on or auto), by tiers or by name;
+     * or (API 26, 54) the gate's or the spotter's pinned weights, for a request that asks for it. */
     uint32_t size, lm_tier = which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE
                              ? which - VJO_GAME_OCR_OPEN_LM + 1u : 0u;
     uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
                           ? which - VJO_GAME_OCR_OPEN_TIER + 1u : 0u;
     int gate = which == VJO_GAME_OCR_OPEN_GATE; /* API 26: the text-presence gate's weights, for its request only */
+    int spot = which == VJO_GAME_OCR_OPEN_SPOT; /* API 54: the text spotter's weights, for its request only */
     if (gate) {
         if (!(request.speed & VJO_GAME_OCR_S_GATE)) return VJO_ERR_ARG;
         name = VJO_VOCR_GATE_NAME;
+    } else if (spot) {
+        if (!(request.speed & VJO_GAME_OCR_S_SPOT)) return VJO_ERR_ARG;
+        name = VJO_VOCR_SPOT_NAME;
     } else if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
         lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
     else if (model_tier && tier_allowed(&request, model_tier)) name = tier_name(model_tier);
@@ -1101,7 +1109,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     /* API 47: the vertical model opens by its own open only (a request with a vertical mode), never by the name
      * a request gives as its model or fallback */
     if (which != VJO_GAME_OCR_OPEN_VERTICAL && !strcmp(name, VJO_VOCR_VERTICAL_NAME)) return VJO_ERR_ARG;
-    size = gate ? VJO_VOCR_GATE_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
+    size = gate ? VJO_VOCR_GATE_BYTES : spot ? VJO_VOCR_SPOT_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;
     model_io.pid = pid;

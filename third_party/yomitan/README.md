@@ -16,16 +16,21 @@ node tools/yomitan_check/port_yomitan_rules.mjs --yomitan /path/to/yomitan \
 python3 tools/gen_deinflect.py   # core/deinflect.inc, core/conjugation.inc
 ```
 
-- `add`: the rules of `-おく` (ておく, でおく, ないでおく; the old `-toku` has とく and どく),
-  `-て`'s まして, `-え`'s ぇ forms and てえ, `-ん`, `-ちゃ`, `-ゃ` (composed with `-ば`, so that
-  なきゃ gives ない), `-ざる`, `-ねば`, `-やがる` and `-やしない`, under the label Rubi shows.
-  Yomitan's conditions become the old rule bits (the script says how).
+- `add`: the rules of `-おく` (ておく, でおく, とく, どく, ないでおく, ないどく; とく and どく reach
+  every te-form through `-て`, so 行っとく is 行く's 行って, #321), `-て`'s まして, `-え`'s ぇ forms
+  and てえ, `-ん`, `-ちゃ`, `-ゃ` (composed with `-ば`, so that なきゃ gives ない), `-ざる`, `-ねば`,
+  `-やがる` and `-やしない`, under the label Rubi shows. Yomitan's conditions become the old rule
+  bits (the script says how).
 - `remove`: the old bare imperative negative (な after a dictionary form), which Yomitan no
-  longer has.
+  longer has, and (#321) the old `-toku` rules, which went to a few dictionary forms in one step
+  (っとく to う, つ or る: 行っとく was 行う) where Yomitan's `-おく` goes through `-て`.
 - `rubi`: Rubi's own, not Yomitan's: each `-え` rule again with ー for its last え or い
-  (知らねー, すげー). Yomitan reaches these forms by turning ー into its vowel before the rules
-  run; Rubi's key normalization does not.
+  (知らねー, すげー), which Yomitan reaches by turning ー into its vowel before the rules run
+  (Rubi's key normalization does not); and (#321) the progressive's てる/でる contracted before
+  の or だ, てん/でん to て/で (してんの, 言ってんだ), which `-ん` read as the negative, in Yomitan too.
 
 Left out on purpose, measured on 5,000 hooked visual-novel lines ([the report](../../reports/yomitan-check.md)):
 `imperative negative slang` (んな: みんな read as 見る), `-ん`'s さん, たん, はん and なん, and `-ゃ`'s
-や and にゃ.
+や and にゃ; and (#321) `-ん`'s かん, which on 27,970 lines of the same games read 12 taps wrongly
+(手をつかんで as 手をつく, なんだかわかんない as 乾く, 宙に浮かんだ as 宙に浮く) and 2 rightly
+(しておかん).

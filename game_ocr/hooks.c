@@ -694,14 +694,14 @@ void vjo_hooks_keep(uint32_t id, uint32_t key)
     VjoStreamSlot *s;
     if (id <= VJO_HOOK_SITE_STREAMS || id > VJO_HOOK_STREAMS) return; /* a site's slot is never given away */
     s = &slots[id - 1];
-    if (!key) { /* pinned: whichever caller holds it (a caller's key is never 0: it returns into segment 0) */
-        vjo_stream_keep(s);
-        return;
-    }
-    /* the caller the job saw, under the slot's lock: a caller replacing it (also under the lock) either finds
-     * it kept, or changed the key first and it is not kept; busy: not now (the next agreeing job keeps it) */
+    /* under the slot's lock, a pin too (#366's audit-b, F3): a new caller taking the slot holds it, so a keep never
+     * lands after its checks, where a thread of the same caller would pass the slot over as kept and take a second
+     * one; busy: not now (the next pinned or agreeing job keeps it) */
     if (!vjo_stream_try_lock(s)) return;
-    if (__atomic_load_n(&s->key, __ATOMIC_RELAXED) - seg_base == key) vjo_stream_keep(s);
+    /* pinned (key 0): whichever caller holds it (a caller's key is never 0: it returns into segment 0); else the
+     * caller the job saw: a caller replacing it (also under the lock) either finds it kept, or changed the key first
+     * and it is not kept */
+    if (!key || __atomic_load_n(&s->key, __ATOMIC_RELAXED) - seg_base == key) vjo_stream_keep(s);
     vjo_stream_unlock(s);
 }
 

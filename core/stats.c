@@ -95,8 +95,23 @@ static int day_slot(VjoStats *s, int g, int32_t day, int add)
     }
     if (lo < s->days && s->day[lo].day == day && s->day[lo].game == g)
         return (int)lo;
-    if (!add || s->days == VJO_STATS_DAYS)
+    if (!add)
         return -1;
+    if (s->days == VJO_STATS_DAYS) {
+        /* full (decades of days): the oldest rollup goes, so that today and the days the tab shows still count; a day
+         * older than every one kept is not added */
+        if (!lo)
+            return -1;
+        memmove(&s->day[0], &s->day[1], (size_t)(lo - 1) * sizeof(s->day[0]));
+        s->days--;
+        s->days_full++;
+        lo--;
+        memset(&s->day[lo], 0, sizeof(s->day[0]));
+        s->day[lo].day = day;
+        s->day[lo].game = (uint16_t)g;
+        s->days++;
+        return (int)lo;
+    }
     memmove(&s->day[lo + 1], &s->day[lo], (s->days - lo) * sizeof(s->day[0]));
     memset(&s->day[lo], 0, sizeof(s->day[0]));
     s->day[lo].day = day;
@@ -194,17 +209,24 @@ uint64_t vjo_stats_scan(VjoStats *s, char *buf, size_t len, uint64_t base, int e
         if (i < len)
             start = i;
     }
+    /* A '"' as the window's last byte, at a line's start, may start a record: whether it does is its next byte's,
+     * which the window does not hold. The next window starts there, never after it (a window of the file's end that
+     * ends in a line break has no such byte). */
+    size_t keep = len > first && buf[len - 1] == '"' && (len - 1 ? buf[len - 2] == '\n' : whole) ? len - 1 : len;
     if (waits)
         next = base + start; /* the file's newest record, damaged as it is now: the next count reads it again */
+    else if (start == len && end == VJO_STATS_SCAN_CUT)
+        next = base + first; /* no record starts here and the file ends: nothing counted, and the next count starts
+                              * here again (as the Shell's: a cut window with no record ends where it starts) */
     else if (start == len || end == VJO_STATS_SCAN_END)
-        next = base + len; /* every record counted (or none starts here) */
+        next = base + keep; /* every record counted (or none starts here) */
     else if (start > first || end == VJO_STATS_SCAN_CUT)
         next = base + start; /* the newest waits: its end is not read yet */
     else { /* a record longer than the window: not one the writer makes; skipped as damaged, as the Shell does */
         s->damaged++;
         if (s->open >= 0)
             s->game[s->open].time.last_us = 0;
-        next = base + len;
+        next = base + keep;
     }
     s->covered = next;
     return next;
@@ -604,7 +626,7 @@ int vjo_stats_cache_read(VjoStats *s, const unsigned char *in, size_t len, int32
         if (s->day[k].game >= s->games || (k && !day_before(&s->day[k - 1], s->day[k].day, s->day[k].game)))
             goto damaged;
     for (uint32_t k = 0; k < s->cards; k++)
-        if ((s->card[k].game != VJO_STATS_NO_GAME && s->card[k].game >= s->games) ||
+        if ((s->card[k].game < VJO_STATS_UNREAD && s->card[k].game >= s->games) ||
             (k && memcmp(s->card[k - 1].id, s->card[k].id, 16) >= 0))
             goto damaged;
     return VJO_STATS_CACHE_OK;

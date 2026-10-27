@@ -417,28 +417,41 @@ add_custom_target(vjo_rco ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.
 include(${ROOT}/cmake/SettingsPNG.cmake)
 # The Anki page (settings/anki_page.c): the export of the queue (settings/anki_export.c) as Lapis
 # notes in an .apkg (core/apkg.c: SQLite, ZIP and the Lapis note type, core/sqlw.c, zipw.c, lapis.c),
-# made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
+# made from the queue's records (core/anki_queue.c) with core/anki.c's fields, and the readings over their
+# sentences from the local dictionaries (#311: core/sentence_reading.c, its files through settings/app_platform.c,
+# the Look up page's, below). No network.
+# The Cards page (#315, settings/cards_page.c): the queue's cards listed, one deleted, its sentence fixed or its
+# picture dropped (settings/cards.c), its picture decoded by the SDK's libjpeg (settings/card_picture.c).
 set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
+  ${ROOT}/settings/cards.c ${ROOT}/settings/cards_page.c ${ROOT}/settings/card_picture.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
-  ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
+  ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
+  ${ROOT}/core/word_key.c
+  ${ROOT}/core/sentence_reading.c) # #311: readings over a card's sentence
 # The Stats tab (settings/stats_page.c, #312): history.csv counted with the Triangle view's own reading-time rule
 # (core/history_lines.c's vjo_reading_time_add, the Shell's; of it the link keeps what the tab calls), per game and
 # per day (core/stats.c) and the record reader (core/history_read.c); the goal is app.ini's (settings/app_prefs.c).
 set(VJO_SETTINGS_STATS_SRC
   ${ROOT}/settings/stats_page.c ${ROOT}/core/stats.c ${ROOT}/core/history_read.c
   ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c ${ROOT}/core/text_rows.c)
+# The Look up page (#313, settings/lookup_page.c): typed search and earlier lines (history.csv: core/history_read.c,
+# above), looked up with the overlay's own code (core/client.c, local_dict.c, text_rows.c) through the app's sceIo
+# platform (settings/app_platform.c), and its cards saved to the queue as the overlay saves them (settings/app_queue.c).
+set(VJO_SETTINGS_LOOKUP_SRC
+  ${ROOT}/settings/lookup_page.c ${ROOT}/settings/lookup.c ${ROOT}/settings/lookup_history.c ${ROOT}/settings/app_queue.c
+  ${ROOT}/settings/app_platform.c ${ROOT}/core/client.c)
 set(VJO_SETTINGS_SRC
   ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c ${ROOT}/settings/app_prefs.c
   ${ROOT}/settings/icons.c ${ROOT}/settings/search.c ${ROOT}/settings/text_layout.c ${ROOT}/core/linebreak.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
-  ${ROOT}/settings/applog.c
+  ${ROOT}/settings/applog.c ${ROOT}/settings/vita2d_textures.c
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
   ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
   ${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/core/regions.c # #358: Suggest a text box, region.ini's line for every game (settings/preferences.c)
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
-  ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_STATS_SRC})
+  ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_STATS_SRC} ${VJO_SETTINGS_LOOKUP_SRC})
 # API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, the worker's verified table
 # itself (core/hook_place.c: of it only vjo_place_title_verified, vjo_place_verified and the table stay
 # linked), and the games of Luna's
@@ -482,7 +495,9 @@ target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffuncti
 # game running: the GPU library's shared parameter buffer and SceShell's framebuffer hand-over);
 # VJO_SETTINGS_GFX_WRAP is the smoke app's too. tools/check_settings_self.py checks that libvita2d
 # calls the wrappers.
-set(VJO_SETTINGS_GFX_WRAP -Wl,--wrap=sceGxmVshInitialize,--wrap=sceSharedFbGetInfo)
+# settings/vita2d_textures.c wraps libvita2d's plain textures (vita2d_create_empty_texture_format): their two stale
+# fields cleared, so that a font's glyph atlas, which main.c frees while the app runs, frees nothing else.
+set(VJO_SETTINGS_GFX_WRAP -Wl,--wrap=sceGxmVshInitialize,--wrap=sceSharedFbGetInfo,--wrap=vita2d_create_empty_texture_format)
 target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
   -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority
   -Wl,--wrap=sceKernelCreateThread ${VJO_SETTINGS_GFX_WRAP} -Wl,--defsym,__sce_headroom=0x4000)
@@ -666,6 +681,8 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/docs/img
     ${STAGE}/third_party/LunaTranslator
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/prepare_vndb.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/reading_stats.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/hook_request.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
+  # API 54: the text spotter's pins (tools/prepare_ocr.py reads them from this header, beside it in the zip)
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/include/vjo_vocr_sizes.h ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_vndb.py --stage ${STAGE}
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.

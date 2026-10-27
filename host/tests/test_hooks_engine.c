@@ -8,6 +8,10 @@
  * hooks.c keeps game addresses as uint32_t, as on the Vita: the fake code segment and game memory are mapped
  * below 4 GiB (MAP_32BIT on x86_64). The fake taiHEN records each hook and gives each a record whose
  * continuation is a real host function (CALL) or a marker (sites), so a test calls a hook as the game would. */
+/* The segment 0 a test maps at 0x81000000 (fixed_seg0) is freed after every test, a failed one's too (acutest runs
+ * TEST_FINI after an aborted test): with --no-exec the tests share one process (audit-rubi-audit-fix-hooks A-N3). */
+static void unmap_fixed_seg0(void);
+#define TEST_FINI unmap_fixed_seg0()
 #include "acutest.h"
 
 #include <stdint.h>
@@ -1360,6 +1364,14 @@ static void test_keep_key(void)
     /* a key the slot never held */
     vjo_hooks_keep(11, 0x7777u);
     TEST_CHECK(slots[10].kept == 0);
+    /* pinned (key 0, a diagnostic pick): under the slot's lock as well (#366's audit-b, F3): busy, not now, the lock
+     * left as it was; free, kept, whichever caller holds it */
+    slots[11].lock = 1;
+    vjo_hooks_keep(12, 0);
+    TEST_CHECK(slots[11].kept == 0 && slots[11].lock == 1);
+    slots[11].lock = 0;
+    vjo_hooks_keep(12, 0);
+    TEST_CHECK(slots[11].kept == 1 && slots[11].lock == 0);
 }
 
 /* vjo_hooks_stop: live off, every hook released newest first (CALL imports, then the sites), each once; then
@@ -1723,80 +1735,170 @@ typedef struct {
     unsigned n;
     const char *text; /* the text the farm verified against the frame */
 } FarmRow;
+/* The farm's record of a hook (its rubi-hook.json and reader), in the terms of a VjoPlaceVerified */
+typedef struct {
+    const char *title;
+    uint32_t nid, off;
+    int thumb;        /* 1 Thumb, 0 ARM: the record's flag, or the mode its bytes decode to where the record says to
+                       * check it by disassembly (tools/hook_farm.py MODES_BY_DISASSEMBLY) */
+    unsigned reg;
+    uint32_t padding; /* 0x81000000 or more: the game's address of the text, the register 0 at the site */
+    unsigned encoding, read;
+    unsigned count_off, data_off; /* a cell record's count and cells (VJO_PLACE_READ_CELLS) */
+    const char *sig;  /* the bytes at the site */
+    unsigned sig_len;
+} FarmSite;
 #include "fixtures/hook_farm.inc"
 static const FarmRow farm_rows[] = {HOOK_FARM_ROWS};
+static const FarmSite farm_sites[] = {HOOK_FARM_SITES};
 _Static_assert(sizeof farm_rows / sizeof farm_rows[0] == HOOK_FARM_FIXTURES, "every excerpt");
+_Static_assert(sizeof farm_sites / sizeof farm_sites[0] == HOOK_FARM_SITE_COUNT, "every hook record");
+#define FARM_SEG0 0x81000000u /* segment 0 where the farm's Vita3K had it for every one of these games */
 
-/* Each excerpt through the worker's own path, as the game hits the site: Rubi's real entry installed in a main
- * module with its NID, its bytes at its offset and the farm's APP_VER in param.sfo; the hit's bytes in game
- * memory at the entry's register (+ padding; through a pointer, or as a cell record's cells with their count),
- * then a NUL unit; the observer, the stream's snapshot and vjo_hooks_text. The text must be the farm's, exactly. */
+/* The farm's record of title's hook, and Rubi's entry at its site, which must say what the record says: the NID, the
+ * offset, the mode (where the record knows it), the bytes, the encoding, the read and a cell record's layout, the
+ * register and padding (an address of the farm's with its register 0 at the site is r15 + padding from a segment 0 at
+ * FARM_SEG0: PCSG00380's static). #316's audit F3: the excerpts installed Rubi's own NID, bytes, register and
+ * padding, so a wrong one passed. */
+static const FarmSite *farm_entry(const char *title, const VjoPlaceVerified **entry)
+{
+    const FarmSite *fs = NULL;
+    const VjoPlaceVerified *all, *v = NULL;
+    unsigned nv;
+    for (unsigned k = 0; k < HOOK_FARM_SITE_COUNT; k++)
+        if (!strcmp(farm_sites[k].title, title)) fs = &farm_sites[k];
+    TEST_ASSERT_(fs != NULL, "%s: the farm's record of its hook", title);
+    nv = vjo_place_verified(title, &all);
+    for (unsigned i = 0; i < nv; i++)
+        if (all[i].off == fs->off) v = &all[i];
+    TEST_ASSERT_(v != NULL, "%s: Rubi's entry at the farm's +%X", title, (unsigned)fs->off);
+    TEST_CHECK_(v->module_nid == fs->nid, "%s: NID %08X, the farm's %08X", title, (unsigned)v->module_nid,
+                (unsigned)fs->nid);
+    /* the mode of every record (audit-rubi-audit-fix-hooks A-F1: those the farm says to check by disassembly were
+     * skipped, and a flipped flag passed for PCSG00469, PCSG00553 and PCSG00807) */
+    TEST_CHECK_((fs->thumb == 0 || fs->thumb == 1) && v->thumb == (unsigned)fs->thumb, "%s: Thumb %u, the farm's %d",
+                title, (unsigned)v->thumb, fs->thumb);
+    /* every byte the farm recorded (A-N1: 12 of the 16 passed); an entry that pins fewer, for a relocated address in
+     * them, would say why here */
+    TEST_CHECK_(v->sig_len == fs->sig_len && !memcmp(v->sig, fs->sig, v->sig_len),
+                "%s: the %u bytes at the site are the farm's %u", title, (unsigned)v->sig_len, fs->sig_len);
+    /* (CP932 with its 0xA0 kept is CP932: VJO_HOOK_ENC_CP932_A0, the MSGSET titles' blank cell) */
+    TEST_CHECK_((v->encoding & ~VJO_HOOK_DECODE_A0) == fs->encoding && v->read == fs->read,
+                "%s: encoding %u, read %u; the farm's %u, %u", title, (unsigned)v->encoding, (unsigned)v->read,
+                fs->encoding, fs->read);
+    if (fs->padding >= FARM_SEG0)
+        TEST_CHECK_(v->reg == 15 && FARM_SEG0 + v->off + (uint32_t)v->padding == fs->padding,
+                    "%s: r%u + 0x%X from a segment 0 at 0x81000000, the farm's address 0x%08X", title, (unsigned)v->reg,
+                    (unsigned)v->padding, (unsigned)fs->padding);
+    else
+        TEST_CHECK_(v->reg == fs->reg && (uint32_t)v->padding == fs->padding, "%s: r%u + %d, the farm's r%u + %u",
+                    title, (unsigned)v->reg, (int)v->padding, fs->reg, (unsigned)fs->padding);
+    TEST_CHECK_(v->read != VJO_PLACE_READ_CELLS ||
+                    (fs->count_off == VJO_PLACE_CELLS_COUNT && fs->data_off == VJO_PLACE_CELLS_DATA),
+                "%s: the record's count at +0x%X and cells at +0x%X", title, fs->count_off, fs->data_off);
+    *entry = v;
+    return fs;
+}
+
+/* A segment 0 at FARM_SEG0 (0x81000000), size bytes, for the test that runs (MAP_FIXED_NOREPLACE: an address already
+ * taken fails the test, nothing is overwritten; under x86-64 ASan that address is shadow memory). TEST_FINI frees it
+ * after the test, whatever its outcome. */
+static uint8_t *fixed_map;
+static size_t fixed_map_size;
+static uint8_t *fixed_seg0(uint32_t size)
+{
+    int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+    void *p;
+#ifdef MAP_FIXED_NOREPLACE
+    flags |= MAP_FIXED_NOREPLACE;
+#endif
+    p = mmap((void *)(uintptr_t)FARM_SEG0, size, PROT_READ | PROT_WRITE, flags, -1, 0);
+    TEST_ASSERT_(p == (void *)(uintptr_t)FARM_SEG0, "a segment 0 at 0x81000000 (mmap gave %p)", p);
+    fixed_map = p;
+    fixed_map_size = size;
+    return p;
+}
+static void unmap_fixed_seg0(void)
+{
+    if (fixed_map) munmap(fixed_map, fixed_map_size);
+    fixed_map = NULL;
+}
+
+/* Each excerpt through the worker's own path in the game as the farm recorded it: a main module with the farm's NID
+ * and the farm's bytes at the farm's offset, in a segment 0 at 0x81000000, and the farm's APP_VER in param.sfo; the
+ * hit's bytes where the farm's hook read them, its register + padding (through the pointer there, or as a cell
+ * record's count and cells), then a NUL unit; Rubi's real entry, the observer, the stream's snapshot and
+ * vjo_hooks_text. The hook must go where the farm's did, and the text must be the farm's, exactly. */
 static void test_farm_excerpts(void)
 {
-    static uint8_t *seg; /* a segment 0 as long as the farthest entry's: only the pages its bytes touch exist */
-    static uint32_t seg_size;
+    uint8_t *seg;
+    uint32_t seg_size = 0;
     unsigned titles = 0;
     const char *last = "";
-    for (unsigned k = 0; k < HOOK_FARM_FIXTURES; k++)
-        if (farm_rows[k].off + 64u > seg_size) seg_size = (farm_rows[k].off + 64u + PAGE - 1u) & ~(PAGE - 1u);
-    if (!seg) seg = low_map(seg_size, PAGE);
-    TEST_ASSERT_(seg != NULL, "a %u-byte segment below 4 GiB", (unsigned)seg_size);
+    for (unsigned k = 0; k < HOOK_FARM_SITE_COUNT; k++) { /* the farthest site, or a static the farm read */
+        const FarmSite *fs = &farm_sites[k];
+        uint32_t end = fs->padding >= FARM_SEG0 ? fs->padding - FARM_SEG0 + fs->data_off + 2u * VJO_HOOK_RAW_BYTES + 4u
+                                                : fs->off + 64u;
+        if (end > seg_size) seg_size = end;
+    }
+    seg_size = (seg_size + PAGE - 1u) & ~(PAGE - 1u);
+    seg = fixed_seg0(seg_size); /* only the pages its bytes touch exist */
     for (unsigned k = 0; k < HOOK_FARM_FIXTURES; k++) {
         const FarmRow *row = &farm_rows[k];
-        const VjoPlaceVerified *all, *v = NULL;
-        unsigned nv = vjo_place_verified(row->title, &all);
-        uint32_t frame[16], addr;
+        const VjoPlaceVerified *v;
+        const FarmSite *fs = farm_entry(row->title, &v);
+        uint32_t frame[16], at;
+        uint8_t *p;
         VjoHookSnap s;
         char text[1024], ver[8];
         size_t len;
-        for (unsigned i = 0; i < nv; i++)
-            if (all[i].off == row->off) v = &all[i];
-        TEST_ASSERT_(v != NULL, "%s: Rubi's entry at +%X", row->title, (unsigned)row->off);
+        TEST_CHECK_(row->off == fs->off, "%s: the hit at the farm's site", row->title);
         TEST_CHECK_(v->app_ver == row->app_ver, "%s: the entry's APP_VER %04X is the farm's %04X", row->title,
                     (unsigned)v->app_ver, (unsigned)row->app_ver);
         titles += strcmp(last, row->title) != 0;
         last = row->title;
         reset();
-        memcpy(seg + v->off, v->sig, v->sig_len);
+        memcpy(seg + fs->off, fs->sig, fs->sig_len);
         mod.seg0 = seg;
-        mod.seg0_size = v->off + 64u;
-        mod.nid = v->module_nid;
-        if (v->app_ver) {
-            snprintf(ver, sizeof ver, "%02X.%02X", (unsigned)(v->app_ver >> 8), (unsigned)(v->app_ver & 0xFFu));
+        mod.seg0_size = fs->off + 64u;
+        mod.nid = fs->nid;
+        if (row->app_ver) {
+            snprintf(ver, sizeof ver, "%02X.%02X", (unsigned)(row->app_ver >> 8), (unsigned)(row->app_ver & 0xFFu));
             set_sfo(ver);
         }
         add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
         add_block(a32(seg), seg_size, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
         vjo_hooks_start(row->title, VJO_TEXT_SOURCE_AUTO, 0);
         TEST_ASSERT_(n_sites >= 1 && site_info[0].ver == v, "%s: its entry is hooked first", row->title);
-        TEST_ASSERT(row->n + 2u <= DATA_SIZE - 0x100u);
+        TEST_CHECK_(n_offs >= 1 && offs[0].offset == fs->off && offs[0].thumb == fs->thumb,
+                    "%s: hooked at the farm's +%X", row->title, (unsigned)fs->off);
+        TEST_ASSERT(row->n + 2u <= DATA_SIZE - 0x200u);
         memset(frame, 0, sizeof frame);
-        if (v->read == VJO_PLACE_READ_CELLS) { /* the farm read the record's cells: its count and cells */
-            uint8_t *rec = v->reg == 15 ? seg + v->off + v->padding : data + 0x100;
+        /* where the farm's hook read: its register + padding (an address of the game's, its register 0 there) */
+        at = fs->padding >= FARM_SEG0 ? fs->padding : a32(data) + 0x100u;
+        if (fs->padding < FARM_SEG0) frame[fs->reg] = at - fs->padding;
+        p = (uint8_t *)(uintptr_t)at;
+        if (fs->read == VJO_PLACE_READ_CELLS) { /* the farm read the record's count of cells, then the cells */
             uint32_t count = row->n / 2u;
-            TEST_ASSERT(v->reg != 15 || (uint32_t)(v->off + v->padding) + REC_CELLS + row->n <= seg_size);
-            memcpy(rec + REC_COUNT, &count, 4);
-            memcpy(rec + REC_CELLS, row->raw, row->n);
-            addr = a32(rec);
+            memcpy(p + fs->count_off, &count, 4);
+            memcpy(p + fs->data_off, row->raw, row->n);
+        } else if (fs->read == VJO_PLACE_READ_DEREF) { /* the text's pointer there */
+            uint32_t text_at = a32(data) + 0x200u;
+            memcpy(p, &text_at, 4);
+            memcpy(data + 0x200, row->raw, row->n);
+            data[0x200 + row->n] = data[0x201 + row->n] = 0;
         } else {
-            memcpy(data + 0x100, row->raw, row->n);
-            data[0x100 + row->n] = data[0x101 + row->n] = 0;
-            addr = a32(data) + 0x100;
-            if (v->read == VJO_PLACE_READ_DEREF) { /* the text's pointer, where the register + padding points */
-                memcpy(data + 0x80, &addr, 4);
-                addr = a32(data) + 0x80;
-            }
+            memcpy(p, row->raw, row->n);
+            p[row->n] = p[row->n + 1u] = 0;
         }
-        if (v->reg != 15) frame[v->reg] = addr - (uint32_t)v->padding; /* r15 is the site's address */
         TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
         TEST_ASSERT_(vjo_hooks_snap(1, &s), "%s: the hit is in its stream", row->title);
         len = vjo_hooks_text(&s, text, sizeof text);
         TEST_CHECK_(len == strlen(row->text) && !strcmp(text, row->text), "%s excerpt %u", row->title, k);
         TEST_MSG("got  [%s]", text);
         TEST_MSG("want [%s]", row->text);
-        memset(seg + v->off, 0, v->sig_len);
-        if (v->read == VJO_PLACE_READ_CELLS && v->reg == 15)
-            memset(seg + v->off + v->padding, 0, REC_CELLS + row->n);
+        memset(seg + fs->off, 0, fs->sig_len);
+        if (fs->padding >= FARM_SEG0) memset(p, 0, fs->data_off + row->n);
     }
     TEST_CHECK_(titles >= 13, "excerpts of %u titles", titles);
 }
@@ -1812,8 +1914,9 @@ static void test_farm_excerpts(void)
  * debug log; a function's entry at both hooks both, and a hit's text goes through Luna's filter. With segment 0
  * anywhere but 0x81000000 the guest address is not read, nor for a relocatable executable's unmarked site. The game's
  * own bytes there are not known here (no dump of it): its console run decides. The test maps 0x81000000 itself
- * (MAP_FIXED_NOREPLACE: an address already taken fails the test cleanly, nothing is overwritten); under x86-64 ASan
- * that address is shadow memory (0x7fff8000-0x8fff6fff), so the test cannot run in such a build. */
+ * (fixed_seg0, freed after it; MAP_FIXED_NOREPLACE: an address already taken fails the test cleanly, nothing is
+ * overwritten); under x86-64 ASan that address is shadow memory (0x7fff8000-0x8fff6fff), so the test cannot run in such
+ * a build. */
 static void test_luna_own_address(void)
 {
     enum { TT_SEG0 = 0x81000000u, TT_SIZE = 0x31258Cu, TT_MAP = 0x315000u }; /* TT_MAP: segment 0 a page higher too */
@@ -1821,7 +1924,7 @@ static void test_luna_own_address(void)
     static const char l7[] = "[\x8E\x9E\x8A\xD4/\x82\xB6\x82\xA9\x82\xF1]\x82\xF0<#FF0000>\x97\xB7</#>\x82\xB7\x82\xE9"
                              "\\n\x90\x6C";
     static const char l8[] = "<b>\x96\xA2\x97\x88</b>\x82\xCD[\x95\xCF/\x82\xA9]\x82\xED\x82\xE9";
-    static uint8_t *tt;
+    uint8_t *tt;
     const VjoLunaSite *real;
     uint32_t frame[16], inst, refused;
     VjoHookSnap s;
@@ -1830,17 +1933,9 @@ static void test_luna_own_address(void)
     TEST_ASSERT(vjo_luna_sites("PCSG00062", &real) == 2);
     TEST_ASSERT(real[0].addr == 0x8119ADDAu && real[0].reg == 7 && real[1].addr == 0x811A6052u && real[1].reg == 8);
     TEST_CHECK(real[0].addr - VJO_LUNA_SEG0 >= TT_SIZE && real[1].addr - VJO_LUNA_SEG0 >= TT_SIZE);
-    if (!tt) {
-        int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-        void *p;
-#ifdef MAP_FIXED_NOREPLACE
-        flags |= MAP_FIXED_NOREPLACE;
-#endif
-        p = mmap((void *)(uintptr_t)TT_SEG0, TT_MAP + PAGE, PROT_READ | PROT_WRITE, flags, -1, 0);
-        TEST_ASSERT_(p == (void *)(uintptr_t)TT_SEG0, "a segment 0 at 0x81000000 (mmap gave %p)", p);
-        TEST_ASSERT(!mprotect((uint8_t *)p + TT_MAP, PAGE, PROT_NONE));
-        tt = p;
-    }
+    _Static_assert(TT_SEG0 == FARM_SEG0, "one fixed segment 0");
+    tt = fixed_seg0(TT_MAP + PAGE); /* freed after the test (TEST_FINI), as the farm test's */
+    TEST_ASSERT(!mprotect(tt + TT_MAP, PAGE, PROT_NONE));
 
     /* zeros at both sites: no function's entry there, refused, with the bytes the check read */
     reset();
@@ -1969,24 +2064,39 @@ static void test_luna_own_address(void)
     }
 }
 
-/* VJO_PLACE_READ_CELLS: the record at the register + padding (here r15, the site's own address); exactly its
- * count of cells, at most 256 (512 bytes), as CP932 bytes; an unreadable count or cells, or a count of 0, give
- * no hit. The record's layout is the farm's (PCSG00380 reader-config.json, PCSG00914's): its count at +0x14,
- * its cells from +0x20 (REC_COUNT, REC_CELLS). */
+/* VJO_PLACE_READ_CELLS: the record at the register + padding; exactly its count of cells, at most 256 (512 bytes), as
+ * CP932 bytes; an unreadable count or cells, or a count of 0, give no hit. The record's layout is the farm's (PCSG00380
+ * reader-config.json, PCSG00914's): its count at +0x14, its cells from +0x20 (REC_COUNT, REC_CELLS). Register 15, the
+ * site's own address (PCSG00380's static), only with segment 0 at 0x81000000, where the farm read it (#316's audit
+ * F4): here it is elsewhere, so such an entry is refused with its bytes matching (test_farm_excerpts runs PCSG00380's
+ * at 0x81000000); the cells are read through r4. */
 static void test_verified_cells(void)
 {
     /* 「あ」 then a line break and い as cells; a stale cell after them that the count leaves out */
     static const uint8_t cells[] = {0x81, 0x75, 0x82, 0xA0, 0x81, 0x76, 0x0A, 0x00, 0x82, 0xA2, 0x82, 0xA4};
     VjoPlaceVerified v;
-    uint32_t frame[16], count = 5, rec;
+    uint32_t frame[16], count = 5, rec, inst, refused;
     VjoHookSnap s;
     char text[64];
     reset();
+    TEST_ASSERT(a32(code) != 0x81000000u);
     put_site(0x100, 1, NULL);
-    v = verified_entry(0x100, mod.nid, 15, 0);
+    v = verified_entry(0x100, mod.nid, 15, 0x200);
+    v.read = VJO_PLACE_READ_CELLS;
+    t_ver = &v;
+    t_nver = 1;
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(n_sites == 0 && n_offs == 0 && refused == 1);
+#if VJO_DEBUG
+    TEST_CHECK(strstr(logbuf, "r15 refused: relocated\n") != NULL);
+    TEST_MSG("%s", logbuf);
+#endif
+    reset();
+    put_site(0x100, 1, NULL);
+    v = verified_entry(0x100, mod.nid, 4, 0x20);
     v.read = VJO_PLACE_READ_CELLS;
     rec = a32(data) + 0x200;
-    v.padding = (int32_t)(rec - (a32(code) + 0x100)); /* the record's distance from the site */
     t_ver = &v;
     t_nver = 1;
     add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
@@ -1995,6 +2105,7 @@ static void test_verified_cells(void)
     memcpy(data + 0x200 + REC_COUNT, &count, 4);
     memcpy(data + 0x200 + REC_CELLS, cells, sizeof cells);
     memset(frame, 0, sizeof frame);
+    frame[4] = rec - 0x20u; /* the register + padding: the record */
     TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
     TEST_ASSERT(vjo_hooks_snap(1, &s));
     TEST_CHECK(s.n == 9 && !memcmp(s.raw, "\x81\x75\x82\xA0\x81\x76\x0A\x82\xA2", 9));
@@ -2007,13 +2118,13 @@ static void test_verified_cells(void)
     vjo_hooks_observe(0, frame);
     TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2 && s.n == 256);
     /* a record 0x40 bytes before the block's end: its count is there, 32 cells (64 bytes) are not */
-    v.padding = (int32_t)(a32(data) + DATA_SIZE - 0x40u - (a32(code) + 0x100));
+    frame[4] = a32(data) + DATA_SIZE - 0x40u - 0x20u;
     count = 32;
     memcpy(data + DATA_SIZE - 0x40u + REC_COUNT, &count, 4);
     vjo_hooks_observe(0, frame);
     TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2);
     count = 0;
-    v.padding = (int32_t)(rec - (a32(code) + 0x100));
+    frame[4] = rec - 0x20u;
     memcpy(data + 0x200 + REC_COUNT, &count, 4);
     vjo_hooks_observe(0, frame);
     TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2);
@@ -2044,7 +2155,8 @@ static size_t sc3_file(const char *title, uint8_t *out, size_t cap)
     return n;
 }
 
-/* Rubi's real SC3 entries in a fake main module (their NID, bytes at their offset, APP_VER 01.00), the farm's pages
+/* Rubi's real SC3 entries in the game as the farm recorded it (its record's NID, the bytes at its offset and its
+ * register: farm_entry; APP_VER 01.00), the farm's pages
  * at r0 with other bytes after the end token, as a script buffer has them (zeros, the next string): the stream keeps
  * the string through its end token, so the bytes after it never make another text; until the charset is set its
  * text is empty, and the charset is set only from exactly the pinned file (another title's, one byte changed, one
@@ -2062,6 +2174,7 @@ static void test_sc3_sites(void)
     for (unsigned k = 0; k < HOOK_SC3_FARM_FIXTURES; k++) {
         const Sc3Row *row = &sc3_rows[k];
         const VjoPlaceVerified *v;
+        const FarmSite *fs;
         uint32_t frame[16];
         VjoHookSnap s;
         char text[1024];
@@ -2069,14 +2182,15 @@ static void test_sc3_sites(void)
         uint32_t seq;
         TEST_ASSERT_(vjo_place_verified(row->title, &v) == 1 && v->read == VJO_PLACE_READ_SC3 &&
                      v->off + 64u <= seg_size, "%s: its SC3 entry", row->title);
+        fs = farm_entry(row->title, &v); /* the farm's record of the hook, which the game below is */
         titles += strcmp(last, row->title) != 0;
         last = row->title;
         reset();
         memset(seg, 0, seg_size);
-        memcpy(seg + v->off, v->sig, v->sig_len);
+        memcpy(seg + fs->off, fs->sig, fs->sig_len);
         mod.seg0 = seg;
-        mod.seg0_size = v->off + 64u;
-        mod.nid = v->module_nid;
+        mod.seg0_size = fs->off + 64u;
+        mod.nid = fs->nid;
         set_sfo("01.00");
         add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
         vjo_hooks_start(row->title, VJO_TEXT_SOURCE_AUTO, 0);
@@ -2086,7 +2200,7 @@ static void test_sc3_sites(void)
         memcpy(data + 0x100, row->raw, row->n);
         memcpy(data + 0x100 + row->n + 16u, "\x01\x80\x01\x02\x80\x00\xFF", 7);
         memset(frame, 0, sizeof frame);
-        frame[0] = a32(data) + 0x100;
+        frame[fs->reg] = a32(data) + 0x100 - fs->padding; /* where the farm's hook read the page */
         TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
         TEST_ASSERT_(vjo_hooks_snap(1, &s), "%s: the hit is in its stream", row->title);
         TEST_CHECK_(s.n == row->n && s.encoding == VJO_HOOK_ENC_SC3 && !memcmp(s.raw, row->raw, row->n),
@@ -2112,16 +2226,16 @@ static void test_sc3_sites(void)
         TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq == seq && s.hits == 2);
         /* no end token within 512 bytes: no hit */
         for (unsigned i = 0; i < VJO_HOOK_RAW_BYTES; i += 2) data[0x400 + i] = 0x80, data[0x401 + i] = 0x01;
-        frame[0] = a32(data) + 0x400;
+        frame[fs->reg] = a32(data) + 0x400 - fs->padding;
         vjo_hooks_observe(0, frame);
         TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq == seq && s.hits == 2);
         /* a string that ends at its block's end: the read stops there and keeps it */
         memcpy(data + DATA_SIZE - row->n, row->raw, row->n);
-        frame[0] = a32(data) + DATA_SIZE - row->n;
+        frame[fs->reg] = a32(data) + DATA_SIZE - row->n - fs->padding;
         vjo_hooks_observe(0, frame);
         TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq == seq && s.hits == 3 && s.n == row->n);
         TEST_CHECK(!vjo_hooks_sc3_set(NULL, 0) && vjo_hooks_text(&s, text, sizeof text) == 0); /* forgotten */
-        memset(seg + v->off, 0, v->sig_len);
+        memset(seg + fs->off, 0, fs->sig_len);
     }
     TEST_CHECK_(titles == 3, "excerpts of %u titles", titles);
     /* a site without an SC3 entry wants no charset */
@@ -2276,9 +2390,9 @@ TEST_LIST = {
     {"a verified entry at a Luna site's address takes Luna's text processing", test_verified_takes_luna_text},
     {"a verified entry: deref, its own filter in place of a Luna site's", test_verified_deref_and_filter},
     {"a verified entry's APP_VER: only that version, read without Luna sites", test_verified_version},
-    {"a verified entry's page record of cells, at the site's distance", test_verified_cells},
+    {"a verified entry's page record of cells; r15 only with segment 0 at 0x81000000", test_verified_cells},
     {"SC3 sites: the string through its end token, the pinned charset, the farm's text", test_sc3_sites},
-    {"the farm's excerpts through each verified entry: its bytes, register, read and filter", test_farm_excerpts},
+    {"the farm's excerpts through each verified entry, in the game as the farm recorded its hook", test_farm_excerpts},
     {"TIME TRAVELERS: Luna's sites at their own addresses in a segment 0 at 0x81000000", test_luna_own_address},
     {"clean controls from CALL and table-site streams in every encoding", test_clean_stream_text},
     {"exact build SHA-256: whole executable, worker only, safe failure", test_exact_build_identity},

@@ -10,16 +10,23 @@ them (text_clean: what the farm verified as drawn). The bucket is private (copyr
   hook_farm.py --bucket DIR inventory            the Vita titles, their farm hook and Rubi's entry (Markdown)
   hook_farm.py --bucket DIR check [TITLE ...]    Rubi's text for every recorded hit (host/hook_farm_check.c,
                                                  built here with cc) against the farm's page text
-  hook_farm.py --bucket DIR fixtures [--out F]   the committed excerpts (host/tests/fixtures/hook_farm.inc)
+  hook_farm.py --bucket DIR fixtures [--out F]   the committed excerpts and the farm's hook records
+                                                 (host/tests/fixtures/hook_farm.inc)
 
 check compares each single-hit page's text two ways: exactly, and as shown: both texts normalised as the worker
 normalises what it shows (core/textnorm.h: ！ as !, the dashes, the ellipses...), white space at the two ends of
 the text dropped (Rubi's filters trim the first line's indentation and blank lines, the farm keeps them), and the
-farm's U+F8F0 read as U+3000 (its cp932 codec's 0xA0, a blank cell: its glyph-cell line labels have U+3000) and
+farm's U+F8F0 read as U+3000 (its cp932 codec's 0xA0, a drawn blank cell: the farm's line labels leave the blank out,
+but their glyph counts are one higher per blank, 164 of the 165 labels that span one in PCSG00540's pages) and
 its C0 controls dropped as vjo_hook_clean drops them (PCSG00380's button icons: Rubi draws no icon). A
 page whose shown text differs only by a player name the filter writes (DEFAULT_NAMES: the farm's text dropped the
 name code, its glyph count shows the name drawn) is counted apart. The worker keeps a site's latest hit, so a
 page the farm built from several hits is compared with its hits' texts joined by line breaks.
+
+fixtures writes, per title Rubi has an entry for at the farm's site, the farm's record of its hook (rubi-hook.json:
+the module NID, offset, mode, register, padding, encoding, the reader and the 16 bytes there), which the engine test
+installs as the game for Rubi's entry (#316's audit F3: not Rubi's own NID, bytes, register and padding), and for
+each such title but the SC3 ones (their excerpts are tools/sc3_charset.py --fixtures') up to 5 short excerpts.
 """
 import argparse
 import json
@@ -230,6 +237,71 @@ def c_bytes(raw):
     return "".join("\\x%02X" % b for b in raw)
 
 
+ENC_NAMES = {"cp932": "VJO_HOOK_ENC_CP932", "utf-8": "VJO_HOOK_ENC_UTF8", "utf-16le": "VJO_HOOK_ENC_UTF16LE"}
+# The mode of the farm's records whose note says to check it by disassembly (their recorded thumb flag is not the
+# code's), decided from the 16 bytes the record holds with LLVM 18.1.8's llvm-mc (`--disassemble`, `-triple
+# thumbv7-none-eabi` and `armv7-none-eabi`): title -> (those bytes, 1 Thumb or 0 ARM). audit-rubi-audit-fix-hooks A-F1:
+# without it the engine test left these entries' mode unchecked. A record with other bytes stops `fixtures` until its
+# mode is decided here.
+MODES_BY_DISASSEMBLY = {
+    # push.w {r4-r8, r11, lr}; sub sp, #20; movs r1, #0; ... (as ARM its last two words do not decode)
+    "PCSG00469": ("2de9f04985b000210091041c049183f1", 1),
+    # adds r2, r5, #0; adds.w r0, r4, #0x9c0; ... (at +0x12C76, 2 mod 4, where no ARM instruction can start)
+    "PCSG00509": ("2a1c14f51c6000255ff482710023fef7", 1),
+    # mov r12, sp; push {r4-r8, r11, r12, lr}; sub sp, sp, #32; mov r11, sp (as Thumb its fourth halfword does not
+    # decode); the same bytes for PCSG00807 (both Rejet's Unity builds)
+    "PCSG00553": ("0dc0a0e1f0592de920d04de20db0a0e1", 0),
+    "PCSG00807": ("0dc0a0e1f0592de920d04de20db0a0e1", 0),
+}
+
+
+def farm_mode(hook):
+    """The record's mode: its thumb flag, or for a record that says to check its mode by disassembly the decided one
+    (MODES_BY_DISASSEMBLY, for exactly the bytes it was decided on)."""
+    if "check mode" not in (hook.get("mode_note") or ""):
+        return int(hook["thumb"])
+    sig, mode = MODES_BY_DISASSEMBLY.get(hook.get("title"), (None, None))
+    if sig != (hook.get("signature") or "").lower():
+        raise SystemExit("%s: the farm's record says to check its mode by disassembly: decide it from its bytes (%s) "
+                         "and add it to MODES_BY_DISASSEMBLY" % (hook.get("title"), hook.get("signature")))
+    return mode
+
+
+def farm_site(hook):
+    """The farm's record of its hook (rubi-hook.json) in the terms of Rubi's VjoPlaceVerified, or None for a record
+    without a site: (offset, module NID, Thumb (farm_mode: the flag, or the mode the bytes decode to where the record
+    says to check it by disassembly), register, padding (the farm's; an address of the game's when it is 0x81000000 or
+    more: its register is 0 at the site, VNCAPTURE_HOOK_OFFSET), encoding, read, the reader's count and data offsets (a
+    cell record's), the 16 bytes)."""
+    if not hook.get("segment0_offset") or not hook.get("signature") or not hook.get("module_nid"):
+        return None
+    reader = {k: v for k, v in (hook.get("reader") or {}).items() if k not in ("schema", "encoding", "provenance")}
+    count_off = data_off = 0
+    if hook.get("terminator") == "sc3":  # MAGES' script text, through its end token (tools/sc3_charset.py)
+        enc, read = "VJO_HOOK_ENC_SC3", "VJO_PLACE_READ_SC3"
+    else:
+        enc = ENC_NAMES[hook["encoding"]]
+        length = reader.pop("length", None)
+        pointers = reader.pop("pointer_offsets", None)
+        data = reader.pop("data_offset", None)
+        if reader:
+            raise SystemExit("%s: a reader Rubi has no read for: %s" % (hook.get("title"), sorted(reader)))
+        if length is not None:  # a count of 16-bit cells, then the cells (VJO_PLACE_READ_CELLS)
+            if (length.get("width"), length.get("scale"), length.get("unit")) != (4, 2, "bytes") or pointers:
+                raise SystemExit("%s: a length reader Rubi has no read for: %r" % (hook.get("title"), length))
+            read, count_off, data_off = "VJO_PLACE_READ_CELLS", int(length["offset"]), int(data or 0)
+        elif pointers == [0]:  # the string's pointer there (VJO_PLACE_READ_DEREF)
+            read = "VJO_PLACE_READ_DEREF"
+        elif pointers or data:
+            raise SystemExit("%s: a pointer reader Rubi has no read for: %r" % (hook.get("title"), pointers))
+        else:
+            read = "VJO_PLACE_READ_STRING"
+    sig = bytes.fromhex(hook["signature"])
+    thumb = farm_mode(hook)
+    return (int(hook["segment0_offset"], 16), int(hook["module_nid"], 16), thumb, int(hook["register"]),
+            int(hook.get("padding") or 0) & 0xFFFFFFFF, enc, read, count_off, data_off, sig)
+
+
 def features(raw_text, text):
     """What a hit exercises: each ASCII character of its raw text (the codes are ASCII), the marks the filters
     map (half-width kana, ･ ﾞ ﾟ, ＊, 《》, U+3000, the 0xA0 blank), and a line break in its text."""
@@ -248,7 +320,9 @@ def cmd_fixtures(args):
     """Short excerpts of the farm's single-hit pages for the entries Rubi has: per title, at most
     args.per_title pages of at most args.max_bytes raw bytes that Rubi turns into exactly the farm's text (its
     U+F8F0 as U+3000),
-    chosen to cover the codes its hits hold (features), the most new ones per byte first."""
+    chosen to cover the codes its hits hold (features), the most new ones per byte first; and per title Rubi has an
+    entry for at the farm's site (SC3 ones too, whose excerpts are tools/sc3_charset.py --fixtures'), the farm's
+    record of the hook (farm_site)."""
     with tempfile.TemporaryDirectory() as tmp:
         exe = build_checker(tmp)
         out = ["/* Generated by tools/hook_farm.py fixtures from the psandvita farm's approved pages: per verified",
@@ -256,10 +330,20 @@ def cmd_fixtures(args):
                " * farm verified against the frame the game drew, which Rubi gives exactly (the farm's U+F8F0, its",
                " * cp932 codec's 0xA0, a blank cell, as U+3000). Short excerpts only, never a script. Do not edit:",
                " * regenerate. */"]
+        sites = []
         n_all = 0
         for tid, folder in titles(args.bucket):
             hook = load_json(os.path.join(folder, "hook", "rubi-hook.json")) or {}
             av = app_ver_bcd(hook.get("app_ver"))
+            # the farm's record, of a title Rubi has an entry for at its site (the checker finds one there)
+            at = hook.get("segment0_offset")
+            if at and run_checker(exe, [(tid, int(at, 16), av, b"")])[0][0] != "noentry":
+                site = farm_site(hook)
+                off, nid, thumb, reg, pad, enc, read, count_off, data_off, sig = site
+                sites.append("    {\"%s\", 0x%08Xu, 0x%Xu, %d, %d, 0x%08Xu, %s, %s, 0x%02Xu, 0x%02Xu, \"%s\", %d}," % (
+                    tid, nid, off, thumb, reg, pad, enc, read, count_off, data_off, c_bytes(sig), len(sig)))
+                if read == "VJO_PLACE_READ_SC3":
+                    continue
             recs = [r for r in pages(folder) if r.get("review_state") == "approved" and len(r["raw_text_events"]) == 1]
             cands = []
             for r in recs:
@@ -297,9 +381,14 @@ def cmd_fixtures(args):
                 n_all += 1
         out.append("#define HOOK_FARM_FIXTURES %d" % n_all)
         text = "\n".join(out[:5]) + "\n#define HOOK_FARM_ROWS \\\n" + " \\\n".join(out[5:-1]) + "\n" + out[-1] + "\n"
+        # the farm's hook records (farm_site): {title, NID, offset, Thumb (-1: unchecked), register, padding,
+        # encoding, read, a cell record's count and data offsets, the bytes at the site, their number}
+        text += ("/* The farm's record of each hook Rubi has an entry for (rubi-hook.json, its reader): the game the\n"
+                 " * engine test runs Rubi's entry in. */\n#define HOOK_FARM_SITES \\\n" + " \\\n".join(sites) +
+                 "\n#define HOOK_FARM_SITE_COUNT %d\n" % len(sites))
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(text)
-        print("%s: %d excerpts" % (args.out, n_all))
+        print("%s: %d excerpts, %d hook records" % (args.out, n_all, len(sites)))
 
 
 def main():

@@ -121,7 +121,9 @@ struct VjoLocalPages { /* typedef in client.h */
 };
 
 /* vjo_local_lookup_at for up to `limit` (1..8) dictionaries. Page 0 is exactly
- * vjo_local_lookup_at's single result, also read into res. Later pages are the
+ * vjo_local_lookup_at's single result, also read into res, but for names_first's word
+ * before a name (docs/local-dictionaries.md "Names and words": one result stops before
+ * the first dictionary's inflections are read). Later pages are the
  * same word in the other dictionaries: each one's best match (as above) over
  * page 0's span, in local_dictionaries order; a dictionary with only a shorter
  * match has no page. Only their locators are kept. limit 1 performs the same

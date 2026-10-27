@@ -180,15 +180,17 @@ build shell_divide host/tests/test_shell_divide.c
 # The Rubi app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
 # picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.
 BS=third_party/bearssl/src
-APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c core/textjoin.c core/anki_queue.c core/json.c
-      core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
-      "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
+APKG=(host/tests/test_apkg.c settings/app_queue.c settings/cards.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c
+      core/textjoin.c core/anki_queue.c core/json.c
+      core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c core/word_key.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
+      "$BS/codec/dec32be.c" "$BS/codec/enc32be.c" core/sentence_reading.c core/local_dict.c settings/app_platform.c
+      core/config.c core/games.c) # (#311's readings test makes a VjoConfig; config.c reads games.c's finder names)
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 # The native hooks (core/hook_text.c, hook_re.c, hook_luna.c): the decoders, the regex VM's 16-bit
 # positions and 32-bit longs, LunaTranslator's table and its ports on the Vita's word size.
 build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c core/utf.c core/text_rows.c "$BS/hash/sha2small.c" \
   "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
-build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
+build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c core/textnorm.c
 # The debug build's PSP probe (core/psp_probe.c): its reads' bounds in 32-bit arithmetic. PSP text
 # (core/psp_text.c): its poll and the engines' filters, on the Vita's word size.
 build psp_probe host/tests/test_psp_probe.c core/psp_probe.c core/psp_text.c
@@ -217,6 +219,9 @@ TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe psp_text hooks_
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
+  # API 54: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT); core/vocr_ocr.c
+  # links it. VJO_VOCR_SPOT_SOURCE_DIR, else the recognizer's checkout when it holds it.
+  SPOT_RT=${VJO_VOCR_SPOT_SOURCE_DIR:-$VJO_VOCR_SOURCE_DIR}/runtime
   MODEL_DEF=()
   [ -n "${VJO_VOCR_MODEL_DIR:-}" ] && MODEL_DEF=(-DVJO_VOCR_MODEL_DIR="\"$VJO_VOCR_MODEL_DIR\"")
   capture_parity() {
@@ -225,11 +230,12 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_scene.o" kernel/scene.c &&
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_suggest.o" core/region_suggest.c && # #358: the kana count (VJO_HOST)
     "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
-      "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
+      "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I "$SPOT_RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
       -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
       "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$OUT/parity_suggest.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
       "$RT/vocr_lines_rows.c" "$RT/vocr_lines_fix.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
-      "$RT/vocr_vertical.c" "$RT/vocr_charbox.c" third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
+      "$RT/vocr_vertical.c" "$RT/vocr_charbox.c" "$SPOT_RT/vocr_textspot6.c" \
+      third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
       third_party/bearssl/src/codec/enc32be.c -lm
   }
   bg build-capture_parity capture_parity

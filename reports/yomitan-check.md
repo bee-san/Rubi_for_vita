@@ -14,6 +14,14 @@ ranks ([remaining](#what-remains), [#321](https://github.com/bee-san/Rubi_for_vi
 pitch dictionary shows one on 549 of every 1,000 taps. All of this is host measurement; nothing here
 has run on a console.
 
+**#321** ([below](#321-what-remained)) fixed what of the rest is the lookup's, measured the same way: a particle
+before a form of する or a katakana word is the particle (気がした, のマンション), ranks of another word are hidden,
+a frequent word comes before a character's name spelled as the text (わたし: 私), and four of the audit's lookups.
+It changes 753 shown entries: SudachiPy calls 661 better and none worse, and 619 of them move away from
+Yomitan's first entry, which reads those particles into the next word too, so the mismatch with Yomitan rises to
+75.27 per 1,000 while SudachiPy's disagreement with the shown entry falls from 285.28 to 275.04 (Yomitan's:
+286.47).
+
 ## How it was measured
 
 - **Lines.** The dialogue of vita-vn-ocr's vocr6-ingest page pool (`pagepool/v1`, manifest sha256
@@ -109,40 +117,105 @@ lines are unchanged (6.12 first word, 5.50 word by word, 5.53 letter by letter; 
 so the console estimate is too. The table grows from 569 rules to 724 and the Shell's pages do not:
 the table is packed ([memory ledger](../docs/memory-ledger.md#yomitans-deinflection-rules-a-packed-table)).
 
+## #321: what remained
+
+[#321](https://github.com/bee-san/Rubi_for_vita/issues/321) listed what #320 left: the classes below, and its
+audit's lookups. Measured the same way, main `68041a7` against #321's change, on the 64,579 taps and, for what
+changes elsewhere, on 330,517 taps of 27,970 lines of the same 46 games (`build_corpus.py --lines 40000 --seed
+321`: every train page the pool has, so it holds the 5,000):
+
+| | main | #321 |
+|---|---:|---:|
+| Shown entry differs from Yomitan's first, per 1,000 taps | 65.76 | **75.27** |
+| SudachiPy's token disagrees with the shown entry, per 1,000 (Yomitan's first entry: 286.47) | 285.28 | **275.04** |
+| Rubi's rank is none of Jiten's values Yomitan shows (same headword), per 1,000 | 9.60 | 4.89 |
+| A name first, the word of its span second, per 1,000 | 4.78 | 3.31 |
+
+The mismatch with Yomitan rises because #321 departs from Yomitan's first entry where both read a particle into
+the next word: of the 753 shown entries it changes (spans or headwords), 619 move away from Yomitan's and 5 toward
+it, and SudachiPy calls 661 better, 92 the same (わたし: it cannot tell a name from 私) and none worse. On the 330,517
+taps, 3,962 shown entries change: 3,494 better, 465 the same, 3 worse (below). By change, on the 64,579 taps (the
+330,517 in brackets):
+
+- **A particle before a katakana word**, 457 taps (2,341): one of が も は に の か と で を へ や な in hiragana
+  before a katakana letter (not the small ァィゥェォ or ッ) is the particle. Rubi read the word as a homograph or an inflection of a word
+  starting with the particle, and so did Yomitan, through its katakana-to-hiragana step: のマンション 飲む's `-ん`,
+  のメンバー 飲める, にエントリー 煮える, とセンパイ 渡船, のスタッフ のす, のカバン のか, はデート 派手. Not before ァィゥェォ, ッ
+  or ー (はァ, へッ: interjections). A katakana ending of one word loses: でチュ, a baby-talk です (10 taps of one game
+  in the 330,517), is で.
+- **A particle before a form of する**, 198 taps (1,125): が も は に の か in hiragana and a candidate that is the
+  particle and す or する are the particle, unless an entry is spelled as the whole span (がする, もしかして, にしても).
+  The audit's 38 (が + する as 賀す or 賀する, も + する as 燃す or 模する) and more: 目にした was the grammar entry にす
+  (a classical negation) 25 times, にしておく にす, はしない 馳す, 気のせい のす, どうかした 貸す, ぼくはそう 破窓, もしかして
+  at か 貸し手. Another word's inflection does not keep the span: kept, にさせる would be 似る and はせず 馳せる (24
+  taps of the 330,517 worse, 2 better); so かすれた (掠れる) is か, and かすれ (カスレ, wrong either way) too: 2 of the 3
+  worse.
+- **Ranks of a different word hidden**, 223 taps (1,377): a rank from a spelling-only Jiten row matched only after
+  kana normalisation shows as none, as in Yomitan (だと ダト's #73,969, はない, のな, にす ニス's, もか, イル いる's #37, ラ ら's).
+  It still ranks the entry; the posting hints and the frozen file are unchanged.
+- **Names first** (`names_first = auto`, the default): 91 taps (456), わたし 私 89 (449), あたる 当たる 1 (5), イチ 一 1
+  (2). [The measurement](../docs/local-dictionaries.md#names-and-words): of 309 taps with a name first and the word below,
+  the name is right in 188 and the word in 109, 89 of them わたし, the only word among the 1,023 most frequent.
+  `on` keeps Rubi 0.9.8's order, `off` puts every word first.
+- **Labels**, 14 taps (108): the contracted progressive (してんの, 言ってんだ, バカにされてん: `-te → progressive or
+  perfect`, not `... → -n`, 8), and `-おく` through `-て` as Yomitan (言っとく, 払っとく: `-te → -toku`, 6), which also
+  makes 行っとく 行く, not 行う (1 tap of the 330,517).
+- **The causative passive as two steps**, 5 taps (25): かわされた 交わす, not 買う; 飛ばされた 飛ばす, 聞かされた 聞かす,
+  立たされて 立たす, 思い知らされる 思い知らす, 待たされた 待たす, 悩まされて 悩ます (each the passive of its own word, as
+  Yomitan, whose causative passive is two steps).
+- **`-ん`'s かん left out**, 2 taps (14): 手をつかんで 手, not 手をつく; なんだかわかんない at か かわ (乾く before: wrong either way);
+  宙に浮かんだ 宙. しておかん loses its `-toku → -n` and shows して (the 3rd worse), and 話をしておかん shows 話をする over
+  話をして, `-te` only (SudachiPy: the same; #321's audit).
+
+The Shell's pages are unchanged; the rule table moved to the data segment
+([memory ledger](../docs/memory-ledger.md#lookups-321)).
+
 ## What remains
 
-None of these is a clear bug in the lookup code; they are design choices, the frozen dictionary's data,
-or missing data, for the owner to decide ([#321](https://github.com/bee-san/Rubi_for_vita/issues/321)):
+None of these is a bug in the lookup code: they are design choices, which #321 keeps, the frozen dictionary's data,
+or missing data:
 
 - **Pitch accents (548.68 / 1,000).** Rubi's files have no pitch data and the popup has no pitch line;
   `VjoVocab.pitch` and the Anki card's pitch fields stay empty. Kanjium's accents (124,137 rows, 3.2 MB
-  text) would cover them; adding them needs a format field or a separate file, and popup space.
+  text, CC BY-SA 4.0) would cover them, as a file of their own: the frozen bundle has no field for them, and the
+  Shell has no room for a second file's lookup and a pitch line (after #321 its debug build has 20 B of code
+  room). Their likeliest place is the Rubi app's card export, which runs beside no game.
 - **Reading ties (9.86).** Jiten gives every reading of a spelling one rank (恐怖 きょうふ and くふ both
   1,692), so the longer article decides: 恐怖 くふ, 化粧 けそう, 一言 いちげん, 真実 しんじち, 雰囲気 ふいんき.
   Of the 637 taps, 354 are such ties; Jiten's kana-form ranks (㋕) of the two readings would choose
   Yomitan's reading in 206 (Sudachi agreeing in 173) and keep Rubi's in 148. Breaking ties by source
   order instead is worse (68.55 overall). A fix needs those ranks in the dictionary (the bundle is
-  frozen).
+  frozen) or a table of the tied spellings in the Shell (no room).
 - **Rubi-only entries (15.36).** Bee's Ultimate Dictionary's grammar points match longer spans than any
   of Yomitan's dictionaries: のこと, 前に, がある, になる, んだけど, と思う. Sudachi splits 434 of the 992,
   agrees with neither in the rest. By design; whether 前に and の姿 should win over 前 and の is a content
   question.
-- **Kana or kanji spelling (16.72).** The same word headed by another spelling: Rubi's common-readings
+- **Kana or kanji spelling (16.69).** The same word headed by another spelling: Rubi's common-readings
   table (そう → 然う, ここ → 此処, いい → 良い) and the bundle's deduplication choose the kanji spelling where
   Yomitan's JMdict shows the kana one. Same word and definition; cosmetic.
-- **Kana names before words (4.78).** A name spelled as the text beats a word spelled otherwise, in any
-  dictionary (the cross-dictionary rule), so わたし shows the character わたし with 私 below it (89 taps),
-  and みちる, なぎさ, いのり likewise. Yomitan does the same (5.99), but Rubi's docs say the names come
-  after the word ("2: a word, then the same word as a character's name").
-- **Ranks of a different word (3.98).** The bundle's converter matches a spelling-only Jiten row after
-  kana normalization, so だと shows ダト's #73,969, もか モカ's #45,140, にす ニス's #34,211, where Yomitan
-  shows no rank. The bundle records the match kind (bits 25-27); a display rule could hide these.
-- **Names have no rank (5.62).** vndb-names.vjdict is format 2: わたし, なぎさ show no Jiten rank.
+- **Names have no rank.** vndb-names.vjdict is format 2: わたし, なぎさ show no Jiten rank. Yomitan shows the
+  word's (わたし #1,901㋕ is the pronoun's) on the name; Rubi does not put a word's rank on a character.
+- **The prohibitive な.** 見るな shows 見る without "imperative negative", as in Yomitan: な is the next word, whose
+  entry is the prohibition (#14). The bare rule that labelled it misread 81 of its 101 taps (なら, なんて, なのに,
+  なり, 失礼な), and limited to verb endings it would still label なら and なんて after a verb.
 - **Yomitan rules not taken.** `-げ` (気 after a verb: していた気), kansai-ben (作られへん, but also 言うたび
   as 言うた), `-まい` (あるまい), `-ふ` and emphatic-sequence collapsing (なーんて): each matches more
-  wrongly than rightly here, or too rarely to measure.
-- **Equal-depth ties.** つかまれた (掴む passive or 捕まる potential), かわされた (交わす or Yomichan's 買う
-  causative passive), なれる (なる potential or 慣れる): the rank decides, as in Yomitan.
+  wrongly than rightly here, or too rarely to measure. The colloquial ら → ん before ない (知んない, 変わんない,
+  たまんない) has no rule in either; one (んない → らない) would also read 案内 written あんない as ある.
+- **Equal-depth ties.** つかまれた (掴む's passive or 捕まる's potential) and なれる (なる's potential or 慣れる): the
+  rank decides, as in Yomitan.
+- **`names_first` with Dictionaries shown 1.** One result stops at the name before the first dictionary's
+  inflections are read, so with `off` the first entry can differ from two shown: 8 of the 759,994 character
+  positions of the 27,970 lines, none with `auto` or `on`
+  ([names and words](../docs/local-dictionaries.md#names-and-words); #321's audit). Reading on for one result costs file reads; leaving out only the inflection's homograph (half of
+  it) measured 16 B of the debug Shell's code and 48 B of the normal's.
+- **A phrase at a longer span.** ないねぇ shows 無い無い and ものがねぇ 物が無い (`-え`'s ねぇ read as ない after ない
+  and が, 2 taps), as in Yomitan.
+- **とっておき** shows とる's `-te → -toku → masu stem` (1 tap; 5 of the 330,517): its entries are spelled in kanji
+  (取って置き), and at one span a kana inflection of a kana entry (the grammar entry とる) beats a kanji homograph by
+  design (kana text finds its kana word or its inflection first: した する, not 下). A row in the lookup tables
+  (`tools/lookup_tables.txt`) would fix it; since #371 those tables are also the bundled dictionary's table hints, so a
+  row changes the released file's pin. Not worth one tap.
 
 ## Reproduce
 
@@ -159,7 +232,10 @@ node tools/yomitan_check/yomitan_lookup.mjs --yomitan $A/yomitan --dicts $A/yomi
 build/host/vjo-dict-taps DICTS plaintext.vjdict,vndb-names.vjdict < $A/corpus.tsv > $A/rubi.tsv
 python3 tools/yomitan_check/compare.py --corpus $A/corpus.jsonl --rubi $A/rubi.tsv \
     --yomitan $A/yomitan.jsonl --rubi-dict DICTS/plaintext.vjdict --names-dict DICTS/vndb-names.vjdict \
-    --sources $A/yomitan-dicts -o $A/report.json
+    --sources $A/yomitan-dicts --examples 30 -o $A/report.json
+# #321's wider check, Rubi only (every train page of the pool: 27,970 lines, 330,517 taps)
+python3 tools/yomitan_check/build_corpus.py --pagepool POOL/pagepool/v1 --splits POOL/splits_v1.json \
+    --lines 40000 --seed 321 -o $A/big.jsonl --manifest $A/big-manifest.json
 ```
 
 `corpus.tsv` is `id\ttext\ttaps` from `corpus.jsonl`. The fleet's copy of every input and output is

@@ -90,21 +90,35 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
   With a minimum of 8 bytes it refused real text: ソラユメ, 逢魔が刻, イヴァン, ジャンル, ダンベル, チンピラ,
   佐伯世羅, 森嶋永遠 (8 bytes each in CP932) and 18分前 in UTF-8, so the minimum is 20 (5 words)
   [measured: `$HERD/shared/artifacts/hooks-fix-engine/prefilter_false_refusals*.txt`];
-- the text then goes to its caller's stream: the stream key is the caller's return address (LR). A new
-  caller claims a free CALL slot (9-20). When all 12 hold other callers, it takes the one written least
-  recently (a slot that never had text first, then the earliest sequence stamp) that is not kept, under that slot's try-lock: the slot's
-  key, hits and text become the new caller's, so a job's snapshot sees another key for that ID; a busy
-  slot, or every slot kept, drops the hit, never waiting. The new caller looks for that slot without the slots'
-  locks while other callers write them, so under the lock its choice is checked: a slot written since it looked
-  (its caller's new text, or another new caller that took it) is no longer the least recently written, and the hit
-  is dropped too. Before #366 the newest stream could lose its slot that way, and also when its caller wrote while
-  the new one looked: the search read the clock first, so that stream's newer stamp looked about 2^32 old. The
-  stamps compare in the clock's serial order, as the job's do. A stream that agreed with OCR, and a stream pinned by a
-  diagnostic request, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. An agreeing
-  stream is kept only while its slot still holds the caller the job's snapshot saw (checked under the
-  slot's lock), so a slot another caller took during the job is not kept for the new one. The job's
-  result says `VJO_HOOK_R_CALLS_FULL` (0x40 in `hook_flags`, the debug log's `flags`) once a caller found
-  every slot taken (`vjo_hooks_call_stats`: hits dropped for lack of a slot, callers that replaced one).
+- the text then goes to its caller's stream: the stream key is the caller's return address (LR). A new caller claims a
+  free CALL slot (9-20). When all 12 hold other callers, it takes the one written least recently (a slot that never
+  had text first, then the earliest sequence stamp) that is not kept, under that slot's try-lock: the slot's key, hits
+  and text become the new caller's, so a job's snapshot sees another key for that ID; a busy slot, or every slot kept,
+  drops the hit, never waiting. The new caller looks for that slot without the slots' locks while other callers write
+  them, so under the lock its choice is checked: a slot written since it looked (its caller's new text, or another new
+  caller that took it) is no longer the least recently written, and the hit is dropped too. Before #366 the newest
+  stream could lose its slot that way, and also when its caller wrote while the new one looked: the search read the
+  clock first, so that stream's newer stamp looked about 2^32 old. The stamps compare in the clock's serial order, as
+  the job's do (within 2^31 new texts of each other: a stream silent for longer ranks as new). **A new caller can
+  wait** while the least recently written slot stays busy: its caller off the CPU with the lock held, while the other
+  callers keep every CPU busy writing. On the host's hammer test (12 callers copying text in tight loops, with new
+  ones beside them) its longest wait on three or four CPUs was 0.21-0.48 s, against 0.04-0.05 s before #366, whose
+  quick takes were then almost all of the newest stream's slot, and on one CPU about 0.45 s for both (another run of
+  the audit's: 0.25-0.49 s against 0.05-0.16 s); callers spinning 100 µs between copies, 0.18 s against 0.05 s; with
+  callers that sleep between copies (1 ms, 100 µs, a frame) it waited no longer than before (at most 17 ms). Passing a
+  busy slot over would end the wait, but it gave callers with two or more threads two slots (223 to 3,880 times in 20
+  runs of 500 ms, against none), and the second one keeps the text it was taken with; so a busy oldest slot still
+  drops the hit. Should a caller still hold two slots, the job takes the newer of them for the learned source, the one
+  its caller writes (`hooks_snapshot`, #366's audit-b): before, it took the last in ID order, so with trust it showed
+  the second slot's old line on every job, without OCR. The console's rate of string copies with every slot taken is
+  unmeasured. A stream that agreed with OCR, and a stream pinned by a diagnostic request, is kept (`vjo_hooks_keep`,
+  from the job path): never given to another caller. Both keep it under the slot's try-lock (busy: at the next such
+  job), so a keep never lands while a new caller is taking the slot, where it once let that caller's other thread pass
+  the slot over as kept and take a second one (#366's audit-b). An agreeing stream is kept only while its slot still
+  holds the caller the job's snapshot saw (checked under the slot's lock), so a slot another caller took during the
+  job is not kept for the new one. The job's result says `VJO_HOOK_R_CALLS_FULL` (0x40 in `hook_flags`, the debug
+  log's `flags`) once a caller found every slot taken (`vjo_hooks_call_stats`: hits dropped for lack of a slot,
+  callers that replaced one).
 
 No syscall, no allocation and no waiting in this path: the slot's try-lock is taken or the hit is
 dropped (and counted). Our own worker's string calls are not hooked: only the main module's imports are.
@@ -159,7 +173,8 @@ Two lists name them:
   - Other engines from the psandvita Vita3K farm, Rubi's own sites (proven in Vita3K only; patched bytes checked as above):
     - PCSG00450 キャプテン・アース Mind Labyrinth, NID 0x28CB1B14, +0x6AB56, Thumb, r1 + 32 (deref), UTF-16LE, filter `RF_PCSG00450`; 78 farm pages
     - PCSG00509 POSSESSION MAGENTA, NID 0xA11A6741, +0x12C76, Thumb, r0, CP932, filter `RF_PCSG00509`; 1299 farm pages
-    - PCSG00540 忠臣蔵46+1 V, NID 0xC595CF25, +0x2B90A, Thumb, r1, CP932, filter `RF_PCSG00540`; 1037 farm pages
+    - PCSG00540 忠臣蔵46+1 V, NID 0xC595CF25, +0x2B90A, Thumb, r1, CP932 with its 0xA0 (`VJO_HOOK_ENC_CP932_A0`), filter
+      `RF_PCSG00540`; 1037 farm pages
     - PCSG00553 剣が君 for V, NID 0xCF234754, +0x11452B8, ARM, r1 + 12, UTF-16LE, filter `RF_BR_NEWLINE`; 1130 farm pages
     - PCSG00648 月に寄りそう乙女の作法, NID 0xE5819F44, +0x26EFA, Thumb, r2, CP932, filter `RF_ANGLE_RUBY`; 1397 farm pages
     - PCSG00713 百花百狼 ～戦国忍法帖～, NID 0x08B1647C, +0x112F46, Thumb, r6, UTF-8, filter none; 1464 farm pages
@@ -214,7 +229,8 @@ Two lists name them:
     (disassembled with LLVM 18's `llvm-mc`). **Unchecked for these two:** a branch elsewhere in segment 0 into
     the middle of the patched bytes, which the entries above had checked on their dumps (one would crash the
     game when it is taken; the farm's dumps, on the owner's machine, can settle it):
-    - PCSG00628 ALIA's CARNIVAL! サクラメント (APP_VER 01.00), NID 0x1EE45F02, +0x3373C, Thumb, r5, CP932, filter
+    - PCSG00628 ALIA's CARNIVAL! サクラメント (APP_VER 01.00), NID 0x1EE45F02, +0x3373C, Thumb, r5, CP932 with its 0xA0
+      (`VJO_HOOK_ENC_CP932_A0`), filter
       `RF_PCSG00628`; 1208 farm pages. Patch: `str r4, [r6, #0x2c]; movs r4, #0; str.w r9, [r6, #0xb4]`.
     - PCSG00380 真 流行り神 (APP_VER 01.00), NID 0x9A11E118, +0x4DE9E, Thumb, r15 + 0x98E152, the cells of
       foaf4's page record (`VJO_PLACE_READ_CELLS`), CP932, filter `RF_PCSG00380`; 1095 farm pages. The site is
@@ -222,20 +238,31 @@ Two lists name them:
       cells) and an unchanged text counts a hit only. Patch (12 bytes): `str r4, [sp, #0xa8]; movt r0,
       #0x819d; ldr r7, [r0]; ldr.w r12, [r0, #0x4]`. The record is a static (`.bss`), which the farm read at
       0x819DBFF0 with segment 0 at 0x81000000 (its r4, 0 at the site, + that address): r15, the site's own
-      address, + 0x98E152 is that address wherever the eboot is loaded as it was linked. A game built with an
-      SDK up to about 3.00 is a statically linked executable at 0x81000000 that cannot be relocated
-      ([h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md));
-      真 流行り神 came out in 2014. Were it relocated, the loader would also rewrite the `movt r0, #0x819d` in
-      the recorded bytes (a static's address in the record's 64 KiB), so the signature refuses the entry unless
-      it came out as in Vita3K. Every read stays inside one readable memory block (`read_game`): a wrong record
-      gives no text, or one that OCR does not agree with, never a fault.
+      address, + 0x98E152 is that address only where the eboot is loaded as it was linked. Nothing the farm
+      recorded says whether this eboot is a fixed-address executable (its ELF type or SDK is in no file of the
+      bucket), so the worker makes sure of what it can: an entry whose register is r15 is installed only when
+      segment 0 is at 0x81000000, where the farm read the record, and is otherwise refused as `relocated`
+      (`VJO_PLACE_RELOCATED`, after its bytes and NID matched; #316's audit F4). A fixed-address executable is
+      loaded there and all of it where it was linked: games built with an SDK 2.60 and lower "were compiled as a
+      statically linked executable, thus their loading address is always the same, namely `0x81000000`, and they
+      cannot be relocated", and a relocatable one is placed by the loader's ASLR ("It seems like ASLR is only enabled
+      for executables/modules", [h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md)),
+      so it is not expected at exactly 0x81000000 (not measured in Rubi's logs: console step 15 asks for CLANNAD's
+      `seg0`, a relocatable eboot's, from two starts). What the check leaves: a relocatable eboot loaded with
+      segment 0 at 0x81000000 and its data within the same 64 KiB as linked keeps the recorded `movt r0,
+      #0x819d` (the high half of a static's address), so its bytes pass, and the hook reads another place (a
+      larger shift rewrites the `movt` and the signature refuses it). Every read stays inside one readable memory
+      block (`read_game`): a wrong record gives no text or a wrong line, never a fault, and with
+      `hook_trust = on` a verified site's line is shown without OCR.
 
   An entry is hooked only when the module NID and every recorded byte match, and, when it names one, not in
   another game version than it was proven in: `app_ver` is the farm's param.sfo `APP_VER` (`0x0100` for
   01.00); another `APP_VER` refuses the entry as `version` (`vjo_place_verified_version`; `APP_VER` is read
   for such an entry also when the title has no Luna site). One that cannot be read leaves the entry to its
   NID and bytes, which pin the build anyway (an update changes the eboot, and so its NID); a Luna site that
-  names its version is refused then, having neither. 28 of the 33 entries name 01.00; CLANNAD's, POSSESSION
+  names its version is refused then, having neither. The gate's one cost: a patch that changes only the game's
+  data and raises its `APP_VER`, with the eboot byte for byte the same, refuses an entry that would still work
+  (#316's audit N6; no such patch is known for these games). 28 of the 33 entries name 01.00; CLANNAD's, POSSESSION
   MAGENTA's, 忠臣蔵46+1 V's, 剣が君 for V's and 月に寄りそう乙女の作法's name none (the farm did not record it), so
   their NID and bytes alone decide. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
@@ -249,10 +276,13 @@ Two lists name them:
   a character's first CP932 byte and its second one or 0; exactly that many cells are read, at most 256,
   none past the record, and `vjo_place_cells` makes them CP932 bytes), or an SC3 string through its end token
   (`VJO_PLACE_READ_SC3`, [SC3 text](#sc3-text)). The register may be r15, the site's
-  own address: the padding is then a static's distance from the site. The host test `verified: every entry
+  own address: the padding is then a static's distance from the site, and the entry is tried only with segment
+  0 at 0x81000000 (`relocated` otherwise: PCSG00380 above). The host test `verified: every entry
   of the list` checks every entry's alignment, recorded bytes against the patch, register, encoding, read,
   filter and `APP_VER`; `the farm's excerpts through each verified entry` runs each entry the farm's bucket
-  has pages for on its own recorded bytes ([farm checks](#farm-checks)). When OCR is refused for memory
+  has pages for in the game as the farm recorded its hook: the farm's NID, its 16 bytes at its offset, the hit
+  where the farm's register and padding point, which Rubi's entry must hook at the farm's offset and read
+  ([farm checks](#farm-checks)). When OCR is refused for memory
   (`VJO_E_OOM`) with the automatic pick, a verified entry's newest text answers unconfirmed
   (`vjo_hook_select_no_memory`, `VJO_HOOK_R_UNCONFIRMED`), its capture pass beside
   `VJO_GAME_RESERVE_HOOK_ONLY`; Luna's sites and CALL callers never do.
@@ -316,7 +346,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 
 | Filter | Titles | What it does | Farm evidence |
 | --- | --- | --- | --- |
-| `PROTOTYPE` | PCSG00007, PCSG00206, PCSG00620 | `･` to `・` (the middle dot between katakana words, not Luna's `…`); half-width kana to hiragana (Luna's map, as its PCSG01198 filter); `$t<name>$d` to the name on its own line, `$t<name>@` to the name; `$d` to a line break; `$[base$/reading$]` to the base; drops `$L1` `$A1` `$S<nnn>` `$S` `$w` `$C[..]`; `＿` to a blank; trims | PCSG00007 events 1-3; PCSG00206 event 367; PCSG00620 events 80-82, and its 12 `･` (page 375: セブンズ･カオス drawn セブンズ・カオス) |
+| `PROTOTYPE` | PCSG00007, PCSG00206, PCSG00620 | `･` to `・` (the middle dot between katakana words, not Luna's `…`); half-width kana to hiragana (Luna's map, as its PCSG01198 filter); `$t<name>$d` to the name on its own line, `$t<name>@` to the name; `$d` to a line break; `$[base$/reading$]` to the base; drops `$L1` `$A1` `$S<nnn>` `$S` `$w` `$C[..]`; `＿` to a blank; trims | PCSG00007 events 1-3; PCSG00206 event 367; PCSG00620 events 80-82, and its 12 `･` (page 375: セブンズ･カオス drawn セブンズ・カオス): the `･` rule is proven on PCSG00620's pages only (PCSG00007's in the bucket have none, PCSG00206 is not in it); the other two share the engine |
 | `IFENGINE` | PCSG00935 (with names: PCSG00448, PCSG00469, PCSG00853) | `#Ruby[base,reading]` to the base; drops `#Tag` and `#Tag[..]`; `#n` to a line break; trims | PCSG00448 events 1, 54; PCSG00853 sample 1; PCSG00935 event 1, all 382 of its bucket pages |
 | `ANGLE_RUBY` | PCSG00648 (and PCSG00509) | `<base,reading>` to the base | PCSG00648 sample 5; PCSG00509 event 50 |
 | `BR_NEWLINE` | PCSG00553, PCSG00807 | `<br>` to a line break; trims | PCSG00807 sample 2; PCSG00553 events 33-37 |
@@ -326,7 +356,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00469` | CLOCK ZERO ExTime | `#Name[1]` 撫子, then `IFENGINE` | samples 80, 182, 1345 |
 | `PCSG00509` | POSSESSION MAGENTA | `＊Ｂ` 鈴; `^` to a line break; `<base,reading>` to the base | events 50, 1011 (67 pages hold `＊Ｂ`) |
 | `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？); a 0xA0 byte is a blank cell, `　` | events 1-5, 51, 53, 55; 0xA0 on 170 of the bucket's 1037 pages (page 82: 東京都　陵南学園。, 9 glyphs) |
-| `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `z<n>.` and `u<n>.` dropped (a size and a code point: in the farm's survey of `main.snr`, in none of its pages), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped, `!X` to the ASCII X (a lowercase X is read as a code first: none in the pages); half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages |
+| `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: first `!X` to the character X, before any other code (`!r` `!v` `!b` `!k` `!y` `!z` `!u` `![` `!]` `!\|` `!<` `!>` `!.` `!!` to full-width forms no other rule reads, which the shown text's normalisation makes ASCII; any other `!X` to X last); `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `u9829.` to ♥, other `u<n>.` (a code point) and `z<n>.` (a size) dropped (in the farm's survey of `main.snr`, in none of its pages: no rule writes another code point), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped; half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages; the escapes as the farm's RUBI-HOOK.md reads `main.snr` (`!L!v!1!.`, `![`/`!]`, "lowercase ASCII is otherwise always a code"; #316's audit F1) |
 | `PCSG00415` | CLANNAD | `＊Ａ` (CP932 81 96 82 60) and `＊Ｂ` (81 96 82 61), the script's name variables for the protagonist's family and given name, to 岡崎 and 朋也 (CLANNAD has no name entry) | not the farm's: a console's `history.csv` (Rubi 0.9.8, the verified site's stream): 16 of 1,347 hook lines, e.g. `「ありゃ、＊Ａ、どこいくんだよっ」` where OCR read 岡崎, `「俺はＤ組の＊Ａ＊Ｂ」` |
 | `PCSG00020`, `PCSG00883` | 極限脱出ＡＤＶ 善人シボウデス (and the Double Pack's) | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
@@ -336,10 +366,16 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00876` | 7'scarlet | `@@` to a line break; drops `$<digit>` style switches | scn op 0x10 records |
 | `PCSG01194` | 参千世界遊戯 | `<name>@r` to the name on its own line, `@r` to a line break, drops `@p<n>.` and `@v<voice>.`, half-width kana (･ ﾞ ﾟ drawn … ！ ？) | events 1, 11, 21-23 |
 
-**CP932's 0xA0.** Shift_JIS leaves the single byte 0xA0 undefined; Windows' cp932 (and so Luna's filters)
-reads it as U+F8F0, a private-use code point, and the decoder (`vjo_hook_decode`) does too: a filter turns it
-into what its game draws there (the MSGSET titles: a blank cell, `　`), and `vjo_hook_clean` drops one no
-filter mapped, as the decoder used to drop the byte.
+**CP932's 0xA0.** Shift_JIS leaves the single byte 0xA0 undefined, and the decoder (`vjo_hook_decode`) drops
+it, as Rubi always has, except in `VJO_HOOK_ENC_CP932_A0`: the encoding of the two entries whose games draw a blank
+cell there, 忠臣蔵46+1 V's and ALIA's CARNIVAL! サクラメント's, for their filters (`RF_PCSG00540`, `RF_PCSG00628`), whose first
+rule (`A0_BLANK` in `core/hook_luna.c`) makes Windows' cp932 reading of it, U+F8F0, the blank `　`. Every other path
+gives the text it gave before #316, for any text: Luna's sites and filters, Rubi's other filters and entries, and the
+string copies (#316's audit F2: decoded as U+F8F0 everywhere, a lone 0xA0 changed 286 of the audit's 83,400 random
+texts outside the two filters, though no other CP932 title of the bucket has one [the audit's measurements]; host test
+`a lone CP932 0xA0`: 0 of 10,600 texts of 155 CP932 sites and 110 filters now, 136 on main `3d095b4` [measured]). A
+host test checks that only those two entries keep the byte, and only with those filters. LunaTranslator itself, on
+Windows' cp932, would give its filters U+F8F0 there; the port keeps the byte out of them, as 0.9.7 did.
 
 **Player names.** Where a hook reads a line before the game expands its player-name code (`#Name[n]`,
 `＊Ｂ`, foaf4's `㌫` `㍊`), Rubi cannot know the name the player typed. The filter writes the game's default name instead,
@@ -366,10 +402,25 @@ Rubi's entries on them:
   own glyph counts show the name drawn. The worker shows a site's latest hit, so a page the farm built from
   several hits (a name, then the line; lines added one by one) is compared with its hits joined.
 - `fixtures` writes `host/tests/fixtures/hook_farm.inc`: per entry, up to 5 hits of at most 128 bytes that
-  Rubi turns into exactly the farm's text, chosen to cover the codes in them. The engine test `the farm's
-  excerpts through each verified entry` installs each entry from Rubi's table in a fake main module (its NID,
-  its bytes at its offset, its `APP_VER`), puts the hit's bytes where its register points, and runs the
-  observer, the stream and `vjo_hooks_text`: 50 excerpts of 14 titles, short lines only, never a script.
+  Rubi turns into exactly the farm's text, chosen to cover the codes in them (none for the SC3 entries, whose
+  excerpts `tools/sc3_charset.py --fixtures` writes), and for every title Rubi has an entry for at the farm's
+  site the farm's record of that hook: its module NID, offset, mode, register, padding, encoding, reader and
+  16 bytes (`rubi-hook.json`). The engine test `the farm's excerpts through each verified entry` makes the
+  game of that record (a main module with the farm's NID and the farm's bytes at the farm's offset, segment 0
+  at 0x81000000 as in the farm's Vita3K, the farm's `APP_VER`), puts the hit's bytes where the farm's register
+  and padding point, and runs Rubi's entry: it must hook the farm's offset in the farm's mode, and the
+  observer, the stream and `vjo_hooks_text` must give the farm's text: 50 excerpts of 14 titles, short lines
+  only, never a script; each field of Rubi's entry is checked against the record by name (#316's audit F3:
+  the test had installed Rubi's own NID, bytes, register and padding, so 4 of the audit's 30 mutations of
+  them passed; all 4 fail it now, and so do a mode, an SC3 entry's NID and PCSG00620's padding changed). The
+  SC3 test runs its three entries in their records' games too. Every record's mode is checked: four of the farm's
+  records say to check their mode by disassembly (their recorded flag is not the code's), and `fixtures` writes
+  the mode their 16 bytes decode to with LLVM 18.1.8's `llvm-mc` (`tools/hook_farm.py` `MODES_BY_DISASSEMBLY`:
+  PCSG00469 and PCSG00509 Thumb, PCSG00553 and PCSG00807 ARM), so a flipped flag fails there too, and so does an
+  entry that pins fewer of the farm's 16 bytes (audit-rubi-audit-fix-hooks A-F1, A-N1). What the farm cannot pin:
+  an entry's filter on text that no farm hit holds. PCSG00713's entry has none, and none of its 2,738 farm hits
+  holds a character any of Rubi's filters change [measured: the bucket's hits, counted], so a filter there would
+  change no farm text and the test cannot see one (A-N2).
 
 Single-hit pages of the bucket of 2026-10-26 (04:36Z) whose text is the farm's, as shown, with main's
 filters before this change and Rubi's now [measured: `tools/hook_farm.py check` on the host]:
@@ -440,8 +491,9 @@ reader halted at its page 11 on one).
 - **The load** (`game_ocr/main.c` `hooks_sc3_load`): at the first job of a game with an SC3 site hooked, before the
   job's snapshot; an open or a read that was cancelled or timed out again at a later job (three tries in all; a read's
   timeout since #368's audit), any other outcome once a session. A close that fails is the job's I/O error (the
-  broker is still the charset's, so the job's own files cannot open: the job fails and says so, and the hook cache
-  waits for a later job), and a block an earlier try could not give back is freed before another is taken. The
+  broker is still the charset's, so the job's own files cannot open: a job that needs them fails and says so, while a
+  trusted SC3 line still answers, and the hook cache waits for a later job), and a block an earlier try could not
+  give back is freed before another is taken. The
   worker cannot always open `ux0:` itself ([worker-loading.md](worker-loading.md)),
   so the kernel's file broker opens it: `vjoOcrModelOpen` with `VJO_GAME_OCR_OPEN_SC3`, for which the kernel builds
   the path from the title ID it reads for the calling process (`loader_title`, the loader's
@@ -652,15 +704,26 @@ OCR resumes by itself, in the same job, when no trusted source has text: an empt
 a learned source whose slot another caller took (that job also unlocks it, as before); a pending disagreement
 (`misses`). The selection then goes on as before (`vjo_hook_select_before`, OCR, `vjo_hook_select_after`), and
 such a job's disagreement takes the close agreement's mark back. A trusted source that has text is not compared
-again: no job of it runs OCR, so in its session only its slot changing hands, or a job without its text whose OCR
-then disagrees, ends its trust. Learning never stops: a regular source learns and is checked as in 0.9.7 until it is
-trusted. The cache keeps the trust (API 49): it saves the interval 32 only for a trusted source (16 for one that
-reached 32 without the close agreement, or with a pending disagreement), and a source restored at 32 (the same
-caller of the same executable, the cache key's SHA-256) is trusted at once at the next launch, with no startup
-confirmation (API 43 ran one OCR job a launch for it; `vjo_hook_select_before` still asks for it with
-`hook_trust = off`). With `hook_trust = off`
+again: no job of it runs OCR, so only its slot changing hands, or `hook_trust = off`, ends its trust (a job without
+its text compares nothing: `vjo_hook_select_after` compares the learned source only when the job holds its text;
+#338's audit N1). With trust kept between launches (below) that holds for as long as the cache entry lives: the same
+executable, hook definitions and text source. Learning never stops: a regular source learns and is checked as in
+0.9.7 until it is trusted. The cache keeps the trust (API 49) in a bit of its own (`VjoHookLearned.trusted`, bit 1 of
+the record's site word): with `hook_trust = on` a trusted source (at 32 with the close agreement and no pending
+disagreement) is saved trusted, and one restored so (the same caller of the same executable, the cache key's
+SHA-256) is trusted at once at the next launch, with no startup confirmation (API 43 ran one OCR job a launch for it;
+`vjo_hook_select_before` still asks for it with `hook_trust = off`). The interval is saved as it is, as 0.9.7 saved it
+(#338's audit F1: API 49 had saved a source at 32 that was not trusted at 16, whatever the setting, so with
+`hook_trust = off` a restart's cadence and the cache's writes differed from 0.9.7's: a write at a first
+disagreement, one more confirmation before 32). With `hook_trust = off` nothing is saved trusted: a record saved trusted
+in a launch with it on is saved again untrusted at that launch's first save (one write), and the cadence is 0.9.7's.
+With `hook_trust = off`
 (or any pick but the automatic one, the self-test's included) nothing of this runs: Rubi 0.9.7's selection, byte
-for byte the same decisions (`host/tests/test_game_hooks.c`, `host/tests/test_hook_select.c`).
+for byte the same decisions and cache writes (`host/tests/test_game_hooks.c` `remembered_hook_worker_cadence`, which
+API 49 had changed and expects 0.9.7's again, and `remembered_trust_is_its_own_bit`; `host/tests/test_hook_select.c`,
+`host/tests/test_hook_cache.c`). Every change to the hook code renews the hook definitions' revision
+(`cmake/HookRevision.cmake`), and the cache key holds it, so a build with such a change (API 49's and this one
+included) restores nothing from an earlier build's cache: every source learns again at its first launch.
 
 What trust gives up: a trusted hook's text is never checked against the screen. A screen the hook did not copy (a
 choice menu, a backlog, a CG with the box hidden) shows the hook's last line, as a Luna site's always has, and a
@@ -686,7 +749,7 @@ claim]:
 | --- | --- | --- |
 | Luna site | 0 OCR jobs | 0 OCR jobs |
 | Rubi verified site | 1,620 OCR jobs (0.188 a line), 0.449 lines recognized a line, 17.5 CTC frames a line, the weights read 29 times; the worker's blocks 4,747 KiB at a job's peak and 4,487 KiB kept after it (means) | **0 OCR jobs**, nothing recognized or read, 0 KiB at a job's peak (API 49: no capture strip), 0 kept |
-| String copy | the same as the verified site's | **656 OCR jobs (0.076 a line)**, 0.185 lines recognized a line, 8.0 CTC frames a line; 1,313 / 1,202 KiB; trusted in 27 of 29 sessions, from line 43 (median), 6,444 trusted answers, none wrong |
+| String copy | the same as the verified site's | **656 OCR jobs (0.076 a line)**, 0.185 lines recognized a line, 8.0 CTC frames a line; 1,313 / 1,202 KiB; trusted in 27 of 29 sessions, from line 43 (median), 6,444 trusted answers, none wrong (true by construction: the bench's string copy holds the page's own line, #338's audit N6; only the caller one page behind tests the rule) |
 | The caller one page behind | 8,579 OCR jobs | the same: **never trusted**, no wrong trusted answer |
 | Luna site, 3 MiB free | **every one of the 8,640 jobs refused**: its pass kept the 4 MiB OCR reserve | 0 refused |
 | Rubi verified site, 3 MiB free | 603 refused (lines under 4 characters, the no-memory path's limit) | 0 refused |
@@ -861,8 +924,13 @@ in place with its lookup):
 Before, a line waited for the watch's report (58 ms on average: the take's 100 ms wait), then the job's capture pass
 (three frames for the region), then the lookup; a line written while the last one drew (clicks) woke nobody, and a
 site's first line, or one that grows, waited for the pixels to settle. With API 49 the report comes 8 ms after the
-copy on average (16 at most), the job's text with it (no frame waited for), then the lookup's 70 ms: the poll and the
-lookup are all that is left.
+copy on average (16 at most), the job's text with it (no frame waited for), then the lookup's 70 ms: in the normal
+build (the release's main download) the poll and the lookup are all that is left. The bench's network thread is the
+normal build's, which writes no log line on that path (release-variants.md). The debug build, which every test build
+is, also writes the job's result lines, with the hook's source line, in one append per file before the text is ready
+(#338's audit F2; #360 moved its text, lookup and done lines after the result): one append of `log.txt`, and one of
+`status.txt` while that is under 64 KiB, 9-47 ms each on the console ([performance.md](performance.md)), so an
+estimated 9-94 ms more there, not in the bench.
 
 **The poll.** The same sessions, reading, with the watch's pace built 4, 8, 16 and 33 ms (`vjo-hook-latency-bench-*`):
 
@@ -885,8 +953,26 @@ Limits:
 - A text that comes back (the same line after another text, or a backlog that copies it again) is a new line again;
   only the same text twice in a row is not.
 - The poll wakes the worker 63 times a second instead of 10 while a game has table sites or a trusted source;
-  that cost is not measured on a console.
-- History: a line given in parts more than 750 ms apart is two records.
+  that cost is not measured on a console. It runs with **Only when I press L + R** too, once the first press's job
+  has carried `VJO_GAME_OCR_S_TRUST`: every job carries it (`config_speed`), while that mode reads nothing in the
+  background, so there the 63 wakeups a second find no read behind them and a trusted line wakes the Shell for none
+  (#338's audit N3; not gated, a cost to measure on a console).
+- A trusted stream whose text changes often (a name or choice site beside the dialogue's: 114 of the 190 Vita titles
+  in [hook-titles.md](hook-titles.md) had more than one ported or verified site at `3388f7a` [the audit's count], their
+  roles unlabelled; a learned
+  caller that also copies other strings) makes every distinct text a line at once: a job with a lookup in the Shell,
+  the open overlay's text replaced and its cursor reset, and a `history.csv` record unless its job is cancelled. API
+  41's 200 ms gap and its no-wakeup-while-drawing rule used to bound this; the bench has one stream (#338's audit N5).
+- The bench leaves out the Shell's `game_job_lock` (an Anki screenshot's exchange holds it), the overlay's open path
+  (its `config.ini` re-read, `vjoSetInputBlock`), the history append between jobs and the worker's lowest-priority
+  scheduling, which can stretch its 16 ms wait while the game's threads run; its `vjoGetState` and `change_detection`
+  are copies of `kernel/main.c`'s (`host/hook_latency_bench.c`), and no host test compiles `kernel/main.c`, so its
+  two `hook_scene` lines are tested through the copy only (#338's audit N7).
+- History: a line given in parts more than 750 ms apart is two records. The converse: two lines are one record when
+  the second starts with the whole first and comes under 750 ms after it (the first line's record is replaced; #338's
+  audit N9). In the bench's 30 titles' pool 225 of 8,910 consecutive page pairs have the next text start with the whole
+  previous one, 198 of them in PCSG00648, whose box adds its lines (the record is the box, nothing lost), and 3 after a
+  line of 3 characters or fewer [the audit's count, not re-measured].
 
 No block, thread or buffer: a few words of `.bss` (the kernel's `hook_scene`, the worker's trust and the last
 reported text's hash, the Shell's newest record's place: 32 B of data), and the code, within the modules' declared
@@ -1021,9 +1107,10 @@ Hardware is paused; these are for the test issue (#230):
    On a fresh cache, confirm two distinct lines, then seven hook-only readings and a checked eighth;
    successful scheduled checks step to 16 and 32. Close/reopen the unchanged seventh line and confirm
    the next new line is still the eighth, rather than resetting or promoting the interval.
-8. Restart the same exact game build: one startup confirmation, then the saved interval with a fresh
-   counter. A menu, blank screen, missing hook, or inconclusive OCR retains the learned identity and
-   requires confirmation when comparable dialogue returns.
+8. Restart the same exact game build with `hook_trust = off`: one startup confirmation, then the saved interval
+   with a fresh counter. A menu, blank screen, missing hook, or inconclusive OCR retains the learned identity and
+   requires confirmation when comparable dialogue returns. With `hook_trust = on` (the default) a source saved
+   trusted needs no startup confirmation (step 14); one saved untrusted gets it, as here.
 9. With Only when I press L + R, and with the subtitle strip: the same texts and confidence rules.
 10. Check one comparable disagreement, then agreement: OCR fallback first, then resume at eight. Two
     consecutive disagreements on fresh dialogue must unlock. Inconclusive and unchanged repeated readings
@@ -1052,8 +1139,13 @@ Hardware is paused; these are for the test issue (#230):
     `trusted hook's capture, scene N` (no `first pass in`), all before the line has finished typing; L + R at once
     opens on it with its first word looked up. Click through several lines quickly: each one is read (a `hook line …
     trusted` and a job each), and the overlay shows the last. With the overlay open and the game on auto: each line
-    replaces the text as it starts. Close the game and start it again: the first line is trusted at once (no OCR job
-    before it). `history.csv` has one record a line.
+    replaces the text as it starts. Close the game and start it again: the first dialogue line is trusted at once (no
+    confirmation OCR for it: the game's first job, its title screen's, still runs OCR and loads the cache). `history.csv`
+    has one record a line. The debug build writes the job's result lines and the hook's source line in one append
+    per file (two while `status.txt` is under 64 KiB) before the text is ready (#338's audit F2): on a short line the
+    "before it has finished typing" can fail by those appends (9-47 ms each, [performance.md](performance.md)), the
+    debug build's own cost; `kernel.txt`'s `hook line … trusted` and `trusted hook's capture` times are the kernel's,
+    before them.
 15. #349, a Luna entry at Vita3K's guest address (the debug build, `text_source = auto`, `hook_trust = on`, the
     default): TIME TRAVELERS (`PCSG00062`). `hooks.log` shows `main module tt1_rom NID … seg0 81000000+31258C
     APP_VER 0100; 0 verified, 2 Luna sites` (the 01.01 update is another build, `eboot` in its Vita3K log: `main module
@@ -1077,6 +1169,21 @@ Hardware is paused; these are for the test issue (#230):
     game runs through several scenes and a chapter change. With the file removed: the first job allocates and frees
     the block, no later job tries again, and OCR reads the lines. The same for ROBOTICS;NOTES ELITE `PCSG00352` and
     CHAOS;CHILD `PCSG00555` (a 16,384 B block).
+17. #316's audit (the debug build, `auto`): アマツツミ (`PCSG01198`)'s `hooks.log` first line says `APP_VER 0100`
+    (the first console reading of `app_version()`; its entry names 01.00, so a misread one refuses it as
+    `version`). 真 流行り神 (`PCSG00380`), if a console has it: `seg0 81000000` and `verified +4DE9E thumb r15`
+    hooked, a dialogue page's text in the overlay from the hook (`flags 0x118`) and 北條紗希 where the game
+    draws the player's name; `seg0` anything else and `refused: relocated` (then OCR reads the game) is what the
+    check is for. ALIA's CARNIVAL! サクラメント (`PCSG00628`): the hook's lines match the screen, Latin words
+    and `[―――]` dash runs included. For both, play through menus, a save and a load: a crash that **OCR only**
+    does not have is what a branch elsewhere into their patched bytes would look like (unchecked: the farm's
+    bucket has no dump of their code).
+18. #338's audit (the debug build, CLANNAD, Automatically): with `hook_trust = off`, once step 7's source is at 32,
+    close and start the game twice: at each start one confirmation (`flags 0x01` or `0x03`, OCR), then hook-only
+    lines (`0x0A`) at once at 32, as 0.9.7 (API 49 restarted it at 16 when no check at 32 had scored 900, or a
+    disagreement had followed). Then `hook_trust = on`: after one close agreement at 32 the source's jobs say `flags 0x10A`, and
+    from the next start at once (no confirmation). A line the hook gives in parts (step 14): one `history.csv`
+    record, with its first part's ID and time.
 
 ## PSP text (Adrenaline)
 

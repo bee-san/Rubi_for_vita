@@ -704,6 +704,36 @@ static const char *table_value(const char *table, const char *key)
     return NULL;
 }
 
+/* Particles that a lookup from them reads into the next word (#321): the first six before a form of
+ * する or す in hiragana (がした: 賀す and 賀する, もせず: 模する, はしない: 馳す, 気のせい: のす, どうかした:
+ * 貸す, 目にした: the grammar entry にす), all twelve before a katakana word (のマンション: 飲む's -ん,
+ * にエントリー: 煮える, とセンパイ: 渡船). lookup_pages shows the particle instead. */
+static const char particle_forms[] VJO_DATA_TABLE(particle_forms) = "する\0がもはにのかとでをへやな";
+
+/* The particle the text starts with, written so: its place in particle_forms, 1-12; 0 for none. */
+static unsigned particle_lead(const char *raw)
+{
+    for (unsigned i = 0; i < 12; i++)
+        if (!memcmp(particle_forms + 7 + 3 * i, raw, 3)) return i + 1;
+    return 0;
+}
+
+/* A candidate that is the span's first character and す or する (with lookup_pages' lead). */
+static int particle_suru(const Candidate *c)
+{
+    return (c->len == 6 || c->len == 9) && !memcmp(c->key + 3, particle_forms, c->len - 3u);
+}
+
+/* names_first (core/config.h): at one span, a word spelled otherwise (私 for わたし) before an entry
+ * spelled as the text in another dictionary (the character's name わたし). auto: when the word is
+ * among the 1,023 most frequent (an own rank's freq_key of 6,912 or more: rank 1,024 has 6,911); on: never (Rubi 0.9.8,
+ * as Yomitan); off: always. */
+static int word_first(const VjoConfig *cfg, uint32_t score)
+{
+    return cfg->names_first == VJO_NAMES_OFF ||
+           (cfg->names_first == VJO_NAMES_AUTO && (score >> FREQ_KEY_SHIFT & 0x1fffu) >= 6912u);
+}
+
 static int is_duplicate(const Workspace *w, int di, const Record *r)
 {
     for (int k = 0; k < w->n_matches; k++)
@@ -848,7 +878,8 @@ static int take_postings(Workspace *w, int di, const Candidate *c, Query *q, int
         if (best == n || score > best_score) { best = j; best_score = score; top = r; }
     }
     if (best == n && any && q->fallback &&
-        (!q->fell_back || (c->depth == q->fallback->depth && other_score > *q->fallback_score))) {
+        (!q->fell_back || c->depth < q->fallback->depth ||
+         (c->depth == q->fallback->depth && other_score > *q->fallback_score))) {
         q->fallback->dict = di;
         q->fallback->depth = c->depth;
         q->fallback->conjugation = c->conjugation;
@@ -1024,7 +1055,9 @@ static int deinflect(Workspace *w, const char *key)
     memcpy(c[0].key, key, len + 1); c[0].len = (uint16_t)len; c[0].rules = 0; c[0].depth = 0;
     c[0].conjugation = 0;
     for (int i = 0; i < count; i++) {
-        unsigned suffix = (uint8_t)c[i].key[c[i].len - 1];
+        /* A rule string ends in a three-byte character, so its bucket is a continuation byte's. */
+        unsigned suffix = (uint8_t)c[i].key[c[i].len - 1] - 0x80u;
+        if (suffix > 63u) continue;
         for (unsigned r = deinflect_offsets[suffix]; r < deinflect_offsets[suffix + 1]; r++) {
             const DeinflectRule *rule = &deinflect_rules[r];
             const char *in = deinflect_strings + (rule->in & 0x7ffu) * 3u, *out = deinflect_strings + (rule->out & 0x7ffu) * 3u;
@@ -1054,7 +1087,7 @@ static int deinflect(Workspace *w, const char *key)
             c[count].conjugation = c[i].conjugation >> 18
                 ? (c[i].conjugation & 0xffffc0u) | 63u
                 : (c[i].conjugation << 6) | (rule->bits & 63u);
-            c[count].depth = (uint8_t)(c[i].depth + 1);
+            c[count].depth = (uint8_t)(c[i].depth + 1 + ((rule->bits & 63u) == DEINFLECT_TWO_STEPS));
             c[count].rules = (uint16_t)rules_out; c[count++].len = (uint16_t)n;
         }
     }
@@ -1110,7 +1143,10 @@ static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t
         if (d->file.read(d->file.ctx, off, payload, len)) return VJO_E_LOCAL_IO;
     }
     if (d->prefix) {
-        rank = (int)(u32((const uint8_t *)payload) & FREQ_RANK_MASK);
+        uint32_t word = u32((const uint8_t *)payload);
+        /* A spelling-only row that matched only after kana normalisation (bits 25-27: 110) is
+         * another word's: だと has ダト's, にす ニス's, イル いる's. No rank, as in Yomitan (#321). */
+        rank = (word >> 25 & 7u) == 6u ? VJO_NO_RANK : (int)(word & FREQ_RANK_MASK);
         payload += d->prefix;
         len -= d->prefix;
     }
@@ -1335,6 +1371,19 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         count++; lengths[count] = bytes; units[count] = source_units; raws[count] = (uint8_t)raw_bytes;
     }
     if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
+    /* A particle in hiragana (particle_forms) before a katakana word (のマンション, にエントリー, とセンパイ):
+     * the particle; no word starts so (#321). A katakana word starts with a letter of U+30A2-30FA but the
+     * small ァィゥェォ and ッ: not はァ or へッ, nor a long vowel mark (the small ャュョヮヵヶ pass; no word
+     * starts with one either, and no tap of the Yomitan check's has one there). Before hiragana, lead marks
+     * the first six particles for the spans' forms of する (particle_suru). */
+    unsigned lead = 0;
+    if (count > 1 && raws[1] == 3 && raws[2] == 6 && (uint8_t)raw[3] == 0xe3 && (lead = particle_lead(raw))) {
+        uint8_t b = (uint8_t)raw[4], t = (uint8_t)raw[5];
+        if (b == 0x82 ? t >= 0xa1 && (t > 0xa9 || !(t & 1u)) : b == 0x83 && t <= 0xba && t != 0x83)
+            count = 1;
+        else if (lead > 6 || !(b == 0x81 || (b == 0x82 && t < 0xa1)))
+            lead = 0;
+    }
 
     if (load) outmem = vjo_arena_alloc(a, VJO_LOCAL_SELECTED_BUDGET);
     w = workspace(a);
@@ -1363,7 +1412,7 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
      * match in another dictionary is none). Only page 0's payload is read:
      * other pages are located, never loaded. */
     for (int k = count; k > 0 && !w->n_matches; k--) {
-        int candidates;
+        int candidates, particle = 0;
         unsigned fell_back = 0, found = 0, exact = 0, resolved = 0;
         key[lengths[k]] = 0;
         candidates = deinflect(w, key);
@@ -1380,8 +1429,16 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
             for (int c = phase; c < (phase ? candidates : 1); c++) {
                 int before = w->n_matches;
                 Query q = {0};
-                /* Candidates come in breadth-first order: fewer inflections first. */
-                if (((found >> d) & 1) && w->candidates[c].depth > depth) break;
+                /* Before the depth test: every candidate of the span is seen in the first dictionary
+                 * phase 1 reads, so the span's particle does not depend on how many are shown (#321's
+                 * audit: がされ was its masu stem with one, が with two). */
+                if (phase && lead && particle_suru(&w->candidates[c])) {
+                    particle = 1;
+                    continue;
+                }
+                /* Candidates come in breadth-first order: fewer inflections first (a two-step
+                 * rule's may come before one-step ones: continue, not break). */
+                if (((found >> d) & 1) && w->candidates[c].depth > depth) continue;
                 q.strict = 1;
                 q.fallback = &fallback[d];
                 q.fallback_score = &fallback_score[d];
@@ -1391,7 +1448,7 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                 fell_back |= (unsigned)q.fell_back << d;
                 if (w->n_matches == before) continue;
                 w->n_matches = before; /* held in chosen[d] until the span's order is known */
-                if (((found >> d) & 1) && q.score <= top) continue;
+                if (((found >> d) & 1) && w->candidates[c].depth == depth && q.score <= top) continue;
                 chosen[d] = w->matches[before];
                 top = q.score;
                 depth = w->candidates[c].depth;
@@ -1399,16 +1456,26 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                 exact |= (unsigned)!c << d;
             }
         }
+        /* A particle and a form of する (がした, もせず, にしておく): the particle, unless an entry is
+         * spelled as the whole span (がする, もしかして). Not another word's inflection, which is rarely
+         * meant (にさせる: 似る, はせず: 馳せる; but かすれた: 掠れる), nor a kanji homograph of the whole
+         * span (はそう: 破窓, かして: 貸し手). It goes back to the particle's own span, where it is never
+         * taken again: no candidate of a lone particle is a form of す or する (tools_yomitan_check). */
+        if (particle && !exact) {
+            k = 2;
+            continue;
+        }
         /* With one result, the first match ends it. */
         for (int pass = 0; pass < 3 && !(limit == 1 && w->n_matches); pass++)
             for (int d = 0; d < w->n_dicts && !(limit == 1 && w->n_matches); d++) {
                 unsigned bit = 1u << d;
                 const Match *m = &fallback[d];
                 if (resolved & bit) continue;
-                if (pass < 2) {
-                    if (!(found & bit) || ((exact & bit) != 0) != (pass == 0)) continue;
+                if (pass < 2 && (found & bit)) {
+                    if (((exact & bit) != 0) != (pass == 0)) continue;
                     m = &chosen[d];
-                } else if (!(fell_back & bit)) continue;
+                } else if (!(fell_back & bit) || pass == 1 || (!pass && !word_first(cfg, fallback_score[d])))
+                    continue;
                 resolved |= bit;
                 w->matches[w->n_matches] = *m;
                 w->matches[w->n_matches++].units = (uint16_t)units[k];

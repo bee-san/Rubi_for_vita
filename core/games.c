@@ -43,42 +43,83 @@ void vjo_games_defaults(VjoGames *g)
     g->default_enabled = 1;
 }
 
-int vjo_games_enabled_as(const VjoGames *g, const char *id, int psp)
+/* Not inlined: the Shell calls it twice (games.ini's table, then ocr_line_fix.ini's), and one copy is 32 B less of
+ * its code than two, which keeps each build's code in its pages (measured, docs/memory-ledger.md "A game's own line
+ * finder"). */
+__attribute__((noinline)) int vjo_games_row_as(const VjoGames *g, const char *id, int psp)
 {
-    if (!vjo_game_is_candidate(id)) return 0;
-    /* The Shell's timeout fallback has no title ID to match exclusions. */
-    if (!strcmp(id, "GAME")) return g->default_enabled && g->count == 0;
     for (;;) {
         for (int i = 0; i < g->count; i++)
             if (!strcmp(g->rules[i].title_id, id)) return g->rules[i].enabled;
-        if (!psp) return g->default_enabled;
+        if (!psp) return -1;
         psp = 0; /* then the shared PSP row's */
         id = VJO_PSP_EMULATOR;
     }
 }
 
+int vjo_games_enabled_as(const VjoGames *g, const char *id, int psp)
+{
+    if (!vjo_game_is_candidate(id)) return 0;
+    /* The Shell's timeout fallback has no title ID to match exclusions. */
+    if (!strcmp(id, "GAME")) return g->default_enabled && g->count == 0;
+    int row = vjo_games_row_as(g, id, psp);
+    return row < 0 ? g->default_enabled : row;
+}
+
 int vjo_games_enabled(const VjoGames *g, const char *id) { return vjo_games_enabled_as(g, id, 0); }
 
-int vjo_games_set(VjoGames *g, const char *id, int enabled)
+/* id's row set to value (any: the caller checks it), added at the end if it has none. */
+static int set_row(VjoGames *g, const char *id, int value)
 {
-    if (!vjo_game_id_valid(id) || (enabled != 0 && enabled != 1)) return -1;
+    if (!vjo_game_id_valid(id)) return -1;
     for (int i = 0; i < g->count; i++) {
         if (!strcmp(g->rules[i].title_id, id)) {
-            g->rules[i].enabled = enabled;
+            g->rules[i].enabled = value;
             return 0;
         }
     }
     if (g->count >= VJO_GAMES_MAX) return -1;
     VjoGameRule *r = &g->rules[g->count++];
     memcpy(r->title_id, id, strlen(id) + 1);
-    r->enabled = enabled;
+    r->enabled = value;
     return 0;
+}
+
+int vjo_games_set(VjoGames *g, const char *id, int enabled)
+{
+    return enabled != 0 && enabled != 1 ? -1 : set_row(g, id, enabled);
 }
 
 static int space(char c) { return c == ' ' || c == '\t' || c == '\r'; }
 
-int vjo_games_parse(VjoGames *g, const char *text, size_t len)
+/* games.ini's values: a rule's index is its enabled. In the Shell's data segment, as the line finder's below (its
+ * code pages are the full ones); the kernel's code pages have room and its data page less, so there it is code. */
+#ifdef VJO_KERNEL
+static const char *const on_off[] = {"disabled", "enabled", NULL};
+#else
+static const char *const on_off[] VJO_DATA_TABLE(games_on_off) = {"disabled", "enabled", NULL};
+#endif
+
+#ifndef VJO_KERNEL
+/* In the data segment: the Shell's code pages are full (core/port.h). By value (games.h VJO_LINE_FINDER_*): the
+ * spotter, then Rubi's finder with config.ini's ocr_line_fix values in their order, which config.c reads too. */
+const char *const vjo_line_finder_names[] VJO_DATA_TABLE(line_finder_names) = {"spotter", "off", "on", "junk", "all",
+                                                                                 NULL};
+typedef char vjo_line_finder_names_fit[sizeof(vjo_line_finder_names) / sizeof(vjo_line_finder_names[0]) ==
+                                       VJO_LINE_FINDERS + 1 ? 1 : -1];
+#endif
+
+/* A file in games.ini's format whose rows take one of names (NULL-terminated; a row's value is its index):
+ * games.ini's on_off, or (#333, line_fix != 0) ocr_line_fix.ini's vjo_line_finder_names, which has no default line.
+ * One function for both, so the Shell's one reader (vita/games_storage.c) has it once. */
+int vjo_games_parse_kind(VjoGames *g, const char *text, size_t len, int line_fix)
 {
+#ifdef VJO_KERNEL
+    const char *const *names = on_off;
+    (void)line_fix;
+#else
+    const char *const *names = line_fix ? vjo_line_finder_names : on_off;
+#endif
     size_t pos = 0;
     vjo_games_defaults(g);
     if (!text || len > VJO_GAMES_TEXT_MAX || memchr(text, 0, len)) return -1;
@@ -96,21 +137,44 @@ int vjo_games_parse(VjoGames *g, const char *text, size_t len)
         while (key_end > start && space(text[key_end - 1])) key_end--;
         while (value_start < end && space(text[value_start])) value_start++;
         size_t key_len = key_end - start, value_len = end - value_start;
-        int enabled;
-        if (value_len == 7 && !memcmp(text + value_start, "enabled", 7)) enabled = 1;
-        else if (value_len == 8 && !memcmp(text + value_start, "disabled", 8)) enabled = 0;
-        else return -1;
-        if (key_len == 7 && !memcmp(text + start, "default", 7)) g->default_enabled = enabled;
-        else {
+        int value = -1;
+        for (int k = 0; names[k]; k++)
+            if (strlen(names[k]) == value_len && !memcmp(text + value_start, names[k], value_len)) value = k;
+        if (value < 0) return -1;
+        if (key_len == 7 && !memcmp(text + start, "default", 7)) {
+            if (names != on_off) return -1;
+            g->default_enabled = value;
+        } else {
             char id[VJO_TITLE_ID_SIZE];
             if (!key_len || key_len >= sizeof(id)) return -1;
             memcpy(id, text + start, key_len);
             id[key_len] = 0;
-            if (vjo_games_set(g, id, enabled) < 0) return -1;
+            if (set_row(g, id, value) < 0) return -1;
         }
     }
     return 0;
 }
+
+#ifndef VJO_KERNEL
+/* The Rubi app's writer (vita/games_storage.c vjo_line_fix_file_save; the Shell never links it). */
+int vjo_line_fix_format(const VjoGames *g, char *out, size_t cap)
+{
+    if (!out || !cap || g->count < 0 || g->count > VJO_GAMES_MAX) return -1;
+    int n = vjo_snprintf(out, cap, "# Rubi: a game's own line finder, set on its page in the Rubi app: off, on, junk "
+                                   "or all (Rubi's finder,\n# config.ini's ocr_finder = grad, with that ocr_line_fix) "
+                                   "or spotter. A game without a line here uses config.ini's.\n");
+    if (n < 0 || (size_t)n >= cap) return -1;
+    size_t used = (size_t)n;
+    for (int i = 0; i < g->count; i++) {
+        int v = g->rules[i].enabled;
+        if (!vjo_game_id_valid(g->rules[i].title_id) || v < 0 || v >= VJO_LINE_FINDERS) return -1;
+        n = vjo_snprintf(out + used, cap - used, "%s = %s\n", g->rules[i].title_id, vjo_line_finder_names[v]);
+        if (n < 0 || (size_t)n >= cap - used) return -1;
+        used += (size_t)n;
+    }
+    return (int)used;
+}
+#endif
 
 int vjo_games_format(const VjoGames *g, char *out, size_t cap)
 {

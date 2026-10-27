@@ -222,31 +222,27 @@ int vjo_hook_select_restore(VjoHookSelect *st, const VjoHookLearned *saved)
 {
     if (!st) return 0;
     unlock(st);
-    if (!saved || saved->site > 1u ||
+    if (!saved || saved->site > 1u || saved->trusted > 1u ||
         (saved->interval != 8u && saved->interval != 16u && saved->interval != 32u)) return 0;
     st->locked_site = saved->site;
     st->locked_key = saved->key;
     st->locked_encoding = saved->encoding;
     st->interval = saved->interval;
     st->confirm = 1;
-#if VJO_HOOK_TRUST_INTERVAL > 8u
-    /* API 49: saved at the trusted interval only while it was trusted (vjo_hook_select_learned): trusted again at
-     * once, without the confirmation OCR read a restored source otherwise gets (vjo_hook_select_trusted ignores
-     * confirm; with hook_trust = off the confirmation runs as before) */
-    st->strong = saved->interval >= VJO_HOOK_TRUST_INTERVAL;
-#endif
+    /* API 49: saved trusted (vjo_hook_select_learned with trust on): trusted again at once, without the confirmation
+     * OCR read a restored source otherwise gets (vjo_hook_select_trusted ignores confirm; with hook_trust = off the
+     * confirmation runs as before) */
+    st->strong = saved->trusted && saved->interval >= VJO_HOOK_TRUST_INTERVAL;
     return 1;
 }
 
-int vjo_hook_select_learned(const VjoHookSelect *st, VjoHookLearned *out)
+int vjo_hook_select_learned(const VjoHookSelect *st, int trust, VjoHookLearned *out)
 {
     if (out) *out = (VjoHookLearned){0};
     if (!st || !st->interval) return 0;
-    uint32_t interval = st->interval;
-#if VJO_HOOK_TRUST_INTERVAL > 8u
-    if (interval >= VJO_HOOK_TRUST_INTERVAL && !st->strong) interval = VJO_HOOK_TRUST_INTERVAL / 2u; /* API 49 */
-#endif
-    if (out) *out = (VjoHookLearned){st->locked_site, st->locked_key, st->locked_encoding, interval};
+    if (out)
+        *out = (VjoHookLearned){st->locked_site, st->locked_key, st->locked_encoding, st->interval,
+                                trust && st->strong && st->interval >= VJO_HOOK_TRUST_INTERVAL};
     return 1;
 }
 

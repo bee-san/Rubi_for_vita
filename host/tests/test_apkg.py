@@ -3,8 +3,9 @@
 
     python3 host/tests/test_apkg.py BUILD/vjo-apkg-tests
 
-The C test binary writes the packages (`--write DIR`: first, second, all and
-many, from records the overlay's Enter writes and from earlier builds'), and
+The C test binary writes the packages (`--write DIR`: first, second, all,
+many and edited, from records the overlay's Enter writes and from earlier
+builds', and, #315, cards the Rubi app's Cards page changed), and
 this checks them with Python's zipfile and sqlite3: the ZIP (stored entries,
 CRC-32s, no `meta`, the media map), the SQLite collection (PRAGMA
 integrity_check, schema 11, the Lapis note type exactly as
@@ -85,6 +86,59 @@ class Package:
         return json.loads(self.db.execute("select models from col").fetchone()[0])
 
 
+def fold(text):
+    """core/word_key.h's fold: katakana as hiragana, the middle dot left out."""
+    out = []
+    for ch in text:
+        cp = ord(ch)
+        if cp in (0x30FB, 0xFF65):
+            continue
+        if 0x30A1 <= cp <= 0x30F6 or cp in (0x30FD, 0x30FE):
+            cp -= 0x60
+        out.append(chr(cp))
+    return "".join(out)
+
+
+def word_key(spelling, reading=None):
+    """core/word_key.c's keys: the word's (spelling TAB reading), or, without a reading, the spelling's alone."""
+    text = fold(spelling) + ("\t" + (fold(reading) or fold(spelling)) if reading is not None else "")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def known_keys(path):
+    """The app's reading of a known_words.txt (vjo-apkg-tests --known-keys): [(line, rc, key)]."""
+    out = subprocess.run([BINARY, "--known-keys", str(path)], check=True, capture_output=True, text=True).stdout
+    return [(int(a), int(b), c[0] if c else "") for a, b, *c in (line.split(" ") for line in out.splitlines())]
+
+
+class TestKnownWords(unittest.TestCase):
+    """#314 stage C: tools/known_words.py's file, read as the Rubi app reads it (settings/anki_export.c
+    vjo_known_line): every line of it a word, with the key the tool's word and reading have."""
+
+    def test_the_tools_file_is_the_apps(self):
+        tool = ROOT / "tools" / "known_words.py"
+        fixture = ROOT / "tools" / "tests" / "fixtures" / "known-words" / "anki-plain-notetype.txt"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "known_words.txt"
+            subprocess.run([sys.executable, str(tool), str(fixture), "-o", str(out)], check=True, capture_output=True)
+            lines = out.read_text(encoding="utf-8").split("\n")[:-1]
+            got = known_keys(out)
+        self.assertEqual(got[0][1], 0)  # the tool's comment line
+        self.assertEqual(len(got), len(lines))
+        for (number, rc, key), line in zip(got[1:], lines[1:]):
+            word, _, reading = line.partition("\t")
+            self.assertEqual((rc, key), (1, word_key(word, reading or None)), (number, line))
+        self.assertEqual(len(got), 7)  # the comment and six words
+
+    def test_the_apps_reading_of_odd_lines(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "known_words.txt"
+            path.write_bytes("\ufeff# mine\r\n猫\tネコ\r\n\r\n  犬  \r\n\tのみ\r\n本\tほん\textra".encode("utf-8"))
+            got = known_keys(path)
+        self.assertEqual(got, [(1, 0, ""), (2, 1, word_key("猫", "ねこ")), (3, 0, ""), (4, 1, word_key("犬")),
+                               (5, -1, ""), (6, 1, word_key("本", "ほん"))])
+
+
 class TestSqliteWriter(unittest.TestCase):
     """core/sqlw.c's files of every tree shape (vjo-apkg-tests --sqlw): one-row leaves on both sides
     of an interior page's 273 children and of two such pages, overflow chains from 4,062 bytes,
@@ -116,7 +170,8 @@ class TestPackages(unittest.TestCase):
         cls.out = pathlib.Path(cls.tmp.name)
         subprocess.run([BINARY, "--write", str(cls.out)], check=True)
         cls.expected = json.loads((cls.out / "expected.json").read_text())
-        cls.pkg = {name: Package(cls.out / f"{name}.apkg") for name in ("first", "second", "all", "many")}
+        cls.pkg = {name: Package(cls.out / f"{name}.apkg")
+                   for name in ("first", "second", "all", "many", "app", "edited", "richer")}
 
     def test_zip(self):
         for name, p in self.pkg.items():
@@ -169,8 +224,10 @@ class TestPackages(unittest.TestCase):
 
     def test_notes_and_cards(self):
         nt = self.expected["notetype_id"]
+        duplicates = {guid_of(i) for i in self.expected["duplicates"]}
         for name, p in self.pkg.items():
             notes = p.notes()
+            game = self.game_tags(name)
             cards = p.db.execute("select id, nid, did, ord, type, queue, due from cards order by id").fetchall()
             self.assertEqual(len(cards), len(notes), name)
             self.assertEqual(len({n[1] for n in notes}), len(notes))  # GUIDs unique
@@ -178,7 +235,11 @@ class TestPackages(unittest.TestCase):
                 fields = flds.split("\x1f")
                 self.assertEqual(len(fields), 22)
                 self.assertEqual(mid, nt)
-                self.assertEqual(tags, " vita-jp-overlay ")
+                # every tag between spaces: #314's duplicate tag on a card whose word an earlier card has, then #311's
+                # game tag on a record with a game, in GameSentenceMiner's form
+                want = (" vita-jp-overlay " + ("duplicate " if guid in duplicates else "") +
+                        (game[guid] + " " if guid in game else ""))
+                self.assertEqual(tags, want, (name, guid))
                 self.assertEqual(sfld, strip_html(fields[0]))
                 self.assertEqual(csum, anki_checksum(strip_html(fields[0])))
                 self.assertGreater(nid, 1_600_000_000_000)
@@ -194,6 +255,40 @@ class TestPackages(unittest.TestCase):
             self.assertEqual([c[6] for c in cards], list(range(1, len(cards) + 1)))  # due: their order
         self.assertEqual(len(self.pkg["many"].notes()), self.expected["many"])
 
+    def test_duplicates_are_tagged(self):
+        """#314: Duplicates (Tag, the default): the version 3 猫 after the version 1 one (no time: earlier), and 犬
+        from another line in the second package after the first's; in the cumulative package, the same two."""
+        def tagged(p):
+            return {n[1] for n in p.notes() if "duplicate" in n[5].split()}
+        dup = [guid_of(i) for i in self.expected["duplicates"]]
+        self.assertEqual(tagged(self.pkg["first"]), {dup[0]})
+        self.assertEqual(tagged(self.pkg["second"]), {dup[1]})
+        self.assertEqual(tagged(self.pkg["all"]), set(dup))
+        self.assertEqual(tagged(self.pkg["many"]), set())
+
+    def game_tags(self, name):
+        """#311: each note's game tag (GUID: tag), in GameSentenceMiner's form: the version 3 records' SOME GAME, none
+        for the version 1 and 2 records; of the app's cards (#313) the earlier line's CLANNAD, none for a typed word."""
+        if name == "app":
+            return {guid_of(self.expected["app"][1]): "Game::CLANNAD"}
+        old = {guid_of(i) for i in self.expected["first"][2:]}
+        return {n[1]: "Game::SOMEGAME" for n in self.pkg[name].notes() if n[1] not in old}
+
+    def test_richer_notes(self):
+        """#311: a Sentence card (IsSentenceCard x), its game's tag, and with the bundled dictionary readings over
+        its sentence in Anki's furigana syntax, the mined word in <b> with its own reading."""
+        (note,) = self.pkg["richer"].notes()
+        fields = note[6].split("\x1f")
+        self.assertEqual(note[1], guid_of(self.expected["richer"]))
+        self.assertEqual(note[5], " vita-jp-overlay Game::SOMEGAME ")
+        self.assertEqual([fields[i] for i in (13, 14, 15, 16)], ["", "", "x", ""])
+        self.assertEqual(fields[7], "今日は<b>学校</b>へ行って、友達と一緒に勉強した。")
+        if self.expected["readings"]:
+            self.assertEqual(fields[8], "今日は<b>学校[がっこう]</b>へ 行[い]って、 友達[ともだち]と 一緒[いっしょ]に"
+                                        " 勉強[べんきょう]した。")
+        else:
+            self.assertEqual(fields[8], "")
+
     def test_guids_come_from_the_queue_ids(self):
         first = {n[1] for n in self.pkg["first"].notes()}
         self.assertEqual(first, {guid_of(i) for i in self.expected["first"]})
@@ -207,6 +302,23 @@ class TestPackages(unittest.TestCase):
                 same = everything[note[1]]
                 self.assertEqual(same[1:], note[1:], "the same GUID, type, time, tags and fields")
         self.assertEqual(len(everything), len(self.expected["first"]) + len(self.expected["second"]))
+
+    def test_cards_the_app_saved(self):
+        """#313: cards of the Rubi app's Look up page (settings/app_queue.c), as any card: their GUIDs from their
+        records' IDs, no picture; a typed word with no sentence and the date it was saved, a word of an earlier line
+        with the line and its game; the other dictionary's entry in the glossary."""
+        notes = self.pkg["app"].notes()
+        self.assertEqual({n[1] for n in notes}, {guid_of(i) for i in self.expected["app"]})
+        self.assertEqual(self.pkg["app"].media, {})
+        by_misc = {n[6].split("\x1f")[21]: n[6].split("\x1f") for n in notes}
+        typed, line = by_misc["2026-10-27 15:04"], by_misc["CLANNAD (2026-10-28 00:30)"]
+        for fields, word in ((typed, ("猫", "猫[ねこ]", "ねこ")), (line, ("犬", "犬[いぬ]", "いぬ"))):
+            self.assertEqual((fields[0], fields[1], fields[2], fields[10]), word + ("",))
+            self.assertIn('data-dictionary="JMdict"', fields[5])
+            self.assertIn('data-dictionary="VNDB names"', fields[11])
+            self.assertEqual(fields[20], "1234")
+        self.assertEqual((typed[7], typed[8]), ("", ""))
+        self.assertEqual(line[7], "<b>犬</b>が鳴いた")
 
     def test_fields_of_known_cards(self):
         by_word = {n[7]: n[6].split("\x1f") for n in self.pkg["first"].notes()}
@@ -226,6 +338,25 @@ class TestPackages(unittest.TestCase):
         room = by_word["部屋"]  # a v0.8.0-test.1 record (version 2)
         self.assertIn('data-dictionary="Daijirin4 Plain"', room[5])
         self.assertEqual(room[20], "9999999")
+
+    def test_cards_changed_on_the_cards_page(self):
+        """#315: a card whose sentence the Cards page fixed is a new note (the new record's ID, its GUID), with
+        the new sentence, the word in it in <b>, and the old card's picture; one whose picture was dropped has
+        none; the cards they replaced and a deleted one are in no package."""
+        e = self.expected["edited"]
+        p = self.pkg["edited"]
+        notes = {n[1]: n[6].split("\x1f") for n in p.notes()}
+        self.assertEqual(set(notes), {guid_of(e["fixed"]), guid_of(e["dropped"])})
+        fixed, dropped = notes[guid_of(e["fixed"])], notes[guid_of(e["dropped"])]
+        self.assertEqual(fixed[0], e["word"])
+        self.assertEqual(fixed[7], e["sentence"].replace(e["word"], f"<b>{e['word']}</b>", 1).replace("\n", "<br>"))
+        self.assertRegex(fixed[10], r'^<img src="vitajp_[0-9a-f]{32}\.jpg">$')
+        self.assertEqual(list(p.media.values()), [fixed[10][10:-2]])
+        self.assertEqual(dropped[10], "")
+        for name, pkg in self.pkg.items():
+            guids = {n[1] for n in pkg.notes()}
+            for gone in e["replaced"] + [e["deleted"]]:
+                self.assertNotIn(guid_of(gone), guids, name)
 
 
 ANKI_CHECK = r'''
@@ -264,6 +395,9 @@ if m:
     shutil.copyfile(os.path.join(col.media.dir(), m.group(1)), out / "imported.jpg")
 check = col.media.check()
 r["media_missing"] = list(check.missing); r["media_unused"] = list(check.unused)
+# #314: Anki's own tags of the notes: the duplicate one has Anki's duplicate tag beside vita-jp-overlay
+r["dup_tags"] = [sorted(col.get_note(n).tags) for n in col.find_notes("tag:duplicate")]
+r["plain_tags"] = sorted({tuple(sorted(col.get_note(n).tags)) for n in col.find_notes("-tag:duplicate")})
 r["again_new"] = len(imp(col, "first").new)   # the same package again
 # the user edits a note and its card is in review (10 days); importing the same card again changes neither
 edited = col.get_note(col.find_notes('"Expression:猫" "MiscInfo:_*"')[0])
@@ -277,6 +411,32 @@ r["notes_after_all"] = col.note_count()
 r["notetypes"] = sorted(m["name"] for m in col.models.all())
 r["media_after_all"] = sorted(f for f in os.listdir(col.media.dir()) if f.startswith("vitajp_"))
 log = imp(col, "many"); r["many_new"] = len(log.new)
+# #311: the sentence card: its front the sentence, its back the readings (Anki's furigana filter), its tags
+log = imp(col, "richer"); r["richer_new"] = len(log.new)
+card = col.get_card(col.find_cards('"Expression:学校"')[0])
+r["richer_question"] = card.question(); r["richer_answer"] = card.answer()
+r["richer_tags"] = sorted(card.note().tags)
+r["game_tag_notes"] = len(col.find_notes('"tag:Game::SOMEGAME"'))
+col.close()
+# #313: the Rubi app's cards, in a new profile: both added, no picture on either
+col = new_col()
+log = imp(col, "app"); r["app_new"] = len(log.new)
+answers = [col.get_card(c).answer() for c in col.find_cards('"deck:Vita JP Overlay"')]
+r["app_answers"] = len(answers); r["app_img"] = sum("<img" in a for a in answers)
+r["app_line"] = sum("<b>犬</b>が鳴いた" in a and "CLANNAD (2026-10-28 00:30)" in a for a in answers)
+col.close()
+# #315: the cards the Cards page changed, in a new collection: the fixed one with its new sentence and the
+# picture it kept, the one whose picture was dropped without one
+col = new_col()
+e = expected["edited"]
+log = imp(col, "edited"); r["edited_new"] = len(log.new)
+fixed = col.get_note(col.find_notes(f'"Expression:{e["word"]}"')[0])
+r["edited_sentence"] = fixed["Sentence"]; r["edited_picture"] = fixed["Picture"]
+m = re.search(r'<img src="(vitajp_[0-9a-f]{32}[.]jpg)">', fixed["Picture"])
+r["edited_media"] = bool(m) and os.path.exists(os.path.join(col.media.dir(), m.group(1)))
+card = col.get_card(fixed.cards()[0].id); r["edited_answer"] = card.answer()
+others = [col.get_note(n) for n in col.find_notes("") if n != fixed.id]
+r["dropped_pictures"] = [n["Picture"] for n in others]
 col.close()
 # A profile that has Lapis from its own package, restyled since (newer): a
 # package of that note type alone (first.apkg's, without notes, its styling
@@ -302,6 +462,14 @@ imp(col, "first")
 lapis = [m for m in col.models.all() if m["name"].startswith("Lapis")]
 r["own_after"] = [(x["id"] == expected["notetype_id"], x["css"] == "/* mine */", x["name"]) for x in lapis]
 r["own_notes"] = col.note_count() - 1
+col.close()
+# #314 stage C: a collection of the first package alone, closed, for tools/known_words.py, and Anki's own
+# "Notes in Plain Text" export of it
+col = new_col()
+imp(col, "first")
+col.export_note_csv(out_path=str(out / "notes.txt"), limit=None, with_html=True, with_tags=True, with_deck=True,
+                    with_notetype=True, with_guid=True)
+r["collection_path"] = col.path
 col.close()
 print(json.dumps(r, ensure_ascii=False))
 '''
@@ -347,6 +515,40 @@ class TestAnkiImport(unittest.TestCase):
         self.assertEqual(len([f for f in r["media"] if f.startswith("vitajp_")]), 1)
         self.assertEqual(r["media_after_all"], [f for f in r["media"] if f.startswith("vitajp_")])
 
+    def test_the_duplicate_tag_in_anki(self):
+        """#314: Anki's import keeps the duplicate note's tags, and only vita-jp-overlay on the others, beside #311's
+        game tag on the version 3 records' notes (the version 1 and 2 records name no game)."""
+        self.assertEqual(self.r["dup_tags"], [["Game::SOMEGAME", "duplicate", "vita-jp-overlay"]])
+        self.assertEqual(self.r["plain_tags"], [["Game::SOMEGAME", "vita-jp-overlay"], ["vita-jp-overlay"]])
+
+    def test_known_words_from_ankis_own_collection(self):
+        """#314 stage C: tools/known_words.py on the collection Anki 26.09.3 made from the first package (closed
+        first, as the tool asks), and on Anki's own "Notes in Plain Text" export of it: the same words."""
+        tool = ROOT / "tools" / "known_words.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            outs = []
+            for source in (self.r["collection_path"], pathlib.Path(self.tmp.name) / "notes.txt"):
+                out = pathlib.Path(tmp) / f"known-{len(outs)}.txt"
+                subprocess.run([sys.executable, str(tool), str(source), "-o", str(out)], check=True,
+                               capture_output=True)
+                outs.append(out.read_text(encoding="utf-8").split("\n")[1:-1])
+        self.assertEqual(outs[0], outs[1])
+        self.assertEqual(sorted(outs[0]), sorted(["猫\tねこ", "犬\tいぬ", "部屋\tへや"]))
+
+    def test_a_sentence_card_with_readings_and_its_game_tag(self):
+        """#311: Lapis's Sentence card shows the sentence on its front (its {{kanji:Sentence}}); the back renders
+        SentenceFurigana's readings as <ruby> (with the bundled dictionary); the note has its game's tag."""
+        r = self.r
+        self.assertEqual(r["richer_new"], 1)
+        self.assertIn("front-sentence", r["richer_question"])
+        self.assertIn("<b>学校</b>へ行って", r["richer_question"])
+        self.assertNotIn('class="front-vocab"', r["richer_question"])
+        if self.expected["readings"]:
+            for ruby in ("<ruby><rb>学校</rb><rt>がっこう</rt></ruby>", "<ruby><rb>友達</rb><rt>ともだち</rt></ruby>"):
+                self.assertIn(ruby, r["richer_answer"])
+        self.assertEqual(r["richer_tags"], ["Game::SOMEGAME", "vita-jp-overlay"])
+        self.assertGreater(r["game_tag_notes"], 700)  # every version-3 card's
+
     def test_rendered_card(self):
         self.assertIn("猫", self.r["question"])
         for text in ("<b>猫</b>", "JMdict", "SOME GAME (2026-10-11 17:11)", "vitajp_", "1234"):
@@ -378,10 +580,29 @@ class TestAnkiImport(unittest.TestCase):
         self.assertEqual(r["notetypes"].count("Lapis"), 1)
         self.assertEqual(r["many_new"], self.expected["many"])
 
+    def test_the_apps_cards_import(self):
+        """#313: the cards the Look up page saved are imported as Anki imports any: two notes, two cards, no
+        picture; the earlier line's card shows the line and its game."""
+        r = self.r
+        self.assertEqual((r["app_new"], r["app_answers"], r["app_img"], r["app_line"]), (2, 2, 0, 1))
+
     def test_an_edited_and_reviewed_note_is_left_alone(self):
         # (the package's note is never newer than one the user edited: Anki's IfNewer keeps the edit)
         self.assertTrue(self.r["edit_kept"])
         self.assertEqual(self.r["review_kept"], [2, 2, 10, 100, 1])  # still in review, one card
+
+    def test_an_edited_card_imports_with_its_new_sentence_and_its_picture(self):
+        """#315: the Cards page's fixed card in Anki: its new sentence, the word bold, its picture shown (the
+        file in the collection's media); the card whose picture was dropped has none."""
+        r, e = self.r, self.expected["edited"]
+        self.assertEqual(r["edited_new"], 2)
+        self.assertEqual(r["edited_sentence"],
+                         e["sentence"].replace(e["word"], f"<b>{e['word']}</b>", 1).replace("\n", "<br>"))
+        self.assertRegex(r["edited_picture"], r'^<img src="vitajp_[0-9a-f]{32}[.]jpg">$')
+        self.assertTrue(r["edited_media"])
+        self.assertIn(r["edited_picture"], r["edited_answer"])
+        self.assertIn("熱いのは苦手", r["edited_answer"])
+        self.assertEqual(r["dropped_pictures"], [""])
 
     def test_a_profiles_own_lapis_is_kept(self):
         r = self.r

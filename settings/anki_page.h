@@ -1,7 +1,12 @@
 /* The Rubi app's Anki page: card mining on/off, the cards' screenshots
  * on/off (anki_screenshot, API 23) and their black bars trimmed or kept
- * (anki_screenshot_trim_bars, API 32), and the export of the queued cards (or all
- * of them) as Lapis notes in a new .apkg file under
+ * (anki_screenshot_trim_bars, API 32), what the export makes of each card
+ * (#311: Card type, Game tag and Sentence readings, app.ini's anki_card_type,
+ * anki_game_tag and anki_sentence_readings), what it does with a word mined
+ * before (#314: Duplicates, app.ini's anki_duplicates: tag, skip or keep), the
+ * Cards page (#315, settings/cards_page.c: the queued cards listed, one deleted,
+ * its sentence fixed or its picture dropped), and the export of the queued cards
+ * (or all of them; "N queued, M already mined") as Lapis notes in a new .apkg file under
  * ux0:data/VitaJPOverlay/anki/ (settings/anki_export.h), which Anki imports
  * on any computer or phone; a card's screenshot goes into its Picture field.
  * Nothing is sent anywhere: the app uses no network. */
@@ -12,6 +17,7 @@
 #include "../core/arena.h"
 #include "../core/buttons.h"
 #include "../core/config.h"
+#include "anki_export.h"
 
 /* main.c's drawing helpers, so the page looks like the others. */
 typedef struct {
@@ -25,21 +31,39 @@ typedef struct {
     unsigned white, dim, accent, off;
     unsigned track; /* the scroll bar's track, a card's colour (API 32: the five rows scroll) */
     const VjoButtons *buttons; /* the console's enter and cancel buttons */
+    int (*text_width)(float pixels, const char *s); /* (#315) the Cards page lays out a card's text */
 } VjoAnkiUi;
 
 /* The page is shown (Select or its tab): reloads the settings and counts the cards. */
 void vjo_anki_page_show(VjoArena *scratch);
 /* One frame of the page: the buttons pressed and a new touch (x, y; -1 when
- * none), then drawing. */
-void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch);
+ * none), then drawing. Returns 1 when a native dialog ran in it (the Cards
+ * page's keyboard): the buttons and the touch that closed it are not new
+ * presses, so main.c takes none until they are let go. */
+int vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch);
 /* The left stick's move for the next frame (rows: negative up, positive down,
  * 0 none; core/stick_scroll.h): it stops at the first and last row, where
  * Up/Down wrap round. */
 void vjo_anki_page_stick(int move);
-/* An export is running: cancel stops it instead of leaving the app. */
+/* An export or a Cards page job is running (the page's worker). */
 int vjo_anki_page_busy(void);
-/* Leaving the app: cancels and joins a running export (the queue is left as it was). */
+/* Cancel is the page's, not the app's exit: a job runs (cancel stops it, or waits), or the Cards
+ * page is open (cancel goes back). */
+int vjo_anki_page_holds_cancel(void);
+/* Leaving the app: cancels and joins a running export (the queue is left as it was), or waits for
+ * a Cards page job. */
 void vjo_anki_page_quit(void);
+
+/* The page's one worker thread (64 KiB stack, CPU3), shared by the export and the Cards page: a job
+ * runs on it with the page's 2 MiB arena (VJO_EXPORT_MEM, made empty for it), ui's status setting its
+ * progress line and stopped saying whether cancel was pressed. One job at a time; its arena stays as it
+ * left it until the next job starts. 0, or the SDK's error (the job did not start). */
+typedef void (*VjoAnkiJob)(VjoArena *arena, const VjoExportUi *ui);
+int vjo_anki_job_start(VjoAnkiJob job, const char *progress);
+/* The running job's progress line ("" when none). */
+void vjo_anki_job_progress(char *out, size_t cap);
+void vjo_anki_job_cancel(void);
+
 /* The app's lines in log.txt, "Rubi app: " and the text (settings/applog.c,
  * below the Shell's 1 MiB rotation): written while config.ini's log_file is
  * on, which main.c sets at start and the page again when it is shown. Between

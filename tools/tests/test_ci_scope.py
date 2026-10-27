@@ -29,6 +29,8 @@ class Scope(unittest.TestCase):
         self.check(["core/hook_place.c", "docs/native-hooks.md"], True, True, False)
         self.check(["core/hook_place.c", "host/tests/test_hooks_engine.c", "host/tests/test_hook_place.c"],
                    True, True, False)
+        # #366's audit: the stream seam suite compiles core/hook_place.c, as the stream suite does
+        self.check(["host/tests/test_hook_stream_seams.c", "host/tests/test_hook_stream.c"], True, True, False)
 
     def test_a_table_change_with_the_ledger_or_the_engine_is_a_full_change(self):
         # #296 moved the worker's budget too; #292 changed the engine and Luna's filters

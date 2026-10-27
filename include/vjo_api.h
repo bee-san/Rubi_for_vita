@@ -116,22 +116,41 @@
  * suggest_rows (a word before text: the result is 4 bytes longer), the band a successful job of rows on the whole
  * frame says the dialogue is in, as its rows at the screen's bottom. The request is unchanged. 51 is #354's (merged
  * first), so this is 52.
+ * 53: vertical text ON prefers columns (#379; docs/vita-vn-ocr.md "Vertical text"): a request with
+ * VJO_GAME_OCR_S_VERTICAL 1 reads the region's rows first, as 2 does, and its columns unless the rows look like
+ * horizontal text (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON); with 1 or 2 a job of columns whose model cannot be
+ * read or has no room (its memory check refuses it, or its weights after the check) reads the rows; the find step's
+ * kinds 4 and 5 say so (a block refused after the check, the columns' capture or workspace, fails the job for memory,
+ * as since API 47). A job of columns reads its columns' rows
+ * once, the rectangle around them (VJO_VOCR_COLUMNS_BATCH), no longer once per column. The Shell leaves out a size whose model failed
+ * with ON too. Sizes and layouts are unchanged. 52 is #369's (merged first), so this is 53. #385's audit (no new API:
+ * the request and result are unchanged): with 1, a region at least as tall as wide is read as columns from the job's
+ * first try, and a wider one with no row at all as rows (nothing to read).
+ * 54: the text spotter as the game worker's line finder (vita-vn-ocr #149 textspot8, #128 textspot6;
+ * docs/vita-vn-ocr.md "The spotter finder"): VjoGameOcrRequest.speed bit 24 (VJO_GAME_OCR_S_SPOT) and bit 26
+ * (VJO_GAME_OCR_S_SPOT_REFINE), its weights' file in the kernel's broker for such a request (VJO_GAME_OCR_OPEN_SPOT,
+ * VJO_VOCR_SPOT_NAME), a new step kind (spot) and block (VJO_GITEM_SPOT); the Shell sets the bits from config.ini
+ * ocr_finder (spotter by default) and ocr_spotter_refine. Sizes and layouts are unchanged. API 45 was this change's
+ * number while it waited (draft branch feat/vocr6-spotter-finder), then 52 and 53, which #369 and #385 took (merged
+ * first); main's numbers only grow, so it is 54.
  * 46: the overlay on the game's text (docs/overlay-on-text.md, #309; closed draft #271's API 37, renumbered):
  * VjoGameOcrRequest.speed bit 25 (VJO_GAME_OCR_S_CHARS): the game worker writes where each character of the text
  * it returns is on the screen (core/charmap.h), after the text and its recognizer's copy in VjoGameOcrResult.text,
  * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
  * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
  * the text spotter, vertical text, trusted hooks).
- * 52: the pause for the frame (config.ini ocr_pause, #348; docs/game-pause.md): VjoGameOcrRequest.speed bit 30
- * (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region copied from one frame in one display
- * call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block (VJO_GITEM_FRAME), which the job reads from;
- * the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. This is #355's: #354 merged first, as 51.
- * 54: test/combined, the combined test build (v0.9.8-test.N; never merged, never main's): main's API 52 with
+ * 52 (draft #355's own number; main's 52 is #369's): the pause for the frame (config.ini ocr_pause, #348;
+ * docs/game-pause.md): VjoGameOcrRequest.speed bit 30 (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME,
+ * the whole region copied from one frame in one display call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's
+ * frame block (VJO_GITEM_FRAME), which the job reads from; the step log's VJO_GSTEP_PAUSE. Sizes and layouts are
+ * unchanged. This is #355's: #354 merged first, as 51.
+ * 55: test/combined, the combined test build (v0.9.8-test.N; never merged, never main's): main's API 54 with
  * every open draft: #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS), #355's own number (speed bit 30,
- * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE), #318 and #359 (no interface change). test.1 was 51, test.2
- * 52, test.3 53 (other interfaces); this build takes a number no other build has. With the characters' places a
- * job selects without API 43's trusted answers (game_ocr/main.c): it recognizes to place a hook's text. */
-#define VJO_API_VERSION 54
+ * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE after main's VJO_GSTEP_SPOT, VJO_GITEM_FRAME after main's
+ * VJO_GITEM_SPOT), #318 and #359 (no interface change). test.1 was 51, test.2 52, test.3 53, test.4 54 (main's 54
+ * since is the spotter's); this build takes a number no other build has. With the characters' places a job selects
+ * without API 43's trusted answers (game_ocr/main.c): it recognizes to place a hook's text. */
+#define VJO_API_VERSION 55
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

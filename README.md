@@ -61,8 +61,12 @@
   [PSP/Vita names dictionary](docs/vndb-attribution.txt) adds 12,151 VNDB characters from 1,202
   visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
-  sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
-  [Lapis](https://github.com/donkuri/lapis) notes for Anki.
+  sentence and a picture of the game's screen. Before you export, the app's Cards page shows each
+  card: delete one saved by mistake, fix an OCR mistake in its sentence, or drop its picture. The app
+  exports the cards as one `.apkg` file of [Lapis](https://github.com/donkuri/lapis) notes for Anki.
+- **Look up and mine later.** The Rubi app's **Look up** tab, beside the suspended game: type a word or a sentence
+  with the Vita's keyboard, or open one of a game's last 200 lines, and look its words up with the overlay's
+  dictionaries; Enter saves a word as a card, without a picture ([details](docs/guide.md#look-up)).
 - **Fast or accurate, now or when you ask.** Choose a Small, Normal or Large model (a game short of
   memory gets the next smaller one by itself), and whether Rubi reads each new screen in the
   background, so the popup is ready when you press, or only when you press L + R.
@@ -158,6 +162,9 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
    a word: it is saved with its sentence and a screenshot. **Export cards** on the Anki page writes
    them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: copy that file to a computer
    (VitaShell's USB or FTP connection) and open it in Anki.
+5. **Look up later.** Suspend the game and open the Rubi app: on its **Look up** tab, type a word (Triangle), or
+   pick an earlier line of a game (L/R), and look its words up; Enter saves the word as a card, without a picture
+   ([details](docs/guide.md#look-up)).
 
 Every control, setting and file is in the [guide](docs/guide.md#use-in-a-game).
 
@@ -169,23 +176,31 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | Page | Setting | Default |
 | --- | --- | --- |
 | Games | Each game ON or OFF, and **Default** ON or OFF ([details](docs/guide.md#per-game-settings)) | ON |
+| | **Line finder** for one game (hold Enter on it): what cuts its text box into lines, the spotter or Rubi's finder with its fixes (`config.ini`'s `ocr_finder` and `ocr_line_fix` for that game alone), for a game the spotter reads worse ([details](docs/guide.md#a-games-own-page)) | Default (`config.ini`'s, the spotter) |
 | OCR & lookup | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
 | | **Read text**: Automatically (when it changes), or Only when I press L + R | Automatically |
 | | **Speed boost while reading (444 MHz)** | ON |
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
-| | **Dictionaries shown**: how many dictionaries' entries for the same word are shown, the best match first and the others below it (the right stick scrolls to them), 1–8 (2: a word, then the same word as a character's name) | 2 |
+| | **Dictionaries shown**: how many dictionaries' entries for the same word are shown, the best match first and the others below it (the right stick scrolls to them), 1–8 (2: a word and the same word as a character's name; which comes first: `names_first`, [details](docs/local-dictionaries.md#names-and-words)) | 2 |
 | | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (the same, plus PSP text in two PSP games, testing), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
-| | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready as soon as the game writes it ([details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
+| | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready within a poll (16 ms) and the first word's lookup of the game writing it (measured on a computer; not run on a console yet; [details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
-| | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns in every game) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
+| | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns, but rows where the box plainly holds lines of text) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | | **Suggest a text box**: a game without a box of its own is offered the one Rubi finds around its dialogue, once each time it starts or resumes ([details](docs/first-box.md)) | ON |
 | | **Overlay on the game's text** (testing): the word is marked where the game shows it, a tap on the game's text looks it up, and the popup sits beside the text ([details](docs/overlay-on-text.md)) | OFF |
 | | **Pause the game to read**: each reading copies the text box from one frame at once, the game waiting a moment (an estimated 2-6 ms for a drawn text box, 11-29 ms for the whole screen: draw a box with □ first), so a spinning icon in it can't stop the read ([details](docs/game-pause.md)) | OFF |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
+| | **Card type**: what the card's front shows: the word, its sentence, both, or the word with the sentence a tap away ([card types](docs/anki.md#card-type)) | Word |
+| | **Game tag**: each card is tagged with its game, `Game::CLANNAD` | ON |
+| | **Sentence readings**: readings over the sentence's kanji on the card's back, where the dictionaries are sure of them ([how often they are wrong](docs/anki.md#sentence-readings)) | ON |
+| | **Duplicates**: a card of a word you mined before gets Anki's `duplicate` tag (Tag), stays in the queue (Skip) or is exported as before (Keep); the page counts them, "N queued, M already mined" ([details](docs/anki.md#duplicates)) | Tag |
+| | **Cards: N queued**: each card before it is exported, newest first, with its sentence and picture; delete it, fix its sentence or drop its picture ([details](docs/anki.md#the-cards-page)) | |
+| | **Known words**: Import reads `known_words.txt`, which `tools/known_words.py` writes from your Anki collection; their cards get the tag `known` ([details](docs/anki.md#known-words)) | none |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
+| Look up | No setting: type a word (Triangle), or open an earlier line of a game (L/R); Enter saves its word as a card, without a picture, with Card mining ON or OFF ([details](docs/guide.md#look-up)) | |
 | Stats | Your reading from `history.csv`: today, the last 14 days, the year's heatmap, the streak, all games and each game (characters, reading time, characters/hour, cards mined), counted as △ counts ([details](docs/guide.md#stats)) | |
 | | **Daily goal**: Off, 2,000 to 50,000 characters or 15 to 120 minutes a day; a day at the goal counts for the streak (with none, any day with reading). Kept in the app's own `app.ini` | Off |
 | Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
@@ -206,7 +221,7 @@ Older installs may have kept **OCR only**, so choose Automatic once if needed.
 | --- | --- | --- |
 | **CLANNAD**, Japanese Vita release (`PCSG00415`) | Automatic; string-copy hooks and Rubi's own game profile | String-copy extraction confirmed in the combined debug test build, including readings without OCR. The separate game profile's hook site remains unverified on a real Vita. |
 | **175 Vita title IDs from LunaTranslator's table** | Automatic attempts using 294 ported hook sites, plus string-copy hooks | Experimental: these game-specific hook sites have not been verified on a real Vita. Examples include **TIME TRAVELERS** (`PCSG00062`), **Code:Realize ～創世の姫君～** (`PCSG00402`) and **DRAMAtical Murder** (`PCSG00420`). |
-| **34 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8, **極限脱出ＡＤＶ 善人シボウデス** (`PCSG00020`, Zero Escape: Virtue's Last Reward), **蒼の彼方のフォーリズム** (`PCSG00700`), the **ZERO ESCAPE ダブルパック**'s 善人シボウデス (`PCSG00883`) and the SC3 games **STEINS;GATE 比翼恋理のだーりん** (`PCSG00146`), **ROBOTICS;NOTES ELITE** (`PCSG00352`) and **CHAOS;CHILD** (`PCSG00555`) on `main`), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 17 are games of Luna's table: for 15 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita; 蒼の彼方のフォーリズム also on a PS Vita (15 of its hook's 19 lines agreed with OCR; 3 scored 0, not examined). |
+| **34 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8, **極限脱出ＡＤＶ 善人シボウデス** (`PCSG00020`, Zero Escape: Virtue's Last Reward), **蒼の彼方のフォーリズム** (`PCSG00700`), the **ZERO ESCAPE ダブルパック**'s 善人シボウデス (`PCSG00883`) and the SC3 games **STEINS;GATE 比翼恋理のだーりん** (`PCSG00146`), **ROBOTICS;NOTES ELITE** (`PCSG00352`) and **CHAOS;CHILD** (`PCSG00555`) on `main`), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 17 are games of Luna's table: for 15 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita; 蒼の彼方のフォーリズム also on a PS Vita (15 of its hook's 19 lines agreed with OCR; 3 scored 0, not examined). For ALIA's CARNIVAL! サクラメント and 真 流行り神 a jump from elsewhere in the game's code into the hook's patched bytes is unchecked (the farm had no copy of their code): one would crash the game. |
 | Other native Vita games | Automatic tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. OCR is used until a matching source is found. **Every game** makes the same attempts. |
 | PSP games in Adrenaline: **Memories Off 6 ～T-wave～** (`NPJH50382`/`ULJM05467`) and **Memories Off ～それから～** (`NPJH50132`/`ULJM05350`) | With **Every game** only: Rubi reads the game's dialogue page from PSP memory, read-only, when the game's ID and code are the expected ones; OCR must agree before the text is shown | Experimental: proven in the PPSSPP emulator only (the farm), not on a real Vita ([PSP text](docs/native-hooks.md#psp-text-adrenaline)). |
 | Other PSP games in Adrenaline | OCR only | PSP text hooks in the game itself (a PSP plugin) are not implemented, in any mode. |
@@ -255,23 +270,27 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Overlay on the game's text (off by default) | not run on a console yet ([details](docs/overlay-on-text.md)) |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
+| ❓ | The app's Look up tab: typed search, a game's earlier lines, cards from them | not run on a console yet; measured on the host ([details](docs/guide.md#look-up)) |
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |
 | ❓ | Pause the game to read | not run on a console yet; the game's wait per reading is an estimate ([details](docs/game-pause.md)) |
 | ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |
 | ❓ | The Rubi app's Stats tab: days, heatmap, streak, daily goal, each game | not run on a console yet; measured on the host ([details](docs/guide.md#stats)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
+| ❓ | A game's own line finder (its page in the Rubi app) | not run on a console yet ([details](docs/guide.md#a-games-own-page)) |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
 | ❓ | Trim black bars on Anki screenshots | not run on a console yet ([details](docs/anki.md#black-bars)) |
+| ❓ | The Cards page (delete a card, fix its sentence, drop its picture) | not run on a console yet; tested on the host, with a stop at each step ([details](docs/anki.md#the-cards-page)) |
 | ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |
 
 What each build changed, and what its console run showed: the [changelog](CHANGELOG.md).
 
 ## Limits
 
-- Vertical text is read only in a text box drawn around it (on a whole screen Rubi reads rows), and not yet on a
-  console ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+- Vertical text is read only in a text box drawn around it: on a whole screen Automatic reads rows, and ON reads columns
+  on most screens, a horizontal game's too (84 % of the hooked ones measured), which gives no sensible text. Not run on
+  a console yet ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 - One console has tested Rubi ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
   not measured on a console yet.
 - The game can stutter while Rubi reads ([FAQ](#will-it-slow-my-game-down)).
@@ -305,7 +324,7 @@ Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the e
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
 game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
-Rubi's OCR worker from its start: 228 KiB of its memory (192 KiB of module pages, 36 KiB of stack and
+Rubi's OCR worker from its start: README_KIB_PLACEHOLDER
 TLS: the normal build's figures; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).
@@ -363,6 +382,7 @@ and copy them to the memory card; up to eight are used, in your order
   [Read text: automatically or on a press](docs/auto-vs-press.md) · [The OCR](docs/vita-vn-ocr.md) ·
   [The one-VPK install](docs/one-vpk-install.md) · [Safe boot](docs/boot-safety.md) ·
   [Vita memory](docs/vita-memory.md) · [Hook requests](docs/hook-requests.md)
+- [The roadmap](docs/roadmap.md): what is left to build, ranked, and what of it is built.
 
 ## Contributing
 

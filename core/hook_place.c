@@ -10,7 +10,7 @@
 const char *vjo_place_reason(int reason)
 {
     static const char *const names[VJO_PLACE_COUNT] = {
-        "ok", "range", "align", "entry", "window", "signature", "unported", "version", "full", "tai"};
+        "ok", "range", "align", "entry", "window", "signature", "unported", "version", "full", "tai", "relocated"};
     return reason >= 0 && reason < VJO_PLACE_COUNT ? names[reason] : "?";
 }
 
@@ -244,14 +244,14 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG00509 POSSESSION MAGENTA (APP_VER ?): Vita3K 0x81012c76, 1299 farm pages (paired-vita-pcsg00509-20261023); patch: adds r2, r5, #0x0; adds.w r0, r4, #0x9c0; movs r5, #0x0; movs.w r1, #0x104; Luna's site here (r0, filter FPCSG00852) */
     {"PCSG00509", 0xA11A6741u, 0x12C76u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
      {0x2A, 0x1C, 0x14, 0xF5, 0x1C, 0x60, 0x00, 0x25, 0x5F, 0xF4, 0x82, 0x71, 0x00, 0x23, 0xFE, 0xF7}, VJO_RF_PCSG00509, 0, 0},
-    /* PCSG00540 忠臣蔵46+1 V (APP_VER ?): Vita3K 0x8102b90a, 1037 farm pages (paired-vita-pcsg00540-20261023); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0x84; movw r4, #0x5bf8; movt r4, #0x8106 */
-    {"PCSG00540", 0xC595CF25u, 0x2B90Au, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+    /* PCSG00540 忠臣蔵46+1 V (APP_VER ?): Vita3K 0x8102b90a, 1037 farm pages (paired-vita-pcsg00540-20261023); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0x84; movw r4, #0x5bf8; movt r4, #0x8106; CP932 with its 0xA0 kept (the blank cell its filter writes) */
+    {"PCSG00540", 0xC595CF25u, 0x2B90Au, 1, 1, VJO_HOOK_ENC_CP932_A0, 16, 0,
      {0x2D, 0xE9, 0xF0, 0x4F, 0xA1, 0xB0, 0x45, 0xF6, 0xF8, 0x34, 0xC8, 0xF2, 0x06, 0x14, 0x24, 0x68}, VJO_RF_PCSG00540, 0, 0},
     /* PCSG00553 剣が君 for V (APP_VER ?): Vita3K 0x821452b8, 1130 farm pages (paired-vita-pcsg00553-20261023); patch: mov r12, sp; push {r4, r5, r6, r7, r8, r11, r12, lr} */
     {"PCSG00553", 0xCF234754u, 0x11452B8u, 0, 1, VJO_HOOK_ENC_UTF16LE, 16, 12,
      {0x0D, 0xC0, 0xA0, 0xE1, 0xF0, 0x59, 0x2D, 0xE9, 0x20, 0xD0, 0x4D, 0xE2, 0x0D, 0xB0, 0xA0, 0xE1}, VJO_RF_BR_NEWLINE, 0, 0},
-    /* PCSG00628 ALIA's CARNIVAL! サクラメント (APP_VER 01.00): Vita3K 0x8103373c, 1208 farm pages (paired-vita-pcsg00628-20261023); patch: str r4, [r6, #0x2c]; movs r4, #0x0; str.w r9, [r6, #0xb4] */
-    {"PCSG00628", 0x1EE45F02u, 0x3373Cu, 1, 5, VJO_HOOK_ENC_CP932, 16, 0,
+    /* PCSG00628 ALIA's CARNIVAL! サクラメント (APP_VER 01.00): Vita3K 0x8103373c, 1208 farm pages (paired-vita-pcsg00628-20261023); patch: str r4, [r6, #0x2c]; movs r4, #0x0; str.w r9, [r6, #0xb4]; CP932 with its 0xA0 kept, as PCSG00540 */
+    {"PCSG00628", 0x1EE45F02u, 0x3373Cu, 1, 5, VJO_HOOK_ENC_CP932_A0, 16, 0,
      {0xF4, 0x62, 0x00, 0x24, 0xC6, 0xF8, 0xB4, 0x90, 0xA1, 0x46, 0x95, 0xF9, 0x00, 0x00, 0x18, 0xB1}, VJO_RF_PCSG00628, 0, 0x0100u},
     /* PCSG00648 月に寄りそう乙女の作法 (APP_VER ?): Vita3K 0x81026efa, 1397 farm pages (paired-vita-pcsg00648-20261023); patch: strh r0, [r4]; movw r1, #0x8638; ldrb r0, [r7]; movt r1, #0x8128; Luna's site here (r2, filter none) */
     {"PCSG00648", 0xE5819F44u, 0x26EFAu, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
@@ -330,6 +330,8 @@ int vjo_place_check_verified(const VjoPlaceVerified *v, const uint8_t *code, uin
     if (v->off & (v->thumb ? 1u : 3u) || (seg_base & 3u)) return VJO_PLACE_ALIGN;
     if (v->sig_len < vjo_place_patch_bytes(seg_base + v->off, v->thumb) || v->sig_len > 16) return VJO_PLACE_SIGNATURE;
     if (module_nid != v->module_nid || memcmp(code + v->off, v->sig, v->sig_len)) return VJO_PLACE_SIGNATURE;
+    /* the proven bytes, but r15 + padding is the static only where the eboot is loaded as it was linked */
+    if (v->reg == 15 && seg_base != VJO_PLACE_FIXED_SEG0) return VJO_PLACE_RELOCATED;
     return VJO_PLACE_OK;
 }
 

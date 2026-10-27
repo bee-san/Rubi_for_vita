@@ -22,6 +22,9 @@ import sys
 from pathlib import Path
 
 SCENARIOS = ["reading", "quick", "subtitles", "open", "site", "grow"]
+# Left out unless named with --titles: titles that share a release with CLANNAD or vita-test, and the pool's test title
+# (docs/native-hooks.md, the trust bench's sessions; #338's audit N8: the default took all of the pool's titles)
+LEFT_OUT = ("PCSG00007", "PCSG00807", "PCSG00866")
 
 
 def session_text(pagepool, title, limit):
@@ -61,7 +64,7 @@ def main():
     ap.add_argument("--jobs", type=int, default=5)
     ap.add_argument("-o", "--output", required=True)
     a = ap.parse_args()
-    titles = a.titles or sorted(p.stem for p in Path(a.pagepool).glob("PCSG*.jsonl"))
+    titles = a.titles or sorted(p.stem for p in Path(a.pagepool).glob("PCSG*.jsonl") if p.stem not in LEFT_OUT)
     texts = {t: session_text(a.pagepool, t, a.pages) for t in titles}
     titles = [t for t in titles if texts[t]]
     benches = [b.split("=", 1) for b in a.bench]

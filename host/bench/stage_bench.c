@@ -718,6 +718,8 @@ static const char nondefault_config[] =
     "hook_trust = off\n"
     "ocr_line_fix = all\n"
     "ocr_wait_hint = off\n"
+    "ocr_finder = spotter\n"
+    "ocr_spotter_refine = on\n"
     "overlay_on_text = on\n" /* API 46 */
     "ocr_pause = on\n";
 

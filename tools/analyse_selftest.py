@@ -934,9 +934,11 @@ LOG = {
     "line": re.compile(r"(\d+)x(\d+) (\d+)f (\d+)\.(\d)ms"),
     # shell/worker.c: the dictionary's display name, "Local dictionaries" (core/config.h VJO_DICT_NAME;
     # builds with the removed Hachidori relay could say "Hachidori relay"); builds before the online
-    # dictionaries' removal add its API key's state, "(key set|MISSING)"
-    "game": re.compile(r"^game (\S+) started: dictionary (.+?)(?: \(key (\S+)\))?, trigger (\S+), subtitles (\S+), "
-                       r"ocr_mode (\S+)"),
+    # dictionaries' removal add its API key's state, "(key set|MISSING)". #333's builds name no dictionary (it was
+    # always VJO_DICT_NAME) and end with the line finder the game's jobs use, as config.ini's two keys: its own
+    # (ocr_line_fix.ini), else config.ini's ocr_finder and ocr_line_fix
+    "game": re.compile(r"^game (\S+) started: (?:dictionary (.+?)(?: \(key (\S+)\))?, )?trigger (\S+), subtitles (\S+), "
+                       r"ocr_mode ([^\s,]+)(?:, ocr_finder ([^\s,]+))?(?:, ocr_line_fix (\S+))?"),
     # ("JP Overlay disabled" in builds before the Rubi rename)
     "disabled": re.compile(r"^(\S+): (?:Rubi|JP Overlay) disabled"),
     # shell/game.c vjo_game_identify: a PSP game's start (the process's title ID, AppMgr's app name, the
@@ -960,10 +962,14 @@ LOG = {
     # (the normal build's line names no word: "anki: save rc=0, 12 ms", docs/release-variants.md)
     "anki_save": re.compile(r"^anki: save (?:(.+) )?rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
     # settings/anki_page.c worker_main: each export's result and counts (export_result); the first builds with the
-    # export had no stop count, and builds before #161 no count of the screenshots no card named that it removed
+    # export had no stop count, and builds before #161 no count of the screenshots no card named that it removed;
+    # #314's: the duplicates (12), what Duplicates did with them (13: tag, skip or keep) and ", not checked" (14);
+    # stage C's cards tagged known (15) and ", known not checked" (16)
     "anki_export": re.compile(r"^(?:Rubi|overlay) app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
                               r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?"
-                              r"(?:, (\d+) swept)?)?(?:, \d+ bytes, arena peak \d+(?:, (\d+) without screenshots)?)?"),
+                              r"(?:, (\d+) swept)?)?(?:, \d+ bytes, arena peak \d+(?:, (\d+) without screenshots"
+                              r"(?:, (\d+) duplicates \((tag|skip|keep)\)(, not checked)?"
+                              r"(?:, (\d+) known(, known not checked)?)?)?)?)?"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     # API 23, shell/anki.c take_shot: a card's screenshot, made by the game worker (rc, the JPEG's quality, bytes,
     # the block, free USER, strips, source, the strips' ms, encoding ms, write ms, the whole)
@@ -1001,6 +1007,11 @@ LOG = {
     # API 42: the recognize step (VJO_GSTEP_RECOGNIZE): kind the share of its CTC frames (bytes) that vita-vn-ocr #117's
     # head gate skipped, percent ("-" without the gate or when it skipped none), arg the lines recognized
     "recognize": re.compile(r"^gstep job recognize kind=(?:-|(\d+)) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) "),
+    # API 54: the text spotter as the finder (VJO_GSTEP_SPOT): kind 1 when it found the lines (0: GRAD did), arg the
+    # boxes it gave the recognizer, rc why GRAD did, bytes its scratch | VJO_GLM_READ / _RESIDENT (its weights), sum
+    # every box it returned | 0x8000 more than it keeps | its weights' load ms << 16, us its time
+    "spot": re.compile(r"^gstep job spot kind=(\d+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
+                       r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
     "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
     # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM); API 36: kind the lines of a border
@@ -1369,6 +1380,16 @@ def export_summary(a):
         t += f"; removed from the queue: {_n(a['export_swept'], 'screenshot')} no card named"
     if a.get("export_missing_picture"):
         t += f"; exported without screenshots: {a['export_missing_picture']} card(s) (original records preserved)"
+    if a.get("export_duplicates_tag"):  # #314
+        t += f"; tagged duplicate (a word mined before): {a['export_duplicates_tag']} card(s)"
+    if a.get("export_duplicates_skip"):
+        t += f"; left out as duplicates (Duplicates: Skip; the queued ones stay queued): {a['export_duplicates_skip']} card(s)"
+    if a.get("export_unchecked"):
+        t += f"; {a['export_unchecked']} export(s) not checked for duplicates (too many cards for memory)"
+    if a.get("export_known"):
+        t += f"; tagged known (known_words.txt): {a['export_known']} card(s)"
+    if a.get("export_known_unchecked"):
+        t += f"; {a['export_known_unchecked']} export(s) not checked for known words (anki_known.bin: see log.txt)"
     lines = [t]
     for p in a.get("export_problems", []):
         if p["rc"]:
@@ -2322,6 +2343,8 @@ def summarise_log(text):
                     "modes": {}},
          "gate": {"jobs": 0, "stopped": 0, "lines_stopped": 0, "scores": [], "us": [], "rcs": {}, "reads": 0},
          "headgate": {"jobs": 0, "gated": 0, "frames": 0, "skipped": 0, "shares": []},
+         "spot": {"jobs": 0, "ran": 0, "boxes": 0, "lines": 0, "us": [], "load_ms": [], "rcs": {}, "reads": 0,
+                  "kept": 0},
          "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
          "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0},
@@ -2490,6 +2513,22 @@ def summarise_log(text):
                 gt["lines_stopped"] += int(m.group(2))
             gt["us"].append(int(m.group(6)))
             continue
+        m = LOG["spot"].match(line)
+        if m:
+            sp, packed, packed_sum = s["spot"], int(m.group(4)), int(m.group(5), 16)
+            sp["jobs"] += 1
+            sp["reads"] += packed >> 31          # VJO_GLM_READ: this job read the spotter's weights from the card
+            sp["kept"] += (packed >> 30) & 1     # VJO_GLM_RESIDENT: kept from an earlier job
+            rc = s32(int(m.group(3), 16))
+            if rc:
+                sp["rcs"][rc] = sp["rcs"].get(rc, 0) + 1
+            if m.group(1) == "1":
+                sp["ran"] += 1
+                sp["lines"] += int(m.group(2))
+                sp["boxes"] += packed_sum & 0x7FFF
+                sp["us"].append(int(m.group(6)))
+            sp["load_ms"].append(packed_sum >> 16)
+            continue
         m = LOG["norm"].match(line)
         if m:
             nm, packed = s["norm"], int(m.group(4), 16)
@@ -2602,7 +2641,11 @@ def summarise_log(text):
                 s["tier_misses"].append({"tier": m.group(1), "title": m.group(2), "need": int(m.group(3)),
                                          "free": int(m.group(4)), "next": m.group(5)})
             elif key == "game":
-                g = s["games"].setdefault(m.group(1), {"starts": 0, "ocr_mode": m.group(6), "dictionary": m.group(2)})
+                g = s["games"].setdefault(m.group(1), {"starts": 0, "ocr_mode": m.group(6)})
+                if m.group(2):  # builds before #333 named the dictionary
+                    g["dictionary"] = m.group(2)
+                if m.group(8):  # #333: each start's line finder, in order (a resume reads the game's own again)
+                    g.setdefault("line_finder", []).append(f"{m.group(7) or '?'} {m.group(8)}")
                 g["starts"] += 1
             elif key == "disabled":
                 s["disabled"].add(m.group(1))
@@ -2678,6 +2721,15 @@ def summarise_log(text):
                 an["export_swept"] += int(m.group(10) or 0)
                 if int(m.group(11) or 0):
                     an["export_missing_picture"] = an.get("export_missing_picture", 0) + int(m.group(11))
+                if int(m.group(12) or 0) and m.group(13) in ("tag", "skip"):  # #314
+                    k = "export_duplicates_" + m.group(13)
+                    an[k] = an.get(k, 0) + int(m.group(12))
+                if m.group(14):
+                    an["export_unchecked"] = an.get("export_unchecked", 0) + 1
+                if int(m.group(15) or 0):
+                    an["export_known"] = an.get("export_known", 0) + int(m.group(15))
+                if m.group(16):
+                    an["export_known_unchecked"] = an.get("export_known_unchecked", 0) + 1
                 if result in ("fail", "partial") and len(an["export_problems"]) < 10:
                     an["export_problems"].append({"what": m.group(1), "rc": int(m.group(2)), "cards": int(m.group(3)),
                                                   "kept": int(m.group(5) or 0), "unreadable": int(m.group(6) or 0),
@@ -3490,6 +3542,18 @@ def norm_line(nm):
             + f"; {_span(nm['us'])} us")
 
 
+def _game_settings(g):
+    """A game's start lines as the summary prints them: its ocr_mode, the line finder its starts used (#333: ocr_finder
+    and ocr_line_fix, once when they agree, else each start's in order) and the dictionary builds before #333 named."""
+    parts = [f"ocr_mode {g['ocr_mode']}"]
+    finders = g.get("line_finder")
+    if finders:
+        parts.append("line finder " + (finders[0] if len(set(finders)) == 1 else " -> ".join(finders)))
+    if g.get("dictionary"):
+        parts.append(g["dictionary"])
+    return ", ".join(parts)
+
+
 def render_collect(c):
     L = [f"collect {c['folder']} ({c['record'].get('collected_at')}, {c['record'].get('host')})"]
     pkg = c["record"].get("package") or {}
@@ -3555,8 +3619,7 @@ def render_collect(c):
         for b in lg["boot"][:8]:
             L.append(f"    {b}")
         if lg["games"]:
-            L.append("  games: " + ", ".join(f"{t} x{g['starts']} (ocr_mode {g['ocr_mode']}, {g['dictionary']})"
-                                            for t, g in lg["games"].items())
+            L.append("  games: " + ", ".join(f"{t} x{g['starts']} ({_game_settings(g)})" for t, g in lg["games"].items())
                      + (f"; disabled: {', '.join(lg['disabled'])}" if lg["disabled"] else ""))
         for p in lg.get("psp", [])[:8]:
             L.append(f"  psp: {p['key']} (title ID {p['title_id'] or '-'}, app {p['app'] or '-'}): "
@@ -3656,6 +3719,14 @@ def render_collect(c):
         hl = headgate_line(lg.get("headgate") or {})
         if hl:
             L.append(hl)
+        sp = lg.get("spot") or {}
+        if sp.get("jobs"):
+            L.append(f"  text spotter (ocr_finder = spotter): {sp['jobs']} job(s), {sp['ran']} found their lines with it "
+                     f"({sp['lines']} line(s) of {sp['boxes']} box(es))" + (f"; {_span(sp['us'])} us a job" if sp["us"] else "")
+                     + f"; weights read {sp['reads']} time(s), kept {sp['kept']}"
+                     + (f" (load {_span(sp['load_ms'])} ms)" if sp["reads"] else "")
+                     + ("; GRAD found them after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(sp["rcs"].items()))
+                        if sp["rcs"] else ""))
         nm = lg.get("norm") or {}
         if nm.get("jobs"):
             L.append(norm_line(nm))

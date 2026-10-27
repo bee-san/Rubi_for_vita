@@ -1,10 +1,11 @@
 /* The Stats page (settings/stats_page.c, #312) is not what the Games and OCR-page harnesses drive: it has its own
  * suite (host/tests/test_settings_stats.c, on a temporary card with a history.csv). Here it counts nothing and draws
- * the header only, so the tab bar can be checked on it; it records how often it was shown and the stick's moves. */
+ * the header only, so the tab bar can be checked on it; it records how often it was shown, the stick's moves and
+ * the app's quit (which stops a count). */
 #include <vita2d.h>
 #include "../../../settings/stats_page.h"
 
-int vjo_stats_stub_shown, vjo_stats_stub_rows;
+int vjo_stats_stub_shown, vjo_stats_stub_rows, vjo_stats_stub_quits;
 void vjo_stats_page_show(VjoArena *scratch) { (void)scratch; vjo_stats_stub_shown++; }
 void vjo_stats_page_frame(const VjoStatsUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
 {
@@ -16,4 +17,4 @@ void vjo_stats_page_frame(const VjoStatsUi *ui, uint32_t pressed, int touch_x, i
     vita2d_swap_buffers();
 }
 void vjo_stats_page_stick(int move) { vjo_stats_stub_rows += move; }
-void vjo_stats_page_quit(void) {}
+void vjo_stats_page_quit(void) { vjo_stats_stub_quits++; }

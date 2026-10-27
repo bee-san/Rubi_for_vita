@@ -73,15 +73,17 @@ int vjo_hooks_build_id(uint8_t out[32]);
 
 /* Job time: stream id agreed with OCR, or the Shell pinned it: its CALL slot is never given to another
  * caller (audit-hooks F2). key: the stream's key as the job's snapshot saw it (VjoHookSnap.key): kept only
- * while the slot still holds that caller (a slot another caller took during the job is not kept for it),
- * checked under the slot's try-lock (busy: not kept this time); 0: whichever caller holds it (a pinned
- * pick). No effect on a table site, or on an id that is not a stream. */
+ * while the slot still holds that caller (a slot another caller took during the job is not kept for it);
+ * 0: whichever caller holds it (a pinned pick). Either under the slot's try-lock (busy: not kept this time;
+ * a pin too since #366's audit-b, F3, so a keep never lands while a new caller is taking the slot). No effect
+ * on a table site, or on an id that is not a stream. */
 void vjo_hooks_keep(uint32_t id, uint32_t key);
 
 /* Job time: since the game started, with every CALL slot held by other callers: dropped, the CALL hits that
- * took no slot (the least recently written one not kept was busy, or every slot was kept; also a hit whose
- * slot went to another caller just before it wrote); replaced, the callers that took the least recently
- * written slot that was not kept (audit-hooks F2). */
+ * took no slot (the least recently written one not kept was busy, kept since, or written since the hit chose it, so no
+ * longer the least recently written: #366; or every slot was kept; or this caller's other thread had taken a slot;
+ * also a hit whose slot went to another caller just before it wrote); replaced, the callers that took the least
+ * recently written slot that was not kept (audit-hooks F2). */
 void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced);
 
 /* Job time: stream id's latest text, copied out under its slot's try-lock. 1 when copied; 0 when the

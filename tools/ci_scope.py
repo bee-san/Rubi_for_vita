@@ -9,9 +9,11 @@ PATH is a changed file, relative to the repository's root. It prints three lines
   code        anything but Markdown changed: the builds and tests run. An empty list is code=true
               (an unknown change builds everything).
   hooks_only  every file that is not Markdown is the native hooks' verified-entry table
-              (core/hook_place.c) or its three suites: the host job builds and runs those suites only
-              (both builds) and leaves out the rest of ctest, the Anki import and the ARM lane; the
-              Vita builds still run in full (the worker's pages and the memory ledger).
+              (core/hook_place.c) or one of the C suites listed with it: the host jobs leave out the
+              tools' Python suites that do not read the table (ctest -LE tools: all but tools_hook_request
+              and tools_hook_farm); every C suite, the ARM lane and the Vita builds still run (the worker's
+              pages and the memory ledger). The merge gate, tools/fast_gate.sh, runs every suite whatever
+              the scope.
   packaging   a file that the release package or tools/e2e_package.py uses changed (PACKAGING
               below), or CI itself: the release zips are made and tools/e2e_package.py runs on them.
 
@@ -22,10 +24,11 @@ import re
 import sys
 
 DOCS = re.compile(r"\.md$")
-# core/hook_place.c is compiled only into its three host suites and the game worker
-# (CMakeLists.txt, vita/CMakeLists.txt); a change to its header, core/hook_luna.c or the ledger's
-# budgets reaches the core library and is a full change.
+# core/hook_place.c and C suites that compile it (CMakeLists.txt): the place, stream, stream seam (#366) and engine
+# suites. The SC3 suite compiles it too but is not listed: a change to it alone is a full change. A change to its
+# header, core/hook_luna.c or the ledger's budgets reaches the core library and is a full change.
 HOOK_TABLE = re.compile(r"^(core/hook_place\.c|host/tests/test_hook_place\.c|host/tests/test_hook_stream\.c"
+                        r"|host/tests/test_hook_stream_seams\.c"
                         r"|host/tests/test_hooks_engine\.c|host/tests/fixtures/hook_place_forms\.inc)$")
 # What the release target stages (vita/CMakeLists.txt `release`), tools/package_release.py,
 # package_variants.py and package_vpk.py read, and tools/e2e_package.py runs: the package's own
