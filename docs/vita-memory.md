@@ -462,8 +462,9 @@ measured on the console]:
 | Icon textures (five current-page icons, at most 256 KiB each, `settings/icons.h`) | at most 1.25 MiB |
 | Anki export arena (2 MiB, `settings/anki_export.h` `VJO_EXPORT_MEM`; the app has no SceNet pool since the AnkiConnect page was removed), config scratch, game list | about 2.2 MiB |
 | PSP rows (`settings/psp.c`): a bubble target's blocks and PARAM.SFO, two taiHEN configurations | 306,800 B |
+| Stats tab (#312, `settings/stats_page.c`, `core/stats.h`): its counts (512 games, 16,384 game-days, 16,384 cards: 958,576 B), the work memory its count reads history.csv and the cache with (1 MiB) and its rows (111,184 B); the count's thread stack (64 KiB) | about 2.1 MiB |
 | Code, stacks, PVF atlas | about 2 MiB |
-| **Total** | **about 25 MiB of 50 MiB** |
+| **Total** | **about 27 MiB of 50 MiB** |
 
 The Games search uses a bounded 257-byte UTF-8 query and two 65-unit UTF-16 buffers on the
 app's stack (`settings/search.c`), not the Shell or a game's memory. The native IME module is

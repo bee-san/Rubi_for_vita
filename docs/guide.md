@@ -479,8 +479,8 @@ yet.
 The **Rubi** app shows five games per page, with compact titles, visible
 IDs and ON/OFF badges. The last page may have fewer games. Games are listed by letter (#,
 A–Z, kana by row, then other characters), alphabetically within it, capital
-and small letters together. Tap the **Games**, **OCR & lookup**
-or **Anki** tab, or press Select, to change pages. Choices save automatically to
+and small letters together. Tap the **Games**, **OCR & lookup**, **Anki**, **Stats**
+or **Install** tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
 Icons load one per frame for the current page only, with at most five textures
 kept. Changing pages releases the previous page's icons; a card
@@ -490,7 +490,7 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Control | Action |
 | --- | --- |
 | Up / Down | Select a game (held: repeats) |
-| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, after a sixth of a second 60 rows a second, at whatever rate the app draws; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup and Anki pages, where it stops at the first and last card while Up / Down wrap round |
+| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, after a sixth of a second 60 rows a second, at whatever rate the app draws; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup, Anki and Stats pages, where it stops at the first and last card while Up / Down wrap round |
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
 | L + R together, or touch the search field | Open the Vita keyboard and search all indexed games by title or title ID. Latin matching ignores case; Japanese text is matched as entered. The Enabled/Disabled filter still applies. Cancel keeps the current search; accept an empty query or touch Clear to show all games again |
 | Touch Prev / Next | Change the five-game page; the page number is shown between them |
@@ -499,7 +499,7 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
-| Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](anki.md#setup-and-use) pages |
+| Select or touch a page tab | Switch between the Games, OCR & lookup, [Anki](anki.md#setup-and-use), [Stats](#stats) and Install pages |
 | Cancel | Exit |
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
@@ -966,6 +966,38 @@ overlay or the app uses the network for Anki. `anki_host` and
 `anki_audio_url` (AnkiConnect, removed) are ignored, and the installer and the
 app's next save remove them. See [docs/anki.md](anki.md) for the fields, the queue, the package
 and memory.
+
+### Stats
+
+The Rubi app's **Stats** page shows your reading from `ux0:data/VitaJPOverlay/history.csv`, the lines the overlay
+keeps with **Read text: Automatically** ([OCR history](ocr-history.md)), and the cards in the Anki queue. It counts
+them as the overlay's △ view does, with `config.ini`'s `reading_time` (adaptive, the default:
+[reading time](ocr-history.md#reading-time)), so each game's **Today** and **In all** are the numbers △ shows in that
+game: today in this game, and this game's total. Days are the Vita's own calendar days, in its time zone. There are
+no sessions: a day, a game and all games.
+
+| Row | What it shows |
+| --- | --- |
+| **Today** | All games today: characters, reading time and characters per hour; the daily goal's bar; the streak, the days in a row that count (ending today, or yesterday while today does not count yet) and the best |
+| **Daily goal** | Off (the default), 2,000, 5,000, 10,000, 20,000 or 50,000 characters, or 15, 30, 60 or 120 minutes of reading a day. Left/Right (or a tap on its sides) choose, Enter goes round. A day counts for the streak when it meets the goal, or with no goal when anything was read |
+| **Last 14 days** | A bar of characters a day, today's at the right, a day at the goal in the accent colour, the goal's line across them; Left/Right choose a day (L/R a week) and the row says its characters, time and characters/hour |
+| **This year** | A heatmap of the year's days, a column a week from Sunday, in four shades by the year's best day; Left/Right choose a day, L/R a week, or tap one |
+| **All games** | The totals of every game, the cards mined and the cards per 10,000 characters, and the lines recorded |
+| A row per game | Its name and the last day read; today's characters, time and characters/hour; in all the same, its cards (by the title ID the card was mined in) and cards per 10,000 characters. The game read last comes first |
+
+- **Start** counts again; the page counts what is new each time it is shown. The first count reads all of
+  `history.csv` on a thread of its own (the status line says how far it is); then the counts are kept in
+  `ux0:data/VitaJPOverlay/stats_cache.bin`, and the next count reads only the lines added since. A `history.csv` that
+  is not the one counted (replaced or shorter), another time zone, another `reading_time` or a damaged cache is
+  counted again from its start. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
+  AMD EPYC 9R14 core; the Vita's time is unmeasured: the app runs on its CPU3 while the game is suspended].
+- **The goal** is kept in the app's own settings file, `ux0:data/VitaJPOverlay/app.ini`
+  (`stats_daily_goal = off | 2000_characters | … | 120_minutes`), never in `config.ini`: the overlay does not read it.
+- The page only reads `history.csv` and the cards; it writes `stats_cache.bin` and `app.ini` only. A line read across
+  midnight is its first day's, with its time, as `tools/reading_stats.py` counts it; △'s **Today** leaves such a line
+  out. A record a power loss cut is skipped, as △ skips it.
+- It counts at most 512 games (more count in **All games** only), 16,384 days of games and 16,384 cards (its
+  memory: about 2.1 MiB of the app's own, [vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)).
 
 ## Memory and troubleshooting
 

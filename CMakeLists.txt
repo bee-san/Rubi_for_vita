@@ -44,7 +44,8 @@ target_compile_options(vjo_taihen_parser PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
-  core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/entries.c core/config.c core/regions.c
+  core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/history_read.c core/stats.c
+  core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
@@ -342,6 +343,13 @@ if(_vjo_plaintext)
   set(_vjo_plaintext_dir ${CMAKE_BINARY_DIR}/plaintext)
 endif()
 
+# The Rubi app's history.csv reader (core/history_read.c: the Look up page's earlier lines, #313, the Stats page,
+# #312) against the Shell's own (core/history_lines.c) on random files, whole and in windows.
+add_executable(vjo-history-read-tests host/tests/test_history_read.c)
+target_include_directories(vjo-history-read-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-history-read-tests vjo_host)
+target_compile_options(vjo-history-read-tests PRIVATE -Wall -Wextra)
+add_test(NAME history_read COMMAND vjo-history-read-tests)
 add_executable(vjo-text-hit-tests host/tests/test_text_hit.c)
 target_include_directories(vjo-text-hit-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-text-hit-tests vjo_host)
@@ -426,6 +434,20 @@ target_include_directories(vjo-history-writer PRIVATE host/tests/vita_stubs)
 target_compile_definitions(vjo-history-writer PRIVATE VJO_HOST=1)
 target_compile_options(vjo-history-writer PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-history-writer PRIVATE vjo_core) # shell/history.c also contains the line-history reader
+# The Rubi app's Stats tab, its counts (core/stats.c, #312): each game's equal to the Shell's count of the same
+# history.csv (core/history_lines.c, the Triangle view's), any windows, a cache at any of them, cut and damaged
+# records, local days and midnight, the timelines of tools/reading_time_sim.py, the cache's checks, the streak.
+add_executable(vjo-stats-tests host/tests/test_stats.c)
+target_include_directories(vjo-stats-tests PRIVATE third_party/acutest/include)
+target_compile_definitions(vjo-stats-tests PRIVATE VJO_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures")
+target_compile_options(vjo-stats-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-stats-tests vjo_core)
+add_test(NAME stats COMMAND vjo-stats-tests)
+# The same counts as a tool (vjo-stats FILE: JSON), for tools/tests/test_stats_tab.py (VJO_STATS_TOOL: against
+# tools/reading_stats.py and the Shell's own count) and #312's parse-time measurement (--synthetic, --bench).
+add_executable(vjo-stats host/stats_tool.c)
+target_compile_options(vjo-stats PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-stats vjo_core)
 # Line history (docs/line-history.md): history.csv's records read back from a window of the file,
 # this game's lines newest first, filtered and deduplicated as the overlay shows them.
 add_executable(vjo-history-lines-tests host/tests/test_history_lines.c)
@@ -647,7 +669,7 @@ foreach(_vjo_suite IN LISTS _vjo_tool_suites)
   # the same result in both builds: label variant_free, which the normal build's CI job and
   # tools/fast_gate.sh leave to the debug build's run (ctest -LE variant_free).
   file(READ ${_vjo_suite} _vjo_suite_text)
-  if(NOT _vjo_suite_text MATCHES "VJO_(CLI|BENCH|SELFTEST_WRITER|DICT_BENCH|TAICFG|HISTORY_WRITER|CAPTURE_PARITY)|build/host")
+  if(NOT _vjo_suite_text MATCHES "VJO_(CLI|BENCH|SELFTEST_WRITER|DICT_BENCH|TAICFG|HISTORY_WRITER|STATS_TOOL|CAPTURE_PARITY)|build/host")
     set_property(TEST ${_vjo_test} APPEND PROPERTY LABELS variant_free)
   endif()
 endforeach()
@@ -677,6 +699,7 @@ endif()
 string(APPEND _vjo_tool_env ";VJO_DICT_BENCH=$<TARGET_FILE:vjo-dict-bench>")
 string(APPEND _vjo_tool_env ";VJO_TAICFG=$<TARGET_FILE:vjo-taicfg>")
 string(APPEND _vjo_tool_env ";VJO_HISTORY_WRITER=$<TARGET_FILE:vjo-history-writer>")
+string(APPEND _vjo_tool_env ";VJO_STATS_TOOL=$<TARGET_FILE:vjo-stats>")
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
 endif()
@@ -781,7 +804,7 @@ foreach(_vjo_variant IN ITEMS app vocr6)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
-    vita/buttons_vita.c
+    vita/buttons_vita.c host/tests/settings_stubs/stats_page_stub.c
     host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
@@ -824,7 +847,7 @@ foreach(_vjo_games IN ITEMS tests bench)
   add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/psp.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
-    vita/buttons_vita.c
+    vita/buttons_vita.c host/tests/settings_stubs/stats_page_stub.c
     host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
@@ -875,6 +898,18 @@ target_compile_definitions(vjo-settings-anki-tests PRIVATE VJO_TEST_CREATE_STUBS
 target_compile_options(vjo-settings-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-settings-anki-tests vjo_host)
 add_test(NAME settings_anki COMMAND vjo-settings-anki-tests)
+# The Rubi app's Stats tab itself (settings/stats_page.c, #312): each game's row as the Triangle view shows it (the
+# Shell's count of the same history.csv), the rows and their scrolling, the goal in app.ini (settings/app_prefs.c,
+# never config.ini), the 14 days and the year, touch, the cache and its checks, the cards per game, on a temporary
+# memory card, its count on the page's worker thread run when the test says.
+add_executable(vjo-settings-stats-tests host/tests/test_settings_stats.c settings/stats_page.c settings/app_prefs.c
+  settings/preferences.c)
+target_include_directories(vjo-settings-stats-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
+  host/tests/install_stubs host/tests/vita_stubs host/tests)
+target_compile_definitions(vjo-settings-stats-tests PRIVATE VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS)
+target_compile_options(vjo-settings-stats-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-settings-stats-tests vjo_host)
+add_test(NAME settings_stats COMMAND vjo-settings-stats-tests)
 # The same engine on a memory card folder, for the one-VPK e2e (a real VPK extracted as VitaShell installs it).
 add_executable(vjo-install-e2e host/install_e2e.c settings/install.c settings/preferences.c)
 target_include_directories(vjo-install-e2e PRIVATE host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs

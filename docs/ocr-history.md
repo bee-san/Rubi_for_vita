@@ -252,6 +252,8 @@ native hooks) and `vocr` for OCR's (0.8.0 had no hooks, so all of its lines are 
 
 ## Reading statistics
 
+The Rubi app's **Stats** page shows them on the Vita: today, the last 14 days, the year, a streak and a daily goal,
+each game and all games ([guide](guide.md#stats)). On a computer,
 `tools/reading_stats.py` (Python 3, nothing to install; in the release zip's
 `tools/` folder and in the repository) reads one or more copies of
 `history.csv` and prints the records, characters, reading time and characters
@@ -387,7 +389,9 @@ duration; untimed lines still count in total characters, but cannot inflate read
 interval, speed is `—` and time is `0 min`. Hook and OCR records follow the same rule.
 
 For an external report with the same numbers, run `python3 tools/reading_stats.py history.csv`
-(with `reading_time = 15s`: `--break-minutes 0.25`).
+(with `reading_time = 15s`: `--break-minutes 0.25`). On the Vita, the Rubi app's **Stats** page counts the same file
+with the same rule, per game and per local day, for every game together too
+([guide](guide.md#stats); `core/stats.c`, #312): each game's numbers there are this view's for that game.
 
 The tool sorts by timestamp; the overlay follows append order so that backward clock changes break
 an interval. The tool also accepts some externally edited CSV formats; the overlay reads Rubi's native
