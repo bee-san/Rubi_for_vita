@@ -11,6 +11,12 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- Opening the overlay confirms that the text is ready: its OCR read skips the stability wait. On an unsettled
+  screen, a running background read yields to a new read without the wait. Background reads and quiet refreshes
+  keep their stability checks; completed results still reopen from the cache.
+
 ### Added
 
 - **A game's own line finder** (#333; [guide](docs/guide.md#a-games-own-page)). The finder (`ocr_finder`, the

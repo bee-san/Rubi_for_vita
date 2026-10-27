@@ -1162,13 +1162,12 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
         request.flags |= (c ? c > VJO_GAME_OCR_CASCADE_MASK ? VJO_GAME_OCR_CASCADE_MASK : c : 1u)
                          << VJO_GAME_OCR_CASCADE_SHIFT;
     }
-    if (job_cfg.ocr_settle_ms > 0) {
+    /* Opening the overlay confirms that the player wants this screen read now.
+     * Keep the wait for background reads, refreshes and diagnostic stages only;
+     * clearing SETTLE_FIRST alone would still leave settle_verify's wait. */
+    if (job_cfg.ocr_settle_ms > 0 && (job_prepares || job_refresh || stage >= 0 || flags)) {
         uint32_t settle = (uint32_t)(job_cfg.ocr_settle_ms + 5) / 10u;
-        /* A job the open overlay waits for (not Auto's, a refresh or the self-test's)
-         * waits at most ocr_settle_press_ms: test.2's waited up to 1.5 s (docs/first-ocr.md). */
         int wait_max = job_cfg.ocr_settle_max_ms;
-        if (!job_prepares && !job_refresh && job_cfg.ocr_settle_press_ms > 0 && job_cfg.ocr_settle_press_ms < wait_max)
-            wait_max = job_cfg.ocr_settle_press_ms;
         request.flags |= (settle ? settle : 1u) << VJO_GAME_OCR_SETTLE_SHIFT |
                          (uint32_t)(wait_max + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
         if (!st0.stable) request.flags |= VJO_GAME_OCR_F_SETTLE_FIRST;
@@ -2108,7 +2107,13 @@ static void open_overlay(void)
     view_waiting = 1;
     if (job_running) {
         ov = OV_OPEN_OLD_JOB; /* a cancelled one is followed by a new one */
-        cancel_outdated_job(&st);
+        /* An unsettled screen may have a background read still waiting in the
+         * game worker. Cancel it and let on_job_done start the overlay's read
+         * without that wait, even before it captured anything. */
+        if (!st.stable && job_prepares && !job_cursor_only)
+            job_cancelled = 1;
+        else
+            cancel_outdated_job(&st);
     } else {
         start_job("overlay opened", 1);
     }
