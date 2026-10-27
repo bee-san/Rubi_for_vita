@@ -331,7 +331,11 @@ records `variant` and `app_version` in each manifest), verifies both, checks the
 there, makes each build's VPK of its zip (`tools/package_vpk.py`: the app, then `payload/` with the
 zip's own files and `payload/manifest.txt`, the app's own facts; it refuses a build whose worker mode
 is not `kernel`, whose payload would install no game's OCR, and anything VitaShell's install scan
-would warn of beyond "extended permissions"), and writes `SHA256SUMS`. `package_vpk.py --verify VPK`
+would warn of beyond "extended permissions"), and writes `SHA256SUMS`. The same artifacts and models
+packaged again give the same bytes, zips and VPKs alike (every written entry has a fixed date and a fixed
+order: `tools/tests/test_package_models.py`; 0.9.8's artifacts gave the same four SHA-256s with Python 3.9
+and with the gate image's 3.12 [measured: audit-rubi-rel-098]), so a release packaged on another machine can
+be checked against the SHA-256s its Release run's package job prints. `package_vpk.py --verify VPK`
 checks a VPK again. Then run the package check on each zip, as CI does on every pull request
 that changes more than Markdown, from a checkout of the zips' own commit:
 
