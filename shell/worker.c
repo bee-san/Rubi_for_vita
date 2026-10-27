@@ -1163,6 +1163,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
                          (job_cfg.ocr_line_fix == 3 ? VJO_GAME_OCR_S_LINE_VALLEY : 0u);
     /* API 46: where each character of the text is on the screen, for the overlay on the game's text */
     if (job_cfg.overlay_on_text && stage < 0) request.speed |= VJO_GAME_OCR_S_CHARS;
+    /* API 51: ocr_pause (off by default) pauses the game for its frame in the user's jobs (docs/game-pause.md) */
+    if (job_cfg.ocr_pause && stage < 0) request.speed |= VJO_GAME_OCR_S_PAUSE;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
     int64_t t0 = now_us();

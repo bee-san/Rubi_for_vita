@@ -55,6 +55,12 @@ static struct {
     unsigned text_blink;   /* the text shows for this many frames, then hides as long (0: it stays) */
     int frozen;            /* the clock never moves (reads and sleeps take no time) */
     int stripes;           /* the screen is diagonal stripes 10 px wide (no text; GRAD finds a line in it) */
+    /* API 51, the pause (VjoGreySource.frozen): the first pass's first strip copies the whole region from the next
+     * frame at once, and every read from then on is from that copy */
+    int freeze;
+    unsigned frozen_at;    /* the frame the copy is of (0: none yet) */
+    unsigned frozen_reads; /* reads served from it */
+    int tall;              /* one band of strokes 80 rows tall (10-89), taller than a strip, instead of the line */
     Read log[LOG_MAX];
     unsigned n_log;
     int opens;
@@ -94,6 +100,8 @@ static unsigned char pixel(unsigned x, unsigned y, unsigned frame)
     int text_on = frame >= scr.text_from && !(scr.clear_at && frame >= scr.clear_at) &&
                   !(scr.text_blink && frame / scr.text_blink % 2);
     if (scr.alt_row && y == scr.alt_row) return (frame >= scr.alt_from ? scr.row_b : scr.row_a)[x];
+    if (scr.tall) /* vertical strokes every 12 px, 2 px wide, rows 10-89: one band the finder cannot split */
+        return (unsigned char)(y >= 10 && y < 90 && x >= 20 && x < 340 && (x - 20) % 12 < 2 ? 235 : 20);
     if (scr.stripes) /* they move by 5 px once the screen changes (change_frame) */
         return (unsigned char)((x + y + (scr.change_frame && frame >= scr.change_frame ? 5u : 0u)) / 10u % 2u ? 40 : 200);
     int on_line = scr.three_lines || scr.two_lines
@@ -118,11 +126,35 @@ static unsigned char pixel(unsigned x, unsigned y, unsigned frame)
     return v;
 }
 
+static unsigned char frozen_copy[W * H];
+static const unsigned char *frozen_region(void *ud)
+{
+    (void)ud;
+    return scr.frozen_at ? frozen_copy : NULL;
+}
+
 static int strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
 {
     uint64_t t0 = scr.clock;
     (void)ud;
     if (y + n > H) return VJO_E_SOURCE;
+    if (scr.freeze && !scr.frozen_at && (flags & VJO_STRIP_FIRST) && !y) {
+        /* the pause: every row from the next frame, in its one display call (the game waits meanwhile) */
+        if (!scr.frozen) scr.clock += FRAME_US;
+        scr.frame++;
+        scr.frozen_at = scr.frame;
+        for (unsigned r = 0; r < H; r++)
+            for (unsigned x = 0; x < W; x++) frozen_copy[(size_t)r * W + x] = pixel(x, r, scr.frozen_at);
+        /* its first pass is published with it: the game goes on */
+        if (scr.resume_for && !scr.resumed_at) scr.resumed_at = scr.frame;
+        if (scr.change_after && !scr.change_frame) scr.change_frame = scr.frame + scr.change_after;
+    }
+    if (scr.frozen_at) { /* the worker's block: no frame waited for */
+        if (scr.n_log < LOG_MAX) scr.log[scr.n_log++] = (Read){y, n, flags, scr.frozen_at, t0};
+        for (unsigned r = 0; r < n; r++) memcpy(dst + (size_t)r * stride, frozen_copy + (size_t)(y + r) * W, W);
+        scr.frozen_reads++;
+        return (int)n;
+    }
     if (!scr.frozen) scr.clock += FRAME_US;
     scr.frame++;
     if (scr.n_log < LOG_MAX) scr.log[scr.n_log++] = (Read){y, n, flags, scr.frame, t0};
@@ -143,13 +175,14 @@ static void sleep_us(uint32_t us)
     scr.sleeps++;
 }
 
-static VjoGreySource im = {NULL, W, H, strip, NULL, NULL};
+static VjoGreySource im = {NULL, W, H, strip, NULL, NULL, NULL};
 static unsigned char capture[64 * 1024];
 static unsigned char ws_mem[512 * 1024] __attribute__((aligned(64)));
 
 static void reset(void)
 {
     memset(&scr, 0, sizeof(scr));
+    im.frozen = NULL;
     scr.clock = 1000000;
     scr.chars = 25;
 }
@@ -2561,7 +2594,107 @@ static void test_the_cascade_rereads_a_gated_counter_line(void)
     free(ws);
 }
 
+
+/* ---- API 51: a region the source froze (VjoGreySource.frozen, the pause: docs/game-pause.md) ---- */
+/* A region that never holds still (every frame differs, a spinner's worst case): read strip by strip, every re-read
+ * tears it and the job gives up (VJO_E_SCREEN_CHANGED, nothing shown); frozen at its first pass, the job reads that
+ * one frame, waits for nothing after the finder, sees no tear and goes on to the model (here: none, VJO_E_OCR_MODEL). */
+static void test_a_frozen_region_is_read_once_without_waiting(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000};
+    VjoVocrStats st;
+    reset();
+    scr.noise = 1;
+    TEST_CHECK(run(&pol, &st) == VJO_E_SCREEN_CHANGED && st.tears > 0 && !st.frozen);
+    TEST_MSG("strip by strip: %u tears, %u tries", st.tears, st.tries);
+    reset();
+    scr.noise = 1;
+    scr.freeze = 1;
+    im.frozen = frozen_region;
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL && scr.opens == 1);
+    TEST_CHECK(st.frozen && !st.tears && st.tries == 1 && !st.settle_passes && !st.settle_us && !st.settled);
+    TEST_CHECK(scr.frozen_at == 1 && scr.frame == 1 && scr.frozen_reads == scr.n_log); /* one frame, every read from it */
+    TEST_MSG("frozen: %u reads, frame %u, %u tears", scr.n_log, scr.frame, st.tears);
+    unsigned at = 0;
+    TEST_CHECK(published_at(&at) >= 0 && at == 1); /* the first pass is that frame's */
+}
+/* A wait before the first pass (settle_first: the screen was still changing when the job was asked) reads the live
+ * screen; an icon that runs through more states than a row keeps (a spinner of 20 shades) keeps it from settling,
+ * so it runs out. Then, strip by strip, the first pass differs from the wait's last pass and every later re-read
+ * tears; frozen, the first pass is the region (the wait's rows forgotten), and nothing tears. */
+static void test_a_frozen_first_pass_forgets_the_wait_before_it(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 400000, .settle_first = 1};
+    VjoVocrStats st;
+    reset();
+    scr.blink_every = 1;
+    scr.icon_levels = 20;
+    TEST_CHECK(run(&pol, &st) == VJO_E_SCREEN_CHANGED && st.settle_timeout && st.tears > 0);
+    TEST_MSG("strip by strip: %u tears, %u tries", st.tears, st.tries);
+    reset();
+    scr.blink_every = 1;
+    scr.icon_levels = 20;
+    scr.freeze = 1;
+    im.frozen = frozen_region;
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.frozen && st.settle_timeout && !st.settled && !st.tears && st.tries == 1);
+    TEST_CHECK(st.settle_us >= 400000 && st.settle_us < 400000 + 3u * FRAME_US);
+    TEST_MSG("frozen after the wait: %u tears, waited %u us", st.tears, (unsigned)st.settle_us);
+}
+/* A source that cannot freeze (frozen() NULL: the kernel refused the copy) reads exactly as one without the callback:
+ * the same strips, flags and frames. */
+static void test_a_refused_freeze_reads_as_before(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000};
+    VjoVocrStats a, b;
+    Read first[LOG_MAX];
+    unsigned n;
+    reset();
+    scr.blink_every = 8;
+    TEST_CHECK(run(&pol, &a) == VJO_E_OCR_MODEL);
+    memcpy(first, scr.log, sizeof(first));
+    n = scr.n_log;
+    reset();
+    scr.blink_every = 8;
+    im.frozen = frozen_region; /* scr.freeze 0: it answers NULL */
+    TEST_CHECK(run(&pol, &b) == VJO_E_OCR_MODEL && !b.frozen);
+    TEST_CHECK(scr.n_log == n && !memcmp(first, scr.log, n * sizeof(first[0])));
+    TEST_CHECK(a.settle_passes == b.settle_passes && a.tears == b.tears && a.tries == b.tries);
+}
+/* A line taller than a strip is read from the frozen region, the region's own rows at its x and y (no line buffer:
+ * this source has none, so strip by strip the line is left out). */
+static unsigned tall_seen, tall_in_place;
+static void tall_record(void *ud, const VjoVocrLineInfo *info)
+{
+    (void)ud;
+    tall_seen++;
+    if (info->h > 64 && info->stride == W && info->pixels == frozen_copy + (size_t)info->y * W + info->x) tall_in_place++;
+}
+static void test_a_tall_line_is_read_from_the_frozen_region(void)
+{
+    VjoVocrPolicy pol = {.blank = 1, .blank_edges = 20000, .line = tall_record}; /* every line blank: no weights */
+    VjoVocrStats st;
+    TEST_ASSERT(vjo_vocr_strip_rows(W, H) < 80);
+    reset();
+    scr.tall = 1;
+    tall_seen = tall_in_place = 0;
+    TEST_CHECK(run(&pol, &st) == VJO_OK && st.lines >= 1 && st.tall_skipped >= 1 && !tall_in_place);
+    TEST_MSG("strip by strip: %u lines, %u tall, %u left out", st.lines, st.tall, st.tall_skipped);
+    reset();
+    scr.tall = 1;
+    scr.freeze = 1;
+    im.frozen = frozen_region;
+    tall_seen = tall_in_place = 0;
+    TEST_CHECK(run(&pol, &st) == VJO_OK && st.frozen && st.tall >= 1 && !st.tall_skipped);
+    TEST_CHECK(tall_in_place >= 1 && tall_in_place == st.tall);
+    TEST_MSG("frozen: %u lines seen, %u tall read in place", tall_seen, tall_in_place);
+}
+
 TEST_LIST = {
+    {"API 51: a frozen region is read once, without a wait or a tear", test_a_frozen_region_is_read_once_without_waiting},
+    {"API 51: a frozen first pass forgets the wait before it", test_a_frozen_first_pass_forgets_the_wait_before_it},
+    {"API 51: a refused freeze reads exactly as before", test_a_refused_freeze_reads_as_before},
+    {"API 51: a tall line is read from the frozen region in place", test_a_tall_line_is_read_from_the_frozen_region},
     {"the_capture_block_stays_within_64_KiB_at_every_size", test_capture_block_sizes},
     {"a_zero_policy_reads_exactly_as_api19", test_zero_policy_is_api19},
     {"typing_text_is_read_once_whole", test_typing_is_read_once_whole},

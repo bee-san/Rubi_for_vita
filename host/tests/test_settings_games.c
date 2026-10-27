@@ -1398,7 +1398,7 @@ static void list_keys_only_on_the_games_page(void)
  * first. The d-pad still wraps round there. */
 /* The OCR & lookup page's focused card in frame f: its place among the page's
  * cards (settings/main.c PREF_*), by its title, or -1. */
-#define OCR_CARDS 11
+#define OCR_CARDS 12
 static int ocr_card(const Frame *f)
 {
     static const char *const titles[OCR_CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
@@ -1406,7 +1406,8 @@ static int ocr_card(const Frame *f)
                                                   "Text source", /* API 31 */
                                                   "Trusted hooks replace OCR", "Skip OCR on screens without text",
                                                   "Vertical text", /* API 43, API 47 */
-                                                  "Overlay on the game's text"}; /* API 46 (test/combined) */
+                                                  "Overlay on the game's text", /* API 46 (test/combined) */
+                                                  "Pause the game to read"}; /* API 51 */
     for (int i = 0; i < OCR_CARDS; i++)
         if (!strcmp(f->bar_title, titles[i])) return i;
     return -1;

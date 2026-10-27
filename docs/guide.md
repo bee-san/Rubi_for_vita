@@ -486,10 +486,11 @@ reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting,
 dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
 switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
 and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
-and **Vertical text** (`ocr_vertical`, the last card: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)), and (API 51)
+**Pause the game to read** (`ocr_pause`, OFF by default, the last card: [pause](game-pause.md)).
 Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
-Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection and two skip cards,
+Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection, two skip and pause cards,
 Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, Automatic/Every
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
@@ -753,6 +754,10 @@ left, with vita-vn-ocr's vertical model, where the line finder's rows in the reg
 rows everywhere else, as `off` does; `on` reads columns in every game. Draw the text box around the columns. On
 the host it read a vertical PS Vita VN's dialogue at 4.5-23 % CER, depending on how the box is drawn, and changed
 no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console).
+`ocr_pause = on` (the Rubi app's **Pause the game to read**; off by default) copies each reading's text box from one
+frame at once, inside that frame's display call, which the game waits in for as long: an estimated 2.4-6.4 ms for a
+dialogue box at 333 MHz, at most 100 ms. The OCR reads that still copy, so a spinning or blinking icon in the box
+cannot stop the read ([pause](game-pause.md); not run on a console). PSP games in Adrenaline read as before.
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
 #100's text-presence gate in front of the finder: a region it says holds no text (the game hid its text box, a CG
 screen) returns no line, so nothing is recognized and no junk is read off the picture. It stays off because it also

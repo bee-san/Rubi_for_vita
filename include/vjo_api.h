@@ -113,12 +113,17 @@
  * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
  * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
  * the text spotter, vertical text, trusted hooks).
- * 51: test/combined, the combined test build (v0.9.8-test.N; never merged, never main's): main's API 50 with draft
- * #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS) and draft #318 (no interface change). A new number keeps
- * main's API 50 builds (0.9.8) and test.17's API 46 from exchanging requests with an interface that differs from
- * theirs, as API 33 did for 31 and 32. With the characters' places a job selects without API 43's trusted
- * answers (game_ocr/main.c): it recognizes to place a hook's text. */
-#define VJO_API_VERSION 51
+ * 51: the pause for the frame (config.ini ocr_pause, #348; docs/game-pause.md): VjoGameOcrRequest.speed bit 30
+ * (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region copied from one frame in one display
+ * call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block (VJO_GITEM_FRAME), which the job reads from;
+ * the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. (Draft #355's number; #354 has 51 too.)
+ * 52: test/combined, the combined test build (v0.9.8-test.2 on; never merged, never main's): main's API 50 with
+ * every open draft: #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS), #355's API 51 (speed bit 30,
+ * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE) and #318 (no interface change). v0.9.8-test.1 was 51
+ * (main's 50 with #326 and #318); #354 and #355 claim 51 on their branches, so this build takes 52, a number
+ * no other build has. With the characters' places a job selects without API 43's trusted answers
+ * (game_ocr/main.c): it recognizes to place a hook's text. */
+#define VJO_API_VERSION 52
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

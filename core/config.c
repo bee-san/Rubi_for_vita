@@ -59,6 +59,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_head_gate = VJO_HEAD_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Head gate" and "Two-level head" */
     c->hook_trust = 1; /* a trusted hook answers without OCR; off: Rubi 0.9.7's selection (docs/native-hooks.md) */
     c->ocr_vertical = VJO_VERTICAL_DEFAULT; /* docs/vita-vn-ocr.md, "Vertical text" */
+    c->ocr_pause = 0; /* the game is not paused for its frame unless ocr_pause = on (docs/game-pause.md) */
 }
 
 const char *vjo_config_default_text(void)
@@ -162,6 +163,10 @@ const char *vjo_config_default_text(void)
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
            "ocr_boost_clock = on\n"
+           "; vocr: pause the game a moment for each reading (the Rubi app's Pause the game to\n"
+           "; read): the text box is copied from one frame, so an animated icon cannot change\n"
+           "; it while it is read: on | off\n"
+           "ocr_pause = off\n"
            "; vocr: vertical text (manga, vertical dialogue): auto reads the region's columns,\n"
            "; right to left, with the vertical model where its rows look like vertical text |\n"
            "; on reads columns in every game | off reads rows\n"
@@ -616,9 +621,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_refine_lines")) {
         static const char *const modes[] VJO_DATA_TABLE(config_modes_1) = {"off", "on", "psp", NULL};
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
-    } else if (vjo_ieq(key, "ocr_text_gate")) {
+    } else if (vjo_ieq(key, "ocr_text_gate") || vjo_ieq(key, "ocr_pause")) {
         static const char *const off_on[] VJO_DATA_TABLE(config_off_on_2) = {"off", "on", NULL};
-        set_choice(c, key, val, &c->ocr_text_gate, off_on);
+        /* ocr_text_gate or (API 51) ocr_pause: their fifth letters differ, in either case */
+        set_choice(c, key, val, (key[4] | 0x20) == 'p' ? &c->ocr_pause : &c->ocr_text_gate, off_on);
     } else if (vjo_ieq(key, head_key)) {
         /* each value's index is its VJO_HEAD_* bits */
         static const char *const heads[] VJO_DATA_TABLE(config_heads_1) = {"off", head_gate_name, head_two_name, "on",
