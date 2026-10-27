@@ -477,10 +477,10 @@ measured on the console]:
 | Code, stacks, PVF atlases (256 KiB each, four at most: the drawing font's and the measuring font's, the drawing font a frame replaced, freed once the GPU is done with it, and for a moment a new measuring font, as the one it replaces is never drawn with and so freed at once: `settings/main.c` `glyphs_for`, `measured_for`, `font_tick`, #313; each replaced font leaves its glyph table in the heap, 4 KiB at the switch's 350 characters, libvita2d's `int_htab_free` [source: libvita2d a8f15ab]; the code: 961,460 B of text in the debug build at #315, 319,360 B more than main `9ad8eb5`'s: the Cards page's 29,741 B and libjpeg-turbo's decoder [measured: arm-vita-eabi-size]) | about 3.1 MiB |
 | **Total** | **about 28 MiB of 50 MiB** |
 
-The Games search uses a bounded 257-byte UTF-8 query and two 65-unit UTF-16 buffers on the
-app's stack (`settings/search.c`), not the Shell or a game's memory; the Look up tab's keyboard (#313) the same with
-129-unit buffers and a 513-byte text, and the Cards page's Fix sentence (#315) with two static 2,049-unit buffers
-(in its `.bss` above). The native IME module is
+The Games search and the Look up tab's keyboard (#313) share one bounded dialog (`settings/search.c`
+`vjo_ime_dialog`): two 129-unit UTF-16 buffers and a 513-byte UTF-8 text on the app's stack (about 1 KiB), with the
+Games search's 257-byte query or the Look up page's 513-byte text; not the Shell or a game's memory. The Cards page's
+Fix sentence (#315) has two static 2,049-unit buffers (in its `.bss` above). The native IME module is
 loaded only during text entry when not already loaded, and released afterwards; its additional
 runtime memory is unmeasured on a console. These sizes come from the source, not console samples.
 

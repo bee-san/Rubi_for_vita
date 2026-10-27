@@ -13,7 +13,8 @@
  * it is opened (vjo_lookup_history_line).
  *
  * The memory is static: one window of VJO_LOOKUP_WINDOW bytes (and the byte before it) and the tables below. The
- * main thread only. */
+ * main thread only. A record longer than a window (the Shell writes none: its line and raw line are 4 KiB at most) is
+ * read cut at a window's start, and dropped when its first five cells are cut. */
 #ifndef VJO_SETTINGS_LOOKUP_HISTORY_H
 #define VJO_SETTINGS_LOOKUP_HISTORY_H
 #include <stddef.h>

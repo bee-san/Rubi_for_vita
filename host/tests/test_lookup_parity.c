@@ -85,6 +85,12 @@ static void load(void)
     }
     fclose(f);
     TEST_ASSERT(lines > 40);
+    /* and lines with rows that have no Japanese (a speaker's romanized name, a menu's Latin): the overlay leaves those
+     * rows out (non_japanese_filter = lines, the default), so an earlier line's text has none of them either */
+    static const char *const latin_rows[] = {"Tomoya\n「猫が好きだ」", "Hello world\n昨日すき焼きを食べました\nEND",
+                                             "ABC 123\n勉強しておかなきゃ"};
+    for (unsigned i = 0; i < sizeof(latin_rows) / sizeof(latin_rows[0]) && lines < LINES; i++)
+        snprintf(line_text[lines++], sizeof(line_text[0]), "%s", latin_rows[i]);
 }
 
 /* ---------------- the overlay's side: the Shell's one 64 KiB block, session first ---------------- */
@@ -251,6 +257,12 @@ static void lookups_equal_the_overlays(void)
     vjo_local_session_close(shell_p.local_session);
     TEST_CHECK_(lookups > 800 && entries > 600 && stacked > 100, "%d lookups, %d entries, %d stacked", lookups, entries,
                 stacked);
+    /* (a line's Latin rows left out: the walk compared the texts; here, that it saw them) */
+    VjoConfig check;
+    vjo_config_defaults(&check);
+    vjo_lookup_configure(&check);
+    TEST_CHECK(vjo_lookup_set_text("Tomoya\n「猫が好きだ」", 0) == 0 && !strcmp(vjo_lookup_text(), "「猫が好きだ」"));
+    TEST_CHECK(vjo_lookup_set_text("Tomoya\n「猫が好きだ」", 1) == 0 && !strcmp(vjo_lookup_text(), "Tomoya\n「猫が好きだ」"));
     TEST_MSG("%d lookups, %d entries, %d stacked", lookups, entries, stacked);
 }
 

@@ -163,26 +163,33 @@ static float text_scale(float pixels) { return pixels / font_em; }
  * entries and the starts of 200 earlier lines, kanji by the hundred. So the app draws with one font and measures with
  * another (`measure_font`, never drawn with), and counts the distinct characters each has had; before a text that
  * would take a font past GLYPH_SWITCH it loads that font again, with an empty atlas, and goes on with the new one.
- * The replaced fonts are freed between frames, once the GPU is done with the frames that drew (font_tick). The
- * drawing font switches once a frame at most (a frame draws the screen's text: a few hundred characters); the
- * measuring font as often as a layout needs, up to MEASURE_RETIRED times a frame (2,800 new characters: an
- * entry of 8 KiB of kanji has fewer than 2,000 distinct ones; past that the font goes on, its atlas full). The atlas holds 502 to 639 glyphs before it refuses one (an estimate:
+ * A replaced drawing font is freed between frames, once the GPU is done with the frames that drew with it
+ * (font_tick); a replaced measuring font at once, as the GPU never reads its atlas (vita2d_pvf_text_width draws
+ * nothing: libvita2d's generic_pvf_draw_text with draw 0), so four atlases at most are alive: the two fonts', a
+ * drawing font replaced this frame and, for a moment, a new measuring font. The drawing font switches once a frame at
+ * most (a frame draws the screen's text: a few hundred characters); the measuring font as often as a layout needs, up
+ * to MEASURE_SWITCHES times a frame (2,800 new characters: an entry of 8 KiB of kanji has fewer than 2,000 distinct
+ * ones; past that the font goes on, its atlas full). The atlas holds 502 to 639 glyphs before it refuses one (an estimate:
  * libvita2d's packer simulated with the glyphs of host/fixtures/word_lookup's lines and English, at estimated glyph
- * sizes); 350 keeps libvita2d's glyph table at 512 entries (int_htab.c resizes past 70 % full), whose 4 KiB its
- * int_htab_free does not give back: each switch leaves 4 KiB of the 8 MiB heap behind (an estimate from its source).
- * A font's atlas texture is made through the link's wrapper (settings/vita2d_textures.c), so freeing it frees
- * nothing else. */
+ * sizes). A font's glyph table (libvita2d int_htab.c) starts at 256 entries of 8 B and doubles as its 182nd and
+ * 364th glyphs come (its load past 70 %), and int_htab_free never frees it: each replaced font leaves its table in the
+ * 8 MiB heap, 4 KiB at up to 363 glyphs (so the switch at 350), 8 KiB past that (a drawing font a frame overfills,
+ * a measuring font past its switches for the frame) [source: libvita2d a8f15ab int_htab.c, and the pinned libvita2d.a's
+ * int_htab.o].
+ * About 2,000 switches (some 700,000 new characters drawn or measured in one run) would use up the heap; the log
+ * counts them. A font's atlas texture is made through the link's wrapper (settings/vita2d_textures.c), so freeing it
+ * frees nothing else. */
 #define GLYPH_SLOTS 1024
 #define GLYPH_SWITCH 350
-#define MEASURE_RETIRED 8
+#define MEASURE_SWITCHES 8
 typedef struct {
     uint32_t seen[GLYPH_SLOTS]; /* code point + 1 of each character the font has had; 0 free; half full at most */
     int count;
 } GlyphSet;
 static GlyphSet drawn_glyphs, measured_glyphs;
 static vita2d_pvf *measure_font; /* text_width's font; NULL (it could not be loaded): the drawing font measures */
-static vita2d_pvf *font_retired, *measure_retired[MEASURE_RETIRED]; /* replaced, until the GPU is done */
-static int measure_retired_n, font_tried, font_switches, measure_switches;
+static vita2d_pvf *font_retired; /* the drawing font replaced this frame, until the GPU is done with it */
+static int font_tried, font_switches, measure_switched, measure_switches; /* (measure_switched: this frame's) */
 
 /* The characters of s the set has not had, added to it: their number. A full set (GLYPH_SLOTS / 2, past
  * GLYPH_SWITCH) counts a character it has no room for as new: its font switches, and the set is emptied. */
@@ -223,7 +230,8 @@ static void glyphs_for(const char *s)
     font_switches++;
 }
 
-/* Before s is measured: the same for the measuring font, as often as there is a slot for the font it replaces. */
+/* Before s is measured: the same for the measuring font, up to MEASURE_SWITCHES times a frame; the font it replaces
+ * is freed at once (never drawn with: no frame the GPU has reads its atlas). */
 static vita2d_pvf *measured_for(const char *s)
 {
     int before;
@@ -234,35 +242,34 @@ static vita2d_pvf *measured_for(const char *s)
     }
     before = measured_glyphs.count;
     if (!glyphs_add(&measured_glyphs, s) || measured_glyphs.count <= GLYPH_SWITCH || !before ||
-        measure_retired_n == MEASURE_RETIRED || !(next = vita2d_load_default_pvf()))
+        measure_switched == MEASURE_SWITCHES || !(next = vita2d_load_default_pvf()))
         return measure_font;
-    measure_retired[measure_retired_n++] = measure_font;
+    vita2d_free_pvf(measure_font);
     measure_font = next;
     memset(&measured_glyphs, 0, sizeof(measured_glyphs));
     glyphs_add(&measured_glyphs, s);
+    measure_switched++;
     measure_switches++;
     return measure_font;
 }
 
-/* Between frames: the fonts a switch replaced are freed once the GPU has finished the frames that drew. */
+/* Between frames: the drawing font a switch replaced is freed once the GPU has finished the frames that drew with it;
+ * a frame's switches are logged, with the counts so far. */
 static void font_tick(void)
 {
     font_tried = 0;
-    if (!font_retired && !measure_retired_n)
-        return;
-    vita2d_wait_rendering_done();
-    if (font_retired) {
-        vita2d_free_pvf(font_retired);
-        font_retired = NULL;
-        vjo_log("font: an empty glyph atlas to draw with after %d characters (%d time%s)", GLYPH_SWITCH,
-                font_switches, font_switches == 1 ? "" : "s");
-    }
-    if (measure_retired_n) {
-        while (measure_retired_n)
-            vita2d_free_pvf(measure_retired[--measure_retired_n]);
+    if (measure_switched) {
+        measure_switched = 0;
         vjo_log("font: an empty glyph atlas to measure with after %d characters (%d time%s)", GLYPH_SWITCH,
                 measure_switches, measure_switches == 1 ? "" : "s");
     }
+    if (!font_retired)
+        return;
+    vita2d_wait_rendering_done();
+    vita2d_free_pvf(font_retired);
+    font_retired = NULL;
+    vjo_log("font: an empty glyph atlas to draw with after %d characters (%d time%s)", GLYPH_SWITCH, font_switches,
+            font_switches == 1 ? "" : "s");
 }
 
 static void text(int x, int y, unsigned color, float pixels, const char *s)
