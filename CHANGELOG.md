@@ -11,6 +11,18 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
+  row (an animated icon or a moving picture in the region), its next try says "Recognizing… Something in the region
+  keeps moving (an animated icon?), so the text never holds still. Press □ to draw a region around just the text."
+  instead of "Recognizing…" alone, until a read shows the text. Before, it said "Recognizing…" for as long as the
+  user waited. With an animated icon, on the host's spinner bench (184 hooked regions, est.), it shows 2.75 s after
+  L + R (median; 4.8 s at most); in the owner's CLANNAD logs no wait for text met a torn read, so it would have shown
+  in none of them. A region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
+  "Recognizing…" (on by default;
+  [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)). Not run on a console yet.
+
 ### Fixed
 
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line

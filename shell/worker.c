@@ -56,9 +56,12 @@ typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 :
 /* VJO_E_SCREEN_CHANGED (the screen changed under every read of a job): the
  * next try starts at once, from the second in a row SCREEN_RETRY_MS later,
  * doubling up to SCREEN_RETRY_MAX_MS. The try itself waits in the game for the
- * text to hold still (vocr_run_one's request). Nothing is shown for either. */
+ * text to hold still (vocr_run_one's request). Nothing is shown for either,
+ * until WAIT_HINT_AFTER in a row: then the open overlay says why it waits
+ * (ocr_wait_hint, #358: start_job_kind). */
 #define SCREEN_RETRY_MS      250u
 #define SCREEN_RETRY_MAX_MS 4000u
+#define WAIT_HINT_AFTER 2u /* #358: measured (docs/text-stability.md "Why the overlay waits") */
 
 VjoView g_view;
 
@@ -1698,21 +1701,34 @@ static int net_busy(void)
     return job_running;
 }
 
+/* #358 (the owner: "Say why the user is waiting"): what the open overlay says, with ocr_wait_hint on, as it starts a
+ * try at its text once WAIT_HINT_AFTER jobs in a row found the text changed under every read (screen_changed_streak,
+ * note_screen_changed; the press's own tries, or Automatically's before it): why it still is recognizing, and what
+ * helps. Not an error: the tries go on, and a read shows its text. In the data segment (the normal Shell's code room). */
+static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) =
+    "Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ "
+    "to draw a region around just the text.";
+/* the overlay's and the strip's status while a job runs, in the data segment too (#358: its code room back) */
+static const char RECOGNIZING[] VJO_DATA_TABLE(RECOGNIZING) = "Recognizing…";
+
 /* lookup = 0: OCR only (the subtitles' sentence). refresh: the open
  * overlay's quiet refresh (background_open), which keeps what the overlay shows:
  * no retirement, no "Recognizing…", the result arena stays, and its result
  * goes to cache_data[1] (local lookups use [0] and one arena). */
 static void start_job_kind(const char *why, int lookup, int refresh)
 {
+    const char *status;
     if (job_running)
         return;
     job_prepare = 0;
+    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT) */
+    status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER ? WAIT_HINT : RECOGNIZING;
     if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
          * after all capture/model/inference allocations have been freed. */
         retire_local_text(0); /* atomic request exclusion and view detachment */
         if (ov != OV_CLOSED)
-            view_publish(1, NULL, "Recognizing…", 0);
+            view_publish(1, NULL, status, 0);
         mem_free();
     }
     vjo_dlog("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
@@ -1738,7 +1754,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     job_cancelled = 0;
     if (view_job_text) { /* its arena may be the new job's (never with a refresh: the overlay shows a lookup) */
         view_job_text = 0;
-        view_publish(1, NULL, "Recognizing…", 0);
+        view_publish(1, NULL, status, 0);
     }
     job_done = 0;
     job_text_ready = 0;
@@ -1991,7 +2007,7 @@ static void open_overlay(void)
             : !cache_ok || active < 0 ? "no background result"
                                       : "screen changed since the background result",
             st.stable, st.quiet);
-    view_publish(1, NULL, "Recognizing…", 0);
+    view_publish(1, NULL, RECOGNIZING, 0);
     view_waiting = 1;
     if (job_running) {
         ov = OV_OPEN_OLD_JOB; /* a cancelled one is followed by a new one */
@@ -2652,7 +2668,7 @@ static void subtitles_show(const VjoState *st)
             vjo_strip_show(text, VJO_STRIP_SENTENCE, 0);
         return;
     }
-    vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
+    vjo_strip_show(RECOGNIZING, VJO_STRIP_STATUS, 1);
     /* A job in progress that brings the strip nothing: a lookup, a refresh, or
      * one that was cancelled (a region, game or pipeline change; not the
      * self-test's, whose end shows the strip's sentence itself): its end does
@@ -2738,6 +2754,10 @@ static void on_command(void)
         push_region();
         cache_ok = 0;
         retire_local_text(1);
+        /* #358: the old region's tears say nothing of the new one's: the wait hint (the region drawn as it asks)
+         * and the retry pace start over, as a new game's do (invalidate_game_work) */
+        screen_changed_streak = 0;
+        screen_retry_until = 0;
         close_overlay();
         /* A job in progress read the old region (a lookup or a refresh, which the
          * close dropped, or OCR): its result goes, as the text and the cache did;
@@ -2751,7 +2771,7 @@ static void on_command(void)
                 /* The strip's job for the new region cannot start beside it: the
                  * strip waits for its end (strip_after_wait). Before, it kept the
                  * old region's sentence until a screen settled (#182 a). */
-                vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
+                vjo_strip_show(RECOGNIZING, VJO_STRIP_STATUS, 1);
                 strip_waiting = 1;
             }
         }
