@@ -13,6 +13,7 @@
 
 #include "anki_export.h"
 #include "app_prefs.h"
+#include "cards_page.h"
 #include "preferences.h"
 #include "../core/stick_scroll.h"
 /* As in main.c: no vita2d_fini in the system application. */
@@ -35,10 +36,12 @@
 #define FOOTER_H 92
 #define SCROLL_X 942
 #define SCROLL_W 6
-enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_DUPES, ROW_KNOWN, ROW_EXPORT, ROW_ALL, ROWS };
-static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H, ACTION_H};
+/* #315: the Cards page's row after the settings rows, before the actions */
+enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_DUPES, ROW_CARDS, ROW_KNOWN, ROW_EXPORT, ROW_ALL, ROWS };
+static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H, ACTION_H};
 /* The worker's jobs (`all`): the queue's export, every card's, and (#314 stage C) known_words.txt's import */
-enum { JOB_QUEUED, JOB_ALL, JOB_KNOWN };
+/* JOB_CARDS (#315): a Cards page job (settings/cards_page.c), cards_job */
+enum { JOB_QUEUED, JOB_ALL, JOB_KNOWN, JOB_CARDS };
 static int top_row; /* the first row in view */
 /* A choice row's badges (#314 Duplicates), as the OCR page's three-choice cards (main.c's Text source): from x 440,
  * 160 px apart, 152 px wide, each choice shown and the chosen one lit. */
@@ -64,9 +67,12 @@ static int known_n = -1;        /* #314 stage C: the known words' keys (anki_kno
 static char note[200];          /* the page's own status (saves) */
 static int note_error;
 
-/* The worker (lock): one export at a time. */
+/* The worker (lock): one job at a time, an export, the known words' import or a Cards page job. They all use
+ * export_mem, as count_mined does on the main thread, which therefore runs only while no job does. */
 static SceUID lock = -1, worker = -1;
 static int all, running, finished, cancelled;
+static VjoAnkiJob cards_job;    /* JOB_CARDS's function */
+static int cards_shown;         /* the Cards page was open in the last frame */
 static VjoAppPrefs job_app;     /* the app's settings the export follows, as the page had them at its start */
 static char progress[160], result[480];
 static int result_error;
@@ -114,6 +120,14 @@ static int worker_main(SceSize args, void *argp)
     sceKernelUnlockMutex(lock, 1);
     vjo_arena_init(&arena, export_mem, sizeof(export_mem));
     t0 = sceKernelGetProcessTimeWide();
+    if (what == JOB_CARDS) { /* #315: its results are the page's (vjo_cards_page_job_done, after the join) */
+        cards_job(&arena, &ui);
+        sceKernelLockMutex(lock, 1, NULL);
+        progress[0] = '\0';
+        finished = 1;
+        sceKernelUnlockMutex(lock, 1);
+        return 0;
+    }
     if (what == JOB_KNOWN) { /* #314 stage C */
         VjoKnownResult k;
         vjo_known_import(&arena, &ui, &k, msg, sizeof(msg));
@@ -149,36 +163,67 @@ static int worker_main(SceSize args, void *argp)
     return 0;
 }
 
+/* job (JOB_*) on the worker, its progress line first. 0, or <0: the SDK's error (-1: a job runs). */
+static int launch(int job, const char *first)
+{
+    int rc;
+    if (running)
+        return -1;
+    if (lock < 0 && (lock = sceKernelCreateMutex("VjoAnkiPage", 0, 0, NULL)) < 0)
+        return lock;
+    all = job;
+    job_app = app;
+    finished = cancelled = 0;
+    snprintf(progress, sizeof(progress), "%s", first);
+    /* CPU3 at a system priority, as the main thread (settings/sysapp.c). */
+    worker = sceKernelCreateThread(job == JOB_CARDS ? "VjoAnkiCards" : "VjoAnkiExport", worker_main, 0x10000100,
+                                   WORKER_STACK, 0, SCE_KERNEL_CPU_MASK_SYSTEM, NULL);
+    rc = worker < 0 ? worker : sceKernelStartThread(worker, 0, NULL);
+    if (rc < 0) {
+        if (worker >= 0)
+            sceKernelDeleteThread(worker);
+        worker = -1;
+        return rc;
+    }
+    running = 1;
+    return 0;
+}
+
 /* job: JOB_QUEUED, JOB_ALL or JOB_KNOWN */
 static void start(int job)
 {
     int rc;
     if (running)
         return;
-    if (lock < 0 && (lock = sceKernelCreateMutex("VjoAnkiPage", 0, 0, NULL)) < 0)
-        return;
-    all = job;
-    job_app = app;
-    finished = cancelled = 0;
-    snprintf(progress, sizeof(progress), "%s", job == JOB_KNOWN ? "Reading known_words.txt…" : "Reading the cards…");
-    /* CPU3 at a system priority, as the main thread (settings/sysapp.c). */
-    worker = sceKernelCreateThread("VjoAnkiExport", worker_main, 0x10000100, WORKER_STACK, 0,
-                                   SCE_KERNEL_CPU_MASK_SYSTEM, NULL);
-    rc = worker < 0 ? worker : sceKernelStartThread(worker, 0, NULL);
-    if (rc < 0) {
-        if (worker >= 0)
-            sceKernelDeleteThread(worker);
-        worker = -1;
+    if ((rc = launch(job, job == JOB_KNOWN ? "Reading known_words.txt…" : "Reading the cards…")) < 0) {
         snprintf(note, sizeof(note), "Could not start the %s (0x%08X).", job == JOB_KNOWN ? "import" : "export",
                  (unsigned)rc);
         note_error = 1;
         return;
     }
-    running = 1;
     note[0] = '\0';
 }
 
-/* The worker is done: join it and count the cards again. */
+int vjo_anki_job_start(VjoAnkiJob fn, const char *first)
+{
+    if (running)
+        return -1;
+    cards_job = fn;
+    return launch(JOB_CARDS, first);
+}
+
+void vjo_anki_job_progress(char *out, size_t cap)
+{
+    out[0] = '\0';
+    if (lock < 0)
+        return;
+    sceKernelLockMutex(lock, 1, NULL);
+    snprintf(out, cap, "%s", running ? progress : "");
+    sceKernelUnlockMutex(lock, 1);
+}
+
+/* The worker is done: join it; after an export or an import the cards are counted again, after a Cards page job
+ * its results go to that page (which may start the next job; the Anki page counts again once it is closed). */
 static void reap(void)
 {
     int done;
@@ -193,6 +238,10 @@ static void reap(void)
     sceKernelDeleteThread(worker);
     worker = -1;
     running = 0;
+    if (all == JOB_CARDS) {
+        vjo_cards_page_job_done();
+        return;
+    }
     vjo_export_count(&counts);
     known_n = vjo_known_count();
     count_mined(); /* (Skip leaves the duplicates queued) */
@@ -205,6 +254,11 @@ static void cancel(void)
     sceKernelLockMutex(lock, 1, NULL);
     cancelled = 1;
     sceKernelUnlockMutex(lock, 1);
+}
+
+void vjo_anki_job_cancel(void)
+{
+    cancel();
 }
 
 /* #314: the queue's cards whose word an earlier card has, for the export row (in the export's memory: no export
@@ -252,6 +306,7 @@ void vjo_anki_page_show(VjoArena *scratch)
         vjo_export_count(&counts);
         known_n = vjo_known_count();
         count_mined();
+        vjo_cards_page_reread(); /* #315: an open Cards page's list as the memory card has it now */
     }
 }
 
@@ -282,6 +337,11 @@ int vjo_anki_page_busy(void)
     return running;
 }
 
+int vjo_anki_page_holds_cancel(void)
+{
+    return running || vjo_cards_page_is_open();
+}
+
 /* A settings row's switch (the first three rows), as config.ini has it. */
 static int row_on(int row)
 {
@@ -298,6 +358,8 @@ static void activate(int row, VjoArena *scratch)
              row == ROW_TRIM ? !cfg.anki_screenshot_trim_bars : cfg.anki_screenshot_trim_bars, scratch);
     else if (row == ROW_DUPES) /* Enter: the next choice, round */
         set_duplicates((app.anki_duplicates + 1) % 3, scratch);
+    else if (row == ROW_CARDS)
+        vjo_cards_page_open(); /* #315: it reads the queue on the worker */
     else
         start(row == ROW_KNOWN ? JOB_KNOWN : row == ROW_ALL ? JOB_ALL : JOB_QUEUED);
 }
@@ -347,6 +409,14 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
             ui->badge(CHOICE_X + k * CHOICE_PITCH, y + 6, CHOICE_W, 34, dupes_name[k],
                       app_writable && app.anki_duplicates == k);
         ui->text(42, y + 60, ui->dim, 24, app_writable ? dupes_help[app.anki_duplicates] : "Cannot read app.ini.");
+    } else if (i == ROW_CARDS) { /* #315: the Cards page */
+        if (counts.queued < 0)
+            snprintf(line, sizeof(line), "Cards (queue unreadable)");
+        else
+            snprintf(line, sizeof(line), "Cards: %d queued", counts.queued);
+        ui->text(42, y + 30, counts.queued < 0 ? ui->off : ui->white, 28, line);
+        ui->badge(812, y + 6, 108, 34, "Open", 0);
+        ui->text(42, y + 60, ui->dim, 24, "See each card; delete it, fix its sentence or drop its picture.");
     } else if (i < ROW_DUPES) {
         ui->text(42, y + 30, ui->white, 28, titles[i]);
         ui->badge(812, y + 6, 108, 34, !writable ? "--" : row_on(i) ? "ON" : "OFF", writable && row_on(i));
@@ -389,13 +459,31 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
     }
 }
 
-void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
+int vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
 {
     char busy_text[160], controls[96], last[480];
-    int stick = stick_move, busy = running, err = 0, total;
+    int stick = stick_move, busy, err = 0, total;
     stick_move = 0;
     reap();
-    busy = running;
+    /* #315: the Cards page, while it is open, has the buttons, the touch and the screen */
+    if (vjo_cards_page_is_open()) {
+        int ran;
+        cards_shown = 1;
+        vjo_cards_page_stick(stick);
+        ran = vjo_cards_page_frame(ui, pressed, touch_x, touch_y);
+        if (vjo_cards_page_is_open())
+            return ran;
+        pressed = 0; /* (it took them: back to this page, which draws this frame) */
+        touch_x = touch_y = -1;
+        stick = 0;
+    }
+    if (cards_shown && !running) { /* back from the Cards page: its deletes and changes counted */
+        cards_shown = 0;
+        vjo_export_count(&counts);
+        count_mined();
+    }
+    /* busy: an export or the import runs. A Cards page job runs only while that page is open, which draws instead. */
+    busy = running && all != JOB_CARDS;
     if (pressed & SCE_CTRL_UP)
         selected = (selected + ROWS - 1) % ROWS;
     if (pressed & SCE_CTRL_DOWN)
@@ -428,10 +516,14 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
                     activate(r, scratch);
                 break;
             }
+    if (vjo_cards_page_is_open()) { /* opened now: drawn at once */
+        cards_shown = 1;
+        return vjo_cards_page_frame(ui, 0, -1, -1);
+    }
     busy_text[0] = last[0] = '\0';
     if (lock >= 0) {
         sceKernelLockMutex(lock, 1, NULL);
-        snprintf(busy_text, sizeof(busy_text), "%s", progress);
+        snprintf(busy_text, sizeof(busy_text), "%s", busy ? progress : "");
         snprintf(last, sizeof(last), "%s", result);
         err = result_error;
         sceKernelUnlockMutex(lock, 1);
@@ -475,15 +567,18 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
                    0, controls);
     vita2d_end_drawing();
     vita2d_swap_buffers();
+    return 0;
 }
 
 void vjo_anki_page_quit(void)
 {
     if (running) {
+        /* an export or an import stops between two steps; a Cards page change runs to its end (its steps are short) */
         cancel();
         sceKernelWaitThreadEnd(worker, NULL, NULL);
         sceKernelDeleteThread(worker);
         worker = -1;
         running = 0;
     }
+    vjo_cards_page_quit();
 }

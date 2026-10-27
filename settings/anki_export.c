@@ -10,6 +10,7 @@
 #include "../core/anki_queue.h"
 #include "../core/errors.h"
 #include "../core/word_key.h"
+#include "cards.h"
 
 void vjo_log(const char *fmt, ...); /* the app's log.txt lines (settings/applog.c) */
 
@@ -1406,6 +1407,12 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
     memset(&l, 0, sizeof(l));
     msg[0] = '\0';
     remove_stale_temps();
+    /* 0. a Cards page change a stop left (#315, settings/cards.h): finished or undone first, so the queue holds
+     * the old card or the new one, never both; one that cannot be settled now stops the export (nothing changed) */
+    if (vjo_cards_recover(a)) {
+        snprintf(msg, cap, "A change of a card that stopped could not be finished (see log.txt). Nothing was changed.");
+        return r->rc = VJO_E_LOCAL_IO;
+    }
     /* 1. the cards: each read once and checked, the oldest VJO_APKG_MAX_CARDS kept */
     queued = scan(VJO_EXPORT_QUEUE_DIR, NULL, NULL);
     if (all)
