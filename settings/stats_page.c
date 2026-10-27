@@ -52,7 +52,7 @@ enum { ROW_TODAY, ROW_GOAL, ROW_DAYS, ROW_YEAR, ROW_ALL, ROW_GAMES };
 #define GOAL_H 68
 #define DAYS_H 150
 #define YEAR_H 172
-#define GAME_H 92
+#define GAME_H 116 /* four lines: the name and the last day read, today, in all, the cards */
 /* the 14 days' bars */
 #define BARS_X 42
 #define BAR_PITCH 62
@@ -64,9 +64,10 @@ enum { ROW_TODAY, ROW_GOAL, ROW_DAYS, ROW_YEAR, ROW_ALL, ROW_GAMES };
 #define HEAT_DY 42
 #define HEAT_CELL 12
 #define HEAT_PITCH 14
-/* the goal's badge */
+/* the goal's badge, and its bar on the Today row */
 #define GOAL_X 500
 #define GOAL_W 400
+#define GOAL_BAR_W 480
 
 /* ---------------- the count (its thread) ---------------- */
 
@@ -720,13 +721,13 @@ static void draw_today(const VjoStatsUi *ui, int y, unsigned bg)
         snprintf(line, sizeof(line), "Counting history.csv…");
     else /* (the count could not start: the status line says why) */
         snprintf(line, sizeof(line), "Not counted yet. Start: count");
-    ui->text(150, y + 30, counted ? ui->white : ui->dim, 24, line);
+    ui->wrapped(150, y + 30, 770, counted ? ui->white : ui->dim, 24, 26, 1, line);
     /* the goal's bar */
     uint32_t p = vjo_stats_goal_progress(&today_all, goal);
     int met = goal && vjo_stats_goal_met(&today_all, goal);
-    ui->rect(42, y + 46, 560, 14, slot_of(ui, bg));
+    ui->rect(42, y + 46, GOAL_BAR_W, 14, slot_of(ui, bg));
     if (goal)
-        ui->rect(42, y + 46, (int)(560 * (p > 1000 ? 1000 : p) / 1000), 14, met ? ui->accent : ui->white);
+        ui->rect(42, y + 46, (int)(GOAL_BAR_W * (p > 1000 ? 1000 : p) / 1000), 14, met ? ui->accent : ui->white);
     number(done, goal_chars);
     if (goal_chars)
         snprintf(amount, sizeof(amount), "%s characters", done);
@@ -738,14 +739,14 @@ static void draw_today(const VjoStatsUi *ui, int y, unsigned bg)
         snprintf(line, sizeof(line), "Goal met: %s", amount);
     else
         snprintf(line, sizeof(line), "%u %% of %s", (unsigned)(p / 10), amount);
-    ui->text(616, y + 59, met ? ui->accent : ui->dim, 22, line);
+    ui->wrapped(42 + GOAL_BAR_W + 14, y + 59, 918 - (42 + GOAL_BAR_W + 14), met ? ui->accent : ui->dim, 22, 24, 1, line);
     if (!goal)
         snprintf(line, sizeof(line), "Streak: %d day%s with reading, best %d", streak_now, streak_now == 1 ? "" : "s",
                  streak_best);
     else
         snprintf(line, sizeof(line), "Streak: %d day%s at the goal, best %d", streak_now, streak_now == 1 ? "" : "s",
                  streak_best);
-    ui->text(42, y + 92, ui->white, 24, line);
+    ui->wrapped(42, y + 92, 876, ui->white, 24, 26, 1, line);
 }
 
 static void draw_goal(const VjoStatsUi *ui, int y)
@@ -769,7 +770,7 @@ static void draw_goal(const VjoStatsUi *ui, int y)
         snprintf(help, sizeof(help), "Off: a day with any reading counts for the streak.");
     else
         snprintf(help, sizeof(help), "A day at the goal counts for the streak. Left/Right: change.");
-    ui->text(42, y + 60, ui->dim, 22, help);
+    ui->wrapped(42, y + 60, 876, ui->dim, 22, 24, 1, help);
 }
 
 static void draw_days(const VjoStatsUi *ui, int y, int focus, unsigned bg)
@@ -787,7 +788,7 @@ static void draw_days(const VjoStatsUi *ui, int y, int focus, unsigned bg)
     summary(line, sizeof(line), &last14[day14]);
     char detail[200];
     snprintf(detail, sizeof(detail), "%s: %s", when, line);
-    ui->wrapped(250, y + 30, 670, focus ? ui->white : ui->dim, 22, 24, 1, detail);
+    ui->wrapped(240, y + 30, 680, focus ? ui->white : ui->dim, 22, 24, 1, detail);
     for (int k = 0; k < 14; k++) {
         int x = BARS_X + k * BAR_PITCH, h = (int)(last14[k].chars * BARS_H / top);
         int met = vjo_stats_goal_met(&last14[k], goal);
@@ -853,13 +854,14 @@ static void draw_year(const VjoStatsUi *ui, int y, int focus, unsigned bg)
     }
 }
 
+/* "12 cards mined, 2.6 per 10,000 characters" */
 static void per_10k(char *out, size_t cap, uint32_t cards, uint64_t chars)
 {
     if (!chars)
-        snprintf(out, cap, "%u card%s", (unsigned)cards, cards == 1 ? "" : "s");
+        snprintf(out, cap, "%u card%s mined", (unsigned)cards, cards == 1 ? "" : "s");
     else {
         uint64_t tenths = (uint64_t)cards * 100000ull / chars; /* cards per 10,000 characters, in tenths */
-        snprintf(out, cap, "%u card%s, %llu.%llu per 10,000 characters", (unsigned)cards, cards == 1 ? "" : "s",
+        snprintf(out, cap, "%u card%s mined, %llu.%llu per 10,000 characters", (unsigned)cards, cards == 1 ? "" : "s",
                  (unsigned long long)(tenths / 10), (unsigned long long)(tenths % 10));
     }
 }
@@ -869,17 +871,18 @@ static void draw_all(const VjoStatsUi *ui, int y)
     char line[200], cards[96], lines[32];
     ui->text(42, y + 28, ui->white, 26, "All games");
     summary(line, sizeof(line), &all_total);
-    ui->text(42, y + 56, ui->white, 22, line);
+    ui->wrapped(42, y + 56, 876, ui->white, 22, 24, 1, line);
     per_10k(cards, sizeof(cards), all_cards, all_total.chars);
     number(lines, all_lines);
     snprintf(line, sizeof(line), "%s; %s lines", cards, lines);
-    ui->text(42, y + 82, ui->dim, 20, line);
+    ui->wrapped(42, y + 82, 876, ui->dim, 20, 22, 1, line);
 }
 
+/* A game's row, four lines: its name and the last day read; today; in all; its cards. Each line is cut to its room
+ * (with "...") if a font draws it wider than the numbers need. */
 static void draw_game(const VjoStatsUi *ui, int y, const GameRow *r)
 {
     char line[320], when[48], text[200], cards[96];
-    ui->wrapped(42, y + 26, 540, ui->white, 24, 26, 1, r->name);
     if (r->last_day == today)
         snprintf(when, sizeof(when), "read today");
     else if (r->last_day == INT32_MIN)
@@ -889,17 +892,20 @@ static void draw_game(const VjoStatsUi *ui, int y, const GameRow *r)
         date_text(d, sizeof(d), r->last_day, r->last_day < year_first);
         snprintf(when, sizeof(when), "last read %s", d);
     }
-    ui->text(918 - ui->text_width(20, when), y + 26, ui->dim, 20, when);
+    int when_w = ui->text_width(20, when);
+    ui->wrapped(42, y + 26, 918 - when_w - 20 - 42, ui->white, 24, 26, 1, r->name);
+    ui->text(918 - when_w, y + 26, ui->dim, 20, when);
     if (r->today.chars || r->today.active_us) {
         summary(text, sizeof(text), &r->today);
         snprintf(line, sizeof(line), "Today: %s", text);
     } else
         snprintf(line, sizeof(line), "Today: nothing yet");
-    ui->text(42, y + 54, ui->white, 20, line);
+    ui->wrapped(42, y + 52, 876, ui->white, 20, 22, 1, line);
     summary(text, sizeof(text), &r->total);
+    snprintf(line, sizeof(line), "In all: %s", text);
+    ui->wrapped(42, y + 78, 876, ui->white, 20, 22, 1, line);
     per_10k(cards, sizeof(cards), r->cards, r->total.chars);
-    snprintf(line, sizeof(line), "In all: %s; %s", text, cards);
-    ui->wrapped(42, y + 80, 880, ui->dim, 20, 22, 1, line);
+    ui->wrapped(42, y + 104, 876, ui->dim, 20, 22, 1, cards);
 }
 
 static void draw_row(const VjoStatsUi *ui, int i, int y)

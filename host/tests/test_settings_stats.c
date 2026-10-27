@@ -197,7 +197,8 @@ void vita2d_swap_buffers(void) {}
 
 /* ---------------- what a frame draws (main.c's helpers, recorded) ---------------- */
 
-typedef struct { int x, y; unsigned color; float px; int clipped; char s[320]; } Text; /* clipped: drawn inside a row cut at the room's end */
+/* clipped: drawn inside a row cut at the room's end; width: a wrapped line's room (0: a plain text) */
+typedef struct { int x, y; unsigned color; float px; int clipped, width; char s[320]; } Text;
 typedef struct { int y, height, focus; } Card;
 typedef struct { int x, y, width, height; unsigned color; } Rect;
 static struct {
@@ -222,15 +223,17 @@ static int width_of(const char *s, float px)
 static void d_text(int x, int y, unsigned color, float px, const char *s)
 {
     if (drawn.texts < 96) {
-        drawn.text[drawn.texts] = (Text){x, y, color, px, clipping, ""};
+        drawn.text[drawn.texts] = (Text){x, y, color, px, clipping, 0, ""};
         snprintf(drawn.text[drawn.texts++].s, 320, "%s", s);
     }
 }
 static int d_width(float px, const char *s) { return width_of(s, px); }
 static void d_wrapped(int x, int y, int width, unsigned color, float px, int line_height, int lines, const char *s)
 {
-    (void)width; (void)line_height; (void)lines;
+    (void)line_height; (void)lines;
     d_text(x, y, color, px, s);
+    if (drawn.texts)
+        drawn.text[drawn.texts - 1].width = width;
 }
 static void d_card(int y, int height, int focus)
 {
@@ -758,6 +761,78 @@ static void start_counts_everything_again(void)
                 "%s", logs);
 }
 
+/* Every text the frame drew fits its room in the stub metrics, which draw Latin wider than the firmware's font: a
+ * wrapped line its width (else it is cut with "..."), any other text the card (to x 932). */
+static void check_fits(const char *what)
+{
+    for (int i = 0; i < drawn.texts; i++) {
+        const Text *t = &drawn.text[i];
+        int w = width_of(t->s, t->px);
+        if (t->width)
+            TEST_CHECK_(w <= t->width, "%s: \"%s\" %d px in a room of %d", what, t->s, w, t->width);
+        else
+            TEST_CHECK_(t->x + w <= 932, "%s: \"%s\" ends at %d", what, t->s, t->x + w);
+    }
+}
+
+/* (audit-rubi-rm2) The largest numbers a reader could have (98,765,432 characters, 123,456 hours, 50,000-character
+ * goals met, a streak of 1,234 days, a game read last year) fit every line, in every row, focused or not. */
+static void big_numbers_fit_their_rows(void)
+{
+    static unsigned char bytes[2 << 20];
+    reset();
+    three_games();
+    show();
+    /* the cache the count wrote, its numbers made as large as a decade of reading */
+    FILE *f = fopen("ux0:data/VitaJPOverlay/stats_cache.bin", "rb");
+    TEST_ASSERT(f != NULL);
+    size_t n = fread(bytes, 1, sizeof(bytes), f);
+    fclose(f);
+    static VjoStats big;
+    TEST_ASSERT(vjo_stats_cache_read(&big, bytes, n, 540, VJO_READING_ADAPTIVE) == VJO_STATS_CACHE_OK);
+    for (uint32_t g = 0; g < big.games; g++) {
+        big.game[g].chars = 98765432;
+        big.game[g].lines = 9876543;
+        big.game[g].time.active_us = 123456ull * 3600000000ull + 7 * 60000000ull;
+        big.game[g].time.timed_chars = 97000000;
+    }
+    for (uint32_t k = 0; k < big.days; k++)
+        big.day[k].n = (VjoStatsCount){123456, 23ull * 3600000000ull + 59 * 60000000ull, 120000};
+    big.game[2].last_day = vjo_stats_days_from_civil(2025, 12, 31); /* last year: its date has its year */
+    n = vjo_stats_cache_write(&big, bytes, sizeof(bytes));
+    TEST_ASSERT(n > 0);
+    f = fopen("ux0:data/VitaJPOverlay/stats_cache.bin", "wb");
+    TEST_ASSERT(f && fwrite(bytes, 1, n, f) == n && !fclose(f));
+    FILE *ini = fopen("ux0:data/VitaJPOverlay/app.ini", "wb");
+    fprintf(ini, "stats_daily_goal = 50000_characters\n");
+    fclose(ini);
+    show();
+    /* (today: two games read, each day's rollup 123,456 characters in 23 h 59 min) */
+    TEST_CHECK(text_with("Goal met: 50,000 characters") != NULL && text_with("246,912 characters, 47 h 58 min") != NULL);
+    int rows = ROW_GAMES + 3, seen = 0;
+    for (int r = 0; r < rows; r++) {
+        char what[32];
+        snprintf(what, sizeof(what), "row %d", r);
+        check_fits(what);
+        seen += text_with("In all: 98,765,432 characters, 123456 h 07 min, 785/hour") != NULL;
+        seen += 100 * (text_with("last read Wed 31 Dec 2025") != NULL);
+        frame(SCE_CTRL_DOWN);
+    }
+    TEST_CHECK_(seen % 100 > 0 && seen >= 100, "%d", seen);
+    /* each goal's line on the Today row: from Off, Right through every one */
+    frame(SCE_CTRL_DOWN); /* (from Today) the Daily goal row */
+    for (int i = 0; i < 6; i++)
+        frame(SCE_CTRL_LEFT);
+    TEST_CHECK(!strcmp(drawn.badge, "Off"));
+    for (int g = 0; g < VJO_GOALS; g++) {
+        frame(SCE_CTRL_UP); /* Today */
+        check_fits("Today with a goal");
+        TEST_CHECK(g ? text_with("Goal met: ") != NULL : text_with("No daily goal") != NULL);
+        frame(SCE_CTRL_DOWN);
+        frame(SCE_CTRL_RIGHT);
+    }
+}
+
 static void write_card(const char *dir, const char *id, const char *platform, const char *tid)
 {
     char path[256];
@@ -794,13 +869,13 @@ static void cards_count_per_game(void)
     TEST_CHECK_(strstr(logs, "6 cards, 6 read") != NULL, "%s", logs);
     for (int i = 0; i < 4; i++)
         frame(SCE_CTRL_DOWN); /* All games */
-    TEST_CHECK(text_with("6 cards, ") != NULL);
+    TEST_CHECK(text_with("6 cards mined, ") != NULL);
     int found = 0;
     for (int i = 0; i < 6; i++) {
         frame(SCE_CTRL_DOWN);
-        found += text_with("2 cards, ") != NULL && text_with("CLANNAD") != NULL;
-        found += text_with("1 card, ") != NULL && text_with("TIME TRAVELERS") != NULL;
-        found += text_with("vita-PCSE99999") != NULL && text_with("no lines read") != NULL && text_with("; 1 card") != NULL;
+        found += text_with("2 cards mined, ") != NULL && text_with("CLANNAD") != NULL;
+        found += text_with("1 card mined, ") != NULL && text_with("TIME TRAVELERS") != NULL;
+        found += text_with("vita-PCSE99999") != NULL && text_with("no lines read") != NULL && text_with("1 card mined") != NULL;
     }
     TEST_CHECK_(found >= 3, "%d", found);
     /* the next count reads again only the card whose record could not be read (not the one that names no game) */
@@ -817,7 +892,7 @@ static void cards_count_per_game(void)
         if (text_with("TIME TRAVELERS"))
             break;
     }
-    TEST_CHECK(text_with("2 cards, ") != NULL && text_with("TIME TRAVELERS") != NULL);
+    TEST_CHECK(text_with("2 cards mined, ") != NULL && text_with("TIME TRAVELERS") != NULL);
 }
 
 /* Cards but no history.csv (Read text: Only when I press L + R keeps none): the cards count, and each record is read
@@ -836,7 +911,7 @@ static void cards_without_history(void)
     TEST_CHECK_(opens_of_cards == 0, "%d", opens_of_cards);
     for (int i = 0; i < 5; i++)
         frame(SCE_CTRL_DOWN);
-    TEST_CHECK(text_with("vita-PCSG00415") != NULL && text_with("no lines read") != NULL && text_with("; 2 cards") != NULL);
+    TEST_CHECK(text_with("vita-PCSG00415") != NULL && text_with("no lines read") != NULL && text_with("2 cards mined") != NULL);
 }
 
 static void no_history_yet(void)
@@ -906,6 +981,7 @@ TEST_LIST = {
     {"a_record_seen_by_its_first_byte_is_counted", a_record_seen_by_its_first_byte_is_counted},
     {"start_counts_everything_again", start_counts_everything_again},
     {"cards_count_per_game", cards_count_per_game},
+    {"big_numbers_fit_their_rows", big_numbers_fit_their_rows},
     {"cards_without_history", cards_without_history},
     {"no_history_yet", no_history_yet},
     {"a_count_that_cannot_start", a_count_that_cannot_start},
