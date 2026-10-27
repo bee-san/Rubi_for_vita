@@ -3138,10 +3138,13 @@ static void background_open(void)
  * build (docs/release-variants.md). */
 void vjo_selftest_init(const VjoConfig *c)
 {
+    /* in the data segment: the normal Shell's code room (#333, docs/memory-ledger.md "A game's own line finder") */
+    static const char armed[] VJO_DATA_TABLE(worker_selftest_armed) =
+        "self-test: armed, but this is the normal build: install the -debug build to run it";
     SceIoStat st;
     (void)c;
     if (sceIoGetstat(VJO_DATA_DIR "/selftest.txt", &st) >= 0)
-        vjo_log("self-test: armed, but this is the normal build: install the -debug build to run it");
+        vjo_log("%s", armed);
 }
 #endif
 #if VJO_DEBUG

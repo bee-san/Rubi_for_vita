@@ -1610,12 +1610,28 @@ games worse than `on` (v10972 38 → 70 errors, v6985 6 → 7), and it carries `
   reads 0.6-0.7% more CTC frames on hval and development (host, measured), because a line's parts stay together.
   What that costs on the console is an estimate; nothing of it has run on a console.
 - **The host tool.** `vjo-ocr --line-fix on|junk|all` reads a region as the worker does with the setting.
+- **A game's own value (#333).** `all` is the best value for Narcissu and not for the others, so one value for every
+  game makes a Narcissu player choose. A game can have its own instead: the Rubi app's game page (hold Enter on the
+  game: [the guide](guide.md#a-games-own-page)) writes `TITLEID = all` (or `off`, `on`, `junk`) into
+  `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, and the Shell reads it with the game's ON/OFF as the game starts or
+  resumes (`shell/game.c` `vjo_game_enabled`). From then on that value replaces `config.ini`'s in `cfg`
+  (`shell/worker.c` `apply_config`), so it is what the user's jobs send (the bits above), what `same_pipeline`
+  compares and what the game's start line in `log.txt` names (`..., ocr_mode auto, ocr_line_fix all`); the self-test's
+  stages carry no bits, as before. A PSP game without a row of its own takes the shared PSP row's (`NPXS10028`), as
+  its ON/OFF does; a game started from inside Adrenaline is `PSPEMUCFW`'s. A game with no row uses `config.ini`'s:
+  there is no table of games in the build, since a rule for one title cannot pass #129's rule across titles and would
+  need measuring again with each model. Nothing of it has run on a console.
 
 **To test on console.**
 - A line with a full-width space after ！: one line with `on`, two parts with `off`.
 - A box whose frame or ornament touches the region, with `junk` and a margin.
 - A Narcissu page with `all`.
 - The job time with the setting on and off.
+- #333: Narcissu with its own **Line finder** set to All on its page in the Rubi app, then a Vita game left on Default
+  (`on`), in one session. `log.txt`'s start lines say `ocr_line_fix all` and `ocr_line_fix on`; Narcissu's touching
+  rows come out as two lines (two crops in `game vocr lines:`), and the other game's text is as before. Then the job
+  time on the same Narcissu page with the override and without it (Default).
+
 ## The spotter finder (API 54)
 
 ```ini

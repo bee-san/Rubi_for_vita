@@ -13,6 +13,30 @@ been reported.
 
 ### Added
 
+- **A game's own line finder** (#333; [guide](docs/guide.md#a-games-own-page)). `ocr_line_fix` (API 50) was one value
+  for every game, and the best one depends on the game: in Narcissu (PSP, `ULJM05674`) two rows of text touch, and only
+  `all` splits them (bee-san/vita-vn-ocr#129, host, with VOCR5-N: 13.65% → 2.76% whole-dialogue CER on the owner's
+  hooked pages), while on other games `on` stays the measured best. Now each game can have its own. Hold Enter, or a
+  touch, on a game in the Rubi app's Games list for half a second: its page has the game's ON/OFF and its **Line
+  finder**, Default (`config.ini`'s, `on` unless changed), Off, On, Junk or All. A press or tap let go sooner still
+  turns the game ON or OFF; the list shows `Line finder: All` on a game with its own.
+  - **Where:** `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one `TITLEID = value` line a game in `games.ini`'s form,
+    read by `games.ini`'s reader. `games.ini` is unchanged: earlier builds read it strictly, and a line they do not
+    know makes it unreadable to them (its backup's choices, or every game OFF).
+  - **When:** the Shell reads it with the game's ON/OFF as the game starts or resumes, and the value replaces
+    `config.ini`'s in the user's jobs; `same_pipeline` compares it, and the self-test reads as before. A PSP game
+    without its own follows the shared PSP row (Adrenaline / PSP games without a setting of their own), as its ON/OFF
+    does.
+  - **No built-in table:** a game without its own uses `config.ini`'s.
+  - **log.txt:** the `game … started` line ends with the value the game's jobs use (`ocr_line_fix all`), and no longer
+    names the dictionary (Local dictionaries in every build since the online ones went); `tools/analyse_selftest.py`
+    reads both forms. The debug build no longer logs the title's app parameters 9 and 10 (answered: 115 starts in
+    test.1–test.4, parameter 9 always refused).
+  - **Memory:** the normal Shell takes 128 B of data and no code (its title name is read with less, and its tables
+    moved to the data segment), the debug Shell 40 B of data and 8 B less code; no module takes a page more, and
+    nothing is allocated ([memory ledger](docs/memory-ledger.md)).
+  - Not run on a console yet.
+
 - **A Look up tab in the Rubi app** (#313; [guide](docs/guide.md#look-up)): look a word up and mine it later, beside
   the suspended game. **Search**: Triangle opens the Vita keyboard (every language's keyboard, 128 characters) for a
   word or a sentence, looked up with the overlay's own lookup and dictionaries (`local_dictionaries`, their order and

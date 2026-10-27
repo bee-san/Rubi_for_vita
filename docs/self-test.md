@@ -252,7 +252,8 @@ only on a yes: [below](#archiving-older-dumps-off-the-vita)), into one timestamp
   URL can carry a key; the setting was removed with AnkiConnect, but an older `config.ini` can still
   hold it) replaced by its length before anything is written (also a commented-out one, a word that
   starts with a removed online dictionary's key name, `jpdb_api_keyKEY`, and a key line without `=`;
-  the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`,
+  the text after either name in the logs' config warnings is masked too), `games.ini`, `ocr_line_fix.ini` (each
+  game's own line finder, #333), `region.ini`,
   the whole `anki_queue/` with its `exported/` cards, and the listing (names and sizes only) of
   `anki/`, the Rubi app's `.apkg` packages, `vjo_app.txt`, the record of the Rubi app the plugins came
   with, and `installed.txt`, the one-VPK install's record ([one-vpk-install.md](one-vpk-install.md)), which

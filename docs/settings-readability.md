@@ -22,6 +22,13 @@ line made way for the Model size row). Game policy and preference loading/saving
 The app still re-reads after a save failure to display the actual saved choices;
 a failure is never presented as a successful save.
 
+Since #333 a game's card toggles as Enter or the finger is let go, and opens the game's own page when held for half
+a second ([the guide](guide.md#a-games-own-page)). On the card's second row, beside the ID and its PSP or Hook tag,
+`Line finder: All` (x 360, in the accent colour) marks a game with a line finder of its own, and the focused card says
+`Hold ×: settings` (x 600, dim; ○ on a console whose Enter is ○). Both are drawn at fixed places, so a frame
+measures no more text. The page reuses the OCR page's 68-pixel cards and 34-pixel badges: the game's ON/OFF, and its
+line finder's five choices (104 pixels wide, 8 apart).
+
 The OCR & lookup page has a fourth card, **Dictionaries shown**, with eight
 number badges (44 × 34 pixels, 4 pixels apart). To fit it, the three smaller
 cards are 68 pixels tall, their badges 34 pixels, and the page's status is one

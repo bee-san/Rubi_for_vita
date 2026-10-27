@@ -9,6 +9,7 @@ with curl as the installer does:
   ux0:data/VitaJPOverlay/  log.txt log.old.txt selftest-report.txt selftest.txt status.txt
                            status.prev.txt kernel.txt kernel.prev.txt config.ini (API keys and
                            the audio source URL redacted before anything is written) games.ini
+                           ocr_line_fix.ini (#333: each game's own line finder, from the Rubi app)
                            region.ini anki_queue/* (every card, screenshot, temp and duplicate file)
                            and anki_queue/exported/* (the cards the Rubi app exported); anki/ (its
                            .apkg packages) is listed only
@@ -67,6 +68,7 @@ APP = f"{APPS}/VJOSET001"  # the Rubi app (Rubi.vpk; JPOverlaySettings.vpk befor
 APP_STAMP, APP_EBOOT = f"{APP}/vjo_app.txt", f"{APP}/eboot.bin"
 FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt", "selftest.txt", "status.txt",
                                   "status.prev.txt", "kernel.txt", "kernel.prev.txt", "config.ini", "games.ini",
+                                  "ocr_line_fix.ini",  # #333: the Rubi app's game pages (shell/game.c reads it)
                                   "region.ini", "vjo_app.txt", "installed.txt",
                                   # the game worker's record of the native hooks (the debug build's; never text): a
                                   # hook request sends it (docs/hook-requests.md)

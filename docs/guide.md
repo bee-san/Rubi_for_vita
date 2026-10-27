@@ -495,7 +495,8 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | L + R together, or touch the search field | Open the Vita keyboard and search all indexed games by title or title ID. Latin matching ignores case; Japanese text is matched as entered. The Enabled/Disabled filter still applies. Cancel keeps the current search; accept an empty query or touch Clear to show all games again |
 | Touch Prev / Next | Change the five-game page; the page number is shown between them |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
-| Enter or touch a game | Toggle OCR and overlay input for that game |
+| Enter or touch a game | Toggle OCR and overlay input for that game, as the button or the finger is let go |
+| Hold Enter, or a touch, on a game for half a second | Open [the game's own page](#a-games-own-page): its ON/OFF and its **Line finder**. The selected game's card says "Hold ×: settings" (○ on a console whose Enter is ○) |
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
@@ -675,6 +676,45 @@ many bubbles is not measured on a console yet. A folder in `ux0:app` that is not
 named like a title ID (nine capital letters and digits) is never taken for a
 bubble, whatever it holds.
 
+### A game's own page
+
+Hold Enter, or a touch, on a game in the list for half a second: its page opens, with its title and ID and two
+settings (#333). A shorter press or tap still turns the game ON or OFF, as it is let go.
+
+- **Rubi in this game**: its ON or OFF, as on the list.
+- **Line finder**: how the OCR cuts this game's text box into lines, `config.ini`'s `ocr_line_fix` for this game
+  alone ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)). **Default** (the start) uses `config.ini`'s,
+  `on` unless you changed it; **Off**, **On**, **Junk** and **All** are the setting's four values. The card says what
+  the chosen one does, or what Default gives this game.
+
+Up/Down select a setting; Left/Right or Enter choose (Enter goes round the line finder's choices); touch a choice to
+take it; Cancel goes back to the list, and Select or a tab to another page. A choice is saved at once and applies
+when the game next starts or resumes, as its ON/OFF does; the list then shows `Line finder: All` (for example) on
+the game's card.
+
+Which games want which: **All** splits two rows of text that touch, which the other values read as one line. On the
+owner's hooked Narcissu (PSP, `ULJM05674`) pages, whose heavy outlines and tight leading make rows touch, it took the
+whole-dialogue error from 13.65% with `on` to 2.76% (bee-san/vita-vn-ocr#129: host, measured through Rubi's path with
+VOCR5-N, the Normal model before VOCR6). That split's whole gain on the hooked games was in Narcissu; on the others it
+can cut a tall line in two, and All made two development games worse than `on`. **Junk** helps only boxes drawn with
+a margin and can drop a real line in a tight one. So `on` stays the default for every game, Rubi has no list of games
+that get another value, and a game gets one only when you choose it. Draw the box a few pixels outside the text for
+Junk and All.
+
+PSP games follow the same rows as their ON/OFF. A bubble's own choice applies to it; without one it takes the line
+finder of the shared row **Adrenaline / PSP games without a setting of their own** (`NPXS10028`), and without that,
+`config.ini`'s. A PSP game started from inside Adrenaline is Adrenaline's (`PSPEMUCFW`): Rubi does not know which
+game it is, so give the game a bubble for a choice of its own.
+
+The choices are kept in `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one line a game in `games.ini`'s form
+(`ULJM05674 = all`), with a backup (`ocr_line_fix.ini.bak`) as `games.ini` has: the app reads it after a save that
+was cut short, and its next save puts the file back. They are not in `games.ini` itself: earlier builds read that
+file strictly, and a line they do not know would make it unreadable to them (its backup's choices, or every game
+OFF). A file the app cannot read (a line edited by hand that is not one of the four values, say) is left as it is,
+and the page says so; the Shell then uses `config.ini`'s value for every game. The game's start line in `log.txt`
+names the value its jobs use: `game ULJM05674 started: trigger l+r, subtitles select+r, ocr_mode auto,
+ocr_line_fix all`. Not run on a console yet.
+
 ## Settings and dictionaries
 
 `ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens. A line
@@ -824,6 +864,8 @@ much on regions drawn tight.
 - `all` is `junk` plus a split of two touching rows (Narcissu), so it is for regions drawn with a margin too.
 - `off` is the frozen finder
   ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)).
+- A game can have its own value, which replaces this one in its jobs: the **Line finder** on
+  [its page in the Rubi app](#a-games-own-page) (#333), for a game such as Narcissu that wants `all`.
 
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
