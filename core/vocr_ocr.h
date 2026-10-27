@@ -200,7 +200,7 @@ typedef struct {
     uint64_t size, stamp;    /* of the file they were read from */
 } VjoVocrGateResident;
 
-/* API 53: the text spotter's weights (VjoVocrPolicy.spot_res; vita-vn-ocr #128, runtime/vocr_textspot6.c), kept
+/* API 54: the text spotter's weights (VjoVocrPolicy.spot_res; vita-vn-ocr #128, runtime/vocr_textspot6.c), kept
  * between jobs as the LM's are: the file VJO_VOCR_SPOT_NAME in the job's model directory, of its pinned size and
  * SHA-256 (include/vjo_vocr_sizes.h), then parsed once (vocr_textspot6_load: its header, its CRC-32 over every byte,
  * its tables), both in one block of vjo_vocr_spot_block_bytes() that alloc gives (16-byte aligned, or NULL: no
@@ -430,7 +430,7 @@ typedef struct {
     unsigned rotate_skipped; /* columns left out: more than VJO_VOCR_ROTATE_BYTES */
     /* #379: the columns fetched together, the rectangle around them read once (VJO_VOCR_COLUMNS_BATCH); 0: none */
     unsigned gathered;
-    /* The text spotter (VjoVocrPolicy.spot, API 53), of the last try. */
+    /* The text spotter (VjoVocrPolicy.spot, API 54), of the last try. */
     unsigned spot_ran;       /* 1: it found this try's lines (0: GRAD did, or the job has no spotter) */
     int spot_rc;             /* 0, or why it could not (VJO_E_*, VOCR_LINES_E_*, VOCR_TEXTSPOT_E_BLOB): GRAD found them */
     unsigned spot_boxes;     /* every box it returned, vertical ones too (no recognizer here reads those) */
@@ -677,7 +677,7 @@ typedef struct {
      * as it can drop a text line in a region drawn tight) and VALLEY (two touching rows split; opt-in). The same
      * arena, rows and dark flags as vocr_find_lines_rows. 0: the frozen finder, exactly as before. */
     unsigned line_fix;
-    /* API 53: the text spotter (vita-vn-ocr #128, runtime/vocr_textspot6.c, docs/vita-vn-ocr.md "The spotter finder")
+    /* API 54: the text spotter (vita-vn-ocr #128, runtime/vocr_textspot6.c, docs/vita-vn-ocr.md "The spotter finder")
      * as the job's finder in place of GRAD, and so of GRAD's short-line probe and text gate: vocr_textspot6_find_rows
      * on the region's rows (stream_row: one pass from row 0, the capture's first, then each box's rows for its dark
      * flag), at the scale its blob's rule gives the frame the region is cut from (spot_frame_w x spot_frame_h; 0: the

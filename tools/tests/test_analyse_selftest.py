@@ -497,7 +497,7 @@ class AnalyseV2(unittest.TestCase):
         self.assertIsNone(a.headgate_line(a.summarise_log("")["headgate"]))
 
     def test_the_spot_step_counts_the_spotters_jobs_and_grads(self):
-        # API 53 (VJO_GSTEP_SPOT): kind 1 when the spotter found the lines, arg its lines, rc why GRAD did instead,
+        # API 54 (VJO_GSTEP_SPOT): kind 1 when the spotter found the lines, arg its lines, rc why GRAD did instead,
         # bytes its scratch | VJO_GLM_READ / VJO_GLM_RESIDENT, sum its boxes | 0x8000 more than it keeps | load ms << 16
         def step(kind, arg, rc, weights, boxes, load_ms, us):
             return (f"gstep job spot kind={kind} arg={arg} rc=0x{rc & 0xFFFFFFFF:08X} bytes={236816 | weights} "

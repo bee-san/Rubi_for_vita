@@ -127,7 +127,7 @@ def shipped_models():
         models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
     # the text-presence gate's weights (ocr_text_gate, off by default; vita-vn-ocr #100)
     models.append((VOCR_GATE_MODEL, VOCR_GATE_ASSETS, VOCR_GATE_TAG, "text-presence gate (ocr_text_gate)"))
-    # API 53: the text spotter's weights (ocr_finder = spotter; vita-vn-ocr #128), once its pin is published
+    # API 54: the text spotter's weights (ocr_finder = spotter; vita-vn-ocr #128), once its pin is published
     if VOCR_SPOT_PUBLISHED:
         models.append((VOCR_SPOT_MODEL, VOCR_SPOT_ASSETS, VOCR_SPOT_TAG, "text spotter (ocr_finder = spotter)"))
     return models
@@ -348,7 +348,7 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         raise ValueError("The vertical model's " + VOCR_VERTICAL_ATTRIBUTION + " is missing or not release " + VOCR5V_TAG
                          + "'s ATTRIBUTION.md (tools/prepare_ocr.py --backend vocr-tiers)")
     assets[DATA + "ocr/" + VOCR_VERTICAL_ATTRIBUTION] = attribution
-    # API 53: the text spotter's release names what it was trained on and its terms: that attribution ships beside its
+    # API 54: the text spotter's release names what it was trained on and its terms: that attribution ships beside its
     # weights, as ocr/SPOTTER-ATTRIBUTION.md, once its pin is published (include/vjo_vocr_sizes.h).
     if VOCR_SPOT_PUBLISHED:
         attribution = models / VOCR_SPOT_ATTRIBUTION

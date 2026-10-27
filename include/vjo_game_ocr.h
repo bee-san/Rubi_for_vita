@@ -86,7 +86,7 @@
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
  * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below); API 36, bit 16
  * the border rule (below); API 42, bits 18-19 the head gate and the two-level head; API 43, bit 20 trusted hooks;
- * API 50, bits 21-23 the line finder's fixes (below); API 53, bits 24 and 26 the text spotter (below). Other bits are
+ * API 50, bits 21-23 the line finder's fixes (below); API 54, bits 24 and 26 the text spotter (below). Other bits are
  * refused, as unknown flags are. */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
@@ -153,7 +153,7 @@
 #define VJO_GAME_OCR_S_LINE_FIX 0x200000u
 #define VJO_GAME_OCR_S_LINE_JUNK 0x400000u
 #define VJO_GAME_OCR_S_LINE_VALLEY 0x800000u
-/* API 53, bits 24 and 26: the text spotter as the job's finder (vita-vn-ocr #149 textspot8 and #128 textspot6,
+/* API 54, bits 24 and 26: the text spotter as the job's finder (vita-vn-ocr #149 textspot8 and #128 textspot6,
  * runtime/vocr_textspot6.c; core/vocr_ocr.h VjoVocrPolicy.spot, config.ini ocr_finder = spotter, the default) in place
  * of GRAD: its horizontal boxes, in its reading order, are the lines the recognizer reads. Its weights are the pinned
  * file VJO_VOCR_SPOT_NAME beside the models (VJO_GAME_OCR_OPEN_SPOT); a job that cannot read or keep them (missing,
@@ -262,7 +262,7 @@ typedef struct {
 #define VJO_GAME_OCR_OPEN_SC3 18u
 #define VJO_GAME_OCR_SC3_DIR "ux0:data/VitaJPOverlay/hooks/"
 #define VJO_GAME_OCR_SC3_BYTES 16384u
-/* API 53: the text spotter's weights (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_NAME), for a request with
+/* API 54: the text spotter's weights (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_NAME), for a request with
  * VJO_GAME_OCR_S_SPOT only. (Closed draft #228 used 18 for its spotter, in an API of its own; 18 is the SC3 charset's since #368.) */
 #define VJO_GAME_OCR_OPEN_SPOT 19u
 
@@ -382,7 +382,7 @@ enum {
                             first rows, 1 the first rows' guess, every row checked, 2 every row came to another
                             picture: read again), bytes = the picture's x << 16 | y, sum = its width << 16 | height
                             (the JPEG's), us the scan's time */
-    VJO_GSTEP_SPOT,      /* API 53, the text spotter (VJO_GAME_OCR_S_SPOT), once per job (its last try): kind 1 when it
+    VJO_GSTEP_SPOT,      /* API 54, the text spotter (VJO_GAME_OCR_S_SPOT), once per job (its last try): kind 1 when it
                             found the lines (0: GRAD found them), arg the horizontal boxes it gave the recognizer (at
                             most VJO_GAME_OCR_LINES), rc 0 or why it could not (VJO_E_*, VOCR_LINES_E_*,
                             VOCR_TEXTSPOT_E_BLOB: the job read with GRAD), bytes its arena and result in the job's
@@ -414,7 +414,7 @@ enum {
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
 #define VJO_GITEM_SHOT 8u      /* "VjoGameShot": a shot's colour strip, encoder and JPEG (API 23) */
 #define VJO_GITEM_SC3 9u       /* "VjoGameSc3": an SC3 hook's charset, from the first job until the worker stops */
-#define VJO_GITEM_SPOT 10u     /* "VjoGameVocrSpot": the text spotter's weights and their parsed form (API 53) */
+#define VJO_GITEM_SPOT 10u     /* "VjoGameVocrSpot": the text spotter's weights and their parsed form (API 54) */
 #define VJO_GITEM_COUNT 11u
 
 typedef struct {

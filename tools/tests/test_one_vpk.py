@@ -18,13 +18,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import package_vpk as vpk  # noqa: E402
-import prepare_ocr  # noqa: E402  (API 53: the text spotter's pinned name)
+import prepare_ocr  # noqa: E402  (API 54: the text spotter's pinned name)
 # the tree's API (include/vjo_api.h): the app's stamp in these fixtures
 API = int(re.search(r"#define VJO_API_VERSION (\d+)", (ROOT / "include/vjo_api.h").read_text()).group(1))
 
 
 def kernel_index():
-    """include/vjo_payload.h's VJO_PAYLOAD_KERNEL_INDEX, (15 + VJO_PAYLOAD_SPOT_FILES): API 53's text spotter adds its
+    """include/vjo_payload.h's VJO_PAYLOAD_KERNEL_INDEX, (15 + VJO_PAYLOAD_SPOT_FILES): API 54's text spotter adds its
     two files before the plugins once its pin is published (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_PUBLISHED)."""
     header = (ROOT / "include/vjo_payload.h").read_text()
     base = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX \((\d+) \+ VJO_PAYLOAD_SPOT_FILES\)", header).group(1))
@@ -141,7 +141,7 @@ class PayloadList(unittest.TestCase):
         files = vpk.payload_files()
         # the bundled PSP/Vita names are a separate payload file; API 47: VOCR5-V and VERTICAL-ATTRIBUTION.md;
         # the SC3 hooks' three charsets (docs/native-hooks.md "SC3 text"); VOCR6 (Normal and Large): VOCR6-ATTRIBUTION.md
-        # API 53: the text spotter's two once published
+        # API 54: the text spotter's two once published
         spot = 2 if package_release.VOCR_SPOT_PUBLISHED else 0
         self.assertEqual(len(files), 24 + spot)
         self.assertEqual(sorted(d for d, _ in files if "/hooks/" in d),
@@ -171,7 +171,7 @@ class PayloadList(unittest.TestCase):
         self.assertNotIn("ux0:data/VitaJPOverlay/vjo_app.txt", [d for d, _ in files])
 
     def test_the_spotter_joins_the_payload_once_published(self):
-        """API 53: VJO_VOCR_SPOT_PUBLISHED 1 (include/vjo_vocr_sizes.h) puts the spotter's weights and attribution
+        """API 54: VJO_VOCR_SPOT_PUBLISHED 1 (include/vjo_vocr_sizes.h) puts the spotter's weights and attribution
         after the vertical model's, as the compiler's #if branch does; the placeholder's 0 leaves them out."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

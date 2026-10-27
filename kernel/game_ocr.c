@@ -52,7 +52,7 @@ static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
 typedef char vjo_hook_cache_stage_check[VJO_GAME_OCR_HOOK_CACHE_BYTES <= sizeof(model_stage) ? 1 : -1];
 typedef char vjo_sc3_stage_check[VJO_GAME_OCR_SC3_BYTES <= sizeof(model_stage) ? 1 : -1]; /* a charset: one read */
 typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage) ? 1 : -1];
-/* API 53: the spotter's pinned name, as every name the broker opens, fits a request's model field (the copy below) */
+/* API 54: the spotter's pinned name, as every name the broker opens, fits a request's model field (the copy below) */
 typedef char vjo_spot_name_check[sizeof(VJO_VOCR_SPOT_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
                                  sizeof(VJO_VOCR_GATE_NAME) <= VJO_GAME_OCR_MODEL_BYTES ? 1 : -1];
 /* exFAT's first file extension while a game ran took 20.9 s on the console;
@@ -1036,7 +1036,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
                           ? which - VJO_GAME_OCR_OPEN_TIER + 1u : 0u;
     int gate = which == VJO_GAME_OCR_OPEN_GATE; /* API 26: the text-presence gate's weights, for its request only */
-    int spot = which == VJO_GAME_OCR_OPEN_SPOT; /* API 53: the text spotter's weights, for its request only */
+    int spot = which == VJO_GAME_OCR_OPEN_SPOT; /* API 54: the text spotter's weights, for its request only */
     if (gate) {
         if (!(request.speed & VJO_GAME_OCR_S_GATE)) return VJO_ERR_ARG;
         name = VJO_VOCR_GATE_NAME;

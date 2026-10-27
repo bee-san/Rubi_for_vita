@@ -12,7 +12,7 @@ v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 VOCR6_N_w8_2l.vocr, VOCR6_L_w8_2l.vocr) and their releases' attributions, v0.3.6-head2level.1's ATTRIBUTION.md
 kept as MODEL-ATTRIBUTION.md and v0.4.0-vocr6.1's as VOCR6-ATTRIBUTION.md, and the text-presence gate's weights
 (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1) with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which
-a package ships, and (API 53) the text spotter's weights with their release's ATTRIBUTION.md kept as
+a package ships, and (API 54) the text spotter's weights with their release's ATTRIBUTION.md kept as
 SPOTTER-ATTRIBUTION.md, pinned in include/vjo_vocr_sizes.h. --backend vocr-tests
 fetches what the host tests read from VJO_VOCR_MODEL_DIR (CMakeLists.txt: their real-model checks): every pinned
 recognizer, the four LMs, the off-path check's references (v0.3.0's VOCR5-S in a v0.3.0/ subdirectory, VOCR6's plain
@@ -209,7 +209,7 @@ VOCR_GATE_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
 VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_ATTRIBUTION_ASSET, 3706,
     '44a353c76e19c6bdabcb9dbd06d14867696dcb59ce0460db22d09749af687f6e')}
 
-# API 53: the text spotter (vita-vn-ocr #149, docs/textspot8.md), the game worker's default finder
+# API 54: the text spotter (vita-vn-ocr #149, docs/textspot8.md), the game worker's default finder
 # (ocr_finder = spotter; grad turns it off): its int8 weights (a VTSP blob) and its release's ATTRIBUTION.md, which ships beside them as
 # ocr/SPOTTER-ATTRIBUTION.md. Their pins are the VJO_VOCR_SPOT_* lines of include/vjo_vocr_sizes.h, the one place
 # that C, CMake and these tools all read (a copy of this script beside a copy of that header, as a release zip's
@@ -411,7 +411,7 @@ def test_models():
     the plugin's, core/vocr_ocr.c), the four LMs, the off-path check's references (host/tests/test_vocr.c:
     v0.3.0's VOCR5-S in v0.3.0/, VOCR6's plain Normal and Large in v0.4.0-vocr6.1/), and the text-presence gate's
     weights, which the host builds take from cmake/VocrGate.cmake (tools/fast_gate.sh's models lane gives it this
-    copy: VJO_VOCR_GATE_BLOB), and (API 53) the text spotter's published weights (host/tests/test_spot_release.c). A
+    copy: VJO_VOCR_GATE_BLOB), and (API 54) the text spotter's published weights (host/tests/test_spot_release.c). A
     name is the file's path under the directory. No attribution: no test reads one."""
     tables = ((VOCR6_ASSETS, VOCR6_TAG), (VOCR5_ASSETS, VOCR5_TAG), (VOCR5V_ASSETS, VOCR5V_TAG),
               (VOCR4_ASSETS, VOCR4_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR_ASSETS, VOCR_TAG),

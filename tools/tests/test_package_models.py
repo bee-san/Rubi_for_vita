@@ -66,7 +66,7 @@ class PackageModels(unittest.TestCase):
         self.vertical_attribution = b"the vertical model's attribution fixture"
         self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
             "https://fixture.invalid/V", len(self.vertical_attribution), hashlib.sha256(self.vertical_attribution).hexdigest())}))
-        # API 53: the text spotter's weights and attribution, its pin published
+        # API 54: the text spotter's weights and attribution, its pin published
         self.spot = b"tiny spotter fixture, not spotter weights"
         self.spot_attribution = b"the spotter's attribution fixture"
         self.enterContext(mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION_PIN", {prepare.VOCR_SPOT_ATTRIBUTION: (
@@ -195,7 +195,7 @@ class PackageModels(unittest.TestCase):
                 self.assertEqual(archive.read(release.DATA + "ocr/" + name), self.fixture_of(name))
             self.assertEqual(sorted(manifest["models"]), sorted({*sizes, *prepare.VOCR_LM_ASSETS, prepare.VOCR_GATE_MODEL,
                                                            prepare.VOCR_VERTICAL_MODEL, prepare.VOCR_SPOT_MODEL}))
-            # API 53: the text spotter's weights and their release's attribution, its pin published
+            # API 54: the text spotter's weights and their release's attribution, its pin published
             spot = manifest["models"][prepare.VOCR_SPOT_MODEL]
             self.assertEqual((spot["release"], spot["bytes"], spot["role"], "tier" in spot),
                              ("bee-san/vita-vn-ocr " + prepare.VOCR_SPOT_TAG, len(self.spot),

@@ -94,11 +94,11 @@ been reported.
   and an animated icon next to the text costs it less; it still misreads side-by-side choice buttons. Its weights
   (52,176 B) are a file beside the models, read once into the game's memory and kept; when they are missing or there
   is no memory for them, and for a region it sees as vertical text under `ocr_vertical = auto`, the job reads with
-  Rubi's finder. Memory (exact bytes, [memory ledger](docs/memory-ledger.md#the-spotter-finder-api-53)): its block,
+  Rubi's finder. Memory (exact bytes, [memory ledger](docs/memory-ledger.md#the-spotter-finder-api-54)): its block,
   57,344 B, and its part of the job's scratch, only in jobs that use it; its code, 16 KiB more of the OCR
   worker's pages in every game that is ON (208,896 B, 217,088 B in the debug build). Its time is
   estimated at 82 ms for a 900×150 text box and 105 ms for 900×200 at 333 MHz (vita-vn-ocr's cycle model; nothing of
-  it has run on a console) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-53); API 53).
+  it has run on a console) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-54); API 54).
 - The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
   row (an animated icon, a moving picture or text still typing in the region), its next try says "Recognizing…
   Something in the region keeps moving (an animated icon? text still typing?). If a region around just the text

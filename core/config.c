@@ -57,7 +57,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_line_fix = VJO_LINE_FIX_DEFAULT;   /* docs/vita-vn-ocr.md, "Line finder fixes" */
     c->hook_sites = 1; /* the table sites with the CALL source; off: the CALL source alone */
     c->ocr_head_gate = VJO_HEAD_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Head gate" and "Two-level head" */
-    c->ocr_finder = VJO_FINDER_DEFAULT; /* API 53: docs/vita-vn-ocr.md, "The spotter finder" */
+    c->ocr_finder = VJO_FINDER_DEFAULT; /* API 54: docs/vita-vn-ocr.md, "The spotter finder" */
     c->ocr_spotter_refine = VJO_SPOTTER_REFINE_DEFAULT;
     c->hook_trust = 1; /* a trusted hook answers without OCR; off: Rubi 0.9.7's selection (docs/native-hooks.md) */
     c->ocr_vertical = VJO_VERTICAL_DEFAULT; /* docs/vita-vn-ocr.md, "Vertical text" */
@@ -517,14 +517,14 @@ static const char vertical_key[] VJO_DATA_TABLE(config_vertical_key) = "ocr_vert
 static const char wait_hint_key[] VJO_DATA_TABLE(config_wait_hint_key) = "ocr_wait_hint";
 /* #321's key, in the data segment too (docs/memory-ledger.md, "Lookups: #321"). */
 static const char names_key[] VJO_DATA_TABLE(config_names_key) = "names_first";
-/* API 53: the spotter's keys and the finder's names, in the data segment as the keys above (the Shell's code pages
+/* API 54: the spotter's keys and the finder's names, in the data segment as the keys above (the Shell's code pages
  * keep their room) */
 static const char finder_key[] VJO_DATA_TABLE(config_finder_key) = "ocr_finder";
 static const char spot_refine_key[] VJO_DATA_TABLE(config_spot_refine_key) = "ocr_spotter_refine";
 static const char finder_grad[] VJO_DATA_TABLE(config_finder_grad) = "grad";
 static const char finder_spotter[] VJO_DATA_TABLE(config_finder_spotter) = "spotter";
 
-/* API 53: one off/on choice table for every off/on setting (their index is the value: off 0, on 1), and the
+/* API 54: one off/on choice table for every off/on setting (their index is the value: off 0, on 1), and the
  * settings that parsed off/on by hand read it through set_choice, the same values and warning: the Shell's code
  * pages keep room for the spotter's settings (docs/memory-ledger.md, "The spotter finder"). */
 static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", NULL};
@@ -635,7 +635,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const modes[] VJO_DATA_TABLE(config_modes_1) = {"off", "on", "psp", NULL};
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
     } else if (vjo_ieq(key, "ocr_text_gate") || vjo_ieq(key, spot_refine_key)) {
-        /* ocr_text_gate or (API 53) ocr_spotter_refine: their fifth letters differ, in either case */
+        /* ocr_text_gate or (API 54) ocr_spotter_refine: their fifth letters differ, in either case */
         set_choice(c, key, val, (key[4] | 0x20) == 's' ? &c->ocr_spotter_refine : &c->ocr_text_gate, off_on);
     } else if (vjo_ieq(key, head_key)) {
         /* each value's index is its VJO_HEAD_* bits */
@@ -645,7 +645,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_line_fix")) {
         static const char *const fixes[] VJO_DATA_TABLE(config_line_fix_1) = {"off", "on", "junk", "all", NULL};
         set_choice(c, key, val, &c->ocr_line_fix, fixes);
-    } else if (vjo_ieq(key, finder_key)) { /* API 53 */
+    } else if (vjo_ieq(key, finder_key)) { /* API 54 */
         static const char *const finders[] VJO_DATA_TABLE(config_finders_1) = {finder_grad, finder_spotter, NULL};
         set_choice(c, key, val, &c->ocr_finder, finders);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {

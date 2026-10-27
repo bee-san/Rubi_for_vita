@@ -138,7 +138,7 @@ jobs:
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
-      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 53), pinned apart from the
+      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 54), pinned apart from the
       # recognizer's files until the recognizer's pin holds them (then one commit pins both, and this step goes)
       - name: Check out the text spotter's pinned runtime
         uses: actions/checkout@v4
@@ -234,7 +234,7 @@ jobs:
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
-      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 53), pinned apart from the
+      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 54), pinned apart from the
       # recognizer's files until the recognizer's pin holds them (then one commit pins both, and this step goes)
       - name: Check out the text spotter's pinned runtime
         uses: actions/checkout@v4
@@ -333,7 +333,7 @@ jobs:
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
-      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 53), pinned apart from the
+      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 54), pinned apart from the
       # recognizer's files until the recognizer's pin holds them (then one commit pins both, and this step goes)
       - name: Check out the text spotter's pinned runtime
         uses: actions/checkout@v4

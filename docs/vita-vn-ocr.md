@@ -1616,7 +1616,7 @@ games worse than `on` (v10972 38 → 70 errors, v6985 6 → 7), and it carries `
 - A box whose frame or ornament touches the region, with `junk` and a margin.
 - A Narcissu page with `all`.
 - The job time with the setting on and off.
-## The spotter finder (API 53)
+## The spotter finder (API 54)
 
 ```ini
 ocr_finder = spotter       ; spotter (the default): vita-vn-ocr's text spotter | grad: Rubi's line finder
@@ -1669,8 +1669,11 @@ guard and hval pages, as the rule says, and were read once on the test sets:
   often than horizontal goes to GRAD's rows, which auto's rule checks as without the spotter (the columns are then read
   with the vertical model). Measured in vita-vn-ocr on the spotter's crop decode with the shipped weights: 0 of
   1,677 horizontal development and confirmation regions, 160 of 181 vertical development regions (77 of 84 VN pages,
-  83 of 97 manga windows; the other 21 read as rows, as a region GRAD's check misses does). A job of columns
-  (`ocr_vertical = on`) reads without the spotter.
+  83 of 97 manga windows; the other 21 are read as the spotter's rows). With
+  `ocr_vertical = on`, which prefers columns ([on's rule](#ons-rule-api-53-379)), GRAD's rows decide unless most of
+  the spotter's boxes are horizontal (none, or as many vertical as horizontal ones, goes to on's check on GRAD's
+  rows); a job of columns reads without the spotter. This on rule was not measured on the spotter's boxes: it hands
+  every case that is not clearly horizontal to on's own measured check.
 - **What it leaves out.** GRAD's short-line probe (#194) and the text-presence gate are GRAD's: a job whose spotter
   finds the lines runs neither and reads no gate weights. `ocr_spotter_refine = on` refines its boxes
   (`VOCR_REFINE_DEFAULT`); off, the default, reads them as found (the measured better decode: the rule's
@@ -1695,7 +1698,7 @@ guard and hval pages, as the rule says, and were read once on the test sets:
   (see [Build](#build)). It is built into the game worker only, at the runtime's `-O2`; the Shell links no OCR
   runtime.
 
-**Memory** (exact bytes; [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-53)):
+**Memory** (exact bytes; [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-54)):
 
 | item | bytes |
 |---|---|
@@ -1716,7 +1719,7 @@ the default clock. Rubi's finding (GRAD with the textbox recovery) took about 10
 
 **Code**: in the game worker, with its use, 16,384 B more of text pages in each build (208,896 B of
 pages, 217,088 B in the debug build), carried by every game that is ON whichever finder it uses [measured: the
-module rows in [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-53)].
+module rows in [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-54)].
 
 **Logs.** `gstep job spot`, once per job (its last try) whose request asks for the spotter:
 - kind: 1 when it found the lines, 0 when GRAD did;
@@ -1907,7 +1910,7 @@ SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`
 `vocr_post.h`) against their
 SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. The text spotter's files
 (`vocr_textspot6.c`, `vocr_textspot6.h` and the headers they include from their own directory, `vocr_textspot.h`,
-`vocr_lines.h`, `vocr_lines_rows.h`: [the spotter finder](#the-spotter-finder-api-53)) are pinned at their own
+`vocr_lines.h`, `vocr_lines_rows.h`: [the spotter finder](#the-spotter-finder-api-54)) are pinned at their own
 commit, `VJO_VOCR_SPOT_COMMIT` (`4674e54`, vita-vn-ocr main after #147, whose runtime differs from the recognizer's
 pin only by the spotter's own files; the five files are byte-identical at the earlier pin `a54a5b2`): they are taken from
 `-DVJO_VOCR_SPOT_SOURCE_DIR=/path/to/a/checkout` of that commit, else from `VJO_VOCR_SOURCE_DIR` when it holds them at

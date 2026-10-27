@@ -803,7 +803,7 @@ development screenshots (host, measured) it takes the whole-dialogue error of Ru
 (0.99% with VOCR6), and on a fresh set of 41 games from 4.29% to 1.86%. `ocr_spotter_refine = on` refines its
 boxes too. Its weights are a file beside the models, kept in the game's memory between jobs; without them a job
 reads with Rubi's finder, as does a region the spotter sees as vertical text under `ocr_vertical = auto`
-([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-53)).
+([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-54)).
 
 `ocr_line_fix` tunes Rubi's finder (`grad`, also the spotter's fallback): `ocr_line_fix = on`, the default, runs it
 with vita-vn-ocr #129's column fix: a line's parts across a full-width space stay one line. On the owner's hooked PS Vita and PSP pages (host, measured), this takes the
@@ -1078,7 +1078,7 @@ holds the worker's 208,896 B of module pages (217,088 B in the debug build; API 
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
 two-level head 8,192 B, API 47's vertical text 4,096 B, API 50's line finder fixes with vita-vn-ocr f8a1856's
-runtime 8,192 B and API 53's text spotter 16,384 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+runtime 8,192 B and API 54's text spotter 16,384 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

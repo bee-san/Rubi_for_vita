@@ -2289,7 +2289,7 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("ocr_head_gate bits %d: speed 0x%08X", bits, (unsigned)fake_game_request.speed);
         mem_free();
     }
-    /* API 53: the text spotter rides in the speed word with ocr_finder = spotter (the default), its refinement's bit
+    /* API 54: the text spotter rides in the speed word with ocr_finder = spotter (the default), its refinement's bit
      * only beside it; ocr_finder = grad sends neither */
     reset();
     TEST_CHECK(cfg.ocr_finder == VJO_FINDER_SPOTTER); /* the default */

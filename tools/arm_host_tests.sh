@@ -216,7 +216,7 @@ TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
-  # API 53: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT); core/vocr_ocr.c
+  # API 54: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT); core/vocr_ocr.c
   # links it. VJO_VOCR_SPOT_SOURCE_DIR, else the recognizer's checkout when it holds it.
   SPOT_RT=${VJO_VOCR_SPOT_SOURCE_DIR:-$VJO_VOCR_SOURCE_DIR}/runtime
   MODEL_DEF=()

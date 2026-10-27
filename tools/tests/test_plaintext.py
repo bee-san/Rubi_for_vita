@@ -149,7 +149,7 @@ class FrozenPlaintext(unittest.TestCase):
         gate_att = {"GATE-ATTRIBUTION.md": ("fixture", 12, hashlib.sha256(b"gate fixture").hexdigest())}
         (models / "VERTICAL-ATTRIBUTION.md").write_text("vertical fixture")
         vertical_att = {"VERTICAL-ATTRIBUTION.md": ("fixture", 16, hashlib.sha256(b"vertical fixture").hexdigest())}
-        (models / release.VOCR_SPOT_ATTRIBUTION).write_text("spotter fixture")  # API 53: the text spotter's
+        (models / release.VOCR_SPOT_ATTRIBUTION).write_text("spotter fixture")  # API 54: the text spotter's
         spot_att = {release.VOCR_SPOT_ATTRIBUTION: ("fixture", 15, hashlib.sha256(b"spotter fixture").hexdigest())}
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \

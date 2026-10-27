@@ -122,7 +122,7 @@
 #define VJO_VOCR_GATE_NAME "textgate_p8_c8_w8.vtd"
 #define VJO_VOCR_GATE_BYTES 1540u
 
-/* API 53: the text spotter's int8 weights (vita-vn-ocr #149's pick, docs/textspot8.md: a VTSP version-4 blob,
+/* API 54: the text spotter's int8 weights (vita-vn-ocr #149's pick, docs/textspot8.md: a VTSP version-4 blob,
  * pre-release v0.3.10-textspot8.1, whose SHA256SUMS lists them), the game worker's default finder (config.ini
  * ocr_finder = spotter; grad turns it off): a file beside the models, read through the
  * kernel's broker (VJO_GAME_OCR_OPEN_SPOT) by a job with VJO_GAME_OCR_S_SPOT, and its release's ATTRIBUTION.md

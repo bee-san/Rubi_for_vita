@@ -1,4 +1,4 @@
-"""API 53: the text spotter's pins (vita-vn-ocr #149; config.ini ocr_finder = spotter, the default). include/vjo_vocr_sizes.h's
+"""API 54: the text spotter's pins (vita-vn-ocr #149; config.ini ocr_finder = spotter, the default). include/vjo_vocr_sizes.h's
 VJO_VOCR_SPOT_* lines are the one place of its tag, name, bytes, SHA-256, attribution, form and whether it is published:
 C (core/vocr_ocr.c, the kernel, include/vjo_payload.h), CMake (cmake/VocrOCR.cmake's VOCR_TEXTSPOT6_NO_MS default) and
 the tools (prepare_ocr.py, package_release.py, package_vpk.py, e2e_package.py) read them, so pinning another published

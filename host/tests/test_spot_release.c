@@ -1,4 +1,4 @@
-/* API 53: the pinned text spotter's own weights (include/vjo_vocr_sizes.h: vita-vn-ocr's pre-release
+/* API 54: the pinned text spotter's own weights (include/vjo_vocr_sizes.h: vita-vn-ocr's pre-release
  * v0.3.10-textspot8.1), read from VJO_VOCR_MODEL_DIR as the models lane gives it (tools/prepare_ocr.py --backend
  * vocr-tests fetches them; without the directory every check here is skipped, as the other real-model tests are):
  * - the file is the pin: vjo_vocr_spot_load, the worker's own load, takes it (its size, SHA-256 and the runtime's

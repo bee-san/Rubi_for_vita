@@ -1089,8 +1089,8 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x20000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 36: but bit 16) */
     r.speed = 0x100000; TEST_CHECK(vjoOcrSubmit(&r) > 0); /* API 43: bit 20, a trusted hook may answer (S_TRUST) */
-    r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) != VJO_ERR_ARG); /* API 53: bit 24, the text spotter (S_SPOT) */
-    r.speed = 0x4000000; TEST_CHECK(vjoOcrSubmit(&r) != VJO_ERR_ARG); /* API 53: bit 26, its refinement (alone: ignored) */
+    r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) != VJO_ERR_ARG); /* API 54: bit 24, the text spotter (S_SPOT) */
+    r.speed = 0x4000000; TEST_CHECK(vjoOcrSubmit(&r) != VJO_ERR_ARG); /* API 54: bit 26, its refinement (alone: ignored) */
     r.speed = 0x8000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: 18-19; API 43: 20; API 50: 21-23) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
     r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 25 (draft #326's), 27, 30-31 unknown */
@@ -2433,7 +2433,7 @@ static void gate_weights_open_only_with_the_gate(void)
         }
 }
 
-/* API 53: the text spotter's weights, the same way: a pinned name the kernel knows, at its pinned size, for a request
+/* API 54: the text spotter's weights, the same way: a pinned name the kernel knows, at its pinned size, for a request
  * that asks for the spotter (VJO_GAME_OCR_S_SPOT) only, by tiers or by name; its refinement bit alone opens nothing,
  * and both bits are known to Submit. */
 static void spot_weights_open_only_with_the_spotter(void)
@@ -2793,7 +2793,7 @@ TEST_LIST = {
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"API 26: the gate's weights open by their pinned name, only with the gate", gate_weights_open_only_with_the_gate},
     {"an SC3 hook's charset opens by the caller's own title ID, up to its limit", sc3_charset_opens_by_the_callers_title},
-    {"API 53: the spotter's weights open by their pinned name, only with the spotter", spot_weights_open_only_with_the_spotter},
+    {"API 54: the spotter's weights open by their pinned name, only with the spotter", spot_weights_open_only_with_the_spotter},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
     {"API 47: the vertical model opens only for a job with a vertical mode, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
     {"the Large size's file opens at its pinned length only (VOCR6-L: 2,475,680 B)", the_large_size_opens_at_its_pinned_length_only},

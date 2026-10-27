@@ -87,7 +87,7 @@ APP_READS = (("cwd", ()), ("nocwd", ("--ftp-method", "nocwd")))
 # The ocr folder holds what the package ships there: the weights (*.vocr), the LMs (*.vlm, #89), their
 # attribution, LM-ATTRIBUTION.md, the model sizes' attributions, MODEL-ATTRIBUTION.md and VOCR6-ATTRIBUTION.md,
 # the text-presence gate's weights (*.vtd) and attribution, GATE-ATTRIBUTION.md, the vertical model's
-# attribution, VERTICAL-ATTRIBUTION.md, and (API 53) the text spotter's weights (*.vtsp) and attribution,
+# attribution, VERTICAL-ATTRIBUTION.md, and (API 54) the text spotter's weights (*.vtsp) and attribution,
 # SPOTTER-ATTRIBUTION.md, once a package carries them (package_release.py).
 DIRS = [(f"{DATA}/anki_queue", "keep", None), (f"{DATA}/anki_queue/exported", "keep", None),
         (f"{DATA}/anki", None, None), (DATA, None, None),

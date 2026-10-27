@@ -1,4 +1,4 @@
-/* API 53: the text spotter in the actual game worker (game_ocr/main.c) and core adapter (core/vocr_ocr.c), with
+/* API 54: the text spotter in the actual game worker (game_ocr/main.c) and core adapter (core/vocr_ocr.c), with
  * the committed random VTSP version-4 blob as its pinned weights (host/fixtures/spotter, test_spot_pins.h), the
  * real spotter runtime, and the resident test's synthetic recognizer with a 4 KiB arena (test_spot_models.h) and
  * spies for the recognizer and GRAD (so a job's lines tell which finder found them). A request with

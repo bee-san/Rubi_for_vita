@@ -72,7 +72,7 @@ def payload_files():
     strings = {"VJO_PAYLOAD_DATA": "ux0:data/VitaJPOverlay/", "VJO_PAYLOAD_OCR": "ux0:data/VitaJPOverlay/ocr/",
                "VJO_PAYLOAD_HOOKS": "ux0:data/VitaJPOverlay/hooks/"}
     block = header[header.index("#define VJO_PAYLOAD_FILE_LIST(X)"):header.index("#define VJO_PAYLOAD_COUNT_ONE")]
-    # API 53: the text spotter's entries stand where VJO_PAYLOAD_SPOT_LIST(X) does, as the compiler reads it: its
+    # API 54: the text spotter's entries stand where VJO_PAYLOAD_SPOT_LIST(X) does, as the compiler reads it: its
     # #if branch's when include/vjo_vocr_sizes.h's pin is published (VJO_VOCR_SPOT_PUBLISHED 1), none before.
     published = re.findall(r"^#define VJO_VOCR_SPOT_PUBLISHED ([01])$", sizes, re.M)
     if len(published) != 1 or block.count("VJO_PAYLOAD_SPOT_LIST(X)") != 1:

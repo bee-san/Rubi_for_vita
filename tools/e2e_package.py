@@ -301,7 +301,7 @@ class E2E:
         expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md", release.VOCR_MODEL_ATTRIBUTION,
                                                     release.VOCR6_ATTRIBUTION, release.VOCR_GATE_ATTRIBUTION,
                                                     release.VOCR_VERTICAL_ATTRIBUTION}
-        # API 53: the text spotter's weights (in shipped_models) and attribution, its pin published; an unpublished
+        # API 54: the text spotter's weights (in shipped_models) and attribution, its pin published; an unpublished
         # pin ships neither (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_PUBLISHED)
         spot = ocr / release.VOCR_SPOT_ATTRIBUTION
         if release.VOCR_SPOT_PUBLISHED:
@@ -514,7 +514,7 @@ class E2E:
               "A the zip lists the .apkg packages (the analysis counts 1) but does not copy them")
         check(not any(s.encode() in blob for s in SECRETS), "A no credential is in any file of the zip")
         m = re.search(r"installed files: (\d+) of (\d+) match the package", a)
-        # the hashed files (plugins, RCO, weights, LMs, the attributions; API 53: the spotter's .vtsp), the VPK, and
+        # the hashed files (plugins, RCO, weights, LMs, the attributions; API 54: the spotter's .vtsp), the VPK, and
         # the dictionary by size
         n_hashed = sum(1 for x in self.device_files
                        if x.endswith((".vocr", ".vlm", ".vtd", ".vtsp", "-ATTRIBUTION.md", ".skprx", ".suprx", ".rco"))) + 2

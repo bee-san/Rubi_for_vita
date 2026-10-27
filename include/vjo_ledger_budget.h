@@ -382,7 +382,7 @@
  * on both builds, main d25c48c (the worker's rows are main 313666a's too) and this change, tools/fast_gate.sh's vitasdk
  * image]. No block, thread or allocation: the
  * columns' rectangle is the tall-line block (VJO_BUDGET_GAME_LINE, its bound unchanged). */
-/* API 53, the text spotter as the finder (ocr_finder = spotter, the default; docs/memory-ledger.md, "The spotter
+/* API 54, the text spotter as the finder (ocr_finder = spotter, the default; docs/memory-ledger.md, "The spotter
  * finder"): vita-vn-ocr's runtime/vocr_textspot6.c at the runtime's -O2, built with VOCR_TEXTSPOT6_NO_MS (only the
  * trunk form the pin uses; cmake/VocrOCR.cmake VJO_VOCR_SPOT_NO_MS), with the vocr_line_dark it calls, and its use
  * (core/vocr_ocr.c, game_ocr/main.c's block and job flow) in the game's partition only: four text pages more in each
@@ -599,7 +599,7 @@
  * Large; docs/vita-vn-ocr.md "Head gate and two-level head"). The worker takes
  * helpers only when its memory check passes with them, one fewer at a time down to none.
  * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544).
- * API 53, the text spotter as the finder (ocr_finder = spotter, vita-vn-ocr #128): its arena and result take the
+ * API 54, the text spotter as the finder (ocr_finder = spotter, vita-vn-ocr #128): its arena and result take the
  * job's scratch, which the recognizer's arena reuses once the boxes are taken (core/vocr_ocr.c layout_spot), so the
  * scratch is the largest of the three: at most VJO_VOCR_SPOT_ARENA_MAX (262,144 B, the protocol's eligibility for a
  * 960 x 544 frame, include/vjo_vocr_sizes.h) and the 1,684 B result (VocrTextspot6Set), 263,840 B 16-byte aligned,
@@ -685,7 +685,7 @@
  * (196,608 B), page-rounded: 450,560 B, only while a shot runs. A shot is a job of
  * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
  * line or helpers (1,921,024 B of the job's worst case besides the resident weights, LM,
- * cascade model, SC3 charset and, API 53, the text spotter's block, which a shot keeps: 9,093,120 + 450,560 B
+ * cascade model, SC3 charset and, API 54, the text spotter's block, which a shot keeps: 9,093,120 + 450,560 B
  * under the job's 11,014,144 B, VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
@@ -695,7 +695,7 @@
  * STEINS;GATE's 5,364 B and ROBOTICS;NOTES's 6,432 B 8,192 B). Only in those games; held beside every job, so in the
  * job's worst case: 10,403,840 -> 10,420,224 B. Its load keeps VJO_GAME_RESERVE_HOOK_ONLY free beside it. */
 #define VJO_BUDGET_GAME_SC3 16384u
-/* API 53: the text spotter's weights and their parsed form (game_ocr/main.c spot_alloc, "VjoGameVocrSpot"; core/
+/* API 54: the text spotter's weights and their parsed form (game_ocr/main.c spot_alloc, "VjoGameVocrSpot"; core/
  * vocr_ocr.h VjoVocrSpotResident), USER_RW only, resident like the LM while the game is the active one and its jobs
  * ask for the spotter (ocr_finder = spotter, the default), given back with the others when a job does not fit,
  * the game leaves the front or a job asks for GRAD. Its worst case is the largest blob the protocol's rule admits,
@@ -723,7 +723,7 @@
  * A game with less runs fewer helpers, a smaller LM, no cascade or none of them, then a smaller
  * tier (game_ocr/main.c), never a smaller tier for the helpers. */
 #define VJO_LIMIT_GAME_WEIGHTS 2502656u
-/* API 53: raised from 1,220,608 B by the spotter's part of the scratch (VJO_BUDGET_GAME_WORKSPACE): +77,824 B. */
+/* API 54: raised from 1,220,608 B by the spotter's part of the scratch (VJO_BUDGET_GAME_WORKSPACE): +77,824 B. */
 #define VJO_LIMIT_GAME_WORKSPACE 1298432u
 /* API 34 adds the measured 8192 B of worker module pages to the prior ceiling, and vita-vn-ocr #109's
  * counter re-decode its 4,096 B. API 42 (vita-vn-ocr #120's head gate, #122's two-level head) adds the Large
@@ -735,7 +735,7 @@
  * Normal and Large (vita-vn-ocr #125) change no budget: Large's block and the workspace keep their pages, and Normal's
  * weights block is a page smaller, so the real peak (VOCR6-N with VOCR6-L's cascade, the 4 MB LM and both helpers) is
  * 9,113,600 B, 1,290,240 B under the worst case without an SC3 charset (10,403,840 B; 10,420,224 B with it).
- * API 53 adds the text spotter's: its block (VJO_BUDGET_GAME_SPOT, 516,096 B), its part of the workspace (77,824 B)
+ * API 54 adds the text spotter's: its block (VJO_BUDGET_GAME_SPOT, 516,096 B), its part of the workspace (77,824 B)
  * and the worker's four text pages (16,384 B, both builds), 610,304 B: 11,214,848 B, 12.4 % of the 90,177,536 B
  * free USER the least any job saw in CLANNAD [measured, #81's v0.8.0-test.1 log] (the worst case 11,014,144 B with
  * an SC3 charset, 12.2 %). Only a job with ocr_finder = spotter takes them, and the spotter only takes the room its check leaves

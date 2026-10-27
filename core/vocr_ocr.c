@@ -2,7 +2,7 @@
  * verified weights (resident between jobs, or one-shot) -> vocr_run per line,
  * straight from the strip that holds it. No copy of the whole region is made.
  * The runtime (vocr.c, vocr_lines.c, vocr_lines_rows.c) is bee-san/vita-vn-ocr's,
- * at the commit cmake/VocrOCR.cmake pins; API 53's finder, the text
+ * at the commit cmake/VocrOCR.cmake pins; API 54's finder, the text
  * spotter (vocr_textspot6.c, VjoVocrPolicy.spot), at the commit it pins for it. */
 #include "vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
@@ -32,7 +32,7 @@ typedef char vjo_vocr_gate_mode_matches_runtime[VJO_VOCR_GATE_MODE == VOCR_TEXTG
 /* A model of columns keeps the column finder's flags in finder_mode's low byte. */
 typedef char vjo_vocr_column_flags_fit[(VOCR_COLUMNS_FLAGS & ~0xFFu) == 0 && (VJO_VOCR_FINDER_COLUMNS & 0xFFu) == 0
                                        ? 1 : -1];
-/* API 53: the spotter's pins (include/vjo_vocr_sizes.h): a blob the protocol's rule admits, its SHA-256 as 64 hex
+/* API 54: the spotter's pins (include/vjo_vocr_sizes.h): a blob the protocol's rule admits, its SHA-256 as 64 hex
  * digits, and boxes the job's lines can hold (a VocrTextspot6Box's coordinates are 16-bit, a VocrLine's wider). */
 typedef char vjo_vocr_spot_pins_fit[VJO_VOCR_SPOT_BYTES > 32u && VJO_VOCR_SPOT_BYTES <= VJO_VOCR_SPOT_MAX_BYTES &&
                                     sizeof(VJO_VOCR_SPOT_SHA256) == 65u && VJO_VOCR_SPOT_ARENA_MAX < 0x7FFFFF00u
@@ -227,7 +227,7 @@ static void lm_opts(const VjoVocrModel *job, const VjoVocrLm *lm, vocr_lm_opts *
 typedef char vjo_vocr_vita_structs_pinned[ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx)) ==
                                           VJO_VOCR_VITA_STRUCTS ? 1 : -1];
 #endif
-/* API 53: the spotter's block (its weights and their parsed form) for the largest pin the rule admits fits the
+/* API 54: the spotter's block (its weights and their parsed form) for the largest pin the rule admits fits the
  * ledger's budget on the Vita's 32-bit build (include/vjo_ledger_budget.h VJO_BUDGET_GAME_SPOT); the 64-bit host's
  * parsed form is larger, and its tests pin a smaller blob. */
 typedef char vjo_vocr_spot_block_fits[sizeof(void *) != 4u ||
@@ -266,7 +266,7 @@ typedef struct {
     size_t refine_off, refine_bytes; /* the refinement's arena, inside total (0 bytes: off) */
     size_t gate_off, gate_bytes;     /* the gate's arena, inside the scratch after the finder's (0 bytes: off) */
     vocr_textgate_model gate;        /* its weights (VjoVocrPolicy.gate_res), loaded for the job */
-    /* API 53: the text spotter (VjoVocrPolicy.spot) finds the lines: its arena at the scratch's start, its result
+    /* API 54: the text spotter (VjoVocrPolicy.spot) finds the lines: its arena at the scratch's start, its result
      * after it (spot_arena, 16-byte aligned), the recognizer's arena over both once the boxes are taken */
     int spot;
     const vocr_textspot6 *spot_m;    /* its parsed weights, in VjoVocrPolicy.spot_res's block */
@@ -395,7 +395,7 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     return 0;
 }
 
-/* API 53: the scratch with the spotter's part (its arena and result, vjo_vocr_spot_bytes): the largest of the
+/* API 54: the scratch with the spotter's part (its arena and result, vjo_vocr_spot_bytes): the largest of the
  * finder's, the spotter's and the recognizer's, which use it one after the other; the runtime's structs follow it. */
 static void layout_spot(Layout *l, size_t spot_bytes)
 {
@@ -511,7 +511,7 @@ size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height)
     return layout(vjo_vocr_model(model), width, height, &l) < 0 ? 0 : l.total;
 }
 
-/* ---- API 53: the text spotter's sizes ---- */
+/* ---- API 54: the text spotter's sizes ---- */
 
 /* Its parsed weights in res's block, after the weights; NULL without verified ones. */
 static const vocr_textspot6 *spot_model(const VjoVocrSpotResident *res)
@@ -1056,7 +1056,7 @@ static int resident_gate(const VjoPlatform *p, const char *dir, VjoVocrGateResid
     return VJO_OK;
 }
 
-/* ---- API 53: the text spotter's weights ---- */
+/* ---- API 54: the text spotter's weights ---- */
 
 /* The pinned SHA-256 (64 lowercase hex digits, include/vjo_vocr_sizes.h VJO_VOCR_SPOT_SHA256) as 32 bytes; 0, or -1
  * for a string that is not one (no file then matches). An unpublished pin's zeros decode, and no file has them. */
@@ -2237,10 +2237,10 @@ static void slot_line(Slot *sl, const unsigned char *pixels, size_t stride, unsi
     sl->img.format = VOCR_GREY8 | (dark ? VOCR_INVERT : 0);
 }
 
-/* API 53: the text spotter on the region's rows (stream_row: its one pass from row 0 is the capture's first, then
+/* API 54: the text spotter on the region's rows (stream_row: its one pass from row 0 is the capture's first, then
  * each box's rows for its dark flag, every row checked as always), at the frame's scale (l->spot_flags); its
  * horizontal boxes, in its reading order, with their dark flags, are the lines (VJO_VOCR_MAX_LINES at most:
- * truncated past them); *vertical and *horizontal count every box of each orientation (API 53: ocr_vertical = auto's
+ * truncated past them); *vertical and *horizontal count every box of each orientation (API 54: ocr_vertical = auto's
  * hand-over to GRAD's rows). VOCR_LINES_OK, or the runtime's error (VOCR_LINES_E_SOURCE: a row could not be read). */
 static int spot_find(Stream *s, const Layout *l, unsigned char *ws, VocrLineSet *set, VjoVocrStats *st,
                      unsigned *vertical, unsigned *horizontal)
@@ -2358,7 +2358,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         }
     }
     if (grad) {
-        /* GRAD's path, the job's own finder (API 53: the only one without the spotter, and its fallback) */
+        /* GRAD's path, the job's own finder (API 54: the only one without the spotter, and its fallback) */
         /* API 26: the gate takes the rows the finder reads (stream_row). It scores row boxes: a model of columns
          * (vertical text, API 47) reads without it. */
         if (l->gate_bytes && !cols) {
@@ -2424,11 +2424,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     if (rc) return rc == VOCR_LINES_E_ARENA ? VJO_E_OOM : VJO_E_OCR_REGION;
     /* A region inside one strip was read once: read it again, so that a screen
      * that changed while it was read is seen (the strips of a taller region are
-     * all read twice by the finder's two passes already; the spotter's, API 53,
+     * all read twice by the finder's two passes already; the spotter's, API 54,
      * once, and its boxes' rows again for their dark flags: every line's rows are
      * read again, each checked, when it is recognized). */
     if (s->strip_rows >= im->height && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
-    /* #194's probe is GRAD's: the spotter's boxes are read as it gave them (API 53) */
+    /* #194's probe is GRAD's: the spotter's boxes are read as it gave them (API 54) */
     if (pol->short_lines && !cols && !st->spot_ran && !set.truncated && probe_short_lines(s, &set) < 0)
         return stream_error(s, VJO_E_SOURCE);
     st->find_us = clock_us(p) - t0;
@@ -2522,7 +2522,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     const unsigned char *gblock = NULL;
     const unsigned gather_n = cols ? gather_box(s, &set, &gbox) : 0u;
     unsigned gather = gather_n;
-    /* API 53: the spotter's boxes are refined by its own policy (ocr_spotter_refine), GRAD's by the job's */
+    /* API 54: the spotter's boxes are refined by its own policy (ocr_spotter_refine), GRAD's by the job's */
     const unsigned refine = st->spot_ran ? pol->spot_refine : pol->refine;
     for (unsigned i = 0, li = 0; i < set.count; i++) {
         const VocrLine *box = &set.lines[i];
@@ -2818,7 +2818,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
 
     if (policy && policy->spot && !columns_of(mi)) {
-        /* API 53: the spotter's arena and result in the scratch, before every other part: the job's own workspace
+        /* API 54: the spotter's arena and result in the scratch, before every other part: the job's own workspace
          * as the caller sized it (vjo_vocr_job_bytes_spot). Without its parsed weights, an arena the build takes,
          * or room, the job finds its lines with GRAD (stats->spot_rc says why). A model of columns reads without
          * it. */
@@ -2843,7 +2843,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     if (policy && (policy->refine || (policy->spot && policy->spot_refine)) && !columns_of(mi)) {
         /* The refinement's arena ends the job's own workspace; without room the
          * boxes are read as found. A model of columns has none (its boxes are columns).
-         * (API 53: GRAD's boxes by refine, the spotter's by spot_refine; a job that
+         * (API 54: GRAD's boxes by refine, the spotter's by spot_refine; a job that
          * asks for the spotter may read with GRAD.) */
         size_t rb = vjo_vocr_refine_bytes(image->width, image->height);
         if (workspace && rb && workspace_size >= front + l.total + rb) {
@@ -2891,13 +2891,13 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     if (cancelled(image)) return VJO_E_CANCELLED;
     if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < front + l.total ||
         !capture || capture_size < need_capture) return VJO_E_OOM;
-    /* The gate scores row boxes: a model of columns (API 47) reads without it; GRAD's only (API 53: a job whose
+    /* The gate scores row boxes: a model of columns (API 47) reads without it; GRAD's only (API 54: a job whose
      * spotter finds the lines reads no gate weights). */
     if (policy && policy->gate && !l.spot && (!columns_of(mi) || test_gate_columns)) {
         /* API 26: the gate's weights (read once, then kept), and its arena in the scratch the finder leaves
          * free (the recognizer's arena is the larger part of it at every region size), so the workspace never
          * grows for it. Without either the job reads as without the gate (stats->gate_rc says why). It is
-         * GRAD's: a job whose spotter finds the lines (API 53) reads no gate weights. */
+         * GRAD's: a job whose spotter finds the lines (API 54) reads no gate weights. */
         int grc = policy->gate_res ? resident_gate(platform, model_dir, policy->gate_res, image, stats)
                                    : VJO_E_OCR_MODEL;
         size_t gb = 0, off = ALIGN16(l.finder);

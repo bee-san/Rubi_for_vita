@@ -629,7 +629,7 @@ if(VJO_WITH_VOCR)
   target_link_options(vjo-vocr-policy-tests PRIVATE "LINKER:--wrap=vocr_run" "LINKER:--wrap=vocr_lm_decode"
     "LINKER:--wrap=vocr_lm_init")
   add_test(NAME vocr_policy COMMAND vjo-vocr-policy-tests)
-  # API 53: the text spotter as a job's finder (core/vocr_ocr.c VjoVocrPolicy.spot): the committed random VTSP blob
+  # API 54: the text spotter as a job's finder (core/vocr_ocr.c VjoVocrPolicy.spot): the committed random VTSP blob
   # (host/fixtures/spotter) as its pin, and a synthetic recognizer pin whose weights no test reads.
   add_executable(vjo-vocr-spot-tests host/tests/test_vocr_spot.c core/vocr_ocr.c core/region_suggest.c)
   target_include_directories(vjo-vocr-spot-tests PRIVATE third_party/acutest/include host/tests core include)
@@ -638,7 +638,7 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-vocr-spot-tests PRIVATE -Wall -Wextra)
   target_link_libraries(vjo-vocr-spot-tests vjo_vocr_rt vjo_host)
   add_test(NAME vocr_spot COMMAND vjo-vocr-spot-tests)
-  # API 53: the pinned spotter's own weights from VJO_VOCR_MODEL_DIR (the models lane; skipped without it): the
+  # API 54: the pinned spotter's own weights from VJO_VOCR_MODEL_DIR (the models lane; skipped without it): the
   # worker's load takes them, their budgets hold, and they find both lines of host/fixtures/short_line's text box.
   add_executable(vjo-spot-release-tests host/tests/test_spot_release.c core/vocr_ocr.c core/region_suggest.c)
   target_include_directories(vjo-spot-release-tests PRIVATE third_party/acutest/include host/tests core include)
@@ -1051,7 +1051,7 @@ if(VJO_WITH_VOCR)
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
-  # API 53: the text spotter in the actual worker (game_ocr/main.c): its weights through the broker into a block of
+  # API 54: the text spotter in the actual worker (game_ocr/main.c): its weights through the broker into a block of
   # their own, kept and given back, and GRAD whenever it cannot run; the real spotter on the committed random blob,
   # spies for the recognizer and GRAD (host/tests/test_game_spot.c).
   add_executable(vjo-game-spot-tests host/tests/test_game_spot.c core/vocr_ocr.c core/textnorm.c core/region_suggest.c

@@ -148,7 +148,7 @@ typedef struct {
      * otherwise (私): VJO_NAMES_*, auto (the default) puts the word first when it is among the 1,024 most
      * frequent. Read by the Shell's lookups only. Last, as above. */
     int names_first;
-    /* Local OCR (vocr, API 53): the line finder of a job, VJO_FINDER_GRAD (Rubi's GRAD with the refinement and
+    /* Local OCR (vocr, API 54): the line finder of a job, VJO_FINDER_GRAD (Rubi's GRAD with the refinement and
      * the short-line probe, as every build before) or VJO_FINDER_SPOTTER (vita-vn-ocr's text spotter (#149, #128),
      * core/vocr_ocr.h VjoVocrPolicy.spot: its boxes are the lines; a job that cannot have its weights reads with
      * GRAD); and whether the spotter's boxes are refined (VOCR_REFINE_DEFAULT; GRAD's follow ocr_refine_lines).
@@ -188,7 +188,7 @@ typedef struct {
 /* ocr_line_fix's default (docs/vita-vn-ocr.md, "Line finder fixes": the measurements). */
 #define VJO_LINE_FIX_DEFAULT 1
 #define VJO_LINE_FIX_DEFAULT_TEXT "on"
-/* API 53: ocr_finder (config.ini grad | spotter) and ocr_spotter_refine (off | on), and their defaults
+/* API 54: ocr_finder (config.ini grad | spotter) and ocr_spotter_refine (off | on), and their defaults
  * (docs/vita-vn-ocr.md, "The spotter finder": vita-vn-ocr #149's pick, measured on the page path, reads every
  * unseen-game set better than GRAD and is the default; GRAD stays its fallback and ocr_finder = grad the switch;
  * each default is one line here and its text the next). */

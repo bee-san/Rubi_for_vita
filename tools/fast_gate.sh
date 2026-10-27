@@ -127,7 +127,7 @@ else
 fi
 case $VOCR in /*) ;; *) VOCR=$ROOT/$VOCR ;; esac
 case $DICTS in ''|/*) ;; *) DICTS=$ROOT/$DICTS ;; esac
-# API 53: the text spotter's files, pinned at their own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT) until
+# API 54: the text spotter's files, pinned at their own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT) until
 # vita-vn-ocr's spotter merges: the recognizer's checkout when that is the same commit, else
 # VJO_VOCR_SPOT_SOURCE_DIR, .refs/vita-vn-ocr-spot at the pin, or a clone in the cache.
 SPOT_PIN=$(sed -n 's/^set(VJO_VOCR_SPOT_COMMIT \([0-9a-f]\{40\}\))$/\1/p' cmake/VocrOCR.cmake)

@@ -1,4 +1,4 @@
-/* API 53: the text spotter as a job's finder (core/vocr_ocr.c, VjoVocrPolicy.spot), with the committed random VTSP
+/* API 54: the text spotter as a job's finder (core/vocr_ocr.c, VjoVocrPolicy.spot), with the committed random VTSP
  * version-4 blob (host/fixtures/spotter; its pins test_spot_pins.h) and a synthetic recognizer pin with a 4 KiB arena
  * (test_spot_models.h): its weights' load and refusals (vjo_vocr_spot_load), the lines a job reads against the
  * runtime's own boxes on fixture frames (vocr_textspot6_find on the frame in memory: its horizontal boxes in its
@@ -377,6 +377,66 @@ static void the_job_reads_the_runtimes_boxes(void)
     }
 }
 
+/* API 54: with ocr_vertical checking for columns (VjoVocrPolicy.vertical_check), the spotter's own box counts decide
+ * whether its boxes are the lines or GRAD's rows go to the vertical check: auto hands over a region it calls vertical
+ * more often than horizontal, on (API 53, #379: columns unless the rows look horizontal) every region it does not call
+ * mostly horizontal; off never. Each frame is checked against the runtime's own counts; the random blob's frames below
+ * give all three cases (vita-vn-ocr's twin on them: the text box 43 vertical / 21 horizontal boxes, the small inverted
+ * crop 0 / 1, the uniform grey 1 / 1), and the test checks that each case occurred. */
+static void vertical_text_checks_hand_over_by_the_spotters_counts(void)
+{
+    static const struct { unsigned w, h, x0, y0; int invert, uniform; } frames[] = {
+        {TB_W, TB_H, 0, 0, 0, 0},   /* mostly vertical boxes: auto and on hand over */
+        {120u, 40u, 500, 60, 1, 0}, /* mostly horizontal: neither does */
+        {TB_W, TB_H, 0, 0, 0, 90},  /* as many of each: on hands over, auto does not */
+    };
+    static const int checks[] = {0, VJO_VOCR_CHECK_AUTO, VJO_VOCR_CHECK_ON};
+    unsigned seen_both = 0, seen_neither = 0, seen_on_only = 0;
+    load_blob();
+    load_textbox();
+    for (unsigned k = 0; k < sizeof(frames) / sizeof(frames[0]); k++) {
+        unsigned vertical = 0, horizontal = 0;
+        for (unsigned c = 0; c < sizeof(checks) / sizeof(checks[0]); c++) {
+            VjoVocrPolicy pol = policy();
+            VjoVocrStats st;
+            VocrLine want[VJO_VOCR_MAX_LINES];
+            unsigned more;
+            reset();
+            make_frame(frames[k].w, frames[k].h, frames[k].x0, frames[k].y0, frames[k].invert);
+            if (frames[k].uniform) /* one grey value everywhere (grey = (77 + 150 + 29) v >> 8 = v) */
+                for (size_t i = 0; i < (size_t)frame_w * frame_h; i++) {
+                    grey[i] = (unsigned char)frames[k].uniform;
+                    rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = (unsigned char)frames[k].uniform;
+                    rgba[i * 4 + 3] = 255;
+                }
+            TEST_ASSERT(load(NULL) == VJO_OK);
+            (void)runtime_lines(VOCR_TEXTSPOT6_SCALE2, want, &more);
+            vertical = horizontal = 0;
+            for (unsigned i = 0; i < runtime_set.count; i++) {
+                if (runtime_set.boxes[i].vertical) vertical++;
+                else horizontal++;
+            }
+            pol.vertical_check = checks[c];
+            int rc = job(&pol, 0, &st);
+            int handed = checks[c] == VJO_VOCR_CHECK_ON ? horizontal <= vertical
+                         : checks[c] == VJO_VOCR_CHECK_AUTO ? vertical > horizontal : 0;
+            if (handed) /* GRAD's rows decide: the job reads them, or (VJO_E_VERTICAL) the worker reads columns next */
+                TEST_CHECK_(st.spot_rc == VJO_E_VERTICAL && !st.spot_ran && (rc == VJO_OK || rc == VJO_E_VERTICAL),
+                            "frame %u check %d (%u vertical, %u horizontal): rc %d spot_rc %d ran %u", k, checks[c],
+                            vertical, horizontal, rc, st.spot_rc, st.spot_ran);
+            else
+                TEST_CHECK_(rc == VJO_OK && st.spot_ran == 1 && !st.spot_rc,
+                            "frame %u check %d (%u vertical, %u horizontal): rc %d spot_rc %d ran %u", k, checks[c],
+                            vertical, horizontal, rc, st.spot_rc, st.spot_ran);
+        }
+        seen_both += vertical > horizontal;
+        seen_neither += horizontal > vertical;
+        seen_on_only += vertical == horizontal;
+    }
+    TEST_CHECK_(seen_both == 1 && seen_neither == 1 && seen_on_only == 1, "cases: both %u, neither %u, on only %u",
+                seen_both, seen_neither, seen_on_only);
+}
+
 /* The scale its blob's rule gives the frame the region is cut from: every region of a 960 x 544 frame halved
  * (SCALE2, the default), one of a 480 x 272 frame at its own size (SCALE1). */
 static void the_region_is_read_at_its_frames_scale(void)
@@ -520,5 +580,6 @@ TEST_LIST = {
     {"its_refinement_is_its_own_and_the_gate_and_probe_are_grads",
      its_refinement_is_its_own_and_the_gate_and_probe_are_grads},
     {"its_scratch_is_sized_exactly", its_scratch_is_sized_exactly},
+    {"vertical_text_checks_hand_over_by_the_spotters_counts", vertical_text_checks_hand_over_by_the_spotters_counts},
     {NULL, NULL}
 };

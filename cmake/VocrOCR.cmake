@@ -207,7 +207,7 @@ endif()
 # (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
 # vocr_lines_fix.c (vita-vn-ocr #129, API 50) is vocr_lines_rows.c with the line finder's fixes behind flags
 # (core/vocr_ocr.h VjoVocrPolicy.line_fix); flags 0 give vocr_lines_rows.c's lines bit for bit.
-# vocr_textspot6.c (vita-vn-ocr #128, #149) is the text spotter, the default finder (API 53); its weights are a
+# vocr_textspot6.c (vita-vn-ocr #128, #149) is the text spotter, the default finder (API 54); its weights are a
 # pinned file beside the models too (VJO_VOCR_SPOT_NAME), read at run time. Only the game worker links this library
 # on the Vita: the Shell links no OCR runtime (vita/CMakeLists.txt), so none of it is ever in SceShell.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"

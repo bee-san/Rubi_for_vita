@@ -830,7 +830,7 @@ static void test_config(void)
         TEST_CHECK(c.ocr_line_fix == fixes[k].want && c.n_warnings == fixes[k].warnings);
         TEST_MSG("%s: %d, %d warnings", fixes[k].text, c.ocr_line_fix, c.n_warnings);
     }
-    /* API 53: the finder, the spotter by default (docs/vita-vn-ocr.md "The spotter finder"), and the spotter's
+    /* API 54: the finder, the spotter by default (docs/vita-vn-ocr.md "The spotter finder"), and the spotter's
      * refinement, off by default. Any case; an unknown or empty value keeps the one before, warned with the key's name. */
     vjo_config_defaults(&c);
     TEST_CHECK(c.ocr_finder == VJO_FINDER_SPOTTER && VJO_FINDER_DEFAULT == VJO_FINDER_SPOTTER && !c.ocr_spotter_refine &&

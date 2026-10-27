@@ -1005,7 +1005,7 @@ LOG = {
     # API 42: the recognize step (VJO_GSTEP_RECOGNIZE): kind the share of its CTC frames (bytes) that vita-vn-ocr #117's
     # head gate skipped, percent ("-" without the gate or when it skipped none), arg the lines recognized
     "recognize": re.compile(r"^gstep job recognize kind=(?:-|(\d+)) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) "),
-    # API 53: the text spotter as the finder (VJO_GSTEP_SPOT): kind 1 when it found the lines (0: GRAD did), arg the
+    # API 54: the text spotter as the finder (VJO_GSTEP_SPOT): kind 1 when it found the lines (0: GRAD did), arg the
     # boxes it gave the recognizer, rc why GRAD did, bytes its scratch | VJO_GLM_READ / _RESIDENT (its weights), sum
     # every box it returned | 0x8000 more than it keeps | its weights' load ms << 16, us its time
     "spot": re.compile(r"^gstep job spot kind=(\d+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "

@@ -229,7 +229,7 @@ class E2EPackageEdges(unittest.TestCase):
         vertical_attribution = b"the vertical model's attribution"
         vertical_att = {"VERTICAL-ATTRIBUTION.md": ("https://fixture.invalid/v", len(vertical_attribution),
                                                     hashlib.sha256(vertical_attribution).hexdigest())}
-        # API 53: the text spotter's attribution, its pin published (its weights are a shipped model, like m.vocr)
+        # API 54: the text spotter's attribution, its pin published (its weights are a shipped model, like m.vocr)
         spot_attribution = b"the text spotter's attribution"
         spot_att = {"SPOTTER-ATTRIBUTION.md": ("https://fixture.invalid/s", len(spot_attribution),
                                                hashlib.sha256(spot_attribution).hexdigest())}

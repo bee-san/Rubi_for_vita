@@ -294,7 +294,7 @@ class VocrDefaults(unittest.TestCase):
                                                                 hashlib.sha256(gate_att).hexdigest())}
             (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
             (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
-            # API 53: the text spotter's weights and attribution, its pin published (a --from directory holds the
+            # API 54: the text spotter's weights and attribution, its pin published (a --from directory holds the
             # attribution as SPOTTER-ATTRIBUTION.md)
             spot, spot_att = b"spotter fixture", b"the spotter's attribution"
             spot_pin = {prepare_ocr.VOCR_SPOT_MODEL: ("https://fixture.invalid/s", len(spot), hashlib.sha256(spot).hexdigest())}
@@ -573,7 +573,7 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
                          {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL, prepare_ocr.VOCR_VERTICAL_MODEL,
                           *([prepare_ocr.VOCR_SPOT_MODEL] if prepare_ocr.VOCR_SPOT_PUBLISHED else [])})
-        # the LMs, the gate (API 26), VOCR5-V (API 47) and the text spotter (API 53, its pin published)
+        # the LMs, the gate (API 26), VOCR5-V (API 47) and the text spotter (API 54, its pin published)
 
 
 class RuntimePinEverywhere(unittest.TestCase):
@@ -583,7 +583,7 @@ class RuntimePinEverywhere(unittest.TestCase):
     def test_the_workflow_and_the_docs_check_out_the_cmake_pin(self):
         cmake = (ROOT / "cmake" / "VocrOCR.cmake").read_text(encoding="utf-8")
         pin = re.search(r"^set\(VJO_VOCR_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
-        # API 53: the text spotter's runtime is pinned apart (VJO_VOCR_SPOT_COMMIT) until the recognizer's pin holds it
+        # API 54: the text spotter's runtime is pinned apart (VJO_VOCR_SPOT_COMMIT) until the recognizer's pin holds it
         spot = re.search(r"^set\(VJO_VOCR_SPOT_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
         flow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         refs = re.findall(r"repository: bee-san/vita-vn-ocr\n(?:\s+#.*\n)*\s+ref: ([0-9a-f]{40})", flow)
@@ -613,7 +613,7 @@ class TestModels(unittest.TestCase):
         want.update({f"v0.3.0/{name}": (size, sha) for name, (_, size, sha) in prepare_ocr.VOCR5_V030_ASSETS.items()})
         want.update({f"v0.4.0-vocr6.1/{name}": (size, sha)
                      for name, (_, size, sha) in prepare_ocr.VOCR6_PLAIN_ASSETS.items()})
-        # API 53: the text spotter's published weights (host/tests/test_spot_release.c), at the plugin's own pin
+        # API 54: the text spotter's published weights (host/tests/test_spot_release.c), at the plugin's own pin
         sizes = macros()
         if prepare_ocr.VOCR_SPOT_PUBLISHED:
             want[sizes["VJO_VOCR_SPOT_NAME"]] = (sizes["VJO_VOCR_SPOT_BYTES"], sizes["VJO_VOCR_SPOT_SHA256"])
