@@ -437,8 +437,11 @@ reader halted at its page 11 on one).
   tables (27,732 B) would take about seven more pages in every game that is ON [estimate: the tables' bytes]; on the
   card each costs memory only in its own game.
 - **The load** (`game_ocr/main.c` `hooks_sc3_load`): at the first job of a game with an SC3 site hooked, before the
-  job's snapshot; a read that was cancelled or timed out again at a later job (three tries in all), any other outcome
-  once a session. The worker cannot always open `ux0:` itself ([worker-loading.md](worker-loading.md)),
+  job's snapshot; an open or a read that was cancelled or timed out again at a later job (three tries in all; a read's
+  timeout since #368's audit), any other outcome once a session. A close that fails is the job's I/O error (the
+  broker is still the charset's, so the job's own files cannot open: the job fails and says so, and the hook cache
+  waits for a later job), and a block an earlier try could not give back is freed before another is taken. The
+  worker cannot always open `ux0:` itself ([worker-loading.md](worker-loading.md)),
   so the kernel's file broker opens it: `vjoOcrModelOpen` with `VJO_GAME_OCR_OPEN_SC3`, for which the kernel builds
   the path from the title ID it reads for the calling process (`loader_title`, the loader's
   `ksceKernelSysrootGetProcessTitleId`; the caller names no path), at most 16,384 B, one read through its staging

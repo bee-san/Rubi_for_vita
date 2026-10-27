@@ -1326,26 +1326,40 @@ static int install_plan(const VjoInstallScan *s, char lines[][VJO_INSTALL_LINE],
     for (int c = 0; c < 2; c++) tail += s->before_overlay[c][0] != 0;
     int steps = max > tail ? max - tail : 0;
     uint64_t models = 0;
-    int plugins_to_write = 0, models_to_write = 0;
+    int plugins_to_write = 0, models_to_write = 0, dir_len = 0;
+    const char *dir = VJO_PAYLOAD_DATA;
     for (int i = 0; i < VJO_PAYLOAD_COUNT; i++) {
         const VjoPayloadFile *f = &s->payload.file[i];
         if (f->kind != VJO_PAYLOAD_COPY) continue;
         int plugin = i >= VJO_PAYLOAD_KERNEL_INDEX;
         if (!plugin) models += f->bytes;
-        if (!s->file_ok[i]) { if (plugin) plugins_to_write++; else models_to_write++; }
+        if (!s->file_ok[i]) {
+            if (plugin) {
+                plugins_to_write++;
+                continue;
+            }
+            /* #368's audit N4: the data files are the OCR models (ocr/), the text hooks' charsets (hooks/) and the
+             * names dictionary (dictionaries/): those to write are named by their one folder, else by the data's */
+            const char *d = vjo_payload_dest(i); /* the compiled list's: set whatever the manifest held */
+            int len = (int)(strrchr(d, '/') - d);
+            if (!models_to_write++) { dir = d; dir_len = len; }
+            else if (len != dir_len || strncmp(d, dir, (size_t)len)) { dir = VJO_PAYLOAD_DATA; dir_len = 0; }
+        }
     }
+    if (!dir_len) dir_len = (int)sizeof(VJO_PAYLOAD_DATA) - 2; /* without its last '/' */
     int k = 1;
     if (s->state == VJO_INSTALL_INSTALLED)
         n = add(lines, n, steps, "%d. Check every file against the package (SHA-256): one that differs is written again.", k++);
     else if (s->state == VJO_INSTALL_NOT_INSTALLED || (plugins_to_write && models_to_write))
-        n = add(lines, n, steps, "%d. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the OCR models "
-                "(%.1f MB) to ux0:data/VitaJPOverlay/ocr; a file that already matches is not written again.", k++, mb(models));
+        n = add(lines, n, steps, "%d. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the data "
+                "files (%.1f MB: the OCR models, the names dictionary and the text hooks' charsets) to "
+                "ux0:data/VitaJPOverlay; a file that already matches is not written again.", k++, mb(models));
     else if (plugins_to_write)
-        n = add(lines, n, steps, "%d. Replace %d of the plugins and their RCO in ur0:tai and ur0:data/VitaJPOverlay (the models "
-                "already match the package's sizes; every file is checked by SHA-256 first).", k++, plugins_to_write);
+        n = add(lines, n, steps, "%d. Replace %d of the plugins and their RCO in ur0:tai and ur0:data/VitaJPOverlay (the data "
+                "files already match the package's sizes; every file is checked by SHA-256 first).", k++, plugins_to_write);
     else if (models_to_write)
-        n = add(lines, n, steps, "%d. Copy %d OCR model file%s to ux0:data/VitaJPOverlay/ocr (the plugins already match).", k++,
-                models_to_write, models_to_write == 1 ? "" : "s");
+        n = add(lines, n, steps, "%d. Copy %d data file%s to %.*s (the plugins already match).", k++, models_to_write,
+                models_to_write == 1 ? "" : "s", dir_len, dir);
     else
         n = add(lines, n, steps, "%d. Check every file against the package (SHA-256): one that differs is written again.", k++);
     if (s->state == VJO_INSTALL_REPAIR && !s->record_ok)

@@ -132,6 +132,21 @@ been reported.
   Small alone's 2.05 s, and now 2.12 s. Its captures and finder time count every try, and the debug build's step log
   keeps the try that read (a full log of 20 steps had dropped its last steps, such as the text's normalisation; the
   refused try's blocks are no longer listed). No module takes a page more ([memory ledger](docs/memory-ledger.md)).
+- **SC3 text, #368's audit.** In STEINS;GATE 比翼恋理のだーりん, ROBOTICS;NOTES ELITE and CHAOS;CHILD:
+  - A charset read that timed out (the memory card's file worker stalled for 2 s) is tried again at a later job, as
+    an open is, three tries in all. Before, one such stall at the first job turned the game's hook off for the
+    session, and OCR read it.
+  - A charset close that fails is now the job's error. Before, the job failed with no cause given (I/O 0), so the
+    Shell took the model file for missing or damaged and used a smaller model until the game next started or resumed.
+    Now that happens for that one job only, and the remembered hook (the hook cache) is read at the next job, where
+    before it was not read for the rest of the session.
+  - A charset block the worker could not give back is freed before it takes another (nearly unreachable).
+  - The app's Install page names the data files it copies and where they go: "the data files (… MB: the OCR models,
+    the names dictionary and the text hooks' charsets) to ux0:data/VitaJPOverlay", and for a repair their folder, for
+    example "Copy 1 data file to ux0:data/VitaJPOverlay/hooks". It used to say "the OCR models … to
+    ux0:data/VitaJPOverlay/ocr" for all of them.
+
+  Host-tested, not run on a console. No module takes a page more ([memory ledger](docs/memory-ledger.md)).
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
   read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then

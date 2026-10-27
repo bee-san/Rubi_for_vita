@@ -238,6 +238,12 @@ If a game does not start: turn it OFF on the Games page, or hold L while you sta
 ×: Update   Left/Right: action   Up/Down: scroll   ○: exit
 ```
 
+That is 0.8.1's plan, whose data files were the OCR models only. Since #368's audit, the first step names every data
+file and the one folder it goes to: "…and the data files (… MB: the OCR models, the names dictionary and the text
+hooks' charsets) to ux0:data/VitaJPOverlay; a file that already matches is not written again." A repair of data
+files alone names their folder when they share one, as in "Copy 1 data file to ux0:data/VitaJPOverlay/hooks (the
+plugins already match).", and otherwise names ux0:data/VitaJPOverlay.
+
 **Reading it.** The plan box holds about ten lines. A plan or a result longer than its box scrolls a
 line at a time with Up/Down (or the left stick) and a box at a time with L/R (as L/R page the Games
 list), a bar at its right shows where the view is (by entries: only the entries in view are laid out),

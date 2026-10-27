@@ -694,11 +694,11 @@ modules (`ctest -R memory_ledger` runs it locally):
   shell pages                         217,088      237,568    1,048,576      811,008
   shell paf                             8,192      241,664      985,088      743,424
   kernel                              155,648      245,760      245,760            0
-  game                                237,568   10,403,840   10,604,544      200,704
+  game                                237,568   10,420,224   10,604,544      184,320
 ```
 
-(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 50 and VOCR6's LMs; the normal
-build's game permanent is 229,376 B.)
+(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 50, VOCR6's LMs and the SC3
+charset's block; the normal build's game permanent is 229,376 B.)
 
 Historical packaged-module output retained from PR #234 before this integration (current combined
 measurements are above):

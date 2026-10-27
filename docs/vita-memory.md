@@ -347,6 +347,12 @@ Rules:
   test.3 they went at once, and #81's run read H15 four times in one game process
   (docs/first-ocr.md). A job that found no line reads them if the job's memory check allowed it
   (the cascade's model included, before any line is doubted): they are held from then on.
+  One block is the exception, by design: `VjoGameSc3`, an SC3 hook's charset (8 or 16 KiB, in
+  three MAGES games only: STEINS;GATE 比翼恋理のだーりん, ROBOTICS;NOTES ELITE, CHAOS;CHILD;
+  [native-hooks.md](native-hooks.md#sc3-text)). It is held from the first job until the worker
+  stops (the game's exit), through inactivity and refused allocations, and taken only with
+  `VJO_GAME_RESERVE_HOOK_ONLY` (1 MiB) free beside it: reading it again needs a claimed job's
+  broker, and a trusted SC3 hook answers with it, without OCR, from that job's line on.
 - Never use the host game's `malloc` or libc heap (256 KiB default) [SDK:
   Memory_Management-Tutorial, 'Configuring the libc Default Heap'].
 - Worker threads: default priority and `SCE_KERNEL_THREAD_CPU_AFFINITY_MASK_DEFAULT` put a thread
