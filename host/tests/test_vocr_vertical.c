@@ -524,12 +524,12 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
     }
 #endif
     /* the model of rows reads doubtful lines again (cascade 2: the second model of rows, which a job of rows really
-     * runs): never a model of columns' */
-    const char *casc = o->cascade == 2 ? M_CASC : M_ROWS;
+     * runs; 3: the same with a 1 us ceiling, so it reads none again): never a model of columns' */
+    const char *casc = o->cascade >= 2 ? M_CASC : M_ROWS;
     if (o->cascade) {
         pol.cascade = vjo_vocr_model(casc);
         pol.cascade_res = &cres;
-        pol.cascade_us = 4000000u;
+        pol.cascade_us = o->cascade == 3 ? 1u : 4000000u;
         pol.cascade_conf = 1001u;
     }
     /* the job's whole workspace, as the game worker gives it: the job, the refinement's arena, the LM and
@@ -1163,45 +1163,59 @@ static void test_auto_check_with_the_line_fix(void)
 
 /* auto's check (VjoVocrPolicy.vertical_check) on rows the rule leaves alone changes nothing of the job of rows,
  * whatever else its policy asks: greedy, the LM, the confidence cascade with a second model of rows (every line
- * doubtful, so each is read again), helpers, the line cache, the refinement and the short-line probe; hash for
- * hash, and the cascade's own figures, against the same job in this build without the check, from the same
- * resident state (the golden jobs above have no cascade: a job of rows has a larger model to read again with). */
+ * doubtful, so each is read again; or a ceiling that leaves every line as read, which no cache may keep), helpers,
+ * the line cache, the refinement and the short-line probe; hash for hash, and the cascade's own figures, against
+ * the same jobs in this build without the check, from the same resident state and cache: two jobs of the screen
+ * each, the second one's lines from what the first left in the cache (the golden jobs above have no cascade: a job
+ * of rows has a larger model to read again with). */
 static void test_check_changes_no_row_job(void)
 {
     static const JobOpts opts[] = {{0}, {.lm = 1}, {.cascade = 2}, {.lm = 1, .cascade = 2},
                                    {.lm = 1, .cascade = 2, .helpers = 2}, {.lm = 1, .cache = 1},
+                                   {.lm = 1, .cascade = 2, .cache = 1}, {.lm = 1, .cascade = 3, .cache = 1},
                                    {.lm = 1, .cascade = 2, .refine = 1, .short_lines = 1}};
-    char text[2][VJO_OCR_TEXT_CAP], raw[2][VJO_OCR_TEXT_CAP];
-    VjoVocrStats st[2];
+    char text[2][2][VJO_OCR_TEXT_CAP], raw[2][2][VJO_OCR_TEXT_CAP];
+    VjoVocrStats st[2][2];
     setup_files();
     for (unsigned frame = 0; frame < 3; frame++)
         for (unsigned i = 0; i < sizeof opts / sizeof opts[0]; i++) {
-            uint64_t h[2];
-            int rc[2];
+            uint64_t h[2][2];
+            int rc[2][2];
             for (int check = 0; check <= 1; check++) {
                 JobOpts o = opts[i];
                 o.check = check;
                 if (!frame) draw_rows();
                 else if (frame == 1) TEST_ASSERT(load_pgm(VJO_SOURCE_DIR "/host/fixtures/short_line/textbox.pgm") == 0);
                 else draw_big_row();
-                vjo_vocr_resident_drop(&res); /* each job from no resident weights, LM, cascade model or cache */
+                vjo_vocr_resident_drop(&res); /* each pair from no resident weights, LM, cascade model or cache */
                 vjo_vocr_resident_drop(&cres);
                 vjo_vocr_lm_drop(&lres);
                 memset(&cache, 0, sizeof cache);
-                raw[check][0] = '\0';
-                rc[check] = job(M_ROWS, &o, text[check], sizeof text[check], o.lm ? raw[check] : NULL,
-                                sizeof raw[check], &st[check]);
-                h[check] = job_hash(rc[check], text[check], o.lm ? raw[check] : NULL, &st[check]);
+                for (int rep = 0; rep <= 1; rep++) {
+                    raw[check][rep][0] = '\0';
+                    rc[check][rep] = job(M_ROWS, &o, text[check][rep], sizeof text[check][rep],
+                                         o.lm ? raw[check][rep] : NULL, sizeof raw[check][rep], &st[check][rep]);
+                    h[check][rep] = job_hash(rc[check][rep], text[check][rep], o.lm ? raw[check][rep] : NULL,
+                                             &st[check][rep]);
+                }
             }
-            TEST_CHECK_(rc[0] == VJO_OK && rc[1] == VJO_OK && h[0] == h[1] && !strcmp(text[0], text[1]) &&
-                            st[0].cascade_lines == st[1].cascade_lines && st[0].cascade_frames == st[1].cascade_frames &&
-                            st[0].cascade_changed == st[1].cascade_changed && st[0].lm_lines == st[1].lm_lines,
-                        "frame %u, policy %u: rc %d/%d, hash 0x%016llx/0x%016llx, cascade lines %u/%u", frame, i, rc[0],
-                        rc[1], (unsigned long long)h[0], (unsigned long long)h[1], st[0].cascade_lines,
-                        st[1].cascade_lines);
-            if (opts[i].cascade) /* the cascade really ran: the test would see it go */
-                TEST_CHECK_(st[0].cascade_lines >= 1, "frame %u, policy %u: the cascade read %u lines", frame, i,
-                            st[0].cascade_lines);
+            for (int rep = 0; rep <= 1; rep++) {
+                const VjoVocrStats *a = &st[0][rep], *b = &st[1][rep];
+                TEST_CHECK_(rc[0][rep] == VJO_OK && rc[1][rep] == VJO_OK && h[0][rep] == h[1][rep] &&
+                                !strcmp(text[0][rep], text[1][rep]) && a->cascade_lines == b->cascade_lines &&
+                                a->cascade_frames == b->cascade_frames && a->cascade_changed == b->cascade_changed &&
+                                a->cascade_skipped == b->cascade_skipped && a->lm_lines == b->lm_lines &&
+                                a->cached == b->cached,
+                            "frame %u, policy %u, job %d: rc %d/%d, hash 0x%016llx/0x%016llx, cascade lines %u/%u, cached "
+                            "%u/%u", frame, i, rep, rc[0][rep], rc[1][rep], (unsigned long long)h[0][rep],
+                            (unsigned long long)h[1][rep], a->cascade_lines, b->cascade_lines, a->cached, b->cached);
+            }
+            if (opts[i].cascade == 2) /* the cascade really ran: the test would see it go */
+                TEST_CHECK_(st[0][0].cascade_lines >= 1, "frame %u, policy %u: the cascade read %u lines", frame, i,
+                            st[0][0].cascade_lines);
+            if (opts[i].cascade == 3) /* the ceiling left every doubtful line as read: none was cached */
+                TEST_CHECK_(st[0][0].cascade_skipped >= 1 && !st[0][1].cached, "frame %u, policy %u: %u skipped, %u cached",
+                            frame, i, st[0][0].cascade_skipped, st[0][1].cached);
         }
 }
 #endif /* VJO_TEST_OFF_ONLY */
