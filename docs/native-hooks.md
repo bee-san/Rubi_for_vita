@@ -91,9 +91,14 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
   [measured: `$HERD/shared/artifacts/hooks-fix-engine/prefilter_false_refusals*.txt`];
 - the text then goes to its caller's stream: the stream key is the caller's return address (LR). A new
   caller claims a free CALL slot (9-20). When all 12 hold other callers, it takes the one written least
-  recently (a slot that never had text first) that is not kept, under that slot's try-lock: the slot's
+  recently (a slot that never had text first, then the earliest sequence stamp) that is not kept, under that slot's try-lock: the slot's
   key, hits and text become the new caller's, so a job's snapshot sees another key for that ID; a busy
-  slot, or every slot kept, drops the hit, never waiting. A stream that agreed with OCR, and a stream pinned by a
+  slot, or every slot kept, drops the hit, never waiting. The new caller looks for that slot without the slots'
+  locks while other callers write them, so under the lock its choice is checked: a slot written since it looked
+  (its caller's new text, or another new caller that took it) is no longer the least recently written, and the hit
+  is dropped too. Before #366 the newest stream could lose its slot that way, and also when its caller wrote while
+  the new one looked: the search read the clock first, so that stream's newer stamp looked about 2^32 old. The
+  stamps compare in the clock's serial order, as the job's do. A stream that agreed with OCR, and a stream pinned by a
   diagnostic request, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. An agreeing
   stream is kept only while its slot still holds the caller the job's snapshot saw (checked under the
   slot's lock), so a slot another caller took during the job is not kept for the new one. The job's
@@ -1167,7 +1172,8 @@ addresses can be patched as they are.
 
 `game_ocr/hooks.h` (the interface), `game_ocr/hooks.c`, `game_ocr/hooks_observer.S`,
 `core/hook_place.{h,c}`, `core/hook_stream.{h,c}`, `host/tests/test_hook_place.c`,
-`host/tests/test_hook_stream.c`, `tools/hook_place_forms.txt`, `tools/gen_hook_place_fixtures.sh`; the
+`host/tests/test_hook_stream.c`, `host/tests/test_hook_stream_seams.c` (the CALL replacement's interleavings, one
+at a time: #366), `tools/hook_place_forms.txt`, `tools/gen_hook_place_fixtures.sh`; the
 selection's `core/hook_select.{h,c}`, `host/tests/test_hook_select.c`, `host/tests/test_game_hooks.c` (the
 job path) and `host/tests/hooks_none.c` (nothing installed, for the worker's other host tests); API 43's bench,
 `host/hook_trust_bench.c` and `tools/hook_trust_bench.py`.

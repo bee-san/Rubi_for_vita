@@ -3,6 +3,12 @@
 
 #include "hook_place.h"
 
+/* A test's seam (host/tests/test_hook_stream_seams.c): another thread's step at a point of replace(), run on the
+ * test's own thread. Nothing in the worker. */
+#ifndef VJO_STREAM_SEAM
+#define VJO_STREAM_SEAM(point, i) ((void)0)
+#endif
+
 /* No libc in the hook path: a plain byte loop the compiler may not turn into a memcpy call (the
  * worker builds with -fno-builtin; the volatile store keeps it a loop on the host as well). */
 static void copy_bytes(uint8_t *dst, const uint8_t *src, unsigned n)
@@ -10,20 +16,24 @@ static void copy_bytes(uint8_t *dst, const uint8_t *src, unsigned n)
     for (unsigned i = 0; i < n; i++) ((volatile uint8_t *)dst)[i] = src[i];
 }
 
-/* n bytes at src as s's latest text; s's lock is held. 1 new text, 0 identical (a hit only). */
-static int store(VjoStreamSlot *s, VjoStreamClock *c, const uint8_t *src, unsigned n, unsigned encoding)
+/* n bytes at src as s's latest text; s's lock is held. fresh: a new caller's first text, new whatever s held. 1 new
+ * text, 0 identical (a hit only). seq and n are also read without the lock (replace()'s scan, the worker's hook watch:
+ * game_ocr/hooks.c vjo_hooks_seq), so they are stored atomically (#366), and seq once, never 0 ("never had text"),
+ * even as the clock wraps. */
+static int store(VjoStreamSlot *s, VjoStreamClock *c, const uint8_t *src, unsigned n, unsigned encoding, int fresh)
 {
-    uint32_t h = vjo_place_hash(src, n);
+    uint32_t h = vjo_place_hash(src, n), seq;
     s->hits++;
-    if (s->seq && s->n == n && s->hash == h && s->encoding == encoding) {
+    if (!fresh && s->seq && s->n == n && s->hash == h && s->encoding == encoding) {
         return 0;
     }
     copy_bytes(s->raw, src, n);
-    s->n = n;
+    __atomic_store_n(&s->n, n, __ATOMIC_RELAXED);
     s->hash = h;
     s->encoding = encoding;
-    s->seq = __atomic_add_fetch(&c->clock, 1u, __ATOMIC_RELAXED);
-    if (!s->seq) s->seq = __atomic_add_fetch(&c->clock, 1u, __ATOMIC_RELAXED); /* 0 means "never" */
+    seq = __atomic_add_fetch(&c->clock, 1u, __ATOMIC_RELAXED);
+    if (!seq) seq = __atomic_add_fetch(&c->clock, 1u, __ATOMIC_RELAXED); /* 0 means "never" */
+    __atomic_store_n(&s->seq, seq, __ATOMIC_RELAXED);
     return 1;
 }
 
@@ -40,7 +50,7 @@ int vjo_stream_offer(VjoStreamSlot *s, VjoStreamClock *c, const uint8_t *src, un
     if (!n || n > VJO_STREAM_RAW || !vjo_stream_try_lock(s)) {
         return drop(c, 0);
     }
-    r = store(s, c, src, n, encoding);
+    r = store(s, c, src, n, encoding, 0);
     vjo_stream_unlock(s);
     return r;
 }
@@ -61,25 +71,34 @@ VjoStreamSlot *vjo_stream_caller(VjoStreamSlot *slots, unsigned n, uint32_t key)
     return NULL;
 }
 
-/* Every slot holds another caller: key takes the least recently written one that is not kept (a slot
- * that never had text is the least recent; the clock's wrap is taken into account), under its try-lock. */
+/* Every slot holds another caller: key takes the least recently written one that is not kept (a slot that never had
+ * text first, then the earliest seq), under its try-lock. The scan reads the slots' seqs without their locks while
+ * game threads write them, and a slot's seq only moves on, so the choice is checked under the lock (#366): unchanged,
+ * the slot is still the least recently written (every other seq is at or after what the scan read); written since the
+ * scan read it (its caller's new text, or another new caller that took it), it is not, and the hit is dropped, as for
+ * a busy slot. Seqs compare in the clock's serial order, as the job compares them (core/hook_select.c,
+ * game_ocr/main.c: within 2^31 new texts of each other), and the clock is not read: a scan that read it first (before
+ * #366) gave a slot written during the scan, whose seq came after that reading, an age of about 2^32, and the newest
+ * stream lost its slot. */
 static int replace(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint32_t key, const uint8_t *src,
                    unsigned n, unsigned encoding)
 {
     VjoStreamSlot *v = NULL;
-    uint32_t now = __atomic_load_n(&c->clock, __ATOMIC_RELAXED), oldest = 0;
+    uint32_t vseq = 0;
     int r;
     for (unsigned i = 0; i < count; i++) {
-        uint32_t seq, age;
+        uint32_t seq;
+        VJO_STREAM_SEAM(scan, i);
         if (__atomic_load_n(&slots[i].kept, __ATOMIC_ACQUIRE)) continue;
         seq = __atomic_load_n(&slots[i].seq, __ATOMIC_RELAXED);
-        age = seq ? now - seq : 0xFFFFFFFFu;
-        if (!v || age > oldest) {
+        if (!v || (vseq && (!seq || (int32_t)(seq - vseq) < 0))) {
             v = &slots[i];
-            oldest = age;
+            vseq = seq;
         }
     }
-    if (!v || !vjo_stream_try_lock(v)) return drop(c, 1); /* every slot kept, or the oldest busy: no wait */
+    if (!v) return drop(c, 1); /* every slot kept */
+    VJO_STREAM_SEAM(chosen, (unsigned)(v - slots));
+    if (!vjo_stream_try_lock(v)) return drop(c, 1); /* the oldest busy: no wait */
     if (__atomic_load_n(&v->kept, __ATOMIC_ACQUIRE)) { /* kept since it was chosen */
         vjo_stream_unlock(v);
         return drop(c, 1);
@@ -89,13 +108,17 @@ static int replace(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint
             vjo_stream_unlock(v);
             return drop(c, 1);
         }
-    if (__atomic_load_n(&v->key, __ATOMIC_RELAXED) != key) { /* (else this caller's other thread took it first) */
+    if (__atomic_load_n(&v->key, __ATOMIC_RELAXED) == key) { /* this caller's other thread took it first: its own */
+        r = store(v, c, src, n, encoding, 0);
+    } else if (v->seq != vseq) { /* written since the scan read it: no longer the least recently written */
+        vjo_stream_unlock(v);
+        return drop(c, 1);
+    } else {
         __atomic_store_n(&v->key, key, __ATOMIC_RELEASE);
-        v->seq = 0; /* a new caller's stream: its text is new, its hits its own */
-        v->hits = 0;
+        v->hits = 0; /* a new caller's stream: its text is new (fresh), its hits its own */
         __atomic_add_fetch(&c->call_replaced, 1u, __ATOMIC_RELAXED);
+        r = store(v, c, src, n, encoding, 1);
     }
-    r = store(v, c, src, n, encoding);
     vjo_stream_unlock(v);
     return r;
 }
@@ -113,7 +136,7 @@ int vjo_stream_offer_caller(VjoStreamSlot *slots, unsigned count, VjoStreamClock
         vjo_stream_unlock(s);
         return drop(c, 1);
     }
-    r = store(s, c, src, n, encoding);
+    r = store(s, c, src, n, encoding, 0);
     vjo_stream_unlock(s);
     return r;
 }
