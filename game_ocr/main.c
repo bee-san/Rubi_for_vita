@@ -2308,6 +2308,11 @@ retry_smaller:
         try_from = used + 1u;
         sceClibMemset(&stats, 0, sizeof(stats));
         capture = (Capture){r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
+        /* API 52: a new check, so a new try of the pause: its own frame block (cleanup gave this one back) and copy.
+         * The game waited for this try's copy (kept in the step); its frame is not the job's, as its strips are not. */
+        paused_us += pz.us;
+        sceClibMemset(&pz, 0, sizeof(pz));
+        pause_frames = 0;
         goto retry_smaller;
     }
     /* ocr-first: a job that read no line (or only blank ones) reads what the

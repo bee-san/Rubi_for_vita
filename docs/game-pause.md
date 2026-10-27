@@ -4,7 +4,9 @@
 default), each reading copies the text box from one frame of the game, at once, inside that frame's display call,
 which the game waits in for as long. The OCR then reads that still copy. A spinner, a blinking mark or an animated
 background in the text box cannot change the rows while they are read, so the job no longer gives up with the
-screen changed under it and shows nothing.
+screen changed under it and shows nothing. While it is OFF in a Vita game, the open overlay's hint for text that
+keeps changing under its reads (#358) also says "Or turn on Pause the game to read in the Rubi app."
+([why the overlay waits](text-stability.md#why-the-overlay-waits-358)).
 
 **What it costs.** For a CLANNAD-sized box the game's display call waits an estimated 2.4-6.4 ms at 333 MHz, once
 per reading. For a whole 960 × 544 screen it waits 10.8-29.0 ms. For a frame in A2B10G10R10 or A1B5G5R5 it waits
@@ -76,7 +78,9 @@ strip, rc -120, 72 display calls and nothing shown. Paused, rc 0: one display ca
    A job asked on a screen still changing (`F_SETTLE_FIRST`) still waits on the live screen first, as before, then
    copies its frame. With `ocr_vertical = auto`, a region whose rows look like vertical text is read again as
    columns, a second try with its own blocks: it copies its frame again, so that job makes the game wait twice (the
-   step's us is the sum).
+   step's us is the sum). So does a job whose model's weights were refused after its check (#324: the game's free
+   memory is reported in whole MiB): it gives its blocks back, the frame block too, and its check of the next
+   smaller model is a new try, with its own frame block, if it fits, and its own copy. Its captures are that try's.
 5. **Read as before.** The job reads strip by strip, exactly as with the setting OFF, when:
    - the kernel refuses the copy or cannot finish it;
    - the block does not fit;
@@ -220,9 +224,11 @@ A console run measures it: the debug build's `gstep pause` step (its us) and ker
   - one frame call beside a spinner, the block freed and the ledger back to 0;
   - a refusal (UNSUPPORTED, TIMEOUT, COPY) frees the block before any strip;
   - no room, or a refused allocation, keeps the model;
-  - a cancelled copy, and one that outlived its call.
+  - a cancelled copy, and one that outlived its call;
+  - weights refused after the check (#324): the smaller model's try takes its own block and copies its own frame.
 - **End to end** (`host/tests/test_alloc_sim.c`): above; with the release models in the gate's models lane.
-- **Shell, config, app**: the bit only with `ocr_pause = on` and never in the self-test's stages (`test_shell_worker.c`);
+- **Shell, config, app**: the bit only with `ocr_pause = on` and never in the self-test's stages, and the wait hint's
+  clause only with it off in a Vita game (`test_shell_worker.c`);
   the key's parse and template (`test_core.c`); the Rubi app's card by keys and touch (`test_settings_app.c`).
 
 ## What a console run must check

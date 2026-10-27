@@ -283,8 +283,11 @@ press), it says:
   place of the hint. It is the overlay's status line (dim, as "Recognizing…"), never the subtitle strip's.
 - **When.** From the third try in a row: with a press, two torn tries take about 3 s; a press that comes after two
   torn background jobs says it at once, since Rubi already saw the text change under two reads.
-- **The fix it names** is the one `main` has: a region drawn around the text alone leaves an icon beside it out.
-  Pause the game to read (#355) is the other; the hint names it once that setting exists.
+- **The fixes it names.** A region drawn around the text alone leaves an icon beside it out. And with
+  **Pause the game to read** OFF (`ocr_pause`, API 52, [game-pause.md](game-pause.md)), in a Vita game, it adds
+  "Or turn on Pause the game to read in the Rubi app." (`WAIT_HINT_PAUSE`): the pause reads the region from one
+  frame, which an animated icon cannot change. Not with the pause ON, and not in a PSP game, which the kernel never
+  pauses (`game_static_fb`, the emulator's process).
 - **Starting over.** A region saved or cleared (□) starts the count over, as a new game does: the old region's tears
   say nothing of the new one's, and its next press says "Recognizing…" until two of its own jobs tear.
 - **Off.** `ocr_wait_hint = off` in `config.ini` keeps "Recognizing…" all along, as before (on by default).

@@ -49,7 +49,9 @@ been reported.
   333 MHz, at most 100 ms. A kernel watchdog turns pausing off until the next boot if a copy ever runs past 200 ms.
   No game thread is suspended, and nothing waits for another thread. PSP games in Adrenaline read as before. The job
   holds one block of the region's size more (at most 524,288 B, only when it fits; the memory ledger counts it in
-  place of a tall line's block). Not run on a console ([details](docs/game-pause.md)).
+  place of a tall line's block). While it is OFF in a Vita game, the open overlay's hint for text that keeps changing
+  (#358, above) adds "Or turn on Pause the game to read in the Rubi app." Not run on a console
+  ([details](docs/game-pause.md)).
 
 ### Fixed
 

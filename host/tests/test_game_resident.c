@@ -30,6 +30,7 @@ static unsigned capture_block, capture_allocs;
 static int64_t available;
 static unsigned live_bytes, peak_bytes, job_block, weights_block;
 static int job_live, weights_live, job_alloc_failure, weights_alloc_failure, weights_free_failure;
+static unsigned weights_refusals; /* the next weights blocks refused (#324: after a passed check) */
 static unsigned job_allocs, job_frees, weights_allocs, weights_frees;
 static int registered_rc, quit_after_delay, cancel_now, cancel_at_open, cancel_after_reads;
 static unsigned quit_delays; /* the worker loop quits after this many sleeps (0: quit_after_delay decides) */
@@ -70,6 +71,7 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
         TEST_CHECK(!weights_live && size <= sizeof(weights_memory)); /* never two weight blocks */
         weights_allocs++;
         if (weights_alloc_failure) return -1;
+        if (weights_refusals) { weights_refusals--; return -1; }
         weights_live = 1; weights_block = size;
     } else {
         TEST_CHECK(!strcmp(name, "VjoGameVocr") && !job_live && size <= sizeof(job_memory));
@@ -289,6 +291,7 @@ static void reset(void)
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = stat_error = 0;
     available = 64*1024*1024; live_bytes = peak_bytes = 0;
     job_live = weights_live = job_alloc_failure = weights_alloc_failure = weights_free_failure = 0;
+    weights_refusals = 0;
     job_allocs = job_frees = weights_allocs = weights_frees = 0;
     registered_rc = quit_after_delay = cancel_now = cancel_at_open = cancel_after_reads = 0;
     take_calls = take_wait_us = take_quit = 0; take_job = take_perm = 0; complete_failures = 0;
@@ -881,11 +884,41 @@ static void a_cancelled_or_stuck_copy(void)
     hook_owns_capture = 0; frame_live = 0; frame_uid = -1; capture_live = 0; capture_uid = -1; blocked = 0;
 }
 
+/* #324: the check passed, yet the model's weights were refused (the console's free memory in whole MiB): the job gives
+ * its blocks back, the frame block too, and checks again from the next smaller model. That is a new check, so a new
+ * try of the pause: its own frame block and its own copy (never the first try's, given back), the game's waits for
+ * both copies in the step; the job's captures are the last try's, as its strips would be. */
+static void weights_refused_after_the_check_the_smaller_models_try_copies_its_own_frame(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset(); spin = 1;
+    r = paused(1);
+    snprintf(r.model, sizeof(r.model), "H15_w8.vocr");
+    snprintf(r.fallback, sizeof(r.fallback), "FL10_w8.vocr");
+    served = "H15_w8.vocr";
+    current = r;
+    weights_refusals = 1;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
+    TEST_CHECK(out.fallback == 1 && weights_allocs == 2 && resident.model == vjo_vocr_model("FL10_w8.vocr"));
+    TEST_CHECK_(frame_calls == 2 && !strip_calls && !out.tears && out.captures == 1,
+                "%u frame copies, %u strips, %u tears, %u captures", frame_calls, strip_calls, out.tears, out.captures);
+    TEST_CHECK(frame_allocs == 2 && !frame_live && !capture_live && !job_live && !out.cleanup_status);
+    const VjoGameOcrStep *ps = pause_step(&out);
+    TEST_CHECK_(ps && ps->kind == 1 && ps->arg == H && !ps->rc && ps->bytes == PAGE_ROUND(W * H) &&
+                ps->sum == (VJO_GPAUSE_FROZEN | VJO_GAME_OCR_MEM_USER << 8) && ps->us == 2u * 1234u,
+                "pause step: kind %u, rows %u, rc %d, sum 0x%X, us %u", ps ? ps->kind : 9u, ps ? ps->arg : 0u,
+                ps ? (int)ps->rc : 0, ps ? ps->sum : 0u, ps ? ps->us : 0u);
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_FRAME) == 0);
+}
+
 TEST_LIST = {
     {"API 52: the pause reads one frame beside a spinner that tears every strip-by-strip read", the_pause_reads_one_frame_beside_a_spinner},
     {"API 52: a refused or cut pause gives its block back and reads as before", a_refused_pause_reads_as_before},
     {"API 52: without room for its block the job reads as before, with the same model", without_room_the_job_reads_as_before},
     {"API 52: a cancelled copy, and one that outlived its call", a_cancelled_or_stuck_copy},
+    {"API 52, #324: weights refused after the check: the smaller model's try copies its own frame",
+     weights_refused_after_the_check_the_smaller_models_try_copies_its_own_frame},
     {"a job without lines warms the weights; the forced fallback keeps the model", a_job_without_lines_warms_the_weights},
     {"another model's weights go when the job needs their memory", another_models_weights_go_when_the_job_needs_them},
     {"the fallback runs only when the configured model does not fit", fallback_runs_only_when_the_model_does_not_fit},
