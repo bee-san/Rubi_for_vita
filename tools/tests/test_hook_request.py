@@ -26,8 +26,8 @@ FORM = ROOT / ".github/ISSUE_TEMPLATE/hook-request.yml"
 DOC = ROOT / "docs/hook-requests.md"
 TOOL = ROOT / "tools/hook_request.py"
 
-# Every format string game_ocr/hooks.c may write to hooks.log, with values to render it with. Two are not on main yet
-# and are read already: PR #352's Luna line with its offset, PR #318's line for the PSP emulator's process.
+# Every format string game_ocr/hooks.c may write to hooks.log, with values to render it with. One is not on main yet
+# and is read already: draft PR #318's line for the PSP emulator's process.
 REASONS = ["range", "align", "entry", "window", "signature", "unported", "version", "full", "tai"]
 FORMATS = {
     "%.9s: text source %u%s\n": [("PCSG00628", 1, ""), ("PCSG00628", 2, ", sites off"), ("", 1, "")],

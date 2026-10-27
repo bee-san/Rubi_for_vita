@@ -51,7 +51,7 @@ made-up numbers: a game LunaTranslator lists twice, whose sites Rubi refused, an
 ```text
 PCSG99999: text source 1
 main module adv NID 1A2B3C4D seg0 81000000+2F1A40 APP_VER 0100; 0 verified, 2 Luna sites
-luna 8003A1C4 r0 refused: entry
+luna 8003A1C4 r0 +361C4 refused: entry
  bytes 4FF0000310B50446E1F7F2FC0028F6D0
 luna 81196DDA r7 refused: range
  bytes 
@@ -71,7 +71,7 @@ sites hooked 0, refused 2; CALL imports hooked 5 of 8
 | `PCSG99999: text source 1` | the title ID; the text source (1 Automatic, 2 Every game), `, sites off` with `hook_sites = off` |
 | `main module …` | the game's executable as the console loaded it: name, module NID, segment 0 (`+` its size), `APP_VER` (`0100` is 01.00; `0000` when param.sfo has none), and how many verified entries and Luna sites this build of Rubi has for the title |
 | `verified +OFF thumb rN …` | one of Rubi's verified entries, at segment 0 + OFF, the text in register rN (`, Luna's text`: a Luna site at the same address cleans its text) |
-| `luna ADDR rN …` | one of LunaTranslator's sites |
+| `luna ADDR rN +OFF …` | one of LunaTranslator's sites, read at segment 0 + OFF (no `+OFF`: no reading of its address is inside segment 0) |
 | `… hooked, stream N` | installed: its text goes to stream N |
 | `… refused: REASON` | not installed, and why (below); the next line, ` bytes …`, is the code there (empty outside segment 0) |
 | `… skipped: …` | the address is hooked already (an entry and a Luna site at one address) |
