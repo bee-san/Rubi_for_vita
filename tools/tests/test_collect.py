@@ -87,6 +87,14 @@ foreground 0x20000 -> 0x0 (suspend) t=60000 ms
 CONFIG = (f"\ufeff; settings\r\nocr_backend = vocr\r\nvocr_model = VOCR3_H15_w8.vocr\r\nvocr_fallback_model = VOCR3_FL10_w8.vocr\r\n"
           f"ocr_mode = auto\r\nlog_file = on\r\nanki_mining = on\r\nanki_host =\r\njpdb_api_key = {SECRET}\r\njiten_api_key =\r\n"
           f"jiten_api_key {SECRET2}\r\n\tJPDB_API_KEY\t=\tx{SECRET}\x0cy\r\nlens_api_key = cr{SECRET}\rpart\r\n")
+# the debug build's hooks.log (game_ocr/hooks.c's lines; no text): CLANNAD's verified entry hooked, the string copies
+HOOKS_LOG = ("PCSG00415: text source 1\n"
+             "main module game NID C5187D60 seg0 81000000+1C4000 APP_VER 0100; 1 verified, 0 Luna sites\n"
+             "verified +2CA70 thumb r6 hooked, stream 1\n"
+             + "".join(f"import {lib}/{nid}: hooked\n" for lib, nid in (
+                 ("BE43BB07", "7205BFDB"), ("BE43BB07", "85B924B7"), ("BE43BB07", "9F87712D"), ("BE43BB07", "AF5C218D"),
+                 ("CAE9ACE6", "14E9DBD7"), ("CAE9ACE6", "C458D60A"), ("CAE9ACE6", "2CDFCD1C"), ("CAE9ACE6", "AC595E68")))
+             + "sites hooked 1, refused 0; CALL imports hooked 8 of 8\n")
 TAI = (b"*KERNEL\r\nur0:tai/VitaJPOverlay_Kernel.skprx\r\n*main\r\nur0:tai/VitaJPOverlay_Shell.suprx\r\n*ALL\r\n"
        b"# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx\r\n*PCSG00415\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n")
 
@@ -98,7 +106,7 @@ class Collect(unittest.TestCase):
         self.root = Path(tmp.name)
         self.package = self.root / "package"
         (self.package / "tools").mkdir(parents=True)
-        for name in ("install_ftp.sh", "collect_vita.py", "analyse_selftest.py", "analyse_timeline.py",
+        for name in ("install_ftp.sh", "collect_vita.py", "analyse_selftest.py", "analyse_timeline.py", "hook_request.py",
                      "model_tiers.json", "package_release.py", "app_stamp.py",
                      "prepare_ocr.py", "prepare_plaintext.py", "migrate_config.py", "patch_tai_config.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
@@ -115,6 +123,7 @@ class Collect(unittest.TestCase):
         (data / "log.old.txt").write_text("bootstrap: shell API 19 entered\n", encoding="utf-8")
         (data / "kernel.txt").write_text(KERNEL)
         (data / "kernel.prev.txt").write_text("Vita JP Overlay kernel 19 started (normal mode)\n")
+        (data / "hooks.log").write_text(HOOKS_LOG)
         (data / "status.txt").write_text("bootstrap: shell API 19 entered\nbootstrap: worker started\n")
         shutil.copyfile(FIXTURES / "selftest-v2-pass.txt", data / "selftest-report.txt")
         (data / "config.ini").write_text(CONFIG, encoding="utf-8")
@@ -233,7 +242,7 @@ class Collect(unittest.TestCase):
             blob = b"".join(z.read(n) for n in names)
         d = folder.name + "/ux0/data/VitaJPOverlay/"
         for rel in ("log.txt", "log.old.txt", "selftest-report.txt", "status.txt", "kernel.txt", "kernel.prev.txt",
-                    "config.ini", "games.ini", "region.ini",
+                    "hooks.log", "config.ini", "games.ini", "region.ini",
                     "anki_queue/0123456789abcdef0123456789abcdef.json",
                     "anki_queue/exported/00112233445566778899aabbccddeeff.json",
                     "anki_queue/fedcba9876543210fedcba9876543210.json.tmp"):
@@ -242,12 +251,21 @@ class Collect(unittest.TestCase):
                     "ur0/tai/config.txt.vjo-20261016-120000.bak", "ux0/tai/config.txt.vjo-new",
                     "ux0/data/VitaJPOverlay/installed.txt",
                     "ux0/data/psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp", "COLLECT.json", "analysis.txt",
-                    "analysis.json", "timeline.txt"):
+                    "analysis.json", "timeline.txt", "hook-request.md"):
             self.assertIn(folder.name + "/" + rel, names)
         for rel in ("ux0/tai/config.txt.vjo-20261016-120000-old.bak", "ux0/tai/config.txt.vjo-bad"):
             self.assertIn(folder.name + "/" + rel, names)  # every copy the installers make
         self.assertNotIn(folder.name + "/ux0/tai/mine.txt", names)
         self.assertIn("sessions (game starts):", (folder / "timeline.txt").read_text())
+        # hooks.log as it was on the Vita, and what a hook request reads in it (docs/hook-requests.md), its line printed
+        # after the analysis's and before the zip's name
+        self.assertEqual((folder / "ux0/data/VitaJPOverlay/hooks.log").read_text(), HOOKS_LOG)
+        self.assertTrue((folder / "hook-request.md").read_text().startswith("# Hook request: PCSG00415\n"))
+        hooks_line = ("hooks.log: PCSG00415, APP_VER 01.00, main module game (NID 0xC5187D60): Rubi's verified entry is "
+                      "installed in this game; 8 string-copy imports hooked. Report: build/device/collect/")
+        self.assertIn(hooks_line, result.stdout)
+        self.assertLess(result.stdout.index("analysis exit "), result.stdout.index(hooks_line))
+        self.assertLess(result.stdout.index(hooks_line), result.stdout.index("Send this one file: "))
         self.assertTrue(any(n.startswith(folder.name + "/listings/") for n in names))
         self.assertIn(d + "anki_queue/a  b#c%20d?.json", names)
         # no API key is in any file of the zip, also one written without = (the C parser logs that line
