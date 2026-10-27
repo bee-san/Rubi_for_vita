@@ -220,6 +220,15 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
      * in segment 0 into it */
     {"PCSG00020", 0xF98BA0BAu, 0x1AC998u, 1, 1, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x2D, 0xE9, 0xF0, 0x4F, 0x2D, 0xED, 0x08, 0x8A, 0xBB, 0xB0, 0x83, 0x46, 0x0C, 0x1C, 0x0B, 0xF5}, VJO_RF_PCSG00020, 0, 0x0100u},
+    /* PCSG00883 ZERO ESCAPE ９時間９人９の扉 善人シボウデス ダブルパック (APP_VER 01.00), its 善人シボウデス: Vita3K 0x811ebcb8,
+     * 32 farm pages (paired-vita-pcsg00883-20261023). The game's eboot.bin is 999 (another engine); from its SELECT GAME
+     * screen it starts app0:skp2_psp2.self, PCSG00020's skp2v engine in a relocatable build, as the process's main module
+     * (NID 0x158B09F2, the title ID unchanged), so this entry is that module's. Message:talk calls 0x811ebcb8 (r1 = one click
+     * segment, UTF-8, PCSG00020's tags) or a twin by a global; the luabind setText binding 0x811ecc3c only dispatches to
+     * them and never runs for story text, and the twin never fired in the Japanese game. 10 bytes: the movw/movt after them
+     * hold a relocated address. patch: push.w {r4-r11, lr}; vpush {s16-s23} */
+    {"PCSG00883", 0x158B09F2u, 0x1EBCB8u, 1, 1, VJO_HOOK_ENC_UTF8, 10, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x2D, 0xED, 0x08, 0x8A, 0xBF, 0xB0}, VJO_RF_PCSG00020, 0, 0x0100u},
     /* PCSG00380 真 流行り神 (APP_VER 01.00): Vita3K 0x8104de9e, 1095 farm pages (paired-vita-pcsg00380-20261023), the
      * per-frame message-window draw (r4 = 0 there); the page is foaf4's static record at 0x819dbff0, 0x98e152 past
      * the site (r15): its cells (VJO_PLACE_READ_CELLS); patch (12): str r4, [sp, #0xa8]; movt r0, #0x819d; ldr r7,

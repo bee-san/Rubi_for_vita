@@ -171,6 +171,15 @@ Two lists name them:
       0xDE344, inside Lua's `lstrlib` `match()`, the subject of every pattern match, mid-function), not segment 0 +
       0x10DA344 as Luna's table reads it, which is past the segment's end, so it was refused as out of range on
       every console.
+    - PCSG00883 ZERO ESCAPE ９時間９人９の扉 善人シボウデス ダブルパック (APP_VER 01.00), its 善人シボウデス: NID 0x158B09F2
+      (`skp2_psp2`), +0x1EBCB8, Thumb, r1, UTF-8, filter `RF_PCSG00020`, 10 bytes; 32 farm pages (2026-10-27). The
+      Double Pack's `eboot.bin` is 999 (Spike Chunsoft's other engine, no entry yet); from its SELECT GAME screen it
+      starts `app0:skp2_psp2.self` as the process's main module, the title ID unchanged, so the worker that starts
+      in that process finds this entry by the module's NID. It is PCSG00020's engine in a relocatable build:
+      `Message:talk` calls 0x811EBCB8 or a twin chosen by a global with the click segment in r1, and the luabind
+      `setText` binding (0x811ECC3C) only dispatches to them, so it never runs for story text; the twin never fired
+      in the Japanese game. The 10 bytes are `push.w {r4-r11, lr}; vpush {s16-s23}; sub sp, #0xfc`, unique in
+      segment 0; the `movw`/`movt` after them hold a relocated address.
 
   - From the farm's data bucket (the hooks of its finished titles, with every approved page's hook bytes:
     [farm checks](#farm-checks)), Rubi's own sites, proven in Vita3K only. The bucket has no segment-0 dump,
@@ -271,7 +280,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00509` | POSSESSION MAGENTA | `＊Ｂ` 鈴; `^` to a line break; `<base,reading>` to the base | events 50, 1011 (67 pages hold `＊Ｂ`) |
 | `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？); a 0xA0 byte is a blank cell, `　` | events 1-5, 51, 53, 55; 0xA0 on 170 of the bucket's 1037 pages (page 82: 東京都　陵南学園。, 9 glyphs) |
 | `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `z<n>.` and `u<n>.` dropped (a size and a code point: in the farm's survey of `main.snr`, in none of its pages), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped, `!X` to the ASCII X (a lowercase X is read as a code first: none in the pages); half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages |
-| `PCSG00020` | 極限脱出ＡＤＶ 善人シボウデス | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
+| `PCSG00020`, `PCSG00883` | 極限脱出ＡＤＶ 善人シボウデス (and the Double Pack's) | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
 | `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
 | `PCSG00853` | ピリオドキューブ | `#Name[1]` 花宮, `#Name[2]` かずは, `#Name[3]` カズハ, then `IFENGINE` | samples 78, 120, 259, 371, 464, 492 |
