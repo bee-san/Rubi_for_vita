@@ -486,8 +486,11 @@ typedef struct {
 /* API 49: no rows (n 0, dst NULL, dst_stride 0): a trusted hook answers the claimed region job (API 43), so its
  * capture is published without reading a pixel, as the scene of the newest line a trusted hook reported
  * (VjoState.hook_scene), while the region still shows that scene: 0, and the Shell takes the job's text for that
- * screen. Any other scene (a menu over the line, an untrusted line since): VJO_ERR_FORMAT, and the worker reads
- * the first pass as before. Never with another VJO_ROWS_* flag, nor for a full-frame, probe or shot job. */
+ * screen. API 51: any other scene (a menu over the line, an untrusted line since, a larger change once the line
+ * drew) is published the same way, as the region's current scene (API 49 refused it and the worker read the
+ * first pass, a strip beside VJO_GAME_RESERVE_HOOK_ONLY, for the same answer). VJO_ERR_FORMAT only while the
+ * region has no screen yet; the worker then reads the first pass. Never with another VJO_ROWS_* flag, nor for a
+ * full-frame, probe or shot job. */
 #define VJO_ROWS_HOOK 0x8u
 #define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call */
 #define VJO_GAME_OCR_KSTRIP_MAX (64u * 1024u) /* the kernel strip's largest size */
@@ -579,7 +582,8 @@ int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data);
 int vjoOcrHookLine(uint32_t seq, uint32_t bytes);
 /* API 49, in vjoOcrHookLine's bytes: the line is a trusted source's (API 43, VJO_HOOK_R_TRUSTED): the Shell is
  * woken even while the last line still draws (0, never 1), and the scene is VjoState.hook_scene until the region
- * shows another, so the Shell reads it at once and VJO_ROWS_HOOK publishes it. */
+ * shows another, so the Shell reads it at once and VJO_ROWS_HOOK publishes it (API 51: and the region's current
+ * scene after that). */
 #define VJO_HOOK_LINE_TRUSTED 0x80000000u
 #ifdef __cplusplus
 }

@@ -560,15 +560,21 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     else if (cancelled || !registration_current(pid)) rc = VJO_ERR_CANCELLED;
     else if (req.flags & VJO_ROWS_HOOK) {
         /* API 49: a trusted answer's capture, without pixels: the trusted line's scene, while the region shows
-         * it (the tracker keeps a hooked line's number until the region shows another screen). No signature:
-         * region_scene never matches it, so the result stands for that scene alone. */
+         * it (the tracker keeps a hooked line's number until the region shows another screen). API 51: once the
+         * region shows another (a menu over the line, a larger change after it drew), the region's current
+         * scene. The answer is the trusted hook's last line whatever the screen shows, so the first pass API 49
+         * read there decided nothing and cost the game a strip beside a 1 MiB reserve, which a game with 1 MiB
+         * free refused. No signature: region_scene never matches it, so the result stands for that scene alone.
+         * Only a region without a screen yet (scene_reset, no trusted line since) is refused, and the worker
+         * reads the pass. */
+        const int line = g.hook_scene && g.hook_scene == g.tracker.id && g.tracker.hook_us;
         if (req.flags != VJO_ROWS_HOOK || req.n || req.y || dst || req.dst_stride ||
             (request.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))
             rc = VJO_ERR_ARG;
-        else if (!g.hook_scene || g.hook_scene != g.tracker.id || !g.tracker.hook_us)
+        else if (!line && (!g.tracker.id || !g.tracker.ref.w))
             rc = VJO_ERR_FORMAT;
         else {
-            span = g.capture_scene = g.hook_scene; /* span: the scene, for the log line */
+            span = g.capture_scene = g.tracker.id; /* span: the scene, for the log line */
             g.crop_w = request.width;
             g.crop_h = request.height;
             g.capture_sig.w = 0;
@@ -580,7 +586,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         VJO_UNLOCK();
         if (rc == 1) {
             ksceKernelSetEventFlag(g.evf, VJO_EV_CAPTURE_DONE);
-            klog_d("ocr job %u: trusted hook's capture, scene %u", req.seq, span);
+            klog_d("ocr job %u: trusted hook's capture, scene %u%s", req.seq, span, line ? "" : ", the region's");
             rc = 0;
         }
         goto out; /* no rows: the info says none were armed */
