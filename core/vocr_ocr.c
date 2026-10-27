@@ -498,12 +498,27 @@ static uint32_t clock_us(const VjoPlatform *p)
     return p->now_us ? (uint32_t)p->now_us(p->ud) : 0;
 }
 
+/* The line watch (rubi-spinner, #353; core/vocr_ocr.h VjoVocrStats.watched): once the region keeps moving under
+ * the stable-text wait (an animated icon with more frames than a row's ring holds, a moving picture), the wait and
+ * the tear check look at the found lines' own pixels only. */
+#define WATCH_OFF 0
+#define WATCH_ON 1     /* a row's checksum over the lines' columns decides; a change elsewhere sends the finder again */
+#define WATCH_ANYWAY 2 /* the wait's limit passed with the lines found alike twice: their own changes are no tears */
+/* A job finds its lines again from a new first pass at most this many times while it waits (each time the finder
+ * found other lines than the ones watched: text that types out, a page that changes); then a change is a tear. */
+#define WATCH_FINDS 8u
+#define RETRY_WATCH 2 /* recognize(): find the lines again (not a try), the line watch on */
+
 /* The region, a strip at a time, for the finder and the recognizer. Every row
  * keeps the checksum it had when first read; a later read that differs means
  * the screen changed under us (err = VJO_E_SCREEN_CHANGED), unless the row went
  * back to one of its recent states (an animated icon; cycle_cap rows at most:
  * new text, or a box that clears, changes more rows than an icon). While
- * settling, a change is only noted (changed). */
+ * settling, a change is only noted (changed). With the line watch (watch), a
+ * row's checksum over the watched lines' columns (and its own recent states,
+ * in the ring's memory: watch_check) decides instead, and a change of the rest
+ * of the row only marks the region as moved (the finder then says whether it
+ * was text). */
 typedef struct {
     const VjoGreySource *src;
     const VjoPlatform *p;
@@ -518,6 +533,8 @@ typedef struct {
     unsigned cycle_cap;     /* rows that may go back to an earlier state without being a change */
     int learn;              /* the stable-text wait is on: such rows are learned */
     int settling, changed;  /* a pass that waits: changes are noted, not errors */
+    int soft;               /* #353: the finder's reads and the verification's, with the wait on: the same, and the
+                             * first change starts the line watch */
     int retract;            /* the next read from row 0 starts a first pass it does not finish */
     int published;          /* a first pass of this job has ended (the Shell was told of it) */
     int held;               /* the rows have read the same since pass_from (a wait ended settled) */
@@ -529,8 +546,37 @@ typedef struct {
     uint32_t settle_left;   /* the job's waiting budget left */
     vocr_textgate_state *gate; /* the gate reading this try's rows, or NULL (VjoVocrPolicy.gate) */
     unsigned gate_next;     /* the next row it takes */
+    /* The line watch (WATCH_*): watch_ok, the wait is on (it can be watched); lines, the lines whose own pixels are
+     * watched (their boxes' columns in each row; NULL: none), spans when have_spans; spans_raw, the finder's own
+     * of them (before the short-line probe), found at found_us; per region row, its checksum over those columns
+     * and their recent states, in the ring's memory (cyc's bit: set; watch_check); moved, a row read differently
+     * than the read before (anywhere in it) since it was last cleared; lmoved, bit i: line i's own pixels changed
+     * to a new state since they were recorded (an icon with many frames, a picture moving behind it, text replaced
+     * in place); lcycled, bit i: they went back to a recent state (an icon drawn at its end); finds, how often the
+     * job found its lines again from a new first pass; confirmed, the wait's line phase held its lines and found
+     * them again alike (wait_lines); graced, the job waited once past its budget to read anyway (watch_verify). */
+    int watch_ok, watch, moved, have_spans, confirmed, graced;
+    int reading, read_tear; /* the lines are being read (after the wait), and a row changed then */
+    int last_try;           /* the job's last try (VJO_VOCR_TRIES) */
+    uint32_t anyway_mask;   /* WATCH_ANYWAY: the watched lines whose own changes are no tears (the ones that moved) */
+    uint32_t switch_us;     /* the pre-wait's patience with rows that keep changing before it watches the lines */
+    const VocrLineSet *lines;
+    uint32_t lmoved, lcycled, found_us;
+    unsigned finds;
+    VocrLineSet spans, spans_raw;
     int err;
 } Stream;
+
+/* The job's finder (its mode and fixes, a model of columns' column finder) over the stream, for the line watch to
+ * run again. */
+typedef struct {
+    const VocrLinesRows *region;
+    int cols;
+    unsigned mode, fix; /* rows: the finder mode and VOCR_FIX_* fixes; columns: the VOCR_COLUMNS_* flags */
+    void *arena;
+    size_t bytes;
+    int probe;          /* the short-line probe after it (VjoVocrPolicy.short_lines, rows) */
+} Finder;
 
 static void bits_clear(Stream *s)
 {
@@ -542,14 +588,115 @@ static uint16_t fold16(uint32_t sum)
     return (uint16_t)(sum ^ (sum >> 16));
 }
 
+/* A row's ring of n earlier states (folded, the latest first), its state changing from c to now (both folded): 1 when
+ * now is one of them (a return), and the ring updated either way: c goes in front, a new state pushing the oldest out
+ * (a state folding to c's 16 bits is a new one, whatever copies of that fold the ring holds). */
+static __attribute__((noinline)) int ring_push(uint16_t *ring, unsigned n, uint16_t c, uint16_t now)
+{
+    unsigned k = now == c ? n : 0;
+    int back;
+    while (k < n && ring[k] != now) k++;
+    back = k < n;
+    if (!n) return 0;
+    if (!back) k = n - 1;
+    memmove(ring + 1, ring, k * sizeof(*ring));
+    ring[0] = c;
+    return back;
+}
+
+/* The watched lines in mask are read anyway: their own changes are no tears from here (WATCH_ANYWAY). */
+static __attribute__((noinline)) void read_anyway(Stream *s, uint32_t mask)
+{
+    s->watch = WATCH_ANYWAY;
+    s->anyway_mask |= mask;
+    s->st->read_anyway = 1;
+}
+
+/* With the line watch: row y, its grey bytes at p and its whole-row checksum sum. A change of the row marks the
+ * region as moved; its checksum over the watched lines' columns (each line whose box holds the row, in the set's
+ * order) decides whether the text changed. As stream_check's, a row going back to one of its recent states there (an
+ * icon drawn at a line's end) is no change (lcycled has those lines); a new state is: while waiting (settling, soft)
+ * it is noted (lmoved has those lines), while reading it is a tear (none once the job reads anyway, WATCH_ANYWAY).
+ * The ring's row of slots 16-bit words holds the row's checksum (two words) and its slots - 2 earlier states. The
+ * first read of a row records it. */
+static void watch_check(Stream *s, unsigned y, const unsigned char *p, uint32_t sum, unsigned i, unsigned char bit)
+{
+    const VocrLineSet *set = s->lines;
+    const unsigned n = s->slots - 2u;
+    uint32_t h = VJO_FNV_INIT, covered = 0, cur;
+    uint16_t *r = s->ring + (size_t)y * s->slots, now;
+    unsigned k;
+    if (!(s->seen[i] & bit)) {
+        s->seen[i] |= bit;
+        s->sums[y] = sum;
+    } else if (s->sums[y] != sum) {
+        s->sums[y] = sum;
+        s->moved = 1;
+    }
+    for (k = 0; set && k < set->count; k++) {
+        const VocrLine *ln = &set->lines[k];
+        if (y < ln->y || y >= ln->y + ln->h) continue;
+        h = vjo_fnv1a(h, p + ln->x, ln->w);
+        covered |= 1u << k;
+    }
+    if (!covered) return;
+    now = fold16(h);
+    if (!(s->cyc[i] & bit)) {
+        s->cyc[i] |= bit;
+        r[0] = (uint16_t)h;
+        r[1] = (uint16_t)(h >> 16);
+        for (k = 2; k < s->slots; k++) r[k] = now;
+        return;
+    }
+    cur = r[0] | (uint32_t)r[1] << 16;
+    if (cur == h) return;
+    r[0] = (uint16_t)h;
+    r[1] = (uint16_t)(h >> 16);
+    if (ring_push(r + 2, n, fold16(cur), now)) { /* back to a recent state: an icon (2 slots keep none) */
+        s->lcycled |= covered;
+        s->st->cycles++;
+        return;
+    }
+    s->lmoved |= covered;
+    if (s->settling || s->soft) {
+        s->st->settle_changes++;
+        s->changed = 1;
+    } else if (s->watch == WATCH_ANYWAY && !(covered & ~s->anyway_mask)) {
+        s->st->watch_ignored++;
+    } else if (s->watch == WATCH_ON && s->last_try && s->reading) {
+        /* the job's last try: the lines that change are read anyway (the finder checks them once read) */
+        read_anyway(s, covered);
+        s->st->watch_ignored++;
+    } else {
+        /* a line held still under the wait and changed under the reading (an icon that rests between its turns):
+         * the try ends, and the wait is over: the next one reads anyway if it finds its lines alike twice */
+        s->st->tears++;
+        s->settle_left = 0;
+        s->err = VJO_E_SCREEN_CHANGED;
+    }
+}
+
+/* The line watch begins (or goes on): the ring's memory holds the lines' checksums from now on, none recorded yet. */
+static __attribute__((noinline)) void watch_begin(Stream *s)
+{
+    if (!s->watch) s->watch = WATCH_ON;
+    s->st->watched = 1;
+    memset(s->cyc, 0, BIT_BYTES(s->h));
+}
+
 /* Checks (or records) the checksum of region row y, whose grey bytes are at p. */
 static void stream_check(Stream *s, unsigned y, const unsigned char *p, int first)
 {
     uint32_t sum = vjo_fnv1a(VJO_FNV_INIT, p, s->w);
     unsigned i = y >> 3, k, slots = s->slots;
+    int back;
     unsigned char bit = (unsigned char)(1u << (y & 7u));
     uint16_t *ring = s->ring + (size_t)y * slots, now = fold16(sum);
     if (first) s->st->region_sum = vjo_fnv1a(s->st->region_sum, (const unsigned char *)&sum, 4);
+    if (s->watch) {
+        watch_check(s, y, p, sum, i, bit);
+        return;
+    }
     if (!(s->seen[i] & bit)) {
         s->seen[i] |= bit;
         s->sums[y] = sum;
@@ -557,37 +704,29 @@ static void stream_check(Stream *s, unsigned y, const unsigned char *p, int firs
         return;
     }
     if (s->sums[y] == sum) return;
-    /* A state folding to the current one's 16 bits is a new one (the sums
-     * differ), whatever copies of that fold the ring holds. */
-    k = now == fold16(s->sums[y]) ? slots : 0;
-    while (k < slots && ring[k] != now) k++;
+    back = ring_push(ring, slots, fold16(s->sums[y]), now);
+    s->sums[y] = sum;
     /* Back to a recent state: an animated icon, not text (text being typed
      * only ever moves on to new states). With the stable-text wait on, up to
      * cycle_cap rows of a job are taken for such rows; a page of new text,
      * or a box of several lines clearing back to what it showed before,
      * changes more rows than that. Without the wait every change is one, as
      * in API 19. */
-    if (k < slots && ((s->cyc[i] & bit) || (s->learn && s->st->cycling_rows < s->cycle_cap))) {
+    if (back && ((s->cyc[i] & bit) || (s->learn && s->st->cycling_rows < s->cycle_cap))) {
         if (!(s->cyc[i] & bit)) {
             s->cyc[i] |= bit;
             s->st->cycling_rows++;
         }
-        memmove(ring + 1, ring, k * sizeof(*ring));
-        ring[0] = fold16(s->sums[y]);
-        s->sums[y] = sum;
         s->st->cycles++;
         return;
     }
-    if (k == slots) k = slots - 1; /* a new state: the oldest leaves */
-    memmove(ring + 1, ring, k * sizeof(*ring));
-    ring[0] = fold16(s->sums[y]);
-    s->sums[y] = sum;
-    if (s->settling) {
+    if (s->settling || s->soft) {
         s->st->settle_changes++;
         s->changed = 1;
         return;
     }
     s->st->tears++;
+    s->read_tear |= s->reading;
     s->err = VJO_E_SCREEN_CHANGED;
 }
 
@@ -680,33 +819,276 @@ static void settle_spend(Stream *s, uint32_t us, int over)
     if (over) s->st->settle_timeout = 1;
 }
 
-/* Waits for the rows to hold still: passes that only read the region, until
- * one that saw no change started settle_us after the last pass that did (or the
- * wait's first). A job that already told the Shell of a capture first voids it
- * (retract), so the Shell does not take the screen it read before for this
- * job's. Settled, the rows have read the same since pass_from. */
-static int settle_wait(Stream *s)
+/* rc for a finder or row failure: the source's own error first. */
+static int stream_error(const Stream *s, int fallback)
+{
+    return s->err ? s->err : fallback;
+}
+
+/* ---- the line watch (#353) ---- */
+
+#define DIFF(a, b) ((a) > (b) ? (a) - (b) : (b) - (a))
+
+static int probe_short_lines(Stream *s, VocrLineSet *set);
+
+/* Two finds of a line alike: the same polarity, and each edge within a quarter of the line's height (2 px at least):
+ * less than a character, so a line that typed on is another line. mv (a line whose own pixels kept changing: an
+ * icon drawn at its end that the finder takes into it, a picture moving behind it): within half its height on its
+ * sides and start, and 2.5 times its height at its end (on hooked pages with an icon after their last line, that
+ * line's end moves by more than its height in 26 of 146 lines with the icon's frames, by more than 3 times in 2;
+ * host/spinner_bench.c --find). A column (cols) is measured by its width, and ends at its bottom. */
+static int line_alike(const VocrLine *p, const VocrLine *q, int mv, int cols)
+{
+    /* along the line: its start a and length l (x and w for a row, y and h for a column); across it: c and z */
+    const unsigned pa = cols ? p->y : p->x, pl = cols ? p->h : p->w, pc = cols ? p->x : p->y, pz = cols ? p->w : p->h;
+    const unsigned qa = cols ? q->y : q->x, ql = cols ? q->h : q->w, qc = cols ? q->x : q->y, qz = cols ? q->w : q->h;
+    const unsigned size = pz < qz ? pz : qz;
+    unsigned t = mv ? size / 2u : size / 4u;
+    if (t < 2u) t = 2u;
+    return p->dark == q->dark && DIFF(pc, qc) <= t && DIFF(pc + pz, qc + qz) <= t && DIFF(pa, qa) <= t &&
+           DIFF(pa + pl, qa + ql) <= (mv ? size * 5u / 2u : t);
+}
+
+/* At most twice as wide as tall (a column: as tall as wide): an icon's box, or one or two characters. */
+static int icon_sized(const VocrLine *ln, int cols)
+{
+    return cols ? ln->h <= 2u * ln->w : ln->w <= 2u * ln->h;
+}
+
+/* Two finds of a region's lines (the finder's own, before the short-line probe) alike: the same count, each line
+ * alike (line_alike), a line of a whose bit is set in moving measured as moving. Loose (the wait's limit, read
+ * anyway): an icon-sized box that only one of them has is passed over (an icon the finder takes for a line in some
+ * of its frames: with an icon in their corner, the finder's count of lines changed with the icon's frames in 21-25 of
+ * 138 hooked regions, host/spinner_bench.c --find). */
+static int lines_alike(const VocrLineSet *a, const VocrLineSet *b, int loose, uint32_t moving, int cols)
+{
+    unsigned i = 0, j = 0;
+    if (a->truncated != b->truncated || (!loose && a->count != b->count)) return 0;
+    while (i < a->count || j < b->count) {
+        if (i < a->count && j < b->count && line_alike(&a->lines[i], &b->lines[j], (moving >> i) & 1u, cols)) {
+            i++;
+            j++;
+        } else if (loose && a->count - i > b->count - j && icon_sized(&a->lines[i], cols)) {
+            i++;
+        } else if (loose && b->count - j > a->count - i && icon_sized(&b->lines[j], cols)) {
+            j++;
+        } else {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Watch lines found now (set; raw, the finder's own of them): their pixels are recorded again from the next read. */
+static __attribute__((noinline)) void watch_set(Stream *s, const VocrLineSet *set, const VocrLineSet *raw)
+{
+    if (set != &s->spans) s->spans = *set;
+    if (raw != &s->spans_raw) s->spans_raw = *raw;
+    s->have_spans = 1;
+    s->lines = &s->spans;
+    s->lmoved = s->lcycled = 0;
+    s->anyway_mask = 0; /* (its bits were the lines watched before) */
+    s->found_us = clock_us(s->p);
+    memset(s->cyc, 0, BIT_BYTES(s->h));
+}
+
+/* The finder again (raw), and (set, optional) the short-line probe as the job applies it, over the region as it is
+ * now: their reads are a wait's (a change is noted, no tear; nothing is published), and moved is cleared first, so that
+ * after it moved says whether a row changed since it began. spend: its time is the wait's (from its budget). */
+static int relook(Stream *s, const Finder *f, VocrLineSet *set, VocrLineSet *raw, int spend)
+{
+    uint32_t t0 = clock_us(s->p), us;
+    int rc;
+    s->moved = s->changed = 0;
+    s->settling = 1;
+    rc = f->cols ? vocr_find_columns_rows(f->region, f->mode, f->arena, f->bytes, raw)
+                 : vocr_find_lines_fix_rows(f->region, (int)f->mode, f->fix, f->arena, f->bytes, raw);
+    if (set) {
+        *set = *raw;
+        if (!rc && !s->err && f->probe && !set->truncated && probe_short_lines(s, set) < 0) rc = VOCR_LINES_E_SOURCE;
+    }
+    s->settling = 0;
+    s->st->watch_looks++;
+    us = clock_us(s->p) - t0;
+    if (spend) settle_spend(s, us, us >= s->settle_left); /* (the budget spent: the wait's limit) */
+    if (s->err || rc == VOCR_LINES_E_SOURCE) return stream_error(s, VJO_E_SOURCE);
+    if (rc) return rc == VOCR_LINES_E_ARENA ? VJO_E_OOM : VJO_E_OCR_REGION;
+    return VJO_OK;
+}
+
+/* Passes that only read the region until one that saw no change (with the line watch: in the watched lines' own
+ * pixels) began settle_us after the last one that did, or after the first: 1, *since (optional) the start of that span;
+ * 2 when rows still changed in the last pass once switch_us had passed (0: never); 0 when the waiting budget (or
+ * VJO_VOCR_SETTLE_READS) ran out first; -1 when a read failed. Its time is the wait's. */
+static int hold_still(Stream *s, uint32_t switch_us, uint32_t *since)
 {
     uint32_t t0 = clock_us(s->p), stable_since = t0;
-    int done = 0, over = 0;
+    int r = 0, over = 0;
     s->settling = 1;
-    s->retract = s->published;
-    while (!done) {
+    s->changed = 0;
+    for (;;) {
         uint32_t ps = clock_us(s->p);
         if (ps - t0 >= s->settle_left || s->st->strips >= VJO_VOCR_SETTLE_READS) { over = 1; break; }
+        if (switch_us && s->changed && ps - t0 >= switch_us) { r = 2; break; }
         s->changed = 0;
         if (stream_pass(s) < 0) break;
         s->st->settle_passes++;
         if (s->changed) stable_since = ps;
-        else if (ps - stable_since >= s->pol->settle_us) done = 1;
+        else if (ps - stable_since >= s->pol->settle_us) { r = 1; break; }
     }
     s->settling = 0;
-    if (done) {
-        s->pass_from = stable_since;
-        s->held = 1;
-        s->st->settled = 1;
-    }
     settle_spend(s, clock_us(s->p) - t0, over);
+    if (since) *since = stable_since;
+    return s->err ? -1 : r;
+}
+
+/* us more of the job's time (its waiting's): a sleep, or passes that only read the region (at most
+ * VJO_VOCR_SETTLE_READS strips). VJO_OK, or why it stopped. */
+static int watch_pause(Stream *s, uint32_t us)
+{
+    uint32_t t0 = clock_us(s->p);
+    int rc = VJO_OK;
+    if (s->pol->sleep) {
+        s->pol->sleep(us);
+        if (cancelled(s->src)) rc = s->err = VJO_E_CANCELLED;
+    } else {
+        s->settling = 1;
+        while (!rc && clock_us(s->p) - t0 < us && s->st->strips < VJO_VOCR_SETTLE_READS)
+            if (stream_pass(s) < 0) rc = stream_error(s, VJO_E_SOURCE);
+        s->settling = 0;
+    }
+    s->st->settle_us += clock_us(s->p) - t0;
+    return rc;
+}
+
+/* The finder again (relook): 1 when it finds the watched lines alike (lines_alike: loose; moving, the lines whose
+ * pixels went back to a recent state and, with moved, those that changed, its own reads included), 0 when not, else
+ * why it could not tell (< 0). */
+static int look_alike(Stream *s, const Finder *f, int loose, int moved, int spend)
+{
+    VocrLineSet look_raw;
+    int rc = relook(s, f, NULL, &look_raw, spend);
+    return rc ? rc : lines_alike(&s->spans_raw, &look_raw, loose, (moved ? s->lmoved : 0u) | s->lcycled, f->cols);
+}
+
+/* The line phase of the wait (settle_wait, once the job watches its lines): the lines (the ones watched already, or
+ * the region's as the finder finds them now) are watched, nothing published, until their own pixels hold for
+ * settle_us and, if rows changed meanwhile (an icon beside the text, a line typing on past its box, a new line), the
+ * finder finds them again alike; other lines are watched in their place. Then s->confirmed: the try that follows
+ * reads its own lines at once when they are alike these and none of their pixels changed since. Within the waiting
+ * budget; without confirmation the try waits in watch_verify. */
+static int wait_lines(Stream *s, const Finder *f)
+{
+    VocrLineSet set, raw;
+    int rc, held;
+    if (!s->have_spans) {
+        if ((rc = relook(s, f, &set, &raw, 1)) != VJO_OK) return rc;
+        watch_set(s, &set, &raw);
+    } else {
+        watch_set(s, &s->spans, &s->spans_raw);
+        s->moved = 0;
+    }
+    for (unsigned n = 0; s->settle_left && n < 4u * WATCH_FINDS; n++) {
+        if ((held = hold_still(s, 0u, NULL)) <= 0) return held < 0 ? stream_error(s, VJO_E_SOURCE) : VJO_OK;
+        if (s->moved) {
+            if ((rc = relook(s, f, &set, &raw, 1)) != VJO_OK) return rc;
+            /* (a line whose own pixels changed meanwhile, an icon in it, may end elsewhere; one that typed on past
+             * its box did not change inside it) */
+            if (!lines_alike(&s->spans_raw, &raw, 0, s->lmoved | s->lcycled, f->cols)) {
+                watch_set(s, &set, &raw); /* other lines: watched from here */
+                continue;
+            }
+            if (s->changed) continue; /* their pixels changed while the finder ran: hold again */
+        }
+        s->confirmed = 1;
+        s->lmoved = 0; /* from here on, a change of their pixels is one since they held */
+        break;
+    }
+    return VJO_OK;
+}
+
+/* The watch's verification, after the try's finder (set; raw, its own lines): VJO_OK once its lines may be read,
+ * RETRY_WATCH when they are to be watched from a new line phase (the next first pass tells the Shell of a capture
+ * that shows them), else why the try ends (VJO_E_SCREEN_CHANGED: other lines past the wait's limit).
+ *  - Lines alike the ones the line phase confirmed, none of whose pixels changed since, are read at once: their
+ *    pixels have read the same from the line phase through this find's first pass, the try's capture.
+ *  - Others, while the waiting budget lasts, are watched from a new line phase (at most WATCH_FINDS times a job;
+ *    then a change is a tear).
+ *  - The budget spent while the lines' own pixels kept changing (an icon the finder takes into a line, a picture
+ *    moving behind the text): lines alike the ones found at least settle_us before (lines_alike, loose) are read
+ *    anyway, their changes no tears any more; others are watched for settle_us, and the finder decides. */
+static int watch_verify(Stream *s, const Finder *f, const VocrLineSet *set, const VocrLineSet *raw)
+{
+    int rc;
+    if (s->confirmed && s->have_spans && lines_alike(&s->spans_raw, raw, 0, s->lmoved | s->lcycled, f->cols)) {
+        s->confirmed = 0;
+        s->st->settled = 1;
+        /* a line that held still moved again while the try found it, its place alike (an icon in it that rests
+         * between its turns): read now, its own changes no tears (the others' still are; the finder checks them once
+         * read) */
+        if (s->lmoved) read_anyway(s, s->lmoved);
+        return VJO_OK;
+    }
+    s->confirmed = 0;
+    if (s->settle_left) {
+        if (s->finds >= WATCH_FINDS) {
+            s->st->tears++;
+            return VJO_E_SCREEN_CHANGED;
+        }
+        watch_set(s, set, raw);
+        s->finds++;
+        s->st->watch_finds++;
+        return RETRY_WATCH;
+    }
+    if (!s->have_spans || !lines_alike(&s->spans_raw, raw, 1, s->lmoved | s->lcycled, f->cols)) {
+        watch_set(s, set, raw);
+        if (s->graced) { /* (the job waited past its budget once already) */
+            s->st->tears++;
+            return VJO_E_SCREEN_CHANGED;
+        }
+    }
+    if (!s->graced && clock_us(s->p) - s->found_us < s->pol->settle_us) {
+        /* found too recently to tell an icon from text that types on: watched for settle_us, then found again
+         * (once a job: it waits at most settle_us and a finder's run past its budget) */
+        s->graced = 1;
+        if ((rc = watch_pause(s, s->found_us + s->pol->settle_us - clock_us(s->p))) != VJO_OK) return rc;
+        if ((rc = look_alike(s, f, 1, 1, 1)) <= 0) {
+            if (rc) return rc;
+            s->st->tears++;
+            return VJO_E_SCREEN_CHANGED;
+        }
+    }
+    read_anyway(s, s->lmoved | s->lcycled); /* the lines that kept moving */
+    return VJO_OK;
+}
+
+/* Waits for the rows to hold still: passes that only read the region, until
+ * one that saw no change started settle_us after the last pass that did (or the
+ * wait's first). A job that already told the Shell of a capture first voids it
+ * (retract), so the Shell does not take the screen it read before for this
+ * job's. Settled, the rows have read the same since pass_from. #353: rows still
+ * changing after twice settle_us (the last pass changed: an icon with more
+ * frames than a row's ring holds, a moving picture, text still typing out), or
+ * the waiting budget spent, start the line watch; a job that watches its lines
+ * waits on them instead (wait_lines). */
+static int settle_wait(Stream *s, const Finder *f)
+{
+    s->retract = s->published;
+    if (!s->watch) {
+        uint32_t since;
+        int r = hold_still(s, s->watch_ok ? s->switch_us : 0u, &since);
+        if (r == 1) {
+            s->pass_from = since;
+            s->held = 1;
+            s->st->settled = 1;
+        } else if (r >= 0 && s->watch_ok) { /* still changing, or the budget spent: the lines' own pixels decide */
+            watch_begin(s);
+        }
+    }
+    if (!s->err && s->watch && s->settle_left) {
+        int rc = wait_lines(s, f);
+        if (rc && !s->err) s->err = rc;
+    }
     return s->err ? -1 : 0;
 }
 
@@ -714,7 +1096,9 @@ static int settle_wait(Stream *s)
  * after the rows were first read the same (pass_from). A change is a tear: the
  * lines found are not the screen's any more. Once one re-read has matched, a
  * pass that would start too early is not read: the job sleeps until it is due
- * (with a sleep callback). */
+ * (with a sleep callback). #353: with the wait on, the job's reads are soft (a
+ * change is noted, no tear) from its finder on: the verification ends at the
+ * first change, and the caller starts the line watch. */
 static int settle_verify(Stream *s)
 {
     uint32_t t0 = clock_us(s->p);
@@ -729,8 +1113,9 @@ static int settle_verify(Stream *s)
         }
         if (stream_pass(s) < 0) break;
         s->st->settle_passes++;
+        if (s->changed) break;
     }
-    if (!s->err && !over) s->st->settled = 1;
+    if (!s->err && !over && !s->changed) s->st->settled = 1;
     settle_spend(s, clock_us(s->p) - t0, over);
     return s->err ? -1 : 0;
 }
@@ -757,12 +1142,6 @@ static const unsigned char *stream_row(void *user, unsigned y)
         s->st->gate_us += clock_us(s->p) - g0;
     }
     return row;
-}
-
-/* rc for a finder or row failure: the source's own error first. */
-static int stream_error(const Stream *s, int fallback)
-{
-    return s->err ? s->err : fallback;
 }
 
 int vjo_vocr_resident_drop(VjoVocrResident *r)
@@ -1963,7 +2342,7 @@ static void slot_line(Slot *sl, const unsigned char *pixels, size_t stride, unsi
 /* One capture of the region: lines, then (weights) each line recognized. */
 static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi,
                      const VjoGreySource *im, VjoVocrResident *res, unsigned char *ws, const Layout *l,
-                     Stream *s, char *text, size_t cap, VjoVocrStats *st, int nocache)
+                     Stream *s, const Finder *finder, char *text, size_t cap, VjoVocrStats *st, int nocache)
 {
     const unsigned w = im->width;
     const VjoVocrPolicy *pol = s->pol;
@@ -2032,6 +2411,12 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
      * once, with them (no hooked horizontal region of 101,651 taken for vertical text either way). */
     const unsigned fix = cols ? 0u : pol->line_fix;
     const int frozen_check = fix && pol->vertical_check && im->height >= w;
+    VocrLineSet raw;
+    /* With the wait on, a change the job's reads see from here to the end of its verification is noted, no tear: it
+     * starts the line watch below (the watch, once on, judges every change itself). */
+    s->lines = s->watch && s->have_spans ? &s->spans : NULL; /* the watched lines: recorded or compared from here */
+    s->changed = 0;
+    s->soft = s->watch_ok && (s->watch || !s->settle_left);
     rc = cols ? vocr_find_columns_rows(&region, mi->finder_mode & 0xFFu, ws + l->scratch_off, l->finder, &set)
               : vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, frozen_check ? 0u : fix,
                                          ws + l->scratch_off, l->finder, &set);
@@ -2069,6 +2454,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
     if (rc == VOCR_LINES_E_SOURCE) return stream_error(s, VJO_E_SOURCE);
     if (rc) return rc == VOCR_LINES_E_ARENA ? VJO_E_OOM : VJO_E_OCR_REGION;
+    raw = set; /* the finder's own lines, as the watch's finder will give them again */
     /* A region inside one strip was read once: read it again, so that a screen
      * that changed while it was read is seen (the strips of a taller region are
      * all read twice by the finder's two passes already). */
@@ -2082,10 +2468,29 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->dark += set.lines[i].dark ? 1u : 0u;
         len_left += line_length(&set.lines[i], cols);
     }
-    if (!set.count) return VJO_OK; /* nothing to read: the model file is not opened */
+    if (!set.count) { /* nothing to read: the model file is not opened */
+        if (!s->soft || !s->changed) return VJO_OK;
+        st->tears++; /* (the screen changed while it was read: once more, as without the watch) */
+        return VJO_E_SCREEN_CHANGED;
+    }
     if (cancelled(im)) return VJO_E_CANCELLED;
     /* Nothing is recognized before the rows have held still for settle_us. */
-    if (settle_on(s) && settle_verify(s) < 0) return stream_error(s, VJO_E_SOURCE);
+    if (!s->watch && settle_on(s) && !s->changed && settle_verify(s) < 0) return stream_error(s, VJO_E_SOURCE);
+    s->soft = 0;
+    /* #353: the rows changed since the finder began (an icon, a picture, text): from a new line phase, the lines'
+     * own pixels are watched (and their first pass is published again) */
+    if (!s->watch && s->changed && s->watch_ok) {
+        watch_begin(s);
+        watch_set(s, &set, &raw);
+        s->finds++;
+        st->watch_finds++;
+        return RETRY_WATCH;
+    }
+    if (s->watch) {
+        rc = watch_verify(s, finder, &set, &raw);
+        if (rc) return rc;
+    }
+    s->reading = 1; /* (from here a row that changes was read whole and held still before: run_job) */
 
     memset(L, 0, sizeof(*L));
     L->p = p;
@@ -2393,6 +2798,20 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     if (rc) goto fail;
     if (busy_on) pol->busy(pol->busy_ud, 0);
     st->recognize_us = clock_us(p) - L->t0 - st->cascade_us; /* the re-reads are cascade_us */
+    /* #353: rows changed while the watched lines were read: the finder (in the scratch, which the recognizer is done
+     * with) says whether they are still the same lines; if not, the screen changed under them. */
+    if (s->watch && s->moved) {
+        const int anyway = s->watch == WATCH_ANYWAY;
+        rc = look_alike(s, finder, anyway, anyway, 0);
+        /* read anyway: an icon beside a line can change how the finder cuts it while it turns; another look
+         * settle_us later, then the lines are what they were or the screen changed under them */
+        if (!rc && anyway && (rc = watch_pause(s, pol->settle_us)) == VJO_OK) rc = look_alike(s, finder, 1, 1, 0);
+        if (rc < 0) return rc;
+        if (!rc) {
+            st->tears++;
+            return VJO_E_SCREEN_CHANGED;
+        }
+    }
     /* The job succeeded: its lines become known texts. */
     if (L->cache)
         for (unsigned k = 0; k < L->n_put; k++) {
@@ -2523,34 +2942,59 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     /* An icon is a few dozen rows; a looping background may be more. */
     st.cycle_cap = VJO_VOCR_CYCLE_ROWS;
     st.learn = st.pol->settle_us && platform->now_us;
+    st.watch_ok = st.learn; /* #353: the line watch is the stable-text wait's */
+    const int cols = columns_of(mi);
+    const VocrLinesRows region = {image->width, image->height, VOCR_LINES_GREY, stream_row, &st};
+    /* the job's finder as the line watch runs it again: its fixes (API 50), a model of columns' own flags */
+    const Finder finder = {&region, cols, cols ? (mi->finder_mode & 0xFFu) : mi->finder_mode,
+                           cols ? 0u : st.pol->line_fix, (unsigned char *)workspace + front + l.scratch_off, l.finder,
+                           st.pol->short_lines && !cols};
     st.settle_left = st.pol->settle_max_us ? st.pol->settle_max_us : VJO_VOCR_SETTLE_MAX_US;
+    /* #353: the pre-wait watches the lines once the rows have kept changing for half the job's budget (meanwhile its
+     * rows learn an icon of up to VJO_VOCR_STATES_MAX frames, as before), twice the span at least */
+    st.switch_us = st.settle_left / 2u > 2u * st.pol->settle_us ? st.settle_left / 2u : 2u * st.pol->settle_us;
     /* The screen may change while it is read (the player advanced the text): then
      * the region is captured again, up to VJO_VOCR_TRIES times. Without the
      * stable-text wait from scratch; with it, after waiting for the rows to hold
-     * still (and before the first, with settle_first). */
+     * still (and before the first, with settle_first). Once the job watches its
+     * lines (#353) it waits on them instead, and finds them again (from a new
+     * first pass, not a try of its own) when the finder sees other lines. */
     for (unsigned attempt = 1; attempt <= VJO_VOCR_TRIES; attempt++) {
-        int wait = settle_on(&st) && (attempt > 1 || st.pol->settle_first);
+        int wait = settle_on(&st) && (attempt > 1 || st.pol->settle_first || st.watch);
         if (!wait || attempt == 1) bits_clear(&st);
         st.rows = st.y0 = st.first_next = 0;
         st.err = 0;
         st.held = st.verified = 0;
         st.cover_next = 0;
+        st.moved = st.soft = st.confirmed = st.reading = st.read_tear = 0;
+        st.last_try = attempt == VJO_VOCR_TRIES;
+        st.lmoved = 0;
+        st.lines = st.watch && st.have_spans ? &st.spans : NULL;
         stats->tries = attempt;
         stats->region_sum = VJO_FNV_INIT;
         if (attempt > 1) stats->retry_at = clock_us(platform); /* the screen changed under the one before */
-        if (wait && settle_wait(&st) < 0) {
+        if (wait && settle_wait(&st, &finder) < 0) {
             rc = stream_error(&st, VJO_E_SOURCE);
             break;
         }
-        rc = recognize(platform, model_dir, mi, image, res, (unsigned char *)workspace + front, &l, &st,
+        rc = recognize(platform, model_dir, mi, image, res, (unsigned char *)workspace + front, &l, &st, &finder,
                        text, text_cap, stats, nocache);
         if (rc == RETRY_NOCACHE) { /* a cached line that would not fit as read: once more without the cache */
             nocache = 1;
             attempt--;
             continue;
         }
+        if (rc == RETRY_WATCH && !cancelled(image)) { /* other lines than the watched ones: find them again */
+            attempt--;
+            continue;
+        }
         if (rc != VJO_E_SCREEN_CHANGED || cancelled(image)) break;
+        /* #353: rows changed while the lines were read, after the wait had held (an icon that rests between its
+         * turns, a picture that moves now and then): the next try watches its lines (a page turned then is found
+         * again, as other lines) */
+        if (st.read_tear && st.watch_ok) watch_begin(&st);
     }
+    if (rc == RETRY_WATCH) rc = VJO_E_CANCELLED; /* (only when cancelled meanwhile) */
     if (rc) text[0] = '\0'; /* never publish a partial recognition */
     return rc;
 }

@@ -2172,8 +2172,11 @@ retry_smaller:
                                  capture.last.fb_format, capture.pass_us, 0);
     step_add(VJO_GSTEP_FIND, stats.columns, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, stats.rotate_skipped,
              stats.dark, stats.find_us, 0);
-    if (policy.settle_us)
-        step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes + tried_settle_passes, /* the job's whole wait (API 47) */
+    if (policy.settle_us) /* kind (#353): the line watch's VJO_GSETTLE_K_* and the finder's runs it took */
+        step_add(VJO_GSTEP_SETTLE,
+                 (stats.watched ? VJO_GSETTLE_K_LINES : 0u) | (stats.read_anyway ? VJO_GSETTLE_K_ANYWAY : 0u) |
+                     (stats.watch_looks > VJO_GSETTLE_K_LOOKS_MAX ? VJO_GSETTLE_K_LOOKS_MAX : stats.watch_looks) << 2,
+                 stats.settle_passes + tried_settle_passes, /* the job's whole wait (API 47) */
                  stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,
                  stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
                  (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles),
