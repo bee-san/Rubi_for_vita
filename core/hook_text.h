@@ -8,12 +8,15 @@
 #include <stdint.h>
 
 /* The encoding of a hook's raw bytes. AUTO (the CALL source's string copies): valid
- * UTF-8 with at least one non-ASCII character is UTF-8, else CP932. */
+ * UTF-8 with at least one non-ASCII character is UTF-8, else CP932. SC3: MAGES' script
+ * text, glyph indices into a game's own charset (core/hook_sc3.h), which only
+ * game_ocr/hooks.c decodes (it holds the charset): vjo_hook_decode gives no text for it. */
 enum {
     VJO_HOOK_ENC_AUTO = 0,
     VJO_HOOK_ENC_UTF8 = 1,
     VJO_HOOK_ENC_UTF16LE = 2,
     VJO_HOOK_ENC_CP932 = 3,
+    VJO_HOOK_ENC_SC3 = 4,
     VJO_HOOK_ENC_COUNT
 };
 

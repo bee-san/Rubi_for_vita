@@ -316,10 +316,10 @@ if(VJO_WITH_VOCR)
     # and the arena it encodes into
     ${ROOT}/core/jpegsw.c ${ROOT}/core/shottrim.c ${ROOT}/core/arena.c
     # API 31: the native text hooks (docs/native-hooks.md), in the game's process only: the hook
-    # engine, the site check, the stream slots, Luna's table and the hook text decoder
+    # engine, the site check, the stream slots, Luna's table and the hook text decoder; MAGES' SC3 text
     ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
     ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
-    ${ROOT}/core/sfo.c)
+    ${ROOT}/core/hook_sc3.c ${ROOT}/core/sfo.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
   # For size, as the worker's control code is: 1,992 B of text and rodata at -Os (2,640 B at -O2; measured,
@@ -329,6 +329,8 @@ if(VJO_WITH_VOCR)
   # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
   # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
   set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # MAGES' SC3 text (core/hook_sc3.c): a hit's span and the job's decoder, for size too.
+  set_source_files_properties(${ROOT}/core/hook_sc3.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
   # control code built for size, with Luna's PSP table (core/hook_luna_psp.inc) as its data.
   if(VJO_DEBUG)
@@ -656,6 +658,10 @@ add_custom_target(release
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt ${STAGE}/ux0/data/VitaJPOverlay/
+  # The SC3 hooks' charsets (docs/native-hooks.md "SC3 text"), which the game worker reads through the kernel's broker
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay/hooks
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/sc3-charsets/PCSG00146.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00352.sc3
+    ${ROOT}/third_party/sc3-charsets/PCSG00555.sc3 ${STAGE}/ux0/data/VitaJPOverlay/hooks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${ROOT}/docs/ocr-history.md ${STAGE}/docs/
   # Keep the guide's feature and recovery links usable in the downloaded ZIP.
   COMMAND ${CMAKE_COMMAND} -E copy

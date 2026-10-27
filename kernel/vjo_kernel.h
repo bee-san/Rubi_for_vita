@@ -134,6 +134,9 @@ void kernel_file_flush(void); /* file worker only */
 int loader_hook_install(void);  /* 0, or why the loader is off (the per-title lines still work) */
 int loader_hook_release(void);  /* 0, or VJO_ERR_BUSY: a game start is still inside the hook */
 void loader_tick(void);         /* the kernel worker thread: answers a starting process's question */
+/* The title ID of process pid (ksceKernelSysrootGetProcessTitleId), as the loader reads it: game_ocr.c names a
+ * game's SC3 charset by it. < 0 when it cannot be read (the loader's function was not found). */
+int loader_title(SceUID pid, char *title, SceSize len);
 
 /* text_source.c (API 31): the loader's verdict on a process start, before its worker starts: only a
  * process started as ON (on != 0) reads the Shell's text source (vjoGetTextSource), any other OCR. */

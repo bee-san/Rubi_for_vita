@@ -41,8 +41,9 @@ static void test_every_verified_entry(void)
     TEST_CHECK(vjo_hook_title_listed("PCSG00469") == VJO_HOOK_TITLE_RUBI); /* CLOCK ZERO ExTime */
     TEST_CHECK(vjo_hook_title_listed("PCSG00628") == VJO_HOOK_TITLE_RUBI); /* ALIA's CARNIVAL! サクラメント */
     TEST_CHECK(vjo_hook_title_listed("PCSG00380") == VJO_HOOK_TITLE_RUBI); /* 真 流行り神 */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00146") == VJO_HOOK_TITLE_RUBI); /* STEINS;GATE 比翼恋理のだーりん (SC3) */
 #if VJO_HOOK_LUNA
-    TEST_CHECK_(only_rubi == 13u, "%u verified titles are not in Luna's table (CLANNAD and 12 of the farm's)",
+    TEST_CHECK_(only_rubi == 16u, "%u verified titles are not in Luna's table (CLANNAD and 15 of the farm's)",
                 only_rubi);
     TEST_CHECK(vjo_luna_title_ported("PCSG01198") && vjo_luna_title_ported("PCSG00469"));
 #endif

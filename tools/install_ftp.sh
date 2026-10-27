@@ -496,6 +496,14 @@ if [ -n "$PACKAGE_DIR" ]; then
     put "$f" "ux0:/data/VitaJPOverlay/dictionaries/$(basename "$f")"
   done
 fi
+# The SC3 hooks' charsets (docs/native-hooks.md "SC3 text"): the package's, else this checkout's. The game worker
+# checks each one's size and SHA-256 before it uses it.
+SC3_DIR=third_party/sc3-charsets
+[ -z "$PACKAGE_DIR" ] || SC3_DIR=$PACKAGE_DIR/ux0/data/VitaJPOverlay/hooks
+for f in "$SC3_DIR"/*.sc3; do
+  [ -f "$f" ] || continue
+  put "$f" "ux0:/data/VitaJPOverlay/hooks/$(basename "$f")"
+done
 # The Rubi app: its VPK, installed in VitaShell (the box at the end says whether it still has to be), and
 # the record of it the Shell plugin compares the installed app with. Without a stamp (a source build whose VPK
 # was not built) the record is emptied, as boot.txt is: "no record" is unknown to the plugins, never another

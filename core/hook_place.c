@@ -254,6 +254,22 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG01194 参千世界遊戯 ～Re Multi Universe Myself～ (APP_VER 01.00): Vita3K 0x81056e24, 30 farm pages (paired-vita-pcsg01194-20261023); patch: ldr r1, [r4, #0x4]; adds r1, r7, r1; str r0, [sp, #0xc]; adds r0, r1, #0x2; Luna's site here (r0, filter none) */
     {"PCSG01194", 0xECD30306u, 0x56E24u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
      {0x61, 0x68, 0x79, 0x18, 0x03, 0x90, 0x88, 0x1C, 0xD6, 0xF8, 0x20, 0x13, 0x00, 0xAA, 0x60, 0x60}, VJO_RF_PCSG01194, 0, 0x0100u},
+    /* MAGES/5pb. SC3 engine (psandvita farm, Vita3K only): the entry of each game's page function, whose r0 is the
+     * page's SC3 string (core/hook_sc3.h), read through its end token and decoded with the game's charset
+     * (third_party/sc3-charsets/). No branch, PC use or IT in the patched bytes, and no branch or pointer in segment
+     * 0 into them: checked on each farm dump of segment 0 (the SHA-256 in its rubi-hook.json). No Luna site. */
+    /* PCSG00146 STEINS;GATE 比翼恋理のだーりん (APP_VER 01.00, module adv7): Vita3K 0x8102b018, 1498 farm pages (paired-vita-pcsg00146-20261023); patch: push.w {r4-r11, lr}; sub sp, #4; movw r4, #0xaba0 */
+    {"PCSG00146", 0x2BAC7A6Du, 0x2B018u, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x81, 0xB0, 0x4A, 0xF6, 0xA0, 0x34, 0xC8, 0xF2, 0x4B, 0x14, 0x00, 0x25}, 0, VJO_PLACE_READ_SC3,
+     0x0100u},
+    /* PCSG00352 ROBOTICS;NOTES ELITE (APP_VER 01.00, module robono): Vita3K 0x8100f1d8, 606 farm pages (paired-vita-pcsg00352-20261023); patch: push.w {r4-r11, lr}; sub sp, #4; movw r4, #0x28 */
+    {"PCSG00352", 0x5409CF98u, 0xF1D8u, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x81, 0xB0, 0x40, 0xF2, 0x28, 0x04, 0x89, 0x46, 0x40, 0xF6, 0x08, 0x41}, 0, VJO_PLACE_READ_SC3,
+     0x0100u},
+    /* PCSG00555 CHAOS;CHILD (APP_VER 01.00, module Game): Vita3K 0x8102f9bc, 395 farm pages (paired-vita-pcsg00555-20261023); patch: push.w {r4-r11, lr}; sub sp, #0x14; movw r4, #0xc604 */
+    {"PCSG00555", 0x5681A30Du, 0x2F9BCu, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x85, 0xB0, 0x4C, 0xF2, 0x04, 0x64, 0xC8, 0xF2, 0x06, 0x14, 0x24, 0x68}, 0, VJO_PLACE_READ_SC3,
+     0x0100u},
 };
 #define VERIFIED_N (sizeof(verified) / sizeof(verified[0]))
 

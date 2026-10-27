@@ -11,6 +11,7 @@
 #include "acutest.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 
@@ -422,6 +423,9 @@ static void reset(void)
     memset(site_uid, 0, sizeof(site_uid));
     memset(scratch, 0, sizeof(scratch));
     scratch_lock = 0;
+    sc3_pin = NULL;
+    sc3_table = NULL;
+    sc3_count = 0;
 #if VJO_DEBUG
     dlog = -1;
 #endif
@@ -1790,6 +1794,116 @@ static void test_verified_cells(void)
     TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2);
 }
 
+/* ---- MAGES SC3 sites on the farm's own pages (tools/sc3_charset.py --fixtures) ---- */
+
+typedef struct {
+    const char *title;
+    const char *raw; /* the bytes the farm's hook read at r0, through the string's end token */
+    unsigned n;
+    const char *text; /* the farm's verified text, ruby's base only */
+} Sc3Row;
+#include "fixtures/hook_sc3_farm.inc"
+static const Sc3Row sc3_rows[] = {HOOK_SC3_FARM_ROWS};
+
+/* A committed charset file (third_party/sc3-charsets), as the worker's load reads it into its block. */
+static size_t sc3_file(const char *title, uint8_t *out, size_t cap)
+{
+    char path[512];
+    FILE *f;
+    size_t n;
+    snprintf(path, sizeof path, "%s/third_party/sc3-charsets/%s.sc3", VJO_SOURCE_DIR, title);
+    f = fopen(path, "rb");
+    TEST_ASSERT_(f != NULL, "%s", path);
+    n = fread(out, 1, cap, f);
+    fclose(f);
+    return n;
+}
+
+/* Rubi's real SC3 entries in a fake main module (their NID, bytes at their offset, APP_VER 01.00), the farm's pages
+ * at r0 with other bytes after the end token, as a script buffer has them (zeros, the next string): the stream keeps
+ * the string through its end token, so the bytes after it never make another text; until the charset is set its
+ * text is empty, and the charset is set only from exactly the pinned file (another title's, one byte changed, one
+ * short: refused); then vjo_hooks_text gives the farm's text. A string whose end token is not within the 512 bytes
+ * a hit reads gives no hit; one that ends at its block's end is read (the read stops at the block). */
+static void test_sc3_sites(void)
+{
+    static uint8_t *seg;
+    static uint8_t file[VJO_SC3_MAX_BYTES + 1u], other[VJO_SC3_MAX_BYTES];
+    const uint32_t seg_size = 0x30000u;
+    unsigned titles = 0;
+    const char *last = "";
+    if (!seg) seg = low_map(seg_size, PAGE);
+    TEST_ASSERT(seg != NULL);
+    for (unsigned k = 0; k < HOOK_SC3_FARM_FIXTURES; k++) {
+        const Sc3Row *row = &sc3_rows[k];
+        const VjoPlaceVerified *v;
+        uint32_t frame[16];
+        VjoHookSnap s;
+        char text[1024];
+        size_t n, n_other;
+        uint32_t seq;
+        TEST_ASSERT_(vjo_place_verified(row->title, &v) == 1 && v->read == VJO_PLACE_READ_SC3 &&
+                     v->off + 64u <= seg_size, "%s: its SC3 entry", row->title);
+        titles += strcmp(last, row->title) != 0;
+        last = row->title;
+        reset();
+        memset(seg, 0, seg_size);
+        memcpy(seg + v->off, v->sig, v->sig_len);
+        mod.seg0 = seg;
+        mod.seg0_size = v->off + 64u;
+        mod.nid = v->module_nid;
+        set_sfo("01.00");
+        add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+        vjo_hooks_start(row->title, VJO_TEXT_SOURCE_AUTO, 0);
+        TEST_ASSERT_(n_sites == 1 && site_info[0].ver == v, "%s: its entry is hooked", row->title);
+        TEST_CHECK(vjo_hooks_sc3_want() == vjo_sc3_pin(row->title) && vjo_hooks_sc3_want());
+        /* the page, then zeros and the next string */
+        memcpy(data + 0x100, row->raw, row->n);
+        memcpy(data + 0x100 + row->n + 16u, "\x01\x80\x01\x02\x80\x00\xFF", 7);
+        memset(frame, 0, sizeof frame);
+        frame[0] = a32(data) + 0x100;
+        TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+        TEST_ASSERT_(vjo_hooks_snap(1, &s), "%s: the hit is in its stream", row->title);
+        TEST_CHECK_(s.n == row->n && s.encoding == VJO_HOOK_ENC_SC3 && !memcmp(s.raw, row->raw, row->n),
+                    "%s excerpt %u: the string through its end token (%u B)", row->title, k, (unsigned)s.n);
+        TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) == 0 && !text[0]); /* no charset yet */
+        /* only the pinned file */
+        n = sc3_file(row->title, file, sizeof file);
+        n_other = sc3_file(strcmp(row->title, "PCSG00146") ? "PCSG00146" : "PCSG00352", other, sizeof other);
+        TEST_CHECK(!vjo_hooks_sc3_set(other, (uint32_t)n_other) && vjo_hooks_sc3_want());
+        TEST_CHECK(!vjo_hooks_sc3_set(file, (uint32_t)n - 1u) && !vjo_hooks_sc3_set(NULL, (uint32_t)n));
+        file[VJO_SC3_HEADER + 100u] ^= 1u;
+        TEST_CHECK(!vjo_hooks_sc3_set(file, (uint32_t)n));
+        file[VJO_SC3_HEADER + 100u] ^= 1u;
+        TEST_ASSERT(vjo_hooks_sc3_set(file, (uint32_t)n) && !vjo_hooks_sc3_want());
+        TEST_CHECK_(vjo_hooks_text(&s, text, sizeof text) == strlen(row->text) && !strcmp(text, row->text),
+                    "%s excerpt %u", row->title, k);
+        TEST_MSG("got  [%s]", text);
+        TEST_MSG("want [%s]", row->text);
+        /* other bytes after the end token are the same text: one more hit, no new sequence */
+        seq = s.seq;
+        memset(data + 0x100 + row->n, 0xA5, 8);
+        vjo_hooks_observe(0, frame);
+        TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq == seq && s.hits == 2);
+        /* no end token within 512 bytes: no hit */
+        for (unsigned i = 0; i < VJO_HOOK_RAW_BYTES; i += 2) data[0x400 + i] = 0x80, data[0x401 + i] = 0x01;
+        frame[0] = a32(data) + 0x400;
+        vjo_hooks_observe(0, frame);
+        TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq == seq && s.hits == 2);
+        /* a string that ends at its block's end: the read stops there and keeps it */
+        memcpy(data + DATA_SIZE - row->n, row->raw, row->n);
+        frame[0] = a32(data) + DATA_SIZE - row->n;
+        vjo_hooks_observe(0, frame);
+        TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq == seq && s.hits == 3 && s.n == row->n);
+        TEST_CHECK(!vjo_hooks_sc3_set(NULL, 0) && vjo_hooks_text(&s, text, sizeof text) == 0); /* forgotten */
+        memset(seg + v->off, 0, v->sig_len);
+    }
+    TEST_CHECK_(titles == 3, "excerpts of %u titles", titles);
+    /* a site without an SC3 entry wants no charset */
+    reset();
+    TEST_CHECK(!vjo_hooks_sc3_want() && !vjo_hooks_sc3_set(file, VJO_SC3_HEADER));
+}
+
 static void test_clean_stream_text(void)
 {
     static const struct { unsigned enc; const char *raw; size_t n; } cases[] = {
@@ -1820,6 +1934,7 @@ TEST_LIST = {
     {"a verified entry: deref, its own filter in place of a Luna site's", test_verified_deref_and_filter},
     {"a verified entry's APP_VER: only that version, read without Luna sites", test_verified_version},
     {"a verified entry's page record of cells, at the site's distance", test_verified_cells},
+    {"SC3 sites: the string through its end token, the pinned charset, the farm's text", test_sc3_sites},
     {"the farm's excerpts through each verified entry: its bytes, register, read and filter", test_farm_excerpts},
     {"clean controls from CALL and table-site streams in every encoding", test_clean_stream_text},
     {"exact build SHA-256: whole executable, worker only, safe failure", test_exact_build_identity},

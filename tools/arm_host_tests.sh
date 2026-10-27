@@ -186,14 +186,18 @@ build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 bg build-hooks_engine "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
   -I third_party/acutest/include -I host/tests -I host/tests/hooks_stubs -I host/tests/game_stubs -DVJO_HOST=1 \
   -I third_party/bearssl/inc -I "$BS" \
-  -DVJO_DEBUG="$VJO_DEBUG" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c \
-  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c "$BS/hash/sha2small.c" \
-  "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
+  -DVJO_DEBUG="$VJO_DEBUG" -DVJO_SOURCE_DIR="\"$PWD\"" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c \
+  core/hook_place.c core/hook_stream.c core/hook_luna.c core/hook_re.c core/hook_text.c core/hook_sc3.c core/sfo.c \
+  "$BS/hash/sha2small.c" "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
+# MAGES' SC3 text (core/hook_sc3.c): the span and the decoder in 32-bit arithmetic, on the committed charsets.
+build hook_sc3 -I host/tests -I third_party/bearssl/inc -I "$BS" -DVJO_SOURCE_DIR="\"$PWD\"" \
+  host/tests/test_hook_sc3.c core/hook_sc3.c core/hook_place.c core/hook_luna.c core/hook_re.c core/hook_text.c \
+  "$BS/hash/sha2small.c" "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
-TESTS+=(hook_text hook_luna psp_probe hooks_engine)
+TESTS+=(hook_text hook_luna hook_sc3 psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime

@@ -5,7 +5,8 @@ function(vjo_hook_revision root)
     core/hook_luna.c core/hook_luna.h core/hook_luna_table.inc core/hook_luna_psp.inc
     core/hook_text.c core/hook_text.h core/hook_cp932.inc core/hook_re.c core/hook_re.h
     core/hook_place.c core/hook_place.h core/hook_select.c core/hook_select.h
-    core/hook_stream.c core/hook_stream.h game_ocr/hooks.c game_ocr/hooks.h game_ocr/hooks_observer.S)
+    core/hook_stream.c core/hook_stream.h core/hook_sc3.c core/hook_sc3.h core/hook_sc3_pins.inc
+    game_ocr/hooks.c game_ocr/hooks.h game_ocr/hooks_observer.S)
   set(revision "")
   foreach(path IN LISTS inputs)
     file(SHA256 "${root}/${path}" digest)

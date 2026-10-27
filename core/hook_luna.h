@@ -60,9 +60,12 @@ const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t
 
 /* Reads up to max bytes at the game's address addr into dst, never past the end of
  * the memory block that holds addr. unit 1 or 2: stop after the first NUL unit of
- * that size (copied, and counted); unit 0: read exactly max or nothing. Returns the
- * bytes copied, 0 when the address is not readable. The worker's reader checks the
- * block (sceKernelFindMemBlockByAddr); the host tests' reads a fake memory image. */
+ * that size (copied, and counted); unit 0: read exactly max or nothing; unit
+ * VJO_HOOK_READ_SPAN: max, fewer at the block's end, NUL bytes included (an SC3
+ * string, core/hook_sc3.h, whose end vjo_sc3_span finds). Returns the bytes copied,
+ * 0 when the address is not readable. The worker's reader checks the block
+ * (sceKernelGetMemBlockInfoByAddr); the host tests' reads a fake memory image. */
+#define VJO_HOOK_READ_SPAN 3u
 typedef unsigned (*VjoHookRead)(void *ud, uint32_t addr, void *dst, unsigned max, unsigned unit);
 
 /* The table's sites of title_id (9 characters, e.g. "PCSG00543"), contiguous, in

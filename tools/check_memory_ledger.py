@@ -80,7 +80,7 @@ ITEMS = {
     # job's workspace, capture, line or helpers, so not in the sum (include/vjo_ledger_budget.h)
     "game": ("VJO_BUDGET_GAME_MODULE_PAGES", "VJO_BUDGET_GAME_STACK", "VJO_BUDGET_GAME_WEIGHTS", "VJO_BUDGET_GAME_WORKSPACE",
              "VJO_BUDGET_GAME_CAPTURE", "VJO_BUDGET_GAME_LINE", "VJO_BUDGET_GAME_LM", "VJO_BUDGET_GAME_CASCADE",
-             "VJO_BUDGET_GAME_HELPERS", "VJO_BUDGET_GAME_SHOT"),
+             "VJO_BUDGET_GAME_HELPERS", "VJO_BUDGET_GAME_SHOT", "VJO_BUDGET_GAME_SC3"),
 }
 # Packaged module -> the macro its pages must not exceed.
 MODULE_BUDGETS = {

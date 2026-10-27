@@ -328,6 +328,12 @@
  * text 160,648 -> 160,888 B (2,952 B of room left), normal 151,748 -> 151,988 B (3,660 B), the same pages [measured:
  * the build log's module rows, both builds, the fixes on main 241e09f, whose plugins main 16fa362 keeps; main's rows
  * as above]. No block, thread or allocation. */
+/* MAGES' SC3 text (docs/native-hooks.md "SC3 text": core/hook_sc3.c at -Os, the SC3 read and decode in
+ * game_ocr/hooks.c, the charset's load in game_ocr/main.c, three verified entries and three charset pins in the data
+ * segment): debug text 160,888 -> 162,024 B (1,816 B of room left) and data/bss 35,328 -> 35,624 B, normal 151,988 ->
+ * 153,140 B (2,508 B) and 35,320 -> 35,608 B, the same pages [measured: the build log's module rows, both builds, main
+ * 892cfb9 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameSc3, is in the game pool
+ * below. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
@@ -456,6 +462,10 @@
  * arm-vita-eabi-size on both builds' VitaJPOverlay_Kernel, main 892cfb9 and this change, tools/fast_gate.sh's
  * vitasdk image]. No block, thread or allocation; the worker's API 43 strip is now taken only on a region without a
  * screen yet. */
+/* An SC3 hook's charset open (VJO_GAME_OCR_OPEN_SC3: the path from the caller's title, loader_title, and the open's
+ * size rule) adds 196 B of text in both builds, no data, no buffer: 43,096 -> 43,292 B (debug) and 37,992 ->
+ * 38,188 B (normal), the same pages [measured: the build log's module rows, both builds, main 892cfb9 and this
+ * change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else
@@ -604,10 +614,16 @@
  * 10,403,840 B, API 42 with VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
+/* A MAGES SC3 hook's charset (game_ocr/main.c hooks_sc3_load, "VjoGameSc3"; docs/native-hooks.md "SC3 text"): the
+ * game's glyph table, read at the first job of a game with an SC3 site and held until the worker stops, USER_RW,
+ * page-rounded: its file is at most VJO_SC3_MAX_BYTES (core/hook_sc3.h, 16,384 B: CHAOS;CHILD's 16,032 B take 16,384 B,
+ * STEINS;GATE's 5,364 B and ROBOTICS;NOTES's 6,432 B 8,192 B). Only in those games; held beside every job, so in the
+ * job's worst case: 10,403,840 -> 10,420,224 B. Its load keeps VJO_GAME_RESERVE_HOOK_ONLY free beside it. */
+#define VJO_BUDGET_GAME_SC3 16384u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
                             VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \
-                            VJO_BUDGET_GAME_HELPERS)
+                            VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SC3)
 /* The recognizer ceiling: weights <= 2,502,656 B, the owner's int8 ceiling for the Large tier
  * (2026-10-14 18:09Z: Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB; 2,500,000 B page-rounded;
  * 1,601,536 B, Normal's 1.6 MB, before VOCR5's Large), and a full-screen workspace of at most
