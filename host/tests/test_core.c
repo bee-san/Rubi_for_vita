@@ -923,6 +923,24 @@ static void test_config(void)
     vertical = "ocr_vertical = on\nocr_boost_clock = off\n"; /* neighbours in the parser, not one field */
     vjo_config_parse(&c, vertical, strlen(vertical));
     TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_ON && c.ocr_boost_clock == 0 && !c.n_warnings);
+    /* #358, ocr_wait_hint: on (1) by default, on | off in any case; anything else keeps the value with a warning naming
+     * the setting; it and ocr_boost_clock share their parse, each setting its own field */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_wait_hint == 1);
+    static const struct { const char *text; int hint, clock, warnings; } hint[] = {
+        {"ocr_wait_hint = off\n", 0, 1, 0}, {"OCR_Wait_Hint = OFF\n", 0, 1, 0},
+        {"ocr_wait_hint = off\nocr_boost_clock = off\n", 0, 0, 0}, {"ocr_boost_clock = off\nocr_wait_hint = on\n", 1, 0, 0},
+        {"ocr_wait_hint = off\nocr_wait_hint = 2\n", 0, 1, 1}, {"ocr_wait_hint = maybe\n", 1, 1, 1},
+        {"ocr_wait_hint =\n", 1, 1, 1}, {"ocr_wait_hint = off ; Recognizing only\n", 0, 1, 0},
+        {"ocr_wait_hints = off\n", 1, 1, 1}, {"ocr_wait = off\n", 1, 1, 1}};
+    for (unsigned i = 0; i < sizeof(hint) / sizeof(hint[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, hint[i].text, strlen(hint[i].text));
+        TEST_CHECK_(c.ocr_wait_hint == hint[i].hint && c.ocr_boost_clock == hint[i].clock &&
+                    c.n_warnings == hint[i].warnings, "%s", hint[i].text);
+        if (hint[i].warnings) /* named, never the value */
+            TEST_CHECK(strstr(c.warnings[0], "ocr_wait") != NULL && !strstr(c.warnings[0], "maybe"));
+    }
 
     /* the default file parses cleanly to the defaults */
     {
@@ -947,6 +965,7 @@ static void test_config(void)
         TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
         TEST_CHECK(d.hook_sites == 1 && strstr(t, "\nhook_sites = on\n")); /* audit-hooks F3 */
         TEST_CHECK(d.hook_trust == 1 && strstr(t, "\nhook_trust = on\n")); /* API 43 */
+        TEST_CHECK(d.ocr_wait_hint == 1 && strstr(t, "\nocr_wait_hint = on\n")); /* #358 */
         TEST_CHECK(d.reading_time == 0 && strstr(t, "\nreading_time = adaptive\n"));
         /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
         TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&

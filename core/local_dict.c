@@ -60,6 +60,7 @@ static const char dictionary_changed_error[] VJO_DATA_TABLE(dictionary_changed_e
     "A dictionary file changed. Close and reopen the overlay.";
 
 #ifdef VJO_LOCAL_STATS
+#include <time.h>
 VjoLocalStats vjo_local_stats;
 void (*vjo_local_trace)(int dict, int cand, int depth, const char *key, int outcome);
 static int read_kind;
@@ -67,11 +68,23 @@ static int read_kind;
 #define STAT_ADD(field, n) (vjo_local_stats.field += (uint64_t)(n))
 #define READ_KIND(kind) (read_kind = (kind))
 #define STAT_READ(n) (vjo_local_stats.reads[read_kind]++, vjo_local_stats.bytes[read_kind] += (uint64_t)(n))
+/* The host benchmark's stage clock (local_dict.h VJO_NS_*): STAT_T0 takes a
+ * start, STAT_NS adds the time since it to a stage. */
+static uint64_t stat_now_ns(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec;
+}
+#define STAT_T0(var) uint64_t var = stat_now_ns()
+#define STAT_NS(kind, var) (vjo_local_stats.ns[kind] += stat_now_ns() - (var))
 #else
 #define STAT(field) ((void)0)
 #define STAT_ADD(field, n) ((void)0)
 #define READ_KIND(kind) ((void)0)
 #define STAT_READ(n) ((void)0)
+#define STAT_T0(var) ((void)0)
+#define STAT_NS(kind, var) ((void)0)
 #endif
 
 /* Six bytes a rule (tools/gen_deinflect.py), inside the Shell's module pages:
@@ -761,6 +774,18 @@ static int rank_posting(Workspace *w, Dictionary *d, const Record *r, uint32_t h
     return VJO_OK;
 }
 
+#ifdef VJO_LOCAL_STATS
+static int rank_posting_timed(Workspace *w, Dictionary *d, const Record *r, uint32_t hint, const Query *q,
+                              uint32_t *score)
+{
+    STAT_T0(t);
+    int rc = rank_posting(w, d, r, hint, q, score);
+    STAT_NS(VJO_NS_RANK, t);
+    return rc;
+}
+#define rank_posting rank_posting_timed
+#endif
+
 /* Posting j of a key: v2/v3, the group's 16-byte postings; v1, index record
  * group + j (group is the key's first record). *hint (when asked): v3's last
  * u16, the posting hints rank_posting uses when the file announces them; v2
@@ -956,6 +981,17 @@ static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw
     return w->dicts[di].version >= 2 ? find_matches_v2(w, di, cand, q, limit) : find_matches_v1(w, di, cand, q, limit);
 }
 
+#ifdef VJO_LOCAL_STATS
+static int find_matches_timed(Workspace *w, int di, int c, const char *raw, size_t raw_len, Query *q, int limit)
+{
+    STAT_T0(t);
+    int rc = find_matches(w, di, c, raw, raw_len, q, limit);
+    STAT_NS(VJO_NS_SEARCH, t);
+    return rc;
+}
+#define find_matches find_matches_timed
+#endif
+
 static int deinflect(Workspace *w, const char *key)
 {
     int count = 1;
@@ -1007,6 +1043,17 @@ static int deinflect(Workspace *w, const char *key)
     }
     return count;
 }
+
+#ifdef VJO_LOCAL_STATS
+static int deinflect_timed(Workspace *w, const char *key)
+{
+    STAT_T0(t);
+    int n = deinflect(w, key);
+    STAT_NS(VJO_NS_DEINFLECT, t);
+    return n;
+}
+#define deinflect deinflect_timed
+#endif
 
 static int boundary(uint32_t cp)
 {
@@ -1105,6 +1152,17 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
     res->n_vocab++;
     return VJO_OK;
 }
+
+#ifdef VJO_LOCAL_STATS
+static int append_match_timed(VjoArena *a, Workspace *w, const Match *m, int pos16, int len16, VjoDictResult *res)
+{
+    STAT_T0(t);
+    int rc = append_match(a, w, m, pos16, len16, res);
+    STAT_NS(VJO_NS_ENTRY, t);
+    return rc;
+}
+#define append_match append_match_timed
+#endif
 
 int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                      const char *text, VjoDictResult *res, VjoErr *err)
@@ -1401,9 +1459,16 @@ int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     return vjo_local_lookup_pages(a, p, cfg, text, cursor_byte, 1, NULL, res, err);
 }
 
+/* (the host benchmark wraps it to time the stacked entries' reads: VJO_NS_PAGE) */
+#ifdef VJO_LOCAL_STATS
+static int read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                     const VjoLocalPages *pages, int page,
+                     VjoDictResult *res, VjoErr *err)
+#else
 int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                         const VjoLocalPages *pages, int page,
                         VjoDictResult *res, VjoErr *err)
+#endif
 {
     size_t mark = vjo_arena_mark(a);
     const VjoLocalPage *pg;
@@ -1460,3 +1525,15 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     vjo_arena_release(a, (size_t)((uint8_t *)outmem - a->base) + output.used);
     return VJO_OK;
 }
+
+#ifdef VJO_LOCAL_STATS
+int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                        const VjoLocalPages *pages, int page,
+                        VjoDictResult *res, VjoErr *err)
+{
+    STAT_T0(t);
+    int rc = read_page(a, p, cfg, pages, page, res, err);
+    STAT_NS(VJO_NS_PAGE, t);
+    return rc;
+}
+#endif

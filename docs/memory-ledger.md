@@ -5,6 +5,25 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Why the overlay waits (#358)
+
+The open overlay's wait hint ([text-stability.md](text-stability.md#why-the-overlay-waits-358)) is Shell code and
+data only: the choice of status as a try starts (`shell/worker.c` `start_job_kind`), the count's reset when a region
+is saved (`on_command`), `ocr_wait_hint`'s parse (it
+shares `ocr_boost_clock`'s branch: `core/config.c`) and its field in each `VjoConfig` copy. The hint (153 B) and the
+key (14 B) are in the data segment (`VJO_DATA_TABLE`), and so is "Recognizing…" now (15 B), which gives the Shell's
+code that much room back. No block, thread, stack or allocation; no budget raised. Measured with VitaSDK GCC 15.2.0
+in the pinned image (`tools/fast_gate.sh`'s; `tools/check_memory_ledger.py`'s module rows, text + data/bss), main
+`2f68854` against this change (the same Shell rows on `892cfb9` and `48d6a3b`):
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Shell | 101,988 + 73,200 → 102,092 + 73,408 B | 89,884 + 73,232 → 89,980 + 73,416 B | 176,128 / 163,840 B, unchanged |
+| Kernel, game worker | unchanged | unchanged | unchanged |
+
+The normal Shell keeps 132 B of code room (228 B before) and 312 B of data room (496 B); the debug Shell 308 B and
+320 B.
+
 ## Line finder fixes (API 50, vita-vn-ocr #129) and the pin at f8a1856
 
 **The game worker, in the game's partition only: two text pages more in each game that is ON, in both builds**
