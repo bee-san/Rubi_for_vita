@@ -470,10 +470,10 @@ typedef char vjo_weights_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDG
 typedef char vjo_cascade_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDGET_GAME_CASCADE &&
                                       VJO_VOCR_CASCADE_BYTES <= VJO_VOCR_MAX_BYTES ? 1 : -1];
 
-/* #385's audit F5 (AGENTS.md rule 3): the job's model, LM and cascade model while its core runs (else NULL), whose
- * blocks the core takes after it has fetched lines when they are not resident (with ocr_skip_blank_lines on, the
- * weights at the first line not blank) */
-static const VjoVocrModel *job_model, *job_casc;
+/* #385's audit F5 (AGENTS.md rule 3): the job's model and LM while its core runs (else NULL), whose blocks the core
+ * takes after it has fetched lines when they are not resident (with ocr_skip_blank_lines on, at the first line not
+ * blank) */
+static const VjoVocrModel *job_model;
 static const VjoVocrLm *job_lm;
 static int64_t free_user_after_reserve(void);
 /* A tall-line block of at most this many bytes (a column's bound, the rotation buffer's: every block a job could ask
@@ -486,11 +486,12 @@ typedef char vjo_line_unchecked_check[VJO_GAME_LINE_UNCHECKED <= VJO_VOCR_ROTATE
 
 /* One block for a line taller than a strip (VjoGreySource.line_buffer). A block larger than one column's (the
  * rotation buffer's bound: #379's rectangle of a job's columns, or a rare band of rows) is taken only from what the
- * game has free beyond the job's reserve and the job's blocks still to come, which its memory check counted and the
- * line block is not in (#385's audit F5: the rectangle, up to 504 KiB, cut into a job of columns' 4 MiB reserve, or
- * with the blank-line check took its weights' room, so they were refused and it read the columns' text as rows).
- * Refused, the columns are read one by one, each in a block of its own, as before #379; such a band is left out and
- * counted (tall_skipped). */
+ * game has free beyond the job's reserve and the job's weights still to come, which its memory check counted and the
+ * line block is not in, and for a job of columns its LM's too (#385's audit F5: the rectangle, up to 504 KiB, cut
+ * into a job of columns' 4 MiB reserve, or with the blank-line check took its weights' room, so they were refused and
+ * it read the columns' text as rows). Refused, the columns are read one by one, each in a block of its own, as before
+ * #379; such a band of rows is left out and counted (tall_skipped), so a job of rows keeps no LM's or cascade's room
+ * for it: those blocks keep the reserve themselves, and their refusal only costs the LM's or the cascade's reading. */
 static void *line_buffer(void *ud, size_t bytes)
 {
     void *base = NULL;
@@ -507,9 +508,9 @@ static void *line_buffer(void *ud, size_t bytes)
     if (bytes > VJO_VOCR_LINE_MAX_BYTES) return NULL;
     if (bytes > VJO_GAME_LINE_UNCHECKED) {
         int64_t to_come = PAGE_ROUND(bytes);
-        if (job_model && weights_uid < 0) to_come += PAGE_ROUND(job_model->bytes);
-        if (job_lm && lm_uid < 0) to_come += PAGE_ROUND(job_lm->bytes);
-        if (job_casc && cascade_uid < 0) to_come += PAGE_ROUND(job_casc->bytes);
+        if (job_model && resident.model != job_model) to_come += PAGE_ROUND(job_model->bytes);
+        if (job_lm && lm_res.lm != job_lm && (job_model->finder_mode & VJO_VOCR_FINDER_COLUMNS))
+            to_come += PAGE_ROUND(job_lm->bytes);
         if (free_user_after_reserve() < to_come) return NULL;
     }
     line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, "VjoGameVocrLine", (uint32_t)bytes, LADDER_ALL,
@@ -2352,11 +2353,10 @@ retry_smaller:
     open_cascade = casc != NULL;
     job_model = use; /* #385's audit F5: the blocks the core may still take (line_buffer) */
     job_lm = lm;
-    job_casc = casc;
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
-    job_model = job_casc = NULL;
+    job_model = NULL;
     job_lm = NULL;
     /* #324: the check passed, yet the model's weights could not be had: out of memory before any were read or
      * held (every job-level VJO_E_OOM comes before them: core/vocr_ocr.c's weights block, the finder's arena, the
