@@ -364,6 +364,8 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         next.model_dir[sizeof(next.model_dir)-1] != 0 ||
         next.fallback[sizeof(next.fallback)-1] != 0 || (next.flags & ~VJO_GAME_OCR_F_ALL) ||
         (next.tiers & ~VJO_VOCR_TIERS_ALL) || (next.speed & ~(shot ? VJO_GAME_OCR_S_SHOT_ALL : VJO_GAME_OCR_S_ALL)) ||
+        /* API 47: the vertical field's 3 names no mode, as the game worker refuses it */
+        ((next.speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK) > VJO_GAME_OCR_VERTICAL_AUTO ||
         /* API 31: an OCR job's hook pick is automatic, a stream or OCR only; a shot answers from no text */
         (shot ? !shot_id_ok(next.shot) || (next.flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL)) ||
                     next.tiers || next.hook_pick
@@ -446,10 +448,16 @@ void game_ocr_frame(int64_t now_us)
 
 int vjoOcrTake(VjoGameOcrRequest *out)
 {
-    uint32_t state;
+    uint32_t state, wait_us = 0;
     SceUID pid = ksceKernelGetProcessId();
     int rc, waited = 0;
     ENTER_SYSCALL(state);
+    /* API 49: a shorter wait the caller asks for in out->seq (the trusted hook watch's pace) */
+    if (!out || ksceKernelMemcpyUserToKernel(&wait_us, &out->seq, sizeof(wait_us)) < 0 || !wait_us ||
+        wait_us > TAKE_WAIT_US)
+        wait_us = TAKE_WAIT_US;
+    else if (wait_us < VJO_GAME_OCR_TAKE_WAIT_MIN_US)
+        wait_us = VJO_GAME_OCR_TAKE_WAIT_MIN_US;
     for (;;) {
         int wait;
         VJO_LOCK();
@@ -476,7 +484,7 @@ int vjoOcrTake(VjoGameOcrRequest *out)
         VJO_UNLOCK();
         if (!wait) break;
         waited = 1;
-        event_wait(MEV_JOB, TAKE_WAIT_US);
+        event_wait(MEV_JOB, wait_us);
     }
     EXIT_SYSCALL(state);
     return rc;
@@ -550,6 +558,39 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     if (pid <= 0 || pid != request_pid) rc = VJO_ERR_PERM;
     else if (!valid || !claimed || req.seq != request.seq || req.size != sizeof(req)) rc = VJO_ERR_ARG;
     else if (cancelled || !registration_current(pid)) rc = VJO_ERR_CANCELLED;
+    else if (req.flags & VJO_ROWS_HOOK) {
+        /* API 49: a trusted answer's capture, without pixels: the trusted line's scene, while the region shows
+         * it (the tracker keeps a hooked line's number until the region shows another screen). API 51: once the
+         * region shows another (a menu over the line, a larger change after it drew), the region's current
+         * scene. The answer is the trusted hook's last line whatever the screen shows, so the first pass API 49
+         * read there decided nothing and cost the game a strip beside a 1 MiB reserve, which a game with 1 MiB
+         * free refused. No signature: region_scene never matches it, so the result stands for that scene alone.
+         * Only a region without a screen yet (scene_reset, no trusted line since) is refused, and the worker
+         * reads the pass. */
+        const int line = g.hook_scene && g.hook_scene == g.tracker.id && g.tracker.hook_us;
+        if (req.flags != VJO_ROWS_HOOK || req.n || req.y || dst || req.dst_stride ||
+            (request.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))
+            rc = VJO_ERR_ARG;
+        else if (!line && (!g.tracker.id || !g.tracker.ref.w))
+            rc = VJO_ERR_FORMAT;
+        else {
+            span = g.capture_scene = g.tracker.id; /* span: the scene, for the log line */
+            g.crop_w = request.width;
+            g.crop_h = request.height;
+            g.capture_sig.w = 0;
+            g.region_seq = request.capture_seq;
+            g.region_us = ksceKernelGetSystemTimeWide();
+            g.done_seq = request.capture_seq;
+            rc = 1; /* published: the event below */
+        }
+        VJO_UNLOCK();
+        if (rc == 1) {
+            ksceKernelSetEventFlag(g.evf, VJO_EV_CAPTURE_DONE);
+            klog_d("ocr job %u: trusted hook's capture, scene %u%s", req.seq, span, line ? "" : ", the region's");
+            rc = 0;
+        }
+        goto out; /* no rows: the info says none were armed */
+    }
     else if (!req.n || req.n > VJO_GAME_OCR_ROWS_MAX || req.y >= request.height || req.n > request.height - req.y ||
              req.dst_stride < request.width * bpp || req.dst_stride > VJO_MAX_W * bpp ||
              (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_RGBA)) ||
@@ -857,6 +898,7 @@ static uint32_t model_size(const char *name)
     if (!strcmp(name, "H15_w8.vocr")) return VJO_VOCR_H15_BYTES;
     if (!strcmp(name, "F20_w8.vocr")) return VJO_VOCR_F20_BYTES;
     if (!strcmp(name, VJO_VOCR4_W20_NAME)) return VJO_VOCR_CASCADE_BYTES;
+    if (!strcmp(name, VJO_VOCR5_V_NAME)) return VJO_VOCR5_V_BYTES;
     return 0;
 }
 
@@ -961,7 +1003,8 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
      * or (API 20) a pinned LM up to the tier the request allows, or the
      * cascade's pinned model when the request gives it a time ceiling; or (API 21,
      * a request by tiers) the pinned model of one of its tiers, or of the tier
-     * above them for the cascade, by its tier. */
+     * above them for the cascade, by its tier; or (API 47) the vertical model,
+     * for a request with a VJO_GAME_OCR_S_VERTICAL mode (on or auto), by tiers or by name. */
     uint32_t size, lm_tier = which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE
                              ? which - VJO_GAME_OCR_OPEN_LM + 1u : 0u;
     uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
@@ -973,12 +1016,17 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     } else if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
         lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
     else if (model_tier && tier_allowed(&request, model_tier)) name = tier_name(model_tier);
+    else if (which == VJO_GAME_OCR_OPEN_VERTICAL && (request.speed & VJO_GAME_OCR_S_VERTICAL))
+        name = VJO_VOCR_VERTICAL_NAME;
     else if (request.tiers) return VJO_ERR_ARG; /* a request by tiers names no model of its own */
     else if (which == VJO_GAME_OCR_OPEN_MODEL) name = request.model;
     else if (which == VJO_GAME_OCR_OPEN_FALLBACK) name = request.fallback;
     else if (which == VJO_GAME_OCR_OPEN_CASCADE &&
              ((request.flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK)) name = VJO_VOCR_CASCADE_NAME;
     else return VJO_ERR_ARG;
+    /* API 47: the vertical model opens by its own open only (a request with a vertical mode), never by the name
+     * a request gives as its model or fallback */
+    if (which != VJO_GAME_OCR_OPEN_VERTICAL && !strcmp(name, VJO_VOCR_VERTICAL_NAME)) return VJO_ERR_ARG;
     size = gate ? VJO_VOCR_GATE_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;
@@ -1132,10 +1180,12 @@ static int hook_cache_locked(SceUID pid, uint32_t seq, uint32_t operation, void 
  * pixels settle (0). A line reported while the last one is still drawing (lines in quick succession: a
  * skip, clicks through the typing) wakes no one (1): it is read once the region settles, as without the
  * watch, so a skip reads no line it passes. Never during a job: a capture begun since is the line's
- * own. seq and bytes (the stream's sequence and raw length) are only logged. */
+ * own. seq and bytes (the stream's sequence and raw length) are only logged. API 49: a trusted source's
+ * line (VJO_HOOK_LINE_TRUSTED in bytes) is read at once, drawing or not: its text needs no pixels, and its
+ * scene is g.hook_scene (VjoState.hook_scene, VJO_ROWS_HOOK). */
 int vjoOcrHookLine(uint32_t seq, uint32_t bytes)
 {
-    uint32_t state, scene = 0;
+    uint32_t state, scene = 0, trusted = bytes & VJO_HOOK_LINE_TRUSTED;
     SceUID pid = ksceKernelGetProcessId();
     int rc;
     ENTER_SYSCALL(state);
@@ -1144,14 +1194,17 @@ int vjoOcrHookLine(uint32_t seq, uint32_t bytes)
     if (!registration_current(pid) || ksceKernelGetThreadId() != worker_thread) rc = VJO_ERR_PERM;
     else if (claimed) rc = VJO_ERR_BUSY;
     else {
-        rc = scene_hook_drawing(&g.tracker) ? 1 : 0;
+        rc = scene_hook_drawing(&g.tracker) && !trusted ? 1 : 0;
         scene_hook(&g.tracker, ksceKernelGetSystemTimeWide());
         g.region_seq = 0;
         scene = g.tracker.id;
+        g.hook_scene = trusted ? scene : 0;
     }
     VJO_UNLOCK();
     if (!rc) ksceKernelSetEventFlag(g.evf, VJO_EV_REGION_QUIET);
-    if (rc >= 0) klog_d("hook line: seq %u, %u bytes, scene %u%s", seq, bytes, scene, rc ? ", no wakeup" : "");
+    if (rc >= 0)
+        klog_d("hook line: seq %u, %u bytes, scene %u%s%s", seq, bytes & ~VJO_HOOK_LINE_TRUSTED, scene,
+               trusted ? ", trusted" : "", rc ? ", no wakeup" : "");
     EXIT_SYSCALL(state);
     return rc;
 }

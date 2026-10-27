@@ -229,6 +229,12 @@ int vjo_hook_select_restore(VjoHookSelect *st, const VjoHookLearned *saved)
     st->locked_encoding = saved->encoding;
     st->interval = saved->interval;
     st->confirm = 1;
+#if VJO_HOOK_TRUST_INTERVAL > 8u
+    /* API 49: saved at the trusted interval only while it was trusted (vjo_hook_select_learned): trusted again at
+     * once, without the confirmation OCR read a restored source otherwise gets (vjo_hook_select_trusted ignores
+     * confirm; with hook_trust = off the confirmation runs as before) */
+    st->strong = saved->interval >= VJO_HOOK_TRUST_INTERVAL;
+#endif
     return 1;
 }
 
@@ -236,7 +242,11 @@ int vjo_hook_select_learned(const VjoHookSelect *st, VjoHookLearned *out)
 {
     if (out) *out = (VjoHookLearned){0};
     if (!st || !st->interval) return 0;
-    if (out) *out = (VjoHookLearned){st->locked_site, st->locked_key, st->locked_encoding, st->interval};
+    uint32_t interval = st->interval;
+#if VJO_HOOK_TRUST_INTERVAL > 8u
+    if (interval >= VJO_HOOK_TRUST_INTERVAL && !st->strong) interval = VJO_HOOK_TRUST_INTERVAL / 2u; /* API 49 */
+#endif
+    if (out) *out = (VjoHookLearned){st->locked_site, st->locked_key, st->locked_encoding, interval};
     return 1;
 }
 
@@ -292,6 +302,32 @@ uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookC
     st->shown_hash = h;
     st->unchecked++;
     if (flags) *flags = VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR | (k->site ? VJO_HOOK_R_SITE : 0u);
+    return k->id;
+}
+
+uint32_t vjo_hook_select_trusted(VjoHookSelect *st, uint32_t pick, const VjoHookCand *c, unsigned n,
+                                 uint32_t *flags)
+{
+    const VjoHookCand *k = NULL;
+    if (flags) *flags = 0;
+    if (!st || (!c && n) || pick != VJO_HOOK_PICK_AUTO) return 0;
+    /* A site whose recipe passed installation's checks (Luna's version and placement; Rubi's module NID and
+     * recorded bytes): the newest text among them, as Luna's sites answer in vjo_hook_select_before. */
+    for (unsigned i = 0; i < n; i++) {
+        if (!(c[i].site & VJO_HOOK_CAND_SITE) || !((c[i].site & VJO_HOOK_CAND_LUNA) || c[i].verified) ||
+            !has_text(&c[i])) continue;
+        if (!k || (int32_t)(c[i].seq - k->seq) > 0 || (c[i].seq == k->seq && c[i].id < k->id)) k = &c[i];
+    }
+    if (k) {
+        if (flags) *flags = VJO_HOOK_R_TRUSTED | VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR;
+        return k->id;
+    }
+    /* The learned source once it has agreed with OCR often enough, and closely at the trusted interval (strong); a
+     * pending disagreement first needs its comparison (vjo_hook_select_before and _after, which reset the interval
+     * to 8 on a match). */
+    if (st->interval < VJO_HOOK_TRUST_INTERVAL || !st->strong || st->misses || !(k = locked_cand(st, c, n))) return 0;
+    st->locked = k->id; /* a restored source, or the same source in a different runtime slot */
+    if (flags) *flags = VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR | (k->site ? VJO_HOOK_R_SITE : 0u);
     return k->id;
 }
 
@@ -397,8 +433,11 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
                 st->confirm = st->misses = 0;
                 st->shown_hash = hh;
                 st->locked_seq = locked->seq;
+                /* API 43: trust needs an agreement this close at the trusted interval (vjo_hook_select_trusted) */
+                if (lscore >= VJO_HOOK_TRUST_SCORE && st->interval >= VJO_HOOK_TRUST_INTERVAL) st->strong = 1;
             } else {
                 st->confirm = 1;
+                st->strong = 0;
                 if (++st->misses >= VJO_HOOK_UNLOCK_MISSES) {
                     unlock(st);
                     f |= VJO_HOOK_R_UNLOCK;

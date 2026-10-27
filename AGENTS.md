@@ -48,6 +48,17 @@ PNG ABI and artwork, and the memory ledger), and, when a packaging file changed
 (`tools/ci_scope.py`), both release zips through `tools/e2e_package.py`. On the 64-core fleet box it
 takes about 3-5 minutes (the first run also builds the two images).
 
+It also runs what CI cannot: the host suites with the pinned release models (lane `models`: the debug
+build with `VJO_VOCR_MODEL_DIR`, every suite that reads the build). CI has no models, so their
+real-model checks run nowhere else: #335's host tests failed only with the models, and nobody saw it until
+a release check ran them. The lane runs when `VJO_VOCR_MODEL_DIR`, else the gate's cache
+(`~/.cache/rubi-fast-gate/models`; `RUBI_GATE_CACHE` moves the cache), holds every pinned model the tests
+read at its size and SHA-256 (`python3 tools/prepare_ocr.py --backend vocr-tests --check --output DIR`);
+otherwise its line is `SKIP models` with what is missing. `--models on` fetches the missing ones into the
+cache first (the releases' public downloads, each checked) and fails the gate if it cannot.
+
+- **On the fleet box every merge gate runs the models lane.** Its cache holds the models, so the line
+  must read `PASS models`; `SKIP models` there is not a pass: run the gate again with `--models on`.
 - **PASS: merge.** `gh pr merge -R bee-san/Rubi_for_vita --squash --delete-branch`, no `--admin`. Paste
   the `FAST GATE` line and the lane lines into the PR body. If branch protection requires checks, stop
   and tell the conductor.

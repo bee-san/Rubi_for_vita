@@ -111,12 +111,12 @@ for the measured results and remaining hardware checks.
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
 **Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.7/Rubi-0.9.7.zip)
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.8/Rubi-0.9.8.zip)
 and extract it.
 
 ### 1. Transfer modules
 
-Using VitaShell FTP, transfer the files from `Rubi-0.9.7/ur0/tai/` to `ur0:tai/` on the Vita:
+Using VitaShell FTP, transfer the files from `Rubi-0.9.8/ur0/tai/` to `ur0:tai/` on the Vita:
 
 - `VitaJPOverlay_Kernel.skprx`
 - `VitaJPOverlay_OCR.suprx`
@@ -143,13 +143,13 @@ If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the en
 
 ### 3. Transfer data files for the plugin
 
-Transfer `Rubi-0.9.7/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+Transfer `Rubi-0.9.8/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
 as `ur0:data/VitaJPOverlay`.
 
 ### 4. Transfer data files for OCR and the dictionary
 
 **This is a separate folder, not a duplicate of step 3.** Transfer
-`Rubi-0.9.7/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+`Rubi-0.9.8/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
 as `ux0:data/VitaJPOverlay`.
 
 If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
@@ -158,7 +158,7 @@ and keep your existing settings file when copying the data.
 ### 5. Transfer and install the VPK / companion app
 
 Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
-top-right corner of its LiveArea page. Transfer `Rubi-0.9.7/Rubi.vpk` to the Vita and install
+top-right corner of its LiveArea page. Transfer `Rubi-0.9.8/Rubi.vpk` to the Vita and install
 (promote) it with VitaShell. Accept the installation and extended-permissions prompts.
 
 ### 6. Reboot the Vita
@@ -373,8 +373,19 @@ reported console run. The behaviour below is checked on the host.
   Automatic; **OCR only** (`ocr`) installs none. PSP games still use OCR only.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
-- **What is shown.** Nonempty Luna hook text is preferred immediately, including short or unchanged
-  lines, without initial or periodic OCR checks. With multiple Luna streams, the newest wins.
+- **Trusted hooks replace OCR** (the Rubi app's OCR & lookup page, `hook_trust` in `config.ini`, on by default,
+  applies when the overlay next opens): a hook Rubi trusts gives the line with no OCR at all, no model read and
+  no OCR memory kept back for it, so a game short of memory still gets its lines. Trusted: LunaTranslator's and
+  Rubi's own verified sites from their first line, and a string copy (or any other hook) once it has agreed
+  with OCR four times, on four different lines. OCR comes back by itself when no trusted hook has text (or a
+  string copy's caller is replaced). The price: a screen the hook did not copy (a choice menu, the backlog)
+  shows the hook's last line. `hook_trust = off` checks every hook with OCR as 0.9.7 did, below
+  ([details](native-hooks.md#trusted-hooks-api-43)). A trusted line is also read at once (API 49): within 16 ms of
+  the game's copy, without waiting for the screen to settle or the line to finish typing, so L + R opens on it with
+  its first word looked up, and the open overlay shows each new line as it starts
+  ([details](native-hooks.md#no-wait-for-a-trusted-line-api-49)).
+- **What is shown** with `hook_trust = off`. Nonempty Luna hook text is preferred immediately, including short
+  or unchanged lines, without initial or periodic OCR checks. With multiple Luna streams, the newest wins.
   When Luna supplies no text, regular hooks use the following validation and cache.
   A regular hook first agrees with OCR on two different dialogue lines (70 % normalized
   similarity, four characters at least). It then answers seven new readings without OCR and checks the
@@ -461,13 +472,18 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 On the **OCR & lookup** page, select a row with Up/Down. Enter
 or touch a row changes its choice: the Model size, **Read text**, the **Speed boost while
 reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, how many
-dictionaries are shown, or the **Text source** (the last card: [native text hooks](#native-text-hooks)).
-Touch a size, a Read text choice, a number or a Text source choice to choose it directly;
+dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
+switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
+and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
+and **Vertical text** (`ocr_vertical`, the last card: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
-Automatically/Only when I press on Read text, OFF/ON on the Speed boost and selection cards,
-Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, or Automatic/Every
+Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection and two skip cards,
+Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, Automatic/Every
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
-as a game's worker reads it then). The page is taller
+as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
+overlay's next open: Automatic, the default, reads columns where the text box holds vertical text
+and rows elsewhere; ON reads columns in every game). The page is taller
 than the screen: it scrolls a card at a time to keep the selected one whole, the next card shows
 at the bottom, a bar at the right shows where the view is, and a touch on a card cut at the
 bottom only scrolls it into view. Read text (`ocr_mode`, [Use in a game](#use-in-a-game)) reads
@@ -721,17 +737,36 @@ Refined lines are read wider: on the
 host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 22-23 ms more per line found with VOCR3-H15 on the console
 ([finder refinement](vita-vn-ocr.md#finder-refinement-api-20)).
-`ocr_text_gate = on` puts vita-vn-ocr #100's text-presence gate in front of the finder: a region it says holds
-no text (the game hid its text box, a CG screen) returns no line, so no junk is read off the picture. On
-vita-vn-ocr's test sets and CLANNAD it changed no text read; it costs an estimated 0.1 s per job, so it is off
-until a console run shows how often it helps
-([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)).
+`ocr_vertical = auto` (the default; the Rubi app's **Vertical text**) reads Japanese set in columns, right to
+left, with vita-vn-ocr's vertical model, where the line finder's rows in the region look like vertical text, and
+rows everywhere else, as `off` does; `on` reads columns in every game. Draw the text box around the columns. On
+the host it read a vertical PS Vita VN's dialogue at 4.5-23 % CER, depending on how the box is drawn, and changed
+no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console).
+`ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
+#100's text-presence gate in front of the finder: a region it says holds no text (the game hid its text box, a CG
+screen) returns no line, so nothing is recognized and no junk is read off the picture. It stays off because it also
+stops a few real lines, mostly very short ones (measured on the host on 46 games' hooked pages: lines OCR would
+have read, 0.004-0.17 % of all, by platform and region); it costs an estimated 0.1 s per job at the game's clock
+([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)). Those figures are with the frozen finder's
+lines: the gate scores the lines the finder returns, and with `ocr_line_fix = on` (API 50) it scores the fixed
+finder's, which has not been measured.
 `ocr_head_gate = on`, the default, lets the recognizer skip its output layer on the frames vita-vn-ocr #117's
 head gate calls blank, about three in five, and (Normal and Large) compute its rare characters only on the frames
 that may need one, the two-level head: an estimated 0.12 / 0.20 / 0.26 s less per 3-line box at 333 MHz (Small /
 Normal / Large), with no development score resolved worse; nothing of it has run on a console yet. `gate` and
 `two_level` keep one of the two; `off` reads every frame with the full head, as before API 42
 ([head gate and two-level head](vita-vn-ocr.md#head-gate-and-two-level-head-api-42)).
+`ocr_line_fix = on`, the default, runs the line finder with vita-vn-ocr #129's column fix: a line's parts across a
+full-width space stay one line. On the owner's hooked PS Vita and PSP pages (host, measured), this takes the
+whole-dialogue error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34%. It gains as
+much on regions drawn tight.
+
+- `junk` also stops box frames and ornaments from being read as lines. It is for regions drawn a few pixels outside
+  the text, because in a tight region it can drop a real line.
+- `all` is `junk` plus a split of two touching rows (Narcissu), so it is for regions drawn with a margin too.
+- `off` is the frozen finder
+  ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)).
+
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own
@@ -913,10 +948,11 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 180,224 B of module pages (188,416 B in the debug build; API 31's native hooks and
+holds the worker's 192,512 B of module pages (200,704 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
-API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B and API 42's head gate and
-two-level head 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
+two-level head 8,192 B, API 47's vertical text 4,096 B and API 50's line finder fixes with vita-vn-ocr f8a1856's
+runtime 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
@@ -970,9 +1006,10 @@ the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
 (VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
 `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
-(VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
-`vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm`
-(release v0.2.6-ctclm.2)<!-- end of the names -->.
+(VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5, release
+v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+`vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
+(release v0.3.7-lm6.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,
 when the request sets a cascade ceiling, the next size up, each by its size,
 never by a name or a path. A request by name (the host tools) opens only its own
@@ -1137,8 +1174,10 @@ cmake --build build/vita --target release
 ```
 
 `bash tools/fast_gate.sh` runs all of CI's checks at once, in containers it builds once (docker or
-podman; `tools/gate/`): both builds' host suites (`ctest -j`), the ARM lane, both Vita builds with
-their checks and, when the package's files changed, the package e2e. It is the merge gate
+podman; `tools/gate/`): both builds' host suites (`ctest -j`), the ARM lane, both Vita builds with their checks
+and, when the package's files changed, the package e2e. Where it finds the pinned release models
+(`VJO_VOCR_MODEL_DIR`, else its cache; `python3 tools/prepare_ocr.py --backend vocr-tests --output DIR` fetches
+them), it also runs the host suites with them, which CI cannot (the `models` lane). It is the merge gate
 ([AGENTS.md](https://github.com/bee-san/Rubi_for_vita/blob/main/AGENTS.md#merge-gate-binding-owner-2026-10-26)); its comments list its options.
 `ctest -j` is safe: each test has a `TMPDIR` of its own, and the tools' Python suites are one test
 per module (`tools_<module>`).
@@ -1263,7 +1302,8 @@ its entries; its kanji lines: Bee's Ultimate Kanji Dictionary (Jiten and KANJIDI
 CC BY-SA 4.0; its grammar summaries: written from Bee's Ultimate Grammar Dictionary, whose
 sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0)
 ([attribution](plaintext-attribution.txt)). The beam + LM decoder's character
-LMs (bee-san/vita-vn-ocr v0.2.6-ctclm.2): CC BY-SA 4.0, with their sources and changes in
+LMs (bee-san/vita-vn-ocr v0.3.7-lm6.2; the 1 MB and 4 MB ones also carry n-gram counts of the owner's
+hooked console captures): CC BY-SA 4.0, with their sources and changes in
 `ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' VOCR5 recognizers
 (bee-san/vita-vn-ocr v0.3.0, with their head gates and two-level heads in v0.3.6-head2level.1) were trained in
 part on NVIDIA's OCR-Synthetic-Multilingual-v1

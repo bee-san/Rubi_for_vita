@@ -129,10 +129,11 @@ class FrozenPlaintext(unittest.TestCase):
         vocr3 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())
                  for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr")}
         lms = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())
-               for name in ("vocr_lm_o3_500k.vlm", "vocr_lm_o3_4000k.vlm")}
+               for name in ("vocr_lm_o3_500k.vlm", "vocr_lm6_o3_4000k.vlm")}
         vocr4 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR4_ASSETS}
         vocr5 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5_ASSETS}
-        for name in (*pins, *vocr3, *lms, *vocr4, *vocr5):
+        vocr5v = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5V_ASSETS}
+        for name in (*pins, *vocr3, *lms, *vocr4, *vocr5, *vocr5v):
             (models / name).write_bytes(payload)
         (models / "ATTRIBUTION.md").write_text("CC BY-SA 4.0 fixture")
         att = {"ATTRIBUTION.md": ("fixture", 20, hashlib.sha256(b"CC BY-SA 4.0 fixture").hexdigest())}
@@ -142,13 +143,16 @@ class FrozenPlaintext(unittest.TestCase):
         gate = {release.VOCR_GATE_MODEL: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())}
         (models / "GATE-ATTRIBUTION.md").write_text("gate fixture")
         gate_att = {"GATE-ATTRIBUTION.md": ("fixture", 12, hashlib.sha256(b"gate fixture").hexdigest())}
+        (models / "VERTICAL-ATTRIBUTION.md").write_text("vertical fixture")
+        vertical_att = {"VERTICAL-ATTRIBUTION.md": ("fixture", 16, hashlib.sha256(b"vertical fixture").hexdigest())}
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
              mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
              mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
              mock.patch.object(release, "VOCR_GATE_ASSETS", gate), mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
+             mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
-             mock.patch.object(release, "VOCR5_ASSETS", vocr5), \
+             mock.patch.object(release, "VOCR5_ASSETS", vocr5), mock.patch.object(release, "VOCR5V_ASSETS", vocr5v), \
              mock.patch.object(convert, "convert", side_effect=AssertionError("No packaging conversion")), \
              mock.patch.object(prepare.subprocess, "run", side_effect=AssertionError("No packaging fetch")), \
              contextlib.redirect_stdout(io.StringIO()):

@@ -391,9 +391,25 @@ void vjo_platform_vita(VjoPlatform *p)
 /* A JPEG of a real one's size, the median of the 294 Vita screens at quality 70 (docs/anki.md), so that a
  * Shell that read it would show in its arena's peak: a JFIF start, bytes no marker, its end. */
 #define SHOT_JPEG_BYTES 56934u
-static uint8_t shot_jpeg[SHOT_JPEG_BYTES];
+static uint8_t shot_jpeg_fake[SHOT_JPEG_BYTES];
+/* The JPEG the fake game worker writes: the fake above, or (the restart steps, VJO_TEST_SHOT_JPEG=FILE) a file's,
+ * the actual game worker's JPEG of a frame (host/tests/test_card_screenshot.py chains the two). */
+static uint8_t *shot_jpeg = shot_jpeg_fake;
+static size_t shot_jpeg_bytes = SHOT_JPEG_BYTES;
+static int load_shot_jpeg(const char *path)
+{
+    static uint8_t real[VJO_GAME_OCR_SHOT_MAX];
+    FILE *f = fopen(path, "rb");
+    size_t n = f ? fread(real, 1, sizeof(real), f) : 0;
+    if (f) fclose(f);
+    if (n < 4 || n >= sizeof(real) || real[0] != 0xFF || real[1] != 0xD8) return -1;
+    shot_jpeg = real;
+    shot_jpeg_bytes = n;
+    return 0;
+}
 static void make_shot_jpeg(void)
 {
+    uint8_t *shot_jpeg = shot_jpeg_fake;
     static const uint8_t head[] = {0xFF, 0xD8, 0xFF, 0xE0, 0, 16, 'J', 'F', 'I', 'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0};
     memcpy(shot_jpeg, head, sizeof(head));
     for (size_t i = sizeof(head); i < SHOT_JPEG_BYTES - 2; i++)
@@ -449,7 +465,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
         snprintf(final, sizeof(final), VJO_ANKI_QUEUE_DIR "/%s.jpg", r->shot);
         snprintf(path, sizeof(path), "%s.tmp", final);
         TEST_ASSERT((f = fopen(path, "wb")) != NULL);
-        TEST_ASSERT(fwrite(shot_jpeg, 1, sizeof(shot_jpeg), f) == sizeof(shot_jpeg));
+        TEST_ASSERT(fwrite(shot_jpeg, 1, shot_jpeg_bytes, f) == shot_jpeg_bytes);
         TEST_ASSERT(fclose(f) == 0);
         crash_at("jpeg_tmp"); /* written, not yet named: a stop during the kernel's save (#161) */
         TEST_CHECK_(stat(final, &st) < 0, "a screenshot asked for over an existing %s", final);
@@ -478,7 +494,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     out->shot_quality = 70;
     out->shot_tries = 1;
     out->shot_block = VJO_BUDGET_GAME_SHOT;
-    out->shot_bytes = shot_job_rc ? 0 : (uint32_t)sizeof(shot_jpeg);
+    out->shot_bytes = shot_job_rc ? 0 : (uint32_t)shot_jpeg_bytes;
     out->n_steps = 1;
     out->step[0].id = VJO_GSTEP_SHOT;
     out->step[0].rc = shot_job_rc;
@@ -1559,7 +1575,7 @@ static void test_enter_saves_the_screenshot_beside_the_card(void)
     only_id(id);
     TEST_CHECK(!strcmp(id, shot_id)); /* the shot named the card's record */
     TEST_CHECK((json = queue_file(id, "json", &len)) && strstr(json, "\"picture\":true"));
-    TEST_CHECK((jpg = queue_file(id, "jpg", &len)) && len == sizeof(shot_jpeg) && !memcmp(jpg, shot_jpeg, len));
+    TEST_CHECK((jpg = queue_file(id, "jpg", &len)) && len == shot_jpeg_bytes && !memcmp(jpg, shot_jpeg, len));
     TEST_CHECK(shot_jobs == 1 && shot_reads == 1 && slot_begins == 1 && slot_ends == 1);
     TEST_CHECK(shot_speed == VJO_GAME_OCR_S_TRIM); /* API 32: its black bars trimmed (the default) */
     TEST_CHECK(!heap_live && heap_allocs == 1 && heap_frees == 1 && heap_last == ANKI_TEXT_MEM);
@@ -1701,7 +1717,7 @@ static void test_an_interrupted_saves_jpeg_is_replaced(void)
     enter(0);
     TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && shot_jobs == 2);
     TEST_CHECK(files_ending(".json") == 1 && files_ending(".jpg") == 1);
-    TEST_CHECK((jpg = queue_file(id, "jpg", &len)) && len == sizeof(shot_jpeg) && !memcmp(jpg, shot_jpeg, len));
+    TEST_CHECK((jpg = queue_file(id, "jpg", &len)) && len == shot_jpeg_bytes && !memcmp(jpg, shot_jpeg, len));
     finish();
 }
 
@@ -1824,6 +1840,9 @@ static int restart_step(int argc, char **argv)
     fixture();
     if (!strncmp(what, "save-shot", 9)) {
 #ifdef VJO_WITH_VOCR
+        const char *real = getenv("VJO_TEST_SHOT_JPEG"); /* the actual game worker's JPEG (test_card_screenshot.py) */
+        if (real && load_shot_jpeg(real) < 0)
+            return 2;
         cfg.anki_screenshot = 1;
         what = what[9] ? "save-other" : "save";
 #else

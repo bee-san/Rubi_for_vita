@@ -39,6 +39,9 @@ class PackageModels(unittest.TestCase):
         self.vocr5 = b"tiny VOCR5 asset fixture, not OCR weights!!"
         vocr5_spec = ("https://fixture.invalid/VOCR5", len(self.vocr5), hashlib.sha256(self.vocr5).hexdigest())
         vocr5 = {name: vocr5_spec for name in prepare.VOCR5_ASSETS}
+        self.vertical = b"tiny VOCR5-V asset fixture, not OCR weights"
+        vocr5v = {name: ("https://fixture.invalid/VOCR5V", len(self.vertical), hashlib.sha256(self.vertical).hexdigest())
+                  for name in prepare.VOCR5V_ASSETS}
         self.attribution = b"CC BY-SA 4.0 fixture"
         att = {prepare.VOCR_LM_ATTRIBUTION: ("https://fixture.invalid/A", len(self.attribution),
                                              hashlib.sha256(self.attribution).hexdigest())}
@@ -54,12 +57,16 @@ class PackageModels(unittest.TestCase):
             "https://fixture.invalid/G", len(self.gate), hashlib.sha256(self.gate).hexdigest())}))
         self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
             "https://fixture.invalid/GA", len(self.gate_attribution), hashlib.sha256(self.gate_attribution).hexdigest())}))
+        self.vertical_attribution = b"the vertical model's attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
+            "https://fixture.invalid/V", len(self.vertical_attribution), hashlib.sha256(self.vertical_attribution).hexdigest())}))
         for module in (prepare, release):
             self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
             self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
             self.enterContext(mock.patch.object(module, "VOCR_LM_ASSETS", lms))
             self.enterContext(mock.patch.object(module, "VOCR4_ASSETS", vocr4))
             self.enterContext(mock.patch.object(module, "VOCR5_ASSETS", vocr5))
+            self.enterContext(mock.patch.object(module, "VOCR5V_ASSETS", vocr5v))
         self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
                                           side_effect=AssertionError("No test network access")))
 
@@ -67,6 +74,8 @@ class PackageModels(unittest.TestCase):
         """The fixture bytes setUp pins a recognizer's release table to (its asset's own)."""
         if name in prepare.VOCR5_ASSETS:
             return self.vocr5
+        if name in prepare.VOCR5V_ASSETS:
+            return self.vertical
         if name in prepare.VOCR3_ASSETS or name in prepare.VOCR4_ASSETS:
             return self.vocr3
         return self.legacy
@@ -82,10 +91,13 @@ class PackageModels(unittest.TestCase):
             (self.models / name).write_bytes(self.vocr3)
         for name in prepare.VOCR5_ASSETS:  # the model sizes'
             (self.models / name).write_bytes(self.vocr5)
+        for name in prepare.VOCR5V_ASSETS:  # the vertical model (ocr_vertical)
+            (self.models / name).write_bytes(self.vertical)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution or self.attribution)
         (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(self.model_attribution)
         (self.models / prepare.VOCR_GATE_MODEL).write_bytes(self.gate)
         (self.models / prepare.VOCR_GATE_ATTRIBUTION).write_bytes(self.gate_attribution)
+        (self.models / prepare.VOCR_VERTICAL_ATTRIBUTION).write_bytes(self.vertical_attribution)
 
     def package_fixture(self, settings=None, write_models=True, vpk=b"synthetic package fixture", record=None):
         """The release package of a synthetic base archive and the fixture models (written first
@@ -160,7 +172,8 @@ class PackageModels(unittest.TestCase):
                 self.assertIn(release.DATA + "ocr/" + name, manifest["files"])
                 self.assertIn(name, manifest["models"])
                 self.assertEqual(archive.read(release.DATA + "ocr/" + name), self.fixture_of(name))
-            self.assertEqual(sorted(manifest["models"]), sorted({*sizes, *prepare.VOCR_LM_ASSETS, prepare.VOCR_GATE_MODEL}))
+            self.assertEqual(sorted(manifest["models"]), sorted({*sizes, *prepare.VOCR_LM_ASSETS, prepare.VOCR_GATE_MODEL,
+                                                           prepare.VOCR_VERTICAL_MODEL}))
             # API 26: the text-presence gate's weights and their release's attribution ship beside the models
             gate = manifest["models"][prepare.VOCR_GATE_MODEL]
             self.assertEqual((gate["release"], gate["bytes"], gate["role"]),
@@ -169,6 +182,10 @@ class PackageModels(unittest.TestCase):
             self.assertNotIn("generation", gate)
             self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_GATE_MODEL), self.gate)
             self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_GATE_ATTRIBUTION), self.gate_attribution)
+            # the vertical model (#99): no size's, its own release, its role
+            vertical = manifest["models"][prepare.VOCR_VERTICAL_MODEL]
+            self.assertEqual((vertical["release"], vertical["role"], "tier" in vertical),
+                             ("bee-san/vita-vn-ocr " + prepare.VOCR5V_TAG, "vertical text (ocr_vertical)", False))
             for name in ("FL10_w8.vocr", "H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_FL10_w8.vocr",
                          "VOCR4_H15_w8.vocr", "VOCR4_W20_w8.vocr"):
                 if name not in sizes:
@@ -337,8 +354,9 @@ class PackageModels(unittest.TestCase):
             manifest = json.loads(archive.read("package-manifest.json"))
         generation = {t["model"]: prepare.VOCR_GENERATION[prepare.release_assets(t["model"])[1]]
                       for t in prepare.model_tiers()["tiers"]}
+        vertical = {prepare.VOCR_VERTICAL_MODEL: prepare.VOCR_GENERATION[prepare.VOCR5V_TAG]}  # #99, no size's
         self.assertEqual({name: entry["generation"] for name, entry in manifest["models"].items() if "generation" in entry},
-                         generation)
+                         {**generation, **vertical})
         normal = prepare.model_tiers()["tiers"][1]["model"]
         for name in prepare.VOCR_LM_ASSETS:  # an LM is no recognizer: no generation
             self.assertNotIn("generation", manifest["models"][name])
@@ -357,6 +375,8 @@ class PackageModels(unittest.TestCase):
         self.assertEqual(manifest["defaults"]["ocr_engine"], moved.get(generation[normal], generation[normal]))
         for name, g in generation.items():
             self.assertEqual(manifest["models"][name]["generation"], moved.get(g, g), name)
+        for name, g in vertical.items():  # its own release's: v0.3.0's move does not reach it
+            self.assertEqual(manifest["models"][name]["generation"], g, name)
         self.assertNotIn("VOCR9", json.dumps(manifest))  # VOCR3's release ships nothing
 
     def test_removed_vocr2_is_neither_shipped_nor_claimed(self):
@@ -417,12 +437,15 @@ class PackageModels(unittest.TestCase):
                 self.assertEqual(got, "set" if value else "", key)
             else:
                 self.assertEqual(got, value, key)
-        # every setting the template has is classified as core/config.c parses it (ocr_refine_lines = off | on | psp
-        # and, API 42, ocr_head_gate = off | gate | two_level | on are choices, kept as the template writes them)
+        # every setting the template has is classified as core/config.c parses it (ocr_refine_lines = off | on | psp,
+        # API 42's ocr_head_gate = off | gate | two_level | on and API 50's ocr_line_fix = off | on | junk | all are
+        # choices, kept as the template writes them)
         self.assertEqual({k for k in template if template[k] in ("on", "off") and k not in ("ocr_refine_lines",
-                                                                                            "ocr_head_gate")},
+                                                                                            "ocr_head_gate",
+                                                                                            "ocr_line_fix")},
                          set(release.SWITCHES))
         self.assertEqual(defaults["ocr_head_gate"], "on")
+        self.assertEqual(defaults["ocr_line_fix"], "on")
         self.assertEqual({k for k in template if template[k].isdigit()}, set(release.NUMBERS))
         # the API 20 job keys, as the template and core/config.c's defaults have them
         self.assertEqual({k: defaults[k] for k in ("ocr_settle_ms", "ocr_settle_max_ms", "ocr_skip_blank_lines",
@@ -492,6 +515,31 @@ class PackageModels(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "OCR model checksum failed: " + small):
             self.package_fixture(write_models=False)
         self.assertFalse((self.root / "package.zip").exists())
+
+    def test_the_same_inputs_make_the_same_zip(self):
+        """audit-rubi-rel-098 F4: 0.9.8's zip, packaged again from the release run's artifacts and the pinned
+        models, differed from the published one in package-manifest.json's date (written with the time of the
+        run) and, on another filesystem, in the order of the names dictionary's staged files (rglob's order)
+        and so of package-manifest.json's keys. Packaging the same base again, at another time and with the
+        directories listed the other way round, now gives the same bytes, and the staged files go in sorted."""
+        rglob = Path.rglob
+        ascending = lambda path, pattern: iter(sorted(rglob(path, pattern)))
+        descending = lambda path, pattern: iter(sorted(rglob(path, pattern), reverse=True))
+        with mock.patch.object(Path, "rglob", ascending):
+            first = self.package_fixture().read_bytes()  # its base, dictionary and licence stay in self.root
+        dictionary = self.root / "jmdict.vjdict"
+        snapshot = {"bytes": dictionary.stat().st_size, "sha256": release.digest(dictionary)}
+        again = self.root / "again.zip"
+        with mock.patch.object(Path, "rglob", descending), mock.patch("time.time", return_value=2_000_000_000.0), \
+             mock.patch.object(release, "load_manifest", return_value=snapshot), \
+             contextlib.redirect_stdout(io.StringIO()):
+            release.package(self.root / "base.zip", again, self.models, dictionary, self.root / "fixture-license.txt")
+        self.assertEqual(first, again.read_bytes())
+        with zipfile.ZipFile(io.BytesIO(first)) as archive:
+            self.assertEqual(archive.getinfo("package-manifest.json").date_time, (1980, 1, 1, 0, 0, 0))
+            staged = [n for n in archive.namelist() if n.startswith("third_party/licenses/VNDB-")]
+            self.assertEqual(len(staged), 2)
+            self.assertEqual(staged, sorted(staged))
 
 if __name__ == "__main__":
     unittest.main()

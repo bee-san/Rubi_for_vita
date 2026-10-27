@@ -34,7 +34,10 @@ normal = names.index(tiers["default"])
 MODEL = tiers["tiers"][normal]["model"]
 CASCADE = tiers["tiers"][normal + 1]["model"] if normal + 1 < len(names) else None
 lm = re.search(r"^ocr_lm = (\S+)", (checkout / "docs" / "config.example.ini").read_text(), re.M).group(1)
-LM = f"vocr_lm_o3_{lm}.vlm"
+# the tier's pinned file, as the kernel's broker names it (include/vjo_vocr_sizes.h VJO_VOCR_LM<n>_NAME, tiers 1-4)
+_sizes = (checkout / "include" / "vjo_vocr_sizes.h").read_text()
+_names = dict(re.findall(r'#define VJO_VOCR_LM([1-4])_NAME "([^"]+)"', _sizes))
+LM = _names[str(("500k", "1000k", "2000k", "4000k").index(lm) + 1)]
 
 
 def norm(text):

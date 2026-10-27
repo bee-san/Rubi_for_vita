@@ -25,6 +25,19 @@ The game worker's steps (`gstep job ...`, `game_ocr/main.c` `step_add`) carry tw
 - a time since the job started, for the instant steps (`mem`, `check`, `alloc`, `free`, `sig`,
   `tear`, `clock`): `step_add` called with us 0 (`game_ocr/main.c:148` at `4ac02ac`).
 
+A job of vertical text (API 47, `ocr_vertical`; [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) logs
+`find` with kind 1 when its lines were columns, with kind 2 for `auto`'s rows that looked like vertical text
+(nothing was read from them; the next `find`, kind 1, is the columns'), and with kind 3 when `auto`'s columns had no
+vertical model to read (`rc=` its I/O error; the rows are read next). Its `bytes=` are the columns it left out
+because their crop (width × height) holds more than its rotation buffer, 57,344 B (`VJO_VOCR_ROTATE_BYTES`,
+`VjoVocrStats.rotate_skipped`; 0 for rows, so a job of rows logs as before). Those are never read, so at most
+`arg=` (the columns found) minus `bytes=` were read: blank columns (the blank-line check), tall ones without the
+line block (`tall_skipped`) and a cancelled job read fewer. A job that `auto` read in more than one try keeps
+each try's `check` and `find` and the job's first pass (`pass`, `sig`), but only the last try's `alloc` and
+`free` steps (the earlier tries gave their blocks back), and its `settle` step counts every try's wait (audit
+of #335). Step lines reach `log.txt` in the debug build only
+(`shell/worker.c` `log_vocr_steps`); the normal build logs no `gstep` line.
+
 Two of the owner's figures were such times, not durations: the "weights allocation of about
 1.38 s" (`alloc ... arg=weights us=1376964`, an allocation made 1.38 s into the job) and the "tear
 re-read 2.3 s" (`tear ... us=2298159`, the step written after the job's tries,
@@ -136,7 +149,9 @@ worker; `L`: every thread's file appends meanwhile).
    resume, a system dialog): they go back after 5 s of the game's running time (`game_ocr/main.c`
    `inactive_long`; process time stops while a process is suspended [SDK: Kernel-Reference,
    sceKernelGetProcessTimeWide]). Nothing new is allocated: the same blocks, the same ledger items,
-   the same pages.
+   the same pages. API 43: in a game whose trusted hook has answered a job, a job that finds no line
+   reads nothing ahead, and after 8 trusted answers in a row the resident blocks go back to the game:
+   the hook supplies the lines ([native-hooks.md](native-hooks.md#trusted-hooks-api-43)).
 3. **A press waits at most 1 s for the text to hold still** (`ocr_settle_press_ms = 1000`;
    `ocr_settle_max_ms`, 2 s, for every other job). In test.2 the two press jobs waited 1,265 and
    1,490 ms for text typing out (365 and 400 changes). There a 1 s cap would not have helped: the job

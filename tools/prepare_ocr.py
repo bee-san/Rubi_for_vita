@@ -11,8 +11,13 @@ v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 --backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8g.vocr,
 VOCR5_N_w8g2.vocr, VOCR5_L_w8g2.vocr) and their release's attribution, v0.3.6-head2level.1's ATTRIBUTION.md
 kept as MODEL-ATTRIBUTION.md, and the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
-with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. Each file comes from the
-release's public download; only when that fails (a draft release) is an authenticated
+with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. --backend vocr-tests
+fetches what the host tests read from VJO_VOCR_MODEL_DIR (CMakeLists.txt: their real-model checks): every pinned
+recognizer, the four LMs, v0.3.0's three VOCR5 recognizers in a v0.3.0/ subdirectory (the off-path check's) and the
+gate's weights (which tools/fast_gate.sh's models lane hands to cmake/VocrGate.cmake); with --check it downloads
+nothing, and says which of them the --output directory lacks or holds other bytes of (exit status 1), as
+tools/fast_gate.sh's models lane asks first.
+Each file comes from the release's public download; only when that fails (a draft release) is an authenticated
 GitHub CLI (`gh auth login`) tried. --from takes a copy downloaded by other means.
 Every file is checked against its pinned size and SHA-256.
 """
@@ -67,24 +72,25 @@ VOCR_ASSETS = {
         'f8c1abe4743a71a742e718523f4206f992d3bd4fb69de321997b2bd6f16779c0'),
 }
 
-# The character LMs of the beam + LM decoder (vita-vn-ocr #82), pre-release
-# v0.2.6-ctclm.2 (ctclm.1 is superseded: built before the protected-title filter), CC BY-SA 4.0: their ATTRIBUTION.md ships beside them. The
-# plugin pins the same sizes and hashes (core/vocr_ocr.c, include/vjo_vocr_sizes.h).
-VOCR_LM_TAG = 'v0.2.6-ctclm.2'
+# The character LMs of the beam + LM decoder (vita-vn-ocr #82, #127), pre-release
+# v0.3.7-lm6.2, CC BY-SA 4.0: tiers 2 and 4 are VOCR6's (built with the hooked games' text), tiers 1 and 3
+# ctclm.2's byte for byte; their ATTRIBUTION.md ships beside them. The plugin pins the same sizes and hashes
+# (core/vocr_ocr.c, include/vjo_vocr_sizes.h) and each tier's decoder settings (the release's settings.json).
+VOCR_LM_TAG = 'v0.3.7-lm6.2'
 VOCR_LM_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_LM_TAG}/'
 VOCR_LM_ASSETS = {
     'vocr_lm_o3_500k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_500k.vlm', 499824,
         '38ea94e0c4ec93863454387e7c2c469d209aaf21f2f6ee5d040e75a09d00d286'),
-    'vocr_lm_o3_1000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_1000k.vlm', 987600,
-        '993000611555171daf6361e29a503b0871a5f3dd240a19555d55f16aaa3ab3d9'),
+    'vocr_lm6_o3_1000k.vlm': (VOCR_LM_BASE + 'vocr_lm6_o3_1000k.vlm', 982320,
+        '41591accf8499f1c34557e585cca382de2c4b5ca15f270c985612c32487e251f'),
     'vocr_lm_o3_2000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_2000k.vlm', 1971568,
         'ac33e461bd346617aae27168aee47230a758f4b301d78b59eb55ca25a21bcb34'),
-    'vocr_lm_o3_4000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_4000k.vlm', 3781072,
-        '01f49be1691a1aab5a6d33414ce7d17c3e5b2daf97dfccb0d341a380a68e5898'),
+    'vocr_lm6_o3_4000k.vlm': (VOCR_LM_BASE + 'vocr_lm6_o3_4000k.vlm', 3603552,
+        'a65841b5bdce3e3123b2d1e712deb857fb577cbd2fd8667e8fb06ab35d368335'),
 }
 VOCR_LM_ATTRIBUTION = 'ATTRIBUTION.md'
-VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 2538,
-    '1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c')}
+VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 6514,
+    '9418ed87e6d9fa196aba2315e05a0cf0dca7056482cce03577ced423e5feb1d3')}
 
 # VOCR4-W20 (vita-vn-ocr #78, pre-release v0.2.5-vocr4.1, whose SHA256SUMS lists this hash;
 # F20's shape): the Large model size before VOCR5, and the confidence cascade's model of a
@@ -115,6 +121,39 @@ VOCR5_ASSETS = {
         '41c3543ff8dddd45dc953a6a5f5d579ef9ca779f0e43196406be59c1d985c5b5'),
 }
 VOCR_DEFAULT_MODEL = 'VOCR5_N_w8g2.vocr'  # the default model size's (Normal's), tools/model_tiers.json
+# v0.3.0's VOCR5 recognizers, the three sizes' blobs before their head gate and two-level head: no longer the
+# plugin's (API 42 pins the blobs above), but host/tests/test_vocr.c's off-path check reads them from
+# VJO_VOCR_MODEL_DIR/v0.3.0/ (each size's pinned blob read with ocr_head_gate = off gives their every logit). The
+# pins v0.3.0's (the model sizes' from #167 until #307); the host tests' set only (--backend vocr-tests), never
+# shipped.
+VOCR5_V030_TAG = 'v0.3.0'
+VOCR5_V030_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5_V030_TAG}/'
+VOCR5_V030_DIR = 'v0.3.0'
+VOCR5_V030_ASSETS = {
+    'VOCR5_S_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_S_w8.vocr', 819792,
+        'f175bfcb8cec65d69e85dd5f2cf707c9a711ada7203c0d1099cd2d0142978b8d'),
+    'VOCR5_N_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_N_w8.vocr', 1185632,
+        '20be179def8033171435ba62388657b3d3c932b365093737948c636e025e3bdc'),
+    'VOCR5_L_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_L_w8.vocr', 2473696,
+        '50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3'),
+}
+VOCR5_V030_TEST_ASSETS = {f'{VOCR5_V030_DIR}/{name}': pin for name, pin in VOCR5_V030_ASSETS.items()}
+# VOCR5-V (vita-vn-ocr #99): vertical text in VOCR5-S's shape, reading a column turned 90 degrees
+# anticlockwise. No model size runs it: a job of columns does (config.ini ocr_vertical on or auto). Pre-release
+# v0.3.2-vertical.1, whose SHA256SUMS lists this hash.
+VOCR5V_TAG = 'v0.3.2-vertical.1'
+VOCR5V_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5V_TAG}/'
+VOCR5V_ASSETS = {
+    'VOCR5_V_w8.vocr': (VOCR5V_BASE + 'VOCR5_V_w8.vocr', 819792,
+        'ccd20c63bb2620f054538b456904bdf19b74d483d3da8de865009e282bb04172'),
+}
+VOCR_VERTICAL_MODEL = 'VOCR5_V_w8.vocr'
+# Its release's ATTRIBUTION.md (in its SHA256SUMS): VOCR5-S's training data and terms (non-commercial use only)
+# and the vertical training data. The package ships it beside the model as ocr/VERTICAL-ATTRIBUTION.md, the
+# other releases' attributions having the same name in their release.
+VOCR_VERTICAL_ATTRIBUTION = 'VERTICAL-ATTRIBUTION.md'
+VOCR_VERTICAL_ATTRIBUTION_PIN = {VOCR_VERTICAL_ATTRIBUTION: (VOCR5V_BASE + 'ATTRIBUTION.md', 3323,
+    '0f644c6dce8c24abb9ac56ecbb684ab7cd1f1950cad0aae15eafadba04bcbcd9')}
 # The model sizes' attribution: v0.3.6-head2level.1's ATTRIBUTION.md (in its SHA256SUMS; v0.3.0's, which it
 # extends with the head gate's and the two-level head's fits), the licences of what the VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
 # their terms (non-commercial use only). The package ships it beside the weights as
@@ -148,7 +187,7 @@ VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_
 # the pins carry it: core/vocr_models.c per file (the Rubi app names the local OCR engine
 # after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
 # was removed from the overlay after v0.8.0-test.1.
-VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5'}
+VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5', VOCR5V_TAG: 'VOCR5'}
 
 # The model sizes the Rubi app offers (config.ini vocr_tier), each a pinned recognizer above:
 # one table for the C pins' tests, the packager and the self-test analyser.
@@ -170,7 +209,7 @@ def model_tiers():
 def release_assets(name):
     """(asset table, release tag) of a pinned recognizer."""
     for assets, tag in ((VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
-                        (VOCR_ASSETS, VOCR_TAG)):
+                        (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError(f'{name} is not a pinned recognizer')
@@ -247,12 +286,17 @@ def fetch_vocr(directory, name, source=None):
 def fetch_tiers(directory, source=None):
     """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their release's
     attribution (MODEL-ATTRIBUTION.md), with the text-presence gate's weights and attribution
-    (GATE-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
+    (GATE-ATTRIBUTION.md), and the vertical model (VOCR_VERTICAL_MODEL, config.ini ocr_vertical) and its
+    release's attribution (VERTICAL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched
+    once."""
     names = dict.fromkeys(tier['model'] for tier in model_tiers()['tiers'])
     paths = [fetch_vocr(directory, name, source) for name in names]
     paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
                                      VOCR_MODEL_ATTRIBUTION_TAG, source, VOCR_MODEL_ATTRIBUTION_ASSET))
     paths += fetch_gate(directory, source)
+    paths.append(fetch_vocr(directory, VOCR_VERTICAL_MODEL, source))
+    paths.append(fetch_release_asset(directory, VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
+                                     VOCR5V_TAG, source, 'ATTRIBUTION.md'))
     return paths
 
 
@@ -268,6 +312,44 @@ def fetch_lms(directory, source=None):
     paths = [fetch_release_asset(directory, name, VOCR_LM_ASSETS, VOCR_LM_TAG, source) for name in VOCR_LM_ASSETS]
     paths.append(fetch_release_asset(directory, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN, VOCR_LM_TAG, source))
     return paths
+
+
+def test_models():
+    """(name, asset table, release tag) of every file the host tests read from VJO_VOCR_MODEL_DIR: each pinned
+    recognizer, shipped or not (every release table here, which tools/tests/test_vocr_defaults.py holds equal to
+    the plugin's, core/vocr_ocr.c), the four LMs, v0.3.0's three VOCR5 recognizers in its v0.3.0/ subdirectory
+    (VOCR5_V030_ASSETS: host/tests/test_vocr.c's off-path check), and the text-presence gate's weights, which the
+    host builds take from cmake/VocrGate.cmake (tools/fast_gate.sh's models lane gives it this copy:
+    VJO_VOCR_GATE_BLOB). A name is the file's path under the directory. No attribution: no test reads one."""
+    tables = ((VOCR5_ASSETS, VOCR5_TAG), (VOCR5V_ASSETS, VOCR5V_TAG), (VOCR4_ASSETS, VOCR4_TAG),
+              (VOCR3_ASSETS, VOCR3_TAG), (VOCR_ASSETS, VOCR_TAG), (VOCR_LM_ASSETS, VOCR_LM_TAG),
+              (VOCR5_V030_TEST_ASSETS, VOCR5_V030_TAG), (VOCR_GATE_ASSETS, VOCR_GATE_TAG))
+    return [(name, assets, tag) for assets, tag in tables for name in assets]
+
+
+def fetch_test_models(directory, source=None):
+    """test_models(), each fetched as the other backends fetch theirs (a valid copy in `directory` is kept); a file
+    in a subdirectory (v0.3.0/) is its release's asset of the file's own name."""
+    return [fetch_release_asset(directory, name, assets, tag, source, Path(name).name)
+            for name, assets, tag in test_models()]
+
+
+def check_models(directory, models):
+    """What `directory` lacks of `models` ((name, asset table, tag), as test_models()): one line per file that
+    is missing or not its pinned size and SHA-256, [] when every one is the pinned file. Reads only."""
+    problems = []
+    for name, assets, tag in models:
+        _, size, sha = assets[name]
+        path = Path(directory) / name
+        if not path.is_file():
+            problems.append(f'{name}: missing ({tag})')
+            continue
+        data = path.read_bytes()
+        if len(data) != size:
+            problems.append(f'{name}: {len(data)} B, not the pinned {size} B ({tag})')
+        elif hashlib.sha256(data).hexdigest() != sha:
+            problems.append(f'{name}: not the pinned SHA-256 ({tag})')
+    return problems
 
 
 
@@ -331,15 +413,35 @@ def generate(directory, ncnn_source):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--output', type=Path, required=True)
-    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-tiers', 'vocr-lm'), default='ncnn',
+    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-tiers', 'vocr-lm', 'vocr-tests'), default='ncnn',
                     help="vocr-tiers: the three model sizes' recognizers (Small, Normal, Large); "
-                         "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md")
+                         "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md; "
+                         "vocr-tests: every pinned recognizer, the LMs, v0.3.0's three (v0.3.0/) and the gate's "
+                         "weights (VJO_VOCR_MODEL_DIR)")
     ap.add_argument('--ncnn-source', type=Path)
-    ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS}),
+    ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS,
+                                               **VOCR5V_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
+    ap.add_argument('--check', action='store_true',
+                    help='vocr-tests: download nothing; exit 1 unless --output holds every one, pinned')
     args = ap.parse_args()
+    if args.check:
+        if args.backend != 'vocr-tests' or args.source:
+            ap.error('--check is for --backend vocr-tests, without --from')
+        problems = check_models(args.output, test_models())
+        for problem in problems:
+            print(problem)
+        print(f'{len(test_models()) - len(problems)} of {len(test_models())} pinned test models verified in',
+              args.output)
+        raise SystemExit(1 if problems else 0)
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.backend == 'vocr-tests':
+        for path in fetch_test_models(args.output, args.source):
+            print('Verified', path.name)
+        print('Test models ready in', args.output, '- VJO_VOCR_MODEL_DIR for the host tests (tools/fast_gate.sh:',
+              'the models lane)')
+        return
     if args.backend == 'vocr-lm':
         for path in fetch_lms(args.output, args.source):
             print('Verified', path.name)
@@ -350,7 +452,7 @@ def main():
         for path in fetch_tiers(args.output, args.source):
             print('Verified', path.name)
         print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (keep',
-              VOCR_MODEL_ATTRIBUTION, 'and', VOCR_GATE_ATTRIBUTION,
+              f'{VOCR_MODEL_ATTRIBUTION}, {VOCR_GATE_ATTRIBUTION} and {VOCR_VERTICAL_ATTRIBUTION}',
               'beside them: their training data\'s licences and their terms)')
         return
     if args.backend == 'vocr':

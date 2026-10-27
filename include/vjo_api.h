@@ -85,8 +85,34 @@
  * A line either skipped something of is read again with the full head where the counter re-decode needs it. The
  * model sizes' files are VOCR5_S_w8g.vocr, VOCR5_N_w8g2.vocr and VOCR5_L_w8g2.vocr; the recognize step's kind is
  * the share of frames the gate skipped, in percent. Sizes and layouts are unchanged. The interfaces of closed
- * drafts #281 (39) and #282 (40) have builds, so this is a new number. */
-#define VJO_API_VERSION 42
+ * drafts #281 (39) and #282 (40) have builds, so this is a new number.
+ * 43: trusted hooks (docs/native-hooks.md, "Trusted hooks"): VjoGameOcrRequest.speed bit 20
+ * (VJO_GAME_OCR_S_TRUST, config.ini hook_trust) lets a trusted source answer a job without OCR, its capture pass
+ * beside VJO_GAME_RESERVE_HOOK_ONLY, and VjoGameOcrResult.hook_flags has VJO_HOOK_R_TRUSTED. Sizes and layouts
+ * are unchanged.
+ * 47: vertical text (config.ini ocr_vertical, vita-vn-ocr #99; docs/vita-vn-ocr.md "Vertical text"):
+ * VjoGameOcrRequest.speed bits 28-29 (VJO_GAME_OCR_S_VERTICAL): 1 has the job read the region's columns, right
+ * to left, with the vertical model (VJO_GAME_OCR_OPEN_VERTICAL, VJO_VOCR_VERTICAL_NAME), 2 read its rows unless
+ * the line finder's rows look like vertical text, then its columns; a line read as a column carries
+ * VJO_GAME_OCR_LINE_COLUMN in its flags. Sizes and layouts are unchanged. API 27 and draft #223's API 29 were the
+ * same feature as flags bit 15, which stays undefined. 44-46 are taken by work in flight (VOCR6's line-finder
+ * fixes, the spotter finder, draft #326's text overlay in test.17), as are speed bits 21-27, so this is 47.
+ * 49: trusted hooks without waiting (docs/native-hooks.md, "No wait for a trusted line"): vjoOcrTake's wait for a
+ * job is out->seq microseconds when the worker sets it lower than 100 ms; vjoOcrHookLine's bytes carry
+ * VJO_HOOK_LINE_TRUSTED, which always wakes the Shell and makes the line's scene VjoState.hook_scene (a new field
+ * at the end: the struct is 4 bytes longer); vjoOcrCaptureRows' VJO_ROWS_HOOK publishes a trusted answer's capture
+ * as that scene without reading pixels. API numbers on main only grow: 47 is #335's (vertical text) and 48
+ * #330's (the line finder).
+ * 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
+ * (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT, _JUNK, _VALLEY), VjoVocrPolicy.line_fix, config.ini ocr_line_fix.
+ * Sizes and layouts are unchanged. This is #330: 47's and 49's notes kept 44 and then 48 for it, and it merged
+ * after 49, so it is 50.
+ * 51: a trusted answer needs no memory (docs/native-hooks.md, "No wait for a trusted line"): vjoOcrCaptureRows'
+ * VJO_ROWS_HOOK also publishes the region's current scene once the region shows another than the trusted line's
+ * (49 refused it with VJO_ERR_FORMAT, and the worker read the first pass: a strip beside VJO_GAME_RESERVE_HOOK_ONLY,
+ * which a game with 1 MiB free refused, so the job failed although the hook had its text). FORMAT now means only
+ * that the region has no screen yet. Sizes and layouts are unchanged. */
+#define VJO_API_VERSION 51
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
@@ -157,6 +183,9 @@ typedef struct {
      * the quiet spot for one taken since it started), else 0: a capture
      * taken before an icon was masked shows the screen once it is */
     uint32_t region_scene;
+    /* API 49: the scene of the newest line a trusted hook reported (vjoOcrHookLine with VJO_HOOK_LINE_TRUSTED)
+     * while the region still shows it, else 0: the Shell reads it at once, past the background read's pacing */
+    uint32_t hook_scene;
 } VjoState;
 
 typedef struct {

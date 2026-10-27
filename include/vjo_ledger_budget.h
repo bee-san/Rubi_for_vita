@@ -123,7 +123,11 @@
  * 144 B of data room [measured: the same rows, main 75041a0 and this change]. Yomitan's deinflection
  * rules in a packed table (docs/memory-ledger.md) make it 90,084 -> 89,228 + 73,560 -> 73,024 on main
  * 627a673, the same pages, 884 B of text room and 704 B of data room [measured: the same rows, main
- * 627a673 and this change]. Its check is
+ * 627a673 and this change]. API 47's vertical text (the request's vertical field, the model a text was read with by
+ * its lines' column flag, config.ini ocr_vertical's parse; its key, the model's name and one cold message of the
+ * OCR's in the data segment, VJO_DATA_TABLE) makes it 89,252 -> 89,300 + 73,048 -> 73,160 on main 796168e, the same
+ * pages, 812 B of text room [measured: the same rows, main 796168e and this change; the debug build 101,460 ->
+ * 101,548 + 73,008 -> 73,152, the same pages]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
@@ -289,10 +293,45 @@
  * files are byte-identical to main's; the Rubi app's eboot.bin, which links core/hook_place.c for the Games tag,
  * is 120 B (debug) and 79 B (normal) larger. The page-record read is two exact reads of game memory into the
  * existing capture buffer: no block, thread or allocation. */
+/* API 43, trusted hooks (core/hook_select.c vjo_hook_select_trusted, game_ocr/main.c's branch, its run counter and
+ * the warm-up's condition): debug text 148,792 -> 149,208 B (2,344 B of room left) and data/bss 35,288 -> 35,312 B,
+ * normal 140,004 -> 140,436 B and 35,280 -> 35,304 B, the same pages [measured: the build log's module rows, both
+ * builds, main 23921ad and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
+/* API 47, vertical text (config.ini ocr_vertical off, on or auto; vita-vn-ocr #99 and #103, closed draft #223's column
+ * job): one text page more in both builds, in the game's partition only, in every game that is ON whatever the
+ * setting. vita-vn-ocr's column finder and rotation (runtime/vocr_vertical.c, built -Os), the dark flag the job
+ * computes on a column's pixels (vocr_lines.c's vocr_line_dark, linked now), the job's column path, VOCR5-V's model
+ * entry, auto's rule (core/vocr_ocr.c vjo_vocr_rows_vertical) and the worker's request and retry (game_ocr/main.c):
+ * on main 796168e the debug build's text 149,368 -> 155,032 B (616 B of room), 188,416 -> 192,512 B of pages, the
+ * normal build's 140,596 -> 146,116 B (1,340 B), 180,224 -> 184,320 B; data/bss unchanged (35,312 and 35,304 B)
+ * [measured: the build log's module rows, both builds, main 796168e (CI's Release run 40407403783) and this change,
+ * tools/fast_gate.sh's vitasdk image]. A job of columns allocates only what a job allocates (its workspace holds the
+ * 57,344 B rotation buffer: test_ledger.c), none when ocr_vertical is off. The kernel and the Shell keep their
+ * pages. No block, thread or allocation. */
+/* API 49, trusted hooks without waiting (game_ocr/main.c hooks_watch's trusted reports and pace, hook_publish):
+ * debug text 155,032 -> 155,576 B (72 B of room left) and data/bss 35,312 -> 35,328 B, normal 146,116 ->
+ * 146,676 B and 35,304 -> 35,320 B, the same pages [measured: the build log's module rows, both builds, main
+ * b6c715c and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the watch reads a
+ * trusted line's text into the hook pool, which no job uses between jobs. */
+/* API 50, vita-vn-ocr #129's line finder fixes and the pin at its merge (f8a1856, which also brings #130's vocr.c):
+ * one text page more in both builds, in the game's partition only. The fixes (runtime/vocr_lines_fix.c in place of
+ * vocr_lines_rows.c, the policy's flags, the request's bits) were +1,264 B of debug text and +1,280 B of normal text
+ * [measured: the build log's module rows, both builds, main 0b1a45b and this change before the pin, 601a133]. #130's
+ * vocr.c, a light attention op that no pinned blob has, is vocr.o 23,255 -> 25,963 B (VitaSDK -O2 NEON, the
+ * build's flags; vocr_run +984 B, gate_tile 806 B, vocr_load +442 B, plan +268 B by symbol). Together they take
+ * two more text pages each on top of API 49's: 192,512 -> 200,704 B (debug) and 184,320 -> 192,512 B (normal, the main
+ * download) in each game that is ON. Measured: debug 155,576 -> 160,648 B of text, normal 146,676 -> 151,748 B,
+ * data/bss 35,328 / 35,320 B as before; 3,192 / 3,900 B of text room left [measured: the build log's module rows,
+ * both builds, main 3388f7a and this change at b74669b (merged as 0994afc), tools/fast_gate.sh's vitasdk image]. No
+ * block, thread or allocation. */
+/* API 47's audit fixes (auto's tries share the wait and report the last try's model, the step log's room): debug
+ * text 160,648 -> 160,888 B (2,952 B of room left), normal 151,748 -> 151,988 B (3,660 B), the same pages [measured:
+ * the build log's module rows, both builds, the fixes on main 241e09f, whose plugins main 16fa362 keeps; main's rows
+ * as above]. No block, thread or allocation. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 188416u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 180224u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
@@ -412,6 +451,11 @@
  * segments 41740+77732 B (debug), 36904+76044 B (normal), rounded 122880/118784 B.
  * Measured with VitaSDK GCC 15.2.0, Release, local minimal-build kernel-measure-ledger.json reports;
  * binary sizes only, console boot/free-pool impact unverified. */
+/* API 51, a trusted answer's capture on another scene (kernel/game_ocr.c VJO_ROWS_HOOK): text 41,444 -> 41,508 B
+ * (debug) and 36,356 -> 36,380 B (normal), data/bss unchanged (77,732 and 76,044 B), the same pages [measured:
+ * arm-vita-eabi-size on both builds' VitaJPOverlay_Kernel, main 892cfb9 and this change, tools/fast_gate.sh's
+ * vitasdk image]. No block, thread or allocation; the worker's API 43 strip is now taken only on a region without a
+ * screen yet. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else
@@ -474,8 +518,9 @@
  * (vjo_vocr_refine_bytes: 72,400 B at 960x544).
  * API 22 (parallel lines) ends it with the line slots of the most helpers a job takes
  * (vjo_vocr_helpers_bytes, VJO_VOCR_HELPERS_MAX = 2: the caller's slot, a line's pixels, greedy
- * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 254,640 B
- * for VOCR5-N on the host build): 1,218,048 B for VOCR5-N with VOCR5-L's cascade, the largest
+ * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 254,672 B
+ * for VOCR5-N on the host build): 1,218,240 B for VOCR5-N with VOCR5-L's cascade, the largest (1,218,048 B
+ * before vita-vn-ocr f8a1856's structs, API 50: on the host its two models and four contexts are 32 B larger each)
  * (1,211,648 B on main, 1,191,680 B with H15 and VOCR4-W20 before VOCR5). API 42 adds 6,400 B: vita-vn-ocr's
  * head gate (48 B in each gated blob's arena) and two-level head (1,456 B more in each two-level blob's) in each of
  * the four contexts such a job plans (its own, the cascade's and the two helpers'), and their fields in the
@@ -486,9 +531,10 @@
 #define VJO_BUDGET_GAME_WORKSPACE 1220608u
 /* API 22: one thread per line a helper recognizes, created for the line and deleted once it is
  * placed (game_ocr/main.c pool_run): at most VJO_VOCR_HELPERS_MAX at once, none between jobs.
- * Its deepest chain: vocr_run 592 + run_head 1,320 + mm_i16 616 = 2,528 B with the Vita compiler
- * (-fstack-usage, vita-vn-ocr 47cf3a3's runtime, since API 42; 448 + 1,328 + 616 = 2,392 B with 817d203's
- * before it; the two-level path's vocr_run 592 + run_head2 1,232 + mm_i16 616 = 2,440 B), about a sixth of it. */
+ * Its deepest chain: vocr_run 600 + run_head 1,320 + mm_i16 616 = 2,536 B with the Vita compiler
+ * (-fstack-usage, the build's flags, vita-vn-ocr f8a1856's runtime, since API 50; 592 + 1,320 + 616 = 2,528 B with
+ * 47cf3a3's from API 42, 448 + 1,328 + 616 = 2,392 B with 817d203's before it; the two-level path's vocr_run 600 +
+ * run_head2 1,240 + mm_i16 616 = 2,456 B), about a sixth of it. */
 #define VJO_STACK_GAME_HELPER 16384u
 #define VJO_BUDGET_GAME_HELPER_STACK (VJO_STACK_GAME_HELPER + VJO_LEDGER_TLS)
 #define VJO_BUDGET_GAME_HELPERS (2u * VJO_BUDGET_GAME_HELPER_STACK)
@@ -507,10 +553,11 @@
  * the helper's line slot first, so no helper reads it; a larger one runs on the worker's thread. */
 #define VJO_BUDGET_GAME_LINE 516096u
 /* API 20: the beam + LM decoder's LM, resident like the weights while the game is the
- * active one, USER_RW only: the largest tier, 3,781,072 B (include/vjo_vocr_sizes.h),
- * page-rounded. The worker's memory check takes the largest tier the request allows
- * that fits beside the reserve, a smaller one, or none. */
-#define VJO_BUDGET_GAME_LM 3784704u
+ * active one, USER_RW only: the largest tier, 3,603,552 B (include/vjo_vocr_sizes.h; VOCR6's
+ * 4 MB LM, vita-vn-ocr #127; ctclm.2's was 3,781,072 B), page-rounded. The worker's memory
+ * check takes the largest tier the request allows that fits beside the reserve, a smaller
+ * one, or none. */
+#define VJO_BUDGET_GAME_LM 3604480u
 /* API 20: the confidence cascade's larger model, resident like the weights, USER_RW only,
  * page-rounded; taken only when the memory check passes with it. API 21: the cascade's model
  * is the next tier up of the job's (Small's is Normal's, Normal's is Large's, Large has none;
@@ -539,16 +586,22 @@
  * VJO_VOCR_STRIP_BYTES, 56 KiB), freed with the job, beside this smaller reserve. A game that leaves
  * less than VJO_GAME_RESERVE free (アマツツミ, PCSG01198: 2 MiB measured on a console, 2026-10-23)
  * cannot run OCR, and would otherwise never show its hook's text. It adds nothing to
- * VJO_WORST_GAME_JOB: it is the capture block every job may hold. */
+ * VJO_WORST_GAME_JOB: it is the capture block every job may hold. API 43: a trusted hook's answer
+ * (VJO_GAME_OCR_S_TRUST, core/hook_select.h vjo_hook_select_trusted) takes the same one strip beside
+ * the same reserve, and after 8 such answers in a row gives back the resident weights, LM and cascade
+ * model: no new block, and the job's own worst case is the capture block's. API 49: it takes no strip at
+ * all while the region shows the trusted line's scene (VJO_ROWS_HOOK publishes its capture without rows),
+ * and API 43's strip otherwise; API 51: no strip on another scene either (the kernel publishes the region's
+ * current scene), only while the region has no screen yet. */
 #define VJO_GAME_RESERVE_HOOK_ONLY (1u * 1024u * 1024u)
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
  * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of
  * 64 colour rows at 960 px (245,760 B) and the JPEG, at most VJO_GAME_OCR_SHOT_MAX
  * (196,608 B), page-rounded: 450,560 B, only while a shot runs. A shot is a job of
  * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
- * line or helpers (1,835,008 B of the job's worst case besides the resident weights, LM
- * and cascade model, which a shot keeps: 8,740,864 + 450,560 B under the job's
- * 10,575,872 B): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
+ * line or helpers (1,843,200 B of the job's worst case besides the resident weights, LM
+ * and cascade model, which a shot keeps: 8,560,640 + 450,560 B under the job's
+ * 10,403,840 B, API 42 with VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
@@ -576,7 +629,8 @@
  * blob's page in the weights and cascade budgets (8,192 B), the workspace's two pages (8,192 B) and the worker's
  * two text pages (8,192 B, both builds): the job's worst case 10,567,680 -> 10,584,064 B, 11.7 % of that free
  * USER (a real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,297,920 B, is 1,286,144 B
- * less). */
+ * less). VOCR6's 4 MB LM (vita-vn-ocr #127, 3,603,552 B against ctclm.2's 3,781,072 B) lowers the LM budget and
+ * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. */
 #define VJO_LIMIT_GAME_JOB 10604544u
 
 #endif

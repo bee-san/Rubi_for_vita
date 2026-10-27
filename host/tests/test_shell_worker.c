@@ -450,9 +450,10 @@ uint32_t vjo_selftest_stage_flags(unsigned i) { return i < 5 ? selftest_stage_fl
 static uint32_t selftest_begin_speed[8];
 void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback, uint32_t speed)
 { if (i < 8) selftest_begin_speed[i] = speed; selftest_begins++; }
-/* shell/selftest.c's rule: no stage uses the line cache, textbox2 (stage 4) runs without helpers */
+/* shell/selftest.c's rule: no stage uses the line cache, textbox2 (stage 4) runs without helpers (its other bits
+ * kept, as there: the clock and, API 43, the trust bit) */
 uint32_t vjo_selftest_stage_speed(unsigned i, uint32_t configured)
-{ return (i == 4 ? configured & VJO_GAME_OCR_S_BOOST : configured) | VJO_GAME_OCR_S_NOCACHE; }
+{ return (i == 4 ? configured & ~VJO_GAME_OCR_S_HELPERS_MASK : configured) | VJO_GAME_OCR_S_NOCACHE; }
 /* shell/selftest.c's rule (its report lines are host/tests/selftest_writer.c's). */
 static int selftest_waits;
 int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
@@ -633,6 +634,7 @@ static int32_t fake_missing_io;
 static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
+static int fake_rows_vertical; /* API 47, ocr_vertical = auto: the worker found the rows to be vertical text */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
 /* A clock step (game_ocr/main.c job_busy): the ARM clock before, while and after, and the boost's rc. */
@@ -758,6 +760,13 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         }
     } else if (fake_memory_fallback && top > 1u) ran = top - 1u;
     const char *ran_model = top ? vjo_vocr_tier_model((int)ran) : fake_game_request.model;
+    /* API 47: a job of columns runs the vertical model, whatever its tiers (game_ocr/main.c): ocr_vertical = on,
+     * or auto where the rows looked like vertical text and the vertical model can be read (else its rows) */
+    unsigned vmode = (fake_game_request.speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK;
+    int fake_columns = vmode == VJO_GAME_OCR_VERTICAL_ON ||
+                       (vmode == VJO_GAME_OCR_VERTICAL_AUTO && fake_rows_vertical &&
+                        !(fake_missing_model && !strcmp(fake_missing_model, VJO_VOCR_VERTICAL_NAME)));
+    if (fake_columns) ran_model = VJO_VOCR_VERTICAL_NAME;
     if (fake_missing_model && !strcmp(ran_model, fake_missing_model)) {
         fake_model_misses++;
         fake_game_result.rc = VJO_E_OCR_MODEL; /* as the worker reports an absent file */
@@ -811,7 +820,9 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.recognized = fake_lines;
         for (unsigned i = 0; i < fake_lines; i++)
             fake_game_result.line[i] = (VjoGameOcrLine){(uint16_t)(917 - i), 30, (uint16_t)(114 - i),
-                                                        fake_line_flags ? fake_line_flags : 0x3FFu, 52100u + i};
+                                                        (uint16_t)((fake_line_flags ? fake_line_flags : 0x3FFu) |
+                                                                   (fake_columns ? VJO_GAME_OCR_LINE_COLUMN : 0u)),
+                                                        52100u + i};
         if (fake_steps) {
             static const uint8_t ids[] = {VJO_GSTEP_MEM, VJO_GSTEP_CHECK, VJO_GSTEP_ALLOC, VJO_GSTEP_ALLOC,
                                           VJO_GSTEP_PASS, VJO_GSTEP_SIG, VJO_GSTEP_FIND, VJO_GSTEP_SETTLE,
@@ -948,6 +959,7 @@ static void reset(void)
     fake_recognized_text = NULL;
     fake_lines = 2;
     fake_line_flags = 0;
+    fake_rows_vertical = 0;
     fake_steps = 0;
     fake_clock_on = fake_clock_rc = 0;
     fake_cascade_frames = fake_cascade_us = 0;
@@ -1658,6 +1670,12 @@ static void test_engine_cache_tracks_backend_models_and_storage(void)
     strcpy(loaded.ocr_model_dir, "ux0:data/other-ocr");
     apply_config();
     TEST_CHECK(!cache_ok);
+    /* API 43: hook_trust decides which text a job shows (a trusted hook's or OCR's): switching it drops the result,
+     * so the overlay's next open reads the screen with the new rule */
+    cache_ok = 1;
+    loaded.hook_trust = !loaded.hook_trust;
+    apply_config();
+    TEST_CHECK(!cache_ok);
 }
 
 static void test_vocr_config(void)
@@ -1700,8 +1718,80 @@ static void test_vocr_model_change_invalidates_cache(void)
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
+    loaded.ocr_vertical = !loaded.ocr_vertical; /* and vertical text (another model, columns) */
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
+    loaded.ocr_line_fix = loaded.ocr_line_fix == 2 ? 1 : 2; /* API 50: and the line finder's fixes */
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
     apply_config(); /* the same again: nothing changed */
     TEST_CHECK(cache_ok);
+}
+
+/* API 47: config.ini ocr_vertical goes into the speed word of every user job as it is (off 0, on 1, auto 2), which
+ * keeps the job's tiers, model name and the rest of its flags and speed. The text's Anki cards and the job's log
+ * line name the vertical model where its lines were columns (VJO_GAME_OCR_LINE_COLUMN): with on, and with auto where
+ * the rows looked like vertical text; else the size's model, as before. A vertical model that fails to open (on)
+ * leaves no size out of the game's ladder and is not retried with a smaller size: its file is not theirs. Off (the
+ * default) sends no vertical bit. */
+static void test_vocr_vertical_request(void)
+{
+    const uint32_t field = VJO_GAME_OCR_S_VERTICAL;
+    reset();
+    fake_recognized_text = "猫";
+    TEST_CHECK(cfg.ocr_vertical == VJO_VERTICAL_DEFAULT && run_vocr_job() == VJO_OK);
+    const uint32_t off_flags = fake_game_request.flags, off_speed = fake_game_request.speed & ~field;
+    TEST_CHECK(!(fake_game_request.speed & field) || VJO_VERTICAL_DEFAULT != VJO_VERTICAL_OFF);
+    mem_free();
+    for (int mode = VJO_VERTICAL_OFF; mode <= VJO_VERTICAL_AUTO; mode++)
+        for (int rows_vertical = 0; rows_vertical <= 1; rows_vertical++) {
+            reset();
+            cfg.ocr_vertical = mode;
+            fake_rows_vertical = rows_vertical;
+            fake_recognized_text = "猫";
+            int columns = mode == VJO_VERTICAL_ON || (mode == VJO_VERTICAL_AUTO && rows_vertical);
+            const char *model = columns ? VJO_VOCR_VERTICAL_NAME : VJO_VOCR_TIER2_NAME;
+            TEST_CHECK(run_vocr_job() == VJO_OK && cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫"));
+            TEST_CHECK_(fake_game_request.flags == off_flags && (fake_game_request.speed & ~field) == off_speed &&
+                            (fake_game_request.speed & field) == (uint32_t)mode << VJO_GAME_OCR_S_VERTICAL_SHIFT &&
+                            fake_game_request.tiers == 3u && !strcmp(fake_game_request.model, VJO_VOCR_TIER2_NAME) &&
+                            !strcmp(anki_model, model),
+                        "mode %d rows_vertical %d: flags 0x%08X (0x%08X), speed 0x%08X, tiers 0x%X, model %s, cards %s",
+                        mode, rows_vertical, (unsigned)fake_game_request.flags, (unsigned)off_flags,
+                        (unsigned)fake_game_request.speed, fake_game_request.tiers, fake_game_request.model, anki_model);
+#if VJO_DEBUG
+            TEST_CHECK(columns ? logged("game vocr rc=0 " VJO_VOCR_VERTICAL_NAME ": ") != NULL
+                               : logged("game vocr rc=0 " VJO_VOCR_TIER2_NAME ": ") != NULL);
+#endif
+            mem_free();
+        }
+    /* on, its file missing: the job fails once, no size is left out, none is tried instead */
+    reset();
+    cfg.ocr_vertical = VJO_VERTICAL_ON;
+    fake_missing_model = VJO_VOCR_VERTICAL_NAME;
+    fake_model_misses = 0;
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && fake_model_misses == 1 && !vocr_unusable);
+    TEST_CHECK(logged("is unusable here") == NULL);
+    fake_missing_model = NULL;
+    mem_free();
+    /* auto, its file missing: the worker reads the rows (the size's model names the cards) */
+    reset();
+    cfg.ocr_vertical = VJO_VERTICAL_AUTO;
+    fake_rows_vertical = 1;
+    fake_missing_model = VJO_VOCR_VERTICAL_NAME;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(anki_model, VJO_VOCR_TIER2_NAME) && !vocr_unusable);
+    fake_missing_model = NULL;
+    mem_free();
+    /* off again: the sizes as before */
+    reset();
+    cfg.ocr_vertical = VJO_VERTICAL_OFF;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && fake_game_request.flags == off_flags && !(fake_game_request.speed & field) &&
+               !strcmp(fake_game_request.model, VJO_VOCR_TIER2_NAME));
+    mem_free();
 }
 
 #ifdef VJO_WITH_VOCR
@@ -2125,6 +2215,38 @@ static void test_vocr_request_carries_the_job_policy(void)
     TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_DROP_BORDERS));
     TEST_MSG("non_japanese_filter = none: speed 0x%08X", (unsigned)fake_game_request.speed);
     mem_free();
+    /* API 43: hook_trust (on by default) rides in the speed word as VJO_GAME_OCR_S_TRUST; hook_trust = off drops it
+     * (Rubi 0.9.7's selection), and the job's pick stays automatic either way */
+    reset();
+    fake_recognized_text = "猫";
+    TEST_CHECK(cfg.hook_trust == 1);
+    TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_TRUST) &&
+               !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL) && fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
+    mem_free();
+    reset();
+    cfg.hook_trust = 0;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_TRUST) &&
+               fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
+    TEST_MSG("hook_trust = off: speed 0x%08X", (unsigned)fake_game_request.speed);
+    mem_free();
+    /* API 50: the line finder's fixes ride in the speed word: the default (on) bit 21 alone, junk bits 21 and 22,
+     * all bits 21-23, off none */
+    const uint32_t lf_bits = VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK | VJO_GAME_OCR_S_LINE_VALLEY;
+    static const struct { int cfg; uint32_t want; } fixes[] = {
+        {1, VJO_GAME_OCR_S_LINE_FIX}, {2, VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK},
+        {3, VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK | VJO_GAME_OCR_S_LINE_VALLEY}, {0, 0u}};
+    for (unsigned k = 0; k < sizeof(fixes) / sizeof(fixes[0]); k++) {
+        reset();
+        if (k == 0) TEST_CHECK(cfg.ocr_line_fix == 1);       /* the default */
+        cfg.ocr_line_fix = fixes[k].cfg;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK &&
+                   (fake_game_request.speed & lf_bits) == fixes[k].want &&
+                   !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+        TEST_MSG("ocr_line_fix %d: speed 0x%08X", fixes[k].cfg, (unsigned)fake_game_request.speed);
+        mem_free();
+    }
     /* the refinement's mode: psp by default, on, off */
     static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
     for (unsigned i = 0; i < 3; i++) {
@@ -4149,9 +4271,11 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
         /* API 22: the default ocr_threads = 3 (two helpers), the default ocr_boost_clock = on (444 MHz while
          * recognizing), no line cache in any stage; textbox2 (the last) serially, to compare with textbox,
          * with the clock kept; the begin record says so. API 36: no stage drops a border line (as the gate,
-         * the user's jobs only) */
-        const uint32_t boost = VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_NOCACHE;
+         * the user's jobs only). API 43: hook_trust (on by default) rides in every job's speed word, the stages'
+         * too: their pick is OCR, which a trusted hook never answers (game_ocr/main.c) */
+        const uint32_t boost = VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_NOCACHE | VJO_GAME_OCR_S_TRUST;
         TEST_CHECK(selftest_speed_seen[i] == (i == 4 ? boost : 2u | boost));
+        TEST_MSG("stage %u speed 0x%08X", i, (unsigned)selftest_speed_seen[i]);
         TEST_CHECK(selftest_begin_speed[i] == selftest_speed_seen[i]);
         TEST_CHECK((selftest_flags_seen[i] & ~(stage_bits | VJO_GAME_OCR_F_SETTLE_FIRST)) == policy);
         TEST_MSG("stage %u flags 0x%08X", i, (unsigned)selftest_flags_seen[i]);
@@ -4938,6 +5062,64 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
 
 /* ocr_mode = on_press recognizes only when the overlay opens: the open
  * overlay keeps its text and runs no refresh, however the screen settles. */
+/* API 49: a trusted hook's line (VjoState.hook_scene, the kernel's while the region shows it) is read at once.
+ * Overlay closed: past the subtitles' SUBTITLE_GAP_US and a failure's backoff, which still hold an untrusted
+ * screen back. Open: its refresh starts right after the last refresh and lookup (REFRESH_GAP_US, REFRESH_IDLE_US
+ * hold an untrusted screen back), and a line that grew (the text shown, then more) keeps the cursor where it was. */
+static void test_trusted_hook_line_is_read_at_once(void)
+{
+    cursor_setup();
+    subtitles = 1;
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    next_scene(30); control_tick(VJO_EV_REGION_QUIET);
+    TEST_CHECK(!job_running && stable_pending); /* an untrusted screen: SUBTITLE_GAP_US after the last job */
+    state.hook_scene = 30; control_tick(0);
+    TEST_ASSERT(job_running); /* the trusted line: at once */
+    finish_current_job();
+    subtitles = 0;
+    ocr_backoff.until = test_now + 10000000; /* a failure's backoff */
+    state.hook_scene = 0; next_scene(31); control_tick(VJO_EV_REGION_QUIET); /* (the kernel's: only the scene's own) */
+    TEST_CHECK(!job_running && stable_pending);
+    state.hook_scene = 31; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    ocr_backoff.until = 0;
+    /* the open overlay */
+    open_overlay();
+    if (job_running) finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    fake_recognized_text = "犬猫";
+    next_scene(32); state.hook_scene = 0; control_tick(VJO_EV_REGION_QUIET);
+    TEST_ASSERT(job_running && job_refresh); /* the first refresh: nothing to pace it yet */
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only);
+    finish_current_job();
+    check_shown("犬猫", "dog", 0);
+    uint32_t generation = local_text_generation;
+    vjo_post_cursor(3, generation); on_command(); finish_current_job(); /* the reader moves to 猫 */
+    check_shown("犬猫", "cat", 3);
+    state.hook_scene = 0; next_scene(33); control_tick(VJO_EV_REGION_QUIET);
+    TEST_CHECK(!job_running && refresh_pending); /* untrusted: REFRESH_GAP_US and REFRESH_IDLE_US */
+    state.hook_scene = 33; fake_recognized_text = "犬猫鳥"; control_tick(0);
+    TEST_ASSERT(job_running && job_refresh); /* trusted: at once */
+    finish_current_job();
+    TEST_CHECK(DLOGGED("refresh rc=0: new text") && !strcmp(local_text, "犬猫鳥"));
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3); /* the line grew: the cursor stays */
+    finish_current_job();
+    check_shown("犬猫鳥", "cat", 3);
+    /* another line, trusted: replaced at once, the cursor at its start */
+    next_scene(34); state.hook_scene = 34; fake_recognized_text = "鳥猫"; control_tick(VJO_EV_REGION_QUIET);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
+    finish_current_job();
+    state.hook_scene = 0;
+    close_overlay();
+    mem_free();
+}
+
 static void test_on_press_overlay_never_refreshes(void)
 {
     cursor_setup();
@@ -7889,6 +8071,7 @@ TEST_LIST = {
 #endif
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
+    {"api49_trusted_hook_line_is_read_at_once", test_trusted_hook_line_is_read_at_once},
     {"history_up_walks_back_and_down_returns", test_history_up_walks_back_and_down_returns},
     {"history_needs_auto_lines_and_memory", test_history_needs_auto_lines_and_memory},
     {"history_waits_for_the_running_job", test_history_waits_for_the_running_job},
@@ -8021,6 +8204,7 @@ TEST_LIST = {
 #ifdef VJO_WITH_VOCR
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
     {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
+    {"vocr_vertical_request_sets_the_bit_names_the_model_and_leaves_no_size_out", test_vocr_vertical_request},
 #if VJO_DEBUG
     {"vocr_logs_memory_check_frames_and_lines", test_vocr_logs_memory_check_and_frames},
 #endif

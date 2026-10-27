@@ -672,7 +672,208 @@ static void no_memory_verified_site(void)
     TEST_CHECK(vjo_hook_select_no_memory(VJO_HOOK_PICK_AUTO, w, 2, &flags) == 4);
 }
 
+/* ---- API 43: trusted hooks (vjo_hook_select_trusted, VJO_GAME_OCR_S_TRUST) ---- */
+
+/* Luna's sites and Rubi's verified sites answer from their first line, short and unchanged text too, the newest
+ * among them (a tie: the lower ID); a CALL caller never does before it is learned; the state does not move. */
+static void trusted_sites_answer_without_ocr(void)
+{
+    const uint32_t luna = VJO_HOOK_CAND_SITE | VJO_HOOK_CAND_LUNA;
+    VjoHookSelect st = {0}, was;
+    VjoHookCand c[4] = {cand(9, 50, 0, LINE3), cand(3, 10, VJO_HOOK_CAND_SITE, LINE1), cand(1, 9, luna, LINE2),
+                        cand(4, 10, VJO_HOOK_CAND_SITE, LINE4)};
+    uint32_t flags;
+    c[1].verified = c[3].verified = 1;
+    was = st;
+    /* the verified sites 3 and 4 hold the newest text (10): a tie, the lower ID */
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, c, 4, &flags) == 3);
+    TEST_CHECK(flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR));
+    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
+    c[2].seq = 11; /* Luna's site copies a newer line */
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, c, 4, &flags) == 1);
+    /* the same text again, and a short one ("はい", 2 characters): still the site's, as Luna's always are */
+    for (unsigned again = 0; again < 3; again++)
+        TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, c, 4, &flags) == 1 && (flags & VJO_HOOK_R_TRUSTED));
+    c[2].text = "はい"; c[2].n = strlen(c[2].text); c[2].seq = 12;
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, c, 4, &flags) == 1);
+    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
+    /* a site neither Luna's nor verified (a Rubi entry that failed nothing yet has no verified mark: none here),
+     * and a CALL caller: not trusted */
+    c[0] = cand(9, 60, 0, LINE3);
+    c[1] = cand(3, 10, VJO_HOOK_CAND_SITE, LINE1);
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0 && !flags);
+    /* the Luna bit alone is not a table site; the verified mark alone on a CALL caller neither */
+    c[0] = cand(2, 1, VJO_HOOK_CAND_LUNA, "はい");
+    c[1] = cand(10, 1, 0, LINE1);
+    c[1].verified = 1;
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0 && !flags);
+    /* a pinned or OCR-only pick: never */
+    c[0] = cand(3, 10, VJO_HOOK_CAND_SITE, LINE1);
+    c[0].verified = 1;
+    TEST_CHECK(vjo_hook_select_trusted(&st, 3, c, 1, &flags) == 0 && !flags);
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_OCR, c, 1, &flags) == 0 && !flags);
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, c, 0, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_trusted(NULL, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0);
+    /* an empty candidate is no answer */
+    c[0].n = 0;
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0);
+}
+
+/* A CALL caller is learned as before (two agreements, then checks at 8 and 16) and trusted once its interval is
+ * VJO_HOOK_TRUST_INTERVAL: four OCR agreements; from then on every reading, a repeated one too, answers without
+ * OCR and no check falls due. The OCR comparisons over 120 fresh readings: 4, against 0.9.7's 6. */
+static void trusted_learned_source_after_four_agreements(void)
+{
+    VjoHookSelect st = {0};
+    VjoHookCand c;
+    unsigned score, ocr = 0, ocr_097 = 0;
+    uint32_t flags;
+    TEST_CHECK(VJO_HOOK_TRUST_INTERVAL == 32u);
+    for (int trust = 0; trust <= 1; trust++) {
+        st = (VjoHookSelect){0};
+        for (unsigned line = 1; line <= 120; line++) {
+            uint32_t id = 0;
+            reading(&c, line);
+            if (trust) id = vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags);
+            TEST_CHECK_(!trust || !id || st.interval >= 32u, "line %u trusted at interval %u", line, st.interval);
+            if (!id) id = vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags);
+            if (!id) {
+                if (trust) ocr++;
+                else ocr_097++;
+                TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+            }
+            /* lines 1, 2 (the lock), 10 (the first check: 16) and 26 (the second: 32), then trusted */
+            if (trust) TEST_CHECK_(st.interval == (line < 2 ? 0u : line < 10 ? 8u : line < 26 ? 16u : 32u),
+                                   "line %u interval %u", line, st.interval);
+            if (trust && line > 26) {
+                TEST_CHECK(id == 9 && flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
+                /* the same reading again (the overlay reopened on it): no OCR either, and no cadence moves */
+                VjoHookSelect was = st;
+                c.seq++;
+                TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 9);
+                TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
+            }
+        }
+    }
+    TEST_CHECK_(ocr == 4 && ocr_097 == 6, "%u with trust, %u without", ocr, ocr_097);
+    TEST_CHECK(st.strong == 1);
+    /* API 49: export gives the trusted interval for a trusted (strong) source only, and a source restored at it (an
+     * earlier launch's trust, the exact executable) is trusted at once, before any OCR, in the runtime slot this
+     * launch gives it; vjo_hook_select_before still asks its confirmation (hook_trust = off) */
+    VjoHookLearned saved;
+    TEST_CHECK(vjo_hook_select_learned(&st, &saved) && saved.interval == 32 && saved.key == 9 * 0x100u);
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved) && st.confirm && !st.locked && st.strong);
+    reading(&c, 500);
+    c.id = 14; /* another runtime slot this launch */
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 14 && st.locked == 14);
+    TEST_CHECK(flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
+    {
+        VjoHookSelect off = st; /* the same restore with hook_trust = off: its confirmation OCR first */
+        TEST_CHECK(vjo_hook_select_before(&off, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    }
+    /* one that reached 32 with weaker agreements (not strong) is exported at 16: restored untrusted, it needs its
+     * close agreement again */
+    st.strong = 0;
+    TEST_CHECK(vjo_hook_select_learned(&st, &saved) && saved.interval == 16);
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved) && !st.strong && st.interval == 16);
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0 && !flags);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 14);
+    TEST_CHECK(!st.strong && vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0 && !flags);
+    /* a pending disagreement is no trust either: exported at 16 */
+    st.interval = 32; st.strong = 0; st.misses = 1;
+    TEST_CHECK(vjo_hook_select_learned(&st, &saved) && saved.interval == 16);
+    st.interval = 8; /* below the trusted interval: exported as it is */
+    TEST_CHECK(vjo_hook_select_learned(&st, &saved) && saved.interval == 8);
+}
+
+/* The agreement that grants trust must be close (VJO_HOOK_TRUST_SCORE, 900): a source whose checks at 32 agree at
+ * 700-899 (the screen's text holds the line and more: the line before, part of the box) stays checked at 32 as in
+ * 0.9.7, OCR every 32nd line; a close agreement at a later check trusts it; a disagreement takes trust back before
+ * it is used. */
+static void trusted_needs_a_close_agreement(void)
+{
+    VjoHookSelect st = learn();
+    VjoHookCand c;
+    char ocr[160];
+    unsigned score, checks = 0;
+    uint32_t flags;
+    st.interval = 32;
+    st.unchecked = 0;
+    for (unsigned line = 3; line <= 3 + 64; line++) {
+        reading(&c, line);
+        /* OCR reads the line and a short name beside it: 15 of 18 characters are the hook's, about 830 */
+        snprintf(ocr, sizeof(ocr), "%s佐藤", c.text);
+        TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+        if (vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags)) continue;
+        checks++;
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, ocr, strlen(ocr), &c, 1, &score, &flags) == 9);
+        TEST_CHECK_(score >= VJO_HOOK_AGREE && score < VJO_HOOK_TRUST_SCORE, "score %u", score);
+        TEST_CHECK(!st.strong && st.interval == 32);
+    }
+    TEST_CHECK_(checks == 2, "%u checks", checks); /* every 32nd line, as 0.9.7's */
+    /* the next check agrees exactly: trusted from the line after it */
+    for (unsigned line = 100;; line++) {
+        reading(&c, line);
+        if (vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags)) break;
+        if (vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags)) continue;
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+        TEST_CHECK(score == 1000 && st.strong);
+        TEST_ASSERT(line < 140);
+    }
+    TEST_CHECK(flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
+    /* a disagreement (hook_trust off for a job, its check) takes the strong mark back */
+    st.unchecked = st.interval - 1u;
+    reading(&c, 200);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "全然関係のない画面の文字がここに表示されている", 69, &c, 1,
+                                     &score, &flags) == 0);
+    TEST_CHECK(!st.strong && st.misses == 1);
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+}
+
+/* OCR resumes by itself when the trusted source has no text, when its slot holds another caller, and while a
+ * disagreement is pending (0.9.7's recovery then compares it again); the source's learning is kept. */
+static void trusted_source_fails_its_checks(void)
+{
+    VjoHookSelect st = learn();
+    VjoHookCand c, other;
+    uint32_t flags;
+    st.interval = 32; /* trusted */
+    st.strong = 1;
+    VjoHookSelect weak = st;
+    weak.strong = 0; /* at 32 but no close agreement there yet: not trusted */
+    reading(&c, 6);
+    TEST_CHECK(vjo_hook_select_trusted(&weak, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0 && !flags);
+    reading(&c, 7);
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 9);
+    /* short text answers (a trusted source's "はい") */
+    c.text = "はい"; c.n = strlen(c.text);
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 9);
+    /* no text, or no candidate at all: none */
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 0, &flags) == 0);
+    c.n = 0;
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    /* another caller in its slot (its key) is not the source */
+    reading(&other, 8);
+    other.key = 0x5555u;
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &other, 1, &flags) == 0 && st.interval == 32);
+    /* a pending disagreement: compared again first */
+    reading(&c, 9);
+    st.misses = 1;
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0 && !flags);
+    st.misses = 0;
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 9);
+    /* a site with text comes first */
+    VjoHookCand both[2] = {c, cand(2, 1, VJO_HOOK_CAND_SITE | VJO_HOOK_CAND_LUNA, LINE1)};
+    TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, both, 2, &flags) == 2 && (flags & VJO_HOOK_R_SITE));
+}
+
 TEST_LIST = {
+    {"trusted_sites_answer_without_ocr", trusted_sites_answer_without_ocr},
+    {"trusted_learned_source_after_four_agreements", trusted_learned_source_after_four_agreements},
+    {"trusted_source_fails_its_checks", trusted_source_fails_its_checks},
+    {"trusted_needs_a_close_agreement", trusted_needs_a_close_agreement},
     {"no_memory_verified_site", no_memory_verified_site},
     {"exact_text", exact_text}, {"wrong_characters", wrong_characters},
     {"name_and_line", name_and_line}, {"backlog_and_prefetch", backlog_and_prefetch},

@@ -102,8 +102,10 @@ def c_table(source=None):
     sizes = macros()
     body = array_body(source, "#else\nstatic const VjoVocrModel models[]")
     pins = []
-    # the finder: a runtime mode, or core/vocr_ocr.c's VJO_VOCR_FINDER (#194: every pinned model's)
-    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE + r', (?:VOCR_LINES_\w+|VJO_VOCR_FINDER)\}',
+    # the finder: a runtime mode, or core/vocr_ocr.c's VJO_VOCR_FINDER (#194: every pinned model's of rows),
+    # or its VJO_VOCR_COLUMNS (#99: the vertical model's column finder)
+    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE +
+                         r', (?:VOCR_LINES_\w+|VJO_VOCR_FINDER|VJO_VOCR_COLUMNS)\}',
                          body):
         name = sizes.get(m.group(1), m.group(1))  # a name macro (VJO_VOCR3_H15_NAME) or a literal
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
@@ -145,11 +147,11 @@ def kernel_names(source=None):
 
 def python_pins():
     """name -> (url, bytes, sha256, release tag) of every release's asset table in tools/prepare_ocr.py:
-    VOCR_ASSETS (VOCR_TAG), VOCR3_ASSETS (VOCR3_TAG) and any later VOCRn_ASSETS (VOCRn_TAG), each name in
-    one table only."""
+    VOCR_ASSETS (VOCR_TAG), VOCR3_ASSETS (VOCR3_TAG) and any later VOCRn_ASSETS (VOCRn_TAG), the vertical
+    model's VOCR5V_ASSETS (VOCR5V_TAG) too, each name in one table only."""
     out = {}
     for key, assets in sorted(vars(prepare_ocr).items()):
-        release = re.fullmatch(r"(VOCR\d*)_ASSETS", key)
+        release = re.fullmatch(r"(VOCR\d*V?)_ASSETS", key)
         if not release:
             continue
         tag = getattr(prepare_ocr, release.group(1) + "_TAG")
@@ -167,7 +169,8 @@ def c_lm_table():
     table = source[source.index("static const VjoVocrLm lms[VJO_VOCR_LM_TIERS]"):]
     table = table[:table.index("};")]
     out = {}
-    for m in re.finditer(r"\{(VJO_VOCR_LM\d_NAME), (VJO_VOCR_LM\d_BYTES),\s*\{([^}]*)\},\s*(\d+), (\d)\}", table):
+    for m in re.finditer(r"\{(VJO_VOCR_LM\d_NAME), (VJO_VOCR_LM\d_BYTES),\s*\{([^}]*)\},\s*(\d+), (\d), (\d+), "
+                         r"(VOCR_LM_BOS|VOCR_LM_EOS)\}", table):
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
         out[sizes[m.group(1)]] = (sizes[m.group(2)], digest, int(m.group(5)))
     return out
@@ -241,8 +244,8 @@ class VocrDefaults(unittest.TestCase):
                     prepare_ocr.fetch_lms(out, src)
         # the real pin is the release's file
         url, size, sha = prepare_ocr.VOCR_LM_ATTRIBUTION_PIN[prepare_ocr.VOCR_LM_ATTRIBUTION]
-        self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/ATTRIBUTION.md"))
-        self.assertEqual((size, sha), (2538, "1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c"))
+        self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.2/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (6514, "9418ed87e6d9fa196aba2315e05a0cf0dca7056482cce03577ced423e5feb1d3"))
 
     def test_the_model_sizes_attribution_comes_pinned_with_them(self):
         """fetch_tiers (--backend vocr-tiers, CI's package job) fetches v0.3.0's ATTRIBUTION.md with the
@@ -260,6 +263,13 @@ class VocrDefaults(unittest.TestCase):
                 blob = ("fixture " + name).encode()
                 pins[name] = ("https://fixture.invalid/" + name, len(blob), hashlib.sha256(blob).hexdigest())
                 (src / name).write_bytes(blob)
+            vblob = b"fixture " + prepare_ocr.VOCR_VERTICAL_MODEL.encode()  # #99: fetched with them
+            vpins = {prepare_ocr.VOCR_VERTICAL_MODEL: ("https://fixture.invalid/V", len(vblob), hashlib.sha256(vblob).hexdigest())}
+            (src / prepare_ocr.VOCR_VERTICAL_MODEL).write_bytes(vblob)
+            vatt = b"the vertical model's attribution fixture"  # its release's ATTRIBUTION.md, kept under its own name
+            vatt_pin = {prepare_ocr.VOCR_VERTICAL_ATTRIBUTION: ("https://fixture.invalid/VA", len(vatt),
+                                                                hashlib.sha256(vatt).hexdigest())}
+            (src / prepare_ocr.VOCR_VERTICAL_ATTRIBUTION).write_bytes(vatt)
             att, lm_att = b"VOCR5 attribution fixture", b"the LMs' attribution"
             att_pin = {prepare_ocr.VOCR_MODEL_ATTRIBUTION: ("https://fixture.invalid/ATTRIBUTION.md", len(att),
                                                             hashlib.sha256(att).hexdigest())}
@@ -272,15 +282,17 @@ class VocrDefaults(unittest.TestCase):
                                                                 hashlib.sha256(gate_att).hexdigest())}
             (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
             (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
-            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), \
+            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), mock.patch.dict(prepare_ocr.VOCR5V_ASSETS, vpins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_VERTICAL_ATTRIBUTION_PIN", vatt_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ASSETS", gate_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ATTRIBUTION_PIN", gate_att_pin), \
                  mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
                 paths = prepare_ocr.fetch_tiers(out, src)
                 self.assertEqual(sorted(p.name for p in paths),
                                  sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", prepare_ocr.VOCR_GATE_MODEL,
-                                         "GATE-ATTRIBUTION.md"]))
+                                         "GATE-ATTRIBUTION.md", prepare_ocr.VOCR_VERTICAL_MODEL,
+                                         prepare_ocr.VOCR_VERTICAL_ATTRIBUTION]))
                 self.assertEqual((out / "GATE-ATTRIBUTION.md").read_bytes(), gate_att)
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
                 self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
@@ -331,7 +343,7 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(set(table), set(prepare_ocr.VOCR_LM_ASSETS))
         for name, (size, sha, tier) in table.items():
             url, want_size, want_sha = prepare_ocr.VOCR_LM_ASSETS[name]
-            self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/" + name), url)
+            self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.2/" + name), url)
             self.assertEqual((size, sha), (want_size, want_sha), name)
         self.assertEqual(sorted(t for _, _, t in table.values()), [1, 2, 3, 4])
         # the kernel knows the same names and sizes by tier
@@ -339,6 +351,15 @@ class VocrDefaults(unittest.TestCase):
         for n in range(1, 5):
             self.assertIn(f"VJO_VOCR_LM{n}_NAME", kernel)
             self.assertIn(f"VJO_VOCR_LM{n}_BYTES", kernel)
+        # each tier's decoder settings are the ones vita-vn-ocr selected it with (v0.3.7-lm6.2's settings.json):
+        # VOCR6's LMs at tiers 2 and 4, ctclm.2's at 1 and 3
+        source = (ROOT / "core/vocr_ocr.c").read_text()
+        block = source[source.index("static const VjoVocrLm lms[VJO_VOCR_LM_TIERS]"):]
+        settings = re.findall(r"\},\s*(\d+), (\d), (\d+), (VOCR_LM_BOS|VOCR_LM_EOS)\}", block[:block.index("};")])
+        self.assertEqual(settings, [("3000", "1", "500", "VOCR_LM_EOS"), ("2500", "2", "600", "VOCR_LM_BOS"),
+                                    ("3000", "3", "500", "VOCR_LM_EOS"), ("2500", "4", "600", "VOCR_LM_BOS")])
+        self.assertIn("o->alpha = lm->alpha;", source)
+        self.assertIn("o->flags = lm->flags;", source)
         # the ledger's LM block holds the largest, page-rounded
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))
@@ -427,7 +448,7 @@ class VocrDefaults(unittest.TestCase):
         python = python_pins()
         by_name = {"VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "H15_w8.vocr", "FL10_w8.vocr", "F20_w8.vocr",
                    "VOCR4_W20_w8.vocr"}  # the host tools' models; the sizes' own besides them
-        self.assertEqual(set(meta), by_name | set(TIER_FILES))
+        self.assertEqual(set(meta), by_name | set(TIER_FILES) | {prepare_ocr.VOCR_VERTICAL_MODEL})
         for name, (generation, shape, _) in meta.items():
             self.assertIn(name, python)
             self.assertEqual(generation, prepare_ocr.VOCR_GENERATION[python[name][3]], name)
@@ -435,7 +456,8 @@ class VocrDefaults(unittest.TestCase):
                 self.assertTrue(name.startswith(generation + "_"), name)
             self.assertIn(shape, name, name)
         self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3",
-                                                       "v0.2.5-vocr4.1": "VOCR4", "v0.3.6-head2level.1": "VOCR5"})
+                                                       "v0.2.5-vocr4.1": "VOCR4", "v0.3.6-head2level.1": "VOCR5",
+                                                       prepare_ocr.VOCR5V_TAG: "VOCR5"})
         self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], TIER_PINS["normal"][5])
         tiers = prepare_ocr.model_tiers()["tiers"]
         self.assertEqual([meta[t["model"]][0] for t in tiers], [TIER_PINS[t["id"]][5] for t in tiers])
@@ -487,7 +509,178 @@ class VocrDefaults(unittest.TestCase):
             if name not in TIER_FILES:
                 self.assertNotIn(name, shipped)
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
-                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL})  # the LMs, the gate (API 26)
+                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL,
+                          prepare_ocr.VOCR_VERTICAL_MODEL})  # the LMs, the gate (API 26), VOCR5-V (API 47)
+
+
+class RuntimePinEverywhere(unittest.TestCase):
+    """The vita-vn-ocr commit cmake/VocrOCR.cmake pins is the one CI's jobs check out and the docs' Build line names
+    (audit-vocr6-finder-h B1: a pin bump that missed the workflow failed every GitHub build job at configure)."""
+
+    def test_the_workflow_and_the_docs_check_out_the_cmake_pin(self):
+        cmake = (ROOT / "cmake" / "VocrOCR.cmake").read_text(encoding="utf-8")
+        pin = re.search(r"^set\(VJO_VOCR_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
+        flow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        refs = re.findall(r"repository: bee-san/vita-vn-ocr\n(?:\s+#.*\n)*\s+ref: ([0-9a-f]{40})", flow)
+        self.assertTrue(refs, "no vita-vn-ocr checkout found in release.yml")
+        self.assertEqual(set(refs), {pin}, refs)
+        docs = (ROOT / "docs" / "vita-vn-ocr.md").read_text(encoding="utf-8")
+        self.assertIn(f"git -C /path/to/vita-vn-ocr checkout {pin}", docs)
+
+
+class TestModels(unittest.TestCase):
+    """--backend vocr-tests: what the host tests' VJO_VOCR_MODEL_DIR holds for their real-model checks, the set
+    tools/fast_gate.sh's models lane checks (--check) before it runs them."""
+
+    def test_the_set_is_every_pin_the_plugin_reads(self):
+        """Every recognizer the plugin pins (shipped or not: the tests run FL10, H15, F20, VOCR3's and VOCR4-W20
+        as well as the sizes' and VOCR5-V), its four LMs and the gate's weights, each at the plugin's own size and
+        SHA-256, and v0.3.0's three VOCR5 recognizers under v0.3.0/; no attribution and nothing else."""
+        models = {name: assets[name][1:] for name, assets, _ in prepare_ocr.test_models()}
+        self.assertEqual(len(models), len(prepare_ocr.test_models()))  # each file once
+        want = {name: (size, sha) for name, (size, sha, _) in c_table().items()}
+        want.update({name: (size, sha) for name, (size, sha, _) in c_lm_table().items()})
+        _, size, sha = prepare_ocr.VOCR_GATE_ASSETS[prepare_ocr.VOCR_GATE_MODEL]
+        want[prepare_ocr.VOCR_GATE_MODEL] = (size, sha)
+        want.update({f"v0.3.0/{name}": (size, sha) for name, (_, size, sha) in prepare_ocr.VOCR5_V030_ASSETS.items()})
+        self.assertEqual(models, want)
+        sizes = macros()
+        for macro in ("VJO_VOCR_TIER1_NAME", "VJO_VOCR_TIER2_NAME", "VJO_VOCR_TIER3_NAME", "VJO_VOCR_CASCADE_NAME",
+                      "VJO_VOCR_VERTICAL_NAME", "VJO_VOCR_GATE_NAME"):
+            self.assertIn(sizes[macro], models, macro)
+        for name in ("FL10_w8.vocr", "H15_w8.vocr"):  # host/tests/test_game_vocr.c's and test_capture_parity.c's
+            self.assertIn(name, models)
+
+    def test_the_off_path_blobs_are_what_test_vocr_reads(self):
+        """host/tests/test_vocr.c's off-path check reads v0.3.0's blobs as VJO_VOCR_MODEL_DIR/v0.3.0/<name> and skips
+        without them (the models lane would pass without running it): the set holds those names there, from
+        release v0.3.0, each its sizes' blob without the head gate (a size its gated blob's, less the gate)."""
+        source = (ROOT / "host" / "tests" / "test_vocr.c").read_text(encoding="utf-8")
+        body = source[source.index("static void test_off_path_reads_v030(void)"):]
+        names = re.search(r"v030\[3\] = \{([^}]*)\}", body).group(1)
+        self.assertIn('"%s/v0.3.0/%s"', body)
+        read = re.findall(r'"([^"]+)"', names)
+        self.assertEqual(sorted(read), sorted(prepare_ocr.VOCR5_V030_ASSETS))
+        tags = {name: tag for name, _, tag in prepare_ocr.test_models()}
+        for name in read:
+            self.assertEqual(tags[f"v0.3.0/{name}"], "v0.3.0")
+        for old, new in (("VOCR5_S_w8.vocr", "VOCR5_S_w8g.vocr"), ("VOCR5_N_w8.vocr", "VOCR5_N_w8g2.vocr"),
+                         ("VOCR5_L_w8.vocr", "VOCR5_L_w8g2.vocr")):
+            self.assertLess(prepare_ocr.VOCR5_V030_ASSETS[old][1], prepare_ocr.VOCR5_ASSETS[new][1])
+            self.assertTrue(prepare_ocr.VOCR5_V030_ASSETS[old][0].endswith("/releases/download/v0.3.0/" + old))
+
+    def _fixture(self, tmp, names=("A_w8.vocr", "B_w8.vocr", "c.vlm", "d.vtd")):
+        """Pins of small fixture files in tmp/src, as test_models() gives them."""
+        import hashlib  # noqa: PLC0415
+        src = Path(tmp) / "src"
+        src.mkdir()
+        assets = {}
+        for name in names:
+            data = ("fixture " + name).encode()
+            (src / name).write_bytes(data)
+            assets[name] = ("https://fixture.invalid/" + name, len(data), hashlib.sha256(data).hexdigest())
+        return src, [(name, assets, "v0.0.0-fixture") for name in names]
+
+    def test_check_names_each_file_missing_or_not_the_pinned_one(self):
+        import shutil  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as tmp:
+            src, models = self._fixture(tmp)
+            self.assertEqual(prepare_ocr.check_models(src, models), [])
+            out = Path(tmp) / "out"
+            shutil.copytree(src, out)
+            (out / "A_w8.vocr").unlink()
+            b_size = (out / "B_w8.vocr").stat().st_size
+            (out / "B_w8.vocr").write_bytes((out / "B_w8.vocr").read_bytes() + b"!")  # another size
+            data = (out / "c.vlm").read_bytes()
+            (out / "c.vlm").write_bytes(data[:-1] + b"?")  # the same size, other bytes
+            self.assertEqual(prepare_ocr.check_models(out, models),
+                             ["A_w8.vocr: missing (v0.0.0-fixture)",
+                              f"B_w8.vocr: {b_size + 1} B, not the pinned {b_size} B (v0.0.0-fixture)",
+                              "c.vlm: not the pinned SHA-256 (v0.0.0-fixture)"])
+            self.assertEqual(len(prepare_ocr.check_models(Path(tmp) / "absent", models)), len(models))
+
+    def test_the_cli_checks_without_a_download_and_fetches_from_a_local_copy(self):
+        import contextlib  # noqa: PLC0415
+        import io  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        from unittest import mock  # noqa: PLC0415
+
+        def run(*argv):
+            stdout = io.StringIO()
+            with mock.patch.object(sys, "argv", ["prepare_ocr.py", *argv]), contextlib.redirect_stdout(stdout):
+                try:
+                    prepare_ocr.main()
+                    code = 0
+                except SystemExit as e:
+                    code = e.code
+            return code, stdout.getvalue()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src, models = self._fixture(tmp)
+            out = Path(tmp) / "out"
+            with mock.patch.object(prepare_ocr, "test_models", return_value=models), \
+                 mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
+                code, text = run("--backend", "vocr-tests", "--check", "--output", str(out))
+                self.assertEqual(code, 1)
+                self.assertIn("0 of 4 pinned test models verified in", text)
+                self.assertFalse(out.exists())  # the check makes nothing
+                code, text = run("--backend", "vocr-tests", "--output", str(out), "--from", str(src))
+                self.assertEqual(code, 0, text)
+                self.assertEqual(sorted(p.name for p in out.iterdir()), sorted(name for name, _, _ in models))
+                code, text = run("--backend", "vocr-tests", "--check", "--output", str(out))
+                self.assertEqual((code, text.splitlines()[-1]), (0, f"4 of 4 pinned test models verified in {out}"))
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(run("--backend", "vocr-lm", "--check", "--output", str(out))[0], 2)  # its own set only
+
+    def test_a_file_in_a_subdirectory_is_its_releases_asset_of_its_own_name(self):
+        """v0.3.0/ (the off-path check's): a --from directory holds the release's file at its own name, the public
+        download is the pinned URL; either way the file lands at its path under --output, and --check finds it
+        there (and only there)."""
+        import hashlib  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        from unittest import mock  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as tmp:
+            data = b"fixture v0.3.0 blob"
+            pin = ("https://fixture.invalid/v0.3.0/E_w8.vocr", len(data), hashlib.sha256(data).hexdigest())
+            models = [("v0.3.0/E_w8.vocr", {"v0.3.0/E_w8.vocr": pin}, "v0.3.0")]
+            src = Path(tmp) / "src"
+            src.mkdir()
+            (src / "E_w8.vocr").write_bytes(data)  # as a release's download directory holds it
+            (src / "v0.3.0").mkdir()
+            (src / "v0.3.0" / "E_w8.vocr").write_bytes(b"not it")
+            served = []
+
+            class Response:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    return False
+
+                def read(self, n):
+                    return data[:n]
+
+            def urlopen(request, timeout):
+                served.append(request.full_url)
+                return Response()
+
+            with mock.patch.object(prepare_ocr, "test_models", return_value=models):
+                out = Path(tmp) / "from"
+                with mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
+                    paths = prepare_ocr.fetch_test_models(out, src)
+                self.assertEqual(paths, [out / "v0.3.0" / "E_w8.vocr"])
+                self.assertEqual((out / "v0.3.0" / "E_w8.vocr").read_bytes(), data)
+                self.assertEqual(prepare_ocr.check_models(out, models), [])
+                out = Path(tmp) / "public"
+                with mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=urlopen):
+                    self.assertEqual(prepare_ocr.fetch_test_models(out), [out / "v0.3.0" / "E_w8.vocr"])
+                self.assertEqual(served, [pin[0]])
+                self.assertEqual(prepare_ocr.check_models(out, models), [])
+                (out / "E_w8.vocr").write_bytes((out / "v0.3.0" / "E_w8.vocr").read_bytes())
+                (out / "v0.3.0" / "E_w8.vocr").unlink()  # beside, not in v0.3.0/: missing
+                self.assertEqual(prepare_ocr.check_models(out, models), ["v0.3.0/E_w8.vocr: missing (v0.3.0)"])
+
 
 if __name__ == "__main__":
     unittest.main()

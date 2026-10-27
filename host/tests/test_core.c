@@ -5,6 +5,7 @@
 #include "acutest.h"
 #include "client.h"
 #include "config.h"
+#include "../include/vjo_game_ocr.h" /* VJO_GAME_OCR_VERTICAL_*: ocr_vertical's values (API 47) */
 #include "entries.h"
 #include "foreground.h"
 #include "furigana.h"
@@ -787,7 +788,8 @@ static void test_config(void)
     refine = "ocr_refine_lines = off\nocr_refine_lines = sometimes\n";
     vjo_config_parse(&c, refine, strlen(refine));
     TEST_CHECK(c.ocr_refine_lines == 0 && c.n_warnings == 1);
-    /* API 26: the text-presence gate, off by default (docs/vita-vn-ocr.md "Text-presence gate") */
+    /* API 26: the text-presence gate, off by default (docs/vita-vn-ocr.md "Text-presence gate": API 43's measurement
+     * on the hooked pages kept it so) */
     vjo_config_defaults(&c);
     TEST_CHECK(c.ocr_text_gate == 0 && VJO_TEXT_GATE_DEFAULT == 0);
     const char *gate = "ocr_text_gate = ON\n";
@@ -817,6 +819,17 @@ static void test_config(void)
     vjo_config_parse(&c, hg, strlen(hg));
     TEST_CHECK(c.ocr_head_gate == VJO_HEAD_GATE && c.n_warnings == 2); /* no ocr_two_level key: unknown, warned */
     TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_head_gate = on\n") != NULL);
+    /* API 50: the line finder's fixes, on by default (vita-vn-ocr #129's measured default); off; junk; all */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_line_fix == 1 && VJO_LINE_FIX_DEFAULT == 1);
+    static const struct { const char *text; int want, warnings; } fixes[] = {
+        {"ocr_line_fix = off\n", 0, 0}, {"ocr_line_fix = ON\n", 1, 0}, {"ocr_line_fix = junk\n", 2, 0},
+        {"ocr_line_fix = all\n", 3, 0}, {"ocr_line_fix = all\nocr_line_fix = valley\n", 3, 1}};
+    for (unsigned k = 0; k < sizeof(fixes) / sizeof(fixes[0]); k++) {
+        vjo_config_parse(&c, fixes[k].text, strlen(fixes[k].text));
+        TEST_CHECK(c.ocr_line_fix == fixes[k].want && c.n_warnings == fixes[k].warnings);
+        TEST_MSG("%s: %d, %d warnings", fixes[k].text, c.ocr_line_fix, c.n_warnings);
+    }
     /* API 31, audit-hooks F3: the hooks' table sites, on by default; off makes the Shell send
      * VJO_TEXT_SOURCE_NO_SITES (only the string copies hooked). Any case; an unknown value is on, warned. */
     vjo_config_defaults(&c);
@@ -830,6 +843,22 @@ static void test_config(void)
         vjo_config_parse(&c, sites[i].text, strlen(sites[i].text));
         TEST_CHECK_(c.hook_sites == sites[i].sites && c.n_warnings == sites[i].warnings, "%s", sites[i].text);
         if (sites[i].warnings) TEST_CHECK(strstr(c.warnings[0], "hook_sites") != NULL); /* named, never the value */
+    }
+    /* API 43, hook_trust: on (1) by default, any case, an unknown or empty value on with a warning naming it;
+     * it and hook_sites share their parse, each setting its own field */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.hook_trust == 1);
+    static const struct { const char *text; int trust, sites, warnings; } trust[] = {
+        {"hook_trust = off\n", 0, 1, 0}, {"Hook_Trust = OFF\n", 0, 1, 0}, {"HOOK_TRUST = off\nhook_sites = off\n", 0, 0, 0},
+        {"hook_sites = off\nhook_trust = on\n", 1, 0, 0}, {"hook_trust = off\nhook_trust = maybe\n", 1, 1, 1},
+        {"hook_trust = off\nhook_trust =\n", 1, 1, 1}, {"hook_trust = off ; 0.9.7's checks\n", 0, 1, 0},
+        {"hook_trusted = off\n", 1, 1, 1}};
+    for (unsigned i = 0; i < sizeof(trust) / sizeof(trust[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, trust[i].text, strlen(trust[i].text));
+        TEST_CHECK_(c.hook_trust == trust[i].trust && c.hook_sites == trust[i].sites &&
+                    c.n_warnings == trust[i].warnings, "%s", trust[i].text);
+        if (trust[i].warnings) TEST_CHECK(strstr(c.warnings[0], "hook_trust") != NULL);
     }
     /* The reading statistics' time rule (docs/ocr-history.md#reading-time): adaptive (0) by default, 15s (1)
      * Rubi 0.9.7's. Any case; an unknown or empty value is adaptive, warned with the key's name. */
@@ -870,6 +899,30 @@ static void test_config(void)
     vjo_config_parse(&c, speed, strlen(speed));
     TEST_CHECK(c.ocr_helpers == 1 && c.ocr_boost_clock == 1 && c.n_warnings == 4); /* one warning each, kept 2 */
     TEST_MSG("helpers %d clock %d, %u warnings", c.ocr_helpers, c.ocr_boost_clock, c.n_warnings);
+    /* vita-vn-ocr #99 (API 47): vertical text, VJO_VERTICAL_DEFAULT by default; off | on | auto in any case, stored
+     * as the request's field (core/config.h VJO_VERTICAL_*); anything else keeps the value with a warning that
+     * names the setting, not the value */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_DEFAULT);
+    TEST_CHECK(VJO_VERTICAL_OFF == 0 && VJO_VERTICAL_ON == (int)VJO_GAME_OCR_VERTICAL_ON &&
+               VJO_VERTICAL_AUTO == (int)VJO_GAME_OCR_VERTICAL_AUTO);
+    const char *vertical = "ocr_vertical = ON\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_ON && c.n_warnings == 0);
+    vertical = "ocr_vertical = yes\nOCR_Vertical = 1\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_ON && c.n_warnings == 2 && strstr(c.warnings[0], "ocr_vertical: invalid value") &&
+               !strstr(c.warnings[0], "yes") && strstr(c.warnings[1], "OCR_Vertical"));
+    vertical = "ocr_vertical = off\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_OFF && c.n_warnings == 2);
+    vertical = "ocr_vertical = Auto\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_AUTO && c.n_warnings == 2);
+    vjo_config_defaults(&c);
+    vertical = "ocr_vertical = on\nocr_boost_clock = off\n"; /* neighbours in the parser, not one field */
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_ON && c.ocr_boost_clock == 0 && !c.n_warnings);
 
     /* the default file parses cleanly to the defaults */
     {
@@ -893,10 +946,13 @@ static void test_config(void)
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
         TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
         TEST_CHECK(d.hook_sites == 1 && strstr(t, "\nhook_sites = on\n")); /* audit-hooks F3 */
+        TEST_CHECK(d.hook_trust == 1 && strstr(t, "\nhook_trust = on\n")); /* API 43 */
         TEST_CHECK(d.reading_time == 0 && strstr(t, "\nreading_time = adaptive\n"));
         /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
         TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&
                    !strstr(t, "japanese_only_selection = on"));
+        TEST_CHECK(d.ocr_vertical == VJO_VERTICAL_DEFAULT &&
+                   strstr(t, "\nocr_vertical = " VJO_VERTICAL_DEFAULT_TEXT "\n"));
     }
 
     /* the same button for both: the toggle keeps it */

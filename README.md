@@ -48,6 +48,9 @@
   top, a word's dictionary entry under it, with its reading and how common the word is. Go word by
   word with the d-pad, character by character with the left stick, or tap a word. An inflected word
   is looked up in its dictionary form (した → する).
+- **Vertical text too.** Columns of Japanese, read right to left, as in a vertical dialogue box or a manga in
+  NOBORU: in a text box drawn around them Rubi finds them by itself (**Vertical text**: Automatic) and reads them
+  with its vertical model ([how well](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console yet).
 - **Fully offline.** Rubi reads dialogue directly with [native text hooks](#native-text-hooks) where
   available, or uses its own OCR on the Vita, then looks it up in a dictionary on the memory card:
   no Wi-Fi, no computer, no account, and no network code
@@ -75,12 +78,12 @@
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
 **Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.7/Rubi-0.9.7.zip)
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.8/Rubi-0.9.8.zip)
 and extract it.
 
 ### 1. Transfer modules
 
-Using VitaShell FTP, transfer the files from `Rubi-0.9.7/ur0/tai/` to `ur0:tai/` on the Vita:
+Using VitaShell FTP, transfer the files from `Rubi-0.9.8/ur0/tai/` to `ur0:tai/` on the Vita:
 
 - `VitaJPOverlay_Kernel.skprx`
 - `VitaJPOverlay_OCR.suprx`
@@ -107,13 +110,13 @@ If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the en
 
 ### 3. Transfer data files for the plugin
 
-Transfer `Rubi-0.9.7/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+Transfer `Rubi-0.9.8/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
 as `ur0:data/VitaJPOverlay`.
 
 ### 4. Transfer data files for OCR and the dictionary
 
 **This is a separate folder, not a duplicate of step 3.** Transfer
-`Rubi-0.9.7/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+`Rubi-0.9.8/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
 as `ux0:data/VitaJPOverlay`.
 
 If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
@@ -122,7 +125,7 @@ and keep your existing settings file when copying the data.
 ### 5. Transfer and install the VPK / companion app
 
 Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
-top-right corner of its LiveArea page. Transfer `Rubi-0.9.7/Rubi.vpk` to the Vita and install
+top-right corner of its LiveArea page. Transfer `Rubi-0.9.8/Rubi.vpk` to the Vita and install
 (promote) it with VitaShell. Accept the installation and extended-permissions prompts.
 
 ### 6. Reboot the Vita
@@ -171,6 +174,9 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries for the same word an L or R tap pages through, 1–8 (2: a word, then the same word as a character's name) | 2 |
 | | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
+| | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready as soon as the game writes it ([details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
+| | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
+| | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns in every game) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -193,7 +199,7 @@ Older installs may have kept **OCR only**, so choose Automatic once if needed.
 | --- | --- | --- |
 | **CLANNAD**, Japanese Vita release (`PCSG00415`) | Automatic; string-copy hooks and Rubi's own game profile | String-copy extraction confirmed in the combined debug test build, including readings without OCR. The separate game profile's hook site remains unverified on a real Vita. |
 | **175 Vita title IDs from LunaTranslator's table** | Automatic attempts using 294 ported hook sites, plus string-copy hooks | Experimental: these game-specific hook sites have not been verified on a real Vita. Examples include **TIME TRAVELERS** (`PCSG00062`), **Code:Realize ～創世の姫君～** (`PCSG00402`) and **DRAMAtical Murder** (`PCSG00420`). |
-| **28 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7; **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) on `main`), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 16 are games of Luna's table: for 15 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita. |
+| **28 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 16 are games of Luna's table: for 15 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita. |
 | Other native Vita games | Automatic tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. OCR is used until a matching source is found. **Every game** makes the same attempts. |
 | PSP games in Adrenaline | OCR only | Native PSP text hooks are not implemented, including in Every game mode. |
 
@@ -233,6 +239,7 @@ offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
+| ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
@@ -244,7 +251,8 @@ What each build changed, and what its console run showed: the [changelog](CHANGE
 
 ## Limits
 
-- Horizontal text only: vertical text is not read.
+- Vertical text is read only in a text box drawn around it (on a whole screen Rubi reads rows), and not yet on a
+  console ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 - One console has tested Rubi ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
   not measured on a console yet.
 - The game can stutter while Rubi reads ([FAQ](#will-it-slow-my-game-down)).
@@ -278,7 +286,7 @@ Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the e
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
 game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
-Rubi's OCR worker from its start: 212 KiB of its memory (176 KiB of module pages, 36 KiB of stack and
+Rubi's OCR worker from its start: 224 KiB of its memory (188 KiB of module pages, 36 KiB of stack and
 TLS: the normal build's figures; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).
@@ -361,7 +369,8 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   OCR-Synthetic-Multilingual-v1 (CC BY 4.0) and on fonts and text that are free for non-commercial
   use only, so their weights are for non-commercial use only: their attribution and terms ship
   beside them as `ocr/MODEL-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#models)). Its character
-  language models are CC BY-SA 4.0. The optional text-presence gate's weights (`ocr_text_gate`, off by
+  language models are CC BY-SA 4.0; the 1 MB and 4 MB ones also carry n-gram counts of the owner's hooked console
+  captures (vita-vn-ocr #127). The optional text-presence gate's weights (`ocr_text_gate`, off by
   default) were trained on synthetic text in fonts and text pools free for non-commercial use only and on
   VNDB screenshots, so they are for non-commercial use only too: their attribution ships beside them as
   `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)).
@@ -377,8 +386,9 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   release v12.1.2.12 (commit 51884b6), whose source files Rubi keeps in
   [third_party/LunaTranslator/](third_party/LunaTranslator/README.md)
   ([the games](docs/hook-titles.md)).
-- **Lookups:** Yomichan's deinflection rules, with Yomitan's for spoken forms (しておく, 変わらん,
-  戻らなきゃ). The dictionary's key filter is modelled on the Bloom
+- **Lookups:** [Yomichan](https://github.com/FooSoft/yomichan)'s deinflection rules (GPL-3.0), with
+  [Yomitan](https://github.com/yomidevs/yomitan)'s for spoken forms (しておく, 変わらん, 戻らなきゃ;
+  GPL-3.0-or-later), pinned in [third_party/](third_party/README.md). The dictionary's key filter is modelled on the Bloom
   filter of [hoshidicts](https://github.com/Manhhao/hoshidicts), Manhhao's dictionary library, which
   bee-san's [Hachidori](https://github.com/bee-san/hachidori) app is built on; Rubi has no code of
   either.

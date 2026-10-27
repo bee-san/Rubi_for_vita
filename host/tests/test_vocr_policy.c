@@ -13,6 +13,7 @@
 #include "../../include/vjo_vocr_sizes.h"
 #include "vocr_lines.h"
 #include "vocr_lines_refine.h"
+#include "vocr_lines_fix.h"
 #include "vocr_textgate.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -763,17 +764,20 @@ static int have_files(const char *dir, const char *const *names, unsigned n)
  * missing file: the job reads as without the cascade and says why. */
 static void test_the_cascade_reads_doubtful_lines_again(void)
 {
-    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME, VJO_VOCR_LM2_NAME};
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME, VJO_VOCR_LM3_NAME};
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
-    const VjoVocrLm *lm = vjo_vocr_lm_tier(2);
+    /* ctclm.2's LM (tier 3, unchanged since API 20): these checks need an LM that keeps the synthetic line's
+     * text. Tier 2 since vita-vn-ocr #127 (VOCR6's blob at its new settings, 600 / 2500 / BOS) reads it as nothing:
+     * the settings do that, ctclm.2's own 1 MB blob at them too (audit-vocr6-lm-rubi F7). */
+    const VjoVocrLm *lm = vjo_vocr_lm_tier(3);
     VjoPlatform p;
     VjoVocrStats st, alone_st;
     char text[256], raw[256], alone[256];
     unsigned char *ws = NULL;
     size_t ws_bytes;
     if (!have_files(dir, files, 3)) { /* before any check: acutest refuses a skip after one */
-        TEST_SKIP("no VOCR3-FL10, VOCR4-W20 and 1000k LM in VJO_VOCR_MODEL_DIR");
+        TEST_SKIP("no VOCR3-FL10, VOCR4-W20 and the 2000k LM in VJO_VOCR_MODEL_DIR");
         return;
     }
     TEST_ASSERT(fl10 && w20 && lm);
@@ -896,6 +900,8 @@ static struct {
     const char *cascade_text; /* the cascade's runs read this (it reads nothing on the synthetic lines) */
     int decode_rc; /* nonzero: each decode of the job's model writes "X" and returns it */
     long beta[8];  /* the per-character bonus each decoder was planned with */
+    long alpha[8]; /* and its LM weight and line flags (each tier's own: core/vocr_ocr.c lms[]) */
+    unsigned flags[8];
     int counter_line;    /* the job's model reads every line as counter_frames() (its own classes) */
     unsigned seen_top1;  /* the class the job's decoder saw on top at counter_frames()'s frame 2 */
     /* API 42, the head gate: with gated_line every run of the job's model that does not ask for the ungated
@@ -906,6 +912,13 @@ static struct {
     /* API 42, the two-level head: with kana_line every run of the job's model that does not ask for the ungated
      * read reads 九カ月です (a full-size カ before 月) with no frame that ran the rare rows (vocr_extra.escaped 0) */
     int kana_line;
+    /* audit-vocr6-rubi-gate F4: with ungated_overflow the ungated runs of the job's model return VOCR_E_TEXT (their
+     * text did not fit the room left), their extras filled, as a re-read that reads more than the gated run does */
+    int ungated_overflow;
+    /* audit-vocr6-rubi-gate F10, F12: the cascade's runs read every line as counter_frames() (cascade_counter), and
+     * those that do not ask for the ungated read report cascade_gated frames skipped */
+    int cascade_counter;
+    unsigned cascade_gated;
 } wrap;
 
 /* "ルッ月です」" as a top-4 of the model's own classes: 九 3 nats under ル at frame 2 and 2 nats of
@@ -972,11 +985,14 @@ int __wrap_vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t text_
         wrap.runs++;
         scr.clock += wrap.run_us;
     } else {
+        if (rc == VOCR_OK && wrap.cascade_counter) counter_frames(c->model, extra, text, text_cap);
+        if (rc == VOCR_OK && wrap.cascade_gated && extra && !extra->ungated) extra->gated = wrap.cascade_gated;
         if (rc == VOCR_OK && wrap.cascade_text && strlen(wrap.cascade_text) < text_cap)
             memcpy(text, wrap.cascade_text, strlen(wrap.cascade_text) + 1);
         wrap.cascade_runs++;
         scr.clock += wrap.cascade_run_us;
     }
+    if (rc == VOCR_OK && wrap.ungated_overflow && extra && extra->ungated && c == wrap.model_ctx) return VOCR_E_TEXT;
     return rc;
 }
 
@@ -1011,7 +1027,11 @@ int __wrap_vocr_lm_init(vocr_lm_ctx *c, const vocr_model *m, const vocr_lm *lm, 
                         size_t bytes)
 {
     if (wrap.on) {
-        if (wrap.inits < sizeof(wrap.beta) / sizeof(wrap.beta[0])) wrap.beta[wrap.inits] = (long)o->beta;
+        if (wrap.inits < sizeof(wrap.beta) / sizeof(wrap.beta[0])) {
+            wrap.beta[wrap.inits] = (long)o->beta;
+            wrap.alpha[wrap.inits] = (long)o->alpha;
+            wrap.flags[wrap.inits] = o->flags;
+        }
         wrap.inits++;
     }
     return __real_vocr_lm_init(c, m, lm, o, ws, bytes);
@@ -1099,24 +1119,26 @@ static void test_the_cascade_ceiling_counts_spent_reread_and_rest(void)
  * decoded; a decode that fails leaves the greedy line (one that does not fit
  * keeps the LM on, any other error turns it off for the job); the greedy text
  * kept for the log has the shown text's line breaks; each tier is planned with
- * its own per-character bonus (500k 3000, 1000k 3500). */
+ * its own settings (beta: 500k 3000, 1000k 2500; alpha and flags: tier 2's reach both decoders). */
 static void test_the_lm_paths(void)
 {
     static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME, VJO_VOCR_LM1_NAME,
-                                        VJO_VOCR_LM2_NAME};
+                                        VJO_VOCR_LM2_NAME, VJO_VOCR_LM3_NAME};
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
-    const VjoVocrLm *lm1 = vjo_vocr_lm_tier(1), *lm2 = vjo_vocr_lm_tier(2);
+    /* lm3, ctclm.2's (unchanged since API 20), for the checks that need the synthetic lines' text kept: tier 2's
+     * settings since vita-vn-ocr #127 (600 / 2500 / BOS) read these bars as nothing (audit-vocr6-lm-rubi F7) */
+    const VjoVocrLm *lm1 = vjo_vocr_lm_tier(1), *lm2 = vjo_vocr_lm_tier(2), *lm3 = vjo_vocr_lm_tier(3);
     VjoPlatform p;
     VjoVocrStats st;
     static char text[1024], raw[1024];
     unsigned char *ws = NULL;
     size_t ws_bytes;
-    if (!have_files(dir, files, 4)) {
-        TEST_SKIP("no VOCR3-FL10, VOCR4-W20 and the 500k and 1000k LMs in VJO_VOCR_MODEL_DIR");
+    if (!have_files(dir, files, 5)) {
+        TEST_SKIP("no VOCR3-FL10, VOCR4-W20 and the 500k, 1000k and 2000k LMs in VJO_VOCR_MODEL_DIR");
         return;
     }
-    TEST_ASSERT(fl10 && w20 && lm1 && lm2 && lm1->beta != lm2->beta);
+    TEST_ASSERT(fl10 && w20 && lm1 && lm2 && lm3 && lm1->beta != lm2->beta);
     posix_platform_init(&cascade_pp, &p);
     p.file_open = posix_open ? posix_open : p.file_open;
     ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
@@ -1129,7 +1151,8 @@ static void test_the_lm_paths(void)
     lres.ud = &lres;
     VjoVocrPolicy casc = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw), .cascade = w20,
                           .cascade_res = &cres, .cascade_us = 60000000u, .cascade_conf = 1001};
-    VjoVocrPolicy plain = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw)};
+    VjoVocrPolicy keep_casc = casc, plain = {.lm = lm3, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw)};
+    keep_casc.lm = lm3;
 #define RUN(pol) vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture, \
                                      vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
     /* one line read again (W20 reading "\xE3\x81\x82"): decoded by the job's model's decoder
@@ -1140,12 +1163,15 @@ static void test_the_lm_paths(void)
     TEST_ASSERT(RUN(&casc) == VJO_OK);
     TEST_CHECK(st.cascade_lines == 1 && wrap.cascade_runs == 1 && wrap.decodes == 1 && wrap.cascade_decodes == 1);
     TEST_CHECK(wrap.inits == 2 && wrap.beta[0] == lm2->beta && wrap.beta[1] == lm2->beta);
+    TEST_CHECK(wrap.alpha[0] == lm2->alpha && wrap.alpha[1] == lm2->alpha && wrap.flags[0] == lm2->flags &&
+               wrap.flags[1] == lm2->flags);
     TEST_MSG("%u + %u decodes, %u decoders planned", wrap.decodes, wrap.cascade_decodes, wrap.inits);
     /* W20 reads the synthetic line as nothing where FL10 read text: the line leaves the text
      * shown (its greedy reading the log), and the job counts it */
+    TEST_CHECK(!vjo_vocr_lm_drop(&lres) && !lres.data); /* the next LM's file */
     reset();
     wrap_reset();
-    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_ASSERT(RUN(&keep_casc) == VJO_OK);
     TEST_CHECK(st.cascade_lines == 1 && !text[0] && !raw[0] && st.cascade_blanked == 1);
     TEST_MSG("shown '%s', greedy kept '%s', %u blanked", text, raw, st.cascade_blanked);
     /* three lines, the second read as empty: two decoded, two shown, two logged */
@@ -1797,6 +1823,63 @@ static void test_a_short_last_line_is_read(void)
 }
 
 
+/* API 50: the line finder's fixes (vita-vn-ocr #129) reach the finder through VjoVocrPolicy.line_fix. A line of six
+ * glyphs, a gap of three glyph widths (wider than the frozen finder's column gap of two band heights) and three
+ * more: the frozen finder (line_fix 0) keeps only the heavier part, VOCR_FIX_COLGAP the whole line (vita-vn-ocr's
+ * runtime/tests/test_vocr_lines_fix.c draws the same line). */
+#define LF_W 640u
+#define LF_H 120u
+static unsigned char lf_rgba[LF_W * LF_H * 4];
+static void lf_glyphs(unsigned x0, unsigned y0, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++)
+        for (unsigned y = 0; y < 20; y++)
+            for (unsigned x = 0; x < 20; x++)
+                if (x % 4u < 2u || y % 6u == 0u || y == 19u) {
+                    unsigned char *q = lf_rgba + ((size_t)(y0 + y) * LF_W + x0 + i * 24u + x) * 4;
+                    q[0] = q[1] = q[2] = 220;
+                }
+}
+static unsigned lf_job(unsigned line_fix)
+{
+    VjoRgbaImage rgba = {lf_rgba, LF_W, LF_H, (size_t)LF_W * 4};
+    VjoGreySource src;
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    VjoVocrStats st = {0};
+    VjoVocrPolicy pol = {.blank = 1, .blank_edges = 20000, .line = sl_record, .line_fix = line_fix};
+    size_t job = vjo_vocr_job_bytes("FL10_w8.vocr", LF_W, LF_H);
+    unsigned char *ws = NULL;
+    char text[64];
+    vjo_grey_source_rgba(&rgba, &src);
+    src.line_buffer = refine_line_buffer;
+    p.file_open = no_file;
+    p.now_us = now;
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, job) == 0);
+    sl_n = 0;
+    TEST_CHECK(vjo_vocr_ocr_policy(&p, "missing", "FL10_w8.vocr", &src, &res, ws, job, capture,
+                                   vjo_vocr_capture_bytes(LF_W, LF_H), &pol, text, sizeof(text), &st) == VJO_OK);
+    free(ws);
+    TEST_CHECK_(st.lines == sl_n, "%u lines found, %u read", st.lines, sl_n);
+    return st.lines;
+}
+static void test_the_line_fix_keeps_a_line_across_a_wide_gap(void)
+{
+    const unsigned second = 20u + 6u * 24u + 60u, end = second + 2u * 24u + 20u;
+    for (size_t i = 0; i < sizeof(lf_rgba); i += 4) {
+        lf_rgba[i] = lf_rgba[i + 1] = lf_rgba[i + 2] = 24;
+        lf_rgba[i + 3] = 255;
+    }
+    lf_glyphs(20, 40, 6);
+    lf_glyphs(second, 40, 3);
+    TEST_CHECK(lf_job(0) == 1);                                   /* the frozen finder: the heavier part only */
+    TEST_CHECK_(sl_n == 1 && sl_got[0].x + sl_got[0].w < second, "line at %u,%u %ux%u", sl_got[0].x, sl_got[0].y,
+                sl_got[0].w, sl_got[0].h);
+    TEST_CHECK(lf_job(VOCR_FIX_DEFAULT) == 1);                    /* COLGAP: one line, the whole of it */
+    TEST_CHECK_(sl_n == 1 && sl_got[0].x <= 20 && sl_got[0].x + sl_got[0].w >= end, "line at %u,%u %ux%u",
+                sl_got[0].x, sl_got[0].y, sl_got[0].w, sl_got[0].h);
+}
+
 /* API 26: the text-presence gate (vita-vn-ocr #100). Its weights are the pinned file in VJO_VOCR_GATE_TEST_DIR
  * (cmake/VocrGate.cmake); without it the tests that need them are skipped (TEST_SKIP, before any check).
  * Diagonal stripes are no text, though the finder finds a line in them: with the gate the job keeps no line and
@@ -1988,20 +2071,24 @@ static void test_the_gate_fits_beside_the_finder(void)
  * ヶ in the worker) while the recognizer's own reading is the one logged; off, nothing changes. */
 static void test_the_counter_redecode(void)
 {
-    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM2_NAME};
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM2_NAME, VJO_VOCR_LM3_NAME};
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
-    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
+    /* lmc is ctclm.2's LM (tier 3, unchanged since API 20): the crafted line's ヶ is that LM's own choice.
+     * Tier 2 (vita-vn-ocr #127) reads this crafted line 「九月です」 today: its new settings (600 / 2500 / BOS) drop
+     * the ヶ, with VOCR6's blob or ctclm.2's (audit-vocr6-lm-rubi F7); asserted below, with the re-decode's part
+     * (#109's counter set: docs/vita-vn-ocr.md, the LM section). */
+    const VjoVocrLm *lmc = vjo_vocr_lm_tier(3), *lm6 = vjo_vocr_lm_tier(2);
     VjoPlatform p;
     VjoVocrStats st;
     static char text[1024], raw[1024];
     unsigned char *ws = NULL;
     size_t ws_bytes;
-    if (!have_files(dir, files, 2)) {
-        TEST_SKIP("no VOCR3-FL10 and the 1000k LM in VJO_VOCR_MODEL_DIR");
+    if (!have_files(dir, files, 3)) {
+        TEST_SKIP("no VOCR3-FL10 and the 1000k and 2000k LMs in VJO_VOCR_MODEL_DIR");
         return;
     }
-    TEST_ASSERT(fl10 && lm2);
+    TEST_ASSERT(fl10 && lmc && lm6);
     posix_platform_init(&cascade_pp, &p);
     p.file_open = posix_open ? posix_open : p.file_open;
     ws_bytes = vjo_vocr_job_bytes(fl10->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name);
@@ -2010,9 +2097,9 @@ static void test_the_counter_redecode(void)
     VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
     res.ud = &res;
     lres.ud = &lres;
-    VjoVocrPolicy on = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
+    VjoVocrPolicy on = {.lm = lmc, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
                         .counter_tau = VJO_VOCR_COUNTER_TAU, .counter_open = VJO_VOCR_COUNTER_OPEN};
-    VjoVocrPolicy off = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw)};
+    VjoVocrPolicy off = {.lm = lmc, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw)};
     VjoVocrPolicy numeral = on;
     numeral.counter_open = 0;
 #define RUN(pol) vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture, \
@@ -2042,6 +2129,24 @@ static void test_the_counter_redecode(void)
     TEST_CHECK(st.counter_lines == 1 && st.lm_lines == 1 && wrap.decodes == 1 && !strcmp(raw, "ルッ月です」"));
     TEST_CHECK(!strcmp(text, "「九ヶ月です」")); /* the LM itself takes ヶ after 九 */
     TEST_MSG("shown '%s'", text);
+    /* tier 2 (VOCR6's LM, vita-vn-ocr #127): the same re-decode feeds it the same edited top-K. Its reading of the
+     * crafted line is 「九月です」: the default tier's known counter loss (its settings', audit-vocr6-lm-rubi F7).
+     * When vita-vn-ocr's retune of the settings keeps the ヶ, the expectation goes back to 「九ヶ月です」. */
+    {
+        VjoVocrPolicy on6 = on;
+        on6.lm = lm6;
+        TEST_CHECK(!vjo_vocr_lm_drop(&lres) && !lres.data);
+        reset();
+        wrap_reset();
+        wrap.counter_line = 1;
+        TEST_ASSERT(RUN(&on6) == VJO_OK);
+        TEST_CHECK(st.counter_lines == 1 && st.lm_lines == 1 && st.lm == lm6 && wrap.decodes == 1 &&
+                   !strcmp(raw, "ルッ月です」") &&
+                   wrap.seen_top1 == counter_class(((const vocr_ctx *)wrap.model_ctx)->model, "九"));
+        TEST_CHECK(!strcmp(text, "「九月です」"));
+        TEST_MSG("tier 2 shows '%s'", text);
+        TEST_CHECK(!vjo_vocr_lm_drop(&lres) && !lres.data);
+    }
     /* off, with the LM: the LM alone takes the ヶ but keeps ル and no 「 */
     reset();
     wrap_reset();
@@ -2154,6 +2259,20 @@ static void test_the_two_level_head(void)
     TEST_ASSERT(RUN(&alone) == VJO_OK);
     TEST_CHECK(st.frames > 0 && st.head_escaped > 0 && !st.head_gated && !wrap.ungated_runs);
     TEST_MSG("VOCR5-N two-level alone: %u of %u frames escaped", st.head_escaped, st.frames);
+    /* audit-vocr6-rubi-gate F5: a job without the LM extras (no LM, no cascade: greedy text only) reads the kana
+     * line again with the full head too; with the gate alone (no two-level head) it does not */
+    VjoVocrPolicy greedy_two = {.head_gate = 1, .two_level = 1}, greedy_gate = {.head_gate = 1};
+    reset();
+    wrap_reset();
+    wrap.kana_line = 1;
+    TEST_ASSERT(RUN(&greedy_two) == VJO_OK);
+    TEST_CHECK(wrap.ungated_runs == 1 && st.head_rereads == 1 && !strstr(text, "カ月"));
+    TEST_MSG("greedy two-level: '%s', %u re-reads", text, st.head_rereads);
+    reset();
+    wrap_reset();
+    wrap.kana_line = 1;
+    TEST_ASSERT(RUN(&greedy_gate) == VJO_OK);
+    TEST_CHECK(!wrap.ungated_runs && !st.head_rereads && strstr(text, "九カ月です"));
 #undef RUN
     TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
     free(ws);
@@ -2167,20 +2286,22 @@ static void test_the_two_level_head(void)
  * has it) the gate skips frames of the synthetic lines and gives their text. */
 static void test_the_head_gate(void)
 {
-    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM2_NAME};
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM3_NAME};
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
-    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
+    /* ctclm.2's LM (tier 3, unchanged since API 20): the crafted counter line's ヶ is its own choice (tier 2 reads
+     * 「九月です」 there, its settings': test_the_counter_redecode) */
+    const VjoVocrLm *lmc = vjo_vocr_lm_tier(3);
     VjoPlatform p;
     VjoVocrStats st;
     static char text[1024], raw[1024], t_ref[1024];
     unsigned char *ws = NULL;
     size_t ws_bytes;
     if (!have_files(dir, files, 2)) {
-        TEST_SKIP("no VOCR3-FL10 and the 1000k LM in VJO_VOCR_MODEL_DIR");
+        TEST_SKIP("no VOCR3-FL10 and the 2000k LM in VJO_VOCR_MODEL_DIR");
         return;
     }
-    TEST_ASSERT(fl10 && lm2);
+    TEST_ASSERT(fl10 && lmc);
     posix_platform_init(&cascade_pp, &p);
     p.file_open = posix_open ? posix_open : p.file_open;
     ws_bytes = vjo_vocr_job_bytes(fl10->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name);
@@ -2189,7 +2310,7 @@ static void test_the_head_gate(void)
     VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
     res.ud = &res;
     lres.ud = &lres;
-    VjoVocrPolicy gate = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
+    VjoVocrPolicy gate = {.lm = lmc, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
                           .counter_tau = VJO_VOCR_COUNTER_TAU, .counter_open = VJO_VOCR_COUNTER_OPEN, .head_gate = 1};
     VjoVocrPolicy plain = gate;
     plain.head_gate = 0;
@@ -2212,6 +2333,18 @@ static void test_the_head_gate(void)
     TEST_CHECK(!strcmp(text, t_ref) && !strcmp(raw, "ルッ月です」") && st.counter_lines == 1 && st.lm_lines == 1);
     TEST_CHECK(!st.head_gated); /* the reading that stands is the ungated one */
     TEST_MSG("shown '%s', logged '%s', %u re-reads, %u gated", text, raw, st.head_rereads, st.head_gated);
+    /* audit-vocr6-rubi-gate F4: the re-read's text does not fit: the line is read gated once more and that reading
+     * stands, with its re-decode and its decode, exactly as without a re-read; its skipped frames are counted */
+    reset();
+    wrap_reset();
+    wrap.counter_line = 1;
+    wrap.gated_line = 5;
+    wrap.ungated_overflow = 1;
+    TEST_ASSERT(RUN(&gate) == VJO_OK);
+    TEST_CHECK(wrap.ungated_runs == 1 && wrap.gated_runs == 2 && wrap.runs == 3 && !st.head_rereads);
+    TEST_CHECK(!strcmp(text, t_ref) && !strcmp(raw, "ルッ月です」") && st.counter_lines == 1 && st.lm_lines == 1 &&
+               st.head_gated == 5);
+    TEST_MSG("shown '%s', logged '%s', %u gated, %u runs", text, raw, st.head_gated, wrap.runs);
     /* frames skipped, but no counter context (no re-decode asked for): no re-read, the skipped frames counted */
     VjoVocrPolicy nocount = gate;
     nocount.counter_tau = nocount.counter_open = 0;
@@ -2270,6 +2403,68 @@ static void test_the_head_gate(void)
     free(ws);
 }
 
+/* audit-vocr6-rubi-gate F10, F12: the confidence cascade's reading, gated (vocr_extra.gated) with a counter context,
+ * is read again with the full head on the cascade's own context, and that reading is the cascade's: its re-decode,
+ * its decode, its frames counted (none skipped); the job's model's line, which skipped nothing, is not read again. A
+ * cascade reading that comes out empty counts its skipped frames too. */
+static void test_the_cascade_rereads_a_gated_counter_line(void)
+{
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME, VJO_VOCR_LM2_NAME};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
+    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024], raw[1024];
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!have_files(dir, files, 3)) {
+        TEST_SKIP("no VOCR3-FL10, VOCR4-W20 and the 1000k LM in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(fl10 && w20 && lm2);
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
+               vjo_vocr_cascade_job_bytes(w20->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res;
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    res.ud = &res;
+    cres.ud = &cres;
+    lres.ud = &lres;
+    VjoVocrPolicy casc = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw), .cascade = w20,
+                          .cascade_res = &cres, .cascade_us = 60000000u, .cascade_conf = 1001,
+                          .counter_tau = VJO_VOCR_COUNTER_TAU, .counter_open = VJO_VOCR_COUNTER_OPEN, .head_gate = 1};
+#define RUN(pol) vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture, \
+                                     vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
+    reset();
+    wrap_reset();
+    wrap.cascade_counter = 1;
+    wrap.cascade_gated = 4;
+    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && wrap.cascade_runs == 2 && wrap.ungated_runs == 1 && st.head_rereads == 1);
+    TEST_CHECK(strstr(text, "九") && !st.head_gated); /* the re-read's re-decode put the numeral back; it skipped nothing */
+    TEST_MSG("shown '%s', %u cascade runs, %u re-reads, %u gated", text, wrap.cascade_runs, st.head_rereads, st.head_gated);
+    /* the same cascade reading without a skipped frame: not read again */
+    reset();
+    wrap_reset();
+    wrap.cascade_counter = 1;
+    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && wrap.cascade_runs == 1 && !wrap.ungated_runs && !st.head_rereads &&
+               strstr(text, "九"));
+    /* an empty cascade reading (W20 reads the synthetic line as nothing) with skipped frames: they are counted */
+    reset();
+    wrap_reset();
+    wrap.cascade_gated = 4;
+    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && !text[0] && st.head_gated == 4 && !wrap.ungated_runs);
+    TEST_MSG("shown '%s', %u gated", text, st.head_gated);
+#undef RUN
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_resident_drop(&cres) && !vjo_vocr_lm_drop(&lres));
+    free(ws);
+}
+
 TEST_LIST = {
     {"the_capture_block_stays_within_64_KiB_at_every_size", test_capture_block_sizes},
     {"a_zero_policy_reads_exactly_as_api19", test_zero_policy_is_api19},
@@ -2298,8 +2493,11 @@ TEST_LIST = {
     {"the_counter_redecode_feeds_the_lm_and_keeps_the_recognizer_text_off_unchanged", test_the_counter_redecode},
     {"the_head_gate_rereads_a_gated_counter_line_and_skips_frames_of_a_gated_blob", test_the_head_gate},
     {"the_two_level_head_rereads_a_kana_counter_line_and_counts_its_escaped_frames", test_the_two_level_head},
+    {"the_cascade_rereads_a_gated_counter_line_and_counts_its_skipped_frames",
+     test_the_cascade_rereads_a_gated_counter_line},
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
     {"a_short_last_line_is_read", test_a_short_last_line_is_read},
+    {"the_line_fix_keeps_a_line_across_a_wide_gap", test_the_line_fix_keeps_a_line_across_a_wide_gap},
     {"the_gate_stops_a_region_without_text", test_the_gate_stops_a_region_without_text},
     {"the_gate_decides_after_a_wait_on_a_one_strip_region", test_the_gate_decides_after_a_wait_on_a_one_strip_region},
     {"the_gate_keeps_the_lines_without_its_weights", test_the_gate_keeps_the_lines_without_its_weights},

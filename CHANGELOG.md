@@ -11,8 +11,97 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
+  arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
+  read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
+  failed the job although the hook had the line: 蒼の彼方のフォーリズム (`PCSG00700`) sampled 1 to 4 MiB free on a
+  console (#324), so a press some time into a line could fail there. The kernel now marks the answer with the
+  screen's current scene without reading pixels, so a trusted hook (a Luna site, a Rubi verified site, a string copy
+  that earned trust) needs no game memory at all. It still reads the strip only while the region has no screen yet.
+  Not run on a console yet.
+
+### Changed
+
+- Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
+  pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
+  tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a
+  release check ran them. It runs when `VJO_VOCR_MODEL_DIR` or
+  its cache holds every pinned model the tests read, each checked by size and SHA-256
+  (`tools/prepare_ocr.py --backend vocr-tests`, `--check` to only check); `--models on` fetches them first.
+- Packaging (no change to the app or the plugins): a release zip packaged again from the same artifacts and models is
+  the same bytes. 0.9.8's was not: `package-manifest.json` took the time of the run and the names dictionary's staged
+  files the filesystem's order, so the published zip's SHA-256 matched neither the Release run's nor another machine's
+  (same files; the VPKs were the same bytes). Both are fixed (`tools/package_release.py`).
+- Building and testing, #343's audit: the set also holds v0.3.0's three VOCR5 recognizers in `v0.3.0/`, so the lane
+  runs the off-path check (each size's blob read with `ocr_head_gate = off` gives v0.3.0's logits bit for bit), which
+  it skipped; the lane checks the models again in its container (a symlink to a file outside the directory fails
+  there by name, not as test failures) and gives its build the gate's checked weights. The game worker's tests cover
+  the tall-line block (`VjoGameVocrLine`) where only the models reached it, and without them (CI): auto's columns
+  try gives it back before the rows' try, a job of columns at its end, and a refused one leaves the columns out.
+
+## [0.9.8] - 2026-10-27
+
+The first pieces of VOCR6, vita-vn-ocr's work on the owner's hooked PS Vita and PSP captures (vita-vn-ocr #125):
+faster OCR (the head gate and two-level head), a line finder that keeps a line whole across a full-width space, and
+new character language models for the 1 MB and 4 MB tiers. Through Rubi's page path on development data, measured on
+a computer, the finder fix and the new 1 MB LM together take whole-dialogue error from 3.875 % to 1.636 % on held-out
+pages of the hooked games and from 3.036 % to 2.441 % on 93 other games (VOCR5-N without the head gate; the recognizer
+itself is still VOCR5's). Most of the hooked games' gain is one title, PCSG00854, whose box decoration the finder
+reads as a line that the old LM's reading kept on screen and the new one's does not: without it, 2.330 % to 1.615 %
+(−0.72 points, 95 % interval −1.05 to −0.44, 45 titles). The hooked games' figures are optimistic, as the LM's
+decoder settings were chosen on those pages. On the other games the gain is the finder's: the LM on top of it is level
+(2.340 % → 2.441 %, not resolved). Also: vertical text, trusted hooks that answer without OCR, Yomitan's lookup rules
+and the adaptive reading time. Nothing new here has run on a console yet. Like 0.9.7, this release is the normal
+build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
+
 ### Added
 
+- **Trusted hooks without waiting** (API 49; with **Trusted hooks replace OCR** on, the default): a trusted hook's
+  new line is ready to look up as soon as the game writes it, as with a hook on a computer. The worker polls the
+  hook every 16 ms (was 100 ms) and reports each trusted line at once (no 200 ms gap; the same text again is no new
+  line), from a site's first line on; the kernel wakes the Shell for it even while the last line still types, and the
+  job reads no pixels (no capture pass); the Shell reads it past the subtitle strip's and a failure's pacing, and with
+  the overlay open replaces the text at once (a line that grows keeps the cursor); `history.csv` keeps one record
+  for a line given as it types; a trusted string copy stays trusted when the game starts again (no confirmation
+  OCR). On the host, over 8,895 hooked lines of 30 Vita games, from the game's copy to the line and its first word
+  ready (the lookup counted as the console's 70 ms): 187 → 78 ms; clicking through, a line every 0.5 s: 8,832 of
+  the lines never read → every line in 80 ms; a verified site's first line 1.8 s → 78 ms; the open overlay's text
+  117 → 8 ms. All that is left is the 16 ms poll and the lookup ([details](docs/native-hooks.md#no-wait-for-a-trusted-line-api-49)).
+  Not run on a console.
+- **Vertical text** (`ocr_vertical` in `config.ini`, the Rubi app's **Vertical text** card on the OCR & lookup
+  page): Japanese set in columns, read right to left, as in a vertical dialogue box or a manga in NOBORU, is read
+  with vita-vn-ocr's vertical model VOCR5-V. **Automatic**, the default, reads the columns where the text box's
+  rows look like vertical text, and rows everywhere else exactly as before; **ON** reads columns in every game,
+  **OFF** rows only. On the host, through Rubi's own job, it read 863 pages of Yunohana SpRING! (PS Vita, a VN
+  the model never trained on) at 4.5 % CER in a box drawn around the columns and 14.0 % in one box drawn once for
+  the game (rows read them at 83 %), and on 101,651 regions and screens of 44 horizontal games Automatic read no
+  columns and every sampled job's text was main's. The game worker takes one more page in each build (4 KiB, in
+  the game's memory); SceShell's and the kernel's pages are as before. Nothing of it has run on a console yet
+  ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); supersedes draft #223).
+- **Trusted hooks replace OCR** (the Rubi app's OCR & lookup page, `hook_trust` in `config.ini`, on by default;
+  API 43): when a hook Rubi trusts has the line, no OCR runs at all: no model, LM or cascade is read, no OCR
+  memory is kept back (its one capture pass keeps 1 MiB instead of 4 MiB), and after eight such lines in a row the
+  weights an earlier OCR job left in the game go back to it. Trusted: LunaTranslator's sites (as since 0.9.4) and
+  Rubi's verified sites from their first line, and any other hook (a string copy) once it has agreed with OCR on four different lines, the last
+  closely. OCR comes back by itself when no trusted hook has text. On the host, over 8,640 hooked lines of 29 Vita
+  games, with main's OCR (#307's head gate, #306's LM): a verified site's OCR jobs 0.19 a line → 0 and the worker's
+  memory kept between jobs 4.4 MiB → 0; a string copy's 0.19 → 0.08 (trusted in 27 of 29 sessions, no wrong answer); a source one
+  line behind the screen was never trusted (it could agree with OCR in 10 sessions and lock in 2: the other ways a
+  source can be wrong are not modelled); with 3 MiB free, a Luna site's lines, all refused before, are shown. The price: a screen the hook did not copy (a
+  choice menu, the backlog) shows the hook's last line. `hook_trust = off` checks hooks with OCR as 0.9.7 did
+  ([details](docs/native-hooks.md#trusted-hooks-api-43)). Not run on a console.
+- **Skip OCR on screens without text** on the app's OCR & lookup page (`ocr_text_gate`, API 26's text-presence
+  gate, now a switch in the app): a text box that holds no text (the game hid it, a CG, a picture) is not read, so
+  no junk text is shown or recognized. It stays **off by default**: on the host, over about 96,000 verified lines
+  of 46 games' hooked pages, it also stops some real lines, mostly `……` and one- or two-character ones (「え？」);
+  of all their lines, those OCR would have read and the gate stops are 0.004-0.17 % (by platform and region), while
+  it leaves 81 of 90 text-free regions without a line (2 without it)
+  ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)). Not run on a console.
+- A host test that a mined card carries the game's screenshot end to end: the game worker's JPEG of a frame,
+  the overlay's Enter that saves the card with it, the Rubi app's export, and the Lapis note's `Picture` showing
+  that JPEG (`host/tests/test_card_screenshot.py`). The code path was already there (since 0.8.0's API 23).
 - Native text hooks for two more Vita visual novels from the hook farm's data bucket, with Rubi's own
   clean-up rules for their text: ALIA's CARNIVAL! サクラメント (`PCSG00628`) and 真 流行り神 (`PCSG00380`, a page
   record of character cells, a new way to read a hook's text). Proven in the Vita3K emulator only: Rubi's
@@ -30,18 +119,37 @@ been reported.
   their rare characters only on the frames that may need one (#122). The sizes now run `VOCR5_S_w8g.vocr`,
   `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (vita-vn-ocr pre-release v0.3.6-head2level.1: v0.3.0's
   recognizers, with a 1,792 B gate each and, for Normal and Large, their output rows in frequency order and a
-  1,984 B trailer; every weight is v0.3.0's), and the runtime pin is vita-vn-ocr `47cf3a3`. On vita-vn-ocr's
-  development data no score was resolved worse; the estimated time per 3-line box at 333 MHz drops from
-  0.63 / 0.92 / 2.08 s to 0.51 / 0.72 / 1.82 s (Small / Normal / Large; estimates, nothing of it has run on a
-  console). A line whose counter re-decode finds a counter, or (two-level head) whose reading holds a
-  full-size カ or ケ before 月, 所, 年, 国 or 条, is read again with the full head (a ヶ the escape missed).
-  `ocr_head_gate = gate` or `two_level` keeps one of the two, `off` neither: the full head on every frame, as
-  before ([details](docs/vita-vn-ocr.md#head-gate-and-two-level-head-api-42)). Memory: the game worker takes
+  1,984 B trailer; every weight is v0.3.0's), and the runtime pin went to vita-vn-ocr `47cf3a3` (`f8a1856` since the
+  line finder's fix below). On vita-vn-ocr's development data no score was resolved worse; the estimated time per
+  3-line box at 333 MHz drops from 0.63 / 0.92 / 2.08 s to 0.51 / 0.72 / 1.82 s (Small / Normal / Large; estimates,
+  nothing of it has run on a console). A line whose counter re-decode finds a counter, or (two-level head) whose
+  reading holds a full-size カ or ケ before 月, 所, 年, 国 or 条, is read again with the full head (a ヶ the escape
+  missed). `ocr_head_gate = gate` or `two_level` keeps one of the two, `off` neither: the full head on every frame,
+  as before ([details](docs/vita-vn-ocr.md#head-gate-and-two-level-head-api-42)). Memory: the game worker takes
   two pages (8,192 B) more in each game that is ON, in both builds; Normal's and Large's weights blocks are a page
   larger, the largest job's workspace two; the Shell's pages are unchanged
   ([measured](docs/memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
-  Install all of this build's plugins together (the VPK's Install does): the game worker and the Shell must
-  both be API 42.
+  An update leaves 0.9.7's `VOCR5_S_w8.vocr`, `VOCR5_N_w8.vocr` and `VOCR5_L_w8.vocr` (4,479,120 B) in
+  `ux0:data/VitaJPOverlay/ocr/`: nothing reads them any more, so they may be deleted. The plugins of this
+  release must all be installed together (API 50, below).
+- **New character LMs for the 1 MB (the default) and 4 MB tiers**, from bee-san/vita-vn-ocr pre-release
+  v0.3.7-lm6.2 (#127): built with the text of the owner's hooked PS Vita and PSP captures besides the open
+  corpora, and decoded with new settings (LM weight 0.6, a bonus of 2.5 nats a character, each line started
+  from the start-of-line context and no end-of-line term; `core/vocr_ocr.c` now keeps the settings per tier).
+  On vita-vn-ocr's development data (VOCR5-N with its cascade, Rubi's line path and display rules,
+  cross-validated) the hooked titles' page-path dialogue CER goes from 4.12% to 3.39% (1 MB) and 4.03% to
+  3.57% (4 MB), and their clean lines from 0.49% to 0.40%; the unseen-game development score is level (not
+  resolved). Most of the page-path gain is one title whose box decoration the finder reads as a junk line.
+  On vita-vn-ocr's synthetic counter lines (#109: 九ヶ月, 三ヶ所 …) the 1 MB LM keeps the small ke slightly less
+  often than ctclm.2's (3,015 against 3,104 of 3,969 crops), mostly where the region's edge cuts into the line
+  ([details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)); the loss comes from the new decoder settings, which
+  vita-vn-ocr retunes for VOCR6. These figures are VOCR5 v0.3.0's without the head gate; the default combination,
+  the gated blobs with `ocr_head_gate = on` and these settings, is unmeasured. The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
+  replace (982,320 and 3,603,552 B), so the game's LM block shrinks by 180,224 B at most. An update leaves
+  ctclm.2's `vocr_lm_o3_1000k.vlm` and `vocr_lm_o3_4000k.vlm` (about 4.8 MB) in `ux0:data/VitaJPOverlay/ocr/`:
+  nothing reads them any more, so they may be deleted
+  ([vita-vn-ocr docs/vocr6-lm.md](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vocr6-lm.md);
+  no console run yet).
 - **Reading time in the Triangle view's statistics is adaptive** (`reading_time = adaptive` in
   `config.ini`, the default): each line counts the time until the next one, at most 2.5 times what your
   own pace in that game would take for it (2 s to 5 minutes), as GameSentenceMiner counts it, without its
@@ -57,9 +165,39 @@ been reported.
   in a few minutes and is the merge gate ([AGENTS.md](AGENTS.md)); CI caches its toolchains, runs ctest in
   parallel and skips what a pull request does not touch (`tools/ci_scope.py`), and builds the Vita targets in
   the VitaSDK image pinned by digest.
+- **OCR cuts lines better** (API 50): vita-vn-ocr #129's column fix (`ocr_line_fix = on`, the default): a line's parts
+  across a full-width space stay one line. On the owner's hooked PS Vita and PSP pages it takes the whole-dialogue
+  error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34% (host, measured;
+  nothing of it has run on a console). The other settings:
+  - `junk`: box frames and ornaments are not read as lines either, for regions drawn with a margin;
+  - `all`: `junk`, and touching rows are also split, as Narcissu's are;
+  - `off`: the old finder.
+
+  With `ocr_vertical = auto`, a box at least as tall as wide is still checked for vertical text on the old finder's
+  rows, which its rule was chosen on, and read with the new finder where it holds rows.
+
+  The runtime pin is now vita-vn-ocr `f8a1856` (#135's merge; it was `47cf3a3`). Memory: the game worker takes two
+  pages more, 8 KiB, in each game that is ON, in both builds (192,512 B of module pages; 200,704 B in the debug
+  build); the Shell's and the kernel's pages are unchanged. Install all of this build's plugins together (the
+  VPK's Install does): the game worker and the Shell must both be API 50.
 
 ### Fixed
 
+- **Vertical text, the audit of #335** (host only; nothing of it has run on a console):
+  - with **Automatic**, a job whose rows looked like vertical text waited for the text to hold still once
+    more in each of its tries: a press could wait up to twice `ocr_settle_press_ms` (three times, the first
+    time the vertical model is missing) where it waits at most once. The tries now share the job's wait, as
+    a job's other tries do ([text stability](docs/text-stability.md));
+  - such a job could name a smaller model size than the one that read its text (a try's step down to a
+    smaller size outlived the try), on Anki cards, in `history.csv` and the log; and the debug log's 20
+    steps filled up with the earlier try's blocks, so the reading try's own steps were dropped;
+  - the kernel now refuses the vertical field's undefined value 3, as the game worker does;
+  - the host tests run with the release models too (a column taller than a strip uses the tall-line block,
+    which the tests' fake memory did not know); `docs/vita-vn-ocr.md` kept stale copies of two paragraphs
+    (the files the broker accepts, without VOCR5-V, and an older attribution), the first of which
+    `tools/docs_model_names.py` now catches; it also names the horizontal screens **Automatic** takes for vertical
+    text (5 or more short rows lined up, as in a menu, a list of names or a status panel, found on constructed
+    screens).
 - **Dictionary lookups, checked against Yomitan on 5,000 hooked visual-novel lines** (64,579 taps; the shown
   entry differed from Yomitan's first on 69.2 taps per 1,000, now 65.8;
   [the report](reports/yomitan-check.md), what remains in [#321]):
@@ -958,7 +1096,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.7...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.8...HEAD
+[0.9.8]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.8
 [0.9.7]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.7
 [0.9.6]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.6
 [0.9.5]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.5

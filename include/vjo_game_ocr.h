@@ -66,6 +66,8 @@
  * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed but
  * (API 32) VJO_GAME_OCR_S_TRIM. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
+/* Bit 15 is not defined: API 27 (#213, reverted) and draft #223's API 29 had vertical text there; API 47 has it in
+ * the speed word (VJO_GAME_OCR_S_VERTICAL). */
 #define VJO_GAME_OCR_F_ALL 0xFFFF7FFFu
 /* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
  * two agree), named by the card's queue ID (32 lowercase hex digits), at most
@@ -83,7 +85,8 @@
  * bit 2 the ARM clock at 444 MHz while the job recognizes (ocr_boost_clock, on
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
  * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below); API 36, bit 16
- * the border rule (below). Other bits are refused, as unknown flags are. */
+ * the border rule (below); API 42, bits 18-19 the head gate and the two-level head; API 43, bit 20 trusted hooks;
+ * API 50, bits 21-23 the line finder's fixes (below). Other bits are refused, as unknown flags are. */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
 #define VJO_GAME_OCR_S_NOCACHE 0x8u
@@ -110,7 +113,43 @@
 #define VJO_GAME_OCR_S_HEAD_SHIFT 18
 #define VJO_GAME_OCR_S_HEAD_GATE (1u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x40000 */
 #define VJO_GAME_OCR_S_TWO_LEVEL (2u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x80000 */
-#define VJO_GAME_OCR_S_ALL 0xD001Fu
+/* API 43, bit 20: trusted hooks answer without OCR (config.ini hook_trust, on by default; docs/native-hooks.md,
+ * "Trusted hooks"). With the automatic pick, a trusted source with text answers the job (core/hook_select.h
+ * vjo_hook_select_trusted): Luna's sites and Rubi's verified sites from their first line, a learned regular source
+ * once its interval reaches VJO_HOOK_TRUST_INTERVAL with a close agreement there. Such a job opens no model, keeps no
+ * OCR reserve (its one capture pass keeps VJO_GAME_RESERVE_HOOK_ONLY) and, after a run of them, gives back the
+ * resident weights, LM and cascade model. Without the bit a job selects as API 42's did. The Shell sets it in the
+ * user's jobs; a pick of OCR or a stream ignores it. Not bit 17 (closed draft #271's VJO_GAME_OCR_S_CHARS). */
+#define VJO_GAME_OCR_S_TRUST 0x100000u
+/* API 47, bits 28-29: vertical text (config.ini ocr_vertical, core/config.h VJO_VERTICAL_*, vita-vn-ocr #99;
+ * docs/vita-vn-ocr.md "Vertical text"). 0: the region's rows, as before. 1 (on): the job runs the vertical model
+ * (include/vjo_vocr_sizes.h VJO_VOCR_VERTICAL_NAME), whatever its tiers name, and opens it as
+ * VJO_GAME_OCR_OPEN_VERTICAL: it finds the region's columns and reads each turned 90 degrees, right to left
+ * (core/vocr_ocr.h VJO_VOCR_FINDER_COLUMNS), with the LM bits as for any job; no cascade, no refinement and no
+ * smaller model to step down to (the reserve is a request by name's). 2 (auto): the job of rows, as with 0,
+ * whose line finder's rows are checked first (core/vocr_ocr.h vjo_vocr_rows_vertical): where they look like
+ * vertical text, nothing is recognized and the job reads the region's columns as with 1; where the vertical
+ * model cannot be read, its rows as with 0. 3 is refused. A line read as a column carries VJO_GAME_OCR_LINE_COLUMN
+ * in VjoGameOcrLine.flags. The Shell sets the field in the user's jobs (the self-test's stages read rows). Not
+ * bits 21-27: API 50's line-finder fixes have 21-23, and VOCR6's spotter finder and draft #326's text overlay
+ * (test.17, in flight) the others, so all of them can merge. */
+#define VJO_GAME_OCR_S_VERTICAL_SHIFT 28u
+#define VJO_GAME_OCR_S_VERTICAL_MASK 0x3u
+#define VJO_GAME_OCR_S_VERTICAL (VJO_GAME_OCR_S_VERTICAL_MASK << VJO_GAME_OCR_S_VERTICAL_SHIFT) /* 0x30000000 */
+#define VJO_GAME_OCR_VERTICAL_ON 1u
+#define VJO_GAME_OCR_VERTICAL_AUTO 2u
+/* API 50, bits 21-23: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.h; core/vocr_ocr.h
+ * VjoVocrPolicy.line_fix, config ocr_line_fix). Bit 21: the measured default, VOCR_FIX_DEFAULT (COLGAP: a line's
+ * parts across a full-width space stay one line). Bit 22: VOCR_FIX_JUNK (frame strips on the region's top or bottom
+ * edge and repeating ornaments are not lines; it can drop a text line in a region drawn tight, so it is opt-in).
+ * Bit 23: VOCR_FIX_VALLEY (two touching rows split; opt-in). Without them the finder is the frozen one, bit for bit.
+ * The Shell sets them in the user's jobs (ocr_line_fix = on, the default: bit 21; junk: 21-22; all: 21-23); the
+ * self-test's stages read as before. Not bit 17 (closed draft #271's VJO_GAME_OCR_S_CHARS), 18-19 (the head gate
+ * and the two-level head) or 20 (trusted hooks). */
+#define VJO_GAME_OCR_S_LINE_FIX 0x200000u
+#define VJO_GAME_OCR_S_LINE_JUNK 0x400000u
+#define VJO_GAME_OCR_S_LINE_VALLEY 0x800000u
+#define VJO_GAME_OCR_S_ALL 0x30FD001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
@@ -179,6 +218,7 @@ typedef struct {
 #define VJO_HOOK_R_UNLOCK 0x20u /* this job unlocked the stream that was locked (two disagreements) */
 #define VJO_HOOK_R_CALLS_FULL 0x40u /* every CALL slot is taken: a new caller was dropped or replaced one */
 #define VJO_HOOK_R_UNCONFIRMED 0x80u /* a Rubi verified table site answered with no OCR agreement ever: OCR had no memory */
+#define VJO_HOOK_R_TRUSTED 0x100u /* API 43: a trusted source answered (VJO_GAME_OCR_S_TRUST), always with NO_OCR */
 
 /* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
  * the LM of tier which - VJO_GAME_OCR_OPEN_LM + 1, up to the request's LM tier,
@@ -186,12 +226,15 @@ typedef struct {
  * a request by tiers) the model of tier which - VJO_GAME_OCR_OPEN_TIER + 1: one of
  * the request's tiers, or with a cascade ceiling the tier above its largest
  * (the cascade's model). A request by tiers opens no MODEL, FALLBACK or CASCADE;
- * one by name opens no TIER. */
+ * one by name opens no TIER. API 47: a request with a VJO_GAME_OCR_S_VERTICAL mode may
+ * open the vertical model (VJO_GAME_OCR_OPEN_VERTICAL), by tiers or by name; the
+ * vertical model opens no other way (not as a request's MODEL or FALLBACK). */
 #define VJO_GAME_OCR_OPEN_MODEL 0u
 #define VJO_GAME_OCR_OPEN_FALLBACK 1u
 #define VJO_GAME_OCR_OPEN_LM 2u
 #define VJO_GAME_OCR_OPEN_CASCADE 8u
 #define VJO_GAME_OCR_OPEN_TIER 9u
+#define VJO_GAME_OCR_OPEN_VERTICAL 16u
 /* API 26: the text-presence gate's weights (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME), for a request with
  * VJO_GAME_OCR_S_GATE only. */
 #define VJO_GAME_OCR_OPEN_GATE 17u
@@ -237,7 +280,12 @@ enum {
                             try began (us since the job started; 0 with one try), us when it was logged,
                             after the tries */
     VJO_GSTEP_SIG,       /* the first pass is in: rc of vjoOcrCaptureRows' publication */
-    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's */
+    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's; API 47: kind 1 when they were columns
+                            (VJO_GAME_OCR_S_VERTICAL), 2 when they were rows that looked like vertical text (auto: the
+                            job read the columns next), 3 when auto's columns could not be read for want of the
+                            vertical model (rc its I/O error, 0: it failed its check; the job read the rows next),
+                            bytes the columns left out, larger than the rotation buffer (core/vocr_ocr.h
+                            VJO_VOCR_ROTATE_BYTES; 0 for rows) */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
                             line (core/vocr_ocr.h vjo_vocr_warm) */
     VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc, bytes their CTC frames; API 42: kind the share of
@@ -342,7 +390,9 @@ typedef struct {
 /* One recognized line: crop size, CTC frames, recognition time and (API 20)
  * flags: its confidence in 1/1000, 1023 when not read with the top K, and
  * whether the LM decoded (0x4000) and changed (0x8000) it (core/vocr_ocr.h
- * VJO_VOCR_LINE_*). */
+ * VJO_VOCR_LINE_*); API 47, whether it was a column read with the vertical
+ * model (VJO_GAME_OCR_LINE_COLUMN, core/vocr_ocr.h VJO_VOCR_LINE_COLUMN). */
+#define VJO_GAME_OCR_LINE_COLUMN 0x0800u
 typedef struct {
     uint16_t width, height, frames, flags;
     uint32_t us;
@@ -433,6 +483,15 @@ typedef struct {
  * expanded as core/fbgrey.h does), 4 bytes a pixel: a shot's rows, and only a shot's; never
  * with SIG or LAST (a shot publishes no capture). dst_stride >= 4 x the width. */
 #define VJO_ROWS_RGBA 0x4u
+/* API 49: no rows (n 0, dst NULL, dst_stride 0): a trusted hook answers the claimed region job (API 43), so its
+ * capture is published without reading a pixel, as the scene of the newest line a trusted hook reported
+ * (VjoState.hook_scene), while the region still shows that scene: 0, and the Shell takes the job's text for that
+ * screen. API 51: any other scene (a menu over the line, an untrusted line since, a larger change once the line
+ * drew) is published the same way, as the region's current scene (API 49 refused it and the worker read the
+ * first pass, a strip beside VJO_GAME_RESERVE_HOOK_ONLY, for the same answer). VJO_ERR_FORMAT only while the
+ * region has no screen yet; the worker then reads the first pass. Never with another VJO_ROWS_* flag, nor for a
+ * full-frame, probe or shot job. */
+#define VJO_ROWS_HOOK 0x8u
 #define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call */
 #define VJO_GAME_OCR_KSTRIP_MAX (64u * 1024u) /* the kernel strip's largest size */
 
@@ -463,7 +522,12 @@ typedef struct {
 extern "C" {
 #endif
 int vjoOcrRegister(void); /* Current active game, verified module; retry at startup. */
-int vjoOcrTake(VjoGameOcrRequest *out); /* 0 claimed, 1 no job, <0 error. */
+/* 0 claimed, 1 no job, <0 error. With nothing queued the kernel waits for a submission at most TAKE_WAIT_US
+ * (100 ms), or (API 49) out->seq microseconds when the caller sets it lower before the call (0: TAKE_WAIT_US; at
+ * least VJO_GAME_OCR_TAKE_WAIT_MIN_US, so a buffer reused with an old job's number never spins): the worker's watch
+ * of a trusted hook polls the stream at that pace (game_ocr/main.c HOOK_WATCH_US). */
+#define VJO_GAME_OCR_TAKE_WAIT_MIN_US 4000u
+int vjoOcrTake(VjoGameOcrRequest *out);
 int vjoOcrCancelled(uint32_t seq); /* Worker: 0 active, 1 cancelled, <0 stale. */
 /* Worker: rows of the claimed job's region into dst (memory of the calling
  * process), copied by the display hook from the next frame the game shows, or
@@ -516,6 +580,11 @@ int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data);
  * drawing (lines in quick succession, a skip), the same but nobody is woken: 1. VJO_ERR_PERM for any other
  * caller; VJO_ERR_BUSY while a job is claimed. */
 int vjoOcrHookLine(uint32_t seq, uint32_t bytes);
+/* API 49, in vjoOcrHookLine's bytes: the line is a trusted source's (API 43, VJO_HOOK_R_TRUSTED): the Shell is
+ * woken even while the last line still draws (0, never 1), and the scene is VjoState.hook_scene until the region
+ * shows another, so the Shell reads it at once and VJO_ROWS_HOOK publishes it (API 51: and the region's current
+ * scene after that). */
+#define VJO_HOOK_LINE_TRUSTED 0x80000000u
 #ifdef __cplusplus
 }
 #endif

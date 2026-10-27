@@ -85,8 +85,13 @@
 #define PREF_SELECTION 3
 #define PREF_HIGHLIGHT 4
 #define PREF_RESULTS 5
-#define PREF_SOURCE 6 /* API 31: Text source (config.ini text_source), the last card */
-#define PREFERENCES 7
+#define PREF_SOURCE 6 /* API 31: Text source (config.ini text_source) */
+/* API 43: OCR skipped where it has nothing to read: a text box without text (ocr_text_gate) and a line a trusted hook
+ * has (hook_trust) */
+#define PREF_TRUST 7
+#define PREF_GATE 8
+#define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical), the last card */
+#define PREFERENCES 10
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -641,6 +646,29 @@ static void set_text_source(int index)
         snprintf(preference_status, sizeof(preference_status), "Saved. It applies when a game next starts.");
 }
 
+/* API 43: Skip OCR on screens without text (ocr_text_gate) and Trusted hooks replace OCR (hook_trust), saved
+ * together; they apply when the overlay next opens. */
+static void set_skips(int text_gate, int hook_trust)
+{
+    if (text_gate == preferences.ocr_text_gate && hook_trust == preferences.hook_trust) return;
+    if (preferences_locked()) return;
+    preference_saved(vjo_preferences_save_skips(text_gate, hook_trust, &scratch));
+}
+
+/* API 47, Vertical text (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text"): its three choices left to
+ * right, OFF (rows, as before), Automatic (columns where the rows look like vertical text), ON (columns in every
+ * game); the Shell reads it each time the overlay opens. */
+static const int vertical_choice[3] = {VJO_VERTICAL_OFF, VJO_VERTICAL_AUTO, VJO_VERTICAL_ON};
+
+static int vertical_index(int mode) { return mode == VJO_VERTICAL_AUTO ? 1 : mode == VJO_VERTICAL_ON ? 2 : 0; }
+
+static void set_vertical(int index)
+{
+    if (index < 0 || index > 2 || vertical_choice[index] == preferences.ocr_vertical) return;
+    if (preferences_locked()) return;
+    preference_saved(vjo_preferences_save_vertical(vertical_choice[index], &scratch));
+}
+
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
 static void set_tier(int tier)
 {
@@ -663,6 +691,10 @@ static void toggle_preference(void)
         set_text_source((source_index(preferences.text_source) + 1) % 3);
         return;
     }
+    if (preference_selected == PREF_VERTICAL) {
+        set_vertical((vertical_index(preferences.ocr_vertical) + 1) % 3);
+        return;
+    }
     if (preference_selected == PREF_RESULTS) {
         set_dictionary_results(preferences.local_dictionary_results % VJO_LOCAL_MAX_DICTS + 1);
         return;
@@ -680,6 +712,11 @@ static void toggle_preference(void)
         set_reading(preferences.ocr_mode, !preferences.ocr_boost_clock);
         return;
     }
+    if (preference_selected == PREF_GATE || preference_selected == PREF_TRUST) {
+        set_skips(preferences.ocr_text_gate ^ (preference_selected == PREF_GATE),
+                  preferences.hook_trust ^ (preference_selected == PREF_TRUST));
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? !preferences.highlight_mode : preferences.highlight_mode,
@@ -692,6 +729,10 @@ static void set_preference(int right)
 {
     if (preference_selected == PREF_SOURCE) {
         set_text_source(source_index(preferences.text_source) + (right ? 1 : -1));
+        return;
+    }
+    if (preference_selected == PREF_VERTICAL) {
+        set_vertical(vertical_index(preferences.ocr_vertical) + (right ? 1 : -1));
         return;
     }
     if (preference_selected == PREF_RESULTS) {
@@ -710,6 +751,11 @@ static void set_preference(int right)
         set_reading(preferences.ocr_mode, right);
         return;
     }
+    if (preference_selected == PREF_GATE || preference_selected == PREF_TRUST) {
+        set_skips(preference_selected == PREF_GATE ? right : preferences.ocr_text_gate,
+                  preference_selected == PREF_TRUST ? right : preferences.hook_trust);
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? right : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
@@ -718,7 +764,8 @@ static void set_preference(int right)
 }
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
-static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H};
+static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H,
+                                             CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -893,6 +940,41 @@ static void draw_source_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
 }
 
+/* API 43: a trusted hook (a Luna or Rubi verified site, or a string copy after four OCR agreements) answers with no
+ * OCR at all (docs/native-hooks.md "Trusted hooks"); OFF checks hooks with OCR as Rubi 0.9.7 did. */
+static void draw_trust_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Trusted hooks replace OCR");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" : preferences.hook_trust ? "ON" : "OFF",
+          preferences_writable && preferences.hook_trust);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a hook Rubi trusts gives the line, with no OCR at all.");
+}
+
+/* API 43 (API 26's gate): a text box the text-presence gate sees no text in is not read (docs/vita-vn-ocr.md). */
+static void draw_gate_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Skip OCR on screens without text");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
+          preferences.ocr_text_gate ? "ON" : "OFF", preferences_writable && preferences.ocr_text_gate);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a hidden text box or a picture is not read.");
+}
+
+/* API 47: Japanese set in columns (manga in NOBORU, a vertical dialogue box), read right to left with the
+ * vertical model (docs/vita-vn-ocr.md "Vertical text"). Same badges as Text source. */
+static void draw_vertical_card(int y)
+{
+    static const char *const names[3] = {"OFF", "Automatic", "ON"};
+    static const char *const help[3] = {"Rows only: horizontal text, as before.",
+                                        "Columns where the text box holds vertical text.",
+                                        "Columns, right to left, in every game: vertical text."};
+    int chosen = vertical_index(preferences.ocr_vertical);
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Vertical text");
+    for (int i = 0; i < 3; i++)
+        badge(SOURCE_BADGE_X + i * SOURCE_BADGE_PITCH, y + CARD_BADGE_Y, SOURCE_BADGE_W, CARD_BADGE_H, names[i],
+              preferences_writable && chosen == i);
+    text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
+}
+
 static void draw_card(int i, int y)
 {
     switch (i) {
@@ -902,6 +984,9 @@ static void draw_card(int i, int y)
     case PREF_SELECTION: draw_selection_card(y); break;
     case PREF_HIGHLIGHT: draw_highlight_card(y); break;
     case PREF_SOURCE: draw_source_card(y); break;
+    case PREF_TRUST: draw_trust_card(y); break;
+    case PREF_GATE: draw_gate_card(y); break;
+    case PREF_VERTICAL: draw_vertical_card(y); break;
     default: draw_results_card(y); break;
     }
 }
@@ -985,6 +1070,12 @@ static void touch_preference(int x, int y)
             (x - SOURCE_BADGE_X) % SOURCE_BADGE_PITCH < SOURCE_BADGE_W && (x - SOURCE_BADGE_X) / SOURCE_BADGE_PITCH < 3)
             set_text_source((x - SOURCE_BADGE_X) / SOURCE_BADGE_PITCH);
         break;
+    case PREF_VERTICAL:
+        /* As Text source: touch a choice to take it; the rest of the card only focuses. */
+        if (dy >= CARD_BADGE_Y && dy < CARD_BADGE_Y + CARD_BADGE_H && x >= SOURCE_BADGE_X &&
+            (x - SOURCE_BADGE_X) % SOURCE_BADGE_PITCH < SOURCE_BADGE_W && (x - SOURCE_BADGE_X) / SOURCE_BADGE_PITCH < 3)
+            set_vertical((x - SOURCE_BADGE_X) / SOURCE_BADGE_PITCH);
+        break;
     case PREF_RESULTS:
         /* Touch a number to choose it; the rest of the card only focuses. */
         if (dy >= CARD_BADGE_Y && dy < CARD_BADGE_Y + CARD_BADGE_H && x >= RESULT_BADGE_X &&
@@ -992,7 +1083,7 @@ static void touch_preference(int x, int y)
             (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
             set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
         break;
-    default: /* the ON/OFF cards: Speed boost and Japanese characters only */
+    default: /* the ON/OFF cards: Speed boost, Japanese characters only and (API 43) the two OCR skips */
         toggle_preference();
     }
 }

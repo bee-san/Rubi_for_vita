@@ -89,6 +89,10 @@ if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
     # Recognized text normalised as the game worker returns it, line by line (tools/textnorm_eval.py).
     add_executable(vjo-textnorm host/textnorm_tool.c)
     target_link_libraries(vjo-textnorm vjo_vocr)
+    # The game worker's job on many regions, its weights kept, rows, columns or auto (tools/vertical_eval.py).
+    find_package(Threads REQUIRED)
+    add_executable(vjo-page-ocr host/page_ocr.c)
+    target_link_libraries(vjo-page-ocr vjo_vocr vjo_host Threads::Threads)
   endif()
 endif()
 
@@ -553,6 +557,17 @@ if(VJO_WITH_VOCR)
   find_package(Threads REQUIRED)
   target_link_libraries(vjo-vocr-parallel-tests vjo_vocr_rt vjo_host bearssl Threads::Threads)
   add_test(NAME vocr_parallel COMMAND vjo-vocr-parallel-tests)
+  # vita-vn-ocr #99: vertical text (a model of columns) through the actual core adapter, with real
+  # vocr_run calls on tiny weights blobs the test builds and pins itself (no release files), and the
+  # job of rows today's exactly (main 796168e's core with the runtime API 50 pins, vita-vn-ocr f8a1856).
+  add_executable(vjo-vocr-vertical-tests host/tests/test_vocr_vertical.c core/vocr_ocr.c)
+  target_include_directories(vjo-vocr-vertical-tests PRIVATE third_party/acutest/include host/tests core include
+    third_party/bearssl/inc)
+  target_compile_options(vjo-vocr-vertical-tests PRIVATE -Wall -Wextra)
+  target_compile_definitions(vjo-vocr-vertical-tests PRIVATE VJO_VOCR_TEST_MODELS="test_vertical_models.h"
+    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" VJO_VOCR_GATE_TEST_DIR="${VJO_VOCR_GATE_TEST_DIR}")
+  target_link_libraries(vjo-vocr-vertical-tests vjo_vocr_rt vjo_host bearssl Threads::Threads)
+  add_test(NAME vocr_vertical COMMAND vjo-vocr-vertical-tests)
   # ocr-speed: serial against helpers (and the cache) on real regions with real weights (host only).
   add_executable(vjo-vocr-parallel-bench host/vocr_parallel_bench.c)
   target_link_libraries(vjo-vocr-parallel-bench vjo_vocr vjo_host Threads::Threads)
@@ -574,7 +589,10 @@ if(VJO_WITH_VOCR)
   # This verifies dispatch and capture ownership without weights or inference.
   add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c)
   target_include_directories(vjo-vocr-mode-tests PRIVATE third_party/acutest/include)
-  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines_rows=vjo_test_find_lines_rows)
+  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines_rows=vjo_test_find_lines_rows
+    vocr_find_columns_rows=vjo_test_find_columns_rows
+    vocr_find_lines_fix_rows=vjo_test_find_lines_fix_rows)
+  target_compile_definitions(vjo-vocr-mode-tests PRIVATE VJO_VOCR_GATE_TEST_DIR="${VJO_VOCR_GATE_TEST_DIR}")
   target_link_libraries(vjo-vocr-mode-tests vjo_vocr_rt vjo_host)
   target_compile_options(vjo-vocr-mode-tests PRIVATE -Wall -Wextra)
   add_test(NAME vocr_finder_dispatch COMMAND vjo-vocr-mode-tests)
@@ -878,7 +896,8 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-game-resident-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-resident-tests PRIVATE
     VJO_VOCR_TEST_MODELS="test_resident_models.h"
-    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows
+    vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
@@ -890,10 +909,47 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-game-hooks-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-hooks-tests PRIVATE
     VJO_VOCR_TEST_MODELS="test_resident_models.h"
-    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows
+    vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-hooks-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_hooks COMMAND vjo-game-hooks-tests)
+  # The trusted-hook bench (docs/native-hooks.md "Trusted hooks", tools/hook_trust_bench.py): the actual worker,
+  # core adapter and runtime with the pinned models replaying hooked pages, one job a page. Built for N = 4 (the
+  # default VJO_HOOK_TRUST_INTERVAL, 32) and, for the study of N, 3 (16) and 2 (8); not a test.
+  foreach(_vjo_trust IN ITEMS 32 16 8)
+    set(_vjo_target vjo-hook-trust-bench)
+    if(NOT _vjo_trust EQUAL 32)
+      set(_vjo_target vjo-hook-trust-bench-${_vjo_trust})
+    endif()
+    add_executable(${_vjo_target} host/hook_trust_bench.c core/hook_select.c)
+    target_include_directories(${_vjo_target} PRIVATE host/tests/game_stubs host/tests core include)
+    target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_definitions(${_vjo_target} PRIVATE VJO_HOOK_TRUST_INTERVAL=${_vjo_trust}u)
+    target_link_libraries(${_vjo_target} vjo_vocr vjo_host)
+  endforeach()
+  # The trusted-hook latency bench (docs/native-hooks.md "No wait for a trusted line", tools/hook_latency_bench.py):
+  # the actual worker, kernel transport and client on one virtual clock, from a hook's write to the line's lookup;
+  # not a test. Built with the worker's default watch pace and, for the poll's cost, 4, 8 and 33 ms (HOOK_WATCH_US).
+  foreach(_vjo_watch IN ITEMS 0 4000 8000 33000)
+    set(_vjo_target vjo-hook-latency-bench)
+    if(NOT _vjo_watch EQUAL 0)
+      set(_vjo_target vjo-hook-latency-bench-${_vjo_watch})
+    endif()
+    add_executable(${_vjo_target} host/hook_latency_bench.c host/hook_latency_kernel.c kernel/buffers.c
+      kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
+    target_include_directories(${_vjo_target} PRIVATE host/tests/game_stubs host/tests/vita_stubs)
+    target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_definitions(${_vjo_target} PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1)
+    if(NOT _vjo_watch EQUAL 0)
+      target_compile_definitions(${_vjo_target} PRIVATE HOOK_WATCH_US=${_vjo_watch}u)
+    endif()
+    target_link_libraries(${_vjo_target} vjo_vocr)
+  endforeach()
+  # The text-presence gate on many regions as the worker's job runs it (tools/gate_eval.py); not a test.
+  add_executable(vjo-gate-eval host/gate_eval.c)
+  target_compile_options(vjo-gate-eval PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_link_libraries(vjo-gate-eval vjo_vocr vjo_host)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c host/tests/hooks_none.c
     host/tests/kernel_model_broker_boundary.c kernel/buffers.c kernel/capture.c
     kernel/scene.c kernel/ledger.c core/ledger.c)
@@ -925,6 +981,10 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-game-shot-tests vjo_vocr)
   add_test(NAME game_shot COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_game_shot.py
     $<TARGET_FILE:vjo-game-shot-tests>)
+  # A mined card carries the game's screenshot, end to end: the game worker's JPEG of a frame, the Shell's Enter that
+  # saves the card with it, the Rubi app's export, the note's Picture (docs/anki.md "The screenshot").
+  add_test(NAME card_screenshot COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_card_screenshot.py
+    $<TARGET_FILE:vjo-game-shot-tests> $<TARGET_FILE:vjo-shell-anki-tests> $<TARGET_FILE:vjo-apkg-tests>)
   # The stage benchmark (docs/performance.md): every stage of an OCR job and of the Shell's
   # lookups on the real sources. tools/bench_stages.py times it here and counts the Vita
   # compiler's instructions under qemu-arm from a Vita build; the smoke test checks that every

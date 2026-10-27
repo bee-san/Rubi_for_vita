@@ -49,6 +49,7 @@ typedef struct {
     int64_t capture_begin_us;  /* API 41: when the capture being taken began (its first pass's row 0) */
     uint32_t capture_seq;      /* bumped per job */
     uint32_t done_seq;         /* seq of the last finished first pass */
+    uint32_t hook_scene;       /* API 49: the scene a trusted hooked line got (VjoState.hook_scene; 0 = none) */
 
     /* change detection: the display hook writes hook_sig[(seq + 1) & 1],
      * then bumps hook_sig_seq; the worker reads hook_sig[seq & 1] */

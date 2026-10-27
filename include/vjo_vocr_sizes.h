@@ -13,19 +13,19 @@
 #define VJO_VOCR3_H15_NAME "VOCR3_H15_w8.vocr"
 #define VJO_VOCR3_FL10_NAME "VOCR3_FL10_w8.vocr"
 #define VJO_VOCR_MODEL_ROOT "ux0:data/VitaJPOverlay/ocr"
-/* The character LMs of the beam + LM decoder (bee-san/vita-vn-ocr #82, pre-release
- * v0.2.6-ctclm.2, CC BY-SA 4.0), tiers 1-4, in VJO_VOCR_MODEL_ROOT; the largest
+/* The character LMs of the beam + LM decoder (bee-san/vita-vn-ocr #82, #127, pre-release
+ * v0.3.7-lm6.2, CC BY-SA 4.0: tiers 2 and 4 VOCR6's, 1 and 3 ctclm.2's), tiers 1-4, in VJO_VOCR_MODEL_ROOT; the largest
  * is the most the game worker reads. A request names the largest tier it allows
  * (VjoGameOcrRequest.flags); the worker opens one at most. */
 #define VJO_VOCR_LM_TIERS 4u
 #define VJO_VOCR_LM1_NAME "vocr_lm_o3_500k.vlm"
 #define VJO_VOCR_LM1_BYTES 499824u
-#define VJO_VOCR_LM2_NAME "vocr_lm_o3_1000k.vlm"
-#define VJO_VOCR_LM2_BYTES 987600u
+#define VJO_VOCR_LM2_NAME "vocr_lm6_o3_1000k.vlm"
+#define VJO_VOCR_LM2_BYTES 982320u
 #define VJO_VOCR_LM3_NAME "vocr_lm_o3_2000k.vlm"
 #define VJO_VOCR_LM3_BYTES 1971568u
-#define VJO_VOCR_LM4_NAME "vocr_lm_o3_4000k.vlm"
-#define VJO_VOCR_LM4_BYTES 3781072u
+#define VJO_VOCR_LM4_NAME "vocr_lm6_o3_4000k.vlm"
+#define VJO_VOCR_LM4_BYTES 3603552u
 #define VJO_VOCR_LM_MAX_BYTES VJO_VOCR_LM4_BYTES
 /* VOCR4-W20 (bee-san/vita-vn-ocr pre-release v0.2.5-vocr4.1, F20's shape, so F20's
  * bytes), in VJO_VOCR_MODEL_ROOT: the Large tier before VOCR5, and the confidence
@@ -53,6 +53,22 @@
 #define VJO_VOCR5_N_BYTES 1189408u
 #define VJO_VOCR5_L_NAME "VOCR5_L_w8g2.vocr"
 #define VJO_VOCR5_L_BYTES 2477472u
+/* The runtime's two structs a job's workspace holds beside its arena (vocr_model and vocr_ctx, each 16-byte
+ * aligned: core/vocr_ocr.c's layout) as the console's compiler lays them out at the pinned runtime: 3,920 B at
+ * vita-vn-ocr f8a1856, whose vocr.h has #130's attention op (1,872 + 2,048 B; 3,872 B at 47cf3a3, 3,760 B at
+ * 817d203; measured: arm-vita-eabi-gcc, sizeof). The Vita build checks it
+ * (core/vocr_ocr.c), so a runtime pin that changes the structs fails until this is updated; the host tests
+ * reckon the console's job with it (host/tests/test_vocr.c), as a 64-bit host's structs are larger. */
+#define VJO_VOCR_VITA_STRUCTS 3920u
+/* VOCR5-V (bee-san/vita-vn-ocr #99): vertical text, VOCR5-S's shape (4,987 classes), trained on
+ * columns turned 90 degrees anticlockwise. It is no model size: a job runs it, whatever the size,
+ * where config.ini ocr_vertical has a job read columns (VjoGameOcrRequest.speed VJO_GAME_OCR_S_VERTICAL), and
+ * opens it as VJO_GAME_OCR_OPEN_VERTICAL. Pinned where every model is (core/vocr_ocr.c,
+ * core/vocr_models.c, kernel/game_ocr.c, tools/prepare_ocr.py). */
+#define VJO_VOCR5_V_NAME "VOCR5_V_w8.vocr"
+#define VJO_VOCR5_V_BYTES 819792u
+#define VJO_VOCR_VERTICAL_NAME VJO_VOCR5_V_NAME
+#define VJO_VOCR_VERTICAL_BYTES VJO_VOCR5_V_BYTES
 /* API 21: the three model tiers the Rubi app offers (config.ini vocr_tier),
  * smallest first; tools/model_tiers.json is the same table (its "tiers", in
  * this order), and tools/tests/test_vocr_defaults.py checks the two agree. A

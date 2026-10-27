@@ -35,19 +35,20 @@ class DocsModelNames(unittest.TestCase):
         self.assertEqual(set(models), set(pins.c_table()))   # the game worker's pins
         self.assertEqual(lms, sorted(pins.c_lm_table(), key=lambda n: pins.c_lm_table()[n][2]))
         self.assertEqual(set(lms), set(prepare_ocr.VOCR_LM_ASSETS))
-        # the three sizes' models, and by name (the host tools) VOCR3, the originals and VOCR4-W20, and the
-        # four LMs (the audit's list)
+        # the three sizes' models, and by name (the host tools) VOCR3, the originals and VOCR4-W20, the
+        # vertical model (#99, by its own open), and the four LMs (the audit's list)
         by_name = ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "FL10_w8.vocr", "H15_w8.vocr", "F20_w8.vocr",
-                   "VOCR4_W20_w8.vocr"]
+                   "VOCR4_W20_w8.vocr", prepare_ocr.VOCR_VERTICAL_MODEL]
         self.assertEqual(sorted(models), sorted({*pins.TIER_FILES, *by_name}))
-        self.assertEqual(lms, ["vocr_lm_o3_500k.vlm", "vocr_lm_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm",
-                               "vocr_lm_o3_4000k.vlm"])
+        self.assertEqual(lms, ["vocr_lm_o3_500k.vlm", "vocr_lm6_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm",
+                               "vocr_lm6_o3_4000k.vlm"])
         text = names.names_text(models, lms)
         releases = {(p[5], p[4]) for p in pins.TIER_PINS.values()}
-        releases |= {("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1")}
+        releases |= {("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1"),
+                     ("VOCR5", prepare_ocr.VOCR5V_TAG)}
         for generation, tag in sorted(releases):
             self.assertIn(f"({generation}, release {tag})", text)
-        self.assertIn("(release v0.2.6-ctclm.2)", text)
+        self.assertIn("(release v0.3.7-lm6.2)", text)
 
     def test_a_name_the_kernel_adds_makes_the_docs_stale(self):
         kernel = (ROOT / "kernel/game_ocr.c").read_text(encoding="utf-8")
@@ -111,6 +112,19 @@ class DocsModelNames(unittest.TestCase):
             self.assertEqual(names.stale(d), ["docs/guide.md"])
             with self.assertRaises(ValueError):
                 names.write(d)
+
+    def test_a_copy_left_without_its_begin_is_stale(self):
+        """An older list left after a block (its END, no BEGIN; audit of #335) is never rewritten: stale."""
+        with tempfile.TemporaryDirectory() as d:
+            for doc in names.DOCS:
+                (Path(d) / doc).parent.mkdir(parents=True, exist_ok=True)
+                (Path(d) / doc).write_text((ROOT / doc).read_text(encoding="utf-8"), encoding="utf-8")
+            doc = Path(d) / "docs/vita-vn-ocr.md"
+            text = doc.read_text(encoding="utf-8")
+            self.assertEqual(names.stale(d), [])
+            copy = names.block()[len(names.BEGIN) + 1:].replace("`F20_w8.vocr`", "`F21_w8.vocr`")
+            doc.write_text(text.replace(names.block(), names.block() + ".\n" + copy, 1), encoding="utf-8")
+            self.assertEqual(names.stale(d), ["docs/vita-vn-ocr.md"])
 
 
 if __name__ == "__main__":

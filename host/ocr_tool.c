@@ -13,6 +13,7 @@
 #include "platform_posix.h"
 #ifdef VJO_WITH_VOCR
 #include "vocr_ocr.h"
+#include "vocr_lines_fix.h" /* VOCR_FIX_DEFAULT, _JUNK, _VALLEY (--line-fix) */
 #endif
 
 typedef struct { unsigned char *pixels; unsigned width, height; } Image;
@@ -126,7 +127,7 @@ static int usage(void)
     fprintf(stderr, "Usage: vjo-ocr [--backend ncnn|vocr] [--model FILE] MODEL_DIR WIDTH HEIGHT INPUT.rgba\n"
 #ifdef VJO_WITH_VOCR
                     "       vocr: [--lines OUT.jsonl] each found line as JSON; [--blank on] skip blank lines;\n"
-                    "             [--lm vocr_lm_o3_4000k.vlm] decode with that LM (in MODEL_DIR)\n"
+                    "             [--lm vocr_lm6_o3_4000k.vlm] decode with that LM (in MODEL_DIR)\n"
                     "             [--cascade VOCR4_W20_w8.vocr [--cascade-conf 700] [--cascade-ms 2000]] read\n"
                     "             lines under that confidence again with the larger model, within that time;\n"
                     "             [--refine on] refine the finder's boxes (vita-vn-ocr's vocr_lines_refine)\n"
@@ -136,6 +137,8 @@ static int usage(void)
                     "             a model whose blob has one) as the game worker runs it by default\n"
                     "             [--two-level on] compute the rare output rows only where needed (vita-vn-ocr's\n"
                     "             two-level head, a model whose blob has one) as the game worker runs it by default\n"
+                    "             [--line-fix on|junk|all] the line finder's fixes (vita-vn-ocr #129): on, Rubi's\n"
+                    "             default, is VOCR_FIX_DEFAULT; junk adds JUNK, all also VALLEY\n"
 #endif
                     "backends built:"
 #ifdef VJO_WITH_NCNN
@@ -159,6 +162,7 @@ int main(int argc, char **argv)
 #ifdef VJO_WITH_VOCR
     const char *lines_path = NULL, *lm_name = NULL, *cascade_name = NULL;
     int blank = 0, refine = 0, counters = 0, head_gate = 0, two_level = 0;
+    unsigned line_fix = 0;
     unsigned cascade_conf = 0, cascade_ms = 2000;
 #endif
     int i = 1;
@@ -177,6 +181,10 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--counters")) counters = !strcmp(argv[i+1], "on");
         else if (!strcmp(argv[i], "--head-gate")) head_gate = !strcmp(argv[i+1], "on");
         else if (!strcmp(argv[i], "--two-level")) two_level = !strcmp(argv[i+1], "on");
+        else if (!strcmp(argv[i], "--line-fix")) /* API 50: off | on (VOCR_FIX_DEFAULT) | junk (+ JUNK) | all (+ VALLEY) */
+            line_fix = !strcmp(argv[i+1], "all") ? (unsigned)(VOCR_FIX_DEFAULT | VOCR_FIX_JUNK | VOCR_FIX_VALLEY) :
+                       !strcmp(argv[i+1], "junk") ? (unsigned)(VOCR_FIX_DEFAULT | VOCR_FIX_JUNK) :
+                       !strcmp(argv[i+1], "on") ? (unsigned)VOCR_FIX_DEFAULT : 0u;
 #endif
         else return usage();
     }
@@ -228,13 +236,13 @@ int main(int argc, char **argv)
         VjoRgbaImage rgba = {im.pixels, im.width, im.height, (size_t)im.width * 4};
         VjoGreySource grey;
         vjo_grey_source_rgba(&rgba, &grey);
-        if (lines_path || blank || lm_name || cascade_name || refine || counters || head_gate || two_level) {
+        if (lines_path || blank || lm_name || cascade_name || refine || counters || head_gate || two_level || line_fix) {
             /* The game worker's form: resident weights, the job policy, the LM. */
             VjoVocrPolicy policy = {.blank = blank, .line = lines_path ? print_line : NULL,
                                     .refine = refine ? VJO_VOCR_REFINE_ALL : 0u, .short_lines = 1,
                                     .counter_tau = counters ? VJO_VOCR_COUNTER_TAU : 0,
                                     .counter_open = counters ? VJO_VOCR_COUNTER_OPEN : 0, .head_gate = head_gate,
-                                    .two_level = two_level};
+                                    .two_level = two_level, .line_fix = line_fix};
             VjoVocrResident res = {resident_alloc, resident_release, NULL, NULL, NULL, 0, 0, 0};
             VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, NULL, NULL, 0, 0, 0};
             FILE *lf = lines_path ? fopen(lines_path, "w") : NULL;
