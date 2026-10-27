@@ -696,6 +696,7 @@ static int fake_memory_fallback, fake_missing_with_fallback, fake_cancel_on_mode
 static int32_t fake_missing_io;
 static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
+static unsigned fake_changed_recognized; /* #353: the lines such a read's last try recognized (its result's) */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
 static int fake_rows_vertical; /* API 47, ocr_vertical = auto: the worker found the rows to be vertical text */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
@@ -799,6 +800,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.rc = VJO_E_SCREEN_CHANGED;
         fake_game_result.text[0] = 0;
         fake_game_result.tears = 3;
+        fake_game_result.recognized = fake_changed_recognized;
         vocr_frees++; /* the worker freed the job's workspace before answering */
         *out = fake_game_result;
         return 0;
@@ -4601,6 +4603,7 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
 
     cursor_setup();
     fake_screen_changes = 3;
+    fake_changed_recognized = 2;
     open_overlay();
     TEST_ASSERT(job_running);
     finish_current_job(); /* the first: again at once */
@@ -4612,13 +4615,19 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
     TEST_CHECK(!job_running);
     test_now += 1000; control_tick(0);
     TEST_ASSERT(job_running && !open_retry);
+    /* #353: the third failure in a row says so in the log (both builds), with the lines its game worker had
+     * recognized; the overlay's status is #358's */
+    TEST_CHECK(logged("ocr: the screen changed under every read") == NULL);
     finish_current_job(); /* the third: 500 ms */
+    TEST_CHECK(logged("ocr: the screen changed under every read of 3 jobs in a row, the last with 2 line(s) "
+                      "recognized and not shown") != NULL);
     test_now += 500000; control_tick(0);
     TEST_ASSERT(job_running);
     finish_current_job();
     check_current_definition("cat", 0);
     check_quiet();
     close_overlay(); mem_free();
+    fake_changed_recognized = 0;
 
     cursor_setup();
     fake_screen_changes = 2;
