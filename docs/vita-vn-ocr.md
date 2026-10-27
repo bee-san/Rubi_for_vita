@@ -1030,7 +1030,8 @@ OCR & lookup page has the choice (**Vertical text**: OFF, Automatic, ON); it app
 
 - **auto** (the default): a job of rows, as before, whose line finder's rows are checked first. Where they look like
   vertical text (below), nothing is read from them and the same job reads the region's columns instead, as `on`
-  does. Elsewhere it is `off`'s job, bit for bit.
+  does. Elsewhere it is `off`'s job, bit for bit; with `ocr_line_fix` on (API 50), in a region at least as tall as
+  wide, it reads the same text after finding the rows twice, first with the frozen finder for the check.
 - **on**: every job of every game reads columns. Horizontal text inside the region is then read as columns of one
   character each: turn it back for horizontal games.
 - **off**: every job reads rows, as Rubi did before.
