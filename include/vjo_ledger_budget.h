@@ -328,6 +328,10 @@
  * text 160,648 -> 160,888 B (2,952 B of room left), normal 151,748 -> 151,988 B (3,660 B), the same pages [measured:
  * the build log's module rows, both builds, the fixes on main 241e09f, whose plugins main 16fa362 keeps; main's rows
  * as above]. No block, thread or allocation. */
+/* PCSG00020, one more verified entry and its filter (core/hook_place.c, core/hook_luna.c r_PCSG00020): worker text
+ * unchanged, rodata +32 B, data +68 B, both builds, the same pages [measured: arm-vita-eabi-size -A on both builds'
+ * VitaJPOverlay_OCR, main 892cfb9 (#354's build, whose worker differs only in VJO_API_VERSION) and this change,
+ * tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
