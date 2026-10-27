@@ -748,7 +748,7 @@ screen) returns no line, so nothing is recognized and no junk is read off the pi
 stops a few real lines, mostly very short ones (measured on the host on 46 games' hooked pages: lines OCR would
 have read, 0.004-0.17 % of all, by platform and region); it costs an estimated 0.1 s per job at the game's clock
 ([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)). Those figures are with the frozen finder's
-lines: the gate scores the lines the finder returns, and with `ocr_line_fix = on` (API 44) it scores the fixed
+lines: the gate scores the lines the finder returns, and with `ocr_line_fix = on` (API 50) it scores the fixed
 finder's, which has not been measured.
 `ocr_head_gate = on`, the default, lets the recognizer skip its output layer on the frames vita-vn-ocr #117's
 head gate calls blank, about three in five, and (Normal and Large) compute its rare characters only on the frames

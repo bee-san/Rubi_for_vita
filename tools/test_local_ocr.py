@@ -89,7 +89,7 @@ def check_vocr(run, image, many):
     parts = stat(result.stderr, 'weights') + stat(result.stderr, 'scratch')
     assert used == workspace + capture and 0 <= workspace - parts < 16384, result.stderr
     assert capture < 64 * 1024 and used < 2 * 1024 * 1024, result.stderr
-    # API 44: the first line cut at a gap between two glyphs (column 235) and its parts set 80 px apart, as a
+    # API 50: the first line cut at a gap between two glyphs (column 235) and its parts set 80 px apart, as a
     # full-width space after ！ leaves them. --line-fix on (vita-vn-ocr #129's column fix) reads it as one line;
     # the frozen finder keeps only its first part.
     one = image.crop((0, 0, image.width, 46))

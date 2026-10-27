@@ -1694,19 +1694,21 @@ copied, and the settings above. Close other apps first.
    `off` goes in the report with its photo. A line such as CLANNAD's 「九ヶ月です」 should read the same every way
    (the counter re-read), and no job should be refused for memory at your usual free memory (a first Normal or
    Large job takes 4 KiB more).
-10. **Line finder fixes (API 44).** With `ocr_line_fix = on` (the default):
-    - **Start and memory.** A game that is ON still starts; the worker holds 4 KiB more of it than in 0.9.7. No
+10. **Line finder fixes (API 50).** With `ocr_line_fix = on` (the default):
+    - **Start and memory.** A game that is ON still starts; the worker holds 8 KiB more of it than before API 50. No
       job is refused for memory at your usual free memory (`game vocr memory:` shows `check passed`).
     - **A line with a full-width space** after ！ or ？: it reads as one line. `game vocr lines:` lists one crop
       for it, and the shown text has the whole line. With `off` (reload the settings) the same line gives two
       crops, or loses its second part. Photograph the shown text both ways.
-    - **`off` is 0.9.7.** On five other lines, the text shown with `off` is what 0.9.7 shows, and its
-      `game vocr lines:` crops are the same.
+    - **`off` is the frozen finder.** On five other lines, the `game vocr lines:` crops with `off` are those of a
+      build before API 50 (test.19, API 47).
     - **`junk`.** A box whose frame or ornament touches the region, with the region drawn a few pixels outside
       the text: with `on`, the strip shows up as a crop of its own in `game vocr lines:` (and maybe as stray
       text); with `junk` that crop is gone and the dialogue lines are unchanged.
     - **`all`.** On a Narcissu (PSP) page, the two touching rows give two crops in `game vocr lines:` and the
       shown text both lines.
+    - **Vertical text.** In a vertical game with `ocr_vertical = auto`, a box drawn around the columns and the
+      speaker's name still reads as columns (the log's find step of kind 2, the lines marked as columns).
     - **Time.** Note `find=` and `recognize=` in the `game vocr rc=` line with `on` and with `off` on the same
       five lines: the finder's time should not change, and recognition only by the frames of the joined parts.
 
