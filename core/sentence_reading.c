@@ -930,7 +930,8 @@ static int parse(Parse *ps, const char *text, size_t from, size_t to, uint32_t f
                 }
                 /* A match from kana with kanji after it gives way to the lookup at its first kanji: after a
                  * particle when that reaches as far (ガ目 of が目を: 目を逸らす, ト書 of と書かれた), else when it
-                 * is rare and the other part_ratio times as frequent (この家 of この家は: 家) */
+                 * is rare and that reaches further (ラ変 of ら変わった: 変わった; not an honorific's word: お上, おかみ)
+                 * or is part_ratio times as frequent (この家 of この家は: 家) */
                 c0 = first_char(text, pos, to);
                 if (rules->anchor && kana(c0) && has_kanji(text + pos, end - pos)) {
                     size_t q = pos, at = pos;
@@ -944,7 +945,9 @@ static int parse(Parse *ps, const char *text, size_t from, size_t to, uint32_t f
                         return ps->st->failed++, got;
                     if (got && a.end >= end &&
                         ((particle_char(c0) && at == pos + 3) ||
-                         (rare(ps, e.rank) && a.rank && (!e.rank || (long long)a.rank * rules->part_ratio <= e.rank)))) {
+                         (rare(ps, e.rank) && a.rank &&
+                          ((a.end > end && c0 != 0x304A && c0 != 0x3054) /* (not after お, ご: お上) */ || !e.rank ||
+                           (long long)a.rank * rules->part_ratio <= e.rank)))) {
                         pos = at;
                         e = a;
                         end = a.end > seg ? seg : a.end;
