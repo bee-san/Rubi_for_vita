@@ -540,7 +540,11 @@ text + data/bss:
 | Shell | 98,260 + 77,664 → 98,164 + 77,728 B | 85,980 + 77,488 → 85,900 + 77,552 B | 176,128 / 163,840 B, unchanged |
 | Kernel | 43,356 + 77,772 → 43,432 + 77,780 B | 38,204 + 76,084 → 38,280 + 76,092 B | 122,880 / 118,784 B, unchanged |
 
-The worker's code ends 512 B under its last page in the debug build, 1,252 B in the normal one. Built with the
+The worker's code ends 512 B under its last page in the debug build, 1,252 B in the normal one, on main `3d095b4`.
+#396's audit follow-up (no spotter with `ocr_vertical = on`, a try of columns without the spotter's part, the `spot`
+step across a job's tries) adds 160 B of worker text in the debug build and 144 B in the normal one against main
+`5e18b60` (180,048 → 180,208 B and 171,100 → 171,244 B; data/bss, the Shell and the kernel unchanged), the same
+pages; the debug worker's code keeps 16 B of its last page. Built with the
 spotter's multi-scale paths too (`-DVJO_VOCR_SPOT_NO_MS=OFF`, for a pin of the `ms` form), the worker's text would be
 about 11,900 B more, three more pages (measured on the earlier main `796168e`); `trunk`, the pinned form, builds
 without them, and `cmake/VocrOCR.cmake` refuses `ms` with them left out.

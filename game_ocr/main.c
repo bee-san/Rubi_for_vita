@@ -2395,7 +2395,7 @@ retry_smaller:
         } else if (rc == VJO_E_VERTICAL) {
             step_add(VJO_GSTEP_FIND, 2, stats.lines, 0, 0, stats.dark, stats.find_us, 0);
             /* API 54: why the spotter left the rows to auto's check, for the columns' try's spot step */
-            if (want_spot) spot_handed = spot_rc ? spot_rc : stats.spot_rc ? stats.spot_rc : VJO_E_VERTICAL;
+            if (want_spot) spot_handed = spot_rc ? spot_rc : stats.spot_rc; /* VJO_E_VERTICAL, or its refusal */
         } else if (rc == VJO_E_OOM) {
             step_add(VJO_GSTEP_FIND, 5, stats.lines, rc, 0, 0, stats.find_us, 0);
         } else {

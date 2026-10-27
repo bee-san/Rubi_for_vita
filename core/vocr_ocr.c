@@ -401,18 +401,12 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
 
 /* API 54: the scratch with the spotter's part (its arena and result, vjo_vocr_spot_bytes): the largest of the
  * finder's, the spotter's and the recognizer's, which use it one after the other; the runtime's structs follow it. */
-static void layout_spot(Layout *l, size_t spot_bytes)
+static void layout_spot(Layout *l, size_t spot_bytes) /* a model of rows' only: a model of columns has none */
 {
-    /* a model of columns' rotation buffer follows the structs, as layout() put it (audit-vocr6-spotter2-rubi F2) */
-    const size_t rot = l->rot_off ? l->total - l->rot_off : 0;
     if (ALIGN16(spot_bytes) <= l->scratch) return;
     l->scratch = ALIGN16(spot_bytes);
     l->structs_off = l->scratch_off + l->scratch;
     l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
-    if (rot) {
-        l->rot_off = l->total;
-        l->total += rot;
-    }
 }
 
 /* The LM extras, after the job's workspace (VjoVocrPolicy.lm): the top-K of
