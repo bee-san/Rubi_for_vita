@@ -190,6 +190,7 @@ static void test_verified(void)
     TEST_CHECK(vjo_place_verified("PCSG00415", &v) == 1 && v);
     TEST_CHECK(v->module_nid == 0xC5187D60u && v->off == 0x2CA70u && v->thumb == 1 && v->reg == 6);
     TEST_CHECK(v->encoding == VJO_HOOK_ENC_CP932 && v->sig_len == 8 && v->padding == 0);
+    TEST_CHECK(v->filter == VJO_RF_PCSG00415); /* the name variables ＊Ａ ＊Ｂ written as 岡崎 朋也 */
     TEST_CHECK(vjo_place_title_verified("PCSG00415") == 1);
     TEST_CHECK(vjo_place_title_verified("PCSG00416") == 0);
     TEST_CHECK(vjo_place_verified("PCSG004150", &v) == 0 && !v);

@@ -328,6 +328,18 @@
  * text 160,648 -> 160,888 B (2,952 B of room left), normal 151,748 -> 151,988 B (3,660 B), the same pages [measured:
  * the build log's module rows, both builds, the fixes on main 241e09f, whose plugins main 16fa362 keeps; main's rows
  * as above]. No block, thread or allocation. */
+/* PCSG00020, one more verified entry and its filter (core/hook_place.c, core/hook_luna.c r_PCSG00020): worker text
+ * unchanged, rodata +32 B, data +68 B, both builds, the same pages [measured: arm-vita-eabi-size -A on both builds'
+ * VitaJPOverlay_OCR, main 892cfb9 (#354's build, whose worker differs only in VJO_API_VERSION) and this change,
+ * tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
+/* PCSG00700, one more verified entry and its filter: worker text unchanged, rodata +64 B (the entry's 40 B, the
+ * filter's patterns), data +104 B (the filter's ops, the filters' index 64 -> 68 B), both builds, the same pages
+ * [measured: arm-vita-eabi-size, both builds, main cbaa4e3 and this change; rebased on main 892cfb9, VitaSDK 2026.08]. No block, thread or
+ * allocation. */
+/* PCSG00883, one more verified entry (core/hook_place.c; it reuses RF_PCSG00020): worker text unchanged, rodata +16 B
+ * (debug) and +0 B (normal), data +40 B, the same pages [measured: arm-vita-eabi-size -A on both builds'
+ * VitaJPOverlay_OCR, #356's head 2ea1809 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or
+ * allocation. */
 /* MAGES' SC3 text (docs/native-hooks.md "SC3 text": core/hook_sc3.c at -Os, the SC3 read and decode in
  * game_ocr/hooks.c, the charset's load in game_ocr/main.c, three verified entries and three charset pins in the data
  * segment): debug text 161,016 -> 162,232 B (1,608 B of room left) and data/bss 35,328 -> 35,624 B, normal 152,084 ->

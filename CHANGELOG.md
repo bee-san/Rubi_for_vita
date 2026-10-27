@@ -22,6 +22,27 @@ been reported.
   in none of them. A region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
   "Recognizing…" (on by default;
   [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)). Not run on a console yet.
+- A native text hook for 極限脱出ＡＤＶ 善人シボウデス (Zero Escape: Virtue's Last Reward, `PCSG00020`, APP_VER
+  01.00), where users reported OCR never worked and took forever. Its LunaTranslator site could never install: the
+  eboot is linked at a fixed 0x81000000, so Luna's address is that address, and Rubi's table read it as an offset
+  past the end of the game's code. That site is also inside Lua's pattern matcher, which sees every string, not only
+  dialogue. The new site is the entry of the engine's `GUI.Message::setText`, one call per click segment (UTF-8,
+  `<K>`, `<P>`, `<F:B>` and other tags removed); a box that grows by clicks shows its newest segment. Found and proven in
+  the Vita3K emulator with the psandvita farm (53 pages an AI reviewer approved against the frames the game drew),
+  not run on a console ([details](docs/native-hooks.md#table-sites)).
+- The same hook for the 善人シボウデス half of ZERO ESCAPE ９時間９人９の扉 善人シボウデス ダブルパック (`PCSG00883`, APP_VER
+  01.00), which a user reported broken: the Double Pack starts its 善人シボウデス as a second executable,
+  `skp2_psp2.self`, the same engine in another build, so it needs its own entry (the engine's message function at
+  another address; the same text clean-up). Its 999 half, the pack's `eboot.bin`, is another engine and still uses
+  OCR. Proven in Vita3K with the farm (32 approved pages), not run on a console.
+- A native text hook for 蒼の彼方のフォーリズム (`PCSG00700`, APP_VER 01.00), with Rubi's own clean-up rules for
+  its text (half-width kana, `<a>(｢)`, `<ruby>(n,reading)`). Found in Vita3K with the psandvita farm's capture
+  build: the site gets each page once, 60 pages in a row. **On the console** (a PCH-2000 on 3.65, Rubi 0.9.7 with
+  this entry, before trusted hooks, API 43): the site was hooked (`1 table sites`, 0 refused); of its 19 lines in
+  two sessions, the 15 compared with OCR agreed (score 1000), the ruby line scored 771 before its rule (1000
+  after), 3 scored 0 ([details](docs/native-hooks.md#table-sites)). On `main` the entry is trusted from its first
+  line (API 43), so its lines need no OCR: that mode has not run on a console for this site, and the 3 lines that
+  scored 0 were not examined.
 - Native hooks for MAGES/5pb.'s SC3 engine: STEINS;GATE 比翼恋理のだーりん (`PCSG00146`), ROBOTICS;NOTES ELITE
   (`PCSG00352`) and CHAOS;CHILD (`PCSG00555`), 1.00, get verified entries at their page function. Their script
   text is glyph indices into each game's own font, so the hook reads a page through its SC3 end token (its 0x00
@@ -52,6 +73,25 @@ been reported.
   to check (every caller has had a slot, the job has read text), and a failed check prints the race's counters. A
   race put in on purpose (the key check under the slot's lock removed) is caught more often: in 49 runs of 1,000
   on four CPUs (7 before), 772 unpinned (366 before).
+- **CLANNAD's hooked lines show 岡崎 and 朋也 instead of `*A` and `*A*B`.** CLANNAD's hook reads each line before the
+  game puts the protagonist's names in: its script writes them as the name variables `＊Ａ` (the family name) and
+  `＊Ｂ` (the given name), which Rubi showed as `*A`, so `「ありゃ、岡崎、どこいくんだよっ」` came out as `「ありゃ、*A、どこいくんだよっ」`.
+  The hook's own text filter now writes the names; CLANNAD has no name entry, so they are always 岡崎朋也. Seen in 16
+  of 1,347 hooked lines of a console's history (Rubi 0.9.8).
+- Native hooks (#349): TIME TRAVELERS' (`PCSG00062`) Luna hook was never installed. Its two sites, `0x8119ADDA` and
+  `0x811A6052`, are Vita3K's guest addresses (Luna added them before its `addr_offset`), and Rubi read every Luna
+  address as `address − 0x80004000`: past the end of the game's 0x31258C-byte segment 0 at 0x81000000 (public
+  Vita3K logs), so both were refused as `range` before a byte was read, on every console. Such an address is the
+  game's own only in a fixed-address executable, so the generator now marks the 7 sites whose executable a public
+  Vita3K log shows as fixed-address (TIME TRAVELERS ×2, PCSG00139, PCSG00172, PCSG00216, PCSG00272 ×2:
+  [the list and its evidence](docs/hook-titles.md#sites-at-vita3ks-guest-address)), and for those, when that reading
+  is outside segment 0 and segment 0 is at 0x81000000, the worker reads `address − 0x81000000` (`+0x19ADDA`,
+  `+0x1A6052`); the placement check then decides on the game's bytes as for any Luna site. Every other site is read
+  as before: the 8 that relocatable executables have at or above 0x81000000 stay refused (their addresses are
+  another module's). Whether the game's bytes there pass the check is not known (no dump of the game here): the
+  debug build's `hooks.log` shows each site's offset and verdict, with its bytes when refused. Not run on a console.
+  STEINS;GATE: no Vita release has a hook entry, in Luna's table or Rubi's
+  ([hook-titles.md](docs/hook-titles.md#steinsgate-no-hook-entry-in-any-release)).
 
 ### Changed
 

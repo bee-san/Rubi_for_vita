@@ -105,13 +105,25 @@ int vjo_luna_version_ok(const VjoLunaSite *all, unsigned n, const VjoLunaSite *s
     return 1;
 }
 
-const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t off, uint16_t app_ver)
+uint32_t vjo_luna_offset(const VjoLunaSite *s, uint32_t seg_base, uint32_t code_size)
+{
+    uint32_t a;
+    if (!s) return VJO_LUNA_NO_OFFSET;
+    a = s->addr & ~1u;
+    if (a >= VJO_LUNA_SEG0 && a - VJO_LUNA_SEG0 < code_size) return a - VJO_LUNA_SEG0;
+    /* Vita3K's guest address: the game's own only in a fixed-address executable, at 0x81000000 */
+    if ((s->flags & VJO_LUNA_F_GUEST) && seg_base == VJO_LUNA_GUEST_SEG0 && a >= seg_base && a - seg_base < code_size)
+        return a - seg_base;
+    return VJO_LUNA_NO_OFFSET;
+}
+
+const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t off, uint16_t app_ver,
+                                    uint32_t seg_base, uint32_t code_size)
 {
     for (unsigned i = 0; all && i < n; i++) {
         const VjoLunaSite *s = &all[i];
-        uint32_t a = s->addr & ~1u;
-        if (a >= VJO_LUNA_SEG0 && a - VJO_LUNA_SEG0 == off && vjo_luna_ported(s) &&
-            vjo_luna_version_ok(all, n, s, app_ver))
+        const uint32_t o = vjo_luna_offset(s, seg_base, code_size);
+        if (o != VJO_LUNA_NO_OFFSET && o == off && vjo_luna_ported(s) && vjo_luna_version_ok(all, n, s, app_ver))
             return s;
     }
     return NULL;
@@ -692,6 +704,28 @@ static const LunaOp r_PCSG00628[] VJO_DATA_TABLE(rubi_PCSG00628) = {
 static const LunaOp r_PCSG00380[] VJO_DATA_TABLE(rubi_PCSG00380) = {
     REP("㊤", "―"), REP("㊥", "―"), REP("㊦", "―"), REP("㌫", "北條"), REP("㍊", "紗希"), SPECIAL(OP_TRIM), END};
 
+/* PCSG00415 CLANNAD (RealLive's script, Prototype's port): the line at 0x2CA70 r6 holds the protagonist's name variables
+ * where the game draws his names: ＊Ａ the family name, ＊Ｂ the given name (full-width, CP932 81 96 82 60 / 82 61).
+ * CLANNAD has no name entry, so they are always 岡崎 and 朋也. A console's history.csv (Rubi 0.9.8, the verified site's
+ * stream): 「ありゃ、＊Ａ、どこいくんだよっ」 where OCR read 岡崎, 「俺はＤ組の＊Ａ＊Ｂ」; 16 of 1,347 hook lines. */
+static const LunaOp r_PCSG00415[] VJO_DATA_TABLE(rubi_PCSG00415) = {REP("＊Ａ", "岡崎"), REP("＊Ｂ", "朋也"), END};
+
+/* PCSG00020 極限脱出ＡＤＶ 善人シボウデス (Chunsoft's skp2v engine): GUI.Message::setText's click segments, 0x811ac998 r1,
+ * UTF-8. <K> is a click wait, <P> the box cleared after it, <N> (a segment of its own) and <F:B> (one line drawn
+ * larger) are not drawn either (farm sessions of 2026-10-27: <K> 66, <P> 45, <N> 2, <F:B> 1 of 113 hits); Luna's
+ * filter for the title (<\w+?>) keeps <F:B>, so any <tag> or <tag:arg> goes. */
+static const LunaOp r_PCSG00020[] VJO_DATA_TABLE(rubi_PCSG00020) = {SUB("<[A-Za-z0-9_:]+>", ""), END};
+
+/* PCSG00700 蒼の彼方のフォーリズム (sprite's BGI/Ethornell port, "Buriko"): the page's script text as it is set on the
+ * text window, 0x81074d48 r1. Plain hiragana and punctuation are half-width kana bytes (｢ｿﾛｿﾛ､行ｶﾅｷｬ｣ is 「そろそろ、
+ * 行かなきゃ」); a spoken line starts <a>(｢): <a> is not drawn and (｢) is its opening 「 (31 of the first 60 pages,
+ * Vita3K 2026-10-26); <ruby>(2,ｼﾄｳ)四島市 is ruby over the next 2 characters, drawn 四島市 (console, 2026-10-26). The
+ * eboot's tag table also names f, c, parallel and ruby2 (and /f, /c), in none of those pages: any <tag> is not drawn.
+ * The speaker's name is set apart from the page and is not in it. */
+static const LunaOp r_PCSG00700[] VJO_DATA_TABLE(rubi_PCSG00700) = {
+    SUB("<a>\\(([^)\n]*)\\)", "$1"), SUB("<ruby2?>\\([^)\n]*\\)", ""), SUB("</?[a-z][a-z0-9]*>", ""),
+    SPECIAL(OP_KANA), END};
+
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_TABLE(rubi_filters) = {
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
@@ -701,6 +735,9 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_T
     [VJO_RF_PCSG00817 - VJO_RF_BASE] = r_PCSG00817, [VJO_RF_PCSG00853 - VJO_RF_BASE] = r_PCSG00853,
     [VJO_RF_PCSG00876 - VJO_RF_BASE] = r_PCSG00876, [VJO_RF_PCSG01194 - VJO_RF_BASE] = r_PCSG01194,
     [VJO_RF_PCSG00628 - VJO_RF_BASE] = r_PCSG00628, [VJO_RF_PCSG00380 - VJO_RF_BASE] = r_PCSG00380,
+    [VJO_RF_PCSG00415 - VJO_RF_BASE] = r_PCSG00415,
+    [VJO_RF_PCSG00020 - VJO_RF_BASE] = r_PCSG00020,
+    [VJO_RF_PCSG00700 - VJO_RF_BASE] = r_PCSG00700,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */

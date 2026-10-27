@@ -119,7 +119,9 @@ Two lists name them:
   register, encoding and 8 to 16 bytes recorded at the site, and optionally a filter and a pointer read:
   - CLANNAD PCSG00415, NID 0xC5187D60, +0x2CA70, Thumb, r6, CP932, `AB F8 2C 23 14 F5 53 70` (STRH.W r2,
     [r11, #0x32C]; ADDS.W r0, r4, #0x34C). From PR #16's `profiles/PCSG00415.vjhook`; proven in Vita3K
-    only (note 22).
+    only (note 22). Filter `RF_PCSG00415`: the line holds the script's name variables `＊Ａ` and `＊Ｂ` where
+    the game draws the protagonist's names, written as 岡崎 and 朋也 (until 0.9.8 the popup showed them as
+    `*A` and `*A*B`).
   - アマツツミ PCSG01198 (APP_VER 01.00), NID 0x8AA413F2, +0x745C8, Thumb, r2, CP932, 16 bytes from
     `09 EB 87 0E` (ADD.W lr, r9, r7, LSL #2; ADD.W lr, lr, #0x1620). Luna's site 0x800785C8, which the
     placement check refuses as no entry (it is inside a function's loop); no branch in segment 0 targets
@@ -160,6 +162,36 @@ Two lists name them:
     - PCSG00817 EVE burst error R, NID 0x2DBAE009, +0x19132, Thumb, r0, CP932, filter `RF_PCSG00817`; 685 farm pages
     - PCSG00876 7'scarlet, NID 0x16FEB862, +0x12B60, Thumb, r6, UTF-8, filter `RF_PCSG00876`; 1051 farm pages
     - PCSG01194 参千世界遊戯 ～Re Multi Universe Myself～, NID 0xECD30306, +0x56E24, Thumb, r0, CP932, filter `RF_PCSG01194`; 30 farm pages
+    - PCSG00020 極限脱出ＡＤＶ 善人シボウデス (Zero Escape: Virtue's Last Reward, APP_VER 01.00), NID 0xF98BA0BA
+      (`skp2_psp2_rel`), +0x1AC998, Thumb, r1, UTF-8, filter `RF_PCSG00020`; 53 farm pages (2026-10-27). Chunsoft's skp2v
+      engine (Lua 5.1 + luabind): the entry of `GUI.Message::setText`, which the script's `Message:talk` calls with
+      one click segment (`<K>` its click wait, `<P>` the box's clear after it). A box's segments add up on the screen
+      until its `<P>`, and the worker keeps a site's latest hit, so the popup shows the newest segment, not the
+      whole box. The speaker's name is set elsewhere (`GUI.Text::setText`, whose changed-text path is no function
+      entry). Patch: `push.w {r4-r11, lr}; vpush {s16-s23}`; no branch in segment 0 into it. The eboot is a
+      fixed-address executable linked at 0x81000000: Luna's 0x810DE344 for this title is that address (segment 0 +
+      0xDE344, inside Lua's `lstrlib` `match()`, the subject of every pattern match, mid-function), not segment 0 +
+      0x10DA344 as Luna's table reads it, which is past the segment's end, so it was refused as out of range on
+      every console.
+    - PCSG00883 ZERO ESCAPE ９時間９人９の扉 善人シボウデス ダブルパック (APP_VER 01.00), its 善人シボウデス: NID 0x158B09F2
+      (`skp2_psp2`), +0x1EBCB8, Thumb, r1, UTF-8, filter `RF_PCSG00020`, 10 bytes; 32 farm pages (2026-10-27). The
+      Double Pack's `eboot.bin` is 999 (Spike Chunsoft's other engine, no entry yet); from its SELECT GAME screen it
+      starts `app0:skp2_psp2.self` as the process's main module, the title ID unchanged, so the worker that starts
+      in that process finds this entry by the module's NID. It is PCSG00020's engine in a relocatable build:
+      `Message:talk` calls 0x811EBCB8 or a twin chosen by a global with the click segment in r1, and the luabind
+      `setText` binding (0x811ECC3C) only dispatches to them, so it never runs for story text; the twin never fired
+      in the Japanese game. The 10 bytes are `push.w {r4-r11, lr}; vpush {s16-s23}; sub sp, #0xfc`, unique in
+      segment 0; the `movw`/`movt` after them hold a relocated address.
+
+  - Found with the psandvita farm's Vita3K capture build, then tested on a console:
+    - PCSG00700 蒼の彼方のフォーリズム (APP_VER 01.00, eboot SHA-256 d1d827ee…), NID 0x3BB91404 (`vita_app`),
+      +0x74D48, Thumb, r1, CP932, filter `RF_PCSG00700`. The site is the entry of the function that sets a page's
+      script string on the text window (a `strlen` probe found it: the page's one call returns to 0x81074d6a); it
+      gets each page once (60 pages in a row in Vita3K). Patch (8 bytes): `push.w {r4-r11, lr}; sub sp, #0x1c;
+      movs.w r10, #0`, no branch into it in the dumped segment 0. On a PCH-2000 (3.65, Rubi 0.9.7 with this
+      entry, 2026-10-26): `hooks in PCSG00700: text source auto, 1 table sites and 3 string copies hooked, 0 sites
+      refused`; of the site's 19 lines in two sessions, the 15 compared with OCR scored 1000, the ruby line 771
+      before `RF_PCSG00700` had its ruby rule (then 1000), 3 scored 0.
 
   - MAGES/5pb. SC3 engine titles from the psandvita Vita3K farm, Rubi's own sites (proven in Vita3K only; no branch,
     PC use or IT in the patched bytes, `push.w {r4-r11, lr}; sub sp, #imm; movw r4, #imm`, and no branch or pointer
@@ -221,9 +253,28 @@ Two lists name them:
 - **Luna's table** (`core/hook_luna.h`, `core/hook_luna_table.inc`: LunaTranslator's Vita3K table,
   ported by hooks-luna-port; [hook-titles.md](hook-titles.md)). Luna's addresses are Vita3K's: the
   offset into segment 0 is `addr - 0x80004000` (`VJO_LUNA_SEG0`), which matches the CLANNAD Vita3K run
-  but is unproven on a console. An entry is tried only when it is ported (`ported`) and its game
-  version matches the game's `APP_VER` (`vjo_luna_version_ok`; `APP_VER` is read once from
-  `app0:sce_sys/param.sfo`).
+  but is unproven on a console. Entries older than Luna's `addr_offset` (f237a9f4, 2026-05-20) can hold
+  Vita3K's guest address instead. A Vita3K before 11dc3b8b (2026-05-27) loaded a fixed-address executable at its
+  link address (0x81000000 for every marked game), where a console must load it too, and a relocatable one
+  elsewhere (0x00105000, 0x80004000), and from 0.2.1 4033 Luna normalises every main module, so the guest address
+  is the game's own only in a fixed-address executable. The generator marks the sites whose executable a public
+  Vita3K log shows as fixed-address at 0x81000000 (`VJO_LUNA_F_GUEST`:
+  [hook-titles.md](hook-titles.md#sites-at-vita3ks-guest-address) lists them with their evidence), and for those
+  only, when `addr - 0x80004000` is outside segment 0 and segment 0 is at 0x81000000, the offset is
+  `addr - 0x81000000` (`vjo_luna_offset`, #349). TIME TRAVELERS' two sites are the case that showed it:
+  `0x8119ADDA - 0x80004000` is past the end of its fixed-address 0x31258C-byte segment 0 (public Vita3K logs), so
+  main refused both as `range` on every console, while `+0x19ADDA` and `+0x1A6052` are inside it. In the public
+  Vita3K logs of 160 of the table's titles, 245 of the 250 sites below 0x81000000 are inside segment 0 in Luna's
+  space, as main reads them. Of the sites at or above 0x81000000, 7 (5 titles: TIME TRAVELERS ×2, PCSG00139,
+  PCSG00172, PCSG00216, PCSG00272 ×2, all ported) are marked. 8 more (PCSG00451 ×2, PCSG00708 ×2, PCSG00787,
+  PCSG01046 ×2, PCSG01049) are inside segment 0 only at their guest offset, but in relocatable executables, where
+  that offset is unrelated code: their addresses are another module's (PCSG00708's Unity eboot: its Mono AOT
+  module, per the psandvita farm's notes; the farm never saw PCSG01046's fire at its guest address). They stay
+  refused, as on main (`range`, or `unported` or `version` where that comes first), as do 9 that fit neither
+  reading and those of the 2 titles without a log. One of these, PCSG00020's `0x810DE344`, is likely a guest
+  address too (its western releases' executables are fixed-address at 0x81000000); a log of the Japanese one would
+  let the generator mark it. An entry is tried only when it is ported (`ported`) and its game version matches the
+  game's `APP_VER` (`vjo_luna_version_ok`; `APP_VER` is read once from `app0:sce_sys/param.sfo`).
 
 The site's offset must lie in segment 0 with the bytes taiHEN saves (16), and a Luna site must pass the
 placement check (`vjo_place_check`), because taiHEN's offset hook (libsubstitute) overwrites 8 bytes at
@@ -270,7 +321,10 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00509` | POSSESSION MAGENTA | `＊Ｂ` 鈴; `^` to a line break; `<base,reading>` to the base | events 50, 1011 (67 pages hold `＊Ｂ`) |
 | `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？); a 0xA0 byte is a blank cell, `　` | events 1-5, 51, 53, 55; 0xA0 on 170 of the bucket's 1037 pages (page 82: 東京都　陵南学園。, 9 glyphs) |
 | `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `z<n>.` and `u<n>.` dropped (a size and a code point: in the farm's survey of `main.snr`, in none of its pages), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped, `!X` to the ASCII X (a lowercase X is read as a code first: none in the pages); half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages |
+| `PCSG00415` | CLANNAD | `＊Ａ` (CP932 81 96 82 60) and `＊Ｂ` (81 96 82 61), the script's name variables for the protagonist's family and given name, to 岡崎 and 朋也 (CLANNAD has no name entry) | not the farm's: a console's `history.csv` (Rubi 0.9.8, the verified site's stream): 16 of 1,347 hook lines, e.g. `「ありゃ、＊Ａ、どこいくんだよっ」` where OCR read 岡崎, `「俺はＤ組の＊Ａ＊Ｂ」` |
+| `PCSG00020`, `PCSG00883` | 極限脱出ＡＤＶ 善人シボウデス (and the Double Pack's) | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
+| `PCSG00700` | 蒼の彼方のフォーリズム | `<a>(X)` to X (a spoken line opens `<a>(｢)`); `<ruby>(n,reading)` and `<ruby2>(..)` dropped, leaving the base; any other `<tag>` dropped (the eboot's tag table also names `f`, `c`, `parallel`); half-width kana to hiragana | Vita3K: 31 of the first 60 pages; console: `<ruby>(2,しとう)四島市` drawn 四島市 (the other tags in no page seen) |
 | `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
 | `PCSG00853` | ピリオドキューブ | `#Name[1]` 花宮, `#Name[2]` かずは, `#Name[3]` カズハ, then `IFENGINE` | samples 78, 120, 259, 371, 464, 492 |
 | `PCSG00876` | 7'scarlet | `@@` to a line break; drops `$<digit>` style switches | scn op 0x10 records |
@@ -915,7 +969,9 @@ instead of `vocr`, and `line_source` `hook` instead of `ocr`: `shell/history.c`;
 [ocr-history.md](ocr-history.md#line-source)). The debug build writes
 `ux0:data/VitaJPOverlay/hooks.log` at each game start (rewritten): the title, the text source, the main
 module's name, NID and segment 0, `APP_VER`, each site with its verdict, reason and first 16 bytes, and
-each CALL import hooked or not. No text is in it. Job results carry the counts; the Shell's debug log
+each CALL import hooked or not. A Luna site's line has the segment-0 offset its address was read at
+(`luna 8119ADDA r7 +19ADDA hooked, stream 1`; no offset when neither reading is inside segment 0, refused
+as `range`). No text is in it. Job results carry the counts; the Shell's debug log
 shows them (hooks-api). API 41: the debug build's `kernel.txt` has a line for each new line the hook watch
 reports, its sequence, raw length and held scene (`hook line: seq N, B bytes, scene S`, with `, no wakeup`
 for a line reported while the last one was still drawing), no text.
@@ -982,7 +1038,23 @@ Hardware is paused; these are for the test issue (#230):
     trusted` and a job each), and the overlay shows the last. With the overlay open and the game on auto: each line
     replaces the text as it starts. Close the game and start it again: the first line is trusted at once (no OCR job
     before it). `history.csv` has one record a line.
-15. SC3 text (the debug build, STEINS;GATE 比翼恋理のだーりん `PCSG00146` 1.00, `auto`, Automatically): `hooks.log`
+15. #349, a Luna entry at Vita3K's guest address (the debug build, `text_source = auto`, `hook_trust = on`, the
+    default): TIME TRAVELERS (`PCSG00062`). `hooks.log` shows `main module tt1_rom NID … seg0 81000000+31258C
+    APP_VER 0100; 0 verified, 2 Luna sites` (the 01.01 update is another build, `eboot` in its Vita3K log: `main module
+    eboot NID … +306C90 APP_VER 0101`, a verdict of its own) and the two sites at their
+    offsets, `luna 8119ADDA r7 +19ADDA` and `luna 811A6052 r8 +1A6052`, each `hooked, stream N` or refused with its
+    16 bytes (`entry` or `window`: then the NID, `APP_VER` and those bytes are what a verified entry needs, with a
+    farm run of the game for its segment 0). Hooked: a dialogue line opens in the overlay from the hook (Triangle:
+    Source Hook; `log.txt`'s job line `flags 0x118`, TRUSTED | SITE | NO_OCR; 0x18 with `hook_trust = off`) and
+    matches the screen, ruby and colour tags removed; a choice or a menu shows the last line. Play through menus, a
+    save and a load and a scene change: a crash or stutter that **OCR only** does not have is what a branch into the
+    12 patched bytes would look like. Learned hook sources start again once in this build (its hook definitions
+    changed: [Which text a job shows](#which-text-a-job-shows)), CLANNAD's too. Send the whole
+    `tools/install_ftp.sh --collect` zip and say which game version is installed. Also CLANNAD's `hooks.log` first
+    line (`main module … seg0 ________+…`) from two game starts: its eboot is relocatable, so its `seg0` shows whether a
+    console loads a relocatable executable at 0x81000000, and whether that moves between starts. PCSG00139,
+    PCSG00172, PCSG00216 and PCSG00272, the other marked titles, show the same lines in their `hooks.log`.
+16. SC3 text (the debug build, STEINS;GATE 比翼恋理のだーりん `PCSG00146` 1.00, `auto`, Automatically): `hooks.log`
     shows NID 2BAC7A6D and `verified +2B018 thumb r0` hooked; `ux0:data/VitaJPOverlay/hooks/PCSG00146.sc3` is
     there (5,364 B). The first job's step log has an alloc step of the `sc3` block (8,192 B) and no free step of it;
     a dialogue line then says `flags 0x118` with the speaker's name on its own line and no reading of a ruby; the
