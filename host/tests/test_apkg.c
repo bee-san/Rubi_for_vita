@@ -2149,7 +2149,7 @@ static int write_packages(const char *dir)
         fprintf(f, "%s\"%s\"", i > 4 ? "," : "", saved[i]);
     /* the cards whose notes have the duplicate tag (#314): 猫 (version 3) after version 1's, and 犬 again */
     fprintf(f, "],\"duplicates\":[\"%s\",\"%s\"]", saved[0], saved[n - 1]);
-    fprintf(f, "],\"app\":[\"%s\",\"%s\"]", app_ids[0], app_ids[1]);
+    fprintf(f, ",\"app\":[\"%s\",\"%s\"]", app_ids[0], app_ids[1]);
     fprintf(f, ",\"many\":700,\"notetype_id\":%lld,\"deck_id\":%lld,\"deck\":\"%s\"}\n", vjo_lapis_notetype_id,
             vjo_lapis_deck_id, vjo_lapis_deck_name);
     fclose(f);
