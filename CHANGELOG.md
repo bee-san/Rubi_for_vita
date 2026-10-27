@@ -30,6 +30,11 @@ been reported.
   `<K>`, `<P>`, `<F:B>` and other tags removed); a box that grows by clicks shows its newest segment. Found and proven in
   the Vita3K emulator with the psandvita farm (53 pages an AI reviewer approved against the frames the game drew),
   not run on a console ([details](docs/native-hooks.md#table-sites)).
+- The same hook for the 善人シボウデス half of ZERO ESCAPE ９時間９人９の扉 善人シボウデス ダブルパック (`PCSG00883`, APP_VER
+  01.00), which a user reported broken: the Double Pack starts its 善人シボウデス as a second executable,
+  `skp2_psp2.self`, the same engine in another build, so it needs its own entry (the engine's message function at
+  another address; the same text clean-up). Its 999 half, the pack's `eboot.bin`, is another engine and still uses
+  OCR. Proven in Vita3K with the farm (32 approved pages), not run on a console.
 - A native text hook for 蒼の彼方のフォーリズム (`PCSG00700`, APP_VER 01.00), with Rubi's own clean-up rules for
   its text (half-width kana, `<a>(｢)`, `<ruby>(n,reading)`). Found in Vita3K with the psandvita farm's capture
   build: the site gets each page once, 60 pages in a row. **On the console** (a PCH-2000 on 3.65, Rubi 0.9.7 with
