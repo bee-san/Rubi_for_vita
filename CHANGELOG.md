@@ -308,7 +308,8 @@ been reported.
   Small alone's 2.05 s, and now 2.12 s. Its captures and finder time count every try, and the debug build's step log
   keeps the try that read (a full log of 20 steps had dropped its last steps, such as the text's normalisation; the
   refused try's blocks are no longer listed, while a block it gave back for good keeps its free step; after auto's
-  vertical-text tries the job needs 21 steps, and the normalisation's is still the one left out). No module takes a
+  vertical-text tries the job needed 21 steps, and the normalisation's was still the one left out, until #385's audit
+  dropped a handed-over try's checks too). No module takes a
   page more ([memory ledger](docs/memory-ledger.md)).
 - **SC3 text, #368's audit.** In STEINS;GATE 比翼恋理のだーりん, ROBOTICS;NOTES ELITE and CHAOS;CHILD:
   - A charset read that timed out (the memory card's file worker stalled for 2 s) is tried again at a later job, as

@@ -2667,12 +2667,14 @@ static void weights_refused_retry_after_auto_s_tries(void)
                 "SIG %u", (unsigned)out.n_steps, weights, lm_block, count_steps(&out, VJO_GSTEP_SETTLE),
                 count_steps(&out, VJO_GSTEP_LOAD), count_steps(&out, VJO_GSTEP_RECOGNIZE),
                 count_steps(&out, VJO_GSTEP_LM), count_steps(&out, VJO_GSTEP_PASS), count_steps(&out, VJO_GSTEP_SIG));
-    /* #382's audit N2: this path needs 21 steps (MEM, 4 CHECK, PASS, SIG, 3 FIND, 4 ALLOC, SETTLE, LOAD, RECOGNIZE,
-     * LM, NORM and the 2 FREE steps of the job's blocks) for the log's 20: the last one in, NORM, is the one left out
-     * (step_add keeps the FREE steps' slots), as the CHANGELOG says. */
-    TEST_CHECK_(out.n_steps == VJO_GAME_OCR_STEPS && count_steps(&out, VJO_GSTEP_FREE) == 2,
-                "%u steps, %u FREE (NORM %u)", (unsigned)out.n_steps, count_steps(&out, VJO_GSTEP_FREE),
-                count_steps(&out, VJO_GSTEP_NORM));
+    /* #382's audit N2: this path needed 21 steps (MEM, 4 CHECK, PASS, SIG, 3 FIND, 4 ALLOC, SETTLE, LOAD, RECOGNIZE,
+     * LM, NORM and the 2 FREE steps of the job's blocks) for the log's 20, and NORM, the last one in, was left out.
+     * #385's audit F7: the rows' first try's check (Normal's, passed) leaves the log with its blocks as it hands over
+     * to the columns, so the 20 steps hold every one of them, NORM too. */
+    TEST_CHECK_(out.n_steps == VJO_GAME_OCR_STEPS && count_steps(&out, VJO_GSTEP_FREE) == 2 &&
+                    count_steps(&out, VJO_GSTEP_NORM) == 1 && count_steps(&out, VJO_GSTEP_CHECK) == 3,
+                "%u steps, %u FREE, NORM %u, CHECK %u", (unsigned)out.n_steps, count_steps(&out, VJO_GSTEP_FREE),
+                count_steps(&out, VJO_GSTEP_NORM), count_steps(&out, VJO_GSTEP_CHECK));
     TEST_CHECK(!memory_live && !capture_live && !line_live && weights_live && lm_live);
     TEST_CHECK(!drop_resident());
 }

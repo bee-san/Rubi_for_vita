@@ -599,15 +599,15 @@ columns read as rows).
 The same change reads a region at least as tall as wide as columns from `on`'s first try, has a region wider than tall
 with no row read as rows (nothing), and drops a try of rows' memory checks from the step log when it hands over to
 the columns ([vertical text](vita-vn-ocr.md#ons-rule-api-53-379)): no block, thread or stack. The rows [measured:
-`tools/check_memory_ledger.py` on both builds, `main` `33fdf30` and this change, `tools/fast_gate.sh`'s VitaSDK image]:
+`tools/check_memory_ledger.py` on both builds, `main` `e4c1a02` and this change, `tools/fast_gate.sh`'s VitaSDK image]:
 
-| module | `main` `33fdf30` | this change | pages |
+| module | `main` `e4c1a02` | this change | pages |
 |---|---:|---:|---:|
-| Game worker, debug | 179,840 + 36,712 B | 180,064 + 36,728 B | 217,088 B both |
-| Game worker, normal | 170,876 + 36,704 B | 171,116 + 36,720 B | 208,896 B both |
+| Game worker, debug | 179,856 + 36,712 B | 180,128 + 36,728 B | 217,088 B both |
+| Game worker, normal | 170,924 + 36,704 B | 171,164 + 36,720 B | 208,896 B both |
 
-The worker's code grows by 224 B (debug) and 240 B (normal), its data/bss by 16 B (the three pointers); the debug worker
-keeps 160 B of its last code page and 136 B of its data page, the normal one 916 and 144 B. The Shell's and the kernel's
+The worker's code grows by 272 B (debug) and 240 B (normal), its data/bss by 16 B (the three pointers); the debug worker
+keeps 96 B of its last code page and 136 B of its data page, the normal one 868 and 144 B. The Shell's and the kernel's
 rows are main's. None of it is measured on a console.
 
 ## Trusted hooks and the OCR-skip switches (API 43)
