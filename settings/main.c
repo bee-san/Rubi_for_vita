@@ -1812,8 +1812,8 @@ int main(void)
                     vjo_stick_latch(&stick_state);
                     stick = 0;
                     held_game = -1;
-                    if (game_view >= 0) close_game_page(); /* #333 */
                 }
+                if (game_view >= 0) close_game_page(); /* #333: a tab leaves a game's page; the Games tab, for its list */
                 page = tab;
             }
             else if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_STATS || page == PAGE_INSTALL) {

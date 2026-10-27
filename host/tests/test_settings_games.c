@@ -3211,6 +3211,12 @@ static void the_games_page_by_touch_and_its_on_off(void)
     script[at++] = (Input){0, 1, 40, 52 + 20, 0}; /* the Games tab touched: its list */
     hold(0, 5);
     int back = at - 1;
+    for (int k = 0; k < frames_at_60hz(500000) + 5; k++) script[at++] = (Input){0, 1, 400, y1, 0}; /* the page again */
+    hold(0, 5);
+    int again = at - 1;
+    script[at++] = (Input){0, 1, 40, 52 + 20, 0}; /* the Games tab, from the page: the list */
+    hold(0, 5);
+    int tabbed = at - 1;
     int frames = run(at);
     TEST_CHECK(frames == at);
     check_rules();
@@ -3230,6 +3236,8 @@ static void the_games_page_by_touch_and_its_on_off(void)
     TEST_CHECK(!session->shown[ocr].page_title[0] && !session->shown[ocr].lf_tag[i1][0]);
     TEST_CHECK_(!session->shown[back].page_title[0] && !strcmp(session->shown[back].lf_tag[i1], "Line finder: All"),
                 "'%s' '%s'", session->shown[back].page_title, session->shown[back].lf_tag[i1]);
+    TEST_CHECK(!strcmp(session->shown[again].page_title, games[1].title) && !session->shown[tabbed].page_title[0] &&
+               !strcmp(session->shown[tabbed].lf_tag[i1], "Line finder: All"));
     TEST_CHECK(line_fix_seen("VJOT00001", 0) == 3 && line_fix_seen("VJOT00000", 0) == -1);
     TEST_CHECK(!shell_sees("ux0:data/VitaJPOverlay/games.ini", "VJOT00000", 0) &&
                shell_sees("ux0:data/VitaJPOverlay/games.ini", "VJOT00001", 0));
