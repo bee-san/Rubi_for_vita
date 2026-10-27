@@ -371,9 +371,9 @@
  * builds, main 2a92864 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is
  * VJO_BUDGET_GAME_FRAME's; no thread. */
 /* test/combined (the combined test build v0.9.8-test.N, never merged): main + every open draft (#318, #326, #355,
- * #359), in the game's partition only: 200,704 -> 217,088 B of pages (debug) and 192,512 -> 200,704 B (normal)
- * [MEASURED_ROWS]. The kernel's and both Shells' pages are main's (two of the drafts' Shell strings are in .rodata
- * here: shell/worker.c). No block, thread or allocation beyond the PRs'. */
+ * #359), in the game's partition only: 200,704 -> 217,088 B of pages (debug: 177,624 + 36,032 B) and 192,512 -> 200,704 B
+ * (normal: 163,580 + 35,944 B) [measured: the gate's module rows, both builds, 5aa8a47]. The kernel's and both Shells'
+ * pages are main's (two of the drafts' Shell strings are in .rodata here: shell/worker.c). No block, thread or alloc. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
