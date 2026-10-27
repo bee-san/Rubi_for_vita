@@ -78,23 +78,32 @@ row states' place in the job's capture block (its size, `vjo_vocr_capture_bytes`
 arena in the job's workspace. On the worker's stack (32 KiB) the job's frame grows from 1,512 to 2,616 B (`run_job`,
 with the line sets it watches) and a finder's run takes `look_alike`'s 360 B on its way [measured: `arm-vita-eabi-gcc
 -Os -fstack-usage`, the build's flags]. In the Shell the log line's string is in the data segment (`VJO_DATA_TABLE`);
-its code is `note_screen_changed`'s call. No budget is raised. The module rows [measured: the build log's module rows,
-VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main `2a92864` and this change rebased on it, both builds]:
+its code is `note_screen_changed`'s call.
 
-| Module | main `2a92864` | this change | pages |
+**One budget is raised: the worker's module pages, by one page in each build** (`VJO_BUDGET_WORKER_MODULE_PAGES`
+200,704 → 204,800 B debug, 192,512 → 196,608 B normal: 4,096 B more in each game that is ON, in the game's partition
+only). The watch's 2,640 B of worker text did not fit the 1,368 B (debug) and 2,140 B (normal) that main `e2c49ee`'s
+worker left in its last text page. `core/vocr_ocr.c` is built `-Os` already. Besides the recognizer's runtime, the
+worker's code still at `-O2` is the JPEG encoder (`-O2` by its own choice), the arena, the hook text decoder and
+Luna's table code, whose capture runs inside the game's hooked function: their objects' text is 3,142 B smaller at
+`-Os` [measured: the four objects at `-O2` and `-Os`, the debug build's flags], other features' code and speed, not
+this change's to trade. `VJO_LIMIT_GAME_JOB` is kept, as API 47's and API 50's pages kept it (the job's worst case
+does not count the module's pages). The module rows [measured: the build log's module rows, VitaSDK 2026.08
+(`tools/fast_gate.sh`'s image), main `e2c49ee` and this change rebased on it, both builds]:
+
+| Module | main `e2c49ee` | this change | pages |
 |---|---:|---:|---:|
-| worker, debug | 161,144 + 35,544 B | 163,784 + 35,544 B | 200,704 B both |
-| worker, normal | 152,196 + 35,536 B | 154,836 + 35,536 B | 192,512 B both (exact) |
-| Shell, debug | 102,092 + 73,408 B | 102,124 + 73,592 B | 176,128 B both |
-| Shell, normal | 89,980 + 73,416 B | 89,996 + 73,608 B | 163,840 B both (exact) |
-| kernel | 43,160 + 77,764 B (debug), 38,008 + 76,076 B (normal) | the same | 122,880 / 118,784 B |
+| worker, debug | 162,472 + 35,872 B | 165,112 + 35,872 B | 200,704 → 204,800 B |
+| worker, normal | 153,508 + 35,856 B | 156,148 + 35,856 B | 192,512 → 196,608 B |
+| Shell, debug | 102,140 + 73,408 B | 102,172 + 73,592 B | 176,128 B both |
+| Shell, normal | 90,020 + 73,416 B | 90,036 + 73,608 B | 163,840 B both (exact) |
+| kernel | 43,356 + 77,764 B (debug), 38,204 + 76,076 B (normal) | the same | 122,880 / 118,784 B |
 
-The debug worker keeps 56 B of its last text page (2,696 B before), the normal worker 812 B (3,452 B); the normal
-Shell 116 B of code room (132 B) and 120 B of data room (312 B). The next change that adds worker code or rodata (a
-hook entry adds 32-64 B of rodata) takes the debug worker a page further, a budget raise of its own (AGENTS.md rule
-10), unless it trims. Of the worker's text, `core/vocr_ocr.c` is 2,594 B (17,886 → 20,480 B at `-Os`: `run_job` 6,852
-→ 7,856 B, the row checks' `stream_read` 684 → 996 B, `lines_alike` 410 B, `relook` 200 B, `hold_still` 186 B,
-`watch_pause` 124 B and smaller helpers); the rest is the step's kind in `game_ocr/main.c`.
+With the page the debug worker keeps 2,824 B of its last text page and the normal worker 3,596 B; the normal Shell
+76 B of code room (92 B before) and 120 B of data room (312 B). Of the worker's text, `core/vocr_ocr.c` is 2,594 B
+(17,886 → 20,480 B at `-Os`: `run_job` 6,852 → 7,856 B, the row checks' `stream_read` 684 → 996 B, `lines_alike`
+410 B, `relook` 200 B, `hold_still` 186 B, `watch_pause` 124 B and smaller helpers); the rest is the step's kind in
+`game_ocr/main.c`.
 
 ## Why the overlay waits (#358)
 
@@ -666,11 +675,11 @@ modules (`ctest -R memory_ledger` runs it locally):
   shell pages                         217,088      237,568    1,048,576      811,008
   shell paf                             8,192      241,664      985,088      743,424
   kernel                              155,648      245,760      245,760            0
-  game                                237,568   10,403,840   10,604,544      200,704
+  game                                241,664   10,420,224   10,604,544      184,320
 ```
 
-(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 50 and VOCR6's LMs; the normal
-build's game permanent is 229,376 B.)
+(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 50, VOCR6's LMs, SC3's charset and
+#353's page; the normal build's game permanent is 233,472 B.)
 
 Historical packaged-module output retained from PR #234 before this integration (current combined
 measurements are above):

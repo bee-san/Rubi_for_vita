@@ -444,7 +444,8 @@ Once the region keeps changing, the job judges the text by the found lines' own 
   a row hold the checksum), the finder's runs the finder's own arena (the recognizer is done with it, or not set up
   yet). On the worker's 32 KiB stack the job's frame grows from 1,512 to 2,616 B (`run_job`, with the line sets it
   watches), and a finder's run takes `look_alike`'s 360 B on its way (`arm-vita-eabi-gcc -Os -fstack-usage`, the
-  build's flags); its code is in the module's pages ([memory-ledger.md](memory-ledger.md#the-line-watch-353)).
+  build's flags). Its code, 2,640 B, takes the worker one page more, 4,096 B in each game that is ON, in both builds
+  ([memory-ledger.md](memory-ledger.md#the-line-watch-353)).
 
 **What it gives** (the 184 regions, 23 scenarios, eight of them audit-rubi-spinner's typing ones; median / 90th
 percentile / slowest time from L + R to the text, est.; "same": the still page's text exactly; "shorter": a read

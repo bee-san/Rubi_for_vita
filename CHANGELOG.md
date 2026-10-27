@@ -101,9 +101,10 @@ been reported.
   median 0.3-1.8 s and 90 % within 1.6-2.5 s after L + R; no region shown before is lost, and an icon that rests
   between its turns is shown in 13 and 7 more regions. Of the 1,777 runs that showed the whole line before, 4 (text
   typed slowly, or with pauses) now show part of it first, and the whole line 0.4-2.3 s later
-  ([details](docs/text-stability.md#animated-icons-and-moving-pictures-353)). No new memory: the line checksums take
-  the row states' place in the job's capture block (its size unchanged); the debug worker keeps 56 B of its last code
-  page ([ledger](docs/memory-ledger.md#the-line-watch-353)).
+  ([details](docs/text-stability.md#animated-icons-and-moving-pictures-353)). No new block or allocation: the line
+  checksums take the row states' place in the job's capture block (its size unchanged). The watch's code takes the
+  worker one page more, 4 KiB in each game that is ON, in both builds: 196,608 B of module pages (204,800 B in the
+  debug build) ([ledger](docs/memory-ledger.md#the-line-watch-353)).
 - The log says when text was recognized but never shown: the third job in a row whose screen changed under every
   read logs (both builds) `ocr: the screen changed under every read of 3 jobs in a row, the last with N line(s)
   recognized and not shown` (the overlay says why it waits: #358, above). The debug build's `gstep job settle` says

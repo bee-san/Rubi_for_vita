@@ -154,7 +154,7 @@ every title without a row of its own.
 
 ## Memory
 
-- **Game partition.** Unchanged per process: the worker's module pages (192,512 B in the normal build and 200,704 B in the debug build since API 50's line finder fixes: [memory-ledger.md](memory-ledger.md#line-finder-fixes-api-50-vita-vn-ocr-129-and-the-pin-at-f8a1856)) and its idle
+- **Game partition.** Unchanged per process: the worker's module pages (196,608 B in the normal build and 204,800 B in the debug build since #353's line watch: [memory-ledger.md](memory-ledger.md#the-line-watch-353)) and its idle
   thread (32,768 B stack + 4,096 B TLS) until a job, then the jobs' blocks as before
   ([memory-ledger.md](memory-ledger.md)). What changes is where: every title ON in `games.ini`,
   not only those with a line. With `default = enabled`, the installer's default, that is every
