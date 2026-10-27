@@ -32,6 +32,8 @@ vita2d_pvf *vita2d_load_default_pvf(void);
 void vita2d_free_pvf(vita2d_pvf *font);
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text);
 int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text);
+typedef unsigned int SceGxmTextureFormat;
+vita2d_texture *vita2d_create_empty_texture_format(unsigned int w, unsigned int h, SceGxmTextureFormat format);
 vita2d_texture *vita2d_load_PNG_file(const char *filename);
 vita2d_texture *vita2d_load_PNG_buffer(const void *buffer);
 void vita2d_free_texture(vita2d_texture *texture);

@@ -423,17 +423,23 @@ set(VJO_SETTINGS_ANKI_SRC
 set(VJO_SETTINGS_STATS_SRC
   ${ROOT}/settings/stats_page.c ${ROOT}/core/stats.c ${ROOT}/core/history_read.c
   ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c ${ROOT}/core/text_rows.c)
+# The Look up page (#313, settings/lookup_page.c): typed search and earlier lines (history.csv: core/history_read.c,
+# above), looked up with the overlay's own code (core/client.c, local_dict.c, text_rows.c) through the app's sceIo
+# platform (settings/app_platform.c), and its cards saved to the queue as the overlay saves them (settings/app_queue.c).
+set(VJO_SETTINGS_LOOKUP_SRC
+  ${ROOT}/settings/lookup_page.c ${ROOT}/settings/lookup.c ${ROOT}/settings/lookup_history.c ${ROOT}/settings/app_queue.c
+  ${ROOT}/settings/app_platform.c ${ROOT}/core/client.c)
 set(VJO_SETTINGS_SRC
   ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c ${ROOT}/settings/app_prefs.c
   ${ROOT}/settings/icons.c ${ROOT}/settings/search.c ${ROOT}/settings/text_layout.c ${ROOT}/core/linebreak.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
-  ${ROOT}/settings/applog.c
+  ${ROOT}/settings/applog.c ${ROOT}/settings/vita2d_textures.c
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
   ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
   ${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/core/regions.c # #358: Suggest a text box, region.ini's line for every game (settings/preferences.c)
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
-  ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_STATS_SRC})
+  ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_STATS_SRC} ${VJO_SETTINGS_LOOKUP_SRC})
 # API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, the worker's verified table
 # itself (core/hook_place.c: of it only vjo_place_title_verified, vjo_place_verified and the table stay
 # linked), and the games of Luna's
@@ -477,7 +483,9 @@ target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffuncti
 # game running: the GPU library's shared parameter buffer and SceShell's framebuffer hand-over);
 # VJO_SETTINGS_GFX_WRAP is the smoke app's too. tools/check_settings_self.py checks that libvita2d
 # calls the wrappers.
-set(VJO_SETTINGS_GFX_WRAP -Wl,--wrap=sceGxmVshInitialize,--wrap=sceSharedFbGetInfo)
+# settings/vita2d_textures.c wraps libvita2d's plain textures (vita2d_create_empty_texture_format): their two stale
+# fields cleared, so that a font's glyph atlas, which main.c frees while the app runs, frees nothing else.
+set(VJO_SETTINGS_GFX_WRAP -Wl,--wrap=sceGxmVshInitialize,--wrap=sceSharedFbGetInfo,--wrap=vita2d_create_empty_texture_format)
 target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
   -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority
   -Wl,--wrap=sceKernelCreateThread ${VJO_SETTINGS_GFX_WRAP} -Wl,--defsym,__sce_headroom=0x4000)

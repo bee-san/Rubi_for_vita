@@ -1362,7 +1362,7 @@ static void the_frame_interval_is_logged_once(void)
 }
 #endif
 
-/* The list keys act on the Games page only: on the OCR & lookup, Anki, Stats and Install
+/* The list keys act on the Games page only: on the OCR & lookup, Anki, Look up, Stats and Install
  * pages Up/Down/L/R leave the list where it was. */
 static void list_keys_only_on_the_games_page(void)
 {
@@ -1382,6 +1382,10 @@ static void list_keys_only_on_the_games_page(void)
     tap(DOWN, 8);
     tap(SCE_CTRL_RTRIGGER, 8);
     hold(UP, 30);
+    hold(0, 8);
+    tap(SCE_CTRL_SELECT, 8); /* Look up (#313) */
+    tap(DOWN, 8);
+    tap(SCE_CTRL_LTRIGGER, 8);
     hold(0, 8);
     tap(SCE_CTRL_SELECT, 8); /* Stats (#312) */
     tap(DOWN, 8);
@@ -1489,6 +1493,8 @@ static void a_page_change_latches_the_stick(void)
     hold_stick(-128, 1); /* pushed up */
     hold(0, 4);
     int up_push = at - 1;
+    with_stick(SCE_CTRL_SELECT, -128); /* Look up (#313), the stick up */
+    with_stick(0, -128);
     with_stick(SCE_CTRL_SELECT, -128); /* Stats (#312), the stick up */
     int stats = at - 1;
     hold_stick(-128, 20);
@@ -1526,7 +1532,8 @@ static void a_touched_tab_latches_the_stick(void)
     at = 0;
     hold(0, 10);
     hold_stick(127, 15);
-    script[at++] = (Input){0, 1, 24 + 304 + 100, 52 + 20, 127}; /* the OCR & lookup tab, the stick still down */
+    /* the OCR & lookup tab (x 152-381 with the six tabs' labels, stub metrics), the stick still down */
+    script[at++] = (Input){0, 1, 260, 52 + 20, 127};
     int tab = at - 1;
     hold_stick(127, 30);
     int held = at - 1;

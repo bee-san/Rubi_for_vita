@@ -11,7 +11,10 @@ never half-written, and a later export takes the rest. These check process
 crashes and disk recovery, not electrical power loss on physical
 Vita/SD2Vita hardware.
 
-    python3 host/tests/test_anki_restart.py BUILD/vjo-shell-anki-tests BUILD/vjo-apkg-tests
+The Rubi app's own saves (a card mined on the Look up page, #313: settings/app_queue.c,
+vjo-app-queue-tests --restart-step) stop at the same boundaries as the overlay's.
+
+    python3 host/tests/test_anki_restart.py BUILD/vjo-shell-anki-tests BUILD/vjo-apkg-tests BUILD/vjo-app-queue-tests
 """
 import json
 import os
@@ -26,6 +29,7 @@ from pathlib import Path
 
 SHELL = str(Path(sys.argv.pop(1)).resolve())
 APP = str(Path(sys.argv.pop(1)).resolve())
+APP_QUEUE = str(Path(sys.argv.pop(1)).resolve())
 BASE91 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&()*+,-./:;<=>?@[]^_`{|}~"
 
 
@@ -130,6 +134,33 @@ class SaveRestartTests(Storage):
                 self.assertIn(again["status"], ("Saved for Anki", "Already queued"))
                 for card in self.records(self.queue):
                     json.loads((self.queue / f"{card}.json").read_text("utf-8"))
+
+
+class AppSaveRestartTests(Storage):
+    """#313, the Rubi app's Look up page: a card it saves, stopped anywhere, is whole or not there, never damages the
+    cards saved before, and the next save of it finishes it (or finds it queued)."""
+
+    def test_every_stop_point(self):
+        for point in ("json_partial", "json_flushed", "json_renamed", "json_committed"):
+            with self.subTest(checkpoint=point):
+                self.use(Path(self.temp.name) / ("app-" + point))
+                self.assertEqual(self.run_step(APP_QUEUE, "save"), {"status": "Saved", "count": 1})
+                original = self.snapshot(self.queue)
+                self.run_step(APP_QUEUE, "save-other", crash=point)
+                for name, data in original.items():
+                    self.assertEqual((self.queue / name).read_bytes(), data)
+                self.assertEqual(len(self.records(self.queue)), 2 if point in ("json_renamed", "json_committed") else 1)
+                again = self.run_step(APP_QUEUE, "save-other")
+                self.assertEqual(again["count"], 2)
+                self.assertIn(again["status"], ("Saved", "Already queued"))
+                self.assertFalse([p for p in self.queue.iterdir() if p.name.endswith(".tmp")])
+                for card in self.records(self.queue):
+                    record = json.loads((self.queue / f"{card}.json").read_text("utf-8"))
+                    self.assertEqual((record["version"], record["picture"]), (4, False))
+                # and the export takes both, as any card (the queue's IDs are the records' SHA-256)
+                done = self.run_step(APP, "export")
+                self.assertEqual((done["rc"], done["cards"]), (0, 2), done)
+                self.assertEqual(set(self.package_guids()), {guid_of(i) for i in self.records(self.archive)})
 
 
 class ScreenshotSaveRestartTests(Storage):

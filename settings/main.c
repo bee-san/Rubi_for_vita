@@ -16,6 +16,7 @@
 #include "icons.h"
 #include "install_page.h"
 #include "letter.h"
+#include "lookup_page.h"
 #include "preferences.h"
 #include "psp.h"
 #include "search.h"
@@ -144,11 +145,86 @@ static int status_error, preference_error;
 
 static float text_scale(float pixels) { return pixels / font_em; }
 
+/* libvita2d's glyph atlas (vita2d_pvf.c, a8f15ab): one 512 x 512 texture per font holds every glyph the font has
+ * drawn or measured, at its own 18-pixel em, and never lets one go; once it is full a new glyph is neither drawn nor
+ * measured (atlas_add_glyph fails: the character is skipped). The Look up page draws many: dictionary entries and
+ * the starts of 200 earlier lines, kanji by the hundred. So the app counts the distinct characters drawn or measured
+ * with the font, and before a text that would take them past GLYPH_SWITCH it loads the font again, with an empty
+ * atlas, and draws on with that one; the old one is freed before the next frame, once the GPU is done with it
+ * (font_tick). The atlas holds 502 to 639 glyphs before it refuses one (an estimate: libvita2d's packer simulated with
+ * the glyphs of host/fixtures/word_lookup's lines and English, at estimated glyph sizes), so 400 leaves a margin;
+ * one frame draws at most about 300 (the list of earlier lines), so a frame never needs a second font. Each switch
+ * leaves 4 KiB of the heap behind (libvita2d's int_htab_free keeps its table, an estimate from its source), and its
+ * texture's two stale fields are cleared by the link (settings/vita2d_textures.c), so freeing it frees nothing else. */
+#define GLYPH_SLOTS 1024
+#define GLYPH_SWITCH 400
+static uint32_t glyph_seen[GLYPH_SLOTS]; /* code point + 1 of each character with this font; 0 free; half full at most */
+static int glyph_count, font_switches, font_tried;
+static vita2d_pvf *font_retired; /* the font a switch replaced, until the GPU is done with it */
+
+/* s's characters this font has not had yet: added to the set (commit), or only counted. */
+static int glyphs_new(const char *s, int commit)
+{
+    size_t n = strlen(s), i = 0;
+    int fresh = 0;
+    while (i < n) {
+        uint32_t key = vjo_utf8_next(s, n, &i) + 1, slot = (key * 2654435761u) >> 22;
+        while (glyph_seen[slot] && glyph_seen[slot] != key)
+            slot = (slot + 1) % GLYPH_SLOTS;
+        if (glyph_seen[slot])
+            continue;
+        fresh++;
+        if (commit && glyph_count < GLYPH_SLOTS / 2) {
+            glyph_seen[slot] = key;
+            glyph_count++;
+        }
+    }
+    return fresh;
+}
+
+/* Before s is drawn or measured: a font with an empty atlas when s's new characters would take this one past
+ * GLYPH_SWITCH (once a frame at most: a font that cannot be loaded is tried again at the next). */
+static void glyphs_for(const char *s)
+{
+    int fresh = glyphs_new(s, 0);
+    if (fresh && glyph_count + fresh > GLYPH_SWITCH && !font_retired && !font_tried) {
+        vita2d_pvf *next = vita2d_load_default_pvf();
+        font_tried = 1;
+        if (next) {
+            font_retired = font;
+            font = next;
+            memset(glyph_seen, 0, sizeof(glyph_seen));
+            glyph_count = 0;
+            font_switches++;
+        }
+    }
+    glyphs_new(s, 1);
+}
+
+/* Between frames: the font a switch replaced is freed once the GPU has finished the frames that drew with it. */
+static void font_tick(void)
+{
+    font_tried = 0;
+    if (!font_retired)
+        return;
+    vita2d_wait_rendering_done();
+    vita2d_free_pvf(font_retired);
+    font_retired = NULL;
+    vjo_log("font: an empty glyph atlas after %d characters (%d time%s)", GLYPH_SWITCH, font_switches,
+            font_switches == 1 ? "" : "s");
+}
+
 static void text(int x, int y, unsigned color, float pixels, const char *s)
-{ vita2d_pvf_draw_text(font, x, y, color, text_scale(pixels), s); }
+{
+    glyphs_for(s);
+    vita2d_pvf_draw_text(font, x, y, color, text_scale(pixels), s);
+}
 
 static int text_width(float pixels, const char *s)
-{ return vita2d_pvf_text_width(font, text_scale(pixels), s); }
+{
+    glyphs_for(s);
+    return vita2d_pvf_text_width(font, text_scale(pixels), s);
+}
 
 static void draw_rows(int x, int y, unsigned color, float pixels, int line_height, const char *s,
                       const VjoTextLayout *layout)
@@ -204,15 +280,15 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 #endif
 
 /* The page tabs, left to right; Select goes to the next (docs/one-vpk-install.md has the Install page, #312 the
- * Stats page). A new page is an entry here and a label in tab_label: the tab bar lays itself out (tab_layout). */
-enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_STATS, PAGE_INSTALL, PAGES };
-static const char *const tab_label[PAGES] = {"Games", "OCR & lookup", "Anki", "Stats", "Install"};
+ * Stats page, #313 the Look up page). A new page is an entry here and a label in tab_label: the tab bar lays itself
+ * out (tab_layout). */
+enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_LOOKUP, PAGE_STATS, PAGE_INSTALL, PAGES };
+static const char *const tab_label[PAGES] = {"Games", "OCR & lookup", "Anki", "Look up", "Stats", "Install"};
 /* The tab bar, from x 24 to 936 under the title row: tabs TAB_GAP apart, at the most TAB_PX pixels of label.
  * While every label fits an equal share (912 / PAGES, less the gap), the tabs are equal (four were 220 px at a
  * pitch of 228). Else each tab is its label's width with TAB_PAD each side, the room left shared out equally; and
  * when even that does not fit, the labels are smaller (TAB_MIN_PX at the least; past that the tabs are equal and
- * their labels cut at their edges). Laid out once the font is loaded, for the drawing and the touches both.
- * (rubi-rm3's design for #313's Look up tab, which adds its page here too.) */
+ * their labels cut at their edges). Laid out once the font is loaded, for the drawing and the touches both. */
 #define TAB_LEFT 24
 #define TAB_ROOM 912
 #define TAB_GAP 8
@@ -345,6 +421,18 @@ static const VjoStatsUi stats_ui = {text, text_width, wrapped_text, focus_card, 
 static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }
 static const VjoInstallDraw install_ui = {text, text_width, rect, focus_card, badge, hints_row, header,
                                           WHITE, DIM, ACCENT, OFF, SELECTED, &buttons};
+
+static void clip(int x0, int y0, int x1, int y1)
+{
+    if (x1 <= x0) {
+        vita2d_disable_clipping();
+        return;
+    }
+    vita2d_enable_clipping();
+    vita2d_set_clip_rectangle(x0, y0, x1, y1);
+}
+static const VjoLookupUi lookup_ui = {text, text_width, wrapped_text, rect, focus_card, badge, footer_at, header, clip,
+                                      WHITE, DIM, ACCENT, OFF, CARD, SELECTED, &buttons};
 
 static void release_icon(void *texture) { vita2d_free_texture(texture); }
 
@@ -1298,13 +1386,18 @@ static void search_games(VjoStickScroll *stick, uint32_t *previous, int *touched
 /* A page shown (Select, or its tab): the pages with a module of their own read again what they show. */
 static void show_page(int p)
 {
+    if (page == PAGE_LOOKUP && p != PAGE_LOOKUP) vjo_lookup_page_leave(); /* its dictionaries' files closed */
     if (p == PAGE_ANKI) vjo_anki_page_show(&scratch);
+    if (p == PAGE_LOOKUP) vjo_lookup_page_show(&scratch);
     if (p == PAGE_STATS) vjo_stats_page_show(&scratch);
     if (p == PAGE_INSTALL) vjo_install_page_show();
 }
 
-/* Cancel is the page's own (it stops an export), not the app's exit. */
-static int page_holds_cancel(void) { return page == PAGE_ANKI && vjo_anki_page_busy(); }
+/* Cancel is the page's own (it stops an export; it goes back from an earlier line to the list), not the app's exit. */
+static int page_holds_cancel(void)
+{
+    return (page == PAGE_ANKI && vjo_anki_page_busy()) || (page == PAGE_LOOKUP && vjo_lookup_page_holds_cancel());
+}
 
 /* ---- what the app ran with, in log.txt (log_file = on, the default) ---- */
 
@@ -1415,6 +1508,7 @@ int main(void)
     memset(&stick_state, 0, sizeof(stick_state));
     for (;;) {
         SceCtrlData pad;
+        font_tick(); /* a font a switch replaced (its atlas full), freed now the GPU is done with it */
         memset(&pad, 0, sizeof(pad));
         if (sceCtrlPeekBufferPositive(0, &pad, 1) < 1)
             pad.ly = VJO_STICK_CENTER; /* a failed read: no buttons and the stick at rest, not pushed up */
@@ -1444,15 +1538,16 @@ int main(void)
         } else search_held = 0;
         if ((pressed & buttons.cancel) && !page_holds_cancel() && !installing) break;
         if ((pressed & SCE_CTRL_SELECT) && !installing) {
-            page = (page + 1) % PAGES;
+            int next = (page + 1) % PAGES;
             repeat_at = now + 350000;
             /* The new page takes no move from a stick still pushed, this frame or until it is let go. */
             vjo_stick_latch(&stick_state);
             stick = 0;
-            show_page(page);
+            show_page(next); /* (it reads the page being left: Look up closes its dictionaries) */
+            page = next;
         }
-        if (page == PAGE_ANKI || page == PAGE_STATS || page == PAGE_INSTALL) {
-            /* anki_page.c, stats_page.c and install_page.c read their own buttons and touches */
+        if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_STATS || page == PAGE_INSTALL) {
+            /* anki_page.c, lookup_page.c, stats_page.c and install_page.c read their own buttons and touches */
         } else if (page == PAGE_OCR) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
@@ -1492,7 +1587,10 @@ int main(void)
                 }
                 page = tab;
             }
-            else if (page == PAGE_ANKI || page == PAGE_STATS || page == PAGE_INSTALL) { touch_x = x; touch_y = y; }
+            else if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_STATS || page == PAGE_INSTALL) {
+                touch_x = x;
+                touch_y = y;
+            }
             else if (page == PAGE_OCR && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
                 touch_preference(x, y); /* the OCR & lookup page's cards */
             else if (page != PAGE_GAMES) { /* no game actions on the other pages */ }
@@ -1536,15 +1634,27 @@ int main(void)
         } else if (page == PAGE_STATS) {
             vjo_stats_page_stick(stick);
             vjo_stats_page_frame(&stats_ui, pressed, touch_x, touch_y, &scratch);
+        } else if (page == PAGE_LOOKUP) {
+            VjoLookupInput in = {pressed, pad.buttons, pad.lx, pad.ly, pad.rx, pad.ry, now, touch_x, touch_y, stick};
+            if (vjo_lookup_page_frame(&lookup_ui, &in)) {
+                /* the keyboard ran: its closing button and touch are no new press, as after the games' search */
+                previous = UINT32_MAX;
+                touched = 1;
+                repeat_at = sceKernelGetProcessTimeWide() + 350000;
+                vjo_stick_latch(&stick_state);
+                continue;
+            }
         }
         else if (page == PAGE_OCR) draw_preferences(); else draw();
         sceDisplayWaitVblankStart();
     }
     vjo_anki_page_quit();
     vjo_stats_page_quit();
+    vjo_lookup_page_quit();
     vjo_install_page_quit();
     vita2d_wait_rendering_done();
     clear_icons();
+    font_tick();
     vita2d_free_pvf(font);
     /* No vita2d_fini. In a system application libvita2d draws into the shared
      * framebuffer's two buffers and never sets its third display buffer, but

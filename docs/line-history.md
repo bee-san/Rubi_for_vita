@@ -235,3 +235,10 @@ mutant sets pass and are killed on this head too.
 Not tested off the console: how the dimmed rows look on the Vita's screen, the read's time on `ux0:`,
 and the Paf heap's free size during a visit. Vita3K is not evidence for any of them (AGENTS.md
 rule 5).
+
+## More of them: the Rubi app's Look up page
+
+The Rubi app's **Look up** page (#313, [the guide](guide.md#look-up)) shows more of them, away from the game: a
+game's last 200 lines in `history.csv`, newest first, kept as this line history keeps them (filtered, trimmed, none
+the same as the one after it), for any game of the file's last 8 MiB; each opens with the same word cursor, and Enter
+saves its word as a card without a picture ([the cards](anki.md#cards-from-the-look-up-page)).

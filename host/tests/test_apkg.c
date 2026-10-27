@@ -31,6 +31,7 @@
 #include "lapis.h"
 #include "sqlw.h"
 #include "zipw.h"
+#include "../../settings/app_queue.h"
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -2093,6 +2094,49 @@ static int write_packages(const char *dir)
     snprintf(path, sizeof(path), "%s/many.apkg", dir);
     if (take_package(r.path, path))
         return 1;
+    /* app: two cards the Rubi app's Look up page saved (#313: settings/app_queue.c), without pictures: a typed
+     * word (no sentence, no game: MiscInfo the date it was saved) and a word of an earlier line (the line, its game) */
+    char app_ids[2][VJO_QUEUE_ID_SIZE];
+    {
+        static const char *word[1] = {"[JMdict]\ncat"}, *name[1] = {"[VNDB names]\nNeko, a character"}, *pos[1] = {"n"};
+        static const VjoAnkiGloss more = {"VNDB names", "猫", "ねこ", name, 1};
+        VjoAnkiNote n;
+        reset();
+        for (int k = 0; k < 2; k++) {
+            memset(&n, 0, sizeof(n));
+            n.spelling = k ? "犬" : "猫";
+            n.reading = k ? "いぬ" : "ねこ";
+            n.rank = 1234;
+            n.source = "Jiten";
+            n.meanings = word;
+            n.n_meanings = 1;
+            n.pos = pos;
+            n.n_pos = 1;
+            n.dictionary = "JMdict";
+            n.more = &more;
+            n.n_more = 1;
+            n.sentence = n.sentence_furigana = k ? "犬が鳴いた" : "";
+            n.hl_start = n.sf_hl_start = k ? 0 : -1;
+            n.hl_end = n.sf_hl_end = k ? 3 : -1;
+            n.misc = k ? "CLANNAD (2026-10-28 00:30)" : "2026-10-27 15:04";
+            if (k) {
+                n.game = "CLANNAD";
+                n.title_id = "PCSG00415";
+                n.platform = "vita";
+                n.ocr_engine = "vocr";
+                n.ocr_model = "VOCR5_N_w8.vocr";
+            }
+            n.unix_time = 1792000000 + 60 * k;
+            vjo_arena_init(&A, mem, sizeof(mem));
+            if (vjo_app_queue_save(&A, &n, app_ids[k]) != VJO_APP_QUEUE_SAVED)
+                return fprintf(stderr, "app card %d not saved\n%s", k, logs), 1;
+        }
+        if (run(0, &r, msg) != VJO_OK || r.cards != 2)
+            return fprintf(stderr, "%s\n%s", msg, logs), 1;
+        snprintf(path, sizeof(path), "%s/app.apkg", dir);
+        if (take_package(r.path, path))
+            return 1;
+    }
     /* what the first two must hold: each card's ID (its GUID's source) */
     snprintf(path, sizeof(path), "%s/expected.json", dir);
     if (!(f = fopen(path, "w")))
@@ -2105,6 +2149,7 @@ static int write_packages(const char *dir)
         fprintf(f, "%s\"%s\"", i > 4 ? "," : "", saved[i]);
     /* the cards whose notes have the duplicate tag (#314): 猫 (version 3) after version 1's, and 犬 again */
     fprintf(f, "],\"duplicates\":[\"%s\",\"%s\"]", saved[0], saved[n - 1]);
+    fprintf(f, "],\"app\":[\"%s\",\"%s\"]", app_ids[0], app_ids[1]);
     fprintf(f, ",\"many\":700,\"notetype_id\":%lld,\"deck_id\":%lld,\"deck\":\"%s\"}\n", vjo_lapis_notetype_id,
             vjo_lapis_deck_id, vjo_lapis_deck_name);
     fclose(f);
