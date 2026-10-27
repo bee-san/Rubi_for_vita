@@ -400,7 +400,6 @@
  * (2,108 B) and 35,536 -> 35,600 B, the same pages [measured: check_memory_ledger.py's module rows, both
  * builds, main 2a92864 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is
  * VJO_BUDGET_GAME_FRAME's; no thread. */
- * below. */
 /* #353, the stable-text wait's line watch (core/vocr_ocr.c: the watched lines' checksums, the finder's looks, reading
  * anyway; game_ocr/main.c's step kind): one text page more in both builds, in the game's partition only, in every game
  * that is ON. On main 84dbad9 the debug build's text 163,528 -> 166,152 B (1,784 B of room), 200,704 -> 204,800 B
