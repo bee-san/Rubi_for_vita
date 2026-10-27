@@ -463,6 +463,41 @@ static void each_game_shows_the_triangle_views_numbers(void)
             TEST_CHECK_(text_with(line) != NULL, "rule %d %s: want \"%s\"", rule, names[g], line);
         }
         TEST_CHECK(text_with("last read Tue 20 Oct") != NULL && text_with("read today") != NULL);
+        /* (audit-rubi-rm2 F4.1) the Today row: all games' today, the sum of each game's Triangle view today; and All
+         * games: the sum of their totals */
+        VjoStatsCount sum_day = {0, 0, 0}, sum_total = {0, 0, 0};
+        for (int g = 0; g < 3; g++) {
+            VjoStatsCount total, day;
+            shell_count(tids[g], &total, &day);
+            sum_day.chars += day.chars, sum_day.active_us += day.active_us, sum_day.timed_chars += day.timed_chars;
+            sum_total.chars += total.chars, sum_total.active_us += total.active_us;
+            sum_total.timed_chars += total.timed_chars;
+        }
+        char want_today[200], want_all[200];
+        summary(want_today, sizeof(want_today), &sum_day);
+        summary(want_all, sizeof(want_all), &sum_total);
+        TEST_ASSERT(sum_day.chars > 0 && (rule || sum_day.active_us > 0));
+        const Text *today_line = NULL, *title = NULL;
+        for (int i = 0; i < 12 && !title; i++) {
+            frame(i ? SCE_CTRL_UP : 0);
+            for (int k = 0; k < drawn.texts; k++)
+                if (!strcmp(drawn.text[k].s, "Today") && drawn.text[k].x == 42 && drawn.text[k].y == VIEW_Y + 30)
+                    title = &drawn.text[k];
+        }
+        TEST_ASSERT(title != NULL);
+        for (int i = 0; i < drawn.texts; i++)
+            if (drawn.text[i].x == 150 && drawn.text[i].y == VIEW_Y + 30)
+                today_line = &drawn.text[i];
+        TEST_CHECK_(today_line && !strcmp(today_line->s, want_today), "rule %d: Today row \"%s\", the games' sum \"%s\"",
+                    rule, today_line ? today_line->s : "(none)", want_today);
+        int all_seen = 0;
+        for (int i = 0; i < 6 && !all_seen; i++) {
+            frame(SCE_CTRL_DOWN);
+            const Text *t = text_with("All games");
+            for (int k = 0; t && k < drawn.texts; k++)
+                all_seen |= drawn.text[k].y == t->y + 28 && !strcmp(drawn.text[k].s, want_all);
+        }
+        TEST_CHECK_(all_seen, "rule %d: All games \"%s\"", rule, want_all);
         /* config.ini's rule is the count's: the log names the records */
         TEST_CHECK(strstr(logs, "stats: history.csv ") != NULL);
     }
@@ -608,6 +643,16 @@ static void the_days_and_the_year(void)
     /* a touch on a cell chooses its day: the year's first is a Thursday (row 4 of column 0) */
     const Text *year = text_with("2026");
     int card_top = year ? year->y - 30 : 0;
+    /* (audit-rubi-rm2 F4.7) the cells' columns are weeks from Sunday: 1 Jan (a Thursday) in column 0's row 4, and the
+     * chosen day, Tue 20 Oct (day 292 of the year), outlined in column 42's row 2 */
+    int jan1 = 0, chosen = 0;
+    for (int k = 0; k < drawn.rects; k++) {
+        const Rect *r = &drawn.rect[k];
+        jan1 |= r->width == 12 && r->height == 12 && r->x == 72 && r->y == card_top + 42 + 4 * 14;
+        chosen |= r->width == 16 && r->height == 2 && r->color == WHITE && r->x == 72 + 42 * 14 - 2 &&
+                  r->y == card_top + 42 + 2 * 14 - 2;
+    }
+    TEST_CHECK(jan1 && chosen);
     touch(0, 72 + 3, card_top + 42 + 4 * 14 + 3);
     TEST_CHECK(text_with("Thu 1 Jan: 0 characters") != NULL);
 }
@@ -642,6 +687,17 @@ static void the_cache_is_read_on_and_checked(void)
     history_len -= 5;
     write_history(); /* (the same records without the junk: counted again from the start, the file being shorter) */
     show();
+    /* (audit-rubi-rm2 F4.6) an edit in the file's first 1 KiB, the same length: counted again from the start */
+    {
+        char *first_line = strstr(history, "「朝だよ、起きて」");
+        TEST_ASSERT(first_line && first_line - history < 1024);
+        first_line[3] = (char)0xE3, first_line[4] = (char)0x81, first_line[5] = (char)0x82; /* 朝 -> あ (3 bytes each) */
+        write_history();
+        logs[0] = 0;
+        show();
+        TEST_CHECK_(strstr(logs, "is not the one counted") && strstr(logs, "counted from 0 ") &&
+                    strstr(logs, "then saved"), "%s", logs); /* (saved: the next show counts nothing again) */
+    }
     /* nothing new: nothing counted, nothing written */
     logs[0] = 0;
     show();
@@ -937,6 +993,24 @@ static void no_history_yet(void)
     TEST_CHECK(strstr(drawn.footer, "Cannot read history.csv (0x80010005)") && drawn.footer_error);
 }
 
+/* (audit-rubi-rm2 F4.8) app.ini that cannot be read: the goal shows "--", is never saved, and the page says why. */
+static void an_unreadable_app_ini_saves_no_goal(void)
+{
+    reset();
+    three_games();
+    FILE *f = fopen("ux0:data/VitaJPOverlay/app.ini", "wb");
+    fprintf(f, "stats_daily_goal = 5000_characters\n");
+    fclose(f);
+    fail_open = "app.ini";
+    show();
+    frame(SCE_CTRL_DOWN); /* the Daily goal row */
+    TEST_CHECK(!strcmp(drawn.badge, "--") && text_with("Cannot read app.ini.") != NULL);
+    frame(SCE_CTRL_RIGHT);
+    TEST_CHECK(strstr(drawn.footer, "Cannot read app.ini. The goal has not been changed.") && drawn.footer_error);
+    fail_open = NULL;
+    TEST_CHECK(app_ini_says("stats_daily_goal = 5000_characters\n") && !app_ini_says("10000"));
+}
+
 /* A count that cannot start (no thread): said, Today says it is not counted, and Start tries again. */
 static void a_count_that_cannot_start(void)
 {
@@ -984,6 +1058,7 @@ TEST_LIST = {
     {"big_numbers_fit_their_rows", big_numbers_fit_their_rows},
     {"cards_without_history", cards_without_history},
     {"no_history_yet", no_history_yet},
+    {"an_unreadable_app_ini_saves_no_goal", an_unreadable_app_ini_saves_no_goal},
     {"a_count_that_cannot_start", a_count_that_cannot_start},
     {"a_new_day_and_quit", a_new_day_and_quit},
     {NULL, NULL},

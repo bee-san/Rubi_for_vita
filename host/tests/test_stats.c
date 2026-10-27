@@ -338,6 +338,40 @@ static void test_resume_at_every_byte(void)
         free(t.buf);
     }
     vjo_reading_rule = VJO_READING_ADAPTIVE;
+    /* (audit-rubi-rm2 F1) two counts in a row, at a record's start and one byte after it, then the rest: one count's
+     * result, at every record start, both rules */
+    for (int rule = VJO_READING_ADAPTIVE; rule <= VJO_READING_GAPS_15S; rule++) {
+        Text t = {0};
+        int chains = 0, differ = 0;
+        vjo_reading_rule = (uint32_t)rule;
+        random_history(&t, 40, 77 + (unsigned)rule, 1);
+        vjo_stats_reset(&s2, 0, (uint32_t)rule);
+        scan_windows(&s2, &t, 1 << 20);
+        for (size_t b = 1; b + 1 < t.len; b++) {
+            if (!(t.buf[b] == '"' && t.buf[b - 1] == '\n'))
+                continue;
+            chains++;
+            vjo_stats_reset(&s, 0, (uint32_t)rule);
+            for (size_t stop = b; stop <= b + 1; stop++) {
+                Text part = {t.buf, stop, 0};
+                char keep = t.buf[stop];
+                t.buf[stop] = 0;
+                scan_windows(&s, &part, 2048);
+                t.buf[stop] = keep;
+                s.history_bytes = stop;
+                size_t n = vjo_stats_cache_write(&s, cache, sizeof(cache));
+                TEST_ASSERT(n && vjo_stats_cache_read(&s, cache, n, 0, (uint32_t)rule) == VJO_STATS_CACHE_OK);
+                s.history_bytes = 0;
+            }
+            scan_windows(&s, &t, 2048);
+            if (memcmp(&s, &s2, sizeof(s)) && differ++ < 3)
+                TEST_CHECK_(0, "rule %d: counts at %zu and %zu, then the rest: %llu records, one count %llu", rule, b,
+                            b + 1, (unsigned long long)s.records, (unsigned long long)s2.records);
+        }
+        TEST_CHECK_(chains > 30 && !differ, "rule %d: %d of %d chains differ", rule, differ, chains);
+        free(t.buf);
+    }
+    vjo_reading_rule = VJO_READING_ADAPTIVE;
     /* the same in the middle of a file: a window that holds no record start and ends in one's first byte */
     Text t = {0};
     char big[4000];
@@ -736,6 +770,11 @@ static void test_goal_and_streak(void)
     days_read(more, 3, 10, 1);
     vjo_stats_streak(&s, today, VJO_GOAL_OFF, &current, &best);
     TEST_CHECK(current == 3 && best == 3);
+    /* (audit-rubi-rm2 F4.5) days after today (a clock set back, then forward): in no streak, nor in the best */
+    int32_t ahead[] = {today - 2, today - 1, today, today + 1, today + 2, today + 3};
+    days_read(ahead, 6, 10, 1);
+    vjo_stats_streak(&s, today, VJO_GOAL_OFF, &current, &best);
+    TEST_CHECK_(current == 3 && best == 3, "%d %d", current, best);
     vjo_stats_streak(&s, today, VJO_GOAL_15MIN, &current, &best);
     TEST_CHECK(current == 0 && best == 0);
     VjoStatsCount none = {0, 0, 0}, two = {2000, 0, 0}, mins = {0, 30 * 60000000ull, 0};

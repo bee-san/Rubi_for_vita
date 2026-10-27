@@ -59,7 +59,7 @@ enum { ROW_TODAY, ROW_GOAL, ROW_DAYS, ROW_YEAR, ROW_ALL, ROW_GAMES };
 #define BAR_W 46
 #define BARS_DY 46 /* the chart's top, from the row's */
 #define BARS_H 70
-/* the year's heatmap: weeks from Sunday, 53 columns of 7 days */
+/* the year's heatmap: weeks from Sunday, 53 columns of 7 days (54 for a leap year from a Saturday, 2028's) */
 #define HEAT_X 72
 #define HEAT_DY 42
 #define HEAT_CELL 12
@@ -183,8 +183,9 @@ static int set_checks(SceUID fd, uint64_t size)
 }
 
 /* history.csv counted from where the cache stopped: its bytes, or -1 (the error in *err). *cacheable: the counts can be
- * cached (their checks were read). */
-static int64_t count_history(uint64_t *from, int *err, int *records_before, int *cacheable)
+ * cached (their checks were read); *recounted: the file was not the one the cache counted, so it was counted from its
+ * start (and the cache must be written, even when it covers as many bytes as before). */
+static int64_t count_history(uint64_t *from, int *err, int *records_before, int *cacheable, int *recounted)
 {
     SceUID fd = sceIoOpen(VJO_STATS_HISTORY_PATH, SCE_O_RDONLY, 0);
     SceOff end;
@@ -192,6 +193,7 @@ static int64_t count_history(uint64_t *from, int *err, int *records_before, int 
     char msg[96];
     *err = 0;
     *cacheable = 1;
+    *recounted = 0;
     *records_before = (int)stats.records;
     if (fd < 0) {
         if (fd != MISSING) {
@@ -216,6 +218,7 @@ static int64_t count_history(uint64_t *from, int *err, int *records_before, int 
         vjo_log("stats: history.csv is not the one counted (%llu B, the cache's %llu of %llu): counting it again",
                 (unsigned long long)size, (unsigned long long)stats.covered, (unsigned long long)stats.history_bytes);
         vjo_stats_reset(&stats, stats.tz_minutes, stats.rule); /* (and the cards: their games are read again) */
+        *recounted = 1;
     }
     *from = pos = stats.covered;
     *records_before = (int)stats.records;
@@ -381,7 +384,7 @@ static int worker_main(SceSize args, void *argp)
                                            "of another time zone", "not read (Start: counted again)"};
     static const char *const save_text[] = {"saved", "unchanged", "not saved"};
     uint64_t now, from = 0, t0 = sceKernelGetProcessTimeWide(), t1, t2;
-    int err = 0, before = 0, read_cards, save = 1, cacheable;
+    int err = 0, before = 0, read_cards, save = 1, cacheable, recounted;
     char msg[240];
     (void)args;
     (void)argp;
@@ -395,13 +398,13 @@ static int worker_main(SceSize args, void *argp)
     uint64_t covered = stats.covered;
     uint32_t cards_before = stats.cards;
     set_progress("Counting history.csv…");
-    int64_t bytes = count_history(&from, &err, &before, &cacheable);
+    int64_t bytes = count_history(&from, &err, &before, &cacheable, &recounted);
     t1 = sceKernelGetProcessTimeWide();
     read_cards = count_cards();
     t2 = sceKernelGetProcessTimeWide();
     if (!cacheable)
         save = 2;
-    else if (why || stats.covered != covered || read_cards || stats.cards != cards_before)
+    else if (why || recounted || stats.covered != covered || read_cards || stats.cards != cards_before)
         save = save_cache() < 0 ? 2 : 0;
     vjo_log("stats: history.csv %lld B, %llu B counted from %llu in %u ms (%llu records; in all %llu, %llu damaged, "
             "%llu without a time); %u cards, %d read, in %u ms; the cache %s, then %s%s",

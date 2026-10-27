@@ -215,6 +215,9 @@ uint64_t vjo_stats_scan(VjoStats *s, char *buf, size_t len, uint64_t base, int e
     size_t keep = len > first && buf[len - 1] == '"' && (len - 1 ? buf[len - 2] == '\n' : whole) ? len - 1 : len;
     if (waits)
         next = base + start; /* the file's newest record, damaged as it is now: the next count reads it again */
+    else if (start == len && end == VJO_STATS_SCAN_CUT)
+        next = base + first; /* no record starts here and the file ends: nothing counted, and the next count starts
+                              * here again (as the Shell's: a cut window with no record ends where it starts) */
     else if (start == len || end == VJO_STATS_SCAN_END)
         next = base + keep; /* every record counted (or none starts here) */
     else if (start > first || end == VJO_STATS_SCAN_CUT)

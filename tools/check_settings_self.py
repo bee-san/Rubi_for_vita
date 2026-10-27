@@ -53,13 +53,13 @@ MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # 5.4; estimates, not measured on a console): libvita2d a8f15ab's GXM rings, depth and stencil,
 # shader patcher, index and clear buffers, parameter buffer and pool; at most 5 icon textures of
 # 256 KiB (settings/icons.h); two 512 x 512 glyph atlases (a font whose atlas is full and the one that replaced it,
-# until the next frame: settings/main.c font_tick, #313); the main thread's default 256 KiB stack, the Anki worker's
-# 128 KiB (settings/anki_page.c) and the Stats count's 64 KiB (settings/stats_page.c, #312; the Stats tab's tables are
-# in the segments: its counts, its cache's work memory and its rows, about 2 MiB; so are the Look up tab's, #313);
-# the Cards page's picture (#315), one texture of at most 512 x 288 RGB (settings/card_picture.h
+# until the next frame: settings/main.c font_tick, #313); the main thread's default 256 KiB stack and the
+# Anki, Install and Stats workers' 64 KiB each (settings/anki_page.c, install_page.c, stats_page.c #312; the Stats tab's
+# tables are in the segments: its counts, its cache's work memory and its rows, about 2 MiB; so are the Look up tab's,
+# #313); the Cards page's picture (#315), one texture of at most 512 x 288 RGB (settings/card_picture.h
 # VJO_CARD_PICTURE_W/_H, three bytes a pixel; its list and card views are in the segments, libjpeg's work in the heap).
 FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024, "glyph_atlas": 2 * 512 * 512,
-         "stacks": 256 * 1024 + 128 * 1024 + 64 * 1024, "card_picture": 512 * 288 * 3}
+         "stacks": 256 * 1024 + 3 * 64 * 1024, "card_picture": 512 * 288 * 3}
 # libvita2d's glyph atlas texture and the wrapper it is made through (settings/vita2d_textures.c).
 ATLAS_FUNCTION = "texture_atlas_create"
 TEXTURE_FUNCTION = "vita2d_create_empty_texture_format"
