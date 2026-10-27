@@ -302,8 +302,8 @@ been reported.
     copies at once, beside busy loops, gcc and clang). The release and acquire orders compile to the same x86 code, so
     no host test can show them.
   - **Learned hooks reset once:** `core/hook_stream.c` is an input of the hook definition SHA-256, so consoles learn
-    each game's hooks again; twelve PRs since 0.9.8, up to this one, have changed it, so the next release does that
-    anyway.
+    each game's hooks again; this fix's three PRs are among the thirteen merged since 0.9.8 that changed it (by #410),
+    so the next release does that anyway.
 - **A game short of memory reads with the next smaller model** (#324). The console reports a game's free memory in
   whole MiB (あおかな, `PCSG00700`, on a PCH-2000: each of 78 samples was 1, 2, 3 or 4 MiB), so a job that passed its
   memory check with less than 1 MiB to spare saw a whole MiB less once it had taken its own blocks: its model's
