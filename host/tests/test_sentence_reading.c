@@ -197,6 +197,15 @@ static void golden_sentences(void)
         {"彼女は本当に優しい。", "彼女[かのじょ]は 本当[ほんとう]に 優[やさ]しい。"},
         {"大丈夫ですか？", "大丈夫[だいじょうぶ]ですか？"},
         {"先生、おはようございます。", "先生[せんせい]、おはようございます。"},
+        /* audit-rubi-rm1 F1: 通りに, an unranked entry read どおりに, after a verb is とおりに: its word 通り has
+         * another word's reading as frequent (とおり, 1755; どおり 2007), so none (言われた has none of its own: 言う
+         * reads いう and ゆう); いつも通り is a word of its own (どおり after a noun); ranked phrases (何かと, 未だに)
+         * and one word's readings (言うと: いう, ゆう, both 25) keep theirs */
+        {"言われた通りにやってみる。", "言われた通りにやってみる。"},
+        {"いつも通りだった。", "いつも 通[どお]りだった。"},
+        {"何かと面倒を見てきた。", "何[なに]かと 面倒[めんどう]を 見[み]てきた。"},
+        {"正直に言うと、苦手だ。", "正直[しょうじき]に 言[い]うと、 苦手[にがて]だ。"},
+        {"未だに続いている。", "未[いま]だに 続[つづ]いている。"},
     };
     VjoPlatform p;
     VjoConfig cfg;
@@ -300,6 +309,99 @@ static void a_longest_sentence_fits_its_scratch(void)
     vjo_local_session_close(p.local_session);
 }
 
+/* audit-rubi-rm1 F9: a highlight that starts or ends inside a character takes the characters it touches: <b> and </b>
+ * both written, around whole characters. */
+static void a_highlight_inside_a_character(void)
+{
+    static const struct {
+        int hl_start, hl_end;
+        const char *spelling, *reading, *want;
+    } cases[] = {
+        {1, 3, "猫", "ねこ", "<b>猫[ねこ]</b>が 好[す]き"},   /* inside 猫 */
+        {0, 4, "猫が", "ねこが", "<b>猫[ねこ]が</b>好[す]き"}, /* to inside が (no space after a tag) */
+        {2, 5, "猫が", "ねこが", "<b>猫[ねこ]が</b>好[す]き"},
+    };
+    VjoPlatform p;
+    VjoConfig cfg;
+    PosixPlatform pp = {0};
+    if (!setup(&p, &cfg, &pp) && no_dictionary())
+        return;
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        VjoAnkiNote note;
+        VjoArena a, scratch;
+        VjoReadingStats st;
+        char *html;
+        int rc;
+        memset(&note, 0, sizeof(note));
+        memset(&st, 0, sizeof(st));
+        note.spelling = cases[i].spelling;
+        note.reading = cases[i].reading;
+        note.sentence = "猫が好き";
+        note.hl_start = cases[i].hl_start;
+        note.hl_end = cases[i].hl_end;
+        note.sf_hl_start = note.sf_hl_end = -1;
+        vjo_arena_init(&a, out_mem, sizeof(out_mem));
+        vjo_arena_init(&scratch, mem, sizeof(mem));
+        html = vjo_sentence_furigana(&a, &scratch, &p, &cfg, NULL, &note, &st, &rc);
+        TEST_ASSERT(html != NULL);
+        TEST_CHECK_(!strcmp(html, cases[i].want), "case %u: '%s', want '%s'", i, html, cases[i].want);
+    }
+    vjo_local_session_close(p.local_session);
+}
+
+/* audit-rubi-rm1 F8: the caller's Cancel (st.stopped) is asked before each lookup: the parse stops there, with
+ * VJO_E_CANCELLED, its memory given back, and counts no failure. */
+static int polls, stop_after;
+static int stop_now(void *ud)
+{
+    (void)ud;
+    return ++polls > stop_after;
+}
+static void cancel_stops_before_the_next_lookup(void)
+{
+    static char text[2400];
+    VjoPlatform p;
+    VjoConfig cfg;
+    PosixPlatform pp = {0};
+    VjoAnkiNote note;
+    VjoArena a, scratch;
+    VjoReadingStats st;
+    size_t used = 0;
+    int rc;
+    if (!setup(&p, &cfg, &pp) && no_dictionary())
+        return;
+    while (used + 40 < sizeof(text))
+        used += (size_t)snprintf(text + used, sizeof(text) - used, "%s", "学校へ行って、友達と一緒に勉強した。");
+    memset(&note, 0, sizeof(note));
+    note.spelling = "学校";
+    note.reading = "がっこう";
+    note.sentence = text;
+    note.hl_start = 0;
+    note.hl_end = 6;
+    note.sf_hl_start = note.sf_hl_end = -1;
+    for (stop_after = 0; stop_after <= 5; stop_after += 5) {
+        memset(&st, 0, sizeof(st));
+        st.stopped = stop_now;
+        polls = 0;
+        vjo_arena_init(&a, out_mem, sizeof(out_mem));
+        vjo_arena_init(&scratch, mem, sizeof(mem));
+        TEST_CHECK(vjo_sentence_furigana(&a, &scratch, &p, &cfg, NULL, &note, &st, &rc) == NULL);
+        TEST_CHECK_(rc == VJO_E_CANCELLED && st.lookups == (unsigned)stop_after && st.failed == 0 && scratch.used == 0 &&
+                        a.used == 0,
+                    "stop after %d: rc %d, %u lookups, %u failed", stop_after, rc, st.lookups, st.failed);
+    }
+    /* never stopped: hundreds of lookups, the field written */
+    memset(&st, 0, sizeof(st));
+    st.stopped = stop_now;
+    polls = 0;
+    stop_after = 1 << 30;
+    vjo_arena_init(&a, out_mem, sizeof(out_mem));
+    vjo_arena_init(&scratch, mem, sizeof(mem));
+    TEST_CHECK(vjo_sentence_furigana(&a, &scratch, &p, &cfg, NULL, &note, &st, &rc) != NULL && rc == 0);
+    TEST_CHECK_(st.lookups > 100 && polls == (int)st.lookups, "%u lookups, %d polls", st.lookups, polls);
+    vjo_local_session_close(p.local_session);
+}
+
 /* Dictionaries that cannot be read: no field (NULL, VJO_E_LOCAL_IO): the export keeps the record's. */
 static void a_dictionary_that_cannot_be_read(void)
 {
@@ -337,5 +439,7 @@ TEST_LIST = {
     {"a_cards_field_over_a_wrapped_line", a_cards_field_over_a_wrapped_line},
     {"a_longest_sentence_fits_its_scratch", a_longest_sentence_fits_its_scratch},
     {"a_dictionary_that_cannot_be_read", a_dictionary_that_cannot_be_read},
+    {"a_highlight_inside_a_character", a_highlight_inside_a_character},
+    {"cancel_stops_before_the_next_lookup", cancel_stops_before_the_next_lookup},
     {NULL, NULL},
 };

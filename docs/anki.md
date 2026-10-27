@@ -251,7 +251,8 @@ The back is the same for all four.
 With **Game tag** ON (the default), each note has its game's tag beside `vita-jp-overlay`, in
 GameSentenceMiner's form (its `_prepare_anki_tags`, under the parent tag `Game`): `Game::` and the game's name as
 the card's record has it, without its spaces (Anki splits tags on ASCII spaces and U+3000, so both go, as do tabs,
-line breaks and other whitespace) and without `::` (which would nest the tag). `CLANNAD` gives `Game::CLANNAD`,
+line breaks and other whitespace) and then without `::` (which would nest the tag), in GSM's order, so `A: :B` gives
+`Game::AB`. `CLANNAD` gives `Game::CLANNAD`,
 `グリザイアの果実　-LE FRUIT DE LA GRISAIA-` gives `Game::グリザイアの果実-LEFRUITDELAGRISAIA-`. A record without a
 game (versions 1 and 2) gets no game tag. Tags of Rubi's and GSM's cards match only where both tools name the
 game the same way.
@@ -282,8 +283,9 @@ sentence's words, from the dictionaries the overlay uses (`config.ini`'s `local_
   dictionary has it. A word whose reading the parse did not find at all gets none either.
 
 On 3,000 real visual-novel lines that the rules were not chosen on, the readings were wrong for
-**1.8 per 1,000 kanji tokens** and missing for 174; Yomitan's `{sentence-furigana}` over the same
-dictionaries gives more readings (34 per 1,000 missing) and more wrong ones (about 46 per 1,000)
+**1.9 per 1,000 kanji tokens** (2.1 at the measurement, as recounted after its audit) and missing for 174;
+Yomitan's `{sentence-furigana}` over the same dictionaries gives more readings (34 per 1,000 missing) and more wrong
+ones (about 46 per 1,000)
 ([reports/sentence-readings.md](../reports/sentence-readings.md): the protocol, the threshold fixed before the
 measurement, the comparison with a morphological analyser). That is why it is ON by default. Host
 measurements; not run on a console yet.
@@ -291,8 +293,8 @@ measurements; not run on a console yet.
 **Time.** An export looks up each card's sentence again: on the host 17 lookups and 98 file reads a line of
 29 characters on average (the 3,000 test lines), about 0.5 s a card on the console by the lookup's fit in
 [docs/lookup-performance.md](lookup-performance.md) (13.1 ms + 2.98 ms a read; an estimate: the app's lookups
-have not been timed on a console). The export's progress then counts every card; Cancel stops it, and nothing
-changes. With the setting OFF an export takes as long as before. A record that already has readings (one of the
+have not been timed on a console). The export's progress then counts every card; Cancel stops it before the next
+lookup, also inside one long sentence (hundreds of lookups), and nothing changes. With the setting OFF an export takes as long as before. A record that already has readings (one of the
 removed online dictionaries) keeps its own. Dictionaries that cannot be read give the cards no readings, and
 `log.txt` says so; the export goes on. Each export's `log.txt` line counts the notes given readings, the words
 read and left without, the lookups and the time.
@@ -916,8 +918,13 @@ writers' state, about 40 KiB, and one card's work at a time) and a 64 KiB stack
 for the one worker thread that exports while the page keeps drawing. The sentence readings (#311) add two
 static blocks, the lookups' scratch (`VJO_READINGS_SCRATCH`, 192 KiB: one lookup's 64 KiB result and 48 KiB
 scratch budgets, and the longest sentence's copies and readings, host test
-`a_longest_sentence_fits_its_scratch`) and the dictionaries' session (8 KiB); a card's field itself is made in
-the export's arena, among its card's work. It uses no
+`a_longest_sentence_fits_its_scratch`) and the dictionaries' session (8 KiB), and the page a copy of
+`config.ini`'s settings for the export's dictionaries (1,376 B); a card's field itself is made in the export's
+arena, among its card's work. Their deepest call path takes 27,136 B of the worker's 64 KiB stack (41 %), from
+the thread's entry through the export, the package's writer and the readings (`parse` 2,960 B five times, then
+`part_overrules`, `word_rubies` and 65 frames of `fit`) [estimate: `-fstack-usage -fcallgraph-info=su` with the
+app's own flags, arm-vita-eabi-gcc 15.2.0, the indirect calls added by hand and newlib's printf as 1 KiB; the
+stack is not painted on a console]. It uses no
 network. Measured on the host (`vjo-apkg-tests`, "measure:" lines): an export
 of 20,005 cards (the 20,000 a package holds, 10,182,874 B) peaked at 1,121,712 B of
 the 2 MiB (804,713 B before [duplicates](#duplicates), whose check holds every card's

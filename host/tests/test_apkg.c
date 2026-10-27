@@ -90,7 +90,18 @@ static struct {
     int fd;                  /* the package's (the last one opened for writing) */
     int fail_dopen_at, dopens; /* the Nth directory opened fails (EIO) */
     int syncs;
+    /* #311's sentence readings: the dictionaries' files (a path with .vjdict) opened (or tried), the ones open now,
+     * and their reads */
+    int dict_tries, dict_reads, dict_fds[16], dict_open;
 } io;
+
+static int dict_fd(int fd)
+{
+    for (int i = 0; i < io.dict_open; i++)
+        if (io.dict_fds[i] == fd)
+            return i;
+    return -1;
+}
 
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
@@ -105,11 +116,18 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
     fd = open(p, flags, mode);
     if (fd >= 0 && (flags & O_CREAT) && strstr(p, ".apkg"))
         io.fd = fd;
+    if (strstr(p, ".vjdict")) {
+        io.dict_tries++;
+        if (fd >= 0 && io.dict_open < 16)
+            io.dict_fds[io.dict_open++] = fd;
+    }
     return fd < 0 ? (errno == ENOENT ? (int)0x80010002u : -1) : fd;
 }
 int sceIoClose(int fd)
 {
-    int rc = close(fd);
+    int rc = close(fd), d = dict_fd(fd);
+    if (d >= 0)
+        io.dict_fds[d] = io.dict_fds[--io.dict_open];
     if (fd == io.fd && io.fail_close) {
         io.fd = -1;
         return -1;
@@ -146,6 +164,8 @@ int sceIoPread(int fd, void *p, size_t n, SceOff off)
     ssize_t k;
     if (io.short_reads && n > 1000)
         n = 1000;
+    if (dict_fd(fd) >= 0)
+        io.dict_reads++;
     k = pread(fd, p, n, off);
     if (io.corrupt_read && k > 0 && off <= 5000 && off + k > 5000)
         ((uint8_t *)p)[5000 - off] ^= 0x40;
@@ -305,19 +325,23 @@ int sceRtcGetCurrentTick(SceRtcTick *t)
 
 static uint8_t mem[VJO_EXPORT_MEM] __attribute__((aligned(16)));
 static VjoArena A;
-static char status_line[128];
+static char status_line[128], status_all[8192];
 static int stop_at_status = -1, statuses;
+static int stop_after_dict_reads = -1; /* #311: Cancel once the dictionaries have been read this often */
 
 static void ui_status(void *ud, const char *msg)
 {
+    size_t n = strlen(status_all);
     (void)ud;
     snprintf(status_line, sizeof(status_line), "%s", msg);
+    snprintf(status_all + n, sizeof(status_all) - n, "%s\n", msg);
     statuses++;
 }
 static int ui_stopped(void *ud)
 {
     (void)ud;
-    return stop_at_status >= 0 && statuses >= stop_at_status;
+    return (stop_at_status >= 0 && statuses >= stop_at_status) ||
+           (stop_after_dict_reads >= 0 && io.dict_reads >= stop_after_dict_reads);
 }
 static const VjoExportUi ui = {NULL, ui_status, ui_stopped};
 
@@ -333,8 +357,8 @@ static void reset(void)
     memset(&io, 0, sizeof(io));
     io.write_after = -1;
     io.fd = -1;
-    logs[0] = status_line[0] = '\0';
-    stop_at_status = -1;
+    logs[0] = status_line[0] = status_all[0] = '\0';
+    stop_at_status = stop_after_dict_reads = -1;
     statuses = 0;
     rm_rf(VJO_EXPORT_QUEUE_DIR);
     rm_rf(VJO_EXPORT_DIR);
@@ -1016,6 +1040,11 @@ static void test_game_tag(void)
         {"グリザイアの果実\u3000-LE FRUIT DE LA GRISAIA-", "Game::グリザイアの果実-LEFRUITDELAGRISAIA-"},
         {"STEINS;GATE 比翼恋理のだーりん", "Game::STEINS;GATE比翼恋理のだーりん"},
         {"A::B::C", "Game::ABC"},
+        {"A: :B", "Game::AB"},           /* audit-rubi-rm1 F4: the whitespace goes first, then "::" (GSM's order) */
+        {"Re: :Zero", "Game::ReZero"},
+        {"A:\u3000:B", "Game::AB"},
+        {"a:::b", "Game::a:b"},           /* an odd run of colons keeps one, as Python's replace */
+        {"::::", ""},
         {"Code:Realize ～創世の姫君～", "Game::Code:Realize～創世の姫君～"},
         {"tab\tand\nnew line\r", "Game::tabandnewline"},
         {"no\xC2\xA0" "break", "Game::nobreak"},
@@ -1497,6 +1526,199 @@ static void test_a_record_s_game_is_read_by_the_app(void)
                         occurrences(file, len, "Game::") == cases[i].tagged,
                     "case %u (%s, version %d): tagged %d", i, cases[i].game, cases[i].version,
                     occurrences(file, len, "Game::"));
+    }
+}
+
+/* The bundled dictionary as config.ini names it (VJO_PLAINTEXT_DIR), or 0: the test says so and checks nothing. */
+static int bundled_dictionary(VjoConfig *dicts)
+{
+    const char *dir = getenv("VJO_PLAINTEXT_DIR");
+    char path[PATH_MAX];
+    struct stat st;
+    snprintf(path, sizeof(path), "%s/plaintext.vjdict", dir ? dir : "");
+    if (!dir || stat(path, &st)) {
+        TEST_CHECK_(!getenv("VJO_REQUIRE_PLAINTEXT"), "plaintext.vjdict required (VJO_PLAINTEXT_DIR)");
+        TEST_MSG("no plaintext.vjdict (VJO_PLAINTEXT_DIR): not checked");
+        return 0;
+    }
+    vjo_config_defaults(dicts);
+    snprintf(dicts->local_dictionary_dir, sizeof(dicts->local_dictionary_dir), "%s", dir);
+    snprintf(dicts->local_dictionaries, sizeof(dicts->local_dictionaries), "plaintext.vjdict");
+    return 1;
+}
+
+static int export_with_readings(int all, const VjoConfig *dicts, VjoExportResult *r, char *msg)
+{
+    VjoAppPrefs prefs;
+    vjo_app_prefs_defaults(&prefs); /* (Sentence readings: ON) */
+    vjo_arena_init(&A, mem, sizeof(mem));
+    return vjo_export_run(&A, all, &prefs, dicts, &ui, r, msg, 300);
+}
+
+/* audit-rubi-rm1 F2: a record whose own SentenceFurigana is not its sentence (one of the removed online
+ * dictionaries' readings) keeps it, with Sentence readings ON and the dictionaries there; its sentence's would differ. */
+static void test_a_records_own_sentence_readings_are_kept(void)
+{
+    static uint8_t file[256 * 1024];
+    static const char own[] = "学校[がっこう]へ 行[おこな]った";
+    VjoConfig dicts;
+    VjoExportResult r;
+    VjoAnkiNote n;
+    const char *m[1] = {"school"};
+    char msg[300], *json;
+    size_t len;
+    if (!bundled_dictionary(&dicts))
+        return;
+    reset();
+    memset(&n, 0, sizeof(n));
+    n.spelling = "学校";
+    n.reading = "がっこう";
+    n.rank = 100;
+    n.meanings = m;
+    n.n_meanings = 1;
+    n.sentence = "学校へ行った";
+    n.hl_start = 0;
+    n.hl_end = 6;
+    n.sentence_furigana = own;
+    n.sf_hl_start = 0;
+    n.sf_hl_end = 20; /* (学校[がっこう]) */
+    n.game = "SOME GAME";
+    n.unix_time = 1791738660;
+    vjo_arena_init(&A, mem, sizeof(mem));
+    TEST_ASSERT((json = vjo_queue_encode(&A, &n, 0)) != NULL);
+    queue_json(json, 0);
+    TEST_ASSERT(export_with_readings(0, &dicts, &r, msg) == VJO_OK && r.cards == 1);
+    len = package_bytes(r.path, file, sizeof(file));
+    TEST_CHECK_(occurrences(file, len, "行[おこな]った") == 1 && occurrences(file, len, "行[い]った") == 0, "%s", logs);
+    /* (the same sentence of its own, no readings: the export's own) */
+    reset();
+    n.sentence_furigana = n.sentence;
+    n.sf_hl_end = 6;
+    vjo_arena_init(&A, mem, sizeof(mem));
+    TEST_ASSERT((json = vjo_queue_encode(&A, &n, 0)) != NULL);
+    queue_json(json, 0);
+    TEST_ASSERT(export_with_readings(0, &dicts, &r, msg) == VJO_OK && r.cards == 1);
+    len = package_bytes(r.path, file, sizeof(file));
+    TEST_CHECK_(occurrences(file, len, "行[い]った") == 1, "%s", logs);
+}
+
+/* audit-rubi-rm1 F2: every dictionary file the readings open is closed when the export ends, after a package
+ * written and after a write that fails (the next export's session starts empty, so a handle left open is lost). */
+static void test_the_dictionaries_are_closed_after_an_export(void)
+{
+    VjoConfig dicts;
+    VjoExportResult r;
+    char msg[300];
+    long size = 0;
+    if (!bundled_dictionary(&dicts))
+        return;
+    for (int k = 0; k < 2; k++) {
+        struct stat st;
+        reset();
+        queue_card(&cat, 0);
+        queue_card(&dog, 0);
+        if (k)
+            io.write_after = size - 64; /* the memory card full at the package's end: after every note's readings */
+        TEST_CHECK_((export_with_readings(0, &dicts, &r, msg) == VJO_OK) == !k, "case %d: %s", k, msg);
+        if (!k) {
+            TEST_ASSERT(stat(r.path, &st) == 0);
+            size = (long)st.st_size;
+        }
+        TEST_CHECK_(io.dict_tries > 0 && io.dict_reads > 0 && io.dict_open == 0,
+                    "case %d: %d dictionary files tried, %d reads, %d still open", k, io.dict_tries, io.dict_reads,
+                    io.dict_open);
+    }
+}
+
+/* audit-rubi-rm1 F2: while readings are looked up (about half a second a card on the console, estimated), the
+ * progress counts every card; without them, every eighth as before. */
+static void test_the_progress_counts_each_card_while_readings_run(void)
+{
+    VjoConfig dicts;
+    VjoExportResult r;
+    char msg[300], want[64];
+    if (!bundled_dictionary(&dicts))
+        return;
+    for (int readings = 1; readings >= 0; readings--) {
+        reset();
+        for (int i = 0; i < 9; i++) {
+            Card c = cat;
+            char word[24];
+            snprintf(word, sizeof(word), "猫%d", i);
+            c.spelling = word;
+            c.time += i;
+            queue_card(&c, 0);
+        }
+        TEST_ASSERT(export_with_readings(0, readings ? &dicts : NULL, &r, msg) == VJO_OK && r.cards == 9);
+        for (int k = 1; k <= 9; k++) {
+            snprintf(want, sizeof(want), "Writing the cards… %d of 9\n", k);
+            TEST_CHECK_(!!strstr(status_all, want) == (readings || k == 8 || k == 9), "readings %d, card %d:\n%s",
+                        readings, k, status_all);
+        }
+    }
+}
+
+/* audit-rubi-rm1 F2: dictionaries that cannot be read are tried once an export: one log line, and the next cards
+ * look nothing up (their files are not tried again). */
+static void test_unreadable_dictionaries_are_tried_once(void)
+{
+    VjoConfig dicts;
+    VjoExportResult r;
+    char msg[300];
+    int tries[2];
+    vjo_config_defaults(&dicts);
+    snprintf(dicts.local_dictionary_dir, sizeof(dicts.local_dictionary_dir), "no/such/directory");
+    snprintf(dicts.local_dictionaries, sizeof(dicts.local_dictionaries), "plaintext.vjdict");
+    for (int cards = 1; cards <= 2; cards++) {
+        reset();
+        queue_card(&cat, 0);
+        if (cards == 2)
+            queue_card(&dog, 0);
+        TEST_ASSERT(export_with_readings(0, &dicts, &r, msg) == VJO_OK && r.cards == cards);
+        tries[cards - 1] = io.dict_tries;
+        TEST_CHECK_(occurrences((const uint8_t *)logs, strlen(logs), "the dictionaries cannot be read") == 1, "%s", logs);
+    }
+    TEST_CHECK_(tries[0] > 0 && tries[1] == tries[0], "%d tries for one card, %d for two", tries[0], tries[1]);
+}
+
+/* audit-rubi-rm1 F8: Cancel during one card's readings stops them before the next lookup (a long sentence takes
+ * hundreds), and nothing changes. */
+static void test_cancel_stops_a_cards_readings(void)
+{
+    static char sentence[2400];
+    VjoConfig dicts;
+    VjoExportResult r;
+    Card c = cat;
+    char msg[300];
+    size_t used = 0;
+    if (!bundled_dictionary(&dicts))
+        return;
+    while (used + 40 < sizeof(sentence))
+        used += (size_t)snprintf(sentence + used, sizeof(sentence) - used, "%s", "学校へ行って、友達と一緒に勉強した。");
+    c.spelling = "学校";
+    c.reading = "がっこう";
+    c.sentence = sentence;
+    c.hl_start = 0;
+    c.hl_end = 6;
+    reset();
+    queue_card(&c, 0);
+    queue_card(&dog, 0);
+    stop_after_dict_reads = 1; /* Cancel, seen after the first lookup has read the dictionary */
+    TEST_CHECK(export_with_readings(0, &dicts, &r, msg) == VJO_E_CANCELLED);
+    TEST_CHECK_(strstr(logs, ", 1 lookups, ") != NULL, "%s", logs);
+    TEST_CHECK(count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 2 && count_dir(VJO_EXPORT_DIR, ".apkg") == 0);
+    TEST_CHECK(io.dict_open == 0);
+    /* the same cards without Cancel: hundreds of lookups */
+    reset();
+    queue_card(&c, 0);
+    queue_card(&dog, 0);
+    TEST_CHECK(export_with_readings(0, &dicts, &r, msg) == VJO_OK && r.cards == 2);
+    {
+        const char *at = strstr(logs, " lookups, ");
+        unsigned lookups = 0;
+        while (at && at > logs && at[-1] >= '0' && at[-1] <= '9')
+            at--;
+        TEST_CHECK_(at && sscanf(at, "%u", &lookups) == 1 && lookups > 100, "%u lookups: %s", lookups, logs);
     }
 }
 
@@ -2641,6 +2863,11 @@ TEST_LIST = {
     {"game_tag", test_game_tag},
     {"the_export_follows_the_app_settings", test_the_export_follows_the_app_settings},
     {"a_record_s_game_is_read_by_the_app", test_a_record_s_game_is_read_by_the_app},
+    {"a_records_own_sentence_readings_are_kept", test_a_records_own_sentence_readings_are_kept},
+    {"the_dictionaries_are_closed_after_an_export", test_the_dictionaries_are_closed_after_an_export},
+    {"the_progress_counts_each_card_while_readings_run", test_the_progress_counts_each_card_while_readings_run},
+    {"unreadable_dictionaries_are_tried_once", test_unreadable_dictionaries_are_tried_once},
+    {"cancel_stops_a_cards_readings", test_cancel_stops_a_cards_readings},
     {"sentence_readings_at_export", test_sentence_readings_at_export},
     {"export_writes_a_dated_verified_package_and_clears_the_queue",
      test_export_writes_a_dated_verified_package_and_clears_the_queue},

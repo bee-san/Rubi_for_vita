@@ -16,8 +16,8 @@ void vjo_reading_rules_default(VjoReadingRules *r)
     r->ratio = VJO_READINGS_RATIO;
     r->part_ratio = VJO_READINGS_PART_RATIO;
     r->rare = VJO_READINGS_RARE;
-    r->counters = r->variants = r->anchor = r->compounds = r->parts = r->phrases = r->shorter = r->names =
-        r->inline_readings = 1;
+    r->counters = r->variants = r->anchor = r->compounds = r->parts = r->particles = r->phrases = r->shorter =
+        r->names = r->inline_readings = 1;
 }
 
 /* ---------------- a word's reading on its text ---------------- */
@@ -559,6 +559,20 @@ static int copy_word(char *dst, const char *src)
     return 1;
 }
 
+/* The caller's Cancel (VjoReadingStats.stopped), asked before each lookup: VJO_E_CANCELLED, else 0. */
+static int stopping(const Parse *ps)
+{
+    return ps->st->stopped && ps->st->stopped(ps->st->stopped_ud) ? VJO_E_CANCELLED : 0;
+}
+
+/* A failure of the parse: counted, unless it is the caller's Cancel. */
+static int failed(Parse *ps, int rc)
+{
+    if (rc != VJO_E_CANCELLED)
+        ps->st->failed++;
+    return rc;
+}
+
 /* 1 and the entry, 0 with no match at cursor, < 0 on failure. */
 static int entry_at(Parse *ps, const char *text, size_t cursor, Entry *e)
 {
@@ -567,6 +581,8 @@ static int entry_at(Parse *ps, const char *text, size_t cursor, Entry *e)
     VjoErr err;
     const VjoVocab *v;
     int rc, units = 0;
+    if ((rc = stopping(ps)) < 0)
+        return rc;
     memset(&err, 0, sizeof(err));
     ps->st->lookups++;
     rc = vjo_local_lookup_at(ps->scratch, ps->p, ps->cfg, text, cursor, &res, &err);
@@ -635,6 +651,10 @@ static int others_disagree(Parse *ps, const char *w, size_t o, size_t n, const c
         return VJO_E_OOM;
     while (i < n)
         units += (size_t)vjo_utf16_units(vjo_utf8_next(text, n, &i));
+    if ((rc = stopping(ps)) < 0) {
+        vjo_arena_release(ps->scratch, mark);
+        return rc;
+    }
     memset(&err, 0, sizeof(err));
     ps->st->lookups++;
     rc = vjo_local_lookup(ps->scratch, ps->p, ps->cfg, copy, &res, &err);
@@ -702,10 +722,53 @@ static int part_overrules(Parse *ps, const char *w, size_t o, size_t n, const ch
     return verdict;
 }
 
-/* One matched word, text[0, n) (with kanji), followed by after; e its entry; bound: in a compound the lookup
- * split (it starts after kanji or katakana, or ends before a kanji: 授業中, 春原君), where a kanji's reading as a
- * word of its own says little. Its readings into out (at most cap), copied into keep. Returns how many (0: none,
- * counted in st), or < 0 on failure. */
+/* The word of a phrase entry, text[0, n) (followed by after: its particle), whose readings there are r (k of them):
+ * does another word of that text read it otherwise? The word's own entry is the one that reads it as the phrase
+ * does (通り どおり, rank 2007); another word is an entry of another Jiten rank, as frequent within ratio (通り とおり,
+ * 1755). Readings of the same rank are one word's (言う: いう and ゆう, both 25), and an unranked one says nothing
+ * (限り: きり). 1 yes, 0 no, < 0 a failed lookup. */
+static int particle_word_disagrees(Parse *ps, const char *text, size_t n, const char *after, size_t after_len,
+                                   const VjoRuby *r, int k)
+{
+    size_t mark = vjo_arena_mark(ps->scratch), units = 0, i = 0;
+    char *copy = vjo_arena_strndup(ps->scratch, text, n);
+    VjoRuby rm[WORD_RUBIES], ro[WORD_RUBIES];
+    VjoDictResult res;
+    VjoErr err;
+    int rc, own = 0, verdict = 0, nm = inside(r, k, 0, n, rm), ko;
+    if (!copy)
+        return VJO_E_OOM;
+    while (i < n)
+        units += (size_t)vjo_utf16_units(vjo_utf8_next(text, n, &i));
+    if ((rc = stopping(ps)) < 0) {
+        vjo_arena_release(ps->scratch, mark);
+        return rc;
+    }
+    memset(&err, 0, sizeof(err));
+    ps->st->lookups++;
+    rc = vjo_local_lookup(ps->scratch, ps->p, ps->cfg, copy, &res, &err);
+    if (rc) {
+        vjo_arena_release(ps->scratch, mark);
+        return rc;
+    }
+    for (int pass = 0; pass < 2 && !verdict; pass++) /* the word's own entry first, then the others */
+        for (int t = 0; t < res.n_tokens && !verdict && !(pass == 0 && own); t++) {
+            const VjoVocab *v = &res.vocab[res.tokens[t].vocab];
+            if (res.tokens[t].pos16 != 0 || (size_t)res.tokens[t].len16 != units || !v->rank)
+                continue;
+            ko = word_rubies(text, n, after, after_len, v->spelling, v->reading, ro, WORD_RUBIES);
+            if (ko <= 0)
+                continue;
+            if (pass == 0 && same_rubies(rm, nm, ro, ko))
+                own = v->rank;
+            else if (pass == 1 && own && v->rank != own && as_frequent(v->rank, own, ps->rules->ratio) &&
+                     !same_rubies(rm, nm, ro, ko))
+                verdict = 1;
+        }
+    vjo_arena_release(ps->scratch, mark);
+    return verdict;
+}
+
 /* The kanji characters of s[0, n). */
 static int kanji_count(const char *s, size_t n)
 {
@@ -750,13 +813,15 @@ static int phrase_head(const char *text, size_t re, size_t n)
     return particle_char(c) && q < n && vjo_is_kanji(first_char(text, q, n));
 }
 
-static int word(Parse *ps, const char *text, size_t n, const char *after, size_t after_len, int bound,
-                const Entry *e, VjoRuby *out, int cap)
+/* One matched word, text[0, n) (with kanji), followed by after; e its entry. (A single kanji in a compound the lookup
+ * split gets none before this: parse().) Its readings into out (at most cap), copied into keep. Returns how many
+ * (0: none, counted in st), or < 0 on failure. */
+static int word(Parse *ps, const char *text, size_t n, const char *after, size_t after_len, const Entry *e,
+                VjoRuby *out, int cap)
 {
     const VjoReadingRules *ru = ps->rules;
     VjoRuby r[WORD_RUBIES];
-    /* (a single kanji in a compound gets none: parse()) */
-    int k, rc, compound = 0;
+    int k, rc;
     unsigned *why = &ps->st->ambiguous;
     size_t i = 0;
     ps->st->words++;
@@ -766,11 +831,17 @@ static int word(Parse *ps, const char *text, size_t n, const char *after, size_t
             ps->st->trace(ps->st->trace_ud, "unplaced", text, n, e->spelling, e->reading);
         return 0;
     }
-    /* A: another entry of the same text, about as frequent (in a compound: any), reads its kanji otherwise */
-    rc = others_disagree(ps, text, 0, n, after, after_len, e, r, k, compound ? 0 : ru->ratio);
+    /* A: another entry of the same text, about as frequent, reads its kanji otherwise */
+    rc = others_disagree(ps, text, 0, n, after, after_len, e, r, k, ru->ratio);
+    /* A on the word of an unranked entry that ends in a particle after kana (通りに, read どおりに: the longest match
+     * took a rare phrase over the word and its particle): another word of that text reads it otherwise (通り after a
+     * verb is とおり): particle_word_disagrees. A word of kanji alone before the particle is B's (彼の, 一緒に). */
+    if (!rc && ru->particles && !e->rank && !e->conjugation && n > 3 && particle(text + n - 3, 3) &&
+        has_kanji(text, n - 3) && !vjo_is_kanji(char_before(text, n - 3)))
+        rc = particle_word_disagrees(ps, text, n - 3, text + n - 3, 3, r, k);
     /* B, C: each run of kanji of a longer word, as a word of its own (B: the run alone; C: a later run with the
      * kana after it), far more frequent than the word, reads it otherwise (今日 of 今日は, 解明 of 解明して, 開ける
-     * of 目を開ける); in a compound, the first run's every entry (中 of 中に in 今晩中に) */
+     * of 目を開ける) */
     while (!rc && i < n) {
         size_t rs = i, re, ce, j = i;
         if (!vjo_is_kanji(vjo_utf8_next(text, n, &j))) {
@@ -796,10 +867,9 @@ static int word(Parse *ps, const char *text, size_t n, const char *after, size_t
          * compound word reads otherwise on its own (立 of 立ち上がる) */
         if (ru->parts && (rs > 0 || re < n) &&
             (kanji_count(text + rs, re - rs) > 1 || (rs == 0 && !e->conjugation && particle(text + re, n - re)) ||
-             (rs == 0 && phrase_head(text, re, n)) || (compound && rs == 0))) {
-            rc = compound && rs == 0 ? others_disagree(ps, text, rs, re - rs, text + re, n - re, e, r, k, 0)
-                                     : part_overrules(ps, text, rs, re - rs, text + re, n - re, e, r, k);
-            why = compound && rs == 0 ? &ps->st->compound : &ps->st->part;
+             (rs == 0 && phrase_head(text, re, n)))) {
+            rc = part_overrules(ps, text, rs, re - rs, text + re, n - re, e, r, k);
+            why = &ps->st->part;
         }
         if (!rc && ru->phrases && rs > 0 && ce > re) {
             rc = part_overrules(ps, text, rs, ce - rs, ce < n ? text + ce : after, ce < n ? n - ce : after_len, e, r,
@@ -839,8 +909,6 @@ static int word(Parse *ps, const char *text, size_t n, const char *after, size_t
                                 &ps->st->shorter, &ps->st->name};
         if (rc == 2)
             why = &ps->st->name;
-        else if (why == &ps->st->ambiguous && compound)
-            why = &ps->st->compound;
         (*why)++;
         for (unsigned j = 0; ps->st->trace && j < sizeof(names) / sizeof(names[0]); j++)
             if (counters[j] == why)
@@ -978,7 +1046,7 @@ static int parse(Parse *ps, const char *text, size_t from, size_t to, uint32_t f
             size_t end;
             int got = entry_at(ps, text, pos, &e), before = *n, k = 0, rc;
             if (got < 0)
-                return ps->st->failed++, got;
+                return failed(ps, got);
             if (got) {
                 uint32_t c0 = first_char(text, pos, to);
                 end = e.end > seg ? seg : e.end;
@@ -990,7 +1058,7 @@ static int parse(Parse *ps, const char *text, size_t from, size_t to, uint32_t f
                     vjo_utf8_next(text, to, &q);
                     if (q < end && has_kanji(text + q, seg - q)) {
                         if ((got = entry_at(ps, text, q, &a)) < 0)
-                            return ps->st->failed++, got;
+                            return failed(ps, got);
                         if (got && a.end > end && has_kanji(text + q, (a.end > seg ? seg : a.end) - q)) {
                             pos = q;
                             e = a;
@@ -1014,7 +1082,7 @@ static int parse(Parse *ps, const char *text, size_t from, size_t to, uint32_t f
                             break;
                     }
                     if ((got = entry_at(ps, text, at, &a)) < 0)
-                        return ps->st->failed++, got;
+                        return failed(ps, got);
                     if (got && a.end >= end &&
                         ((particle_char(c0) && at == pos + 3) ||
                          (rare(ps, e.rank) && a.rank &&
@@ -1041,7 +1109,7 @@ static int parse(Parse *ps, const char *text, size_t from, size_t to, uint32_t f
                         if (!vjo_is_kanji(vjo_utf8_next(text, end, &q)))
                             continue;
                         if ((got2 = entry_at(ps, text, at, &a)) < 0)
-                            return ps->st->failed++, got2;
+                            return failed(ps, got2);
                         if (got2 && a.end > end && a.rank &&
                             (!e.rank || (long long)a.rank * rules->part_ratio <= e.rank)) {
                             size_t mark = vjo_arena_mark(ps->scratch);
@@ -1097,13 +1165,13 @@ static int parse(Parse *ps, const char *text, size_t from, size_t to, uint32_t f
                         ps->st->trace(ps->st->trace_ud, "counters", text + pos, end - pos, e.spelling, e.reading);
                 } else {
                     ps->st->words--; /* word() counts it */
-                    k = word(ps, text + pos, end - pos, text + end, to - end, bound, &e, out + *n, cap - *n);
+                    k = word(ps, text + pos, end - pos, text + end, to - end, &e, out + *n, cap - *n);
                 }
                 if (k < 0) {
                     if (k == VJO_E_TOO_LARGE && *n == cap)
                         k = 0; /* no room for more: the rest stays without */
                     else
-                        return ps->st->failed++, k;
+                        return failed(ps, k);
                 }
                 /* the text's own reading in brackets after the word (嚇(おど)し, 賓客(ひんきゃく)): the word's last
                  * reading must be it */
@@ -1261,6 +1329,12 @@ char *vjo_sentence_furigana(VjoArena *a, VjoArena *scratch, const VjoPlatform *p
     }
     len = vjo_text_join(t, o, 2);
     hl = o[0] >= 0 && o[1] > o[0] && (size_t)o[1] <= len;
+    if (hl) { /* a highlight inside a character takes the characters it touches (<b> and </b> both written) */
+        while (o[0] > 0 && ((unsigned char)t[o[0]] & 0xC0) == 0x80)
+            o[0]--;
+        while ((size_t)o[1] < len && ((unsigned char)t[o[1]] & 0xC0) == 0x80)
+            o[1]++;
+    }
     while (i < len)
         kanji += (size_t)vjo_is_kanji(vjo_utf8_next(t, len, &i));
     if (!kanji) {
