@@ -692,6 +692,12 @@ static const LunaOp r_PCSG00628[] VJO_DATA_TABLE(rubi_PCSG00628) = {
 static const LunaOp r_PCSG00380[] VJO_DATA_TABLE(rubi_PCSG00380) = {
     REP("㊤", "―"), REP("㊥", "―"), REP("㊦", "―"), REP("㌫", "北條"), REP("㍊", "紗希"), SPECIAL(OP_TRIM), END};
 
+/* PCSG00415 CLANNAD (RealLive's script, Prototype's port): the line at 0x2CA70 r6 holds the protagonist's name variables
+ * where the game draws his names: ＊Ａ the family name, ＊Ｂ the given name (full-width, CP932 81 96 82 60 / 82 61).
+ * CLANNAD has no name entry, so they are always 岡崎 and 朋也. A console's history.csv (Rubi 0.9.8, the verified site's
+ * stream): 「ありゃ、＊Ａ、どこいくんだよっ」 where OCR read 岡崎, 「俺はＤ組の＊Ａ＊Ｂ」; 16 of 1,347 hook lines. */
+static const LunaOp r_PCSG00415[] VJO_DATA_TABLE(rubi_PCSG00415) = {REP("＊Ａ", "岡崎"), REP("＊Ｂ", "朋也"), END};
+
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_TABLE(rubi_filters) = {
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
@@ -701,6 +707,7 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_T
     [VJO_RF_PCSG00817 - VJO_RF_BASE] = r_PCSG00817, [VJO_RF_PCSG00853 - VJO_RF_BASE] = r_PCSG00853,
     [VJO_RF_PCSG00876 - VJO_RF_BASE] = r_PCSG00876, [VJO_RF_PCSG01194 - VJO_RF_BASE] = r_PCSG01194,
     [VJO_RF_PCSG00628 - VJO_RF_BASE] = r_PCSG00628, [VJO_RF_PCSG00380 - VJO_RF_BASE] = r_PCSG00380,
+    [VJO_RF_PCSG00415 - VJO_RF_BASE] = r_PCSG00415,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */

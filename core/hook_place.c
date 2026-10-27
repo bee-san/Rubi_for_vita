@@ -144,7 +144,9 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
 /* Rubi's own verified sites. CLANNAD (PCSG00415): the function that receives each line in r6 as
  * CP932, at segment 0 + 0x2CA70 (Thumb: STRH.W r2, [r11, #0x32C]; ADDS.W r0, r4, #0x34C, no PC
  * use). From the PR #16 profile (profiles/PCSG00415.vjhook, removed in c35ebf9); proven in Vita3K
- * only (vita-vn-ocr notes 22), not yet on a console.
+ * only (vita-vn-ocr notes 22), not yet on a console. Its line holds the script's name variables, ＊Ａ
+ * and ＊Ｂ, where the game draws the protagonist's names: RF_PCSG00415 writes them (a console's
+ * history.csv, Rubi 0.9.8: 16 of 1,347 hook lines showed *A or *A*B).
  * アマツツミ (PCSG01198, AMATSUTSUMI_PSVITA, APP_VER 01.00): Luna's site 0x800785C8 (r2, CP932, its
  * filter: Luna's entry at the same address post-processes the text), which the placement check refuses
  * as no entry: it is inside a function (0x81070E3A's loop, 0x810745C8 in the game). Its 8 patched bytes
@@ -159,7 +161,7 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
  * read-only. */
 static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
-     {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, 0, 0, 0},
+     {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, VJO_RF_PCSG00415, 0, 0},
     {"PCSG01198", 0x8AA413F2u, 0x745C8u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
      {0x09, 0xEB, 0x87, 0x0E, 0x0E, 0xF5, 0xB1, 0x5E, 0x01, 0x37, 0x4E, 0xF8, 0x04, 0x0B, 0x09, 0x2F}, 0, 0, 0x0100u},
     /* PROTOTYPE engine (psandvita farm, Vita3K only): VJO_RF_PROTOTYPE; PCSG00007 reads through the text struct's buffer pointer */

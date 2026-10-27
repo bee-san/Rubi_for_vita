@@ -11,6 +11,14 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- **CLANNAD's hooked lines show 岡崎 and 朋也 instead of `*A` and `*A*B`.** CLANNAD's hook reads each line before the
+  game puts the protagonist's names in: its script writes them as the name variables `＊Ａ` (the family name) and
+  `＊Ｂ` (the given name), which Rubi showed as `*A`, so `「ありゃ、岡崎、どこいくんだよっ」` came out as `「ありゃ、*A、どこいくんだよっ」`.
+  The hook's own text filter now writes the names; CLANNAD has no name entry, so they are always 岡崎朋也. Seen in 16
+  of 1,347 hooked lines of a console's history (Rubi 0.9.8).
+
 ### Changed
 
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the

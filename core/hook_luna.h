@@ -118,6 +118,7 @@ enum {
     VJO_RF_PCSG01194,               /* 参千世界遊戯: shin @-markup, half-width kana */
     VJO_RF_PCSG00628,               /* ALIA's CARNIVAL! サクラメント: MSGSET's SNR markup, half-width kana */
     VJO_RF_PCSG00380,               /* 真 流行り神: dash pieces, the default player name */
+    VJO_RF_PCSG00415,               /* CLANNAD: the name variables ＊Ａ ＊Ｂ to 岡崎 朋也 */
     VJO_RF_END
 };
 
