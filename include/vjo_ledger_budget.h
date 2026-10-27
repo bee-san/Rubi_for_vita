@@ -324,6 +324,10 @@
  * data/bss 35,328 / 35,320 B as before; 3,192 / 3,900 B of text room left [measured: the build log's module rows,
  * both builds, main 3388f7a and this change at b74669b (merged as 0994afc), tools/fast_gate.sh's vitasdk image]. No
  * block, thread or allocation. */
+/* API 47's audit fixes (auto's tries share the wait and report the last try's model, the step log's room): debug
+ * text 160,648 -> 160,888 B (2,952 B of room left), normal 151,748 -> 151,988 B (3,660 B), the same pages [measured:
+ * the build log's module rows, both builds, the fixes on main 241e09f, whose plugins main 16fa362 keeps; main's rows
+ * as above]. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
