@@ -1173,6 +1173,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     if (job_cfg.ocr_text_gate && stage < 0) request.speed |= VJO_GAME_OCR_S_GATE;
     /* API 42: vita-vn-ocr #117's head gate and two-level head, ocr_head_gate's VJO_HEAD_* bits, in the user's jobs */
     if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_head_gate << VJO_GAME_OCR_S_HEAD_SHIFT; /* 0-3: config.c */
+    /* API 54: the text spotter as the finder, and its boxes refined, in the user's jobs too */
+    if (job_cfg.ocr_finder && stage < 0)
+        request.speed |= VJO_GAME_OCR_S_SPOT | (job_cfg.ocr_spotter_refine ? VJO_GAME_OCR_S_SPOT_REFINE : 0u);
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
@@ -1907,7 +1910,8 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         a->ocr_text_gate != b->ocr_text_gate || a->ocr_head_gate != b->ocr_head_gate ||
         a->ocr_vertical != b->ocr_vertical ||
         a->hook_trust != b->hook_trust || /* API 43: which text a job shows, a hook's or OCR's */
-        a->ocr_line_fix != b->ocr_line_fix)
+        a->ocr_line_fix != b->ocr_line_fix ||
+        a->ocr_finder != b->ocr_finder || a->ocr_spotter_refine != b->ocr_spotter_refine) /* API 54 */
         return 0;
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
            !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);

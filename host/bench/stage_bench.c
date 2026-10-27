@@ -717,7 +717,9 @@ static const char nondefault_config[] =
     "reading_time = 15s\n"
     "hook_trust = off\n"
     "ocr_line_fix = all\n"
-    "ocr_wait_hint = off\n";
+    "ocr_wait_hint = off\n"
+    "ocr_finder = spotter\n"
+    "ocr_spotter_refine = on\n";
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {

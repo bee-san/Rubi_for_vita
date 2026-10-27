@@ -2289,6 +2289,32 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("ocr_head_gate bits %d: speed 0x%08X", bits, (unsigned)fake_game_request.speed);
         mem_free();
     }
+    /* API 54: the text spotter rides in the speed word with ocr_finder = spotter (the default), its refinement's bit
+     * only beside it; ocr_finder = grad sends neither */
+    reset();
+    TEST_CHECK(cfg.ocr_finder == VJO_FINDER_SPOTTER); /* the default */
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_SPOT) &&
+               !(fake_game_request.speed & VJO_GAME_OCR_S_SPOT_REFINE));
+    mem_free();
+    reset();
+    cfg.ocr_finder = VJO_FINDER_GRAD;
+    cfg.ocr_spotter_refine = 1; /* with grad: nothing (GRAD's job) */
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK &&
+               !(fake_game_request.speed & (VJO_GAME_OCR_S_SPOT | VJO_GAME_OCR_S_SPOT_REFINE)));
+    mem_free();
+    for (int refine = 0; refine <= 1; refine++) {
+        reset();
+        cfg.ocr_finder = VJO_FINDER_SPOTTER;
+        cfg.ocr_spotter_refine = refine;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_SPOT) &&
+                   !!(fake_game_request.speed & VJO_GAME_OCR_S_SPOT_REFINE) == refine &&
+                   !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+        TEST_MSG("spotter, refine %d: speed 0x%08X", refine, (unsigned)fake_game_request.speed);
+        mem_free();
+    }
     /* API 36: the border rule (core/textnorm.h) rides in the speed word with non_japanese_filter = lines, the
      * default, and not with none */
     reset();

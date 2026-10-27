@@ -1005,6 +1005,11 @@ LOG = {
     # API 42: the recognize step (VJO_GSTEP_RECOGNIZE): kind the share of its CTC frames (bytes) that vita-vn-ocr #117's
     # head gate skipped, percent ("-" without the gate or when it skipped none), arg the lines recognized
     "recognize": re.compile(r"^gstep job recognize kind=(?:-|(\d+)) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) "),
+    # API 54: the text spotter as the finder (VJO_GSTEP_SPOT): kind 1 when it found the lines (0: GRAD did), arg the
+    # boxes it gave the recognizer, rc why GRAD did, bytes its scratch | VJO_GLM_READ / _RESIDENT (its weights), sum
+    # every box it returned | 0x8000 more than it keeps | its weights' load ms << 16, us its time
+    "spot": re.compile(r"^gstep job spot kind=(\d+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
+                       r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
     "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
     # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM); API 36: kind the lines of a border
@@ -2335,6 +2340,8 @@ def summarise_log(text):
                     "modes": {}},
          "gate": {"jobs": 0, "stopped": 0, "lines_stopped": 0, "scores": [], "us": [], "rcs": {}, "reads": 0},
          "headgate": {"jobs": 0, "gated": 0, "frames": 0, "skipped": 0, "shares": []},
+         "spot": {"jobs": 0, "ran": 0, "boxes": 0, "lines": 0, "us": [], "load_ms": [], "rcs": {}, "reads": 0,
+                  "kept": 0},
          "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
          "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0},
@@ -2496,6 +2503,22 @@ def summarise_log(text):
                 gt["stopped"] += int(m.group(2)) > 0
                 gt["lines_stopped"] += int(m.group(2))
             gt["us"].append(int(m.group(6)))
+            continue
+        m = LOG["spot"].match(line)
+        if m:
+            sp, packed, packed_sum = s["spot"], int(m.group(4)), int(m.group(5), 16)
+            sp["jobs"] += 1
+            sp["reads"] += packed >> 31          # VJO_GLM_READ: this job read the spotter's weights from the card
+            sp["kept"] += (packed >> 30) & 1     # VJO_GLM_RESIDENT: kept from an earlier job
+            rc = s32(int(m.group(3), 16))
+            if rc:
+                sp["rcs"][rc] = sp["rcs"].get(rc, 0) + 1
+            if m.group(1) == "1":
+                sp["ran"] += 1
+                sp["lines"] += int(m.group(2))
+                sp["boxes"] += packed_sum & 0x7FFF
+                sp["us"].append(int(m.group(6)))
+            sp["load_ms"].append(packed_sum >> 16)
             continue
         m = LOG["norm"].match(line)
         if m:
@@ -3668,6 +3691,14 @@ def render_collect(c):
         hl = headgate_line(lg.get("headgate") or {})
         if hl:
             L.append(hl)
+        sp = lg.get("spot") or {}
+        if sp.get("jobs"):
+            L.append(f"  text spotter (ocr_finder = spotter): {sp['jobs']} job(s), {sp['ran']} found their lines with it "
+                     f"({sp['lines']} line(s) of {sp['boxes']} box(es))" + (f"; {_span(sp['us'])} us a job" if sp["us"] else "")
+                     + f"; weights read {sp['reads']} time(s), kept {sp['kept']}"
+                     + (f" (load {_span(sp['load_ms'])} ms)" if sp["reads"] else "")
+                     + ("; GRAD found them after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(sp["rcs"].items()))
+                        if sp["rcs"] else ""))
         nm = lg.get("norm") or {}
         if nm.get("jobs"):
             L.append(norm_line(nm))

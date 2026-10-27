@@ -83,6 +83,22 @@ been reported.
   writes `region = full` in `region.ini`, the line for every game without its own. Not run on a console yet.
   The worker takes 1,040 B more of its pages and the normal Shell 24 B of code and 88 B of data; no module takes a
   page more, and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
+- **The text lines are found by a small network: vita-vn-ocr's text spotter** (`ocr_finder = spotter`, the new
+  default; `grad` is Rubi's finder as before, which also stays the spotter's fallback). Trained on the owner's hooked
+  PS Vita and PSP pages and on MeikiOCR's line boxes of other games' screenshots (vita-vn-ocr #149, textspot8), it finds
+  the lines inside your region, and the recognizer reads them as before. On other games' screenshots (host, measured
+  through Rubi's path) it takes the dialogue error from Rubi's finder's 2.38% to 1.03% (0.99% with VOCR6), and on a
+  fresh set of 41 games from 4.29% to 1.86%; on the hooked test game and on CLANNAD's dialogue it is level with Rubi's
+  finder (0.97% against 0.98% and 0.95%), and with CLANNAD's speaker names it reads 1.17% against 2.83%. It no longer
+  merges the lines of a translucent box over a busy picture,
+  and an animated icon next to the text costs it less; it still misreads side-by-side choice buttons. Its weights
+  (52,176 B) are a file beside the models, read once into the game's memory and kept; when they are missing or there
+  is no memory for them, and for a region it sees as vertical text under `ocr_vertical = auto`, the job reads with
+  Rubi's finder. Memory (exact bytes, [memory ledger](docs/memory-ledger.md#the-spotter-finder-api-54)): its block,
+  57,344 B, and its part of the job's scratch, only in jobs that use it; its code, 16 KiB more of the OCR
+  worker's pages in every game that is ON (208,896 B, 217,088 B in the debug build). Its time is
+  estimated at 82 ms for a 900×150 text box and 105 ms for 900×200 at 333 MHz (vita-vn-ocr's cycle model; nothing of
+  it has run on a console) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-54); API 54).
 - The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
   row (an animated icon, a moving picture or text still typing in the region), its next try says "Recognizing…
   Something in the region keeps moving (an animated icon? text still typing?). If a region around just the text
@@ -449,7 +465,6 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   ([farm checks](docs/native-hooks.md#farm-checks)).
 - `tools/hook_farm.py` checks every verified entry against the farm's recorded hook bytes and texts; the host
   tests run 50 short excerpts of them through the worker's own hook path.
-
 ### Changed
 
 - **OCR: faster reads with vita-vn-ocr's head gate and two-level head** (API 42; `config.ini`
