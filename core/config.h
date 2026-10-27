@@ -145,7 +145,7 @@ typedef struct {
     int ocr_wait_hint;        /* 0/1, on by default */
     /* Lookups (#321; docs/local-dictionaries.md "Names and words"): at one span, whether an entry spelled as the
      * text in a later dictionary (a character's name, わたし) comes before a word the first dictionary spells
-     * otherwise (私): VJO_NAMES_*, auto (the default) puts the word first when it is among the 1,024 most
+     * otherwise (私): VJO_NAMES_*, auto (the default) puts the word first when it is among the 1,023 most
      * frequent. Read by the Shell's lookups only. Last, as above. */
     int names_first;
     /* Local OCR (vocr, API 54): the line finder of a job, VJO_FINDER_GRAD (Rubi's GRAD with the refinement and

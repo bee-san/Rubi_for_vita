@@ -282,16 +282,28 @@ below it. Where the word is very frequent this is wrong: the bundled names inclu
 わたし (XBLAZE LOST:MEMORIES), which came before 私 at every わたし of the text, 89 taps of the 5,000-line
 [Yomitan check](../reports/yomitan-check.md). So `config.ini`'s `names_first` (#321):
 
-- `auto` (the default): the word comes first when it is among the 1,024 most frequent of its frequency
-  list (私 #32), the name first otherwise (渚 #32,728);
+- `auto` (the default): the word comes first when it is among the 1,023 most frequent of its frequency
+  list, an own rank of 1,023 or better (私 #32), the name first otherwise (渚 #32,728);
 - `on`: the name first, as Rubi 0.9.8 and Yomitan;
 - `off`: the word first.
 
 Measured on that check's 309 taps where a name came first with the word below it, read one by one: the
 name is the text's word in 188 (a character of the game: みちる, ミカゲ, いのり, なぎさ), the word in 109,
-89 of them わたし (12 are neither or unclear). The only word among the 1,024 most frequent was 私, so `auto` keeps the first
+89 of them わたし (12 are neither or unclear). The only word among the 1,023 most frequent was 私, so `auto` keeps the first
 and fixes わたし; `off` would lose about 190 (on 27,970 lines of the same games, `auto` changes 456 taps:
-わたし → 私 449, あたる → 当たる 5, イチ → 一 2). With Dictionaries shown 1, the first is the only one.
+わたし → 私 449, あたる → 当たる 5, イチ → 一 2). On those lines any cut from rank 795 (一) to
+1,975 does the same: 512 would lose あたる and イチ, 2,048 would put 香り (#1,976) before the character かおり (#321's
+audit). No cut separates the rest: 遥か, 爽やか and 仄か (#5,955, #5,294, #21,690) are meant where the names
+はるか, さわやか and ほのか come first, but 満ちる (#2,327) and 祈り (#6,822) are not where みちる and いのり do.
+
+With Dictionaries shown 1, the first is the only one. It is the first of more except for `names_first`'s
+word: one result ends the search at the first dictionary with an entry spelled as the text (the name),
+before the first dictionary's inflections are read. So, with `off` (or `auto` and a word among the 1,023
+most frequent), a word spelled otherwise comes first with one shown but the name with more when the first
+dictionary also has an inflection spelled as the text (ゆめみ: 夢見 with one, the name with two), and only
+with more can a homograph of an inflection come first (いなケン: the name with one, 嘶く with two). On the
+27,970 lines, 8 of their 759,994 character positions show another first entry with one than with two, all
+with `off`, none with `auto` or `on` (#321's audit).
 
 Until 0.9.6 the other dictionaries were pages, one at a time, with an L or R tap
 (`L/R Dictionary 2 of 3`). Stacking reads them with the word: when looking it up, the
@@ -489,7 +501,9 @@ Format 3 is format 2 with these additions, so it needs nothing in memory:
   (Jiten's `N㋕`), bits 25-27 how the rank matched. A rank from a spelling-only row that
   matched only after kana normalisation (bits 25-27 `110`) is shown as none, as Yomitan, which
   compares spellings exactly, shows none: it is mostly another word's (だと had ダト's #73,969, にす
-  ニス's, イル いる's; 304 taps of the Yomitan check's 64,579, #321); it still ranks the entry. The ranking's head
+  ニス's, イル いる's; 304 taps of the Yomitan check's 64,579, #321), and a few times the word's own in
+  the other kana (メシ had めし's #4,793; こらこら, いたた: 5 of 330,517 taps, #321's audit); it still ranks
+  the entry. The ranking's head
   read and the shown entry's payload read include it: no extra read, 4 bytes
   more in each.
 - optional **posting hints**: every posting's last u16 holds what the ranking

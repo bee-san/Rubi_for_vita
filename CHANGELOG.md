@@ -211,11 +211,11 @@ been reported.
   - **A particle before a katakana word** is the particle: のマンション showed 飲む (`-ん`), にエントリー 煮える,
     とセンパイ 渡船, はデート 派手 (457 taps). Not before ァ, ッ or ー (はァ, へッ).
   - **A particle before a form of する** is the particle: 気がした showed 賀する, もせず 模する, 目にした the grammar
-    entry にす, はしない 馳す, 気のせい のす (199 taps). An entry spelled as the whole span stays (がする, もしかして).
+    entry にす, はしない 馳す, 気のせい のす (198 taps). An entry spelled as the whole span stays (がする, もしかして).
   - **Ranks of another word** are no longer shown: だと showed ダト's #73,969, にす ニス's, イル いる's #37 (223 taps; a
     spelling-only Jiten row that matched only after kana normalisation, as Yomitan shows none).
   - **わたし shows 私 first**, the character named わたし below it: a character's name spelled as the text still comes
-    first (なぎさ, いのり, ミユキ in their games), but not before one of the 1,024 most frequent words. `config.ini`
+    first (なぎさ, いのり, ミユキ in their games), but not before one of the 1,023 most frequent words. `config.ini`
     `names_first = on` keeps Rubi 0.9.8's order, `off` puts every word first ([the measurement](docs/local-dictionaries.md#names-and-words)).
   - 行っとく shows 行く, not 行う (`-おく` through `-て`, as Yomitan: 言っとく says `-te → -toku`, as 言っておく);
     してんの and 言ってんだ say `-te → progressive or perfect`, not `-n`, the negative; かわされた shows 交わす, not 買う
@@ -223,6 +223,10 @@ been reported.
     out).
   - Kept as they are, and why: [what remains](reports/yomitan-check.md#what-remains) (pitch accents, reading ties,
     the prohibitive な, names' ranks).
+  - #321's audit: with Dictionaries shown 1, a particle before a form of する is the particle too, as with 2 (a
+    one-step match of the first dictionary kept the whole span before; not seen on the 27,970 lines). With 1, the
+    first entry can still differ from 2 for `names_first = off` (8 of 759,994 character positions; [names and
+    words](docs/local-dictionaries.md#names-and-words)). Host only.
 
 - **Native hooks: an active string-copy stream no longer loses its slot to a new caller in a race** (#366). When all
   12 CALL streams are held by other callers, a new caller takes the one written least recently. Two races gave it the

@@ -101,6 +101,25 @@ class PackedTable(unittest.TestCase):
         two = int(re.search(r"#define DEINFLECT_TWO_STEPS (\d+)u", text).group(1))
         self.assertEqual(labels[two], "causative passive")
 
+    def test_a_lone_particle_is_never_a_form_of_su(self):
+        """lookup_pages' particle before a form of する goes back to the particle's own span (`k = 2;
+        continue;`): it ends there only because no candidate of a lone particle is a character and す or
+        する (particle_suru does not look at the first one). deinflect()'s search, on the generated rules."""
+        bits = {"v1": 1, "v5": 2, "vs": 4, "vk": 8, "vz": 16, "adj-i": 32, "iru": 64}
+        rules = [(r["kanaIn"], r["kanaOut"], sum(bits[x] for x in r["rulesIn"]), sum(bits[x] for x in r["rulesOut"]))
+                 for rs in gen_deinflect.rule_sets().values() for r in rs]
+        for particle in "がもはにのかとでをへやな":
+            found = [(particle, 0)]
+            for key, have in found:  # breadth first, as deinflect(): a rule's input bits must meet the key's
+                for kana_in, kana_out, rules_in, rules_out in rules:
+                    if (have and not have & rules_in) or not key.endswith(kana_in):
+                        continue
+                    new = key[:len(key) - len(kana_in)] + kana_out
+                    if new and (new, rules_out) not in found and len(found) < 128:
+                        found.append((new, rules_out))
+            suru = [k for k, _ in found[1:] if len(k) in (2, 3) and k[1:] in ("す", "する")]
+            self.assertEqual(suru, [], particle)
+
     def test_supplement_changes_what_it_says(self):
         old = json.loads((ROOT / "third_party/yomichan/deinflect.json").read_text())
         supplement = json.loads((ROOT / "third_party/yomitan/deinflect-supplement.json").read_text())

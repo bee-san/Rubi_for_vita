@@ -143,7 +143,7 @@ taps, 3,962 shown entries change: 3,494 better, 465 the same, 3 worse (below). B
   のメンバー 飲める, にエントリー 煮える, とセンパイ 渡船, のスタッフ のす, のカバン のか, はデート 派手. Not before ァィゥェォ, ッ
   or ー (はァ, へッ: interjections). A katakana ending of one word loses: でチュ, a baby-talk です (10 taps of one game
   in the 330,517), is で.
-- **A particle before a form of する**, 199 taps (1,131): が も は に の か in hiragana and a candidate that is the
+- **A particle before a form of する**, 198 taps (1,125): が も は に の か in hiragana and a candidate that is the
   particle and す or する are the particle, unless an entry is spelled as the whole span (がする, もしかして, にしても).
   The audit's 38 (が + する as 賀す or 賀する, も + する as 燃す or 模する) and more: 目にした was the grammar entry にす
   (a classical negation) 25 times, にしておく にす, はしない 馳す, 気のせい のす, どうかした 貸す, ぼくはそう 破窓, もしかして
@@ -155,7 +155,7 @@ taps, 3,962 shown entries change: 3,494 better, 465 the same, 3 worse (below). B
   It still ranks the entry; the posting hints and the frozen file are unchanged.
 - **Names first** (`names_first = auto`, the default): 91 taps (456), わたし 私 89 (449), あたる 当たる 1 (5), イチ 一 1
   (2). [The measurement](../docs/local-dictionaries.md#names-and-words): of 309 taps with a name first and the word below,
-  the name is right in 188 and the word in 109, 89 of them わたし, the only word among the 1,024 most frequent.
+  the name is right in 188 and the word in 109, 89 of them わたし, the only word among the 1,023 most frequent.
   `on` keeps Rubi 0.9.8's order, `off` puts every word first.
 - **Labels**, 14 taps (108): the contracted progressive (してんの, 言ってんだ, バカにされてん: `-te → progressive or
   perfect`, not `... → -n`, 8), and `-おく` through `-て` as Yomitan (言っとく, 払っとく: `-te → -toku`, 6), which also
@@ -163,8 +163,9 @@ taps, 3,962 shown entries change: 3,494 better, 465 the same, 3 worse (below). B
 - **The causative passive as two steps**, 5 taps (25): かわされた 交わす, not 買う; 飛ばされた 飛ばす, 聞かされた 聞かす,
   立たされて 立たす, 思い知らされる 思い知らす, 待たされた 待たす, 悩まされて 悩ます (each the passive of its own word, as
   Yomitan, whose causative passive is two steps).
-- **`-ん`'s かん left out**, 1 tap (8): 手をつかんで 手, not 手をつく; なんだかわかんない at か かわ (乾く before: wrong either way);
-  宙に浮かんだ 宙. しておかん loses its `-toku → -n` and shows して (the 3rd worse).
+- **`-ん`'s かん left out**, 2 taps (14): 手をつかんで 手, not 手をつく; なんだかわかんない at か かわ (乾く before: wrong either way);
+  宙に浮かんだ 宙. しておかん loses its `-toku → -n` and shows して (the 3rd worse), and 話をしておかん shows 話をする over
+  話をして, `-te` only (SudachiPy: the same; #321's audit).
 
 The Shell's pages are unchanged; the rule table moved to the data segment
 ([memory ledger](../docs/memory-ledger.md#lookups-321)).
@@ -177,7 +178,7 @@ or missing data:
 - **Pitch accents (548.68 / 1,000).** Rubi's files have no pitch data and the popup has no pitch line;
   `VjoVocab.pitch` and the Anki card's pitch fields stay empty. Kanjium's accents (124,137 rows, 3.2 MB
   text, CC BY-SA 4.0) would cover them, as a file of their own: the frozen bundle has no field for them, and the
-  Shell has no room for a second file's lookup and a pitch line (after #321 its debug build has 28 B of code
+  Shell has no room for a second file's lookup and a pitch line (after #321 its debug build has 20 B of code
   room). Their likeliest place is the Rubi app's card export, which runs beside no game.
 - **Reading ties (9.86).** Jiten gives every reading of a spelling one rank (恐怖 きょうふ and くふ both
   1,692), so the longer article decides: 恐怖 くふ, 化粧 けそう, 一言 いちげん, 真実 しんじち, 雰囲気 ふいんき.
@@ -203,6 +204,11 @@ or missing data:
   たまんない) has no rule in either; one (んない → らない) would also read 案内 written あんない as ある.
 - **Equal-depth ties.** つかまれた (掴む's passive or 捕まる's potential) and なれる (なる's potential or 慣れる): the
   rank decides, as in Yomitan.
+- **`names_first` with Dictionaries shown 1.** One result stops at the name before the first dictionary's
+  inflections are read, so with `off` the first entry can differ from two shown: 8 of the 759,994 character
+  positions of the 27,970 lines, none with `auto` or `on`
+  ([names and words](../docs/local-dictionaries.md#names-and-words); #321's audit). Reading on for one result costs file reads; leaving out only the inflection's homograph (half of
+  it) measured 16 B of the debug Shell's code and 48 B of the normal's.
 - **A phrase at a longer span.** ないねぇ shows 無い無い and ものがねぇ 物が無い (`-え`'s ねぇ read as ない after ない
   and が, 2 taps), as in Yomitan.
 - **とっておき** shows とる's `masu stem → -toku → -te` (1 tap; 5 of the 330,517): its entries are spelled in kanji
