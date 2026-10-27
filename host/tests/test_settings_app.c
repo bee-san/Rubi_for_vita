@@ -32,6 +32,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "../../core/vocr_models.h"
+#include "../../core/utf.h"
 #include "../../core/config.h" /* VJO_VERTICAL_* (API 47) */
 #include "../../include/vjo_vocr_sizes.h"
 #include "../../core/app_stamp.h"
@@ -139,7 +140,7 @@ typedef struct {
  * its state in statics, so it runs in a forked child, and the frames it shows
  * come back through shared memory. */
 typedef struct { int frames, exited, main_rc, finis, font_loads, font_frees, font_free_in_frame, font_free_unwaited,
-                 dead_font_uses; Frame shown[MAX_FRAMES]; } Session;
+                 dead_font_uses, most_glyphs, fonts_both; Frame shown[MAX_FRAMES]; } Session;
 static Session *session;
 static Frame *shown;
 static const Input *script;
@@ -246,15 +247,35 @@ int vita2d_fini(void) { finis++; return 0; }
 void vita2d_set_clear_color(unsigned int color) { (void)color; }
 /* The fonts: each load a font of its own, alive until freed; a font is freed only between frames, after a wait for
  * the GPU (settings/main.c font_tick), and never drawn or measured with once freed. */
-#define FONTS 16
+#define FONTS 96
 static int font_live[FONTS], font_loads, font_frees, font_free_in_frame, font_free_unwaited, dead_font_uses,
            in_frame, waited;
+/* Each font's distinct characters, as libvita2d's atlas would hold them (its glyph table), the most any font had,
+ * and the fonts that drew and those that measured. */
+#define FONT_GLYPHS 4096
+static uint32_t font_glyph[FONTS][FONT_GLYPHS];
+static int font_glyphs[FONTS], font_drew[FONTS], font_measured[FONTS], most_glyphs;
 void vita2d_start_drawing(void) { memset(&drawing, 0, sizeof(drawing)); in_frame = 1; waited = 0; }
 void vita2d_end_drawing(void) { in_frame = 0; }
 static void font_use(vita2d_pvf *font)
 {
     int i = (int)((int *)font - font_live);
     if (i < 0 || i >= FONTS || !font_live[i]) dead_font_uses++;
+}
+static void font_holds(vita2d_pvf *font, const char *text, int drawn)
+{
+    int f = (int)((int *)font - font_live);
+    size_t n = strlen(text), i = 0;
+    if (f < 0 || f >= FONTS) return;
+    (drawn ? font_drew : font_measured)[f] = 1;
+    while (i < n) {
+        uint32_t cp = vjo_utf8_next(text, n, &i);
+        int k = 0;
+        if (cp == '\n') continue; /* (libvita2d never adds it) */
+        while (k < font_glyphs[f] && font_glyph[f][k] != cp) k++;
+        if (k == font_glyphs[f] && k < FONT_GLYPHS) font_glyph[f][font_glyphs[f]++] = cp;
+        if (font_glyphs[f] > most_glyphs) most_glyphs = font_glyphs[f];
+    }
 }
 void vita2d_swap_buffers(void) {}
 void vita2d_clear_screen(void) {}
@@ -288,6 +309,7 @@ void vita2d_free_pvf(vita2d_pvf *font)
 int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 {
     font_use(font);
+    font_holds(font, text, 0);
     int units = 0;
     for (const unsigned char *p = (const unsigned char *)text; *p; p++)
         if (*p < 0x80) units += 10;
@@ -297,6 +319,7 @@ int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text)
 {
     font_use(font);
+    font_holds(font, text, 1);
     if (drawing.texts < (int)(sizeof(drawing.text) / sizeof(drawing.text[0]))) {
         Text *t = &drawing.text[drawing.texts++];
         t->x = x; t->y = y; t->color = color; t->scale = scale;
@@ -400,6 +423,8 @@ static int run_to(const Input *inputs, int n, int code)
         session->font_free_in_frame = font_free_in_frame;
         session->font_free_unwaited = font_free_unwaited;
         session->dead_font_uses = dead_font_uses;
+        session->most_glyphs = most_glyphs;
+        for (int k = 0; k < FONTS; k++) session->fonts_both += font_drew[k] && font_measured[k];
         _exit(0);
     }
     int status = 0;
@@ -1766,52 +1791,67 @@ static void test_the_tab_bar(void)
     tabs_of(14, 5);
 }
 
-/* libvita2d's glyph atlas keeps every glyph a font drew or measured and drops new ones once it is full: main.c counts
- * the distinct characters drawn or measured with the font and, before a text that would take them past 400, loads
- * the font again (an empty atlas) and draws on with that one; the old one is freed before the next frame, after a
- * wait for the GPU (font_tick); log.txt says so. No text is ever drawn or measured with a freed font, and no atlas
- * holds more than 400 characters. A page that draws the same characters again (the Games page) never switches. */
-extern int vjo_lookup_stub_glyphs;
-static void test_a_full_glyph_atlas_gets_an_empty_one(void)
+/* libvita2d's glyph atlas keeps every glyph a font drew or measured and drops new ones once it is full: main.c draws
+ * with one font and measures with another, counts the distinct characters each has had and, before a text that would
+ * take one past 350, loads that one again (an empty atlas) and goes on with it; the replaced ones are freed between
+ * frames, after a wait for the GPU (font_tick); log.txt says so. No font ever holds more than 350 characters, none
+ * both draws and measures, and none is used once freed. The drawing font switches once a frame at most, the
+ * measuring one as often as a frame's layout needs (1,000 new characters in one string: three switches). A page that
+ * draws the same characters again (the Games page) never switches. */
+extern int vjo_lookup_stub_glyphs, vjo_lookup_stub_measures;
+static void test_full_glyph_atlases_get_empty_ones(void)
 {
     static const Input idle[] = {{0, 0, 0, 0}};
-    Input in[2 * 3 + 12];
+    Input in[2 * 4 + 12];
     int n = 0;
     card(NULL);
     TEST_ASSERT(run(idle, 1) >= 1);
-    TEST_CHECK_(session->font_loads == 1 && session->font_frees == 1, "an idle app: %d loads, %d frees",
-                session->font_loads, session->font_frees);
-    for (int i = 0; i < 3; i++) /* Select to the Look up page, whose stub draws 100 new characters a frame */
+    TEST_CHECK_(session->font_loads == 2 && session->font_frees == 2 && !session->fonts_both,
+                "an idle app: %d loads, %d frees, %d fonts both drawing and measuring", session->font_loads,
+                session->font_frees, session->fonts_both);
+    for (int i = 0; i < 3; i++) /* Select to the Look up page, whose stub draws and measures new characters */
         in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}, in[n++] = (Input){0, 0, 0, 0};
     for (int i = 0; i < 12; i++)
         in[n++] = (Input){0, 0, 0, 0};
-    vjo_lookup_stub_glyphs = 100;
+    vjo_lookup_stub_glyphs = 100;    /* 100 new characters drawn a frame: 1,400 in 14 frames */
+    vjo_lookup_stub_measures = 1000; /* 1,000 new ones measured a frame, one a call as the page does: 14,000 */
     TEST_ASSERT(run(in, n) == n);
-    vjo_lookup_stub_glyphs = 0;
-    /* about 1,300 new characters with the pages' own: three switches (a fourth font at most); every font freed, the
-     * replaced ones between frames after a wait, the last one at the exit */
-    TEST_CHECK_(session->font_loads >= 4 && session->font_loads <= 5 && session->font_frees == session->font_loads,
+    vjo_lookup_stub_glyphs = vjo_lookup_stub_measures = 0;
+    /* drawing: 1,400 characters, 350 a font: four switches at least, one a frame at most; measuring: 14,000, two or
+     * three switches each frame */
+    TEST_CHECK_(session->font_loads >= 2 + 4 + 39 && session->font_frees == session->font_loads,
                 "%d loads, %d frees", session->font_loads, session->font_frees);
     TEST_CHECK_(!session->font_free_in_frame && !session->font_free_unwaited && !session->dead_font_uses,
                 "%d frees in a frame, %d without a wait, %d uses of a freed font", session->font_free_in_frame,
                 session->font_free_unwaited, session->dead_font_uses);
-    char log[4096] = "";
+    TEST_CHECK_(!session->fonts_both, "%d fonts both drew and measured", session->fonts_both);
+    TEST_CHECK_(session->most_glyphs <= 350, "a font held %d characters", session->most_glyphs);
+    char log[8192] = "";
     FILE *f = fopen("ux0:data/VitaJPOverlay/log.txt", "rb");
     if (f) {
         log[fread(log, 1, sizeof(log) - 1, f)] = '\0';
         fclose(f);
     }
-    TEST_CHECK_(strstr(log, "font: an empty glyph atlas after 400 characters (1 time)") &&
-                    strstr(log, "font: an empty glyph atlas after 400 characters (3 times)"), "log.txt: %s", log);
-    /* the Games page alone, the same characters frame after frame: one font */
+    /* a line a frame with switches, the counts so far: the drawing font's first, the measuring font's three at once */
+    TEST_CHECK_(strstr(log, "font: an empty glyph atlas to draw with after 350 characters (1 time)\n") &&
+                    strstr(log, "font: an empty glyph atlas to measure with after 350 characters (3 times)\n"),
+                "log.txt: %s", log);
+    /* rows of 30 new characters a string, as the page measures a row: no font past 350 */
+    vjo_lookup_stub_glyphs = 30;
+    vjo_lookup_stub_measures = -30;
+    TEST_ASSERT(run(in, n) == n);
+    vjo_lookup_stub_glyphs = vjo_lookup_stub_measures = 0;
+    TEST_CHECK_(session->most_glyphs <= 350, "a font held %d characters", session->most_glyphs);
+    TEST_CHECK(!session->dead_font_uses && !session->fonts_both && session->font_frees == session->font_loads);
+    /* the Games page alone, the same characters frame after frame: the two fonts */
     static const Input games[24];
     TEST_ASSERT(run(games, 24) == 24);
-    TEST_CHECK(session->font_loads == 1 && !session->dead_font_uses);
+    TEST_CHECK(session->font_loads == 2 && !session->dead_font_uses);
 }
 
 TEST_LIST = {
     {"the_tab_bar_six_tabs_fit_their_labels_and_their_touches", test_the_tab_bar},
-    {"a_full_glyph_atlas_gets_an_empty_one", test_a_full_glyph_atlas_gets_an_empty_one},
+    {"full_glyph_atlases_get_empty_ones", test_full_glyph_atlases_get_empty_ones},
     {"one_engine_VOCR_its_model_size_on_top_no_lens", test_one_engine_its_model_size_on_top},
     {"a_tap_in_the_cards_top_band_focuses_it_and_chooses_nothing", test_the_cards_top_band_focuses_it},
     {"exit_ends_the_process_without_vita2d_fini", test_exit_ends_the_process_without_vita2d_fini},

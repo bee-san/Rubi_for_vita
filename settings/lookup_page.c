@@ -92,6 +92,8 @@ static int char_width(uint32_t cp, int px)
     n = vjo_utf8_encode(cp, buf);
     buf[n] = '\0';
     w = s_ui->text_width((float)px, buf);
+    if (w <= 0 && cp > ' ')
+        return w; /* (a glyph its font could not hold: measured again next time, not kept) */
     if (width_entries >= WIDTH_SLOTS * 3 / 4) { /* full: forgotten, measured again as they come */
         memset(widths, 0, sizeof(widths));
         width_entries = 0;
@@ -180,7 +182,7 @@ typedef struct {
 #define BODY_ROWS 400
 static Row body[BODY_ROWS];
 static int body_rows, body_top, body_cut; /* body_cut: the entry had more rows than BODY_ROWS */
-static char pool[2048];                   /* the strings the rows are made of besides the entry's own */
+static char pool[4096];                   /* the strings the rows are made of besides the entry's own */
 static size_t pool_used;
 
 static const char *pool_put(const char *s)
@@ -337,6 +339,12 @@ static void build_body(void)
     for (int i = 0; i < l->n_more; i++) {
         blank();
         vocab_rows(l->more[i], NULL, NULL); /* its definition names its dictionary ("[title]") */
+    }
+    if (body_cut && body_rows) { /* more rows than BODY_ROWS: the last one says so */
+        Row *r = &body[body_rows - 1];
+        memset(r, 0, sizeof(*r));
+        r->height = (uint8_t)line_height(EN_PX);
+        add_piece(r, "…", strlen("…"), EN_PX, s_ui->dim, 0);
     }
 }
 

@@ -242,8 +242,9 @@ int vjo_lookup_history_line(int i, char *text, size_t cap, VjoLookupSource *src)
     }
     sceIoClose(fd);
     if (got != l->bytes || !vjo_history_record_start(window, 0, got, 1) ||
-        vjo_history_row(window, window + got, VJO_HISTORY_COL_MODEL + 1, &row) || strcmp(row.uuid, want))
-        return -1; /* the file changed */
+        vjo_history_row(window, window + got, VJO_HISTORY_COL_MODEL + 1, &row) || strcmp(row.uuid, want) ||
+        row.time_us != l->time_us)
+        return -1; /* the file changed (another record there, or none) */
     copy_cut(text, cap, row.line, row.len[3]);
     memset(src, 0, sizeof(*src));
     g = find_game(want);
