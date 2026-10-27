@@ -133,6 +133,11 @@ typedef struct {
     /* Vertical text (vita-vn-ocr #99, API 47; docs/vita-vn-ocr.md "Vertical text"): VJO_VERTICAL_*, the
      * request's VJO_GAME_OCR_S_VERTICAL field as it is (include/vjo_game_ocr.h). Last, as above. */
     int ocr_vertical;
+    /* Local OCR (vocr, API 50): the line finder's fixes (bee-san/vita-vn-ocr #129; core/vocr_ocr.h
+     * VjoVocrPolicy.line_fix): 1 (on, the default) its measured default, VOCR_FIX_DEFAULT (COLGAP); 2 (junk) also
+     * the frame-strip rule, for regions drawn with a margin; 3 (all) also the touching-rows split; 0 (off) the
+     * frozen finder. Last, as above. */
+    int ocr_line_fix;         /* 0 off, 1 on, 2 junk, 3 all */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
@@ -155,6 +160,9 @@ typedef struct {
  * sees rows (measured on the host, never on a console). */
 #define VJO_VERTICAL_DEFAULT VJO_VERTICAL_AUTO
 #define VJO_VERTICAL_DEFAULT_TEXT "auto"
+/* ocr_line_fix's default (docs/vita-vn-ocr.md, "Line finder fixes": the measurements). */
+#define VJO_LINE_FIX_DEFAULT 1
+#define VJO_LINE_FIX_DEFAULT_TEXT "on"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and

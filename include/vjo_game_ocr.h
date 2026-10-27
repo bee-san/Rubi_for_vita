@@ -85,7 +85,8 @@
  * bit 2 the ARM clock at 444 MHz while the job recognizes (ocr_boost_clock, on
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
  * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below); API 36, bit 16
- * the border rule (below). Other bits are refused, as unknown flags are. */
+ * the border rule (below); API 42, bits 18-19 the head gate and the two-level head; API 43, bit 20 trusted hooks;
+ * API 50, bits 21-23 the line finder's fixes (below). Other bits are refused, as unknown flags are. */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
 #define VJO_GAME_OCR_S_NOCACHE 0x8u
@@ -137,7 +138,18 @@
 #define VJO_GAME_OCR_S_VERTICAL (VJO_GAME_OCR_S_VERTICAL_MASK << VJO_GAME_OCR_S_VERTICAL_SHIFT) /* 0x30000000 */
 #define VJO_GAME_OCR_VERTICAL_ON 1u
 #define VJO_GAME_OCR_VERTICAL_AUTO 2u
-#define VJO_GAME_OCR_S_ALL 0x301D001Fu
+/* API 50, bits 21-23: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.h; core/vocr_ocr.h
+ * VjoVocrPolicy.line_fix, config ocr_line_fix). Bit 21: the measured default, VOCR_FIX_DEFAULT (COLGAP: a line's
+ * parts across a full-width space stay one line). Bit 22: VOCR_FIX_JUNK (frame strips on the region's top or bottom
+ * edge and repeating ornaments are not lines; it can drop a text line in a region drawn tight, so it is opt-in).
+ * Bit 23: VOCR_FIX_VALLEY (two touching rows split; opt-in). Without them the finder is the frozen one, bit for bit.
+ * The Shell sets them in the user's jobs (ocr_line_fix = on, the default: bit 21; junk: 21-22; all: 21-23); the
+ * self-test's stages read as before. Not bit 17 (closed draft #271's VJO_GAME_OCR_S_CHARS), 18-19 (the head gate
+ * and the two-level head) or 20 (trusted hooks). */
+#define VJO_GAME_OCR_S_LINE_FIX 0x200000u
+#define VJO_GAME_OCR_S_LINE_JUNK 0x400000u
+#define VJO_GAME_OCR_S_LINE_VALLEY 0x800000u
+#define VJO_GAME_OCR_S_ALL 0x30FD001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.

@@ -16,6 +16,7 @@
 #define HEIGHT 12u
 static unsigned row_reads[HEIGHT], strips, finder_calls, column_calls, model_opens, first_flags, last_flags;
 static int selected_mode, emit_line;
+static unsigned selected_fix;
 static const char *selected_model;
 static const unsigned char grey = (unsigned char)((77u * 30 + 150u * 100 + 29u * 150) >> 8);
 
@@ -69,6 +70,15 @@ static int spy_finder(const VocrLinesRows *src, void *arena, size_t bytes, VocrL
     return VOCR_LINES_OK;
 }
 
+/* API 50: the job's finder is the fixed one (vita-vn-ocr #129, runtime/vocr_lines_fix.h); fix 0 is the frozen
+ * finder's lines, which the spy above stands for */
+int vjo_test_find_lines_fix_rows(const VocrLinesRows *src, int finder, unsigned fix, void *arena, size_t bytes,
+                                 VocrLineSet *out)
+{
+    selected_fix = fix;
+    return vjo_test_find_lines_rows(src, finder, arena, bytes, out);
+}
+
 static int absent_model(void *user, const char *path, VjoFile *out)
 {
     (void)user; (void)out;
@@ -82,6 +92,7 @@ static void reset(int line)
     memset(row_reads, 0, sizeof(row_reads));
     strips = finder_calls = column_calls = model_opens = first_flags = last_flags = 0; selected_mode = -1;
     emit_line = line;
+    selected_fix = ~0u;
 }
 
 static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
@@ -109,6 +120,8 @@ static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
                                       : VOCR_LINES_TEXTBOX_RECOVERY) &&
                     finder_calls == (unsigned)!cols && column_calls == (unsigned)cols && selected_mode == expected &&
                     !model_opens && stats.columns == (unsigned)cols, "%s", models[i].name);
+        TEST_CHECK(cols ? selected_fix == ~0u : selected_fix == 0u); /* API 19's job (no policy): the frozen
+                                                                    * finder's lines */
         TEST_CHECK(stats.workspace == size && stats.capture == cap && !stats.model_loaded && !text[0]);
         /* One strip holds the region: read once (the first pass, whole: FIRST and LAST),
          * then once more to see that it did not change; the finder's passes hit the strip. */

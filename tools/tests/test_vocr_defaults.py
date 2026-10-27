@@ -512,5 +512,20 @@ class VocrDefaults(unittest.TestCase):
                          {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL,
                           prepare_ocr.VOCR_VERTICAL_MODEL})  # the LMs, the gate (API 26), VOCR5-V (API 47)
 
+
+class RuntimePinEverywhere(unittest.TestCase):
+    """The vita-vn-ocr commit cmake/VocrOCR.cmake pins is the one CI's jobs check out and the docs' Build line names
+    (audit-vocr6-finder-h B1: a pin bump that missed the workflow failed every GitHub build job at configure)."""
+
+    def test_the_workflow_and_the_docs_check_out_the_cmake_pin(self):
+        cmake = (ROOT / "cmake" / "VocrOCR.cmake").read_text(encoding="utf-8")
+        pin = re.search(r"^set\(VJO_VOCR_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
+        flow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        refs = re.findall(r"repository: bee-san/vita-vn-ocr\n(?:\s+#.*\n)*\s+ref: ([0-9a-f]{40})", flow)
+        self.assertTrue(refs, "no vita-vn-ocr checkout found in release.yml")
+        self.assertEqual(set(refs), {pin}, refs)
+        docs = (ROOT / "docs" / "vita-vn-ocr.md").read_text(encoding="utf-8")
+        self.assertIn(f"git -C /path/to/vita-vn-ocr checkout {pin}", docs)
+
 if __name__ == "__main__":
     unittest.main()

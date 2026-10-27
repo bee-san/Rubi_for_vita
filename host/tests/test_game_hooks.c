@@ -294,6 +294,14 @@ int vocr_find_lines_rows(const VocrLinesRows *src, int mode, void *arena, size_t
     out->lines[0] = (VocrLine){10, 2, 180, 3, 0};
     return VOCR_LINES_OK;
 }
+/* API 50: the job's finder is the fixed one (vita-vn-ocr #129); its spy records the flags and finds as above */
+static unsigned spy_line_fix = ~0u;
+int vocr_find_lines_fix_rows(const VocrLinesRows *src, int mode, unsigned fix, void *arena, size_t bytes,
+                             VocrLineSet *out)
+{
+    spy_line_fix = fix;
+    return vocr_find_lines_rows(src, mode, arena, bytes, out);
+}
 int vocr_load(vocr_model *m, const void *blob, size_t bytes)
 {
     memset(m, 0, sizeof(*m)); m->blob = blob; m->bytes = bytes;
@@ -1399,6 +1407,28 @@ static void trusted_watch_learned_source(void)
     TEST_CHECK(hk.sel.locked == 11 && hook_publishes == 1 && !rows_calls);
 }
 
+/* API 50: the line finder's fixes follow the request's speed bits (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT;
+ * _JUNK: VOCR_FIX_JUNK; _VALLEY: VOCR_FIX_VALLEY); without them the finder is the frozen one (fix 0). */
+static void line_fix_follows_the_request(void)
+{
+    static const struct { uint32_t speed; unsigned fix; } cases[] = {
+        {0u, 0u}, {VJO_GAME_OCR_S_LINE_FIX, VOCR_FIX_DEFAULT},
+        {VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK, VOCR_FIX_DEFAULT | VOCR_FIX_JUNK},
+        {VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK | VJO_GAME_OCR_S_LINE_VALLEY,
+         VOCR_FIX_DEFAULT | VOCR_FIX_JUNK | VOCR_FIX_VALLEY},
+        {VJO_GAME_OCR_S_LINE_VALLEY, VOCR_FIX_VALLEY}};
+    VjoGameOcrResult out;
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        reset();
+        VjoGameOcrRequest r = request(VJO_HOOK_PICK_OCR);
+        r.speed = cases[i].speed;
+        spy_line_fix = ~0u;
+        vjo_game_ocr_cache_clear();
+        TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == 0 && finds == 1);
+        TEST_CHECK_(spy_line_fix == cases[i].fix, "speed 0x%08X: fix %u", (unsigned)cases[i].speed, spy_line_fix);
+    }
+}
+
 TEST_LIST = {
     {"API 43: a trusted verified site answers without OCR, also short of memory", trusted_verified_site_answers_without_ocr},
     {"API 43: a trusted Luna site keeps the hook-only reserve", trusted_luna_site_in_a_tight_game},
@@ -1407,6 +1437,7 @@ TEST_LIST = {
     {"API 43: the hook watch reports a trusted verified site's lines", hook_watch_reports_trusted_verified_lines},
     {"API 49: a trusted line is reported at once, from its first, once per text; the watch's pace", trusted_watch_reports_at_once},
     {"API 49: the learned source is reported flagged once trusted, restored ones by identity", trusted_watch_learned_source},
+    {"API 50: the line finder's fixes follow the request", line_fix_follows_the_request},
     {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
     {"Luna: no initial, periodic or repeated OCR and no generic cache IO", luna_never_loads_ocr_or_generic_learning},
     {"Luna: preserve generic learning and resume it when unavailable", luna_preserves_generic_state_and_falls_back_when_unavailable},

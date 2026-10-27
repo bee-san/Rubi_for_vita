@@ -131,9 +131,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #123's merge: #122's two-level head and #120's head
-          # gate, after #112's counter re-decode, #101's text-presence gate, #85, #83 and #82)
-          ref: 47cf3a3f9a0d8398d742b98b81f5fb85fe11a9ae
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #135's merge: #129's line finder fixes, #130's attention
+          # op (no pinned blob has one), #122's two-level head and #120's head gate, after #112's counter re-decode,
+          # #101's text-presence gate, #85, #83 and #82)
+          ref: f8a1856c1b21bf41af744c159b54ce8203408a89
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -219,7 +220,7 @@ jobs:
         with:
           repository: bee-san/vita-vn-ocr
           # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (as in the host job)
-          ref: 47cf3a3f9a0d8398d742b98b81f5fb85fe11a9ae
+          ref: f8a1856c1b21bf41af744c159b54ce8203408a89
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -305,9 +306,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #123's merge: #122's two-level head and #120's head
-          # gate, after #112's counter re-decode, #101's text-presence gate, #85, #83 and #82)
-          ref: 47cf3a3f9a0d8398d742b98b81f5fb85fe11a9ae
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #135's merge: #129's line finder fixes, #130's attention
+          # op (no pinned blob has one), #122's two-level head and #120's head gate, after #112's counter re-decode,
+          # #101's text-presence gate, #85, #83 and #82)
+          ref: f8a1856c1b21bf41af744c159b54ce8203408a89
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

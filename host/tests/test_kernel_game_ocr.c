@@ -1076,7 +1076,7 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x20000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 36: but bit 16) */
     r.speed = 0x100000; TEST_CHECK(vjoOcrSubmit(&r) > 0); /* API 43: bit 20, a trusted hook may answer (S_TRUST) */
-    r.speed = 0x200000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19; API 43: and 20) */
+    r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19; API 43: 20; API 50: 21-23) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
     r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bits 21-27 (in flight elsewhere), 30-31 */
     r.speed = 0x40000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
@@ -1094,8 +1094,13 @@ static void invalid_capture_and_wire(void)
     /* API 43: bit 20, trusted hooks, an OCR job's, never a shot's */
     TEST_CHECK(VJO_GAME_OCR_S_TRUST == 0x100000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_TRUST) &&
                !(VJO_GAME_OCR_S_TRUST & VJO_GAME_OCR_S_SHOT_ALL));
+    /* API 50: bits 21-23, the line finder's fixes; bit 17 is closed draft #271's */
+    TEST_CHECK(VJO_GAME_OCR_S_LINE_FIX == 0x200000u && VJO_GAME_OCR_S_LINE_JUNK == 0x400000u &&
+               VJO_GAME_OCR_S_LINE_VALLEY == 0x800000u);
+    TEST_CHECK((VJO_GAME_OCR_S_ALL & 0xE00000u) == 0xE00000u && !(0xE00000u & VJO_GAME_OCR_S_SHOT_ALL));
     r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate, (API 36) the border rule, (API 42) the
-                                   * head gate and the two-level head, (API 43) trust: known */
+                                   * head gate and the two-level head, (API 43) trust, (API 50) the line finder's
+                                   * fixes: known */
     uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;

@@ -15,8 +15,9 @@
  *    policy asks (and no workspace for them);
  *  - off: a job on the model of rows gives today's job exactly. Its text, greedy text, frames, every
  *    line's stats, the workspace and the strips read hash to the figures this file's off part gives when
- *    built against main cbaa4e3 (before vertical text; VJO_TEST_OFF_ONLY, which leaves the rest out; main
- *    93647d3's are the same; 1de7b67's, before the head gate's runtime, were other workspace figures), on a
+ *    built against main 796168e (before vertical text; VJO_TEST_OFF_ONLY, which leaves the rest out) with the
+ *    runtime API 50 pins, vita-vn-ocr f8a1856 (cbaa4e3's and 93647d3's with 47cf3a3 were other workspace
+ *    figures, as were 1de7b67's before the head gate's runtime), on a
  *    5-line region and on host/fixtures/short_line/textbox.pgm (#194's box), greedy and with the LM.
  * This makes no claim about accuracy: the tiny models read nothing real. */
 #define main acutest_main
@@ -27,6 +28,7 @@
 #include "vocr.h"
 #include "vocr_lm.h"
 #include "vocr_lines.h"
+#include "vocr_lines_fix.h"
 #include "vocr_ocr.h"
 #ifndef VJO_TEST_OFF_ONLY
 #include "vocr_vertical.h"
@@ -445,6 +447,7 @@ static void on_line(void *ud, const VjoVocrLineInfo *info)
 
 typedef struct {
     int lm, line, helpers, cache, refine, short_lines, cascade, gate, check;
+    unsigned fix; /* API 50: VjoVocrPolicy.line_fix */
 } JobOpts;
 
 /* A pool of real threads (VjoVocrPool): one per line a helper runs, joined. */
@@ -508,6 +511,7 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
     pol.short_lines = o->short_lines;
 #ifndef VJO_TEST_OFF_ONLY
     pol.vertical_check = o->check; /* API 47, auto */
+    pol.line_fix = o->fix;         /* API 50 */
     static VjoVocrGateResident gate_res; /* its weights: from the models' directory when a gate test put them there
                                            * (put_gate_file); without them the gate cannot decide */
     if (o->gate) {
@@ -561,19 +565,21 @@ static uint64_t job_hash(int rc, const char *text, const char *raw, const VjoVoc
 }
 
 /* ------------------------------------------------------------ off: today's job of rows */
-/* The figures main cbaa4e3's core gives (this file with -DVJO_TEST_OFF_ONLY, built against that tree and the
- * runtime it pins, vita-vn-ocr 47cf3a3; main 93647d3's, before #328, the same): each job's hash. Main 1de7b67's,
- * before API 42's runtime grew the recognizer's structs, were others (the workspace is in the hash). */
+/* The figures main 796168e's core gives (this file with -DVJO_TEST_OFF_ONLY, built against that tree) with the
+ * runtime API 50 pins, vita-vn-ocr f8a1856, whose structs are 32 B larger each on the host: each job's hash. With
+ * 47cf3a3's runtime, main cbaa4e3's (and 93647d3's) were 0xe2572f2fa151c0bb, 0x6c64d803e5ffa2ce,
+ * 0x28c1fae31b586636, 0xa5a1fa4ab4c5f221, 0x8cc063648a0972b0 and 0x6b01f34572b1decd, and main 1de7b67's, before
+ * API 42's runtime grew the recognizer's structs, others again (the workspace is in the hash). */
 static const struct {
     const char *what;
     uint64_t hash;
 } golden[] = {
-    {"5 lines greedy", 0xe2572f2fa151c0bbull},
-    {"5 lines lm", 0x6c64d803e5ffa2ceull},
-    {"5 lines lm, 2 helpers", 0x28c1fae31b586636ull},
-    {"short line greedy", 0xa5a1fa4ab4c5f221ull},
-    {"short line lm, refined, short lines", 0x8cc063648a0972b0ull},
-    {"one big row greedy", 0x6b01f34572b1decdull},
+    {"5 lines greedy", 0x4beb0f827b4d1cf8ull},
+    {"5 lines lm", 0xa3cbeb10390eca0eull},
+    {"5 lines lm, 2 helpers", 0xad426afa695e38b5ull},
+    {"short line greedy", 0x410ea20474246fe1ull},
+    {"short line lm, refined, short lines", 0xecdb0a6d61cd98f0ull},
+    {"one big row greedy", 0x554d56d0195a578dull},
 };
 
 static int load_pgm(const char *path)
@@ -1105,6 +1111,48 @@ static void test_auto_check(void)
             TEST_CHECK(!(st.line[k].flags & VJO_VOCR_LINE_COLUMN));
     }
 }
+
+/* API 50 beside auto: a box drawn around four columns and a speaker's name 40 px to their left (two band
+ * heights). The column fix joins each row's parts across that gap, and its joined rows do not look vertical; the
+ * frozen finder's rows do, and in a region at least as tall as wide the check takes those (core/vocr_ocr.c):
+ * vertical text still, with the fix on. A region of horizontal rows reads with the fix. */
+static void test_auto_check_with_the_line_fix(void)
+{
+    static const unsigned glyphs[4] = {6, 4, 7, 3};
+    static unsigned char grey[280u * 300u], arena[1u << 20];
+    char text[VJO_OCR_TEXT_CAP];
+    VjoVocrStats st;
+    VocrLineSet frozen, fixed;
+    setup_files();
+    vjo_vocr_resident_drop(&res);
+    draw_columns(280, 300, 4, glyphs, 20, 26, 20, 225);
+    column(280u - 20u - 4u * 38u - 40u - 20u, 8, 4, 20, 26, 9, 225); /* the name */
+    /* the premise, on the region's grey rows: the frozen rows look vertical, the fixed rows do not */
+    TEST_ASSERT(strip(NULL, 0, rh, grey, rw, VJO_STRIP_FIRST | VJO_STRIP_LAST) == (int)rh);
+    VocrLinesImage g = {grey, rw, rh, rw, VOCR_LINES_GREY};
+    memset(&frozen, 0, sizeof frozen);
+    memset(&fixed, 0, sizeof fixed);
+    TEST_ASSERT(vocr_find_lines(&g, VOCR_LINES_TEXTBOX_RECOVERY, arena, sizeof arena, &frozen) == 0);
+    TEST_ASSERT(vocr_find_lines_fix(&g, VOCR_LINES_TEXTBOX_RECOVERY, VOCR_FIX_DEFAULT, arena, sizeof arena, &fixed) == 0);
+    TEST_CHECK_(vjo_vocr_rows_vertical(frozen.lines, frozen.count, rw, rh) &&
+                    !vjo_vocr_rows_vertical(fixed.lines, fixed.count, rw, rh),
+                "frozen %u rows, fixed %u rows", frozen.count, fixed.count);
+    JobOpts o = {.check = 1, .fix = VOCR_FIX_DEFAULT};
+    int rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    TEST_CHECK_(rc == VJO_E_VERTICAL && !st.recognized && !st.model_loaded, "rc %d, %u read", rc, st.recognized);
+    o.check = 0; /* without the check: the fixed rows, read */
+    rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    TEST_CHECK_(rc == VJO_OK && st.lines == fixed.count, "rc %d, %u rows (fixed %u)", rc, st.lines, fixed.count);
+    /* horizontal rows in a wide region, checked, with the fix: read as without the check */
+    draw_rows();
+    o.check = 1;
+    rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    unsigned checked = st.lines, read_checked = st.recognized;
+    o.check = 0;
+    int rc2 = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    TEST_CHECK_(rc == VJO_OK && rc2 == VJO_OK && checked == st.lines && read_checked == st.recognized && checked >= 2,
+                "rc %d / %d, %u / %u rows", rc, rc2, checked, st.lines);
+}
 #endif /* VJO_TEST_OFF_ONLY */
 
 TEST_LIST = {
@@ -1121,6 +1169,7 @@ TEST_LIST = {
     {"the text-presence gate never runs on columns (recognize's guard)", test_gate_never_runs_on_columns},
     {"auto: the rule on the row finder's rows, vertical and horizontal, and its edges", test_rows_vertical_rule},
     {"auto: rows of vertical text read nothing (VJO_E_VERTICAL); horizontal rows are today's job", test_auto_check},
+    {"API 50 with auto: a tall box's rows checked as the frozen finder finds them, then read with the fix", test_auto_check_with_the_line_fix},
 #endif
     {NULL, NULL}
 };

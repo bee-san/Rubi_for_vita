@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT 47cf3a3f9a0d8398d742b98b81f5fb85fe11a9ae)
+set(VJO_VOCR_COMMIT f8a1856c1b21bf41af744c159b54ce8203408a89)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -31,18 +31,22 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # a blob's head gate calls blank (vita-vn-ocr #120, VjoVocrPolicy.head_gate) and computes
 # its rare rows only where a blob's two-level head needs them (#122, VjoVocrPolicy.two_level);
 # since #123 it also parses width strides up to 3 (stride-12 blobs; none is pinned) and
-# refuses a kernel narrower than its stride. Its gate and two-level code is #122's (fb63532).
+# refuses a kernel narrower than its stride. Its gate and two-level code is #122's (fb63532). Since #130
+# (VOCR6's stage-3 candidate) it also runs a light global-attention op (op type 5) in a blob that has one; no
+# pinned blob has one, and every other blob reads bit for bit as before.
 # vocr_vertical.c (vita-vn-ocr #99, merged by #103 and unchanged since: the same
 # file at this pin) finds the columns of vertical text (GRAD on the region's
 # transpose, right to left) and turns a column 90 degrees anticlockwise for the
 # vertical recognizer (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text").
 set(_vocr_pins
-  vocr.c 83cb778c482853d43bd2c361818793efdb9e9dcb50a6fff3c14f9fcf2e39ffda
-  vocr.h a2fbed39216433dff01a44dd8b3ed0838c613f2aee4afe16a652dd2d3429297e
+  vocr.c e2d43c501e8cec076fd21539feb03b1178bb920cc85782cba0e6422c66d9cd60
+  vocr.h c9670efd980a993f98307e6093ca17c7595f64a09c11a3d4c7bb6cea84993de5
   vocr_lines.c 90c30a1c1e1707b818c2bd919243ee589700ff44ceac8b8d7a842b9d55d8d9ca
   vocr_lines.h 4f768c9a7aaa1f9e3b8f16990be23c3b098b675cf6316df7eb20dc6198b9f37d
   vocr_lines_rows.c 3207edb85d1cd7c79899390bb2ee028839dd120ca5d2278a28edd5fa9ca2ee6e
   vocr_lines_rows.h 60967239238df1ecca767e95c9c752f4c0b9efba097a59034ae2326717ad3465
+  vocr_lines_fix.c 242a0a9eacaf38dc901eb35c54639f69c94cc0419eeb36467dfc74ab79c70fb4
+  vocr_lines_fix.h d28af14903e1604006edbb75dc5d939ac845651220fa661c0e7fc7a1cec9efe4
   vocr_lm.c 89e0494caf22090cab52131b8b9d489a26085300b61e59855cb9a0d4074dbd05
   vocr_lm.h 6d314c7fbc74c240b4e6d70c0dc0a9e1c98fcb196ecd6bc1aa2ccf5c8fb9fb86
   vocr_lines_refine.c f4fb08aa995379c5ee9cb746307ed2c2d357574d71e5556f2b40d8ce1584e797
@@ -76,9 +80,11 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # newlib, which SceShell plugins link without.
 # vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
 # (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
+# vocr_lines_fix.c (vita-vn-ocr #129, API 50) is vocr_lines_rows.c with the line finder's fixes behind flags
+# (core/vocr_ocr.h VjoVocrPolicy.line_fix); flags 0 give vocr_lines_rows.c's lines bit for bit.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c" "${_vocr_rt}/vocr_post.c"
-  "${_vocr_rt}/vocr_vertical.c")
+  "${_vocr_rt}/vocr_lines_fix.c" "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c"
+  "${_vocr_rt}/vocr_post.c" "${_vocr_rt}/vocr_vertical.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)

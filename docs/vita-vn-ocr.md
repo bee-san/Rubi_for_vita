@@ -1318,6 +1318,72 @@ updates:
    [vita-memory.md](vita-memory.md), [offline-testing.md](offline-testing.md),
    [settings-readability.md](settings-readability.md), [anki.md](anki.md), `README.md`'s credits and the CHANGELOG.
 
+## Line finder fixes (API 50)
+
+```ini
+ocr_line_fix = on   ; off: the frozen finder; junk: also drop frame strips (regions with a margin); all: also split touching rows
+```
+
+The finder cuts a region into lines before anything is read, and most of the whole-dialogue errors come from that
+cut, not from reading (vita-vn-ocr #119). bee-san/vita-vn-ocr#129 measured it on the owner's hooked corpus (#125),
+46,805 native PS Vita and PSP pages whose line boxes and text come from the game itself. It found three common
+failures and fixed each behind a flag in `runtime/vocr_lines_fix.c` (vita-vn-ocr `docs/finder-fix.md`):
+
+| flag | what | `ocr_line_fix` |
+|---|---|---|
+| `VOCR_FIX_COLGAP` | a line's parts across a full-width space (after ！ or ？) stay one line; the frozen finder kept only the heavier part and read the rest as a line of its own, or not at all | on, junk, all |
+| `VOCR_FIX_JUNK` | a line on the region's top or bottom edge under 70% of the tallest other line's height (a frame strip, a cut neighbour), and a line spanning the region that repeats itself (an ornament), are dropped | junk, all |
+| `VOCR_FIX_VALLEY` | a band of two touching rows (heavy outlines, tight leading) is split at its valley | all |
+
+`on` is `VOCR_FIX_DEFAULT` (COLGAP), the step #129's pre-registered rule adopted and that holds whether a region is
+drawn with a margin or tight. `off` is the frozen finder, bit for bit (vita-vn-ocr's `make check-lines-fix`). The
+flags reach the finder in `VjoVocrPolicy.line_fix`.
+
+**What it does, measured in vita-vn-ocr.** These are host numbers through Rubi main's path (`eval/pagepath.py`, #131),
+with VOCR5-N W8I, the 1 MB LM, the cascade, `core/textnorm.c` and the line filter, in the console view (PSP frames
+2×). Every figure is whole-dialogue CER with a 95% cluster-bootstrap interval.
+
+| regions | `off` (Rubi before) | `on` | `junk` |
+|---|---:|---:|---:|
+| hval: other pages of 46 hooked train titles, drawn with a 12-20 px margin (6,327) | 3.875% | **3.292%** (−0.583 [−0.926, −0.309]) | 1.898% |
+| development: 93 other VNs (1,161) | 3.036% | **2.340%** (−0.696 [−1.262, −0.249]) | 2.325% |
+| hval, cut tight at the lines' union (2,109) | 2.570% | 1.933% (−0.637 [−1.022, −0.340]) | 2.391% |
+| development, cut 1 px around the ink (387) | 3.110% | 2.123% (−0.986 [−1.852, −0.362]) | 2.727% |
+| the hooked test title, read for report only | 1.241% | 0.978% | 0.978% |
+
+VOCR5-S and VOCR5-L move the same way with `on`: hval 3.22% → 2.64% and 3.92% → 3.34%.
+
+`junk` is not the default.
+- **Where it helps.** On regions drawn with a margin it removes frame strips and ornaments: −1.395 points on hval.
+  Most of that is one game whose dotted ornament reads as text.
+- **Where it hurts.** On regions drawn tight, as this guide recommends, it drops real dialogue lines: tight hval
+  +0.458 [−0.007, +1.451] and tight development +0.603 [0.000, +1.938] against `on`. The cases are a textured box,
+  an edge line shorter than a furigana line, and an inline name.
+
+Use `junk` for a game whose box frame or ornament is read as text, with a region drawn a few pixels outside the
+text. `all` also splits two touching rows. That fixes Narcissu (13.65% → 2.76% on hval), but it made one development
+game worse, so it is opt-in too.
+
+- **The request.** `VJO_GAME_OCR_S_LINE_FIX` (speed bit 21), `VJO_GAME_OCR_S_LINE_JUNK` (bit 22) and
+  `VJO_GAME_OCR_S_LINE_VALLEY` (bit 23). Bit 17 is closed draft #271's; bits 18 and 19 are the head gate's and the
+  two-level head's (API 42), and bit 20 is trusted hooks' (API 43). The Shell sets them in
+  the user's jobs; the self-test's stages and shots never carry them, so the self-test reads with the frozen finder
+  as before.
+- **Memory.** There is no new allocation. The fixes use the finder's own arena (`vocr_lines_arena_bytes` is
+  unchanged), with no heap and no recursion; the deepest call chain is 8 B deeper (vita-vn-ocr's audit). The worker
+  links `vocr_find_lines_fix_rows` in place of `vocr_find_lines_rows`: +1,256 B of code at -O2 (vita-vn-ocr's
+  measurement, VitaSDK gcc 15.2.0, Thumb-2). The module pages are given in the PR and checked by the memory ledger.
+- **Time.** On the host the finder takes the same time with `on` (426 / 424 µs per hval region, best of 7). `on`
+  reads 0.6-0.7% more CTC frames, because a line's parts stay together. That is an estimate; nothing of it has run
+  on a console.
+- **The host tool.** `vjo-ocr --line-fix on|junk|all` reads a region as the worker does with the setting.
+
+**To test on console.**
+- A line with a full-width space after ！: one line with `on`, two parts with `off`.
+- A box whose frame or ornament touches the region, with `junk` and a margin.
+- A Narcissu page with `all`.
+- The job time with the setting on and off.
+
 ## Models
 
 **The default size, Normal, is VOCR5-N (`VOCR5_N_w8g2.vocr`); Small is VOCR5-S
@@ -1416,7 +1482,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 47cf3a3f9a0d8398d742b98b81f5fb85fe11a9ae  # #123's merge (after #122's, #120's, #112's, #111's, #101's, #85's, #83's and #82's): the two-level head, the head gate, the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout f8a1856c1b21bf41af744c159b54ce8203408a89  # #135's merge (after #130's, #123's, #122's, #120's, #112's, #111's, #101's, #85's, #83's and #82's): the line finder fixes, the attention op (unused by the pinned blobs), the two-level head, the head gate, the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").

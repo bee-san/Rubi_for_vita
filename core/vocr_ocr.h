@@ -585,6 +585,12 @@ typedef struct {
      * returns VJO_E_VERTICAL, and the caller reads the region's columns with the model of columns. 0: off,
      * exactly as before; a model of columns ignores it. */
     int vertical_check;
+    /* API 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.h): VOCR_FIX_* flags for
+     * vocr_find_lines_fix_rows, the finder with COLGAP (a line's parts across a full-width space stay one line; the
+     * default), JUNK (frame strips on the region's top or bottom edge and repeating ornaments are not lines; opt-in,
+     * as it can drop a text line in a region drawn tight) and VALLEY (two touching rows split; opt-in). The same
+     * arena, rows and dark flags as vocr_find_lines_rows. 0: the frozen finder, exactly as before. */
+    unsigned line_fix;
 } VjoVocrPolicy;
 #define VJO_VOCR_COUNTER_TAU 6000
 #define VJO_VOCR_COUNTER_OPEN 4000

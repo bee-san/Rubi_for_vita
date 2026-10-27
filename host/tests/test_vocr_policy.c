@@ -13,6 +13,7 @@
 #include "../../include/vjo_vocr_sizes.h"
 #include "vocr_lines.h"
 #include "vocr_lines_refine.h"
+#include "vocr_lines_fix.h"
 #include "vocr_textgate.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -1821,6 +1822,63 @@ static void test_a_short_last_line_is_read(void)
 }
 
 
+/* API 50: the line finder's fixes (vita-vn-ocr #129) reach the finder through VjoVocrPolicy.line_fix. A line of six
+ * glyphs, a gap of three glyph widths (wider than the frozen finder's column gap of two band heights) and three
+ * more: the frozen finder (line_fix 0) keeps only the heavier part, VOCR_FIX_COLGAP the whole line (vita-vn-ocr's
+ * runtime/tests/test_vocr_lines_fix.c draws the same line). */
+#define LF_W 640u
+#define LF_H 120u
+static unsigned char lf_rgba[LF_W * LF_H * 4];
+static void lf_glyphs(unsigned x0, unsigned y0, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++)
+        for (unsigned y = 0; y < 20; y++)
+            for (unsigned x = 0; x < 20; x++)
+                if (x % 4u < 2u || y % 6u == 0u || y == 19u) {
+                    unsigned char *q = lf_rgba + ((size_t)(y0 + y) * LF_W + x0 + i * 24u + x) * 4;
+                    q[0] = q[1] = q[2] = 220;
+                }
+}
+static unsigned lf_job(unsigned line_fix)
+{
+    VjoRgbaImage rgba = {lf_rgba, LF_W, LF_H, (size_t)LF_W * 4};
+    VjoGreySource src;
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    VjoVocrStats st = {0};
+    VjoVocrPolicy pol = {.blank = 1, .blank_edges = 20000, .line = sl_record, .line_fix = line_fix};
+    size_t job = vjo_vocr_job_bytes("FL10_w8.vocr", LF_W, LF_H);
+    unsigned char *ws = NULL;
+    char text[64];
+    vjo_grey_source_rgba(&rgba, &src);
+    src.line_buffer = refine_line_buffer;
+    p.file_open = no_file;
+    p.now_us = now;
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, job) == 0);
+    sl_n = 0;
+    TEST_CHECK(vjo_vocr_ocr_policy(&p, "missing", "FL10_w8.vocr", &src, &res, ws, job, capture,
+                                   vjo_vocr_capture_bytes(LF_W, LF_H), &pol, text, sizeof(text), &st) == VJO_OK);
+    free(ws);
+    TEST_CHECK_(st.lines == sl_n, "%u lines found, %u read", st.lines, sl_n);
+    return st.lines;
+}
+static void test_the_line_fix_keeps_a_line_across_a_wide_gap(void)
+{
+    const unsigned second = 20u + 6u * 24u + 60u, end = second + 2u * 24u + 20u;
+    for (size_t i = 0; i < sizeof(lf_rgba); i += 4) {
+        lf_rgba[i] = lf_rgba[i + 1] = lf_rgba[i + 2] = 24;
+        lf_rgba[i + 3] = 255;
+    }
+    lf_glyphs(20, 40, 6);
+    lf_glyphs(second, 40, 3);
+    TEST_CHECK(lf_job(0) == 1);                                   /* the frozen finder: the heavier part only */
+    TEST_CHECK_(sl_n == 1 && sl_got[0].x + sl_got[0].w < second, "line at %u,%u %ux%u", sl_got[0].x, sl_got[0].y,
+                sl_got[0].w, sl_got[0].h);
+    TEST_CHECK(lf_job(VOCR_FIX_DEFAULT) == 1);                    /* COLGAP: one line, the whole of it */
+    TEST_CHECK_(sl_n == 1 && sl_got[0].x <= 20 && sl_got[0].x + sl_got[0].w >= end, "line at %u,%u %ux%u",
+                sl_got[0].x, sl_got[0].y, sl_got[0].w, sl_got[0].h);
+}
+
 /* API 26: the text-presence gate (vita-vn-ocr #100). Its weights are the pinned file in VJO_VOCR_GATE_TEST_DIR
  * (cmake/VocrGate.cmake); without it the tests that need them are skipped (TEST_SKIP, before any check).
  * Diagonal stripes are no text, though the finder finds a line in them: with the gate the job keeps no line and
@@ -2434,6 +2492,7 @@ TEST_LIST = {
      test_the_cascade_rereads_a_gated_counter_line},
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
     {"a_short_last_line_is_read", test_a_short_last_line_is_read},
+    {"the_line_fix_keeps_a_line_across_a_wide_gap", test_the_line_fix_keeps_a_line_across_a_wide_gap},
     {"the_gate_stops_a_region_without_text", test_the_gate_stops_a_region_without_text},
     {"the_gate_decides_after_a_wait_on_a_one_strip_region", test_the_gate_decides_after_a_wait_on_a_one_strip_region},
     {"the_gate_keeps_the_lines_without_its_weights", test_the_gate_keeps_the_lines_without_its_weights},
