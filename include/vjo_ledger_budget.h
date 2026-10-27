@@ -451,6 +451,11 @@
  * segments 41740+77732 B (debug), 36904+76044 B (normal), rounded 122880/118784 B.
  * Measured with VitaSDK GCC 15.2.0, Release, local minimal-build kernel-measure-ledger.json reports;
  * binary sizes only, console boot/free-pool impact unverified. */
+/* API 51, a trusted answer's capture on another scene (kernel/game_ocr.c VJO_ROWS_HOOK): text 41,444 -> 41,508 B
+ * (debug) and 36,356 -> 36,380 B (normal), data/bss unchanged (77,732 and 76,044 B), the same pages [measured:
+ * arm-vita-eabi-size on both builds' VitaJPOverlay_Kernel, main 892cfb9 and this change, tools/fast_gate.sh's
+ * vitasdk image]. No block, thread or allocation; the worker's API 43 strip is now taken only on a region without a
+ * screen yet. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else
