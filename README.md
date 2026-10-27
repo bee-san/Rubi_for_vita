@@ -176,7 +176,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | Page | Setting | Default |
 | --- | --- | --- |
 | Games | Each game ON or OFF, and **Default** ON or OFF ([details](docs/guide.md#per-game-settings)) | ON |
-| | **Line finder** for one game (hold Enter on it): how its text box is cut into lines, `config.ini`'s `ocr_line_fix` for that game alone, such as **All** for Narcissu, whose rows touch ([details](docs/guide.md#a-games-own-page)) | Default (`config.ini`'s, On) |
+| | **Line finder** for one game (hold Enter on it): what cuts its text box into lines, the spotter or Rubi's finder with its fixes (`config.ini`'s `ocr_finder` and `ocr_line_fix` for that game alone), for a game the spotter reads worse ([details](docs/guide.md#a-games-own-page)) | Default (`config.ini`'s, the spotter) |
 | OCR & lookup | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
 | | **Read text**: Automatically (when it changes), or Only when I press L + R | Automatically |
 | | **Speed boost while reading (444 MHz)** | ON |

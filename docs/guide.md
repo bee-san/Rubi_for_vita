@@ -496,7 +496,7 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Touch Prev / Next | Change the five-game page; the page number is shown between them |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
 | Enter or touch a game | Toggle OCR and overlay input for that game, as the button or the finger is let go |
-| Hold Enter, or a touch, on a game for half a second | Open [the game's own page](#a-games-own-page): its ON/OFF and its **Line finder**. The selected game's card says "Hold ×: settings" (○ on a console whose Enter is ○) |
+| Hold Enter, or a touch, on a game for half a second | Open [the game's own page](#a-games-own-page): its ON/OFF and its **Line finder** (the spotter, or Rubi's finder with its fixes). The selected game's card says "Hold ×: settings" (○ on a console whose Enter is ○) |
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
@@ -682,24 +682,28 @@ Hold Enter, or a touch, on a game in the list for half a second: its page opens,
 settings (#333). A shorter press or tap still turns the game ON or OFF, as it is let go.
 
 - **Rubi in this game**: its ON or OFF, as on the list.
-- **Line finder**: how the OCR cuts this game's text box into lines, `config.ini`'s `ocr_line_fix` for this game
-  alone ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)). **Default** (the start) uses `config.ini`'s,
-  `on` unless you changed it; **Off**, **On**, **Junk** and **All** are the setting's four values. The card says what
-  the chosen one does, or what Default gives this game.
+- **Line finder**: what cuts this game's text box into lines, `config.ini`'s `ocr_finder` and `ocr_line_fix` for this
+  game alone. **Default** (the start) uses `config.ini`'s: the text spotter unless you changed it. **Spotter** is
+  vita-vn-ocr's text spotter ([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-54)). **Off**, **On**,
+  **Junk** and **All** are Rubi's own finder (`ocr_finder = grad`) with that `ocr_line_fix`
+  ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)). The card says what the chosen one does, or what
+  Default gives this game.
 
 Up/Down select a setting; Left/Right or Enter choose (Enter goes round the line finder's choices); touch a choice to
 take it; Cancel goes back to the list, and Select or a tab to another page. A choice is saved at once and applies
-when the game next starts or resumes, as its ON/OFF does; the list then shows `Line finder: All` (for example) on
-the game's card.
+when the game next starts or resumes, as its ON/OFF does; the list then shows `Line finder: On` (for example) on the
+game's card.
 
-Which games want which: **All** splits two rows of text that touch, which the other values read as one line. On the
-owner's hooked Narcissu (PSP, `ULJM05674`) pages, whose heavy outlines and tight leading make rows touch, it took the
-whole-dialogue error from 13.65% with `on` to 2.76% (bee-san/vita-vn-ocr#129: host, measured through Rubi's path with
-VOCR5-N, the Normal model before VOCR6). That split's whole gain on the hooked games was in Narcissu; on the others it
-can cut a tall line in two, and All made two development games worse than `on`. **Junk** helps only boxes drawn with
-a margin and can drop a real line in a tight one. So `on` stays the default for every game, Rubi has no list of games
-that get another value, and a game gets one only when you choose it. Draw the box a few pixels outside the text for
-Junk and All.
+Which to choose: keep **Default** unless a game reads badly. The spotter is the measured best overall, and on Narcissu
+too, whose rows touch. On the owner's hooked pages (host, measured: VOCR5-N, the 1 MB LM and the cascade, regions drawn
+with a margin; counted from the per-page records of the runs behind vita-vn-ocr #129 and #149, the spotter as #149
+chose it, before its weights were trained again with these pages), Narcissu (`ULJM05674`) read with 63 errors in 4,959
+characters with the spotter, 137 with All, and 677 with On. Over the 46 hooked games the spotter made 2,135 errors in
+162,471 characters (1.31%), All 2,445 (1.50%), Junk 3,083 (1.90%), On 5,349 (3.29%) and Off 6,296 (3.88%); on 93 other
+games' screenshots 0.97% against All's 1.50% and On's 2.34%. On 17 of the 46 games and 23 of the 93, one of Rubi's
+finder's values made fewer errors than the spotter (the best of the four, picked on the same pages), by up to 35
+errors a game: such a game is the one to give **On** (or another value) here. Draw the box a few pixels outside the text for Junk and All, which can drop a real
+line in a box drawn tight. Rubi has no list of games that get another value: a game gets one only when you choose it.
 
 PSP games follow the same rows as their ON/OFF. A bubble's own choice applies to it; without one it takes the line
 finder of the shared row **Adrenaline / PSP games without a setting of their own** (`NPXS10028`), and without that,
@@ -707,13 +711,14 @@ finder of the shared row **Adrenaline / PSP games without a setting of their own
 game it is, so give the game a bubble for a choice of its own.
 
 The choices are kept in `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one line a game in `games.ini`'s form
-(`ULJM05674 = all`), with a backup (`ocr_line_fix.ini.bak`) as `games.ini` has: the app reads it after a save that
-was cut short, and its next save puts the file back. They are not in `games.ini` itself: earlier builds read that
-file strictly, and a line they do not know would make it unreadable to them (its backup's choices, or every game
-OFF). A file the app cannot read (a line edited by hand that is not one of the four values, say) is left as it is,
-and the page says so; the Shell then uses `config.ini`'s value for every game. The game's start line in `log.txt`
-names the value its jobs use: `game ULJM05674 started: trigger l+r, subtitles select+r, ocr_mode auto,
-ocr_line_fix all`. Not run on a console yet.
+(`PCSG00001 = on`; the values are `spotter`, `off`, `on`, `junk` and `all`), with a backup (`ocr_line_fix.ini.bak`)
+as `games.ini` has: the app reads it after a save that was cut short, and its next save puts the file back. They
+are not in `games.ini` itself: earlier builds read that file strictly, and a line they do not know would make it
+unreadable to them (its backup's choices, or every game OFF). A file the app cannot read (a line edited by hand that
+is not one of the five values, say) is left as it is, and the page says so; the Shell then uses `config.ini`'s line
+finder for every game. The game's start line in `log.txt` names what its jobs use: `game PCSG00001 started: trigger
+l+r, subtitles select+r, ocr_mode auto, ocr_finder grad, ocr_line_fix on` (with the spotter, `ocr_line_fix` is its
+fallback's). Not run on a console yet.
 
 ## Settings and dictionaries
 
@@ -864,8 +869,9 @@ much on regions drawn tight.
 - `all` is `junk` plus a split of two touching rows (Narcissu), so it is for regions drawn with a margin too.
 - `off` is the frozen finder
   ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)).
-- A game can have its own value, which replaces this one in its jobs: the **Line finder** on
-  [its page in the Rubi app](#a-games-own-page) (#333), for a game such as Narcissu that wants `all`.
+- A game can have its own line finder, which replaces `ocr_finder` and `ocr_line_fix` in its jobs: the **Line
+  finder** on [its page in the Rubi app](#a-games-own-page) (#333), for a game that reads better with Rubi's finder
+  than with the spotter.
 
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
