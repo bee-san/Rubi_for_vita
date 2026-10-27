@@ -1371,8 +1371,10 @@ VOCR5-S and VOCR5-L move the same way with `on`: hval 3.22% → 2.64% and 3.92% 
   an edge line shorter than a furigana line, and an inline name.
 
 Use `junk` for a game whose box frame or ornament is read as text, with a region drawn a few pixels outside the
-text. `all` also splits two touching rows. That fixes Narcissu (13.65% → 2.76% on hval), but it made one development
-game worse, so it is opt-in too.
+text. `all` is `junk` plus a split of two touching rows. On regions drawn with a margin it is the best of the four
+(hval 1.505%, development 1.497%), and it fixes Narcissu (13.65% → 2.76% on hval). But it makes two development
+games worse than `on` (v10972 38 → 70 errors, v6985 6 → 7), and it carries `junk`'s loss on regions drawn tight
+(not measured for `all` itself), so it is opt-in too.
 
 - **The request.** `VJO_GAME_OCR_S_LINE_FIX` (speed bit 21), `VJO_GAME_OCR_S_LINE_JUNK` (bit 22) and
   `VJO_GAME_OCR_S_LINE_VALLEY` (bit 23). Bit 17 is closed draft #271's; bits 18 and 19 are the head gate's and the
@@ -1384,8 +1386,8 @@ game worse, so it is opt-in too.
   links `vocr_find_lines_fix_rows` in place of `vocr_find_lines_rows`: +1,256 B of code at -O2 (vita-vn-ocr's
   measurement, VitaSDK gcc 15.2.0, Thumb-2). The module pages are given in the PR and checked by the memory ledger.
 - **Time.** On the host the finder takes the same time with `on` (426 / 424 µs per hval region, best of 7). `on`
-  reads 0.6-0.7% more CTC frames, because a line's parts stay together. That is an estimate; nothing of it has run
-  on a console.
+  reads 0.6-0.7% more CTC frames on hval and development (host, measured), because a line's parts stay together.
+  What that costs on the console is an estimate; nothing of it has run on a console.
 - **The host tool.** `vjo-ocr --line-fix on|junk|all` reads a region as the worker does with the setting.
 
 **To test on console.**
@@ -1692,6 +1694,23 @@ copied, and the settings above. Close other apps first.
    `off` goes in the report with its photo. A line such as CLANNAD's 「九ヶ月です」 should read the same every way
    (the counter re-read), and no job should be refused for memory at your usual free memory (a first Normal or
    Large job takes 4 KiB more).
+10. **Line finder fixes (API 50).** With `ocr_line_fix = on` (the default):
+    - **Start and memory.** A game that is ON still starts; the worker holds 8 KiB more of it than before API 50. No
+      job is refused for memory at your usual free memory (`game vocr memory:` shows `check passed`).
+    - **A line with a full-width space** after ！ or ？: it reads as one line. `game vocr lines:` lists one crop
+      for it, and the shown text has the whole line. With `off` (reload the settings) the same line gives two
+      crops, or loses its second part. Photograph the shown text both ways.
+    - **`off` is the frozen finder.** On five other lines, the `game vocr lines:` crops with `off` are those of a
+      build before API 50 (test.19, API 47).
+    - **`junk`.** A box whose frame or ornament touches the region, with the region drawn a few pixels outside
+      the text: with `on`, the strip shows up as a crop of its own in `game vocr lines:` (and maybe as stray
+      text); with `junk` that crop is gone and the dialogue lines are unchanged.
+    - **`all`.** On a Narcissu (PSP) page, the two touching rows give two crops in `game vocr lines:` and the
+      shown text both lines.
+    - **Vertical text.** In a vertical game with `ocr_vertical = auto`, a box drawn around the columns and the
+      speaker's name still reads as columns (the log's find step of kind 2, the lines marked as columns).
+    - **Time.** Note `find=` and `recognize=` in the `game vocr rc=` line with `on` and with `off` on the same
+      five lines: the finder's time should not change, and recognition only by the frames of the joined parts.
 
 ## Limits
 

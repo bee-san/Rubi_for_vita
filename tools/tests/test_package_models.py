@@ -438,7 +438,7 @@ class PackageModels(unittest.TestCase):
             else:
                 self.assertEqual(got, value, key)
         # every setting the template has is classified as core/config.c parses it (ocr_refine_lines = off | on | psp,
-        # API 42's ocr_head_gate = off | gate | two_level | on and API 43's ocr_line_fix = off | on | junk | all are
+        # API 42's ocr_head_gate = off | gate | two_level | on and API 50's ocr_line_fix = off | on | junk | all are
         # choices, kept as the template writes them)
         self.assertEqual({k for k in template if template[k] in ("on", "off") and k not in ("ocr_refine_lines",
                                                                                             "ocr_head_gate",

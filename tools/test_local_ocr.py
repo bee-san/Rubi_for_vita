@@ -33,9 +33,9 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         pixels = tmp/'input.rgba'
-        def run(im, model=args.model):
+        def run(im, model=args.model, extra=()):
             pixels.write_bytes(im.tobytes())
-            cmd = [args.cli] + (['--backend', 'vocr'] if args.backend == 'vocr' else [])
+            cmd = [args.cli] + (['--backend', 'vocr'] if args.backend == 'vocr' else []) + list(extra)
             return subprocess.run(cmd + [str(model), str(im.width), str(im.height), str(pixels)],
                                   text=True, capture_output=True, timeout=60)
         result = run(image)
@@ -89,6 +89,16 @@ def check_vocr(run, image, many):
     parts = stat(result.stderr, 'weights') + stat(result.stderr, 'scratch')
     assert used == workspace + capture and 0 <= workspace - parts < 16384, result.stderr
     assert capture < 64 * 1024 and used < 2 * 1024 * 1024, result.stderr
+    # API 50: the first line cut at a gap between two glyphs (column 235) and its parts set 80 px apart, as a
+    # full-width space after ！ leaves them. --line-fix on (vita-vn-ocr #129's column fix) reads it as one line;
+    # the frozen finder keeps only its first part.
+    one = image.crop((0, 0, image.width, 46))
+    gap = Image.new('RGBA', (one.width + 80, one.height + 20), (0, 0, 0, 255))
+    gap.paste(one.crop((0, 0, 235, one.height)), (0, 10))
+    gap.paste(one.crop((235, 0, one.width, one.height)), (315, 10))
+    on, off = run(gap, extra=['--line-fix', 'on']), run(gap)
+    assert on.returncode == 0 and LINES[0] in on.stdout and 'lines=1' in on.stderr, (on.stdout, on.stderr)
+    assert off.returncode == 0 and LINES[0] not in off.stdout, (off.stdout, off.stderr)
 
 
 if __name__ == '__main__':
