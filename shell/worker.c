@@ -1741,7 +1741,9 @@ static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) = WAIT_HINT_TEXT;
 /* API 52: the same, and the pause (docs/game-pause.md), while ocr_pause is off in a game it works in: it reads the
  * region from one frame, which an animated icon cannot change. Never in the PSP emulator's process (game_static_fb),
  * where the kernel refuses it. */
-static const char WAIT_HINT_PAUSE[] VJO_DATA_TABLE(WAIT_HINT_PAUSE) =
+/* test/combined: in .rodata (the code segment), not the data segment: with every draft the normal Shell's data pages
+ * were full (69,888 B in 69,632), its code pages had room (SceShell's pages may only shrink: AGENTS.md rule 1) */
+static const char WAIT_HINT_PAUSE[] =
     WAIT_HINT_TEXT " Or turn on Pause the game to read in the Rubi app.";
 /* API 52: the active game is the PSP emulator's (VJO_GAME_STATIC_FB, activate_game): no pause, so no WAIT_HINT_PAUSE */
 static int game_static_fb;
@@ -2376,7 +2378,8 @@ static void on_cursor_done(void)
  * the open overlay says why it waits from WAIT_HINT_AFTER on (#358,
  * start_job_kind). */
 #ifdef VJO_WITH_VOCR
-static const char SCREEN_MOVING_LOG[] VJO_DATA_TABLE(SCREEN_MOVING_LOG) =
+/* test/combined: in .rodata, as WAIT_HINT_PAUSE (the data pages full with every draft) */
+static const char SCREEN_MOVING_LOG[] =
     "ocr: the screen changed under every read of %d jobs in a row, the last with %u line(s) recognized and not "
     "shown: an animated icon or a moving picture in the region? (docs/text-stability.md)";
 #endif

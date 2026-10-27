@@ -124,7 +124,7 @@
  * the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. This is #355's: #354 merged first, as 51.
  * 53: test/combined, the combined test build (v0.9.8-test.3 on; never merged, never main's): main's API 51 with
  * every open draft: #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS), #355's API 52 (speed bit 30,
- * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE) and #318 (no interface change). v0.9.8-test.1 was 51 and
+ * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE), #318 and #359 (no interface change). v0.9.8-test.1 was 51 and
  * test.2 was 52 (with main's 50); main has 51 (#354) and #355's branch 52, so this build takes 53, a number no
  * other build has. With the characters' places a job selects without API 43's trusted answers (game_ocr/main.c):
  * it recognizes to place a hook's text. */
