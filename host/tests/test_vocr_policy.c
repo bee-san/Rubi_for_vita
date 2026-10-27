@@ -320,7 +320,8 @@ static void test_never_still_times_out_once(void)
     TEST_CHECK_(scr.clock - t0 <= 400000u + 7u * FRAME_US, "the job took %llu us (budget 400000)",
                 (unsigned long long)(scr.clock - t0));
     TEST_CHECK(!st.settled && st.settle_timeout && st.watched && st.read_anyway && st.lines == 1);
-    TEST_CHECK(st.settle_us >= 400000 && st.settle_us < 400000 + 150000u + 12u * FRAME_US);
+    TEST_CHECK_(st.settle_us >= 400000 && st.settle_us < 400000 + 12u * FRAME_US, "waited %u us",
+                (unsigned)st.settle_us); /* (no grace past the budget since audit-rubi-spinner F1) */
     TEST_MSG("waited %u us, tries %u, %u finder runs, read anyway %u", (unsigned)st.settle_us, st.tries,
              st.watch_looks, st.read_anyway);
 }

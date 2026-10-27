@@ -13,8 +13,8 @@ import json
 import subprocess
 import sys
 
-# the press's wait (1 s) and the read anyway's grace (150 ms and a finder's run), the recognition, the cascade's
-# re-reads and the Shell's retry pace: generous; a regression shows nothing at all
+# the press's wait (1 s), the read anyway's looks once read (up to 3 x ocr_settle_ms and two finder's runs), the
+# recognition, the cascade's re-reads and the Shell's retry pace: generous; a regression shows nothing at all
 MAX_SHOW_MS = 6000
 
 

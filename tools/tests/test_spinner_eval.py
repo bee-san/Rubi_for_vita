@@ -89,6 +89,15 @@ class Summary(unittest.TestCase):
         rs = [result("a", "still", text="あいうえお"), result("a", "spin", text="あいう")]
         self.assertEqual(se.summary(rs, 20000)["scenarios"]["spin"]["chars_missed_vs_still"], 2)
 
+    def test_a_line_read_before_it_was_whole_counts_as_shorter(self):
+        # the still text's beginning, shorter: a line read half typed (audit-rubi-spinner F1's rule); another text, or
+        # one that differs early, is not
+        rs = [result(r, "still", text="あいうえおかきくけこ") for r in "abcd"]
+        rs += [result("a", "spin", text="あいうえお"), result("b", "spin", text="かきくけ"),
+               result("c", "spin", text="あいうえおかきくけこ"), result("d", "spin", text="あXうえお")]
+        s = se.summary(rs, 20000)["scenarios"]["spin"]
+        self.assertEqual((s["shorter_than_still"], s["same_text_as_still"]), (1, 1))
+
 
 if __name__ == "__main__":
     unittest.main()

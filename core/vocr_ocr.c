@@ -504,7 +504,8 @@ static uint32_t clock_us(const VjoPlatform *p)
  * the tear check look at the found lines' own pixels only. */
 #define WATCH_OFF 0
 #define WATCH_ON 1     /* a row's checksum over the lines' columns decides; a change elsewhere sends the finder again */
-#define WATCH_ANYWAY 2 /* the wait's limit passed with the lines found alike twice: their own changes are no tears */
+#define WATCH_ANYWAY 2 /* the lines are read anyway (the wait's limit, or a line that changed under the last try or
+                          after the line phase confirmed it): their own changes are no tears */
 /* A job finds its lines again from a new first pass at most this many times while it waits (each time the finder
  * found other lines than the ones watched: text that types out, a page that changes); then a change is a tear. */
 #define WATCH_FINDS 8u
@@ -1018,8 +1019,8 @@ static int wait_lines(Stream *s, const Finder *f)
  *    then a change is a tear).
  *  - The budget spent while the lines' own pixels kept changing (an icon the finder takes into a line, a picture
  *    moving behind the text): the try's lines (the watched ones if alike, lines_alike loose) are read anyway, their
- *    changes no tears any more. Once read, the finder must find them alike again, settle_us after they were found at
- *    the earliest, as the stable-text wait's span (recognize's final look). */
+ *    changes no tears any more. Once read, the finder must find them alike again, twice settle_us after they were found
+ *    at the earliest, the span of the stable-text wait and its check (recognize's final look). */
 static int watch_verify(Stream *s, const Finder *f, const VocrLineSet *set, const VocrLineSet *raw)
 {
     const int confirmed = s->confirmed && s->have_spans;

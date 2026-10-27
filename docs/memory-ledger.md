@@ -77,33 +77,36 @@ code to the game worker and a log line to the Shell, and no block, thread or all
 row states' place in the job's capture block (its size, `vjo_vocr_capture_bytes`, unchanged), the finder's runs its own
 arena in the job's workspace. On the worker's stack (32 KiB) the job's frame grows from 1,512 to 2,616 B (`run_job`,
 with the line sets it watches) and a finder's run takes `look_alike`'s 360 B on its way [measured: `arm-vita-eabi-gcc
--Os -fstack-usage`, the build's flags]. In the Shell the log line's string is in the data segment (`VJO_DATA_TABLE`);
-its code is `note_screen_changed`'s call.
+-Os -fstack-usage`, the build's flags]. In the Shell the log line's string (164 B) is in the data segment
+(`VJO_DATA_TABLE`), its code `note_screen_changed`'s call. Main `8081241` (#360) left the debug Shell 28 B of code room
+and 168 B of data room: the call sits where the streak is still in a register and the pace's zero is folded into its
+shift (the same waits), and the string has no pointer to these docs, so the Shell's pages stay as they are.
 
 **One budget is raised: the worker's module pages, by one page in each build** (`VJO_BUDGET_WORKER_MODULE_PAGES`
 200,704 → 204,800 B debug, 192,512 → 196,608 B normal: 4,096 B more in each game that is ON, in the game's partition
-only). The watch's 2,640 B of worker text did not fit the 1,368 B (debug) and 2,140 B (normal) that main `e2c49ee`'s
-worker left in its last text page. `core/vocr_ocr.c` is built `-Os` already. Besides the recognizer's runtime, the
-worker's code still at `-O2` is the JPEG encoder (`-O2` by its own choice), the arena, the hook text decoder and
-Luna's table code, whose capture runs inside the game's hooked function: their objects' text is 3,142 B smaller at
-`-Os` [measured: the four objects at `-O2` and `-Os`, the debug build's flags], other features' code and speed, not
-this change's to trade. `VJO_LIMIT_GAME_JOB` is kept, as API 47's and API 50's pages kept it (the job's worst case
-does not count the module's pages). The module rows [measured: the build log's module rows, VitaSDK 2026.08
-(`tools/fast_gate.sh`'s image), main `e2c49ee` and this change rebased on it, both builds]:
+only). The watch's 2,640 B of worker text did not fit the 1,368 B (debug) and 2,140 B (normal) that main's worker left
+in its last text page (`e2c49ee`'s: #368's SC3 text and six hook entries). `core/vocr_ocr.c` is built `-Os` already.
+Besides the recognizer's runtime, the worker's code still at `-O2` is the JPEG encoder (`-O2` by its own choice), the
+arena, the hook text decoder and Luna's table code, whose capture runs inside the game's hooked function: their
+objects' text is 3,142 B smaller at `-Os` [measured: the four objects at `-O2` and `-Os`, the debug build's flags],
+other features' code and speed, not this change's to trade. `VJO_LIMIT_GAME_JOB` is kept, as API 47's and API 50's
+pages kept it (the job's worst case does not count the module's pages). The module rows [measured: the build log's
+module rows, VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main `8081241` and this change rebased on it, both
+builds]:
 
-| Module | main `e2c49ee` | this change | pages |
+| Module | main `8081241` | this change | pages |
 |---|---:|---:|---:|
 | worker, debug | 162,472 + 35,872 B | 165,112 + 35,872 B | 200,704 → 204,800 B |
 | worker, normal | 153,508 + 35,856 B | 156,148 + 35,856 B | 192,512 → 196,608 B |
-| Shell, debug | 102,140 + 73,408 B | 102,172 + 73,592 B | 176,128 B both |
-| Shell, normal | 90,020 + 73,416 B | 90,036 + 73,608 B | 163,840 B both (exact) |
+| Shell, debug | 102,372 + 73,560 B | 102,388 + 73,720 B | 176,128 B both |
+| Shell, normal | 90,020 + 73,416 B | 90,036 + 73,584 B | 163,840 B both (exact) |
 | kernel | 43,356 + 77,764 B (debug), 38,204 + 76,076 B (normal) | the same | 122,880 / 118,784 B |
 
-With the page the debug worker keeps 2,824 B of its last text page and the normal worker 3,596 B; the normal Shell
-76 B of code room (92 B before) and 120 B of data room (312 B). Of the worker's text, `core/vocr_ocr.c` is 2,594 B
-(17,886 → 20,480 B at `-Os`: `run_job` 6,852 → 7,856 B, the row checks' `stream_read` 684 → 996 B, `lines_alike`
-410 B, `relook` 200 B, `hold_still` 186 B, `watch_pause` 124 B and smaller helpers); the rest is the step's kind in
-`game_ocr/main.c`.
+With the page the debug worker keeps 2,824 B of its last text page and the normal worker 3,596 B. The debug Shell
+keeps 12 B of code room and 8 B of data room, the normal Shell 76 B and 144 B. Of the worker's text, `core/vocr_ocr.c`
+is 2,594 B (17,886 → 20,480 B at `-Os`: `run_job` 6,852 → 7,856 B, the row checks' `stream_read` 684 → 996 B,
+`lines_alike` 410 B, `relook` 200 B, `hold_still` 186 B, `watch_pause` 124 B and smaller helpers); the rest is the
+step's kind in `game_ocr/main.c`.
 
 ## Why the overlay waits (#358)
 

@@ -355,11 +355,11 @@
  * below. */
 /* #353, the stable-text wait's line watch (core/vocr_ocr.c: the watched lines' checksums, the finder's looks, reading
  * anyway; game_ocr/main.c's step kind): one text page more in both builds, in the game's partition only, in every game
- * that is ON. On main e2c49ee the debug build's text 162,472 -> 165,112 B (2,824 B of room), 200,704 -> 204,800 B of
- * pages, the normal build's 153,508 -> 156,148 B (3,596 B), 192,512 -> 196,608 B; data/bss unchanged (35,872 and
- * 35,856 B) [measured: the build log's module rows, both builds, main e2c49ee and this change, tools/fast_gate.sh's
- * vitasdk image]. Its 2,640 B of text (core/vocr_ocr.c 17,886 -> 20,480 B, already -Os) did not fit the 1,368 / 2,140 B
- * main left. Besides the recognizer's runtime, the worker's code still at -O2 is the JPEG encoder (-O2 by its own
+ * that is ON. On main 8081241 (whose worker is e2c49ee's) the debug build's text 162,472 -> 165,112 B (2,824 B of
+ * room), 200,704 -> 204,800 B of pages, the normal build's 153,508 -> 156,148 B (3,596 B), 192,512 -> 196,608 B;
+ * data/bss unchanged (35,872 and 35,856 B) [measured: the build log's module rows, both builds, main 8081241 and this
+ * change, tools/fast_gate.sh's vitasdk image]. Its 2,640 B of text (core/vocr_ocr.c 17,886 -> 20,480 B, already -Os)
+ * did not fit the 1,368 / 2,140 B main left. Besides the recognizer's runtime, the worker's code still at -O2 is the JPEG encoder (-O2 by its own
  * choice, above), the arena, the hook text decoder and Luna's table code, whose capture runs inside the game's hooked
  * function: their objects' text is 3,142 B smaller at -Os [measured: the four objects at -O2 and -Os, the debug build's
  * flags], other features' code and speed, not this change's to trade. The job's limit is kept, as API 47's and API 50's

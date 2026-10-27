@@ -98,7 +98,7 @@ job, of both modes. Nothing is recognized until every row of the region has read
   16 recent states, a picture moving in the box), and a job whose rows changed while it read its lines
   after the wait had held: the job watches its found lines' own pixels from then on, reads them anyway
   at the limit, and has the finder look at them again twice `ocr_settle_ms` after it found them: lines
-  that typed on meanwhile end the job, and the next one reads them (#353,
+  that typed on meanwhile by more than a quarter of their height end the job, and the next one reads them (#353,
   [text-stability.md](text-stability.md#animated-icons-and-moving-pictures-353)).
 
 **Reading before the line has finished.** A typewriter pause longer than the window (150 ms and about

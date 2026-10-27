@@ -2402,28 +2402,29 @@ static void on_cursor_done(void)
  * second in a row SCREEN_RETRY_MS later, doubling up to SCREEN_RETRY_MAX_MS;
  * a job that reads its screen ends the run. #353: the third in a row says so in
  * the log (both builds), with the lines its game worker had recognized and that
- * are not shown (the string in the data segment: the normal Shell's code room);
- * the open overlay says why it waits from WAIT_HINT_AFTER on (#358,
- * start_job_kind). */
+ * are not shown (for the Shell's code room: the string in the data segment, the
+ * call where the streak is still in a register, and the pace's zero folded into
+ * its shift, the same waits); the open overlay says why it waits from
+ * WAIT_HINT_AFTER on (#358, start_job_kind). */
 #ifdef VJO_WITH_VOCR
 static const char SCREEN_MOVING_LOG[] VJO_DATA_TABLE(SCREEN_MOVING_LOG) =
-    "ocr: the screen changed under every read of %d jobs in a row, the last with %u line(s) recognized and not "
-    "shown: an animated icon or a moving picture in the region? (docs/text-stability.md)";
+    "ocr: the screen changed under every read of 3 jobs in a row, the last with %u line(s) recognized and not "
+    "shown: an animated icon or a moving picture in the region?";
 #endif
 static void note_screen_changed(const char *what)
 {
-    uint32_t wait_ms = screen_changed_streak ? SCREEN_RETRY_MS << (screen_changed_streak - 1) : 0;
+    uint32_t wait_ms = SCREEN_RETRY_MS * ((1u << screen_changed_streak) >> 1); /* 0, then doubling */
     if (wait_ms > SCREEN_RETRY_MAX_MS)
         wait_ms = SCREEN_RETRY_MAX_MS;
     if (screen_changed_streak < 8)
         screen_changed_streak++;
+#ifdef VJO_WITH_VOCR
+    if (screen_changed_streak == 3) /* (the network thread's result: read after job_done) */
+        vjo_log(SCREEN_MOVING_LOG, (unsigned)vocr_result.recognized);
+#endif
     screen_retry_until = now_us() + (int64_t)wait_ms * 1000;
     vjo_dlog("%s dropped: the screen changed under it (%d in a row), next try in %u ms", what,
             screen_changed_streak, (unsigned)wait_ms);
-#ifdef VJO_WITH_VOCR
-    if (screen_changed_streak == 3) /* (the network thread's result: read after job_done) */
-        vjo_log(SCREEN_MOVING_LOG, screen_changed_streak, (unsigned)vocr_result.recognized);
-#endif
 }
 
 /* A refresh ended (#81 request 4). Whatever happened, the shown text stays
