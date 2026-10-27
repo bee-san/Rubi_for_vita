@@ -819,7 +819,7 @@ static void test_config(void)
     vjo_config_parse(&c, hg, strlen(hg));
     TEST_CHECK(c.ocr_head_gate == VJO_HEAD_GATE && c.n_warnings == 2); /* no ocr_two_level key: unknown, warned */
     TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_head_gate = on\n") != NULL);
-    /* API 48: the line finder's fixes, on by default (vita-vn-ocr #129's measured default); off; junk; all */
+    /* API 50: the line finder's fixes, on by default (vita-vn-ocr #129's measured default); off; junk; all */
     vjo_config_defaults(&c);
     TEST_CHECK(c.ocr_line_fix == 1 && VJO_LINE_FIX_DEFAULT == 1);
     static const struct { const char *text; int want, warnings; } fixes[] = {

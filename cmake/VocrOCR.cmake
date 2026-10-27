@@ -80,7 +80,7 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # newlib, which SceShell plugins link without.
 # vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
 # (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
-# vocr_lines_fix.c (vita-vn-ocr #129, API 48) is vocr_lines_rows.c with the line finder's fixes behind flags
+# vocr_lines_fix.c (vita-vn-ocr #129, API 50) is vocr_lines_rows.c with the line finder's fixes behind flags
 # (core/vocr_ocr.h VjoVocrPolicy.line_fix); flags 0 give vocr_lines_rows.c's lines bit for bit.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
   "${_vocr_rt}/vocr_lines_fix.c" "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c"

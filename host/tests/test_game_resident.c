@@ -188,7 +188,7 @@ int vocr_find_lines_rows(const VocrLinesRows *src, int mode, void *arena, size_t
     for (unsigned i = 0; i < spy_lines; i++) out->lines[i] = (VocrLine){10, 2 + 3*i, 180 - 10*i, 3, 0};
     return VOCR_LINES_OK;
 }
-/* API 48: the job's finder is the fixed one (vita-vn-ocr #129); its spy records the flags and finds as above */
+/* API 50: the job's finder is the fixed one (vita-vn-ocr #129); its spy records the flags and finds as above */
 static unsigned spy_line_fix = ~0u;
 int vocr_find_lines_fix_rows(const VocrLinesRows *src, int mode, unsigned fix, void *arena, size_t bytes,
                              VocrLineSet *out)

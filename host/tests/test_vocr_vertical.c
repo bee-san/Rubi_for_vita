@@ -16,7 +16,7 @@
  *  - off: a job on the model of rows gives today's job exactly. Its text, greedy text, frames, every
  *    line's stats, the workspace and the strips read hash to the figures this file's off part gives when
  *    built against main 796168e (before vertical text; VJO_TEST_OFF_ONLY, which leaves the rest out) with the
- *    runtime API 48 pins, vita-vn-ocr f8a1856 (cbaa4e3's and 93647d3's with 47cf3a3 were other workspace
+ *    runtime API 50 pins, vita-vn-ocr f8a1856 (cbaa4e3's and 93647d3's with 47cf3a3 were other workspace
  *    figures, as were 1de7b67's before the head gate's runtime), on a
  *    5-line region and on host/fixtures/short_line/textbox.pgm (#194's box), greedy and with the LM.
  * This makes no claim about accuracy: the tiny models read nothing real. */
@@ -563,7 +563,7 @@ static uint64_t job_hash(int rc, const char *text, const char *raw, const VjoVoc
 
 /* ------------------------------------------------------------ off: today's job of rows */
 /* The figures main 796168e's core gives (this file with -DVJO_TEST_OFF_ONLY, built against that tree) with the
- * runtime API 48 pins, vita-vn-ocr f8a1856, whose structs are 32 B larger each on the host: each job's hash. With
+ * runtime API 50 pins, vita-vn-ocr f8a1856, whose structs are 32 B larger each on the host: each job's hash. With
  * 47cf3a3's runtime, main cbaa4e3's (and 93647d3's) were 0xe2572f2fa151c0bb, 0x6c64d803e5ffa2ce,
  * 0x28c1fae31b586636, 0xa5a1fa4ab4c5f221, 0x8cc063648a0972b0 and 0x6b01f34572b1decd, and main 1de7b67's, before
  * API 42's runtime grew the recognizer's structs, others again (the workspace is in the hash). */

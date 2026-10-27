@@ -181,7 +181,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--counters")) counters = !strcmp(argv[i+1], "on");
         else if (!strcmp(argv[i], "--head-gate")) head_gate = !strcmp(argv[i+1], "on");
         else if (!strcmp(argv[i], "--two-level")) two_level = !strcmp(argv[i+1], "on");
-        else if (!strcmp(argv[i], "--line-fix")) /* API 48: off | on (VOCR_FIX_DEFAULT) | junk (+ JUNK) | all (+ VALLEY) */
+        else if (!strcmp(argv[i], "--line-fix")) /* API 50: off | on (VOCR_FIX_DEFAULT) | junk (+ JUNK) | all (+ VALLEY) */
             line_fix = !strcmp(argv[i+1], "all") ? (unsigned)(VOCR_FIX_DEFAULT | VOCR_FIX_JUNK | VOCR_FIX_VALLEY) :
                        !strcmp(argv[i+1], "junk") ? (unsigned)(VOCR_FIX_DEFAULT | VOCR_FIX_JUNK) :
                        !strcmp(argv[i+1], "on") ? (unsigned)VOCR_FIX_DEFAULT : 0u;

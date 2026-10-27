@@ -2022,7 +2022,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             s->gate_next = 0;
         }
     }
-    /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h). API 48: the rows with
+    /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h). API 50: the rows with
      * pol->line_fix's fixes; 0 is vocr_find_lines_rows exactly (vita-vn-ocr's check-lines-fix) */
     rc = cols ? vocr_find_columns_rows(&region, mi->finder_mode & 0xFFu, ws + l->scratch_off, l->finder, &set)
               : vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, pol->line_fix, ws + l->scratch_off,

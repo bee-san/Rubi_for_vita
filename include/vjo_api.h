@@ -102,11 +102,12 @@
  * VJO_HOOK_LINE_TRUSTED, which always wakes the Shell and makes the line's scene VjoState.hook_scene (a new field
  * at the end: the struct is 4 bytes longer); vjoOcrCaptureRows' VJO_ROWS_HOOK publishes a trusted answer's capture
  * as that scene without reading pixels. API numbers on main only grow: 47 is #335's (vertical text) and 48
- * #330's (the line finder). */
- * 48: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
+ * #330's (the line finder).
+ * 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
  * (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT, _JUNK, _VALLEY), VjoVocrPolicy.line_fix, config.ini ocr_line_fix.
- * Sizes and layouts are unchanged. 47's note kept 44 for it; it merged after 47, so it is 48. */
-#define VJO_API_VERSION 48
+ * Sizes and layouts are unchanged. This is #330: 47's and 49's notes kept 44 and then 48 for it, and it merged
+ * after 49, so it is 50. */
+#define VJO_API_VERSION 50
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

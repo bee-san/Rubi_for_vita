@@ -133,7 +133,7 @@ typedef struct {
     /* Vertical text (vita-vn-ocr #99, API 47; docs/vita-vn-ocr.md "Vertical text"): VJO_VERTICAL_*, the
      * request's VJO_GAME_OCR_S_VERTICAL field as it is (include/vjo_game_ocr.h). Last, as above. */
     int ocr_vertical;
-    /* Local OCR (vocr, API 48): the line finder's fixes (bee-san/vita-vn-ocr #129; core/vocr_ocr.h
+    /* Local OCR (vocr, API 50): the line finder's fixes (bee-san/vita-vn-ocr #129; core/vocr_ocr.h
      * VjoVocrPolicy.line_fix): 1 (on, the default) its measured default, VOCR_FIX_DEFAULT (COLGAP); 2 (junk) also
      * the frame-strip rule, for regions drawn with a margin; 3 (all) also the touching-rows split; 0 (off) the
      * frozen finder. Last, as above. */

@@ -11,7 +11,7 @@
  * shows it (core/textfilter.c). API 47's vertical text (ocr_vertical): off reads rows; on reads the region's
  * columns with the vertical model (VJO_VOCR_VERTICAL_NAME), no cascade and no refinement; auto reads rows
  * checked first (VjoVocrPolicy.vertical_check) and, where they look like vertical text, the columns as on: the
- * worker's retry (game_ocr/main.c, VJO_E_VERTICAL). API 48's line finder fixes (ocr_line_fix): --line-fix on is
+ * worker's retry (game_ocr/main.c, VJO_E_VERTICAL). API 50's line finder fixes (ocr_line_fix): --line-fix on is
  * the worker's default (VOCR_FIX_DEFAULT), junk and all add JUNK and VALLEY; without the option the rows are the
  * frozen finder's, as they were when API 47's figures were measured.
  *
@@ -266,7 +266,7 @@ static int run_one(const Setup *su, const VjoPlatform *plat, const VjoVocrModel 
     pol.counter_tau = VJO_VOCR_COUNTER_TAU;
     pol.counter_open = VJO_VOCR_COUNTER_OPEN;
     pol.head_gate = pol.two_level = su->head; /* API 42, config.ini ocr_head_gate = on */
-    pol.line_fix = cols ? 0u : su->line_fix; /* API 48, config.ini ocr_line_fix (rows only) */
+    pol.line_fix = cols ? 0u : su->line_fix; /* API 50, config.ini ocr_line_fix (rows only) */
 #if HAVE_VERTICAL
     pol.vertical_check = check;
 #endif
