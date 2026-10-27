@@ -69,12 +69,13 @@ either (`VJO_DEBUG=0` for the normal one), and the Vita3K smokes build each in i
 
 What a run leaves out (2026-10-26, `tools/ci_scope.py`, the same rules as `tools/fast_gate.sh`): a pull
 request that changes Markdown alone builds nothing; one that changes only the hooks' verified-entry table
-(`core/hook_place.c` and its suites) leaves out the tools' Python suites (label `tools`), whose programs
-have no hook table in them; and one that changes none of the package's files makes no release zip, no
-artifact and no package e2e. The normal build's `host` job leaves the suites that never read the build
-(label `variant_free`) to the debug build's. Pushes (`main`, test branches), tags and manual runs run all of
-it. The apt packages and `tools/setup_toolchain.sh`'s result come from `actions/cache`
-(`tools/ci_apt_cache.sh`, `tools/ci_toolchain_cache.sh`); a miss falls back to the mirror and the full setup.
+(`core/hook_place.c` and its suites) leaves out the tools' Python suites whose programs do not read the
+table (label `tools`: all but `tools_hook_request` and `tools_hook_farm`); and one that changes none of
+the package's files makes no release zip, no artifact and no package e2e. The normal build's `host` job
+leaves the suites that never read the build (label `variant_free`) to the debug build's. Pushes (`main`,
+test branches), tags and manual runs run all of it. The apt packages and `tools/setup_toolchain.sh`'s
+result come from `actions/cache` (`tools/ci_apt_cache.sh`, `tools/ci_toolchain_cache.sh`); a miss falls
+back to the mirror and the full setup.
 
 ### CI's Vita build in its container
 

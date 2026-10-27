@@ -294,7 +294,8 @@ static void test_taking_meets_my_other_thread(void)
 /* (#366's audit-b, F3) The job keeps A (a pin, or an agreeing stream) while C holds A's lock taking it: the keep takes
  * A's try-lock, finds it busy and keeps nothing now. C's other thread then offers: A is not kept, so it is still the
  * least recently written, busy: dropped. One slot for C. A keep without the lock landed here and let the other thread
- * pass A over as kept and take B. The next job's keep keeps A, now C's. */
+ * pass A over as kept and take B. The next pinned job's keep (a pin keeps the slot's ID, whichever caller holds it)
+ * keeps A, now C's; an agreeing stream's keep, keyed to the caller the job saw, would not (#366's audit-c, N5). */
 static void test_taking_then_kept_meets_my_other_thread(void)
 {
     setup(0);

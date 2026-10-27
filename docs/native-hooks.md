@@ -101,23 +101,25 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
   the job's do (within 2^31 new texts of each other: a stream silent for longer ranks as new). **A new caller can
   wait** while the least recently written slot stays busy: its caller off the CPU with the lock held, while the other
   callers keep every CPU busy writing. On the host's hammer test (12 callers copying text in tight loops, with new
-  ones beside them) its longest wait on three or four CPUs was 0.21-0.48 s, against 0.04-0.05 s before #366, whose
-  quick takes were then almost all of the newest stream's slot, and on one CPU about 0.45 s for both (another run of
-  the audit's: 0.25-0.49 s against 0.05-0.16 s); callers spinning 100 µs between copies, 0.18 s against 0.05 s; with
-  callers that sleep between copies (1 ms, 100 µs, a frame) it waited no longer than before (at most 17 ms). Passing a
-  busy slot over would end the wait, but it gave callers with two or more threads two slots (223 to 3,880 times in 20
-  runs of 500 ms, against none), and the second one keeps the text it was taken with; so a busy oldest slot still
-  drops the hit. Should a caller still hold two slots, the job takes the newer of them for the learned source, the one
-  its caller writes (`hooks_snapshot`, #366's audit-b): before, it took the last in ID order, so with trust it showed
-  the second slot's old line on every job, without OCR. The console's rate of string copies with every slot taken is
-  unmeasured. A stream that agreed with OCR, and a stream pinned by a diagnostic request, is kept (`vjo_hooks_keep`,
-  from the job path): never given to another caller. Both keep it under the slot's try-lock (busy: at the next such
-  job), so a keep never lands while a new caller is taking the slot, where it once let that caller's other thread pass
-  the slot over as kept and take a second one (#366's audit-b). An agreeing stream is kept only while its slot still
-  holds the caller the job's snapshot saw (checked under the slot's lock), so a slot another caller took during the
-  job is not kept for the new one. The job's result says `VJO_HOOK_R_CALLS_FULL` (0x40 in `hook_flags`, the debug
-  log's `flags`) once a caller found every slot taken (`vjo_hooks_call_stats`: hits dropped for lack of a slot,
-  callers that replaced one).
+  ones beside them; three measurements: the author's and #366's two audits') its longest wait on three or four CPUs
+  was 0.15-0.49 s, against 0.04-0.16 s before #366, whose quick takes were then almost all of the newest stream's
+  slot, and on one CPU about 0.45 s for both; callers spinning 100 µs between copies, 0.12-0.18 s against 0.05-0.07 s;
+  with callers that sleep between copies (1 ms, 100 µs, a frame) at most 17 ms for both, but for one run of 40 ms
+  against 4 ms (a frame, four CPUs). Passing a busy slot over would end the wait, but it gave callers with two or more
+  threads two slots (223 to 5,980 times in 20 runs of 500 ms, two measurements, against none), and the second one
+  keeps the text it was taken with; so a busy oldest slot still drops the hit. Should a caller still hold two slots,
+  the job takes the newer of them for the learned source, the one its caller writes, whenever it can read that one
+  (`hooks_snapshot`, #366's audit-b; a busy newest slot leaves the job only the other): before, it took the last in ID
+  order, so with trust it showed the second slot's old line on every job, without OCR. The console's rate of string
+  copies with every slot taken is unmeasured. A stream that agreed with OCR, and a stream pinned by a diagnostic
+  request, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. Both keep it under the slot's
+  try-lock (busy: at the next such job), so a keep never lands while a new caller is taking the slot, where a pin
+  could let that caller's other thread pass the slot over as kept and take a second one (#366's audit-b, shown with a
+  seam test; no current Shell sends a pin: its requests carry the automatic pick or OCR's). An agreeing stream is kept
+  only while its slot still holds the caller the job's snapshot saw (checked under the slot's lock), so a slot another
+  caller took during the job is not kept for the new one. The job's result says `VJO_HOOK_R_CALLS_FULL` (0x40 in
+  `hook_flags`, the debug log's `flags`) once a caller found every slot taken (`vjo_hooks_call_stats`: hits dropped
+  for lack of a slot, callers that replaced one).
 
 No syscall, no allocation and no waiting in this path: the slot's try-lock is taken or the hit is
 dropped (and counted). Our own worker's string calls are not hooked: only the main module's imports are.
