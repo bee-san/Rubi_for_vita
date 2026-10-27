@@ -20,7 +20,8 @@
 
 #define WORKER_STACK (64 * 1024)
 
-/* Six rows (API 23 added Screenshots, API 32 their black bars, #314 Duplicates), then the 3-line status box,
+/* Seven rows (API 23 added Screenshots, API 32 their black bars, #314 Duplicates and Known words), then the 3-line
+ * status box,
  * which ends above the controls line main.c draws at y 535: the export rows' help is one line.
  * The rows are more than the room above the box: they scroll a row at a time, the selected one
  * always whole, as the OCR page's cards do (a row cut at the room's bottom shows there is more,
@@ -34,8 +35,10 @@
 #define FOOTER_H 92
 #define SCROLL_X 942
 #define SCROLL_W 6
-enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_DUPES, ROW_EXPORT, ROW_ALL, ROWS };
-static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H};
+enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_DUPES, ROW_KNOWN, ROW_EXPORT, ROW_ALL, ROWS };
+static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H, ACTION_H};
+/* The worker's jobs (`all`): the queue's export, every card's, and (#314 stage C) known_words.txt's import */
+enum { JOB_QUEUED, JOB_ALL, JOB_KNOWN };
 static int top_row; /* the first row in view */
 /* A choice row's badges (#314 Duplicates), as the OCR page's three-choice cards (main.c's Text source): from x 440,
  * 160 px apart, 152 px wide, each choice shown and the chosen one lit. */
@@ -57,6 +60,7 @@ static int writable, app_writable, selected;
 static int stick_move;          /* the left stick's move for the next frame (vjo_anki_page_stick) */
 static VjoExportCounts counts = {-1, -1};
 static int mined = -1;          /* #314: queued cards whose word an earlier card has (-1: not known) */
+static int known_n = -1;        /* #314 stage C: the known words' keys (anki_known.bin; -1: none) */
 static char note[200];          /* the page's own status (saves) */
 static int note_error;
 
@@ -110,36 +114,53 @@ static int worker_main(SceSize args, void *argp)
     sceKernelUnlockMutex(lock, 1);
     vjo_arena_init(&arena, export_mem, sizeof(export_mem));
     t0 = sceKernelGetProcessTimeWide();
-    vjo_export_run(&arena, what, &prefs, &ui, &r, msg, sizeof(msg));
+    if (what == JOB_KNOWN) { /* #314 stage C */
+        VjoKnownResult k;
+        vjo_known_import(&arena, &ui, &k, msg, sizeof(msg));
+        vjo_log("anki: known words import rc=%d: %d words, %d keys, %d not words, %d over, arena peak %u, %u ms", k.rc,
+                k.words, k.keys, k.skipped, k.over, (unsigned)arena.peak,
+                (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u));
+        sceKernelLockMutex(lock, 1, NULL);
+        snprintf(result, sizeof(result), "%s", msg);
+        result_error = k.rc != 0 || k.skipped || k.over;
+        progress[0] = '\0';
+        finished = 1;
+        sceKernelUnlockMutex(lock, 1);
+        return 0;
+    }
+    vjo_export_run(&arena, what == JOB_ALL, &prefs, &ui, &r, msg, sizeof(msg));
     vjo_log("anki: export (%s) rc=%d: %d cards, %d moved, %d kept, %d unreadable, %d too large, %d left, "
-            "%d stopped, %d swept, %u bytes, arena peak %u, %d without screenshots, %d duplicates (%s)%s, %u ms",
-            what ? "all" : "queued", r.rc, r.cards, r.moved, r.kept, r.unreadable, r.too_large, r.left, r.stopped,
+            "%d stopped, %d swept, %u bytes, arena peak %u, %d without screenshots, %d duplicates (%s)%s, %d known%s, "
+            "%u ms",
+            what == JOB_ALL ? "all" : "queued", r.rc, r.cards, r.moved, r.kept, r.unreadable, r.too_large, r.left, r.stopped,
             r.swept, (unsigned)r.bytes, (unsigned)arena.peak, r.missing_picture, r.duplicates,
-            vjo_app_prefs_value("anki_duplicates", prefs.anki_duplicates), r.unchecked ? ", not checked" : "",
-            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u));
+            vjo_app_prefs_value("anki_duplicates", prefs.anki_duplicates), r.unchecked ? ", not checked" : "", r.known,
+            r.known_unchecked ? ", known not checked" : "", (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u));
     sceKernelLockMutex(lock, 1, NULL);
     n = (size_t)snprintf(result, sizeof(result), "%s", msg);
     if (r.rc == 0 && r.cards && n < sizeof(result))
         snprintf(result + n, sizeof(result) - n, " Copy it from %s/ by VitaShell's FTP or USB (or the SD2Vita "
                  "card, when it is ux0:) and open it in Anki.", VJO_EXPORT_DIR);
-    result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture || r.unchecked;
+    result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture || r.unchecked ||
+                   r.known_unchecked;
     progress[0] = '\0';
     finished = 1;
     sceKernelUnlockMutex(lock, 1);
     return 0;
 }
 
-static void start(int every)
+/* job: JOB_QUEUED, JOB_ALL or JOB_KNOWN */
+static void start(int job)
 {
     int rc;
     if (running)
         return;
     if (lock < 0 && (lock = sceKernelCreateMutex("VjoAnkiPage", 0, 0, NULL)) < 0)
         return;
-    all = every;
+    all = job;
     job_app = app;
     finished = cancelled = 0;
-    snprintf(progress, sizeof(progress), "Reading the cards…");
+    snprintf(progress, sizeof(progress), "%s", job == JOB_KNOWN ? "Reading known_words.txt…" : "Reading the cards…");
     /* CPU3 at a system priority, as the main thread (settings/sysapp.c). */
     worker = sceKernelCreateThread("VjoAnkiExport", worker_main, 0x10000100, WORKER_STACK, 0,
                                    SCE_KERNEL_CPU_MASK_SYSTEM, NULL);
@@ -148,7 +169,8 @@ static void start(int every)
         if (worker >= 0)
             sceKernelDeleteThread(worker);
         worker = -1;
-        snprintf(note, sizeof(note), "Could not start the export (0x%08X).", (unsigned)rc);
+        snprintf(note, sizeof(note), "Could not start the %s (0x%08X).", job == JOB_KNOWN ? "import" : "export",
+                 (unsigned)rc);
         note_error = 1;
         return;
     }
@@ -172,6 +194,7 @@ static void reap(void)
     worker = -1;
     running = 0;
     vjo_export_count(&counts);
+    known_n = vjo_known_count();
     count_mined(); /* (Skip leaves the duplicates queued) */
 }
 
@@ -227,6 +250,7 @@ void vjo_anki_page_show(VjoArena *scratch)
     if (!running) {
         vjo_log_enable(cfg.log_file);
         vjo_export_count(&counts);
+        known_n = vjo_known_count();
         count_mined();
     }
 }
@@ -275,7 +299,7 @@ static void activate(int row, VjoArena *scratch)
     else if (row == ROW_DUPES) /* Enter: the next choice, round */
         set_duplicates((app.anki_duplicates + 1) % 3, scratch);
     else
-        start(row == ROW_ALL);
+        start(row == ROW_KNOWN ? JOB_KNOWN : row == ROW_ALL ? JOB_ALL : JOB_QUEUED);
 }
 
 /* Row i's top in the column (the first row's: 0), and on screen. */
@@ -323,7 +347,7 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
             ui->badge(CHOICE_X + k * CHOICE_PITCH, y + 6, CHOICE_W, 34, dupes_name[k],
                       app_writable && app.anki_duplicates == k);
         ui->text(42, y + 60, ui->dim, 24, app_writable ? dupes_help[app.anki_duplicates] : "Cannot read app.ini.");
-    } else if (i < ROW_EXPORT) {
+    } else if (i < ROW_DUPES) {
         ui->text(42, y + 30, ui->white, 28, titles[i]);
         ui->badge(812, y + 6, 108, 34, !writable ? "--" : row_on(i) ? "ON" : "OFF", writable && row_on(i));
         if (i == ROW_MINING)
@@ -333,6 +357,17 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
             snprintf(line, sizeof(line), "%s", i == ROW_SHOT ? "Each card keeps a picture of the game screen (about 60 KB)."
                                                              : "Cuts black borders from the picture (a PSP game shown small).");
         ui->text(42, y + 60, ui->dim, 24, line);
+    } else if (i == ROW_KNOWN) { /* #314 stage C: known_words.txt into the app's index */
+        int on = busy && all == JOB_KNOWN;
+        ui->text(42, y + 30, ui->white, 28, "Known words");
+        ui->badge(760, y + 6, 160, 34, on ? "Importing…" : "Import", on);
+        if (known_n > 0)
+            snprintf(line, sizeof(line), "%d known word%s: their cards get the tag known.", known_n,
+                     known_n == 1 ? "" : "s");
+        else
+            snprintf(line, sizeof(line), "%s", !known_n ? "known_words.txt had no words."
+                                                        : "Imports known_words.txt (tools/known_words.py makes it).");
+        ui->wrapped(42, y + 62, 870, ui->dim, 22, 24, 1, on ? busy_text : line);
     } else if (i == ROW_EXPORT) { /* the queued cards */
         if (counts.queued < 0)
             snprintf(line, sizeof(line), "Export cards (queue unreadable)");
@@ -341,16 +376,16 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
         else
             snprintf(line, sizeof(line), "Export cards (%d queued)", counts.queued);
         ui->text(42, y + 30, counts.queued < 0 ? ui->off : ui->white, 28, line);
-        ui->badge(760, y + 6, 160, 34, busy && !all ? "Exporting…" : "Export", busy && !all);
+        ui->badge(760, y + 6, 160, 34, busy && all == JOB_QUEUED ? "Exporting…" : "Export", busy && all == JOB_QUEUED);
         ui->wrapped(42, y + 62, 870, ui->dim, 22, 24, 1,
-                    busy && !all ? busy_text : "Writes a new .apkg; the queue clears once it is checked.");
+                    busy && all == JOB_QUEUED ? busy_text : "Writes a new .apkg; the queue clears once it is checked.");
     } else { /* every card */
         ui->text(42, y + 30, ui->white, 28, "Export all cards");
         count_text(line, sizeof(line), total, "in all");
         ui->text(500, y + 30, total < 0 ? ui->off : ui->dim, 24, line);
-        ui->badge(760, y + 6, 160, 34, busy && all ? "Exporting…" : "Export all", busy && all);
+        ui->badge(760, y + 6, 160, 34, busy && all == JOB_ALL ? "Exporting…" : "Export all", busy && all == JOB_ALL);
         ui->wrapped(42, y + 62, 870, ui->dim, 22, 24, 1,
-                    busy && all ? busy_text : "Every card again, the exported too: Anki adds only new notes.");
+                    busy && all == JOB_ALL ? busy_text : "Every card again, the exported too: Anki adds only new notes.");
     }
 }
 

@@ -62,6 +62,8 @@ typedef struct {
     int media;       /* screenshot files in it */
     int duplicates;  /* #314: cards whose word an earlier card has: tagged duplicate (Tag) or left out (Skip) */
     int unchecked;   /* #314: 1 when the duplicates could not be checked (memory): no card was tagged */
+    int known;       /* #314 stage C: cards tagged known (known_words.txt, imported on the Anki page) */
+    int known_unchecked; /* 1 when the known words could not be read (memory, a damaged index): none tagged */
     uint32_t bytes;  /* its size */
     char path[VJO_EXPORT_PATH_MAX]; /* where it is */
     char name[64];   /* its file name */
@@ -107,5 +109,38 @@ typedef struct {
 int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords *out);
 /* 1 when an earlier card (by time, then ID) than this one (its word, time and ID) has its word. */
 int vjo_words_earlier(const VjoWords *w, uint64_t key, int64_t time, const uint8_t id[16]);
+
+/* ---- known words (#314 stage C) ---- */
+
+/* ux0:data/VitaJPOverlay/known_words.txt, which tools/known_words.py writes from an Anki collection: one word a line,
+ * then (optionally) a TAB and its reading; UTF-8, a BOM, CRLF and blank lines allowed, a line whose first character
+ * (after spaces) is '#' a comment, ASCII spaces, tabs and U+3000 around each field ignored, anything after a second TAB
+ * ignored. The Anki page's Import reads it into the app's own index, anki_known.bin (the keys, sorted), which the
+ * export reads: a card of a word in it gets the tag `known`. A line with a reading matches the card of that word
+ * (vjo_word_key); a line without one, every card of that spelling (vjo_word_spelling_key). */
+#define VJO_KNOWN_PATH VJO_EXPORT_DATA_DIR "/known_words.txt"
+#define VJO_KNOWN_INDEX VJO_EXPORT_DATA_DIR "/anki_known.bin"
+#define VJO_KNOWN_MAX 65536 /* words an import keeps (512 KiB of keys at an export) */
+#define VJO_KNOWN_LINE_MAX 512 /* a longer line is no word (skipped, counted) */
+
+/* One line (n bytes, without its newline; a CR at its end is dropped): 1 a word (its key in *key), 0 a blank line
+ * or a comment, -1 not a word (an empty word, a control character or NUL, a field over VJO_KNOWN_LINE_MAX). */
+int vjo_known_line(const char *line, size_t n, uint64_t *key);
+
+typedef struct {
+    int rc;        /* VJO_OK, or why the index is as it was (VJO_E_*) */
+    int missing;   /* no known_words.txt: the index was removed (no known words) */
+    int words;     /* lines that are words */
+    int keys;      /* distinct keys in the index */
+    int skipped;   /* lines that are not words (log.txt names the first ones) */
+    int over;      /* words past VJO_KNOWN_MAX, left out */
+} VjoKnownResult;
+
+/* The Anki page's Import: known_words.txt into anki_known.bin (written under a temporary name, then in place of the
+ * old one; nothing changes when the file cannot be read or the index cannot be written). A one-sentence result in
+ * msg. Returns r->rc. */
+int vjo_known_import(VjoArena *a, const VjoExportUi *ui, VjoKnownResult *r, char *msg, size_t cap);
+/* The keys in anki_known.bin (its head only), or -1 when there is none or it is damaged. */
+int vjo_known_count(void);
 
 #endif

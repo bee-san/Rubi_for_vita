@@ -55,6 +55,19 @@ uint64_t vjo_word_key(const char *spelling, const char *reading)
     return key;
 }
 
+uint64_t vjo_word_spelling_key(const char *spelling)
+{
+    br_sha256_context h;
+    unsigned char d[32];
+    uint64_t key = 0;
+    br_sha256_init(&h);
+    fold(&h, spelling);
+    br_sha256_out(&h, d);
+    for (int i = 0; i < 8; i++)
+        key = key << 8 | d[i];
+    return key;
+}
+
 void vjo_word_key_hex(uint64_t key, char out[VJO_WORD_KEY_HEX])
 {
     static const char digits[] = "0123456789abcdef";

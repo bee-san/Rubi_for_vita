@@ -1,0 +1,10 @@
+#separator:tab
+#html:false
+猫	猫[ねこ]	ねこ			cat		猫が 好き													1234	
+部屋	部屋[へや]	へや			(Daijirin4 Plain) A room or chamber of a house.; A sumo stable.		隣の部屋で、妙に背の高い先生と話をして													9999999	SOME GAME (2026-10-11 17:11)
+猫	猫[ねこ]	ねこ			(JMdict) cat		猫が好き										[0]	heiban	Jiten: 1234	1234	SOME GAME (2026-10-11 17:11)
+犬	犬[いぬ]	いぬ			(JMdict) dog		「犬だ！」 と言った				(JMdict) dog(Daijirin4) いぬ。四足の哺乳類。									9999999	SOME GAME (2026-10-11 17:12)
+食べる	食[た]べる	たべる			"(Sankoku8) to eat <&> ""quoted"""		パンを食べた										[1]	atamadaka		9999999	SOME GAME (2026-10-11 17:12)
+犬小屋	犬小屋[いぬごや]	いぬごや			(JMdict) dog		「犬だ！」 と言った				(JMdict) dog(Daijirin4) いぬ。四足の哺乳類。									9999999	SOME GAME (2026-10-11 17:12)
+犬	犬[いぬ]	いぬ			(JMdict) dog		犬が走る				(JMdict) dog(Daijirin4) いぬ。四足の哺乳類。									9999999	SOME GAME (2026-10-11 17:12)
+本	ほん																				

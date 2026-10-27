@@ -1315,25 +1315,26 @@ class AnkiExportLines(unittest.TestCase):
 
     def test_the_app_writes_the_lines_the_analyser_reads(self):
         page = (ROOT / "settings/anki_page.c").read_text(encoding="utf-8")
-        fmt = re.search(r'vjo_log\("(anki: export \(%s\) rc=%d: [^"]*)"\s*"([^"]*)"', page)
+        fmt = re.search(r'vjo_log\("(anki: export \(%s\) rc=%d: [^"]*)"\s*"([^"]*)"(?:\s*"([^"]*)")?', page)
         self.assertIsNotNone(fmt, "settings/anki_page.c's export line moved: update LOG['anki_export']")
+        export_fmt = fmt.group(1) + fmt.group(2) + (fmt.group(3) or "")  # (its literals, joined as C joins them)
         # the app's prefix (settings/applog.c), and an earlier build's, "overlay app: " (before the Rubi rename)
         self.assertIn('snprintf(line, sizeof(line), "Rubi app: ")', (ROOT / "settings/applog.c").read_text(encoding="utf-8"))
         for prefix in ("Rubi app: ", "overlay app: "):
-            line = prefix + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000, 9,
-                                                              3, "tag", "", 4321)
+            line = prefix + export_fmt % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000, 9,
+                                                              3, "tag", "", 4, "", 4321)
             m = a.LOG["anki_export"].match(line)
             self.assertEqual([m.group(g) for g in range(1, 11)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7", "8"])
-            self.assertEqual((m.group(11), m.group(12), m.group(13), m.group(14)), ("9", "3", "tag", None))
-            # #314: Skip, and an export too large to check
-            line = prefix + (fmt.group(1) + fmt.group(2)) % ("all", 0, 5, 0, 0, 0, 0, 0, 0, 0, 1000, 2000, 0, 2, "skip",
-                                                              ", not checked", 10)
+            self.assertEqual([m.group(g) for g in range(11, 17)], ["9", "3", "tag", None, "4", None])
+            # #314: Skip, and an export too large to check, its known words' index damaged
+            line = prefix + export_fmt % ("all", 0, 5, 0, 0, 0, 0, 0, 0, 0, 1000, 2000, 0, 2, "skip",
+                                                              ", not checked", 0, ", known not checked", 10)
             m = a.LOG["anki_export"].match(line)
-            self.assertEqual((m.group(12), m.group(13), m.group(14)), ("2", "skip", ", not checked"))
+            self.assertEqual([m.group(g) for g in range(12, 17)], ["2", "skip", ", not checked", "0", ", known not checked"])
         # the app's own idea of an error, which export_result follows (#314: "not checked" is one, as a missing
         # screenshot is: the package is whole, its result line says what it lacks)
         self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture || "
-                      "r.unchecked;", page)
+                      "r.unchecked ||\n                   r.known_unchecked;", page)
         export = (ROOT / "settings/anki_export.c").read_text(encoding="utf-8")
         for words in ('"anki export: %s did not verify (%d): removed, nothing cleared"',
                       '"anki export: %s: 99 packages are named for this second already"',
@@ -1349,18 +1350,22 @@ class AnkiExportLines(unittest.TestCase):
 
     def test_duplicates_are_reported(self):
         """#314: what Duplicates did, in the export summary; a successful export with duplicates is no problem."""
-        log = (export_line(swept=0).rstrip() + ", 0 without screenshots, 2 duplicates (tag), 15 ms\n" +
-               export_line(swept=0).rstrip() + ", 0 without screenshots, 1 duplicates (skip), 9 ms\n" +
-               export_line(swept=0).rstrip() + ", 0 without screenshots, 0 duplicates (tag), not checked, 9 ms\n" +
-               export_line(swept=0).rstrip() + ", 0 without screenshots, 0 duplicates (keep), 9 ms\n")
+        log = (export_line(swept=0).rstrip() + ", 0 without screenshots, 2 duplicates (tag), 3 known, 15 ms\n" +
+               export_line(swept=0).rstrip() + ", 0 without screenshots, 1 duplicates (skip), 0 known, 9 ms\n" +
+               export_line(swept=0).rstrip() + ", 0 without screenshots, 0 duplicates (tag), not checked, 0 known, "
+                                               "known not checked, 9 ms\n" +
+               export_line(swept=0).rstrip() + ", 0 without screenshots, 0 duplicates (keep), 1 known, 9 ms\n")
         lg = a.summarise_log(log)
         an = lg["anki"]
         self.assertEqual((an["export_duplicates_tag"], an["export_duplicates_skip"], an["export_unchecked"]), (2, 1, 1))
+        self.assertEqual((an["export_known"], an["export_known_unchecked"]), (4, 1))
         self.assertEqual((an["export_ok"], lg["trouble"]), (4, {}))
         text = "\n".join(a.export_summary(an))
         self.assertIn("tagged duplicate (a word mined before): 2 card(s)", text)
         self.assertIn("left out as duplicates (Duplicates: Skip; the queued ones stay queued): 1 card(s)", text)
         self.assertIn("1 export(s) not checked for duplicates (too many cards for memory)", text)
+        self.assertIn("tagged known (known_words.txt): 4 card(s)", text)
+        self.assertIn("1 export(s) not checked for known words (anki_known.bin: see log.txt)", text)
 
     def test_recovered_text_is_reported_without_claiming_cards_stayed_queued(self):
         line = export_line(swept=0).rstrip() + ", 2 without screenshots\n"

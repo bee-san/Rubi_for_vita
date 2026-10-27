@@ -30,8 +30,9 @@ directory.
    (`anki_screenshot_trim_bars`): the picture leaves out the black borders
    around the game's picture, as a PSP game shown smaller than the screen has
    them ([black bars](#black-bars)). **Duplicates**, below it, says what an export does with a card of
-   a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)). The page's six rows
-   scroll a row at a time.
+   a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)), and **Known words**
+   imports the words you know from Anki ([below](#known-words)). The page's seven rows scroll a row at a
+   time.
 2. In a game, open the overlay, select a word and press Enter. The status line
    shows `Saving card…`, then `Saved for Anki`. Enter again on the same
    entry says `Already queued`. In a local character lookup, Enter saves
@@ -132,8 +133,8 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 
 The other fields (`ExpressionAudio`, `SelectionText`, `DefinitionPicture`,
 `SentenceAudio`, `Hint` and the `Is…Card` switches) stay empty. Every note has
-the tag `vita-jp-overlay`, and one whose word an earlier card has also `duplicate`
-([below](#duplicates)). The bundled dictionary, Bee's Ultimate Dictionary,
+the tag `vita-jp-overlay`, one whose word an earlier card has also `duplicate`
+([below](#duplicates)), and one of a word you know `known` ([below](#known-words)). The bundled dictionary, Bee's Ultimate Dictionary,
 gives every entry its Jiten global frequency rank
 ([frequency ranks](local-dictionaries.md#frequency-ranks)): a ranked entry
 fills `Frequency` and `FreqSort`; an unranked one leaves `Frequency` empty, and
@@ -202,10 +203,54 @@ card **whose word an earlier card has**:
   only ever a copy of the records (a card's ID is its record's checksum, so its word never changes). A
   missing or damaged one is rebuilt from the records; it can be deleted at any time.
 
-Nothing in the overlay changes: it marks a word only while its list is shown, as before ([#314](https://github.com/bee-san/Rubi_for_vita/issues/314)
-plans a mark for a word you have, in the popup, if it fits the Shell's pages). None of this has run on a
-console yet; the host suites check it (`test_apkg.c`, `test_settings_anki.c`, `test_anki.c` `word_key`)
-and Anki 26.09.3 imports the tag (`test_apkg.py`).
+Nothing in the overlay changes: it marks a word only while its list is shown, as before (a mark in the
+popup for a word you have, #314's stage B, does not fit the Shell's pages: [below](#not-in-the-popup)). None
+of this has run on a console yet; the host suites check it (`test_apkg.c`, `test_settings_anki.c`,
+`test_anki.c` `word_key`) and Anki 26.09.3 imports the tag (`test_apkg.py`).
+
+### Known words
+
+The words you already know are in Anki, not on the Vita. `tools/known_words.py` writes them into a file
+the Rubi app reads, and the export tags their cards `known`, so they can be found (`tag:known`) and
+suspended or deleted in Anki:
+
+1. On a computer, close Anki (or copy the collection), then
+   `python3 tools/known_words.py ~/.local/share/Anki2/"User 1"/collection.anki2`. It reads every note whose
+   note type has an `Expression` field, and its `ExpressionReading` (Lapis's, and many mining note types'):
+   `--word-field` and `--reading-field` choose others, `--deck` and `--note-type` keep some notes, and
+   `--reviewed` only those with a card that is not new. It also reads a `.colpkg` or `.apkg`, and Anki's
+   **Notes in Plain Text** export (`--word-column`, `--reading-column`). It writes `known_words.txt`.
+2. Copy it to `ux0:data/VitaJPOverlay/known_words.txt`, then on the Anki page choose **Known words**:
+   **Import**. The page says how many words it read; it keeps them in `anki_known.bin` (8 B a word), and a
+   later export tags every card of them `known` (whatever **Duplicates** says). Import again after a new
+   file; with no file, Import clears them.
+
+`known_words.txt` is one word a line, then, optionally, a TAB and its reading (UTF-8; a BOM, CRLF, blank
+lines and `#` comments allowed; spaces around a field are ignored). A line with a reading is that word
+([its key](#duplicates)); a line without one is every card of that spelling, whatever its reading. At most
+65,536 words are kept; a line that is not a word (an empty word, a control character) is skipped, and the
+page says how many were. Anki 26.09.3's own collection and its plain-text export give the same file
+(`test_apkg.py`).
+
+### Not in the popup
+
+#314's stage B, a mark in the overlay's popup for a word you have (a marker file per word written at
+Enter, and one `sceIoGetstat` after each lookup, a dim √), is not built: it needs Shell code the Shell's
+pages do not have, and AGENTS.md lets those pages only shrink. Measured on main `030c7ea` with the gate's
+pinned Vita toolchain (VitaSDK GCC 15.2.0; `tools/check_memory_ledger.py`'s module rows), a minimal version
+of it (the key and its fold linked into the Shell at `-Os`, the marker at save, the stat in both lookup
+jobs, the mark and its colour; no log line, no app-side sync) adds 840 B of text to the normal Shell and
+824 B to the debug one:
+
+| Shell | main (text + data/bss) | with the minimal stage B | pages |
+| --- | ---: | ---: | --- |
+| normal | 85,980 + 77,488 B (36 B of code room) | 86,820 + 77,488 B | 163,840 → 167,936 B: over its budget |
+| debug | 98,260 + 77,664 B (44 B of code room) | 99,084 + 77,664 B | 176,128 → 180,224 B: over its budget |
+
+Moving cold strings to the data segment, as #303, #307 and #385 did, cannot make that room: the data segment
+has 336 B (normal) and 160 B (debug) of room, and every cold Shell file is already built `-Os`. So, as #314
+planned, stage B does not merge, and the duplicate and known tags at export (above) stand alone
+([memory ledger](memory-ledger.md#duplicate-aware-mining-314-the-rubi-app-only)).
 
 ### The package
 
@@ -675,9 +720,11 @@ export (`VJO_EXPORT_MEM`: the list of cards, 32 B each for up to 20,000, the
 writers' state, about 40 KiB, and one card's work at a time) and a 64 KiB stack
 for the one worker thread that exports while the page keeps drawing. It uses no
 network. Measured on the host (`vjo-apkg-tests`, "measure:" lines): an export
-of 20,005 cards (the 20,000 a package holds, 10,182,874 B) peaked at 804,713 B of
-the 2 MiB; one of 700 cards, some with 9 KB definitions, peaked at 187,111 B and
-wrote a 606,426 B package. These are host measurements; a physical Vita has not
+of 20,005 cards (the 20,000 a package holds, 10,182,874 B) peaked at 1,121,712 B of
+the 2 MiB (804,713 B before [duplicates](#duplicates), whose check holds every card's
+word, 24 B each, while the cards are listed); one of 700 cards, some with 9 KB
+definitions, peaked at 187,111 B and wrote a 606,426 B package. An import of 65,536
+[known words](#known-words) peaks at 541,704 B. These are host measurements; a physical Vita has not
 run this code yet.
 
 ## Not included

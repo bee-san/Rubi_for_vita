@@ -85,6 +85,59 @@ class Package:
         return json.loads(self.db.execute("select models from col").fetchone()[0])
 
 
+def fold(text):
+    """core/word_key.h's fold: katakana as hiragana, the middle dot left out."""
+    out = []
+    for ch in text:
+        cp = ord(ch)
+        if cp in (0x30FB, 0xFF65):
+            continue
+        if 0x30A1 <= cp <= 0x30F6 or cp in (0x30FD, 0x30FE):
+            cp -= 0x60
+        out.append(chr(cp))
+    return "".join(out)
+
+
+def word_key(spelling, reading=None):
+    """core/word_key.c's keys: the word's (spelling TAB reading), or, without a reading, the spelling's alone."""
+    text = fold(spelling) + ("\t" + (fold(reading) or fold(spelling)) if reading is not None else "")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def known_keys(path):
+    """The app's reading of a known_words.txt (vjo-apkg-tests --known-keys): [(line, rc, key)]."""
+    out = subprocess.run([BINARY, "--known-keys", str(path)], check=True, capture_output=True, text=True).stdout
+    return [(int(a), int(b), c[0] if c else "") for a, b, *c in (line.split(" ") for line in out.splitlines())]
+
+
+class TestKnownWords(unittest.TestCase):
+    """#314 stage C: tools/known_words.py's file, read as the Rubi app reads it (settings/anki_export.c
+    vjo_known_line): every line of it a word, with the key the tool's word and reading have."""
+
+    def test_the_tools_file_is_the_apps(self):
+        tool = ROOT / "tools" / "known_words.py"
+        fixture = ROOT / "tools" / "tests" / "fixtures" / "known-words" / "anki-plain-notetype.txt"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "known_words.txt"
+            subprocess.run([sys.executable, str(tool), str(fixture), "-o", str(out)], check=True, capture_output=True)
+            lines = out.read_text(encoding="utf-8").split("\n")[:-1]
+            got = known_keys(out)
+        self.assertEqual(got[0][1], 0)  # the tool's comment line
+        self.assertEqual(len(got), len(lines))
+        for (number, rc, key), line in zip(got[1:], lines[1:]):
+            word, _, reading = line.partition("\t")
+            self.assertEqual((rc, key), (1, word_key(word, reading or None)), (number, line))
+        self.assertEqual(len(got), 7)  # the comment and six words
+
+    def test_the_apps_reading_of_odd_lines(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "known_words.txt"
+            path.write_bytes("\ufeff# mine\r\n猫\tネコ\r\n\r\n  犬  \r\n\tのみ\r\n本\tほん\textra".encode("utf-8"))
+            got = known_keys(path)
+        self.assertEqual(got, [(1, 0, ""), (2, 1, word_key("猫", "ねこ")), (3, 0, ""), (4, 1, word_key("犬")),
+                               (5, -1, ""), (6, 1, word_key("本", "ほん"))])
+
+
 class TestSqliteWriter(unittest.TestCase):
     """core/sqlw.c's files of every tree shape (vjo-apkg-tests --sqlw): one-row leaves on both sides
     of an interior page's 273 children and of two such pages, overflow chains from 4,062 bytes,
@@ -320,6 +373,14 @@ lapis = [m for m in col.models.all() if m["name"].startswith("Lapis")]
 r["own_after"] = [(x["id"] == expected["notetype_id"], x["css"] == "/* mine */", x["name"]) for x in lapis]
 r["own_notes"] = col.note_count() - 1
 col.close()
+# #314 stage C: a collection of the first package alone, closed, for tools/known_words.py, and Anki's own
+# "Notes in Plain Text" export of it
+col = new_col()
+imp(col, "first")
+col.export_note_csv(out_path=str(out / "notes.txt"), limit=None, with_html=True, with_tags=True, with_deck=True,
+                    with_notetype=True, with_guid=True)
+r["collection_path"] = col.path
+col.close()
 print(json.dumps(r, ensure_ascii=False))
 '''
 
@@ -368,6 +429,20 @@ class TestAnkiImport(unittest.TestCase):
         """#314: Anki's import keeps both tags of the duplicate note, and only vita-jp-overlay on the others."""
         self.assertEqual(self.r["dup_tags"], [["duplicate", "vita-jp-overlay"]])
         self.assertEqual(self.r["plain_tags"], [["vita-jp-overlay"]])
+
+    def test_known_words_from_ankis_own_collection(self):
+        """#314 stage C: tools/known_words.py on the collection Anki 26.09.3 made from the first package (closed
+        first, as the tool asks), and on Anki's own "Notes in Plain Text" export of it: the same words."""
+        tool = ROOT / "tools" / "known_words.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            outs = []
+            for source in (self.r["collection_path"], pathlib.Path(self.tmp.name) / "notes.txt"):
+                out = pathlib.Path(tmp) / f"known-{len(outs)}.txt"
+                subprocess.run([sys.executable, str(tool), str(source), "-o", str(out)], check=True,
+                               capture_output=True)
+                outs.append(out.read_text(encoding="utf-8").split("\n")[1:-1])
+        self.assertEqual(outs[0], outs[1])
+        self.assertEqual(sorted(outs[0]), sorted(["猫\tねこ", "犬\tいぬ", "部屋\tへや"]))
 
     def test_rendered_card(self):
         self.assertIn("猫", self.r["question"])

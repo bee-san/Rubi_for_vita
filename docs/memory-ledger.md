@@ -113,6 +113,28 @@ The worker keeps 328 B (debug) and 1,100 B (normal) of its last text page.
   before), `leave_region_mode` 8 B, the word's helpers and `vjo_rsel_preset` none (`-fstack-usage`, the normal
   build's flags without LTO).
 
+## Duplicate-aware mining (#314): the Rubi app only
+
+Duplicates and known words at export ([anki.md](anki.md#duplicates)) are the Rubi app's code and files: the Shell, the
+game worker and the kernel are byte-identical to main's, in both builds (the build log's module rows, main `3d095b4`
+and #390 at `aab20f9`: Shell 85,980 + 77,488 B normal, 98,260 + 77,664 B debug). The app's export takes, in its 2 MiB arena
+(`VJO_EXPORT_MEM`), 24 B a card for every card's word while it lists the cards (20,005 cards: 1,121,712 B at its
+peak with the package's own work, measured on the host) and 8 B a known word (65,536 at most: an import peaks at
+541,704 B, measured on the host); with more cards than that holds, it exports without the duplicate check and says so.
+
+**Stage B, a mark in the popup, does not fit.** A minimal version (the word key linked into the Shell at `-Os`, a
+marker file at Enter, one `sceIoGetstat` after each lookup, the KNOWN mark and its dim colour; no log line, no
+app-side sync), built with the gate's toolchain on main `030c7ea`:
+
+| Shell | main | minimal stage B | by symbol (normal) |
+|---|---:|---:|---|
+| normal | 85,980 + 77,488 B (36 B of code room) | 86,820 + 77,488 B: 167,936 B of pages, over the 163,840 B budget | `fold` 180, `net_main` +132, `word_marker` 124, `vjo_word_key` 116, `view_publish` +88, `do_save` +36, `render` +24 |
+| debug | 98,260 + 77,664 B (44 B of code room) | 99,084 + 77,664 B: 180,224 B of pages, over the 176,128 B budget | |
+
+The data segments have 336 B (normal) and 160 B (debug) of room, so moving cold strings there cannot pay for 804 /
+780 B of code, and every cold Shell file is already `-Os`. Rule 1 lets the Shell's pages only shrink: the stage is not
+built.
+
 ## SC3 text: MAGES' script strings (no API change)
 
 STEINS;GATE 比翼恋理のだーりん, ROBOTICS;NOTES ELITE and CHAOS;CHILD get verified entries whose text is decoded with
