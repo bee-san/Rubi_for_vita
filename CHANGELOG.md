@@ -141,7 +141,8 @@ been reported.
   labels for the fifth tab. Only the app changes: the Shell, the game worker, the kernel and the RCO are byte-identical
   to main's in both builds. Not run on a console yet.
 - A Cards page in the Rubi app (#315): **Cards: N queued** on the Anki page lists the queued cards newest first,
-  with their word, reading, game and date, a camera for a card with a picture and a mark for a word on two cards;
+  with their word, reading, game and date, a camera for a card with a picture and a mark for a word mined before
+  (the export's duplicate);
   Left/Right show the exported cards instead, read only. A card opens with its sentence (the word marked), the first
   lines of its definition and its picture. A queued card can be deleted (into `anki_queue/deleted/`, which Triangle
   empties), its sentence fixed with the keyboard (the word found again in the new text) or its picture dropped.

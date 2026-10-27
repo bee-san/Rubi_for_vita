@@ -556,7 +556,8 @@ box: they scroll a row at a time as the OCR page's cards do, a bar at the right 
 and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
 
 The **Cards page** lists the queued cards, newest first: Up/Down and the left stick choose, L/R a page of
-six, Left/Right the queue or the exported cards (read only), Square only the words on two cards, Start reads
+six, Left/Right the queue or the exported cards (read only), Square only the cards of a word mined before (the
+ones [Duplicates](anki.md#duplicates) finds), Start reads
 again, Enter opens a card (its sentence with the word marked, its definition, its picture; L/R the card before
 or after it), and Cancel goes back. On a queued card, Left/Right choose **Delete**, **Fix sentence** (the
 keyboard, on several lines; its done button saves) or **Drop picture**, and Enter does it; Delete and Drop

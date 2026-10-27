@@ -1,7 +1,8 @@
 /* The Rubi app's Cards page (#315), opened from the Anki page's Cards row: the queue's cards newest
  * first (the word, its reading, the game and the date, a camera mark for a card with a picture, a
- * mark for a word on two cards), ▲▼ and the stick to move, L/R a page; Left/Right show the exported
- * cards instead (read only: their notes may be in Anki already, and an edit would be a new note).
+ * mark for a word mined before: the export's duplicate), ▲▼ and the stick to move, L/R a page;
+ * Left/Right show the exported cards instead (read only: their notes may be in Anki already, and an
+ * edit would be a new note).
  * Enter opens a card: its sentence with the word marked, the first lines of its definition and its
  * picture, decoded when the card opens and scaled to fit (settings/card_picture.c); L/R the card
  * before or after it. A queued card can be deleted, its sentence fixed with the keyboard, or its

@@ -217,21 +217,32 @@ static int named(const char *hex)
     return unknown ? -1 : 0;
 }
 
-/* A retired queued card's picture into deleted/: the queue's, and one left in exported/ by an
- * export stopped between the card's two moves when no exported record names it. */
+/* A retired queued card's picture into deleted/, without taking one a record still names:
+ * - the same card exported too (exported/<id>.json: a removal an export could not make): the picture stays where it
+ *   is, the queue's or exported/'s, as that record's (the export reads either directory, and the sweep keeps a
+ *   picture a record names);
+ * - else the queue's goes into deleted/, and a copy an export stopped between a card's two moves left in exported/
+ *   (no record names it there) goes too: into deleted/ when the queue had none, else removed (deleted/ has its
+ *   copy), so that nothing is left where no sweep looks. */
 static int retire_picture(const char *hex)
 {
-    char path[PATH_CAP];
-    int rc = retire(Q, hex, "jpg");
+    char path[PATH_CAP], jpg[PATH_CAP];
+    int archived, queued, rc;
     at(path, X, hex, "json");
-    if (!rc && present(path) == 0) {
-        char trash[PATH_CAP];
-        at(path, X, hex, "jpg");
-        at(trash, D, hex, "jpg");
-        if (present(path) > 0 && present(trash) == 0)
-            rc = retire(X, hex, "jpg");
+    if ((archived = present(path)) != 0)
+        return archived < 0 ? VJO_E_LOCAL_IO : 0;
+    at(jpg, Q, hex, "jpg");
+    if ((queued = present(jpg)) < 0 || (rc = retire(Q, hex, "jpg")) != 0)
+        return VJO_E_LOCAL_IO;
+    at(path, X, hex, "jpg");
+    switch (present(path)) {
+    case 0:
+        return 0;
+    case 1:
+        return queued ? remove_if(path) : retire(X, hex, "jpg");
+    default:
+        return VJO_E_LOCAL_IO;
     }
-    return rc;
 }
 
 /* An intent file's name: deleted/<old>.fix. It holds the new card's ID and a line break. */
@@ -243,12 +254,30 @@ static void intent_path(char out[PATH_CAP], const char *old)
 /* An intent's outcome, after a stop or a failure: the new card there, the old one is retired
  * (steps 4-5); else the new card's files go. Then the intent goes. 0, or VJO_E_LOCAL_IO (it stays,
  * for the next try). */
-static int settle(const char *old, const char *new_id)
+static int sibling(VjoArena *a, const char *old);
+
+static int settle(VjoArena *a, const char *old, const char *new_id, int recovering)
 {
     char path[PATH_CAP], tmp[PATH_CAP + 4];
     int there = named(new_id), rc = 0;
     if (there < 0)
         return VJO_E_LOCAL_IO;
+    /* The new card's record only in deleted/, the old card queued: in a recovery, the new card was made, then changed
+     * again (an earlier build let a change's new card change before the change was settled; so may an intent that
+     * cannot be read) when a later card is queued, one of the old card's word, reading and time (a change keeps
+     * them). Without one it is no new card but an older copy: a sentence fixed back to what it was is that
+     * sentence's card again, in deleted/ since the first fix. (The page's Delete waits for this change.) */
+    if (!there && recovering) {
+        int queued, copy;
+        at(path, Q, old, "json");
+        queued = present(path);
+        at(path, D, new_id, "json");
+        copy = present(path);
+        if (queued < 0 || copy < 0)
+            return VJO_E_LOCAL_IO;
+        if (queued && copy && (there = sibling(a, old)) != 0 && there != 1)
+            return VJO_E_LOCAL_IO; /* (not known: settled when it is) */
+    }
     if (there) {
         if ((rc = retire(Q, old, "json")) == 0)
             rc = retire_picture(old);
@@ -273,12 +302,127 @@ static int settle(const char *old, const char *new_id)
 
 typedef struct {
     char old[VJO_QUEUE_ID_SIZE], new_id[VJO_QUEUE_ID_SIZE];
-    int tmp; /* an intent's own temporary file (a stop while it was written): removed */
+    int tmp;    /* an intent's own temporary file (a stop while it was written): removed */
+    int rc;     /* its read: 0, or why it has no usable new card's ID */
+    int usable; /* new_id is the new card's ID */
+    int state;  /* INTENT_* */
 } Intent;
+enum { INTENT_OPEN, INTENT_SETTLED, INTENT_FAILED, INTENT_DONE };
 
-/* One round: up to INTENT_MAX intents settled. The ones that could not be (failed), and whether there were
- * more (more). */
-static void recover_round(VjoArena *a, Intent *intents, int *failed, int *more)
+static void hold(VjoCardsHeld *held, const char *old)
+{
+    uint8_t id[16];
+    if (!held || vjo_cards_unhex(old, id) < 0 || vjo_cards_is_held(held, id))
+        return;
+    if (held->n == VJO_CARDS_HELD_MAX) {
+        held->incomplete = 1;
+        return;
+    }
+    memcpy(held->id[held->n++], id, 16);
+}
+
+int vjo_cards_is_held(const VjoCardsHeld *held, const uint8_t id[16])
+{
+    for (int i = 0; held && i < held->n; i++)
+        if (!memcmp(held->id[i], id, 16))
+            return 1;
+    return 0;
+}
+
+/* What a record shows, whether or not it can be exported: its strings if they are there. */
+typedef struct Loose {
+    const char *spelling, *reading, *game, *misc, *sentence;
+    uint32_t time;
+    int picture, hl_start, hl_end;
+} Loose;
+static void loose(VjoArena *a, const char *json, size_t len, Loose *out);
+
+/* Another queued card has old's word, reading and time (a change keeps those: it may be old's new card, or a later
+ * one): 1; 0 none; -1 not known (a read that failed); 2 old's own record has no word (not known which card). Only
+ * for a damaged intent, or a new card found only in deleted/: every queued record is read. */
+static int sibling(VjoArena *a, const char *old)
+{
+    char path[PATH_CAP], *json, *spelling = NULL, *reading = NULL;
+    size_t len, mark = vjo_arena_mark(a), each;
+    Loose f;
+    uint32_t time;
+    SceIoDirent ent;
+    SceUID d;
+    int found = 0, rc;
+    at(path, Q, old, "json");
+    if (read_whole(a, path, VJO_QUEUE_TEXT_MAX, &json, &len) != 0)
+        return -1;
+    loose(a, json, len, &f);
+    if (!f.spelling) {
+        vjo_arena_release(a, mark);
+        return 2;
+    }
+    spelling = vjo_arena_strndup(a, f.spelling, strlen(f.spelling));
+    reading = vjo_arena_strndup(a, f.reading ? f.reading : "", f.reading ? strlen(f.reading) : 0);
+    time = f.time;
+    if (!spelling || !reading || (d = sceIoDopen(Q)) < 0) {
+        vjo_arena_release(a, mark);
+        return -1;
+    }
+    each = vjo_arena_mark(a);
+    for (;;) {
+        memset(&ent, 0, sizeof(ent));
+        if ((rc = sceIoDread(d, &ent)) <= 0)
+            break;
+        if (!SCE_S_ISREG(ent.d_stat.st_mode) || strlen(ent.d_name) != 37 || strcmp(ent.d_name + 32, ".json") ||
+            !strncmp(ent.d_name, old, 32))
+            continue;
+        snprintf(path, sizeof(path), "%s/%s", Q, ent.d_name);
+        if (read_whole(a, path, VJO_QUEUE_TEXT_MAX, &json, &len) == 0) {
+            loose(a, json, len, &f);
+            found = f.spelling && !strcmp(f.spelling, spelling) && !strcmp(f.reading ? f.reading : "", reading) &&
+                    f.time == time;
+        } else {
+            found = -1; /* (a record not read: it may be the one) */
+        }
+        vjo_arena_release(a, each);
+        if (found)
+            break;
+    }
+    sceIoDclose(d);
+    vjo_arena_release(a, mark);
+    return found ? found : rc < 0 ? -1 : 0;
+}
+
+/* The intent of this round, not settled, whose change made intents[i]'s old card (an open one first), or -1. */
+static int feeder(const Intent *intents, int n, int i)
+{
+    int found = -1;
+    for (int j = 0; j < n; j++)
+        if (j != i && intents[j].usable && (intents[j].state == INTENT_OPEN || intents[j].state == INTENT_FAILED) &&
+            !strcmp(intents[j].new_id, intents[i].old)) {
+            if (intents[j].state == INTENT_OPEN)
+                return j;
+            found = j;
+        }
+    return found;
+}
+
+static void settle_intent(VjoArena *a, Intent *it, VjoCardsHeld *held, int *failed)
+{
+    char path[PATH_CAP];
+    intent_path(path, it->old);
+    if (settle(a, it->old, it->new_id, 1) != 0) {
+        vjo_log("cards: %s: the change to %s could not be settled; its old card stays queued until it is", path,
+                it->new_id);
+        (*failed)++;
+        hold(held, it->old);
+        it->state = INTENT_FAILED;
+        return;
+    }
+    vjo_log("cards: %s settled: %s %s", path, it->new_id,
+            named(it->new_id) > 0 ? "kept, the old card retired" : "undone, the old card kept");
+    it->state = INTENT_SETTLED;
+}
+
+/* One round: up to INTENT_MAX intents settled, the old cards of those that cannot be into held. Their number in
+ * failed, and whether there were more (more). */
+static void recover_round(VjoArena *a, Intent *intents, VjoCardsHeld *held, int *failed, int *more)
 {
     SceIoDirent ent;
     SceUID d;
@@ -287,6 +431,8 @@ static void recover_round(VjoArena *a, Intent *intents, int *failed, int *more)
     if ((d = sceIoDopen(D)) < 0) {
         io_fail("dopen", D, d);
         *failed = 1;
+        if (held)
+            held->incomplete = 1; /* (not known which cards) */
         return;
     }
     /* collected first: nothing is removed from a directory while it is read */
@@ -311,13 +457,18 @@ static void recover_round(VjoArena *a, Intent *intents, int *failed, int *more)
     }
     if (rc < 0) {
         io_fail("dread", D, rc);
-        *failed = 1;
+        *failed += 1;
+        if (held)
+            held->incomplete = 1;
     }
     sceIoDclose(d);
     for (int i = 0; i < n; i++) {
-        char path[PATH_CAP], tmp[PATH_CAP + 4], *text;
-        size_t len, mark = vjo_arena_mark(a);
+        char path[PATH_CAP], tmp[PATH_CAP + 4], *text = NULL;
+        size_t len = 0, mark = vjo_arena_mark(a);
         uint8_t id[16];
+        intents[i].state = INTENT_DONE;
+        intents[i].usable = 0;
+        intents[i].new_id[0] = '\0';
         intent_path(path, intents[i].old);
         if (intents[i].tmp) { /* never a complete intent: its change had not started */
             snprintf(tmp, sizeof(tmp), "%s.tmp", path);
@@ -325,47 +476,90 @@ static void recover_round(VjoArena *a, Intent *intents, int *failed, int *more)
             continue;
         }
         rc = read_whole(a, path, 64, &text, &len);
-        if (rc == 0 && len >= 32)
+        if (rc == 0 && len >= 32) {
             memcpy(intents[i].new_id, text, 32);
-        vjo_arena_release(a, mark);
-        if (rc == MISSING)
-            continue;
-        if (rc == VJO_E_LOCAL_IO || rc == VJO_E_OOM) { /* not read now: kept for the next try */
-            (*failed)++;
-            continue;
+            intents[i].new_id[32] = '\0';
+            intents[i].usable = vjo_cards_unhex(intents[i].new_id, id) == 0;
         }
-        intents[i].new_id[32] = '\0';
-        if (rc || len < 32 || vjo_cards_unhex(intents[i].new_id, id) < 0) {
-            /* a damaged intent (a bad card: it is committed whole): the two cards stay as they are */
-            vjo_log("cards: %s: no new card's ID in it (%d); removed, the cards left as they are", path, rc);
+        vjo_arena_release(a, mark);
+        intents[i].rc = rc;
+        if (rc != MISSING)
+            intents[i].state = INTENT_OPEN;
+    }
+    /* Two changes in a row, a card's and then its new card's (an earlier build allowed the second before the first
+     * was settled): the first one first, so that its new card is there when the second is settled. One whose first
+     * could not be settled waits for it, its old card held: settled before it, the old card would come back beside
+     * the second's new card. */
+    for (int changed = 1; changed;) {
+        changed = 0;
+        for (int i = 0; i < n; i++) {
+            int by;
+            if (intents[i].state != INTENT_OPEN || !intents[i].usable)
+                continue;
+            if ((by = feeder(intents, n, i)) >= 0 && intents[by].state == INTENT_OPEN)
+                continue;
+            changed = 1;
+            if (by >= 0) {
+                vjo_log("cards: %s.fix: waits for %s.fix, the change that made its card; its old card stays queued "
+                        "until both are settled", intents[i].old, intents[by].old);
+                (*failed)++;
+                hold(held, intents[i].old);
+                intents[i].state = INTENT_FAILED;
+                continue;
+            }
+            settle_intent(a, &intents[i], held, failed);
+        }
+    }
+    for (int i = 0; i < n; i++) /* a ring of changes, which only hands make: as found */
+        if (intents[i].state == INTENT_OPEN && intents[i].usable)
+            settle_intent(a, &intents[i], held, failed);
+    for (int i = 0; i < n; i++) {
+        char path[PATH_CAP], tmp[PATH_CAP + 4];
+        const char *old = intents[i].old;
+        int queued;
+        if (intents[i].state != INTENT_OPEN)
+            continue;
+        rc = intents[i].rc;
+        intent_path(path, old);
+        /* no usable new card's ID: its old card, if queued, may have its new card queued beside it */
+        at(tmp, Q, old, "json");
+        queued = present(tmp);
+        if (queued == 0 || (queued > 0 && rc != VJO_E_LOCAL_IO && rc != VJO_E_OOM && sibling(a, old) == 0)) {
+            /* the old card gone (retired or deleted), or a damaged intent beside no card it could have made */
+            vjo_log("cards: %s: no usable new card's ID in it (%d); removed (%s)", path, rc,
+                    queued ? "no card it could have made: the old card kept" : "its old card is not queued");
             *failed += remove_if(path) != 0;
             continue;
         }
-        if (settle(intents[i].old, intents[i].new_id) != 0) {
-            vjo_log("cards: %s: the change to %s could not be settled; tried again later", path, intents[i].new_id);
-            (*failed)++;
-        } else {
-            vjo_log("cards: %s settled: %s %s", path, intents[i].new_id,
-                    named(intents[i].new_id) > 0 ? "kept, the old card retired" : "undone, the old card kept");
-        }
+        vjo_log("cards: %s: no usable new card's ID in it (%d); kept, and its old card stays queued until it is "
+                "settled (a card of the same word and time may be its fixed one)", path, rc);
+        (*failed)++;
+        hold(held, old);
     }
 }
 
-int vjo_cards_recover(VjoArena *a)
+int vjo_cards_recover(VjoArena *a, VjoCardsHeld *held)
 {
     size_t mark = vjo_arena_mark(a);
     Intent *intents;
     int failed = 0, more = 0;
+    if (held)
+        memset(held, 0, sizeof(*held));
     if (!is_dir(D))
         return 0;
-    if (!(intents = (Intent *)vjo_arena_alloc(a, sizeof(Intent) * INTENT_MAX)))
+    if (!(intents = (Intent *)vjo_arena_alloc(a, sizeof(Intent) * INTENT_MAX))) {
+        if (held)
+            held->incomplete = 1;
         return 1;
+    }
     /* rounds while there were more than a round takes (a stop leaves one; more are a copy's) */
     for (int round = 0; round < 16; round++) {
-        recover_round(a, intents, &failed, &more);
+        recover_round(a, intents, held, &failed, &more);
         if (!more)
             break;
     }
+    if (more && held)
+        held->incomplete = 1;
     vjo_arena_release(a, mark);
     return failed + more;
 }
@@ -429,12 +623,6 @@ static void date_of(const char *misc, uint32_t time, char out[17])
         utc_day(time, out);
 }
 
-/* What a record shows, whether or not it can be exported: its strings if they are there. */
-typedef struct {
-    const char *spelling, *reading, *game, *misc, *sentence;
-    uint32_t time;
-    int picture, hl_start, hl_end;
-} Loose;
 
 static const char *loose_string(VjoArena *a, const VjoJson *j, const char *key)
 {
@@ -642,14 +830,17 @@ static int scan(const char *dir, Scan *s)
 }
 
 static const VjoCardRow *dup_rows;
+/* by word key, then oldest first (the order's reverse: equal times by word, reading and ID) */
 static int by_key(const void *x, const void *y)
 {
-    uint64_t a = dup_rows[*(const int *)x].key, b = dup_rows[*(const int *)y].key;
-    return a < b ? -1 : a > b;
+    const VjoCardRow *a = &dup_rows[*(const int *)x], *b = &dup_rows[*(const int *)y];
+    if (a->key != b->key)
+        return a->key < b->key ? -1 : 1;
+    return -vjo_cards_order(a, b);
 }
 
-/* Rows of the same word as another readable one: #314's word key (core/word_key.h), as the export's Duplicates
- * finds them (katakana as hiragana, a missing reading the spelling's), among the rows of the window. */
+/* Without #314's word index (no memory for it, a directory it cannot read): among the window's rows, every card of a
+ * word but its earliest, as the export would find them in the window alone. */
 static void mark_duplicates(VjoArena *a, VjoCardList *l)
 {
     size_t mark = vjo_arena_mark(a);
@@ -662,11 +853,27 @@ static void mark_duplicates(VjoArena *a, VjoCardList *l)
     dup_rows = l->rows;
     qsort(ix, (size_t)k, sizeof(int), by_key);
     for (int i = 1; i < k; i++)
-        if (!by_key(&ix[i - 1], &ix[i])) {
-            l->rows[ix[i - 1]].flags |= VJO_CARD_DUPLICATE;
+        if (l->rows[ix[i - 1]].key == l->rows[ix[i]].key)
             l->rows[ix[i]].flags |= VJO_CARD_DUPLICATE;
-        }
     vjo_arena_release(a, mark);
+}
+
+/* The rows the export's Duplicates finds (#314, settings/anki_export.h: an earlier card, queued or exported, has the
+ * word): its own word index (anki_words.bin, so a list after the first reads only new records). 0, or its error
+ * (then mark_duplicates). */
+static int mark_mined(VjoArena *a, VjoCardList *l, const VjoExportUi *ui)
+{
+    size_t mark = vjo_arena_mark(a);
+    VjoWords w;
+    int rc = vjo_export_words(a, ui, 0, &w);
+    for (int i = 0; rc == 0 && i < l->n; i++) {
+        VjoCardRow *r = &l->rows[i];
+        if (!(r->flags & VJO_CARD_UNREADABLE) && r->key &&
+            vjo_words_earlier(&w, r->key, r->time ? (int64_t)r->time : (int64_t)VJO_APKG_NO_TIME, r->id))
+            r->flags |= VJO_CARD_DUPLICATE;
+    }
+    vjo_arena_release(a, mark);
+    return rc;
 }
 
 int vjo_cards_list(VjoArena *a, int which, const VjoCardRow *bound, VjoCardList *l, const VjoExportUi *ui)
@@ -693,7 +900,11 @@ int vjo_cards_list(VjoArena *a, int which, const VjoCardRow *bound, VjoCardList 
     qsort(l->rows, (size_t)l->n, sizeof(VjoCardRow), newest_first);
     for (int i = 0; i < l->n; i++)
         l->unreadable += !!(l->rows[i].flags & VJO_CARD_UNREADABLE);
-    mark_duplicates(a, l);
+    /* (a stop while the words are read stops the list too: the page's Cancel) */
+    if ((rc = mark_mined(a, l, ui)) == VJO_E_CANCELLED)
+        return VJO_E_CANCELLED;
+    if (rc)
+        mark_duplicates(a, l);
     return 0;
 }
 
@@ -831,11 +1042,42 @@ const uint8_t *vjo_cards_picture(VjoArena *a, int which, const uint8_t id[16], s
 
 /* ---------------- delete, empty deleted ---------------- */
 
+/* hex is the new card of a change not settled yet (an intent in deleted/ names it): 1; 0 none; -1 not known. Its
+ * old card is still to be retired (a move that failed), and deleting this card first would let the recovery take the
+ * change for one that never made its card, and keep the old card. */
+static int pending_new(VjoArena *a, const char *hex)
+{
+    size_t mark = vjo_arena_mark(a);
+    SceIoDirent ent;
+    SceUID d;
+    int found = 0, rc;
+    if (!is_dir(D))
+        return 0;
+    if ((d = sceIoDopen(D)) < 0)
+        return -1;
+    for (;;) {
+        char path[PATH_CAP], *text;
+        size_t len;
+        memset(&ent, 0, sizeof(ent));
+        if ((rc = sceIoDread(d, &ent)) <= 0)
+            break;
+        if (!SCE_S_ISREG(ent.d_stat.st_mode) || strlen(ent.d_name) != 36 || strcmp(ent.d_name + 32, ".fix"))
+            continue;
+        snprintf(path, sizeof(path), "%s/%s", D, ent.d_name);
+        if (read_whole(a, path, 64, &text, &len) == 0 && len >= 32 && !memcmp(text, hex, 32))
+            found = 1;
+        vjo_arena_release(a, mark);
+        if (found)
+            break;
+    }
+    sceIoDclose(d);
+    return found ? 1 : rc < 0 ? -1 : 0;
+}
+
 int vjo_cards_delete(VjoArena *a, const uint8_t id[16])
 {
     char hex[VJO_QUEUE_ID_SIZE], path[PATH_CAP];
     int there, rc;
-    (void)a;
     vjo_cards_hex(id, hex);
     at(path, Q, hex, "json");
     if ((there = present(path)) <= 0) {
@@ -843,11 +1085,15 @@ int vjo_cards_delete(VjoArena *a, const uint8_t id[16])
             vjo_log("cards: %s: not in the queue (exported or deleted meanwhile?)", hex);
         return VJO_E_LOCAL_IO;
     }
+    if ((there = pending_new(a, hex)) != 0) {
+        vjo_log("cards: %s: the change that made it is not finished (its old card is still queued); not deleted", hex);
+        return there > 0 ? VJO_CARDS_E_PENDING : VJO_E_LOCAL_IO;
+    }
     if ((rc = prepare_deleted()) != 0 || (rc = retire(Q, hex, "json")) != 0)
         return rc;
     /* its picture after it: one a stop leaves is a JPEG no card names (the export's sweep) */
     if (retire_picture(hex))
-        vjo_log("cards: %s: its picture stays in the queue; the export removes it", hex);
+        vjo_log("cards: %s: its picture stays in the queue; the next export that writes a package removes it", hex);
     mount_sync();
     vjo_log("cards: %s deleted", hex);
     return 0;
@@ -901,18 +1147,31 @@ int vjo_cards_empty_deleted(VjoArena *a, int *removed)
 
 /* ---------------- fix sentence, drop picture ---------------- */
 
-/* Occurrences of w (n bytes) in s: at most cap starts in pos; the count. */
-static int occurrences(const char *s, const char *w, size_t n, int *pos, int cap)
+/* The occurrences of w (n bytes) in s, overlapping ones too (ああ twice in あああ): their count, and the place of
+ * the k-th (k from 0; -1 when there are not that many) in *at. No limit: a sentence may hold a word many times. */
+static int occurrences(const char *s, const char *w, size_t n, int k, int *at)
 {
-    int k = 0;
+    int count = 0;
+    if (at)
+        *at = -1;
     if (!n)
         return 0;
     for (const char *p = s; (p = strstr(p, w)) != NULL; p++) {
-        if (k < cap)
-            pos[k] = (int)(p - s);
-        k++;
+        if (at && count == k)
+            *at = (int)(p - s);
+        count++;
     }
-    return k;
+    return count;
+}
+
+/* Which occurrence of w starts at pos in s (from 0), or -1 when none does. */
+static int occurrence_at(const char *s, const char *w, size_t n, int pos)
+{
+    int k = 0;
+    for (const char *p = s; n && (p = strstr(p, w)) != NULL; p++, k++)
+        if (p - s == pos)
+            return k;
+    return -1;
 }
 
 static int is_break(char c) { return c == '\n' || c == '\r'; }
@@ -945,7 +1204,7 @@ int vjo_cards_find_word(const char *old_sentence, int hl_start, int hl_end, cons
 {
     char w[512];
     size_t n = old_sentence ? strlen(old_sentence) : 0, wn;
-    int before[64], after[64], n_before, n_after, best = -1, k = -1;
+    int n_before, n_after, k, best = -1;
     long dist = 0;
     if (!old_sentence || !sentence || hl_start < 0 || hl_end <= hl_start || (size_t)hl_end > n ||
         (size_t)(hl_end - hl_start) >= sizeof(w))
@@ -953,19 +1212,17 @@ int vjo_cards_find_word(const char *old_sentence, int hl_start, int hl_end, cons
     wn = (size_t)(hl_end - hl_start);
     memcpy(w, old_sentence + hl_start, wn);
     w[wn] = '\0';
-    n_before = occurrences(old_sentence, w, wn, before, 64);
-    n_after = occurrences(sentence, w, wn, after, 64);
+    n_before = occurrences(old_sentence, w, wn, -1, NULL);
+    n_after = occurrences(sentence, w, wn, -1, NULL);
     if (n_after) {
-        for (int i = 0; i < n_before && i < 64; i++)
-            if (before[i] == hl_start)
-                k = i;
-        if (n_before == n_after && k >= 0 && k < 64) {
-            *start = after[k];
+        /* as often as before: the same occurrence; else the one nearest where it was */
+        if (n_before == n_after && (k = occurrence_at(old_sentence, w, wn, hl_start)) >= 0) {
+            occurrences(sentence, w, wn, k, start);
         } else {
-            for (int i = 0; i < n_after && i < 64; i++) {
-                long d = labs((long)after[i] - hl_start);
+            for (const char *p = sentence; (p = strstr(p, w)) != NULL; p++) {
+                long d = labs((long)(p - sentence) - hl_start);
                 if (best < 0 || d < dist)
-                    best = after[i], dist = d;
+                    best = (int)(p - sentence), dist = d;
             }
             *start = best;
         }
@@ -1088,6 +1345,8 @@ static int copy_picture(VjoArena *a, const char *new_id, const uint8_t *jpeg, si
     return rc;
 }
 
+static int pending_new(VjoArena *a, const char *hex);
+
 /* Fix sentence (sentence) or Drop picture (NULL). */
 static int change(VjoArena *a, const uint8_t card[16], const char *sentence, VjoCardChange *out)
 {
@@ -1116,16 +1375,35 @@ static int change(VjoArena *a, const uint8_t card[16], const char *sentence, Vjo
         goto done;
     }
     out->picture = picture;
+    if (sentence && !strcmp(sentence, note.sentence)) {
+        /* the same text: the same card (its word where it was), whatever its bytes' escapes */
+        out->done = VJO_CARDS_UNCHANGED;
+        out->word_found = note.hl_start >= 0 && note.hl_end > note.hl_start;
+        rc = 0;
+        goto done;
+    }
+    /* the new card of a change whose old card is not retired yet: that change is settled first (a change of this
+     * card now would retire it before its old card, and the recovery would then keep the old card too) */
+    if ((rc = pending_new(a, old)) != 0) {
+        vjo_log("cards: %s: the change that made it is not finished (its old card is still queued); not changed", old);
+        out->pending = rc > 0;
+        rc = VJO_E_LOCAL_IO;
+        goto done;
+    }
+    /* exported already (the same record queued and exported: a removal an export could not make): its note may be
+     * in Anki, so a change would be a second note, as for the exported cards the page shows read only */
+    at(path, X, old, "json");
+    if (present(path) != 0) {
+        out->exported = 1;
+        vjo_log("cards: %s: exported already: not changed", old);
+        rc = VJO_E_PARSE;
+        goto done;
+    }
     if (sentence) {
         if (vjo_cards_find_word(note.sentence, note.hl_start, note.hl_end, sentence, &start, &end) == 0)
             out->word_found = 1;
         else
             start = end = -1;
-        if (!strcmp(sentence, note.sentence) && start == note.hl_start && end == note.hl_end) {
-            out->done = VJO_CARDS_UNCHANGED; /* the same text: the same card, whatever its bytes' escapes */
-            rc = 0;
-            goto done;
-        }
     }
     keep = picture && sentence;
     if (keep) {
@@ -1191,6 +1469,7 @@ static int change(VjoArena *a, const uint8_t card[16], const char *sentence, Vjo
     intent_path(path, old);
     if (present(path) != 0) {
         vjo_log("cards: %s: an earlier change of this card is not settled", path);
+        out->held = 1;
         rc = VJO_E_LOCAL_IO;
         goto done;
     }
@@ -1208,18 +1487,26 @@ static int change(VjoArena *a, const uint8_t card[16], const char *sentence, Vjo
         at(path, Q, new_id, "json");
         if (!rc)
             rc = commit(path, edited, new_len);
-        /* a failure is undone as a recovery would undo it; a record there after all (a sync that
-         * failed after its rename) is the change, finished below */
-        if (rc && (settle(old, new_id) != 0 || named(new_id) <= 0)) {
-            rc = VJO_E_LOCAL_IO;
-            goto done;
+        /* a failure is settled as a recovery would settle it: undone when the record is not there; when it is (its
+         * rename done, the sync after it failed) the change is made, and the page says the card did not confirm it */
+        if (rc) {
+            settle(a, old, new_id, 0);
+            if (named(new_id) <= 0) {
+                rc = VJO_E_LOCAL_IO;
+                goto done;
+            }
+            out->unsynced = 1;
         }
     }
     /* (4) the old record, (5) its picture, then the intent */
-    if (settle(old, new_id) != 0) {
+    if (settle(a, old, new_id, 0) != 0) {
         intent_path(path, old);
-        out->old_left = present(path) != 0;
-        vjo_log("cards: %s: the old card could not be moved; retried before the next list and export", old);
+        if (present(path) != 0) {
+            out->old_left = 1;
+            vjo_log("cards: %s: the old card could not be moved; retried before the next list and export", old);
+        } else {
+            out->unsynced = 1; /* (every move made: only the memory card's sync failed) */
+        }
     }
     vjo_cards_unhex(new_id, out->id);
     out->done = exists ? VJO_CARDS_EXISTED : VJO_CARDS_CHANGED;
