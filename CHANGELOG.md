@@ -11,6 +11,17 @@ been reported.
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-10-27
+
+The first pieces of VOCR6, vita-vn-ocr's work on the owner's hooked PS Vita and PSP captures (vita-vn-ocr #125):
+faster OCR (the head gate and two-level head), a line finder that keeps a line whole across a full-width space, and
+new character language models for the 1 MB and 4 MB tiers. Through Rubi's page path on development data, measured on
+a computer, the finder fix and the new 1 MB LM together take whole-dialogue error from 3.875 % to 1.636 % on held-out
+pages of the hooked games and from 3.036 % to 2.441 % on 93 other games (VOCR5-N; the recognizer itself is still
+VOCR5's). Also: vertical text, trusted hooks that answer without OCR, Yomitan's lookup rules and the adaptive reading
+time. Nothing new here has run on a console yet. Like 0.9.7, this release is the normal build only: `Rubi-0.9.8.vpk`
+(the main download) and `Rubi-0.9.8.zip`.
+
 ### Added
 
 - **Trusted hooks without waiting** (API 49; with **Trusted hooks replace OCR** on, the default): a trusted hook's
@@ -1047,7 +1058,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.7...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.8...HEAD
+[0.9.8]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.8
 [0.9.7]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.7
 [0.9.6]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.6
 [0.9.5]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.5
