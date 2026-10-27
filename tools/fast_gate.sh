@@ -186,6 +186,13 @@ if [ "$ENGINE" != none ]; then
   fi
   USER_ARGS=(--user "$(id -u):$(id -g)")
   [ "$ENGINE" != podman ] || USER_ARGS+=(--userns=keep-id)
+  # The lanes' TMPDIR (/tmp: every suite's own directory, the compilers' temporary files) in memory, not in the
+  # container's overlay on the machine's disk. The suites write real files and sync them (the Shell's history
+  # writer syncs every append): on the overlay each sync waits for whatever else the machine writes, and with
+  # the fleet's training and gates on the same disk shell_history took 98-120+ s of its 120 s TIMEOUT, in every
+  # host lane, on main too (2026-10-27); on tmpfs 2.2 s against 40.2 s on the overlay in the same minute. Only
+  # where the files are changes: CI's runners and CONTAINER_ENGINE=none keep their own TMPDIR.
+  USER_ARGS+=(--tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777)
 fi
 run_lane() { # run_lane NAME host|vita SCRIPT: SCRIPT in that image (or here), its log in LOGS/NAME.log
   local name=$1 kind=$2 script=$3 t0 rc
