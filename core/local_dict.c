@@ -1372,9 +1372,10 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     }
     if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
     /* A particle in hiragana (particle_forms) before a katakana word (のマンション, にエントリー, とセンパイ):
-     * the particle; no word starts so (#321). A katakana word starts with a full-size letter, U+30A2-30FA
-     * but ァィゥェォ and ッ: not はァ or へッ, nor a long vowel mark. Before hiragana, lead marks the first
-     * six particles for the spans' forms of する (particle_suru). */
+     * the particle; no word starts so (#321). A katakana word starts with a letter of U+30A2-30FA but the
+     * small ァィゥェォ and ッ: not はァ or へッ, nor a long vowel mark (the small ャュョヮヵヶ pass; no word
+     * starts with one either, and no tap of the Yomitan check's has one there). Before hiragana, lead marks
+     * the first six particles for the spans' forms of する (particle_suru). */
     unsigned lead = 0;
     if (count > 1 && raws[1] == 3 && raws[2] == 6 && (uint8_t)raw[3] == 0xe3 && (lead = particle_lead(raw))) {
         uint8_t b = (uint8_t)raw[4], t = (uint8_t)raw[5];

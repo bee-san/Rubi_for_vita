@@ -138,7 +138,7 @@ taps, 3,962 shown entries change: 3,494 better, 465 the same, 3 worse (below). B
 330,517 in brackets):
 
 - **A particle before a katakana word**, 457 taps (2,341): one of が も は に の か と で を へ や な in hiragana
-  before a full-size katakana letter is the particle. Rubi read the word as a homograph or an inflection of a word
+  before a katakana letter (not the small ァィゥェォ or ッ) is the particle. Rubi read the word as a homograph or an inflection of a word
   starting with the particle, and so did Yomitan, through its katakana-to-hiragana step: のマンション 飲む's `-ん`,
   のメンバー 飲める, にエントリー 煮える, とセンパイ 渡船, のスタッフ のす, のカバン のか, はデート 派手. Not before ァィゥェォ, ッ
   or ー (はァ, へッ: interjections). A katakana ending of one word loses: でチュ, a baby-talk です (10 taps of one game
@@ -211,7 +211,7 @@ or missing data:
   it) measured 16 B of the debug Shell's code and 48 B of the normal's.
 - **A phrase at a longer span.** ないねぇ shows 無い無い and ものがねぇ 物が無い (`-え`'s ねぇ read as ない after ない
   and が, 2 taps), as in Yomitan.
-- **とっておき** shows とる's `masu stem → -toku → -te` (1 tap; 5 of the 330,517): its entries are spelled in kanji
+- **とっておき** shows とる's `-te → -toku → masu stem` (1 tap; 5 of the 330,517): its entries are spelled in kanji
   (取って置き), and at one span a kana inflection of a kana entry (the grammar entry とる) beats a kanji homograph by
   design (kana text finds its kana word or its inflection first: した する, not 下). A row in the lookup tables
   (`tools/lookup_tables.txt`) would fix it; since #371 those tables are also the bundled dictionary's table hints, so a
