@@ -43,9 +43,7 @@ void vjo_games_defaults(VjoGames *g)
     g->default_enabled = 1;
 }
 
-/* Not inlined: the Shell calls it for games.ini's table and for ocr_line_fix.ini's, and one copy is 40 B less of
- * its code pages than two (docs/memory-ledger.md, "A game's own line finder"). */
-__attribute__((noinline)) int vjo_games_row_as(const VjoGames *g, const char *id, int psp)
+int vjo_games_row_as(const VjoGames *g, const char *id, int psp)
 {
     for (;;) {
         for (int i = 0; i < g->count; i++)
@@ -91,8 +89,8 @@ int vjo_games_set(VjoGames *g, const char *id, int enabled)
 
 static int space(char c) { return c == ' ' || c == '\t' || c == '\r'; }
 
-/* games.ini's values: a rule's index is its enabled. */
-static const char *const on_off[] = {"disabled", "enabled", NULL};
+/* games.ini's values: a rule's index is its enabled. (In the data segment, as the line finder's below.) */
+static const char *const on_off[] VJO_DATA_TABLE(games_on_off) = {"disabled", "enabled", NULL};
 
 #ifndef VJO_KERNEL
 /* In the data segment: the Shell's code pages are full (core/port.h); config.c's ocr_line_fix reads them too. */

@@ -94,22 +94,20 @@ int vjo_game_identify(SceUID pid, VjoGameId *g)
  * showed which one is the title: in the owner's test.1-test.4 logs (115 game
  * starts, four Vita titles) parameter 9 was refused (0x80801000) and empty
  * every time, and parameter 10 held the title. #333 took the log line's
- * bytes for the debug Shell's code room; the order is unchanged. */
+ * bytes, and the second buffer's, for the Shell's code room; the order and
+ * the result are unchanged. */
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size)
 {
-    char p9[128], p10[128];
-    int r9, r10;
-    sceClibMemset(p9, 0, sizeof(p9));
-    sceClibMemset(p10, 0, sizeof(p10));
-    r9 = sceAppMgrAppParamGetString(pid, 9, p9, sizeof(p9) - 1);
-    r10 = sceAppMgrAppParamGetString(pid, 10, p10, sizeof(p10) - 1);
-    if (!sceClibStrcmp(tid, VJO_PSP_EMULATOR))
+    if (!sceClibStrcmp(tid, VJO_PSP_EMULATOR)) {
         sceClibSnprintf(name, size, "PSP");
-    else if (r9 >= 0 && p9[0])
-        sceClibSnprintf(name, size, "%s", p9);
-    else if (r10 >= 0 && p10[0])
-        sceClibSnprintf(name, size, "%s", p10);
-    else
-        name[0] = '\0';
-    vjo_utf8_trim_partial(name);
+        return;
+    }
+    for (int param = 9; param <= 10; param++) {
+        sceClibMemset(name, 0, size);
+        if (sceAppMgrAppParamGetString(pid, param, name, size - 1) >= 0 && name[0]) {
+            vjo_utf8_trim_partial(name);
+            return;
+        }
+    }
+    name[0] = '\0';
 }

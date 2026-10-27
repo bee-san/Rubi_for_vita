@@ -3206,10 +3206,10 @@ static void the_games_page_by_touch_and_its_on_off(void)
     script[at++] = (Input){0, 1, 368 + 4 * 112 + 20, GP_LF_Y + 20, 0}; /* the All choice */
     hold(0, 5);
     int touched = at - 1;
-    tap(SCE_CTRL_SELECT, 5);
-    tap(SCE_CTRL_SELECT, 5);
-    tap(SCE_CTRL_SELECT, 5);
-    tap(SCE_CTRL_SELECT, 5); /* round the four tabs to Games */
+    tap(SCE_CTRL_SELECT, 5); /* the next tab: the page closes */
+    int ocr = at - 1;
+    script[at++] = (Input){0, 1, 40, 52 + 20, 0}; /* the Games tab touched: its list */
+    hold(0, 5);
     int back = at - 1;
     int frames = run(at);
     TEST_CHECK(frames == at);
@@ -3227,7 +3227,9 @@ static void the_games_page_by_touch_and_its_on_off(void)
                 "'%s' '%s'", session->shown[up].bar_title, session->shown[up].page_badge);
     TEST_CHECK(!strcmp(session->shown[off].page_badge, "OFF") && !strcmp(session->shown[on].page_badge, "ON"));
     TEST_CHECK(session->shown[touched].lf_chosen == 4 && !strcmp(session->shown[touched].bar_title, "Line finder"));
-    TEST_CHECK(!session->shown[back].page_title[0] && !strcmp(session->shown[back].lf_tag[i1], "Line finder: All"));
+    TEST_CHECK(!session->shown[ocr].page_title[0] && !session->shown[ocr].lf_tag[i1][0]);
+    TEST_CHECK_(!session->shown[back].page_title[0] && !strcmp(session->shown[back].lf_tag[i1], "Line finder: All"),
+                "'%s' '%s'", session->shown[back].page_title, session->shown[back].lf_tag[i1]);
     TEST_CHECK(line_fix_seen("VJOT00001", 0) == 3 && line_fix_seen("VJOT00000", 0) == -1);
     TEST_CHECK(!shell_sees("ux0:data/VitaJPOverlay/games.ini", "VJOT00000", 0) &&
                shell_sees("ux0:data/VitaJPOverlay/games.ini", "VJOT00001", 0));
