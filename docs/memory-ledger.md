@@ -284,17 +284,17 @@ scan, host, ASan/UBSan, the audit of #320's harness): 1,175,231 → 1,175,510 on
 27,696 B). No allocation, thread, stack or budget is added; nothing of it has run on a console.
 
 **#321's audit.** The particle's する check moved before the depth test, so the span's particle is the same for any
-Dictionaries shown (`lookup_pages` +28 B normal, +24 B debug). Measured as above, main `9ad8eb5` against this
+Dictionaries shown (`lookup_pages` +28 B normal, +24 B debug). Measured as above, main `099b156` against this
 change:
 
 | Shell | main | #321's audit | Loaded pages |
 |---|---:|---:|---:|
-| Debug | 98,164 + 77,728 B | 98,196 + 77,728 B | 176,128 B, unchanged |
-| Normal | 85,900 + 77,552 B | 85,916 + 77,552 B | 163,840 B, unchanged (`--exact`) |
+| Debug | 98,212 + 77,792 B | 98,244 + 77,792 B | 176,128 B, unchanged |
+| Normal | 85,940 + 77,696 B | 85,972 + 77,696 B | 163,840 B, unchanged (`--exact`) |
 
-Room left: the debug Shell's code 108 B, its data 96 B; the normal Shell's code 100 B, its data 272 B. The kernel and
+Room left: the debug Shell's code 60 B, its data 32 B; the normal Shell's code 44 B, its data 128 B. The kernel and
 the game worker are byte-identical to main's in both builds; the Rubi app's `eboot.bin` (which links
-`core/local_dict.c` and `core/config.c`) changes by -9 B (debug) and +5 B (normal), in its own process. The VjoNet
+`core/local_dict.c` and `core/config.c`) grows by 17 B (debug) and 28 B (normal), in its own process. The VjoNet
 frames are unchanged (`-fstack-usage`, as above). Nothing of it has run on a console.
 
 ## Why the overlay waits (#358)

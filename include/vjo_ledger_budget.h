@@ -105,7 +105,9 @@
  * [measured: the same rows, main 68041a7 and this change]. A game's own line finder (#333: ocr_line_fix.ini read
  * with games.ini, the spotter or Rubi's finder with its fixes in cfg; the parameters' log line gone, the tables in the
  * data segment) makes it 98,164 + 77,728 -> 98,212 + 77,792 on main 9ad8eb5, the same pages (92 and 32 B left)
- * [measured: the same rows, main 9ad8eb5 and this change]. */
+ * [measured: the same rows, main 9ad8eb5 and this change]. #321's audit (the particle's する check before the depth
+ * test, lookup_pages +24 B) makes it 98,244 + 77,792 on main 099b156, the same pages (60 and 32 B left)
+ * [measured: the same rows, main 099b156 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -145,8 +147,9 @@
  * page more, the same 163,840 B, 68 B of text room and 336 B of data room [measured: the same rows, main 68041a7 and
  * this change]. A game's own line finder (#333, above; the title read into its caller's buffer, the self-test's
  * notice in the data segment) makes it 85,900 + 77,552 -> 85,940 + 77,696 on main 9ad8eb5, the same pages, 76 B of
- * text room and 128 B of data room [measured: the same rows, main 9ad8eb5 and this change]. Its check is exact
- * (--exact): this must equal its pages. */
+ * text room and 128 B of data room [measured: the same rows, main 9ad8eb5 and this change]. #321's audit (above,
+ * lookup_pages +28 B) makes it 85,972 + 77,696 on main 099b156, 44 B of text room [measured: the same rows, main
+ * 099b156 and this change]. Its check is exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
