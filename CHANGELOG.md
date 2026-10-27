@@ -158,10 +158,11 @@ been reported.
   Their tap read every entry's first 160 bytes, 16 reads for 私, because the tables compare the entries' spellings and
   readings; the bundled dictionary now marks the one entry a table names (posting hints version 2, two spare bits of
   each posting, 99 postings; [format](docs/local-dictionaries.md#binary-format-version-3-with-frequency-ranks)). The
-  entries shown are the same at every one of the 64,579 taps of 5,000 real lines (host); there, a cursor lookup makes
-  7.83 reads instead of 8.12, and the 2.7% of taps that read 4 to 17 entries' heads (18.9 reads) make 8.7 (est. 69 ->
-  39 ms on the console at test.4's 2.98 ms a read). The two tables move to `tools/lookup_tables.txt`, which the
-  converter reads too (the Shell's bytes for them are unchanged). Your own dictionaries get the marks with
+  entries shown are the same at every one of the 64,579 taps of 5,000 real lines (host); there, after change 3, a
+  cursor lookup makes 5.67 reads instead of 5.98, and the 2.7% of taps that read 4 to 17 entries' heads (17.0 reads:
+  私 22) make 6.2 (私 5.1; est. 64 -> 32 ms on the console at test.4's 2.98 ms a read). The two tables move to
+  `tools/lookup_tables.txt`, which the converter reads too (the Shell's bytes for them are unchanged; the reader's
+  code takes 0 B more text in the normal Shell and 16 B in the debug one). Your own dictionaries get the marks with
   `convert_dictionary.py --frequency … --table-hints`; a file with them is refused by Rubi 0.9.8 and older, so it is
   not the default. The bundled dictionary's SHA-256 changes (`docs/plaintext-dictionaries.json`). Not run on a
   console yet.

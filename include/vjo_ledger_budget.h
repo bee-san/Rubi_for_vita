@@ -96,7 +96,10 @@
  * and this change]. #360's job lines after the result and the close line's press-to-screen figure (the debug
  * build's only; docs/release-variants.md) make it 102,140 -> 102,372 text and 73,408 -> 73,560 data/bss on
  * main e2c49ee, the same pages (28 and 168 B left), the normal build's plugins byte for byte main's
- * [measured: the same rows, both builds, main e2c49ee and this change]. */
+ * [measured: the same rows, both builds, main e2c49ee and this change]. The table hints (#360: rank_posting
+ * ranks the lookup tables' words from their postings' bits; the tables, moved to core/lookup_tables.inc, are the
+ * same bytes) make it 102,372 -> 102,388 text on main 2bb09c4, the same data and pages (12 B left) [measured: the
+ * same rows, main 2bb09c4 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -130,8 +133,9 @@
  * its lines' column flag, config.ini ocr_vertical's parse; its key, the model's name and one cold message of the
  * OCR's in the data segment, VJO_DATA_TABLE) makes it 89,252 -> 89,300 + 73,048 -> 73,160 on main 796168e, the same
  * pages, 812 B of text room [measured: the same rows, main 796168e and this change; the debug build 101,460 ->
- * 101,548 + 73,008 -> 73,152, the same pages]. Its check is
- * exact (--exact): this must equal its pages. */
+ * 101,548 + 73,008 -> 73,152, the same pages]. The table hints (#360) leave it 90,020 + 73,416 on main
+ * 2bb09c4, the same text bytes, 92 B of text room [measured: the same rows, main 2bb09c4 and this change]. Its
+ * check is exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B

@@ -2004,7 +2004,8 @@ static void posting_hints_rank_as_the_head_does(void)
  * is ranked from its postings' table bits, exactly as its heads rank it, when
  * page 0 names this reader's tables (the remaining head: katakana text's
  * katakana spelling, コウ); with another tables' id its heads are read, as in
- * version 1; a version 1 descriptor with the bits is refused where they are.
+ * version 1, and so they are when a version 1 descriptor comes with the bits
+ * (ignored there). Any other rule bit past the inflection rules' is refused.
  * The bits are trusted, as the other hints are: under this reader's id, bits
  * made from other tables show what the bits say (私 あたし), not the heads. */
 static void table_hints_rank_table_keys_as_the_head_does(void)
@@ -2052,7 +2053,7 @@ static void table_hints_rank_table_keys_as_the_head_does(void)
     char want[32];
     snprintf(want, sizeof(want), "rc %d", VJO_E_LOCAL_FORMAT);
     for (size_t t = 0; t < sizeof(cases) / sizeof(cases[0]); t++) {
-        char plain[256], v1[256], v2[256], trusted[256], other[256], refused[256];
+        char plain[256], v1[256], v2[256], trusted[256], other[256], ignored[256];
         int v1_reads, v2_reads;
         VjoArena a; VjoPlatform p; VjoConfig cfg;
         setup(&a, &p, &cfg);
@@ -2061,7 +2062,7 @@ static void table_hints_rank_table_keys_as_the_head_does(void)
         build(&fixtures[2], "v2.vjdict", rows, n, 3);
         build(&fixtures[3], "trusted.vjdict", rows, n, 3);
         build(&fixtures[4], "other.vjdict", rows, n, 3);
-        build(&fixtures[5], "refused.vjdict", rows, n, 3);
+        build(&fixtures[5], "ignored.vjdict", rows, n, 3);
         add_hints(&fixtures[1]);
         add_table_hints(&fixtures[2], vjo_local_preferred_table(), vjo_local_usual_table(), id);
         add_table_hints(&fixtures[3], other_preferred, other_usual, id);
@@ -2074,16 +2075,14 @@ static void table_hints_rank_table_keys_as_the_head_does(void)
         v2_reads = shown("v2.vjdict", cases[t].text, 0, v2, sizeof(v2));
         shown("trusted.vjdict", cases[t].text, 0, trusted, sizeof(trusted));
         shown("other.vjdict", cases[t].text, 0, other, sizeof(other));
-        shown("refused.vjdict", cases[t].text, 0, refused, sizeof(refused));
+        shown("ignored.vjdict", cases[t].text, 0, ignored, sizeof(ignored));
         TEST_CHECK_(!strncmp(plain, cases[t].shows, strlen(cases[t].shows)), "%s", plain);
         TEST_CHECK_(!strcmp(plain, v1), "version 1: %s, not %s", v1, plain);
         TEST_CHECK_(!strcmp(plain, v2), "version 2: %s, not %s", v2, plain);
         TEST_CHECK_(v2_reads <= v1_reads, "%d reads, %d with version 1", v2_reads, v1_reads);
         TEST_CHECK_(!strncmp(trusted, cases[t].trusted, strlen(cases[t].trusted)), "trusted bits: %s", trusted);
         TEST_CHECK_(!strcmp(plain, other), "another tables' id: %s, not %s", other, plain);
-        /* 人 and 犬 have no bits of these tables: their postings are read as in any version 1 file */
-        TEST_CHECK_(!strcmp(refused, strcmp(cases[t].text, "人") && strcmp(cases[t].text, "犬") ? want : plain),
-                    "version 1 with the bits: %s", refused);
+        TEST_CHECK_(!strcmp(plain, ignored), "version 1 with the bits: %s, not %s", ignored, plain);
     }
     {
         /* under version 2 only bits 7 and 11 are the tables': any other rule bit past the inflection rules'

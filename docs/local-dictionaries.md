@@ -688,8 +688,9 @@ bundled dictionary is one.
   A reader whose tables have this id ranks the table keys' postings from the
   hints and these bits; one whose tables differ ignores the bits and reads
   their heads, as with version 1. A posting of version 1, or of a file without
-  hints, has neither bit (a lookup that reads such a posting otherwise fails
-  with a format error, as any other unknown rule bit makes it fail). `table_bits` in `tools/convert_dictionary.py` is the
+  hints, has neither bit; this reader ignores the two bits in any file that is
+  not version 2 of its own tables, and fails a lookup that reads any other rule
+  bit past bit 6 (a format error, in every file). `table_bits` in `tools/convert_dictionary.py` is the
   reference writer. Like the other hints the bits are trusted: a file whose
   bits are wrong shows the entries they say, not what its heads would rank
   first, as a wrong frequency key does.

@@ -55,7 +55,8 @@
 /* Hints version 2, the table hints: a posting's rule bits 7 and 11 say that
  * its entry is the usual_spellings or the preferred_readings value for its
  * key (spelled or read so), and bytes 168..171 name the tables they were made
- * with (LOOKUP_TABLES_ID, core/lookup_tables.inc). */
+ * with (LOOKUP_TABLES_ID, core/lookup_tables.inc); in any other file the two
+ * bits are ignored. */
 #define HINTS_TABLES 168u
 #define RULE_TABLES 0x880u    /* bit 7: the usual spelling (RANK_USUAL); 11: the preferred reading (RANK_PREFERRED) */
 
@@ -128,7 +129,7 @@ typedef struct {
     uint32_t prefix;                   /* bytes before a payload's spelling: 4 in v3, else 0 */
     char freq_title[FREQ_TITLE_SIZE];  /* v3: the frequency list's name; "" without one */
     char title[TITLE_SIZE];            /* v2/v3: the dictionary's own name; "" without one */
-    uint8_t hints;                     /* v3 posting hints: 0 none; 1; 2 table hints of other tables; 3 of these */
+    uint8_t hints;                     /* v3 posting hints: 0 none; 1, 2 (the table keys by heads); 3 table hints */
     /* Where the session holds the filter directory: its copy's byte offset in
      * the session's pool, from the session's start (0: not in the pool, read
      * from page 0). In the padding after hints (PoolKeepsTheSize below). */
@@ -487,8 +488,9 @@ static int open_header(Workspace *w, Dictionary *d, VjoLocalSession *s, uint32_t
     if (d->version == 3 && !memcmp(page0->bytes + HINTS_DESCRIPTOR, "VJPH", 4)) {
         uint32_t version = u32(page0->bytes + HINTS_DESCRIPTOR + 4);
         if (version - 1u > 1u) return VJO_E_LOCAL_FORMAT;
-        /* version 2: the table bits, used when made with these tables */
-        d->hints = (uint8_t)(version == 2 && u32(page0->bytes + HINTS_TABLES) == LOOKUP_TABLES_ID ? 3 : version);
+        /* 3 only for version 2 made with these tables: its table bits rank
+         * (1 and 2 rank alike, the table keys from their heads) */
+        d->hints = (uint8_t)(version + (u32(page0->bytes + HINTS_TABLES) == LOOKUP_TABLES_ID));
     }
     f = page0->bytes + FILTER_DESCRIPTOR;
     if (d->version < 2 || memcmp(f, "VJKF", 4)) return VJO_OK;
@@ -751,11 +753,11 @@ static int rank_posting(Workspace *w, Dictionary *d, const Record *r, uint32_t h
      * compares the head's strings (spelled_or_read): with table hints made
      * with these tables (d->hints 3) the posting's table bits say what it
      * finds, RULE_TABLES' bits 7 and 11 shifted onto RANK_USUAL and
-     * RANK_PREFERRED (posting_at refuses bits 8-10, 12-15); otherwise the head is
-     * read for such a key. It is read in any file for kana text whose entry is
-     * spelled otherwise yet normalizes to the key (it may or may not be
-     * spelled as the text is). */
-    if (d->hints && (d->hints == 3 || (!q->preferred && !q->usual)) &&
+     * RANK_PREFERRED (posting_at refuses bits 8-10, 12-15); otherwise (1, 2) the
+     * head is read for such a key. It is read in any file for kana text whose
+     * entry is spelled otherwise yet normalizes to the key (it may or may not
+     * be spelled as the text is). */
+    if (d->hints > (q->preferred || q->usual ? 2 : 0) &&
         !(q->key && (hint & HINT_NORMALIZED) && !(hint & HINT_SPELLING))) {
         STAT(hinted);
         *score = r->entry_len | (hint >> HINT_FREQ_SHIFT) << FREQ_KEY_SHIFT;
@@ -819,9 +821,8 @@ static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_
     r->entry_off = u64(post); r->entry_len = u32(post + 8); r->rules = u16(post + 12);
     r->key_off = group; r->key_len = key_len;
     if (hint) *hint = d->version == 3 ? u16(post + 14) : 0;
-    /* the table bits (RULE_TABLES) only with hints version 2 */
-    if ((d->version == 2 && u16(post + 14)) || (r->rules & ~(d->hints > 1 ? RULE_MASK | RULE_TABLES : RULE_MASK)) ||
-        r->entry_off < d->data ||
+    /* RULE_TABLES' bits rank only with hints version 2 (rank_posting) */
+    if ((d->version == 2 && u16(post + 14)) || (r->rules & ~(RULE_MASK | RULE_TABLES)) || r->entry_off < d->data ||
         r->entry_len < min_entry(d) || r->entry_len > VJO_LOCAL_MAX_ENTRY ||
         !range_ok(d, r->entry_off, r->entry_len)) return VJO_E_LOCAL_FORMAT;
     return VJO_OK;
