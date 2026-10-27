@@ -38,21 +38,52 @@ same module pages in every build.**
 ## Why the overlay waits (#358)
 
 The open overlay's wait hint ([text-stability.md](text-stability.md#why-the-overlay-waits-358)) is Shell code and
-data only: the choice of status as a try starts (`shell/worker.c` `start_job_kind`), the count's reset when a region
-is saved (`on_command`), `ocr_wait_hint`'s parse (it
-shares `ocr_boost_clock`'s branch: `core/config.c`) and its field in each `VjoConfig` copy. The hint (153 B) and the
-key (14 B) are in the data segment (`VJO_DATA_TABLE`), and so is "Recognizing…" now (15 B), which gives the Shell's
-code that much room back. No block, thread, stack or allocation; no budget raised. Measured with VitaSDK GCC 15.2.0
-in the pinned image (`tools/fast_gate.sh`'s; `tools/check_memory_ledger.py`'s module rows, text + data/bss), main
-`2f68854` against this change (the same Shell rows on `892cfb9` and `48d6a3b`):
+data only:
+- the choice of status as a try starts (`shell/worker.c` `start_job_kind`);
+- the count's reset when a region is saved (`on_command`);
+- `ocr_wait_hint`'s parse, which shares `ocr_boost_clock`'s branch (`core/config.c`), and its field in each
+  `VjoConfig` copy.
 
-| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+The hint (163 B since the audit's follow-up, 153 B in #364) and the key (14 B) are in the data segment
+(`VJO_DATA_TABLE`), and so is "Recognizing…" now (15 B), which gives the Shell's code that much room back. No block,
+thread, stack or allocation; no budget raised.
+
+Measured with VitaSDK GCC 15.2.0 in the pinned image (`tools/fast_gate.sh`'s; `tools/check_memory_ledger.py`'s
+module rows, text + data/bss):
+
+| Module | Debug | Normal | Loaded pages |
 |---|---:|---:|---:|
-| Shell | 101,988 + 73,200 → 102,092 + 73,408 B | 89,884 + 73,232 → 89,980 + 73,416 B | 176,128 / 163,840 B, unchanged |
+| Shell, main `2f68854` (before #364) | 101,988 + 73,200 B | 89,884 + 73,232 B | 176,128 / 163,840 B |
+| Shell, #364 (`199fe31`; the same on `6bfd1f4`) | 102,092 + 73,408 B | 89,980 + 73,416 B | unchanged |
+| Shell, the audit's follow-up on `6bfd1f4` (the hint's new text) | 102,092 + 73,416 B | 89,980 + 73,432 B | unchanged |
+| Shell, `main` `8da24c8` (#376) → the follow-up | 102,372 + 73,560 → 102,372 + 73,568 B | 90,020 + 73,416 → 90,020 + 73,432 B | unchanged |
 | Kernel, game worker | unchanged | unchanged | unchanged |
 
-The normal Shell keeps 132 B of code room (228 B before) and 312 B of data room (496 B); the debug Shell 308 B and
-320 B.
+On `8da24c8` with the follow-up, the normal Shell keeps 92 B of code room and 296 B of data room; the debug Shell
+28 B and 160 B.
+
+**With #355 and #359** (the audit's F2): the measured rows, `main` 8da24c8 with this change and each sibling's Shell
+change (#355 at 9e44739, #359 at f630b69), text + data/bss. Those heads predate #376 and #368, so the scratch merges
+were resolved for the build only.
+
+| Shell | Normal | Debug | Ledger |
+|---|---:|---:|---|
+| `main` 8da24c8 (#376 took the debug Shell's code from 102,092 to 102,372 B) | 90,020 + 73,416 B | 102,372 + 73,560 B | pass |
+| this change | 90,020 + 73,432 B | 102,372 + 73,568 B | pass (92 / 28 B of code room) |
+| + #359's Shell part (its log line, `SCREEN_MOVING_LOG` 190 B) | 90,036 + 73,616 B | 102,404 + 73,760 B | **debug FAIL** (code 4 B past its page) |
+| + #355, no clause | 90,076 + 73,456 B | 102,436 + 73,576 B | **debug FAIL** |
+| + #355 as it is (`WAIT_HINT_PAUSE`, a second copy of the hint, 214 B) | 90,108 + 73,664 B | 102,468 + 73,800 B | **debug FAIL** (code and data) |
+| + #355 as it is + #359 | 90,124 + 73,856 B | 102,500 + 73,984 B | **both FAIL**: 172,032 / 184,320 B of pages |
+| + #355 with its clause as a format of one copy + #359 | 90,140 + 73,680 B | 102,500 + 73,808 B | **both FAIL** (the code) |
+
+- **The clause cannot be a second copy.** As a format of one copy (`"%s Or turn on Pause the game to read."`,
+  written into a 201 B buffer in `start_job_kind`'s frame on VjoControl's 16 KiB stack when the pause would help),
+  the normal Shell's data stays in its page: before #376 it measured 90,100 + 73,680 B, and the ledger passed in
+  both builds.
+- **The debug Shell's code is what fails now.** #376 left it 28 B of room, and either sibling alone needs more. Room
+  has to be found first: a table to the data segment, as `RECOGNIZING` did, or a debug-only log line shortened.
+- The stack buffer's depth is not painted, as VjoNet's is, so #355 measures the frame (`-fstack-usage`) when it takes
+  the clause.
 
 ## Line finder fixes (API 50, vita-vn-ocr #129) and the pin at f8a1856
 

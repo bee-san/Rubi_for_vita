@@ -708,8 +708,9 @@ every row of the region has held still for `ocr_settle_ms` (150 ms by default,
 or `ocr_settle_press_ms` (1000; `0`: the same limit) when the open overlay waits
 for it ([first-ocr.md](first-ocr.md)), and a blinking "next" icon does not hold it up; on the console
 it has read no dialogue line early ([text stability](text-stability.md)). When the text changed under
-every read of two jobs in a row (an animated icon in the region, say), the open overlay says so as it
-tries again, and what helps: a region drawn around just the text (`ocr_wait_hint = off` keeps
+every read of two jobs in a row (an animated icon in the region, or text still typing), the open overlay says so as
+it tries again, and what helps where it can: a region drawn around just the text, if that leaves the moving thing
+out (`ocr_wait_hint = off` keeps
 "Recognizing…"; [why the overlay waits](text-stability.md#why-the-overlay-waits-358)). `ocr_skip_blank_lines = on`
 skips found lines with no text-like ink; it is off by default, because once it
 keeps soft text (a PSP game shown 2x, an upscaled render) it finds next to

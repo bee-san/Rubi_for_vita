@@ -266,61 +266,114 @@ learned model would have to wait out too.
 ## Why the overlay waits (#358)
 
 **The owner's item** (#358): "Say why the user is waiting. After a few seconds of 'Recognizing…' on torn reads,
-name the cause and the fix: shrink the box, or turn on Pause the game to read." A job whose screen changed under
-every read ends `VJO_E_SCREEN_CHANGED` and is dropped quietly (#81 request 4), and the Shell tries again at
-`note_screen_changed`'s pace (at once, then 250 ms, doubling to 4 s). Until now the open overlay said
-"Recognizing…" all along, however long that went on: with an animated icon in the region, until the user gave up
-(#353).
+name the cause and the fix: shrink the box, or turn on Pause the game to read."
+- A job whose screen changed under every read ends `VJO_E_SCREEN_CHANGED` and is dropped quietly (#81 request 4).
+- The Shell tries again at `note_screen_changed`'s pace: at once, then 250 ms, doubling to 4 s.
+- Until #364 the open overlay said "Recognizing…" all along, however long that went on. With an animated icon in the
+  region, that meant until the user gave up (#353).
 
 **What it says now.** As the open overlay starts a try at its text (`shell/worker.c` `start_job_kind`), once the
-last 2 jobs in a row ended that way (`WAIT_HINT_AFTER`; the press's own tries, or Automatically's just before the
-press), it says:
+last 2 jobs in a row ended that way (`WAIT_HINT_AFTER`; the press's own tries, or Automatically's before the press),
+it says:
 
-> Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ to
-> draw a region around just the text.
+> Recognizing… Something in the region keeps moving (an animated icon? text still typing?). If a region around just
+> the text leaves it out, press □ to draw one.
 
-- **Not an error.** The tries go on at the same pace, and the first that reads its screen shows its text and word in
+- **Not an error.** The tries go on at the same pace. The first try that reads its screen shows its text and word in
   place of the hint. It is the overlay's status line (dim, as "Recognizing…"), never the subtitle strip's.
-- **When.** From the third try in a row: with a press, two torn tries take about 3 s; a press that comes after two
-  torn background jobs says it at once, since Rubi already saw the text change under two reads.
-- **The fix it names** is the one `main` has: a region drawn around the text alone leaves an icon beside it out.
-  Pause the game to read (#355) is the other; the hint names it once that setting exists.
+- **When.** At the overlay's next try once two jobs in a row tore, so from the third try of a press's own:
+  - **On the host bench:** a median 2.85 s after L + R (est.: the bench's times, below).
+  - **On the console:** no press has torn yet. Its 16 torn background jobs took 0.75-3.16 s each (median 2.45 s),
+    with twice a press's wait budget (`ocr_settle_max_ms` 2 s against `ocr_settle_press_ms`' 1 s), so a press's two
+    torn tries should take less (unmeasured).
+  - **After two torn background jobs, a press in the pace's gap** (no job running) starts a try that says it at once.
+  - **A press while Automatically's next try runs**, the more common case (that try starts as soon as the pace
+    allows), says "Recognizing…" until that try ends. If it tore too, the overlay's own next try, after the pace,
+    says why. If it read, its text shows.
+- **The fix, as a condition.** A region drawn with □ helps only where it can leave the moving thing out: an icon
+  beside the text, or a picture moving outside the lines. It cannot leave out an icon inside a line's box (right after
+  its last character), a picture moving behind the glyphs, or a line still typing out. Of the bench's 2,404 runs
+  that never show text on `main` (below):
+  - **□ can help in 1,292:** 556 with an icon beside the text, 552 with one beside a line that types, 184 with a
+    picture moving outside the lines;
+  - **□ cannot help in 1,112:** 560 with the icon in a line, 184 with a picture behind it, 368 with an icon that
+    follows the typing.
+
+  So the hint says the fix as a condition ("if a region around just the text leaves it out"), and names typing as a
+  cause, which is what the slow-typing runs that show it first are (below).
+- **Pause the game to read** (#355, a draft) is the fix for the rest in a Vita game: a frozen frame cannot tear. The
+  hint names it once #355 is on `main`, only while the setting is off, and never in the PSP emulator, whose frames
+  the kernel never pauses. See "With #355 and #359" below for how its clause fits.
 - **Starting over.** A region saved or cleared (□) starts the count over, as a new game does: the old region's tears
   say nothing of the new one's, and its next press says "Recognizing…" until two of its own jobs tear.
+- **Held over, in Only when I press L + R.** Nothing reads the screen between presses there, so a count of 2 from
+  one press holds until a read, a region or a new game. The next press then says why from its first try. On a page
+  with the same icon that is still true; on another page, that try's read replaces the hint. In Automatically, the
+  background jobs after the close count again, or a read ends the run.
 - **Off.** `ocr_wait_hint = off` in `config.ini` keeps "Recognizing…" all along, as before (on by default).
 
-**Why 2.** `tools/wait_hint_replay.py` replays the rule for 1, 2 and 3 torn jobs in a row:
-- **On the owner's console** (CLANNAD, every debug build of API 20 or later: test.2-test.4, the test.4 collect's
-  `log.old.txt` and `log.txt`): none of the 75 openings that waited for a recognition met a torn job, so the hint would
-  have shown in none of them, whatever the count. The 376 background jobs had 16 torn ones, in 15 runs: 14 single, 1
-  double, each followed by a read. A wait through them would have met the hint after 15 of the runs with 1 (each
-  until the next job's result, a median 1.96 s later), after 1 with 2 (the double, 987 ms before its read), and after
-  none with 3.
-- **On the host** (rubi-spinner's #353 bench, `host/spinner_bench.c`: 184 hooked dialogue regions of 46 titles,
-  15 scenarios, L + R 3 s after the page, 20 s; `main` 892cfb9's timelines; times are the bench's estimates): all
-  1,668 runs that never show text (an icon with more frames than a row's ring holds, a picture moving in the box)
-  were torn, and every one gets the hint, after L + R:
+**Why 2.** `tools/wait_hint_replay.py` replays the rule for 1, 2 and 3 torn jobs in a row.
+- **On the owner's console:**
+  - **The data:** CLANNAD, every debug build of API 20 or later (test.2-test.4), from the test.4 collect's
+    `log.old.txt` and `log.txt`.
+  - **The waits:** none of the 75 openings that waited for a recognition met a torn job, so the hint would have shown
+    in none of them, whatever the count.
+  - **The tears:** the 376 background jobs had 16 torn ones, in 15 runs (14 single, 1 double), each followed by a
+    read. A wait through those runs would have met the hint after 15 of them with 1 (each until the next job's
+    result, a median 1.96 s later), after 1 with 2 (the double, 987 ms before its read), and after none with 3.
+- **On the host:**
+  - **The bench:** rubi-spinner's `host/spinner_bench.c`, as #359 commits its run at f630b69 (`full-main23` /
+    `full-fix11`: their scenario fields match its `docs/benchmarks/spinner-20261027.json`, all 575). That is 184
+    hooked dialogue regions of 46 titles in 23 scenarios, L + R 3 s after the page, then 20 s (the bench's estimated
+    times). Its `main` is 892cfb9's stable-text wait and scene tracker, the same code as on 2a92864.
+  - **The runs that never show text** (2,404) were all torn, and every one gets the hint. The last column is the 563
+    runs that show text after a wait:
 
-  | in a row | the hint, after L + R (median / 90th percentile / slowest) | of the 104 runs that show text after a wait: the hint first (< 1 s before the text) |
+  | in a row | the hint, after L + R (median / 90th percentile / slowest) | of the 563: the hint first (< 1 s before the text) |
   |---|---|---|
-  | 1 | 1.19 / 1.47 / 2.39 s | 22 (0) |
-  | **2** | **2.75 / 3.15 / 4.80 s** | 22 (4) |
-  | 3 | 4.50 / 5.15 / 9.35 s | 5 (1) |
+  | 1 | 1.24 / 1.59 / 2.76 s | 137 (34) |
+  | **2** | **2.85 / 3.30 / 4.80 s** | 67 (18) |
+  | 3 | 4.65 / 5.30 / 9.35 s | 19 (7) |
 
-  Of the 22, 21 have an icon that turns and rests and 1 the 24-frame icon: the hint is true there (an icon is in the
-  region), and shows a median 2.2 s before the text with 2. The still page, the typing line and the 8-frame icon never
-  show it.
-- **So 2:** "a few seconds" (2.75 s) with an icon, and on the console once in 15 runs of torn reads, never in a wait
-  the owner made. 1 would follow 14 single tears that the next job read; 3 waits 1.75 s longer for the same runs.
+  - **The 67 with 2:**
+    - 38 type a character every 15 frames, 2 every 10 frames, and 5 type with a half-second pause after every 5
+      characters;
+    - 21 have an icon that turns and rests, 1 has the 24-frame icon.
+    - Something is moving in each, and the hint shows a median 1.7 s before the text.
+  - **Never:** the still page, the normal typing line and the 8-frame icon.
+- **So 2:** "a few seconds" (2.85 s) with an icon, and on the console once in 15 runs of torn reads, never in a wait
+  the owner made. 1 would follow 14 single tears that the next job read; 3 waits 1.8 s longer for the same runs.
 
-**With #353's line watch** (its bench, the same 2,760 runs): 2 runs never show text, and the hint shows in both
-(4.25 s and 9.35 s after L + R, with 2); 26 of the 1,724 runs that show text after a wait were torn on the way, and 3
-of them get the hint first (2.2-2.7 s before the text).
+**With #359's line watch** (#353; its run at f630b69, the same 4,232 runs; with 2):
+- **11 runs never show text,** and the hint shows in all 11 (6.60 / 9.65 / 9.65 s after L + R).
+- **45 of the 2,913 runs that show text after a wait** get the hint first (11 under 1 s before the text): 37 of them
+  type slowly with nothing else moving (35 a character every 15 frames).
+- An earlier run of #359's (fix9, superseded by its audit) gave 2 runs and 3 of 1,724.
 
-**Its cost.** No allocation, thread or static buffer: one `VjoConfig` field, 96 B of the normal Shell's code (104 B
-of the debug one's), and the hint's 153 B and the key's 14 B in the data segment, where "Recognizing…" went too
-([memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358)).
+**With #355 and #359.** Their Shell changes do not fit beside this one on today's `main` (8da24c8) as they are.
+- **The measurement:** `main` with this change, plus #355 at 9e44739 and #359 at f630b69's Shell change (its log
+  line), each built in both variants (`tools/check_memory_ledger.py`'s module rows). Those heads predate #376 and
+  #368, so the scratch merges were resolved for the build only.
+- **The clause #364 asked of #355 cannot have a second copy.** #355 as it is keeps one: `WAIT_HINT_PAUSE`, the whole
+  hint and " Or turn on Pause the game to read in the Rubi app.". With #359 too, the normal Shell takes 172,032 B of
+  pages against its 163,840 B budget.
+- **One copy is enough.** Make the clause a format, `"%s Or turn on Pause the game to read."`, and have
+  `start_job_kind` write the hint into it (in a buffer on the control thread's stack) only when the pause would help
+  (`!cfg.ocr_pause && !game_static_fb`). That keeps the normal Shell's data in its page, measured before #376
+  (90,100 + 73,680 B, ledger pass in both builds).
+- **The debug Shell's code has no room for either sibling now.** #376 took 280 B of it (102,092 → 102,372 B, 28 B
+  left), and each sibling adds more:
+  - #359's Shell part alone: 102,404 B, 4 B past its page;
+  - #355 alone with no clause: 102,436 B.
+  - So both need room found in the debug Shell first; [memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358)
+    has the rows.
+
+**Its cost on `main`.** No allocation, thread or static buffer:
+- one `VjoConfig` field, `ocr_wait_hint`, read by the Shell only;
+- 96 B of the normal Shell's code (104 B of the debug one's). That is net: "Recognizing…" left the code segment for
+  the data segment, where the hint's 163 B and the key's 14 B are too.
+- [memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358) has the rows.
 
 **Not run on a console.** The rule and its text are host-tested (`host/tests/test_shell_worker.c`
-`open_overlay_says_why_it_waits`); whether the hint reads well over a game, and when it shows there, waits for the
+`open_overlay_says_why_it_waits`). Whether the hint reads well over a game, and when it shows there, waits for the
 owner's test build.
