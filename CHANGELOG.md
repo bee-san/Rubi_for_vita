@@ -130,6 +130,11 @@ time. Nothing new here has run on a console yet. Like 0.9.7, this release is the
   in a few minutes and is the merge gate ([AGENTS.md](AGENTS.md)); CI caches its toolchains, runs ctest in
   parallel and skips what a pull request does not touch (`tools/ci_scope.py`), and builds the Vita targets in
   the VitaSDK image pinned by digest.
+- Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
+  pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
+  tests' fake memory, fixed in #341), unseen until a release check ran them. It runs when `VJO_VOCR_MODEL_DIR` or
+  its cache holds every pinned model the tests read, each checked by size and SHA-256
+  (`tools/prepare_ocr.py --backend vocr-tests`, `--check` to only check); `--models on` fetches them first.
 - **OCR cuts lines better** (API 50): vita-vn-ocr #129's column fix (`ocr_line_fix = on`, the default): a line's parts
   across a full-width space stay one line. On the owner's hooked PS Vita and PSP pages it takes the whole-dialogue
   error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34% (host, measured;

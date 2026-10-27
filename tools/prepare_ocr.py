@@ -11,8 +11,11 @@ v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 --backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8g.vocr,
 VOCR5_N_w8g2.vocr, VOCR5_L_w8g2.vocr) and their release's attribution, v0.3.6-head2level.1's ATTRIBUTION.md
 kept as MODEL-ATTRIBUTION.md, and the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
-with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. Each file comes from the
-release's public download; only when that fails (a draft release) is an authenticated
+with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. --backend vocr-tests
+fetches what the host tests read from VJO_VOCR_MODEL_DIR (CMakeLists.txt: their real-model checks): every pinned
+recognizer, the four LMs and the gate's weights; with --check it downloads nothing, and says which of them the
+--output directory lacks or holds other bytes of (exit status 1), as tools/fast_gate.sh's models lane asks first.
+Each file comes from the release's public download; only when that fails (a draft release) is an authenticated
 GitHub CLI (`gh auth login`) tried. --from takes a copy downloaded by other means.
 Every file is checked against its pinned size and SHA-256.
 """
@@ -292,6 +295,40 @@ def fetch_lms(directory, source=None):
     return paths
 
 
+def test_models():
+    """(name, asset table, release tag) of every file the host tests read from VJO_VOCR_MODEL_DIR: each pinned
+    recognizer, shipped or not (every release table here, which tools/tests/test_vocr_defaults.py holds equal to
+    the plugin's, core/vocr_ocr.c), the four LMs and the text-presence gate's weights. No attribution: no test
+    reads one."""
+    tables = ((VOCR5_ASSETS, VOCR5_TAG), (VOCR5V_ASSETS, VOCR5V_TAG), (VOCR4_ASSETS, VOCR4_TAG),
+              (VOCR3_ASSETS, VOCR3_TAG), (VOCR_ASSETS, VOCR_TAG), (VOCR_LM_ASSETS, VOCR_LM_TAG),
+              (VOCR_GATE_ASSETS, VOCR_GATE_TAG))
+    return [(name, assets, tag) for assets, tag in tables for name in assets]
+
+
+def fetch_test_models(directory, source=None):
+    """test_models(), each fetched as the other backends fetch theirs (a valid copy in `directory` is kept)."""
+    return [fetch_release_asset(directory, name, assets, tag, source) for name, assets, tag in test_models()]
+
+
+def check_models(directory, models):
+    """What `directory` lacks of `models` ((name, asset table, tag), as test_models()): one line per file that
+    is missing or not its pinned size and SHA-256, [] when every one is the pinned file. Reads only."""
+    problems = []
+    for name, assets, tag in models:
+        _, size, sha = assets[name]
+        path = Path(directory) / name
+        if not path.is_file():
+            problems.append(f'{name}: missing ({tag})')
+            continue
+        data = path.read_bytes()
+        if len(data) != size:
+            problems.append(f'{name}: {len(data)} B, not the pinned {size} B ({tag})')
+        elif hashlib.sha256(data).hexdigest() != sha:
+            problems.append(f'{name}: not the pinned SHA-256 ({tag})')
+    return problems
+
+
 
 def binary_param(text, layer_types):
     """Numeric subset of the official ncnn2mem format, for this pinned graph.
@@ -353,16 +390,34 @@ def generate(directory, ncnn_source):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--output', type=Path, required=True)
-    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-tiers', 'vocr-lm'), default='ncnn',
+    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-tiers', 'vocr-lm', 'vocr-tests'), default='ncnn',
                     help="vocr-tiers: the three model sizes' recognizers (Small, Normal, Large); "
-                         "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md")
+                         "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md; "
+                         "vocr-tests: every pinned recognizer, the LMs and the gate's weights (VJO_VOCR_MODEL_DIR)")
     ap.add_argument('--ncnn-source', type=Path)
     ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS,
                                                **VOCR5V_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
+    ap.add_argument('--check', action='store_true',
+                    help='vocr-tests: download nothing; exit 1 unless --output holds every one, pinned')
     args = ap.parse_args()
+    if args.check:
+        if args.backend != 'vocr-tests' or args.source:
+            ap.error('--check is for --backend vocr-tests, without --from')
+        problems = check_models(args.output, test_models())
+        for problem in problems:
+            print(problem)
+        print(f'{len(test_models()) - len(problems)} of {len(test_models())} pinned test models verified in',
+              args.output)
+        raise SystemExit(1 if problems else 0)
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.backend == 'vocr-tests':
+        for path in fetch_test_models(args.output, args.source):
+            print('Verified', path.name)
+        print('Test models ready in', args.output, '- VJO_VOCR_MODEL_DIR for the host tests (tools/fast_gate.sh:',
+              'the models lane)')
+        return
     if args.backend == 'vocr-lm':
         for path in fetch_lms(args.output, args.source):
             print('Verified', path.name)
