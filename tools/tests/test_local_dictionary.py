@@ -855,9 +855,10 @@ class FrequencyTest(unittest.TestCase):
         tables_id = convert.tables_id(convert.lookup_tables())
         self.assertEqual(two[160:172], b"VJPH" + struct.pack("<II", 2, tables_id))
         self.assertEqual(one[160:172], b"VJPH" + struct.pack("<II", 1, 0))
-        marked, expected = {}, {}
+        marked = {}
         for (at, key, spelling, reading, rules, hint), old in zip(self.postings(two), self.postings(one)):
             self.assertEqual((at, key, spelling, reading, hint), (old[0], old[1], old[2], old[3], old[5]))
+            self.assertEqual(old[4] & ~convert.RULE_BITS, 0)  # the default file: no table bits
             self.assertEqual(rules & convert.RULE_BITS, old[4])  # the deinflection bits as they were
             if rules & ~convert.RULE_BITS:
                 marked[(key, spelling, reading)] = rules & ~convert.RULE_BITS
