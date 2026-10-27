@@ -161,6 +161,20 @@ static int auxiliary_at(const char *surface, size_t n, size_t s, uint32_t prev, 
     return 0;
 }
 
+const char *vjo_furigana_conjugated(const char *base, size_t base_len, const char *reading, size_t reading_len,
+                                    const char *next, size_t n)
+{
+    Piece p;
+    p.base = base;
+    p.base_len = base_len;
+    p.reading = reading;
+    p.reading_len = reading_len;
+    for (unsigned k = 0; k < sizeof(irregular) / sizeof(irregular[0]); k++)
+        if (piece_is(&p, irregular[k].base, irregular[k].reading))
+            return irregular[k].conjugated(next, n);
+    return NULL;
+}
+
 /* p's reading, or the irregular reading for the kana after it. */
 static void reading_of(const Piece *p, const char *next, size_t n, VjoRuby *out)
 {
