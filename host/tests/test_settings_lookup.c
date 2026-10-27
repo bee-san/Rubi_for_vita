@@ -508,7 +508,7 @@ static void the_cursor_by_word_stick_and_tap(void)
 
 /* Enter saves the shown entry as a card: the overlay's record, without a picture; a typed text longer than the
  * word is its sentence, a typed word alone has none; no game, MiscInfo the date it was saved. The same card again
- * is queued already. Where nothing matches, Enter opens the keyboard. */
+ * is queued already. Where nothing matches, Enter says so; with no text, it opens the keyboard. */
 static void a_card_from_a_typed_text(void)
 {
     VjoAnkiNote note;
@@ -533,15 +533,22 @@ static void a_card_from_a_typed_text(void)
     frame(SCE_CTRL_CROSS);
     TEST_ASSERT(queued(&note, "") == 2);
     TEST_CHECK(!strcmp(note.sentence, "") && note.hl_start == -1);
-    /* on が nothing matches: Enter is the keyboard */
+    /* on が nothing matches: Enter says so, saves nothing and opens no keyboard */
     keyboard_types("猫が");
     frame(SCE_CTRL_TRIANGLE);
     frame(SCE_CTRL_RIGHT);
     int calls = vjo_test_ime_calls;
-    vjo_test_ime_button = SCE_IME_DIALOG_BUTTON_CLOSE; /* cancelled: the text stays */
-    TEST_CHECK(frame(SCE_CTRL_CROSS) == 1 && vjo_test_ime_calls == calls + 1 && queued(NULL, NULL) == 2);
+    TEST_CHECK(frame(SCE_CTRL_CROSS) == 0 && vjo_test_ime_calls == calls && queued(NULL, NULL) == 2);
+    TEST_CHECK(!strcmp(drawn.footer, "No entry here to save.") && !drawn.footer_error);
+    /* a keyboard cancelled: the text stays */
+    vjo_test_ime_button = SCE_IME_DIALOG_BUTTON_CLOSE;
+    TEST_CHECK(frame(SCE_CTRL_TRIANGLE) == 1 && vjo_test_ime_calls == calls + 1);
     frame(0);
     TEST_CHECK(shown("猫") && shown("が"));
+    /* with no text, Enter is the keyboard */
+    keyboard_types("");
+    frame(SCE_CTRL_TRIANGLE);
+    TEST_CHECK(frame(SCE_CTRL_CROSS) == 1 && vjo_test_ime_calls == calls + 3);
     /* an empty text accepted: nothing to look up */
     keyboard_types("");
     frame(SCE_CTRL_TRIANGLE);

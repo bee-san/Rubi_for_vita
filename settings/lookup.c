@@ -300,7 +300,7 @@ int vjo_lookup_mine(const VjoLookupSource *src, char *msg, size_t cap)
     char misc[160];
     int rc;
     if (vjo_lookup_note(src, &note, misc, sizeof(misc)) < 0) {
-        snprintf(msg, cap, "%s", looked_up == cursor ? "No word here to save." : "Looking it up first: try again.");
+        snprintf(msg, cap, "%s", looked_up == cursor ? "No entry here to save." : "Looking it up first: try again.");
         return VJO_APP_QUEUE_FAILED - 10;
     }
     rc = vjo_app_queue_save(&card, &note, NULL);

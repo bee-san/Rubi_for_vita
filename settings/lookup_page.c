@@ -680,13 +680,11 @@ static int input(const VjoLookupInput *in)
     if (mode == MODE_SEARCH) {
         int on_text = y >= TEXT_Y && y < TEXT_Y + TEXT_H && x >= 24 && x < 936;
         if (in->pressed & s_ui->buttons->enter) {
-            /* Enter: a card of the entry shown; with none (no text, no word there), the keyboard */
-            catch_up();
-            if (vjo_lookup_result()->list.n_entries) {
-                mine();
-                return 0;
-            }
-            return type_text();
+            /* Enter: a card of the entry shown (none there: it says so); with no text yet, the keyboard */
+            if (!vjo_lookup_text_len())
+                return type_text();
+            mine();
+            return 0;
         }
         if ((in->pressed & SCE_CTRL_TRIANGLE) || (on_text && !vjo_lookup_text_len()))
             return type_text();

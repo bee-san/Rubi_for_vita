@@ -982,7 +982,7 @@ The Rubi app's **Look up** page (#313) looks words up beside the suspended game,
 and lookup, and saves them as Anki cards: a word you type, or a word of an earlier line of a game. L or R, or a tap on
 **Search** or **Earlier lines**, goes from one to the other; each keeps its text and cursor.
 
-- **Search.** Triangle (or Enter, or a tap on the empty text box) opens the Vita keyboard for a word or a sentence
+- **Search.** Triangle (or, before anything is typed, Enter or a tap on the text box) opens the Vita keyboard for a word or a sentence
   of up to 128 characters; every language's keyboard is offered, Japanese among them, whatever the system's
   keyboards are. The text is looked up as the overlay looks up its text: the word at the cursor, longest match first,
   in its dictionary form (した → する), in `local_dictionaries`' order with the same ranking, the other dictionaries'
@@ -1008,11 +1008,11 @@ and lookup, and saves them as Anki cards: a word you type, or a word of an earli
 | Left stick | Left/right: a character a step, the word looked up once the cursor rests (`stick_lookup_ms`); up/down: scroll the entry |
 | Touch the text | Look up the word that starts at the character touched |
 | Up / Down, right stick | Scroll the entry (in the list: choose a line; Left/Right a page of lines) |
-| Enter | Save the entry as a card (Search with no entry there: the keyboard; the list: open the line) |
+| Enter | Save the entry as a card (Search with no text yet: the keyboard; the list: open the line) |
 | Square | Earlier lines: the next game |
 | Cancel | An open line: back to the list; else exit the app |
 
-The page uses no network and allocates nothing: its memory is static, about 420 KB of the app's 50 MiB
+The page uses no network and allocates nothing: its memory is static, about 420 KiB of the app's 50 MiB
 ([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)), and leaving the page closes the
 dictionaries' files. The Shell, the game worker and the kernel are unchanged. Not run on a console yet.
 
