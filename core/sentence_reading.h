@@ -31,23 +31,34 @@
 #include "local_dict.h"
 
 /* Top entries: as frequent as the overlay's entry within this factor of its Jiten rank. */
-#define VJO_READINGS_RATIO 2
-/* A whole entry ending in kana loses to its kanji part that is this much more frequent. */
-#define VJO_READINGS_PART_RATIO 8
+#define VJO_READINGS_RATIO 4
+/* A part of a word (a run of its kanji as a word of its own) overrules it when this much more frequent. */
+#define VJO_READINGS_PART_RATIO 4
+/* A rare entry: unranked, or ranked past this. */
+#define VJO_READINGS_RARE 20000
 /* The scratch a card's sentence takes at most, besides the dictionary session (vjo_local_session_size): one
  * lookup's result and scratch budgets, and for a sentence of VJO_LOCAL_MAX_TEXT bytes its copies (2 x 4 KiB),
  * its readings (32 B a kanji, and their kana) and the lookups' configuration (host test
  * a_longest_sentence_fits_its_scratch). */
 #define VJO_READINGS_SCRATCH (VJO_LOCAL_RESULT_BUDGET + VJO_LOCAL_SCRATCH_BUDGET + 80u * 1024u)
 
+/* The rules (vjo_reading_rules_default: all of them, the constants above); each can be turned off for the host's
+ * measurements (host/sentence_readings.c). */
 typedef struct {
     int ratio;      /* VJO_READINGS_RATIO */
-    int part_ratio; /* VJO_READINGS_PART_RATIO; 0: no check of a whole entry's kanji part */
-    int counters;   /* 1: a counter after a number gets no reading */
-    int variants;   /* 1: a spoken shortening of the reading (ほんとに of 本当に) is no other reading */
-    int anchor;     /* 1: a match from kana ending inside a run of kanji gives way to the run's own */
-    int compounds;  /* 1: a word in a compound the lookup split (after kanji or katakana): every entry counts */
+    int part_ratio; /* VJO_READINGS_PART_RATIO */
+    int rare;       /* VJO_READINGS_RARE */
+    int counters;   /* a counter after a number gets no reading, nor the number */
+    int variants;   /* a spoken shortening of the reading (ほんとに of 本当に) is no other reading */
+    int anchor;     /* a match from kana gives way to the lookup at its first kanji (ガ目, この家) */
+    int compounds;  /* in a compound the lookup split, every entry of the word, or of its first run, counts */
+    int parts;      /* a run of kanji of a longer word, as a word of its own (今日 of 今日は) */
+    int phrases;    /* a later run with its kana (開ける of 目を開ける) */
+    int shorter;    /* a rare inflected match one character shorter (扱い of 扱いだ) */
+    int names;      /* another dictionary's name entry of the same text whose romanized readings differ (VNDB's) */
+    int inline_readings; /* the text's own reading in brackets after a word must be the word's (嚇(おど)し) */
 } VjoReadingRules;
+void vjo_reading_rules_default(VjoReadingRules *r);
 
 /* What one sentence's (or an export's) parse did, for log.txt and the host's measurements. */
 typedef struct {
@@ -55,13 +66,22 @@ typedef struct {
     unsigned words;     /* matched words with kanji */
     unsigned read;      /* ... given their reading */
     unsigned ambiguous; /* ... none: another entry as frequent reads them otherwise */
-    unsigned part;      /* ... none: a whole entry whose kanji part reads otherwise */
+    unsigned compound;  /* ... none: in a compound, another entry reads them otherwise */
+    unsigned part;      /* ... none: a run of their kanji, as a word, reads it otherwise */
+    unsigned phrase;    /* ... none: a later run with its kana reads it otherwise */
+    unsigned shorter;   /* ... none: one character shorter, a common word reads them otherwise */
+    unsigned name;      /* ... none: another dictionary has the text as a name, romanized otherwise */
+    unsigned inline_readings; /* ... none: the text gives its reading in brackets, another one */
     unsigned counters;  /* ... none: a counter after a number, or that number */
-    unsigned unplaced;  /* ... none: the reading does not fit the text */
+    unsigned unplaced;  /* ... none: the reading does not fit the text (or the entry has none: a name) */
     unsigned unchecked; /* ... none: the other entries could not all be read (over the lookup's budget) */
     unsigned unmatched; /* kanji in no match */
-    unsigned anchored;  /* matches from kana that gave way to their kanji run's (rules.anchor) */
-    unsigned failed;    /* lookups that failed (an unreadable dictionary, a result over its budget) */
+    unsigned anchored;  /* matches from kana that gave way to their first kanji's (rules.anchor) */
+    unsigned failed;    /* lookups that failed (an unreadable dictionary) */
+    /* Optional (the host's measurements): each matched word with kanji, its entry and what it got (why: "read",
+     * or the counter's name above); NULL in the app. */
+    void (*trace)(void *ud, const char *why, const char *text, size_t n, const char *spelling, const char *reading);
+    void *trace_ud;
 } VjoReadingStats;
 
 /* The readings of the kanji of text[from, to) (its other bytes are never looked up), into out (at most cap,
@@ -73,11 +93,12 @@ int vjo_sentence_rubies(VjoArena *keep, VjoArena *scratch, const VjoPlatform *p,
                         const VjoReadingRules *rules, const char *text, size_t from, size_t to, VjoRuby *out,
                         int cap, VjoReadingStats *st);
 
-/* A word's readings on its text as written (surface, n bytes): its dictionary form spelling read reading,
- * placed as above (no lookup). Readings point into reading or are static. Returns how many (0: the word has
- * no kanji, or its reading does not fit), at most cap. */
-int vjo_word_rubies(const char *surface, size_t n, const char *spelling, const char *reading, VjoRuby *out,
-                    int cap);
+/* A word's readings on its text as written (surface, n bytes, followed in the text by after, after_len bytes:
+ * 何's reading looks at it): its dictionary form spelling read reading, placed as above (no lookup). Readings
+ * point into reading or are static. Returns how many (0: the word has no kanji, or its reading does not fit), at
+ * most cap. */
+int vjo_word_rubies(const char *surface, size_t n, const char *after, size_t after_len, const char *spelling,
+                    const char *reading, VjoRuby *out, int cap);
 
 /* Appends text[0, len) to b in Anki's furigana syntax (" 漢字[かな]"): each reading's base after a space,
  * none at the start or after a tag; text escaped as HTML, '[' and ']' too (no reading of Anki's furigana
