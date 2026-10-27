@@ -493,7 +493,7 @@ lookup cursor at 59: 7 chars, dictionary 1/1, page 1/1, 5 reads 16948 B, rc=0, 0
 ```
 
 That is why (`first word` during Auto OCR, `on open`, `cursor` for an arrow
-or a tap, `page` for an L or R tap), the cursor byte, the matched span in
+or a tap, `page` for an L or R tap before 0.9.6, which stacks the dictionaries instead), the cursor byte, the matched span in
 characters, the dictionary file (`?` among several with one shown), the page,
 the file reads and bytes, the result and the time; then up to 8 characters
 at the cursor, the entry, its dictionary's name (the file's title, as the bundled

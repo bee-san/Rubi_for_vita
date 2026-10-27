@@ -126,8 +126,8 @@ Enable `daijirin.vjdict` alone to prefer its bilingual definitions, or put it
 before `jmdict.vjdict` in `local_dictionaries` to retain plain JMdict as a
 fallback. Use the actual installed filenames. This changes dictionary lookup
 without changing the OCR engine. The local overlay performs one lookup at the
-selected character and displays one entry at a time; set **Dictionaries shown**
-to 2 to page to JMdict's entry with Down (see below).
+selected character and shows the best match first; with **Dictionaries shown**
+at 2, JMdict's entry for the same word follows below it (see below).
 
 Nested English and Japanese text becomes plain text. Ruby annotation text,
 styles and link destinations are omitted; the base characters and visible link

@@ -37,7 +37,7 @@ earlier line opens with the cursor on 万; with today's default, OFF, it opens o
 - The body's first line says where the text is: `Earlier line -2 · ▲ earlier · ▼ later` (without
   `▲ earlier` on the oldest line kept).
 - On the focused line everything works as on the current text: Left/Right, Up/Down between its own
-  rows, the left stick, a tap, the dictionaries' pages (L/R) and Enter. Each line's first word is
+  rows, the left stick, a tap, the other dictionaries' entries below the word and Enter. Each line's first word is
   looked up when it is shown, as the current text's is when the overlay opens. The arrows' Up/Down
   between lines are the d-pad's only: a held left stick stops at the text's first and last rows, as it
   stops at a one-row text's ends ([touch-lookup.md](touch-lookup.md#the-left-stick-138)).
