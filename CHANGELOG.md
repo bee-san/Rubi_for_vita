@@ -282,15 +282,17 @@ been reported.
     Their plain writes against those atomic reads were a data race in C11 terms: ThreadSanitizer found 13-14 in 5 runs
     of the race test on `main` (two measurements) and none now (clang 18, the fleet box). A stream that has had text
     no longer reads as empty to the watch while a new caller takes it.
-  - **One stream per caller** (#366's audits): a keep (a stream that agreed with OCR, or a diagnostic pin) takes the
-    stream's lock, as an agreeing one already did, so it never lands while a new caller is taking the stream, where it
+  - **One stream per caller** (#366's audits): a diagnostic pin (no current Shell sends one) takes the stream's lock,
+    as an agreeing stream's keep already did, so a keep never lands while a new caller is taking the stream, where it
     could let that caller's other thread take a second one. Should a caller still hold two, the job shows the one it
-    writes: it showed the other one's old line, with trust on every job and without OCR (the host's job tests).
+    writes, whenever it can read that one: it showed the other one's old line, with trust on every job and without OCR
+    (the host's job tests).
   - **The wait:** a new caller still waits while the least recently written stream is busy and every other caller
-    keeps the CPUs busy. On the host's hammer test, on three or four CPUs, its longest wait was 0.21-0.48 s against
-    0.04-0.05 s before #366, whose quick takes were then mostly the newest stream's; on one CPU about 0.45 s for both;
-    with callers that sleep between copies, no longer than before. Passing a busy stream over ended the wait, but gave
-    callers with two threads two streams (223 to 3,880 times in 20 runs of 500 ms), so it was not taken
+    keeps the CPUs busy. On the host's hammer test (12 callers copying in tight loops; three measurements), on three
+    or four CPUs its longest wait was 0.15-0.49 s against 0.04-0.16 s before #366, whose quick takes were then mostly
+    the newest stream's; on one CPU about 0.45 s for both; with callers that sleep between copies, at most 17 ms for
+    both, but for one run of 40 ms against 4 ms. Passing a busy stream over ended the wait, but gave callers with two
+    threads two streams (223 to 5,980 times in 20 runs of 500 ms, two measurements), so it was not taken
     ([details](docs/native-hooks.md)).
   - **Tests:** the issue's state; a suite that runs each interleaving at the search's own points on every run
     (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 7 of whose 15 tests fail on `main` with its four

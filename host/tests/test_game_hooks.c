@@ -1413,7 +1413,14 @@ static void trusted_call_source_after_four_agreements(void)
  * second slot appears on stream 14 with an old line, and the caller's next lines land in stream 9; then the other way
  * round, learned on 14, with the caller's lines landing in a second slot on 9. Every job shows the current line, from
  * the slot the caller writes (the newest), never the second slot's old one. Before, the job took the last of the
- * slots in ID order: with trust, the old line on every job, without OCR. */
+ * slots in ID order: with trust, the old line on every job, without OCR. Each case also runs with the streams' clock
+ * near 2^32: the old line at 0xFFFFFFF9, the caller's next lines wrapping past 0 (#366's audit-c, N2: an unsigned
+ * comparison took the old line from line 48 on). */
+static uint32_t clock_after(uint32_t base, uint32_t n) /* the clock's n-th value after base (0 skipped, as its own) */
+{
+    uint32_t v = base + n;
+    return base && v < base ? v + 1u : v;
+}
 static void second_slot_of_the_learned_caller(void)
 {
     static char lines[60][96], ocr[60][96];
@@ -1429,36 +1436,36 @@ static void second_slot_of_the_learned_caller(void)
         else snprintf(ocr[i], sizeof(ocr[i]), "%s", varied[i % 10]); /* unlike each other and the old line */
         snprintf(lines[i], sizeof(lines[i]), "「%s」", ocr[i]);
     }
-    for (int trust = 0; trust < 2; trust++)
-        for (int below = 0; below < 2; below++) {
-            const uint32_t learned = below ? 14 : 9, second = below ? 9 : 14, writes = below ? second : learned;
-            const uint32_t speed = trust ? VJO_GAME_OCR_S_TRUST : 0;
-            TEST_CASE_("%s, the second slot %s the learned one", trust ? "trusted" : "hook_trust = off",
-                       below ? "below" : "above");
-            reset();
-            fs[learned].key = 0x5910u;
-            for (unsigned i = 0; i < 40; i++) {
-                stream(learned, VJO_HOOK_KIND_CALL, i + 1, lines[i]);
-                spy_text = ocr[i];
-                TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, speed, &out) == 0 && out.text_from == learned);
-            }
-            TEST_ASSERT(hk.sel.interval && hk.sel.locked == learned);
-            if (trust) TEST_ASSERT(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
-            fs[second].key = 0x5910u; /* the second slot: the caller's old line (above), or its next ones (below) */
-            stream(second, VJO_HOOK_KIND_CALL, 41, lines[40]);
-            for (unsigned i = 41; i < 60; i++) {
-                stream(writes, VJO_HOOK_KIND_CALL, i + 1, lines[i]);
-                spy_text = ocr[i];
-                TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, speed, &out) == 0);
-                TEST_CHECK_(out.text_from == writes && !strcmp(out.text, lines[i]),
-                            "line %u: stream %u (%u), flags %#x: %s", i + 1, (unsigned)out.text_from, (unsigned)writes,
-                            (unsigned)out.hook_flags, out.text);
-                if (trust)
-                    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
-            }
-            TEST_CHECK_(hk.sel.interval && hk.sel.locked == writes, "locked %u (%u), interval %u",
-                        (unsigned)hk.sel.locked, (unsigned)writes, (unsigned)hk.sel.interval);
+    for (unsigned k = 0; k < 8; k++) { /* every case: across the wrap or not, trusted or not, below or above */
+        const int wrap = k >> 2, trust = k >> 1 & 1, below = k & 1;
+        const uint32_t learned = below ? 14 : 9, second = below ? 9 : 14, writes = below ? second : learned;
+        const uint32_t speed = trust ? VJO_GAME_OCR_S_TRUST : 0, base = wrap ? 0xFFFFFFD0u : 0u;
+        TEST_CASE_("%s, the second slot %s%s", trust ? "trusted" : "hook_trust = off", below ? "below" : "above",
+                   wrap ? ", the clock wrapping" : "");
+        reset();
+        fs[learned].key = 0x5910u;
+        for (unsigned i = 0; i < 40; i++) {
+            stream(learned, VJO_HOOK_KIND_CALL, clock_after(base, i + 1), lines[i]);
+            spy_text = ocr[i];
+            TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, speed, &out) == 0 && out.text_from == learned);
         }
+        TEST_ASSERT(hk.sel.interval && hk.sel.locked == learned);
+        if (trust) TEST_ASSERT(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
+        fs[second].key = 0x5910u; /* the second slot: the caller's old line (above), or its next ones (below) */
+        stream(second, VJO_HOOK_KIND_CALL, clock_after(base, 41), lines[40]);
+        for (unsigned i = 41; i < 60; i++) {
+            stream(writes, VJO_HOOK_KIND_CALL, clock_after(base, i + 1), lines[i]);
+            spy_text = ocr[i];
+            TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, speed, &out) == 0);
+            TEST_CHECK_(out.text_from == writes && !strcmp(out.text, lines[i]),
+                        "line %u: stream %u (%u), flags %#x: %s", i + 1, (unsigned)out.text_from, (unsigned)writes,
+                        (unsigned)out.hook_flags, out.text);
+            if (trust)
+                TEST_CHECK(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
+        }
+        TEST_CHECK_(hk.sel.interval && hk.sel.locked == writes, "locked %u (%u), interval %u",
+                    (unsigned)hk.sel.locked, (unsigned)writes, (unsigned)hk.sel.interval);
+    }
 }
 
 /* The hook watch (API 41) watches a verified site once a trusted job read it, so its next line starts the read. */
