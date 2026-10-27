@@ -123,6 +123,9 @@ been reported.
   text; the normal build's keeps its pages, and so do both Shells ([memory ledger](docs/memory-ledger.md#psp-text-and-the-psp-probe-format-4)).
   A Vita game's remembered hook (`hooks.cache`) is learned again once after this build: the hook engine's files
   changed, so their revision did.
+- Draft #318's bound on the open overlay's changed-screen retries (#278's fix: stop after three with "The screen
+  keeps changing…") is not in this build: `main`'s #364 (the open overlay says why it waits, #358) supersedes it,
+  and the tries go on with its hint.
 
 - **Pause the game to read** (API 52, #348; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR & lookup
   page, OFF by default): each reading copies the text box from one frame at once, inside that frame's display call,
@@ -147,9 +150,6 @@ been reported.
   the UID error for a missing block. It now accepts exactly that error behind a readable, non-wrapping mapping
   (#278's fix), runs with Automatic or Every game (OCR only turns it off), logs Rubi's PSP text profile check and
   each job's text source, and writes format 4 to `psp_probe.log`. Not run on a console in this form.
-- **The open overlay no longer waits for ever on a screen that keeps changing:** after three captures in a row
-  refused because the screen changed (34 of 47 PSP jobs in #248), it says so ("The screen keeps changing. Close and
-  reopen the overlay when the text stops."); reading in the background keeps its own backoff (#278's fix).
 - **Native hooks: an active string-copy stream no longer loses its slot to a new caller in a race** (#366). When all
   12 CALL streams are held by other callers, a new caller takes the one written least recently. Two races gave it the
   newest one instead. A caller that wrote while the new one searched got a stamp after the clock reading the search

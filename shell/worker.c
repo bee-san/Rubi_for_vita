@@ -2655,20 +2655,14 @@ static void on_job_done(void)
             retire_local_text(1);
         job_cancelled = 0;
         stable_pending = game_active(); /* only the current game's next screen (Auto) */
-        if (ov != OV_CLOSED && stable_pending &&
-            (d->err.rc != VJO_E_SCREEN_CHANGED || screen_changed_streak < SCREEN_OPEN_TRIES)) {
-            ov = OV_OPEN; /* the overlay waits for this screen's */
+        if (ov != OV_CLOSED && stable_pending) { /* the overlay waits for this screen's */
+            ov = OV_OPEN;
             if (now_us() < screen_retry_until)
                 open_retry = 1; /* "Recognizing…" stays until background_open retries */
             else
                 start_job("the screen changed during the last one", 1);
-        } else {
-            if (ov != OV_CLOSED && stable_pending) { /* SCREEN_OPEN_TRIES in a row: the open overlay stops waiting */
-                ov = OV_OPEN;
-                open_retry = view_waiting = view_job_text = 0;
-                view_publish(1, NULL, SCREEN_CHANGED_MESSAGE, 1);
-            }
-            if (subtitles) vjo_strip_set_busy(0);
+        } else if (subtitles) {
+            vjo_strip_set_busy(0);
         }
         strip_after_wait(); /* a region drawn during it: the strip's job for the new region (#182) */
         return;
