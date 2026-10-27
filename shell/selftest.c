@@ -32,7 +32,6 @@
 
 #include "../core/boot_guard.h"
 #include "../core/fbgrey.h"
-#include "../core/port.h"
 #include "../include/vjo_import.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../include/vjo_vocr_sizes.h"
@@ -303,10 +302,8 @@ static const char *const step_names[] = {
     "none", "mem", "check", "alloc", "free", "pass", "tear", "sig", "find", "load", "recognize", "fallback",
     "fb", "probe", "settle", "blank", "norm", "lm", "cascade", "refine", "par", "clock", "pace", "shot", "save",
     "gate", "trim", "spot"};
-/* In the data segment (core/port.h): the debug Shell's code pages are full (docs/memory-ledger.md, "Lookups:
- * #321's audit"). */
-static const char *const mem_names[] VJO_DATA_TABLE(selftest_mem_names) = {"-", "user", "cdram", "phycont", "kernel"};
-static const char *const src_names[] VJO_DATA_TABLE(selftest_src_names) = {"-", "hook", "kstrip", "user"};
+static const char *const mem_names[] = {"-", "user", "cdram", "phycont", "kernel"};
+static const char *const src_names[] = {"-", "hook", "kstrip", "user"};
 static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line", "lm", "cascade",
                                          "shot", "sc3", "spot"};
 /* Every step and block has its name (a new one without fails the build). */
