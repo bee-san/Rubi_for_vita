@@ -1101,11 +1101,12 @@ no sessions: a day, a game and all games.
 | **All games** | The totals of every game, the cards mined and the cards per 10,000 characters, and the lines recorded |
 | A row per game | Its name and the last day read; today's characters, time and characters/hour; in all the same, its cards (by the title ID the card was mined in) and cards per 10,000 characters. The game read last comes first |
 
-- **Start** counts again; the page counts what is new each time it is shown. The first count reads all of
-  `history.csv` on a thread of its own (the status line says how far it is); then the counts are kept in
-  `ux0:data/VitaJPOverlay/stats_cache.bin`, and the next count reads only the lines added since. A `history.csv` that
-  is not the one counted (replaced or shorter), another time zone, another `reading_time` or a damaged cache is
-  counted again from its start. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
+- The page counts what is new each time it is shown. The first count reads all of `history.csv` on a thread of its
+  own (the status line says how far it is); then the counts are kept in `ux0:data/VitaJPOverlay/stats_cache.bin`, and
+  the next count reads only the lines added since. A `history.csv` that is not the one counted (replaced or shorter,
+  or with other bytes where the last count stopped), another time zone, another `reading_time` or a damaged cache is
+  counted again from its start. **Start** counts everything again from the start, the cards too: after editing
+  `history.csv` on a computer, say. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
   AMD EPYC 9R14 core; the Vita's time is unmeasured: the app runs on its CPU3 while the game is suspended].
 - **The goal** is kept in the app's own settings file, `ux0:data/VitaJPOverlay/app.ini`
   (`stats_daily_goal = off | 2000_characters | … | 120_minutes`), never in `config.ini`: the overlay does not read it.

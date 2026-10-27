@@ -73,7 +73,7 @@ enum { ROW_TODAY, ROW_GOAL, ROW_DAYS, ROW_YEAR, ROW_ALL, ROW_GAMES };
 static VjoStats stats;                               /* the worker's while it runs, the page's after */
 static unsigned char work[WORK_MEM] __attribute__((aligned(16)));
 static SceUID lock = -1, worker = -1;
-static int running, finished, cancelled, count_rule;
+static int running, finished, cancelled, count_rule, count_full; /* count_full: Start's count, from the start */
 static char progress[160], result[240];
 static int result_error;
 static char note[160]; /* the page's own line (a save, a start that failed): the main thread's */
@@ -377,7 +377,7 @@ static int save_cache(void)
 static int worker_main(SceSize args, void *argp)
 {
     static const char *const why_text[] = {"read", "damaged", "of another version", "of another reading_time",
-                                           "of another time zone"};
+                                           "of another time zone", "not read (Start: counted again)"};
     static const char *const save_text[] = {"saved", "unchanged", "not saved"};
     uint64_t now, from = 0, t0 = sceKernelGetProcessTimeWide(), t1, t2;
     int err = 0, before = 0, read_cards, save = 1, cacheable;
@@ -386,7 +386,11 @@ static int worker_main(SceSize args, void *argp)
     (void)argp;
     vjo_reading_rule = (uint32_t)count_rule; /* the Shell's rule, as config.ini sets it (core/history_lines.h) */
     int32_t tz = local_offset(&now);
-    int why = load_cache(tz, (uint32_t)count_rule);
+    /* Start counts everything again, from history.csv's first byte and every card's record: whatever the cache holds
+     * (a file edited in place passes its checks); a show counts what was added since the cache */
+    int why = count_full ? -5 : load_cache(tz, (uint32_t)count_rule);
+    if (count_full)
+        vjo_stats_reset(&stats, tz, (uint32_t)count_rule);
     uint64_t covered = stats.covered;
     uint32_t cards_before = stats.cards;
     set_progress("Counting history.csv…");
@@ -404,7 +408,7 @@ static int worker_main(SceSize args, void *argp)
             (unsigned)((t1 - t0) / 1000), (unsigned long long)stats.records - (unsigned long long)before,
             (unsigned long long)stats.records, (unsigned long long)stats.damaged, (unsigned long long)stats.untimed,
             (unsigned)stats.cards, read_cards, (unsigned)((t2 - t1) / 1000),
-            why == 1 ? "absent" : why_text[-why < 5 ? -why : 1], save_text[save], stopped() ? "; stopped" : "");
+            why == 1 ? "absent" : why_text[-why <= 5 ? -why : 1], save_text[save], stopped() ? "; stopped" : "");
     if (bytes < 0)
         snprintf(msg, sizeof(msg), "Cannot read history.csv (0x%08X). The numbers are from the last count.", (unsigned)err);
     else if (!bytes && !stats.cards)
@@ -422,11 +426,12 @@ static int worker_main(SceSize args, void *argp)
     return 0;
 }
 
-static void start(void)
+static void start(int full)
 {
     int rc;
     if (running)
         return;
+    count_full = full; /* (read by the worker only: written before it is created) */
     if (lock < 0 && (lock = sceKernelCreateMutex("VjoStatsPage", 0, 0, NULL)) < 0) {
         snprintf(note, sizeof(note), "Could not start the count (0x%08X).", (unsigned)lock);
         note_error = 1;
@@ -560,7 +565,7 @@ void vjo_stats_page_show(VjoArena *scratch)
         if (!counted)
             build_days(); /* the days until the first count is done: today's, and nothing in them */
         count_rule = cfg.reading_time; /* VJO_READING_* */
-        start();
+        start(0);
     }
     view_dirty = 1;
 }
@@ -979,7 +984,7 @@ void vjo_stats_page_frame(const VjoStatsUi *ui, uint32_t pressed, int touch_x, i
     if ((pressed & SCE_CTRL_START) && !running) {
         note[0] = '\0';
         count_rule = cfg.reading_time;
-        start();
+        start(1);
     }
     if (touch_y >= VIEW_Y && touch_y < VIEW_END && touch_x >= 24 && touch_x < 936)
         touch(touch_x, touch_y, scratch);

@@ -686,6 +686,78 @@ static void the_cache_is_read_on_and_checked(void)
     TEST_CHECK_(strstr(logs, "(1 records;") != NULL, "%s", logs);
 }
 
+/* The page's In all line for game tid, and what it would be with the Shell's count of the same file. */
+static void in_all(const char *tid, const char *name, char *got, size_t cap, char *want, size_t wcap)
+{
+    VjoStatsCount total, day;
+    char text[200];
+    got[0] = 0;
+    for (int i = 0; i < 12 && !got[0]; i++) {
+        frame(i ? SCE_CTRL_DOWN : 0);
+        const Text *n = text_with(name), *t = text_with("In all: ");
+        if (n && t)
+            snprintf(got, cap, "%s", t->s);
+    }
+    vjo_reading_rule = VJO_READING_ADAPTIVE;
+    shell_count(tid, &total, &day);
+    summary(text, sizeof(text), &total);
+    snprintf(want, wcap, "In all: %s", text);
+}
+
+/* (audit-rubi-rm2) A count that sees only a record's first byte, its '"' at the file's end, leaves it for the next
+ * count: the record is counted once it is whole, not lost. */
+static void a_record_seen_by_its_first_byte_is_counted(void)
+{
+    char got[320], want[260];
+    reset();
+    three_games();
+    show();
+    size_t was = history_len;
+    record("PCSG00415", "CLANNAD", "「最後の台詞です」", jst(27, 23, 20, 0));
+    size_t whole = history_len;
+    history_len = was + 1; /* only its first byte */
+    write_history();
+    show();
+    history_len = whole;
+    write_history();
+    show();
+    in_all("PCSG00415", "CLANNAD", got, sizeof(got), want, sizeof(want));
+    TEST_CHECK_(strstr(got, want) != NULL, "page \"%s\", Shell \"%s\"; %s", got, want, logs);
+}
+
+/* (audit-rubi-rm2) Start counts again from the start: also a history.csv edited in place, which the cache's checks
+ * (its first 1 KiB and the 256 B before where it stopped) cannot see. */
+static void start_counts_everything_again(void)
+{
+    char got[320], want[260];
+    reset();
+    three_games();
+    show();
+    /* a CLANNAD line after the cache's first 1 KiB, well before its last 256 B */
+    char *p = history + 1500, *rec;
+    for (;;) {
+        p = strstr(p, "かきくけこさしすせそ\",17"); /* the line cell, followed by its time (not raw_line's copy) */
+        TEST_ASSERT(p != NULL && (size_t)(p - history) + 300 < history_len);
+        for (rec = p; rec > history && !(rec[-1] == '\n' && rec[0] == '"'); rec--)
+            ;
+        if (!strncmp(rec, "\"vita-PCSG00415\"", 16))
+            break;
+        p++;
+    }
+    memcpy(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZABCD", 30); /* 10 kana -> 30 Latin letters (each counts) */
+    write_history();
+    show(); /* a show counts only what is new: nothing */
+    in_all("PCSG00415", "CLANNAD", got, sizeof(got), want, sizeof(want));
+    TEST_CHECK_(strstr(got, want) == NULL, "page \"%s\", Shell \"%s\"", got, want);
+    logs[0] = 0;
+    frame(SCE_CTRL_START);
+    run_worker();
+    in_all("PCSG00415", "CLANNAD", got, sizeof(got), want, sizeof(want));
+    TEST_CHECK_(strstr(got, want) != NULL, "page \"%s\", Shell \"%s\"; %s", got, want, logs);
+    TEST_CHECK_(strstr(logs, "counted from 0 ") && strstr(logs, "the cache not read (Start: counted again), then saved"),
+                "%s", logs);
+}
+
 static void write_card(const char *dir, const char *id, const char *platform, const char *tid)
 {
     char path[256];
@@ -831,6 +903,8 @@ TEST_LIST = {
     {"the_goal_is_saved_in_app_ini", the_goal_is_saved_in_app_ini},
     {"the_days_and_the_year", the_days_and_the_year},
     {"the_cache_is_read_on_and_checked", the_cache_is_read_on_and_checked},
+    {"a_record_seen_by_its_first_byte_is_counted", a_record_seen_by_its_first_byte_is_counted},
+    {"start_counts_everything_again", start_counts_everything_again},
     {"cards_count_per_game", cards_count_per_game},
     {"cards_without_history", cards_without_history},
     {"no_history_yet", no_history_yet},
