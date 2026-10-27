@@ -124,6 +124,33 @@ size, and does not advance the fingerprint. Power loss during an append can
 leave an incomplete final CSV record; discard that record before importing if
 necessary (`tools/reading_stats.py` skips it). History is never rotated or
 erased automatically. Disk use grows with the saved text; RAM use does not.
+
+**A line that grows replaces its record** (API 49, with a hook that gives a line as it types: each part is read at
+once). When the new text is the newest record's and more, of the same game, within 750 ms of that record's append,
+the newest record is removed (the file truncated to where it began) and the whole line written in its place, with
+the same `uuid` and `time`; the reading total counts the line once. So the file is append-only but for its last
+record. The rewrite (`shell/history.c` `vjo_history_append`, #338's audit F3):
+
+- opens the file first: one that cannot be opened loses nothing (the earlier part's record stays);
+- truncates inside the window in which a count of the total does not read the file's end (`total.seq` odd), and only
+  while no count has the file open and the file still ends where that record ends (a file replaced or edited since
+  is not truncated: the line is a record of its own after it);
+- reads the file's end again after the truncation, so the record goes where the earlier part's began whether the
+  console's `SCE_O_APPEND` places each write at the end or only the open (not measured on a console).
+
+What a failed rewrite still loses: a write, sync or close that fails after the truncation rolls the file back to where
+the earlier part's record began, as any failed append rolls back to where it began, so the line has no record (its
+earlier part's is gone with it), and a later read of the line writes it as a record of its own. Two lines are
+one record when the second starts with the whole first and comes under 750 ms after it
+([native-hooks.md](native-hooks.md#no-wait-for-a-trusted-line-api-49): 225 of 8,910 consecutive page pairs of a host
+pool start so, 198 of them a box that adds its lines).
+
+The rewrite's order is in the Shell's code, which may not take a page more: it is main's steps reordered, with the
+end's check and the second read of the end (on main `70deda7`, the Shell's text 98,244 → 98,276 B in the debug build,
+with F2's line, and 85,972 → 85,988 B in the normal one, which moves a log format of 32 B to its data segment, the same
+pages; `vjo_history_append`'s frame 504 → 528 B on
+VjoNet's fixed 20 KiB stack: API 49 had taken it 488 → 504 B, and the 456 B above are older still) [measured: the
+build log's module rows, both builds, and `-fstack-usage` with the normal Shell's flags without LTO].
 Console I/O latency and memory headroom for this change remain unmeasured until
 a physical-console run.
 
@@ -232,8 +259,15 @@ whichever supplied it. Not recorded:
 - A read that failed, was cancelled or found the screen changed under it; a cursor
   move (it reads nothing); the debug build's self-test (OCR only).
 - Dialogue the game showed and replaced between two reads (skipping, or the game's
-  auto mode): a hook stream keeps its latest text only, and the history has one record
-  per read, not one for each line a hook saw.
+  auto mode), when OCR or an untrusted hook reads the screen: a hook stream keeps its latest text only, and the
+  history has one record per read, not one for each line a hook saw. With a trusted hook (API 49, **Trusted hooks
+  replace OCR**, the default) every line is read at once, also while the one before still draws, so the lines a
+  player clicks through are recorded too, and counted in the total and in characters per hour; only a line replaced
+  faster than a job takes (about 80 ms with the first word's lookup, on the host) is cancelled with its job and not
+  recorded. In the host latency bench's clicking scenario (a line every 0.5 s), 63 of 8,895 lines were read before
+  API 49 and all 8,895 after [measured, host: #338's audit's rerun]. The reading-time simulation
+  ([reading-time.md](reading-time.md)) modelled skip and auto mode with the old reads; whether a line replaced
+  within some time should count as read is the owner's call (#338's audit F4).
 - A line the same as the record before it, whatever its source: OCR's reading, then
   the same text from a hook, is one record, `ocr` (unless a read between them failed:
   [#252](https://github.com/bee-san/Rubi_for_vita/issues/252), above).

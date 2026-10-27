@@ -107,7 +107,11 @@
  * data segment) makes it 98,164 + 77,728 -> 98,212 + 77,792 on main 9ad8eb5, the same pages (92 and 32 B left)
  * [measured: the same rows, main 9ad8eb5 and this change]. #321's audit (the particle's する check before the depth
  * test, lookup_pages +24 B) makes it 98,244 + 77,792 on main 099b156, the same pages (60 and 32 B left)
- * [measured: the same rows, main 099b156 and this change]. */
+ * [measured: the same rows, main 099b156 and this change]. #338's audit fixes (shell/history.c's grown-line
+ * rewrite reordered: the file opened before the truncation, the truncation inside the count's odd window and only over
+ * the file's own last record, the end read again after it; the debug build's hook source line in the result's log
+ * batch) make it 98,244 -> 98,276 text on main 70deda7, the same data and pages (28 B left) [measured: the same rows, main
+ * 70deda7 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -149,7 +153,11 @@
  * notice in the data segment) makes it 85,900 + 77,552 -> 85,940 + 77,696 on main 9ad8eb5, the same pages, 76 B of
  * text room and 128 B of data room [measured: the same rows, main 9ad8eb5 and this change]. #321's audit (above,
  * lookup_pages +28 B) makes it 85,972 + 77,696 on main 099b156, 44 B of text room [measured: the same rows, main
- * 099b156 and this change]. Its check is exact (--exact): this must equal its pages. */
+ * 099b156 and this change].
+ * #338's audit's history rewrite (above), with the short job line's format moved to the data segment (32 B), makes it
+ * 85,972 + 77,696 -> 85,988 + 77,728 on main 70deda7, the same pages, 28 B of text room [measured: the same rows, main 70deda7 and this change]: main's steps reordered, with the end's check and
+ * its second read, which a file replaced since and an SCE_O_APPEND that places only the open need. Its check is exact
+ * (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
@@ -414,6 +422,11 @@
  * 170,812 B normal (1,220 B), data/bss unchanged, the same pages; the kernel's and the Shell's rows unchanged
  * [measured: the build log's module rows, both builds, main b88772c and this change, tools/fast_gate.sh's vitasdk
  * image]. No block, thread or allocation. */
+/* #338's audit fixes (the cache's trust bit, VjoHookLearned.trusted; vjo_hook_select_learned's trust argument, the
+ * interval saved as it is): worker text 179,760 -> 179,840 B debug (384 B of room left) and 170,828 -> 170,876 B
+ * normal (1,156 B), data/bss 36,704 -> 36,712 B and 36,696 -> 36,704 B, the same pages [measured: the build log's
+ * module rows, both builds, main 70deda7 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or
+ * allocation; the cache's record keeps its 96 B. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else

@@ -45,9 +45,11 @@ typedef struct {
 
 /* The only learned data that may be persisted. A slot ID, runtime address, dialogue or partial
  * comparison history never belongs in a cache. The worker scopes this to the exact executable and
- * hook-definition revision. site is the boolean !!VjoHookCand.site, not its provenance flags. */
+ * hook-definition revision. site is the boolean !!VjoHookCand.site, not its provenance flags. trusted (API 49,
+ * #338's audit F1): 1 for a source saved trusted (a strong one at VJO_HOOK_TRUST_INTERVAL, saved with hook_trust =
+ * on), which the next launch trusts at once; interval is the learned interval as 0.9.7 saved it either way. */
 typedef struct {
-    uint32_t site, key, encoding, interval;
+    uint32_t site, key, encoding, interval, trusted;
 } VjoHookLearned;
 
 /* One game's state, owned by its worker thread. Zero initially; copy before a job and restore the
@@ -66,12 +68,14 @@ typedef struct {
 
 /* Restoring clears transient state and requires one OCR confirmation. Bad data clears the state and
  * returns 0. Export includes provisional learning so an inconclusive startup never deletes a cache.
- * With no learned source export clears *out and returns 0. API 49: export gives the trusted interval only for a
- * strong (trusted) source, half of it for one that reached the interval without a strong agreement, and restore
- * makes a source saved at that interval strong again, so a trusted source is trusted from the game's next start
- * (vjo_hook_select_trusted needs no confirmation; vjo_hook_select_before still asks for it). */
+ * With no learned source export clears *out and returns 0. Export gives the learned interval as it is, whatever the
+ * setting (0.9.7's), and, only with trust (hook_trust = on), trusted for a strong source at VJO_HOOK_TRUST_INTERVAL;
+ * restore makes a source saved trusted strong again, so it is trusted from the game's next start
+ * (vjo_hook_select_trusted needs no confirmation; vjo_hook_select_before still asks for it). With hook_trust = off
+ * nothing is saved trusted, and the interval and the writes are 0.9.7's (#338's audit F1: API 49 had saved a source
+ * at 32 that was not trusted at 16, also with trust off). */
 int vjo_hook_select_restore(VjoHookSelect *st, const VjoHookLearned *saved);
-int vjo_hook_select_learned(const VjoHookSelect *st, VjoHookLearned *out);
+int vjo_hook_select_learned(const VjoHookSelect *st, int trust, VjoHookLearned *out);
 
 /* Similarity, 0..1000, of a stream's text h to OCR's text o, after normalising both (full-width forms
  * folded, whitespace and punctuation dropped): the best match of h within o (o may hold a speaker's

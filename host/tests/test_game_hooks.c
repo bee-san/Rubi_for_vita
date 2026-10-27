@@ -859,9 +859,9 @@ static void keep_and_calls_full(void)
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !out.hook_flags && !keeps);
 }
 
-static void prime_hook_cache(uint32_t interval)
+static void prime_hook_cache_trusted(uint32_t interval, uint32_t trusted)
 {
-    VjoHookLearned learned = {0, 0x1234u, VJO_HOOK_ENC_UTF8, interval};
+    VjoHookLearned learned = {0, 0x1234u, VJO_HOOK_ENC_UTF8, interval, trusted};
     VjoHookCacheKey key = {0};
     memcpy(key.title, "PCSG00415", 10);
     memcpy(hk.cache_key.title, key.title, sizeof(key.title));
@@ -871,6 +871,8 @@ static void prime_hook_cache(uint32_t interval)
     TEST_ASSERT(vjo_hook_cache_put(saved_cache, 0, &key, &learned) == 1);
     saved_cache_size = sizeof(saved_cache);
 }
+
+static void prime_hook_cache(uint32_t interval) { prime_hook_cache_trusted(interval, 0); }
 
 static void restart_hook_selection(void)
 {
@@ -1024,17 +1026,61 @@ static void remembered_hook_worker_cadence(void)
     /* Reopening unchanged dialogue takes OCR's ordinary path, without advancing the learned counter. */
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && runs == 3 && !hk.sel.unchecked);
     TEST_CHECK(!cache_saves && cache_loads == 1);
-    /* Restart: one bad OCR result retains the source, saved once as no longer trusted (API 49: the trusted interval
-     * is saved only for a strong source, so a restart now confirms it); the next fresh agreement resets to 8 and
-     * saves once more. */
+    /* Restart: one bad OCR result retains the source; the next fresh agreement resets to 8 and saves once. With
+     * hook_trust = off (these jobs carry no VJO_GAME_OCR_S_TRUST) that is 0.9.7's, write for write (#338's audit F1:
+     * API 49 saved the source at 16 at the first miss, a write 0.9.7 never made, and restored it at 16). */
     restart_hook_selection();
     stream(15, VJO_HOOK_KIND_CALL, 34, LINE1); spy_text = "ここには全く違った文章が表示されています";
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !out.text_from);
-    TEST_CHECK(hk.sel.interval == 32 && hk.sel.misses == 1 && !hk.sel.strong && cache_saves == 1);
-    TEST_CHECK(hk.cached.interval == 16 && hk.cached.key == 0x1234u);
+    TEST_CHECK(hk.sel.interval == 32 && hk.sel.misses == 1 && !hk.sel.strong && !cache_saves);
+    TEST_CHECK(hk.cached.interval == 32 && hk.cached.key == 0x1234u && !hk.cached.trusted);
     stream(15, VJO_HOOK_KIND_CALL, 35, LINE2); spy_text = OCR2;
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 15);
-    TEST_CHECK(hk.sel.interval == 8 && !hk.sel.misses && cache_saves == 2);
+    TEST_CHECK(hk.sel.interval == 8 && !hk.sel.misses && cache_saves == 1);
+}
+
+/* #338's audit F1, the other half: with hook_trust = on a strong source at 32 is saved trusted (a write of its own when
+ * a check's close agreement makes it strong, and one when a miss takes it back), and comes back trusted; its interval is
+ * saved as it is (32, not API 49's 16 for one not trusted). A launch with hook_trust = off after one with it on saves
+ * the source untrusted once and then as 0.9.7 would. */
+static void remembered_trust_is_its_own_bit(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    prime_hook_cache_trusted(32, 1);
+    fs[15].key = 0x1234;
+    stream(15, VJO_HOOK_KIND_CALL, 1, LINE1); spy_text = OCR1;
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && out.text_from == 15 && !runs);
+    TEST_CHECK(hk.sel.strong && hk.sel.interval == 32 && cache_loads == 1 && !cache_saves);
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
+    /* the same cache, trust off: its confirmation OCR, then the bit cleared in one write, then none */
+    restart_hook_selection();
+    stream(15, VJO_HOOK_KIND_CALL, 2, LINE2); spy_text = OCR2;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 15 && runs == 1);
+    TEST_CHECK(cache_saves == 1 && hk.cached.interval == 32 && !hk.cached.trusted);
+    stream(15, VJO_HOOK_KIND_CALL, 3, LINE3); spy_text = LINE3;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 15 && cache_saves == 1);
+    /* trust on again: not trusted until a close agreement at 32 (its confirmation), which saves it trusted */
+    restart_hook_selection();
+    stream(15, VJO_HOOK_KIND_CALL, 4, LINE1); spy_text = OCR1;
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && runs == 2);
+    TEST_CHECK(hk.sel.strong && cache_saves == 2 && hk.cached.interval == 32 && hk.cached.trusted);
+    /* trusted, it answers without OCR and is not compared again (no miss can take its trust back: only its slot
+     * changing hands, or hook_trust = off) */
+    stream(15, VJO_HOOK_KIND_CALL, 5, LINE2); spy_text = "ここには全く違った文章が表示されています";
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && runs == 2 && out.text_from == 15);
+    TEST_CHECK(cache_saves == 2);
+    /* a source saved at 32 untrusted, trust on: a startup disagreement keeps it at 32 with no write (API 49 had saved
+     * it at 16 and restored it there), and the next agreement takes it to 8, one write: 0.9.7's cadence */
+    reset();
+    prime_hook_cache_trusted(32, 0);
+    fs[15].key = 0x1234;
+    stream(15, VJO_HOOK_KIND_CALL, 1, LINE1); spy_text = "ここには全く違った文章が表示されています";
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && runs == 1 && !out.text_from);
+    TEST_CHECK(hk.sel.interval == 32 && hk.sel.misses == 1 && !hk.sel.strong && !cache_saves);
+    stream(15, VJO_HOOK_KIND_CALL, 2, LINE2); spy_text = OCR2;
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && out.text_from == 15);
+    TEST_CHECK(hk.sel.interval == 8 && cache_saves == 1 && hk.cached.interval == 8 && !hk.cached.trusted);
 }
 
 static void hook_cache_worker_failures(void)
@@ -1089,11 +1135,11 @@ static void hook_cache_cleanup_ownership(void)
     stream(9, VJO_HOOK_KIND_CALL, 2, LINE2); spy_text = "この画面は異なる文章を表示しています";
     hk.sel.confirm = 1; /* force a comparable disagreement check */
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && hk.sel.misses == 1);
-    TEST_CHECK(cache_saves == 1); /* API 49: saved as no longer trusted */
+    TEST_CHECK(!cache_saves); /* hook_trust = off: no write at a first miss, as in 0.9.7 (#338's audit F1) */
     stream(9, VJO_HOOK_KIND_CALL, 3, LINE3); spy_text = OCR3; fail_capture_free = 1;
     r = request(VJO_HOOK_PICK_AUTO); vjo_game_ocr_cache_clear();
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OCR_UNAVAILABLE);
-    TEST_CHECK(out.cleanup_status && blocked && cache_saves == 1 && hk.sel.interval == 32 && hk.sel.misses == 1);
+    TEST_CHECK(out.cleanup_status && blocked && !cache_saves && hk.sel.interval == 32 && hk.sel.misses == 1);
     TEST_CHECK(!cleanup()); /* fixture releases the retained block before the next reset */
 }
 
@@ -1462,7 +1508,7 @@ static void trusted_watch_learned_source(void)
     clock_value += HOOK_LINE_GAP_US;
     TEST_CHECK(hooks_watch() == 0 && hook_lines == 3 && hook_line_bytes == (uint32_t)strlen(LINE3));
     /* restored as trusted from the cache (the next start of the game): no slot yet (locked 0), found by its key */
-    reset(); prime_hook_cache(VJO_HOOK_TRUST_INTERVAL);
+    reset(); prime_hook_cache_trusted(VJO_HOOK_TRUST_INTERVAL, 1);
     fake_installed = 4; /* string copies only: the pace is the trusted source's */
     spy_text = OCR1;
     stream(10, VJO_HOOK_KIND_CALL, 1, "セーブしますか？"); fs[10].key = 0x5555; /* the title screen's menu */
@@ -1722,6 +1768,7 @@ TEST_LIST = {
     {"the border rule follows the request (API 36), on OCR's and a stream's text", border_lines_follow_the_request},
     {"hook cache cleanup: BUSY, copy failure, cancellation, failed primary free", hook_cache_cleanup_ownership},
     {"remembered hook: startup confirmation, exact32 cadence, recovery", remembered_hook_worker_cadence},
+    {"remembered hook: its trust saved apart from its interval (hook_trust on, then off, then on)", remembered_trust_is_its_own_bit},
     {"hook cache worker: failed job, exact build invalidation, IO failures", hook_cache_worker_failures},
     {"nothing installed: OCR as before, no snapshot", nothing_installed_is_ocr_as_before},
     {"an agreeing stream's text replaces OCR's", agreeing_stream_replaces_ocr_text},

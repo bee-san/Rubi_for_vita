@@ -381,8 +381,9 @@ reported console run. The behaviour below is checked on the host.
   Rubi's own verified sites from their first line, and a string copy (or any other hook) once it has agreed
   with OCR four times, on four different lines. OCR comes back by itself when no trusted hook has text (or a
   string copy's caller is replaced). The price: a screen the hook did not copy (a choice menu, the backlog)
-  shows the hook's last line. `hook_trust = off` checks every hook with OCR as 0.9.7 did, below
-  ([details](native-hooks.md#trusted-hooks-api-43)). A trusted line is also read at once (API 49): within 16 ms of
+  shows the hook's last line. A string copy that earned trust is trusted again at the game's next start (the hook
+  cache keeps that apart from its learned interval). `hook_trust = off` checks every hook with OCR as 0.9.7 did, below,
+  its cache's interval and writes included ([details](native-hooks.md#trusted-hooks-api-43)). A trusted line is also read at once (API 49): within 16 ms of
   the game's copy, without waiting for the screen to settle or the line to finish typing, so L + R opens on it with
   its first word looked up, and the open overlay shows each new line as it starts
   ([details](native-hooks.md#no-wait-for-a-trusted-line-api-49)).

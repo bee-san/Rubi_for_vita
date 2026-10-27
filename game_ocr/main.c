@@ -1814,7 +1814,7 @@ static void hooks_cache_save(void)
     VjoHookLearned learned;
     int n, has;
     if (!hk.cache_ready) return;
-    has = vjo_hook_select_learned(&hk.sel, &learned);
+    has = vjo_hook_select_learned(&hk.sel, hk.trust_on, &learned); /* trusted only with hook_trust = on */
     if (!memcmp(&learned, &hk.cached, sizeof(learned))) return;
     /* Attempt only when the chosen identity or learned interval changes. A failed write must not
      * become a write per reading; OCR selection and in-session confidence remain usable. */

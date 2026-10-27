@@ -93,7 +93,9 @@ def main():
     ap.add_argument("--pages-dir")
     ap.add_argument("--pages", type=int, default=300, help="pages a session (0: all)")
     ap.add_argument("--titles", nargs="*")
-    ap.add_argument("--exclude", nargs="*", default=[])
+    # by default the titles the docs leave out (#338's audit N8): no dialogue region (PCSG00653), a release shared with
+    # CLANNAD or vita-test, the pool's test title (docs/native-hooks.md "Why four agreements")
+    ap.add_argument("--exclude", nargs="*", default=["PCSG00007", "PCSG00653", "PCSG00807", "PCSG00866"])
     ap.add_argument("--free-mib", type=int, default=64)
     ap.add_argument("--tight-mib", type=int, default=3)
     ap.add_argument("--jobs", type=int, default=5)
