@@ -23,10 +23,11 @@
  * machine's), its workspace and the stats the worker's log carries. Host only; private frames stay with the
  * caller (tools/vertical_eval.py).
  *
- * --find-only: no recognition; for each region the row finder's lines as the job's check sees them (VOCR_LINES_
+ * --find-only: no recognition; for each region the row finder's lines as the job reads them (VOCR_LINES_
  * TEXTBOX_RECOVERY on the region's grey rows, with --line-fix's fixes: the job's own finder, before its short-line
- * probe), the column
- * finder's columns (the vertical model's flags), and auto's verdict on the rows (vjo_vocr_rows_vertical). */
+ * probe), the column finder's columns (the vertical model's flags), and auto's verdict as the job's check gives it
+ * (vjo_vocr_rows_vertical; with --line-fix, a region at least as tall as wide is checked on the frozen finder's
+ * rows, as the job does, so the printed rows are not the ones checked there). */
 #define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
 #include <stdint.h>

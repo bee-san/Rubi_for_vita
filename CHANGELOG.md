@@ -146,6 +146,9 @@ time. Nothing new here has run on a console yet. Like 0.9.7, this release is the
   - `all`: `junk`, and touching rows are also split, as Narcissu's are;
   - `off`: the old finder.
 
+  With `ocr_vertical = auto`, a box at least as tall as wide is still checked for vertical text on the old finder's
+  rows, which its rule was chosen on, and read with the new finder where it holds rows.
+
   The runtime pin is now vita-vn-ocr `f8a1856` (#135's merge; it was `47cf3a3`). Memory: the game worker takes two
   pages more, 8 KiB, in each game that is ON, in both builds (192,512 B of module pages; 200,704 B in the debug
   build); the Shell's and the kernel's pages are unchanged. Install all of this build's plugins together (the

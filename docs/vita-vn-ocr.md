@@ -969,7 +969,8 @@ lines, and it does lose some:
 `tools/gate_eval.py` runs `host/gate_eval.c`, the worker's job policy on the host (`core/vocr_ocr.c` with Rubi's finder,
 the gate at its pinned point, VOCR5 Normal with the 1 MB LM and the cascade, PSP regions refined, a PSP page scaled
 2x as Adrenaline shows it; measured before #307's head gate, on vita-vn-ocr `817d203` and VOCR5 v0.3.0's files: the
-gate scores the finder's boxes, which #307 does not change), on every page of vita-vn-ocr's hooked page pool (`vocr6-ingest` `pagepool/v1`: 46 games,
+gate scores the finder's boxes, which #307 does not change; and before API 50, so with the frozen finder's boxes: with
+`ocr_line_fix = on` it scores the fixed finder's, which has not been measured), on every page of vita-vn-ocr's hooked page pool (`vocr6-ingest` `pagepool/v1`: 46 games,
 30 Vita and 16 PSP, whose hook text was verified against the drawn glyphs; PCSG00007, PCSG00866 and PCSG00807 are left
 out, as they share releases with CLANNAD and vita-test, or are the pool's test title), in three regions a page: its
 own dialogue region, the one region a player would draw for the game (around the dialogue of almost every page), and
@@ -1076,7 +1077,13 @@ text when either holds:
   the median span of those rows (their median left and right edges; of an even count, the upper of the two
   middle ones).
 
-It is integer arithmetic on at most 16 boxes: no memory, no strip, a few hundred instructions. Then the job returns
+It is integer arithmetic on at most 16 boxes: no memory, no strip, a few hundred instructions. The rule was chosen on
+the frozen line finder's rows. Since API 50 the finder joins a row's parts across a wide gap (`ocr_line_fix = on`, the
+default: [line finder fixes](#line-finder-fixes-api-50)), and such joined rows look less like a column's characters:
+on the text box and its name tag below, auto took 785 regions instead of 837 for vertical text. So with the fixes on,
+a region at least as tall as wide (the rule's first case) is checked on the frozen finder's rows; where they do not
+look vertical, its rows are found again with the fixes, and those are read. A wider region is found once, with the
+fixes. Where the rows are vertical text, the job returns
 `VJO_E_VERTICAL` to the game worker, which frees the try's blocks and runs the request again with the vertical model
 (`game_ocr/main.c`, `again:`): its own memory check, a request by name's reserve, the column job. A vertical model
 it cannot read (absent, short, failing its hash) or fit has the job read the rows instead; after a file it could not
@@ -1130,6 +1137,11 @@ vita-vn-ocr #103's held-out vertical test cluster (VOCR5-S, its starting point, 
 | the text box and its speaker's name tag | 84.30 % | 23.37 % [22.06, 24.73]; recall 0.960, precision 0.727 | 23.64 % (837 of 863) |
 | the whole screen | 96.04 % | 168.32 % | 97.55 % (41 of 863) |
 
+These figures were measured before API 50, with the frozen finder. With `ocr_line_fix = on`, auto takes the same
+tight, drawn-once and name-tag regions (789, 741 and 837), 40 of the 863 whole screens instead of 41, 153 and 1 of
+#103's development regions below, no hooked horizontal region and none of the 2,837 VNDB screenshots (1 before):
+`vjo-page-ocr --find-only --line-fix on`, which checks a region as the job does.
+
 A box drawn once has the box's empty edge and the name tag beside the columns: the finder takes some of their marks
 for short columns (precision 0.69), whose readings add errors. On vita-vn-ocr #103's development regions (181: its
 regions are a page's dialogue columns plus 12 px; PC pages scaled to 960×544, PSP frames shown 2× as Adrenaline shows
@@ -1152,9 +1164,10 @@ intervals). On the console the rule is a few hundred instructions a job (an esti
 **Memory.** The worker's code, in every game that is ON whatever the setting: 4,096 B more module pages in each build
 (184,320 B normal, 192,512 B debug: [memory-ledger.md](memory-ledger.md#vertical-text-api-47)). SceShell's and the
 kernel's pages are as before. A job of columns takes the vertical model's weights (823,296 B in pages, a Small job's)
-and a workspace of VOCR5-S's shape plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,872
-(the console's runtime structs, `VJO_VOCR_VITA_STRUCTS`) + 57,344 B, 188,416 B in pages at
-960×544; with the LM extras, the greedy text and both helpers' slots 706,320 B on the host build (708,608 B in pages),
+and a workspace of VOCR5-S's shape plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,920
+(the console's runtime structs, `VJO_VOCR_VITA_STRUCTS`, at vita-vn-ocr f8a1856 since API 50; 3,872 B before) +
+57,344 B, 188,416 B in pages at 960×544; with the LM extras, the greedy text and both helpers' slots 706,448 B on the
+host build (706,320 B before API 50; 708,608 B in pages either way),
 within `VJO_BUDGET_GAME_WORKSPACE` (1,220,608 B; `host/tests/test_ledger.c`). A
 column whose crop holds more than the rotation buffer (wider than 105 px at the full 544-px height) is left out and
 counted (`VjoVocrStats.rotate_skipped`, the bytes of the log's `find` step). auto's job that reads columns holds the
@@ -1368,6 +1381,15 @@ failures and fixed each behind a flag in `runtime/vocr_lines_fix.c` (vita-vn-ocr
 `on` is `VOCR_FIX_DEFAULT` (COLGAP), the step #129's pre-registered rule adopted and that holds whether a region is
 drawn with a margin or tight. `off` is the frozen finder, bit for bit (vita-vn-ocr's `make check-lines-fix`). The
 flags reach the finder in `VjoVocrPolicy.line_fix`.
+
+**Beside vertical text's `auto`** ([its rule](#vertical-text-vita-vn-ocr-99)), which was chosen on the frozen finder's
+rows: with the fixes and `ocr_vertical = auto`, a region at least as tall as wide is checked on the frozen finder's
+rows, and where they do not look vertical its rows are found again with the fixes and read; a wider region is found
+once, with the fixes. On #335's hooked vertical pages, the check on the fixed rows alone took 785 of the 863 regions
+drawn around the text box and its name tag for vertical text, against 837 with the frozen rows; with this it takes
+837 again, and every tall region's verdict is the frozen finder's. No hooked horizontal region (of 101,651) is taken
+for vertical text either way, and 2 of them are tall: only those, and tall regions of vertical text, run the finder
+twice (`vjo-page-ocr --find-only --line-fix on`, host).
 
 **What it does, measured in vita-vn-ocr.** These are host numbers through Rubi main's path (`eval/pagepath.py`, #131),
 with VOCR5-N W8I, the 1 MB LM, the cascade, `core/textnorm.c` and the line filter, in the console view (PSP frames

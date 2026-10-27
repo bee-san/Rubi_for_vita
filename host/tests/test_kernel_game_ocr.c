@@ -1078,7 +1078,7 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x100000; TEST_CHECK(vjoOcrSubmit(&r) > 0); /* API 43: bit 20, a trusted hook may answer (S_TRUST) */
     r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19; API 43: 20; API 50: 21-23) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
-    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bits 21-27 (in flight elsewhere), 30-31 */
+    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 25 (bits 24-27 in flight elsewhere; 21-23 are API 50's), 30-31 */
     r.speed = 0x40000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(VJO_GAME_OCR_S_VERTICAL == 0x30000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_VERTICAL) ==
                                                             VJO_GAME_OCR_S_VERTICAL);

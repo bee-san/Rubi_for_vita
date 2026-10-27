@@ -513,7 +513,7 @@
  * (vjo_vocr_refine_bytes: 72,400 B at 960x544).
  * API 22 (parallel lines) ends it with the line slots of the most helpers a job takes
  * (vjo_vocr_helpers_bytes, VJO_VOCR_HELPERS_MAX = 2: the caller's slot, a line's pixels, greedy
- * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 254,640 B
+ * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 254,672 B
  * for VOCR5-N on the host build): 1,218,240 B for VOCR5-N with VOCR5-L's cascade, the largest (1,218,048 B
  * before vita-vn-ocr f8a1856's structs, API 50: on the host its two models and four contexts are 32 B larger each)
  * (1,211,648 B on main, 1,191,680 B with H15 and VOCR4-W20 before VOCR5). API 42 adds 6,400 B: vita-vn-ocr's
