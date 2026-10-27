@@ -1013,6 +1013,70 @@ static void rubi_filters(void)
     rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "<red>赤い<end>扉<K>", "赤い扉");
     rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "<N>", "");
     rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "a<b c>d<>", "a<b c>d<>"); /* not a tag: kept */
+    /* The farm's hook-farm titles of 2026-10-27 (bee-san/psandvita, paired-vita-<title>-20261023; Vita3K only): each
+     * raw text is one hit's bytes at the title's verified site, each result the text its AI reviewer approved against
+     * the frame the game drew. PROTOTYPE: PCSG00183 page 6 (a $t speaker with no end code), page 2's third NVL
+     * paragraph, its title card's $K codes (session ada5e786 event 35); PCSG00785 events 78 and 50 */
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "$t母親｢ﾁｮｯﾄｰ､ｿﾛｿﾛ出ﾅｲﾄ遅刻ｽﾙﾝじｬﾅｲﾉ？ﾓｳ､兄弟ｿﾛｯﾃぎﾘぎﾘﾅﾝだｶﾗ｣",
+            "母親「ちょっとー、そろそろ出ないと遅刻するんじゃないの？もう、兄弟そろってぎりぎりなんだから」");
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "\n汝､繰ﾙ者でｱﾘ､綴ﾙ者｡", "汝、繰る者であり、綴る者。");
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "$L1『$C[ffff00]$K130九天九地盤$K0$C[]―三国記―』", "『九天九地盤―三国記―』");
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "$t花@｢――ﾜ､ﾜｱ､$[芙蓉$/ﾌﾖｳ$]姫!?　どｳｼﾀの？｣",
+            "花「――わ、わあ、芙蓉姫！？　どうしたの？」"); /* OP_KANA's map widens ! and ?; the shown form folds them */
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "玄徳ｻﾝﾄの婚儀の日取ﾘが決ﾏｯﾀ｡\n", "玄徳さんとの婚儀の日取りが決まった。");
+    /* PROTOTYPE_NAMELINE: the speaker on a line of its own (PCSG01000 pages 1, 4, 16; PCSG00988 page 5), ISLAND's centred
+     * prologue line (session 44c652f7 event 46) */
+    rubi_to(VJO_RF_PROTOTYPE_NAMELINE, VJO_HOOK_ENC_CP932, "$tガキＢ@「お前怖いのか？」", "ガキＢ\n「お前怖いのか？」");
+    rubi_to(VJO_RF_PROTOTYPE_NAMELINE, VJO_HOOK_ENC_CP932, "$tガキＣ@「それともまさか、$[暴龍島$/ぼうりゅうじま$]から――」",
+            "ガキＣ\n「それともまさか、暴龍島から――」");
+    rubi_to(VJO_RF_PROTOTYPE_NAMELINE, VJO_HOOK_ENC_CP932, "$tガキ共@$S033「ギィヤァァァァアアアア～～～～!!」",
+            "ガキ共\n「ギィヤァァァァアアアア～～～～！！」");
+    rubi_to(VJO_RF_PROTOTYPE_NAMELINE, VJO_HOOK_ENC_CP932, "$t？？？@『…ｵｲ､返事ｦｾﾝｶ…』", "？？？\n『…おい、返事をせんか…』");
+    rubi_to(VJO_RF_PROTOTYPE_NAMELINE, VJO_HOOK_ENC_CP932, "\n\n\n\n\n　$A1初めに、音があった。", "初めに、音があった。");
+    /* IFENGINE after the #Name expander: PCSG00428 page 2, PCSG00530's centred Monologue card (session 3e50af75 event
+     * 1), PCSG00826 page 3 (its indents kept), PCSG00602 page 17's third line (one hit a line) */
+    rubi_to(VJO_RF_IFENGINE, VJO_HOOK_ENC_CP932, "#Speed[5]#Effect[0]#Scale[1]「どうしたの？」#n", "「どうしたの？」");
+    rubi_to(VJO_RF_IFENGINE, VJO_HOOK_ENC_CP932,
+            "#Scale[1.0]　#n　#n　#n　#n　#n　#n　#n　　　　――愛の光なき人生は無価値である。#n", "――愛の光なき人生は無価値である。");
+    rubi_to(VJO_RF_IFENGINE, VJO_HOOK_ENC_CP932, "（うーん、なんだか頭がボーッとする……#n　昨日も早く休んだし、#n　寝不足ではないはずなんだけどな）",
+            "（うーん、なんだか頭がボーッとする……\n　昨日も早く休んだし、\n　寝不足ではないはずなんだけどな）");
+    rubi_to(VJO_RF_IFENGINE, VJO_HOOK_ENC_CP932, "　#Color[16]真田勇士隊#Color[0]が、こんなにも、早く」", "真田勇士隊が、こんなにも、早く」");
+    /* PCSG00472: ゞ ゝ drawn as one !? and one !! cell (PCSG00472 page 14, PCSG00476 page 17, whose reviewer read っ……!?);
+     * PCSG00272's NVL paragraph and its undrawn #n　#n spacer (session 8e5c4f3b event 1), PCSG00382 page 1 */
+    rubi_to(VJO_RF_PCSG00472, VJO_HOOK_ENC_CP932, "#Scale[1.0]あぁゞ　ざけんなゝ　横暴だぞゝ#n", "あぁ!?　ざけんな!!　横暴だぞ!!");
+    rubi_to(VJO_RF_PCSG00472, VJO_HOOK_ENC_CP932, "#Scale[1.0]っ……ゞ#n", "っ……!?");
+    rubi_to(VJO_RF_PCSG00472, VJO_HOOK_ENC_CP932, "#Scale[1.0]――愛すれば愛するほどに。#nあなたを、食べてしまいたくなる。#n　#n",
+            "――愛すれば愛するほどに。\nあなたを、食べてしまいたくなる。");
+    rubi_to(VJO_RF_PCSG00472, VJO_HOOK_ENC_CP932, "#Scale[1.0]「ああ」#n", "「ああ」");
+    /* AOZORA_RUBY: PCSG00638 page 4; the bare form after a kanji (the farm's rule, in none of its pages), and 《》 after a
+     * character that is no kanji, which stays */
+    rubi_to(VJO_RF_AOZORA_RUBY, VJO_HOOK_ENC_CP932, "家を出てまだ十歩程度だというのに、｜神奈《かんな》は立ったまま舟を｜漕《こ》ぎはじめた。",
+            "家を出てまだ十歩程度だというのに、神奈は立ったまま舟を漕ぎはじめた。");
+    rubi_to(VJO_RF_AOZORA_RUBY, VJO_HOOK_ENC_CP932, "春眠《しゅんみん》、｜夏眠《なつみん》", "春眠、夏眠");
+    rubi_to(VJO_RF_AOZORA_RUBY, VJO_HOOK_ENC_CP932, "「《魔法》だよ」", "「《魔法》だよ」");
+    /* CARET_NEWLINE: PCSG01065 page 3 */
+    rubi_to(VJO_RF_CARET_NEWLINE, VJO_HOOK_ENC_CP932, "「あれが校舎よね。^大きいな……それに、すごく綺麗。^何だか学校じゃないみたい」",
+            "「あれが校舎よね。\n大きいな……それに、すごく綺麗。\n何だか学校じゃないみたい」");
+    /* PCSG01250: page 18's ruby; #n and the #Size/#Pos codes its layout parser reads (in none of the farm's pages) */
+    rubi_to(VJO_RF_PCSG01250, VJO_HOOK_ENC_CP932, "呆れたように菓子を食うのは三年の部員、/ruby:和呂田 茜&わろた あかね/だ。",
+            "呆れたように菓子を食うのは三年の部員、和呂田 茜だ。");
+    rubi_to(VJO_RF_PCSG01250, VJO_HOOK_ENC_CP932, "#Size[2]大声#n#Pos[0,10]次の行", "大声\n次の行");
+    /* BR_NEWLINE: PCSG00706 page 5 (Rejet's Unity history string, UTF-16) */
+    rubi_to(VJO_RF_BR_NEWLINE, VJO_HOOK_ENC_UTF16LE, "（海……？<br>　私は学校へ行くために、<br>　道を歩いてたはずじゃ……）<br>",
+            "（海……？\n　私は学校へ行くために、\n　道を歩いてたはずじゃ……）");
+
+    /* PCSG01065: CARET_NEWLINE in place of Luna's filter at its site (FPCSG00852), which drops the ^ */
+    s = site("PCSG01065", 0x80029854u);
+    TEST_CHECK(s != NULL);
+    if (s) {
+        n = encode(VJO_HOOK_ENC_CP932, "多くの生徒が寮に帰っているのだろうか、^辺りには人気がない。", raw, sizeof raw);
+        TEST_CHECK(vjo_luna_text(s, raw, n, VJO_HOOK_ENC_CP932, out, sizeof out) > 0 &&
+                   !strcmp(out, "多くの生徒が寮に帰っているのだろうか、辺りには人気がない。"));
+        TEST_CHECK(vjo_luna_text_filter(s, VJO_RF_CARET_NEWLINE, VJO_HOOK_ENC_CP932, raw, n, VJO_HOOK_ENC_CP932, out,
+                                        sizeof out) > 0 &&
+                   !strcmp(out, "多くの生徒が寮に帰っているのだろうか、\n辺りには人気がない。"));
+        TEST_MSG("got [%s]", out);
+    }
 
     /* in place of a Luna site's filter: PCSG00448's own drops the name the hook sees before the expander */
     s = site("PCSG00448", 0x800718F8u);

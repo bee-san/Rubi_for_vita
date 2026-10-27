@@ -152,6 +152,11 @@ enum {
     VJO_RF_PCSG00415,               /* CLANNAD: the name variables ＊Ａ ＊Ｂ to 岡崎 朋也 */
     VJO_RF_PCSG00020,               /* 極限脱出ＡＤＶ 善人シボウデス: <K>, <P>, <N>, <F:B> and colour tags dropped */
     VJO_RF_PCSG00700,               /* 蒼の彼方のフォーリズム: <a>(｢) opens a line, half-width kana */
+    VJO_RF_PROTOTYPE_NAMELINE,      /* PROTOTYPE task:: titles: $t<name>@ on a line of its own, then PROTOTYPE */
+    VJO_RF_PCSG00472,               /* DIABOLIK LOVERS: ゞ ゝ are the font's one-cell !? !!, then IFENGINE */
+    VJO_RF_AOZORA_RUBY,             /* ｜base《reading》 ruby, and a kanji's bare 《reading》: the base */
+    VJO_RF_CARET_NEWLINE,           /* ^ is a line break */
+    VJO_RF_PCSG01250,               /* スキとスキとでサンカク恋愛: /ruby:base&reading/, #n, layout codes */
     VJO_RF_END
 };
 

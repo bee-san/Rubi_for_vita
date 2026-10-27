@@ -362,8 +362,21 @@
  * of room left) and 154,548 -> 154,676 B normal (972 B), data/bss unchanged (35,880 / 35,864 B), the same pages; the
  * kernel's and the Shell's rows unchanged [measured: tools/check_memory_ledger.py, main 1c9d048's Release run 40546045095
  * artifacts against this change's fast-gate builds, VitaSDK 2026.08]. No block, thread or allocation. */
+/* The psandvita hook farm's 20 verified entries of 2026-10-27 and their filters (core/hook_place.c; core/hook_luna.c:
+ * PROTOTYPE_NAMELINE, PCSG00472, AOZORA_RUBY, CARET_NEWLINE, PCSG01250 and one more PROTOTYPE op): worker .text
+ * unchanged; .rodata +304 B, most of it the 20 titles' strings (Luna's ID table is a char[][10] in the data segment, so
+ * nothing is shared; Luna's own patterns for PCSG01250 are); .data +976 B, the 20 rows' 800 B, the ops and the
+ * filters' index (PROTOTYPE_NAMELINE and PCSG00472 are PROTOTYPE's and IFENGINE's arrays from an op earlier: 48 B
+ * less), both builds. The module rows: debug text 163,656 -> 163,960 B, 120 B past its 40 pages (main had 184 B of
+ * room), so one text page more (167,936 B, 3,976 B of room); normal text 154,692 -> 154,996 B (652 B of room), the
+ * same pages; data/bss 35,880 -> 36,856 B debug (8 B left) and 35,864 -> 36,840 B normal (24 B left), the same
+ * pages. So the debug build's worker takes 4,096 B more in each game that is ON (200,704 -> 204,800 B), in the game's
+ * partition, never SceShell's; the normal build, the release's main download, keeps 192,512 B. The 20 titles'
+ * strings alone (about 200 B) did not fit the debug worker's last text page [measured: arm-vita-eabi-size -A on both builds'
+ * VitaJPOverlay_OCR, main 68041a7 and this change, tools/fast_gate.sh's vitasdk image; module rows:
+ * tools/check_memory_ledger.py]. No block, thread or allocation. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
 #else
 #define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
 #endif
