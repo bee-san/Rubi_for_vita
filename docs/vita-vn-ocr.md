@@ -1213,7 +1213,7 @@ On the regions above (`vjo-page-ocr --find-only --line-fix on`, whose `horizonta
 | VNDB's PS Vita and PSP screenshots, whole screens (2,837) | 77 (2.7 %) |
 
 The rule's thresholds were tried on these same regions: no held-out set checks it. Through the job (`vertical_eval.py
-run`, `--vertical on --line-fix on`, this change against main `19986c7`): on gave main's text on every one of the 3,353
+run`, `--vertical on --line-fix on`, this change against main `68041a7`): on gave main's text on every one of the 3,353
 Yunohana and 362 development regions, all read as columns; on 3,080 hooked horizontal regions (60 drawn boxes and 10
 whole screens a title) it read rows in 2,572 (2,493 of the 2,640 boxes), each of them off's job exactly (text, lines,
 CTC frames, strips), where main's on read columns in all of them.
