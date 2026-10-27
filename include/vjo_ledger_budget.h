@@ -330,8 +330,8 @@
  * as above]. No block, thread or allocation. */
 /* MAGES' SC3 text (docs/native-hooks.md "SC3 text": core/hook_sc3.c at -Os, the SC3 read and decode in
  * game_ocr/hooks.c, the charset's load in game_ocr/main.c, three verified entries and three charset pins in the data
- * segment): debug text 160,888 -> 162,024 B (1,816 B of room left) and data/bss 35,328 -> 35,624 B, normal 151,988 ->
- * 153,140 B (2,508 B) and 35,320 -> 35,608 B, the same pages [measured: the build log's module rows, both builds, main
+ * segment): debug text 160,888 -> 162,088 B (1,752 B of room left) and data/bss 35,328 -> 35,624 B, normal 151,988 ->
+ * 153,204 B (2,444 B) and 35,320 -> 35,608 B, the same pages [measured: the build log's module rows, both builds, main
  * 892cfb9 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameSc3, is in the game pool
  * below. */
 #if VJO_DEBUG

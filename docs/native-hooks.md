@@ -872,7 +872,7 @@ text to the debug build in the same pages [measured: the module rows of local CI
 audit-hooks section 3].
 
 An SC3 site ([SC3 text](#sc3-text)) adds the worker's one block outside this rule, `VjoGameSc3`: its game's charset,
-8 or 16 KiB, from the first job until the worker stops, in those three games only; and 1,136 / 1,152 B of text
+8 or 16 KiB, from the first job until the worker stops, in those three games only; and 1,200 / 1,216 B of text
 (debug / normal) and 296 / 288 B of data/bss to every game's worker, in the same pages (200,704 and 192,512 B)
 [measured: the build log's module rows on main `892cfb9` and this change, both builds; memory-ledger.md "SC3 text"].
 Its hit reads into the same 512-byte capture buffer.

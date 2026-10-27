@@ -22,14 +22,14 @@ same module pages in every build.**
 
   | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
   |---|---:|---:|---:|
-  | Game worker | 160,888 + 35,328 → 162,024 + 35,624 B | 151,988 + 35,320 → 153,140 + 35,608 B | 200,704 / 192,512 B, unchanged |
+  | Game worker | 160,888 + 35,328 → 162,088 + 35,624 B | 151,988 + 35,320 → 153,204 + 35,608 B | 200,704 / 192,512 B, unchanged |
   | Kernel | 43,096 + 77,764 → 43,292 + 77,764 B | 37,992 + 76,076 → 38,188 + 76,076 B | 122,880 / 118,784 B, unchanged |
   | Shell | 101,988 + 73,200 → 101,996 + 73,200 B (the self-test's name of the block) | unchanged | 176,128 / 163,840 B, unchanged |
 
   The worker's text is `core/hook_sc3.c` at `-Os` (the span and the decoder), the SC3 read and decode in
   `game_ocr/hooks.c` and the load in `game_ocr/main.c`; its data, the three verified entries (120 B) and the three
-  charsets' pins (144 B) in the data segment ("Tables in the data segment" below) and their state. It keeps 1,816 B
-  (debug) and 2,508 B (normal) of its last text page, 1,240 / 1,256 B of data. The kernel's 196 B are the open's
+  charsets' pins (144 B) in the data segment ("Tables in the data segment" below) and their state. It keeps 1,752 B
+  (debug) and 2,444 B (normal) of its last text page, 1,240 / 1,256 B of data. The kernel's 196 B are the open's
   path from the caller's title (`loader_title`) and its size rule; no buffer: the charset crosses the existing
   32 KiB staging buffer in one read.
 - **Not added:** the charsets compiled into the worker (27,732 B of tables: about seven more pages in every game that
