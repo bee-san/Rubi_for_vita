@@ -77,6 +77,17 @@ been reported.
   The hook's own text filter now writes the names; CLANNAD has no name entry, so they are always 岡崎朋也. Seen in 16
   of 1,347 hooked lines of a console's history (Rubi 0.9.8).
 
+### Fixed
+
+- **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
+  arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
+  read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
+  failed the job although the hook had the line: 蒼の彼方のフォーリズム (`PCSG00700`) sampled 1 to 4 MiB free on a
+  console (#324), so a press some time into a line could fail there. The kernel now marks the answer with the
+  screen's current scene without reading pixels, so a trusted hook (a Luna site, a Rubi verified site, a string copy
+  that earned trust) needs no game memory at all. It still reads the strip only while the region has no screen yet.
+  Not run on a console yet.
+
 ### Changed
 
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the

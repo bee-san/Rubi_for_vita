@@ -55,7 +55,7 @@ static struct {
     unsigned text_blink;   /* the text shows for this many frames, then hides as long (0: it stays) */
     int frozen;            /* the clock never moves (reads and sleeps take no time) */
     int stripes;           /* the screen is diagonal stripes 10 px wide (no text; GRAD finds a line in it) */
-    /* API 51, the pause (VjoGreySource.frozen): the first pass's first strip copies the whole region from the next
+    /* API 52, the pause (VjoGreySource.frozen): the first pass's first strip copies the whole region from the next
      * frame at once, and every read from then on is from that copy */
     int freeze;
     unsigned frozen_at;    /* the frame the copy is of (0: none yet) */
@@ -2499,7 +2499,7 @@ static void test_the_cascade_rereads_a_gated_counter_line(void)
 }
 
 
-/* ---- API 51: a region the source froze (VjoGreySource.frozen, the pause: docs/game-pause.md) ---- */
+/* ---- API 52: a region the source froze (VjoGreySource.frozen, the pause: docs/game-pause.md) ---- */
 /* A region that never holds still (every frame differs, a spinner's worst case): read strip by strip, its re-reads
  * tear it (on main the job then gives up, VJO_E_SCREEN_CHANGED, and shows nothing; another stabilisation may read it
  * anyway, so only the tears are asserted); frozen at its first pass, the job reads that one frame, waits for nothing
@@ -2602,10 +2602,10 @@ static void test_a_tall_line_is_read_from_the_frozen_region(void)
 }
 
 TEST_LIST = {
-    {"API 51: a frozen region is read once, without a wait or a tear", test_a_frozen_region_is_read_once_without_waiting},
-    {"API 51: a frozen first pass forgets the wait before it", test_a_frozen_first_pass_forgets_the_wait_before_it},
-    {"API 51: a refused freeze reads exactly as before", test_a_refused_freeze_reads_as_before},
-    {"API 51: a tall line is read from the frozen region in place", test_a_tall_line_is_read_from_the_frozen_region},
+    {"API 52: a frozen region is read once, without a wait or a tear", test_a_frozen_region_is_read_once_without_waiting},
+    {"API 52: a frozen first pass forgets the wait before it", test_a_frozen_first_pass_forgets_the_wait_before_it},
+    {"API 52: a refused freeze reads exactly as before", test_a_refused_freeze_reads_as_before},
+    {"API 52: a tall line is read from the frozen region in place", test_a_tall_line_is_read_from_the_frozen_region},
     {"the_capture_block_stays_within_64_KiB_at_every_size", test_capture_block_sizes},
     {"a_zero_policy_reads_exactly_as_api19", test_zero_policy_is_api19},
     {"typing_text_is_read_once_whole", test_typing_is_read_once_whole},

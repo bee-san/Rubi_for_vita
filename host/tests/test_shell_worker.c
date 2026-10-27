@@ -2247,7 +2247,7 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("ocr_line_fix %d: speed 0x%08X", fixes[k].cfg, (unsigned)fake_game_request.speed);
         mem_free();
     }
-    /* API 51: ocr_pause (off by default) rides in the speed word as VJO_GAME_OCR_S_PAUSE only when on */
+    /* API 52: ocr_pause (off by default) rides in the speed word as VJO_GAME_OCR_S_PAUSE only when on */
     reset();
     fake_recognized_text = "猫";
     TEST_CHECK(!cfg.ocr_pause);
@@ -4306,7 +4306,7 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     TEST_CHECK(selftest_ends == 5 && selftest_rcs[0] == VJO_E_OOM && selftest_rcs[1] == VJO_E_OOM && selftest_done);
     fail_vocr_user = 0; fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
     mem_free();
-    /* API 51: no stage pauses the game, whatever ocr_pause says (the user's jobs only, as the gate) */
+    /* API 52: no stage pauses the game, whatever ocr_pause says (the user's jobs only, as the gate) */
     reset();
     cfg.ocr_pause = 1;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;

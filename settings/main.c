@@ -91,7 +91,7 @@
 #define PREF_TRUST 7
 #define PREF_GATE 8
 #define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical) */
-#define PREF_PAUSE 10   /* API 51: Pause the game to read (config.ini ocr_pause), the last card */
+#define PREF_PAUSE 10   /* API 52: Pause the game to read (config.ini ocr_pause), the last card */
 #define PREFERENCES 11
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
@@ -670,7 +670,7 @@ static void set_vertical(int index)
     preference_saved(vjo_preferences_save_vertical(vertical_choice[index], &scratch));
 }
 
-/* API 51, Pause the game to read (config.ini ocr_pause, docs/game-pause.md): applies when the overlay next opens. */
+/* API 52, Pause the game to read (config.ini ocr_pause, docs/game-pause.md): applies when the overlay next opens. */
 static void set_pause(int on)
 {
     if (on == preferences.ocr_pause) return;
@@ -992,7 +992,7 @@ static void draw_vertical_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
 }
 
-/* API 51: the game's frame held while Rubi copies the text box from it, so the OCR reads one still picture
+/* API 52: the game's frame held while Rubi copies the text box from it, so the OCR reads one still picture
  * (docs/game-pause.md); OFF reads it strip by strip over a few frames, as before. */
 static void draw_pause_card(int y)
 {
@@ -1111,7 +1111,7 @@ static void touch_preference(int x, int y)
             (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
             set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
         break;
-    default: /* the ON/OFF cards: Speed boost, Japanese characters only, (API 43) the two OCR skips, (API 51) the pause */
+    default: /* the ON/OFF cards: Speed boost, Japanese characters only, (API 43) the two OCR skips, (API 52) the pause */
         toggle_preference();
     }
 }

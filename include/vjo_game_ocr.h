@@ -149,7 +149,7 @@
 #define VJO_GAME_OCR_S_LINE_FIX 0x200000u
 #define VJO_GAME_OCR_S_LINE_JUNK 0x400000u
 #define VJO_GAME_OCR_S_LINE_VALLEY 0x800000u
-/* API 51, bit 30: pause the game for its frame (config.ini ocr_pause, off by default; docs/game-pause.md, #348). The
+/* API 52, bit 30: pause the game for its frame (config.ini ocr_pause, off by default; docs/game-pause.md, #348). The
  * job's first pass asks for the whole region at once (VJO_ROWS_FRAME): the display hook copies every row of it from
  * one frame, inside the game's display call, which waits that long (at most VJO_GAME_OCR_PAUSE_MAX_US), into the
  * worker's frame block; every later read of the job is from that copy, so a spinning icon or an animated background
@@ -359,7 +359,7 @@ enum {
                             first rows, 1 the first rows' guess, every row checked, 2 every row came to another
                             picture: read again), bytes = the picture's x << 16 | y, sum = its width << 16 | height
                             (the JPEG's), us the scan's time */
-    VJO_GSTEP_PAUSE,     /* API 51, the pause for the frame (VJO_GAME_OCR_S_PAUSE), once per job that asked for it:
+    VJO_GSTEP_PAUSE,     /* API 52, the pause for the frame (VJO_GAME_OCR_S_PAUSE), once per job that asked for it:
                             kind 1 when every read of the job came from one frame copied in one display call, 0 when
                             the job read as before; arg the rows that display call copied (the region's height), rc
                             0 or why not (the kernel's VJO_ERR_*: UNSUPPORTED a game it does not pause or the
@@ -381,7 +381,7 @@ enum {
 #define VJO_GSETTLE_NONE 0     /* not asked for, or no line to read */
 #define VJO_GSETTLE_HELD 1     /* the rows held still settle long before the lines were read */
 #define VJO_GSETTLE_TIMEOUT 2  /* the job's waiting budget ran out first: read without it */
-/* VJO_GSTEP_PAUSE sum (API 51). */
+/* VJO_GSTEP_PAUSE sum (API 52). */
 #define VJO_GPAUSE_FROZEN 0u   /* the region came from one frame, copied in one display call: every read is from it */
 #define VJO_GPAUSE_NO_ROOM 1u  /* the frame block did not fit beside the job (its memory check) or was refused */
 #define VJO_GPAUSE_REFUSED 2u  /* the kernel refused the copy or could not finish it (rc says why) */
@@ -395,7 +395,7 @@ enum {
 #define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
 #define VJO_GITEM_SHOT 8u      /* "VjoGameShot": a shot's colour strip, encoder and JPEG (API 23) */
-#define VJO_GITEM_FRAME 9u     /* "VjoGameVocrFrame": the region from one frame, a paused job's (API 51) */
+#define VJO_GITEM_FRAME 9u     /* "VjoGameVocrFrame": the region from one frame, a paused job's (API 52) */
 #define VJO_GITEM_COUNT 10u
 
 typedef struct {
@@ -516,7 +516,7 @@ typedef struct {
  * region has no screen yet; the worker then reads the first pass. Never with another VJO_ROWS_* flag, nor for a
  * full-frame, probe or shot job. */
 #define VJO_ROWS_HOOK 0x8u
-/* API 51 (VJO_GAME_OCR_S_PAUSE, docs/game-pause.md): with SIG and LAST, and only so, the whole region at once: y 0, n
+/* API 52 (VJO_GAME_OCR_S_PAUSE, docs/game-pause.md): with SIG and LAST, and only so, the whole region at once: y 0, n
  * the region's height, through the hook (mode VJO_GAME_OCR_SRC_HOOK) into one block of the caller (dst_stride apart,
  * at most VJO_MAX_W). The display hook copies every row from the frame the game submits, in that one display call,
  * which waits as long: the game's pause. It stops at VJO_GAME_OCR_PAUSE_MAX_US (VJO_ERR_TIMEOUT: the rows copied so far

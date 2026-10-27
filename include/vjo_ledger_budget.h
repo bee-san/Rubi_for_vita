@@ -127,9 +127,9 @@
  * its lines' column flag, config.ini ocr_vertical's parse; its key, the model's name and one cold message of the
  * OCR's in the data segment, VJO_DATA_TABLE) makes it 89,252 -> 89,300 + 73,048 -> 73,160 on main 796168e, the same
  * pages, 812 B of text room [measured: the same rows, main 796168e and this change; the debug build 101,460 ->
- * 101,548 + 73,008 -> 73,152, the same pages]. API 51's ocr_pause (its key beside the text gate's in the parse, one
- * speed bit, VjoConfig's 4 B) makes it 89,884 -> 89,956 + 73,232 on main 892cfb9, the same pages, 156 B of text room
- * [measured: the same rows, main 892cfb9 and this change; the debug build 101,988 -> 102,124 + 73,200 -> 73,224, the
+ * 101,548 + 73,008 -> 73,152, the same pages]. API 52's ocr_pause (its key beside the text gate's in the parse, one
+ * speed bit, VjoConfig's 4 B) makes it 89,884 -> 89,956 + 73,232 on main 48d6a3b, the same pages, 156 B of text room
+ * [measured: the same rows, main 48d6a3b and this change; the debug build 101,988 -> 102,124 + 73,200 -> 73,224, the
  * same pages]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
@@ -340,10 +340,11 @@
  * [measured: arm-vita-eabi-size, both builds, main cbaa4e3 and this change; rebased on main 892cfb9, VitaSDK 2026.08]. No block, thread or
  * allocation. */
 /* API 51, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
+/* API 52, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
  * memory check and step; core/vocr_ocr.c's frozen region): debug text 160,888 -> 162,008 B (1,832 B of room left) and
  * data/bss 35,328 -> 35,392 B, normal 151,988 -> 153,076 B (2,572 B) and 35,320 -> 35,384 B, the same pages
- * [measured: the build log's module rows, both builds, main 892cfb9 and this change (the gate's run on 20d4874),
- * tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's; no thread. */
+ * [measured: check_memory_ledger.py's module rows, both builds, main 48d6a3b and this change, tools/fast_gate.sh's
+ * vitasdk image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's; no thread. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
@@ -473,10 +474,10 @@
  * vitasdk image]. No block, thread or allocation; the worker's API 43 strip is now taken only on a region without a
  * screen yet. */
 /* API 52, the pause for the frame (kernel/game_ocr.c: VJO_ROWS_FRAME's checks, the hook's chunked copy and its cap,
- * the watchdog in the rows tick): debug 43,096 -> 43,672 B of text and 77,764 -> 77,788 B of data/bss, normal 37,992
- * -> 38,480 and 76,076 -> 76,092 B, the same pages [measured: the build log's module rows, both builds, main 892cfb9
- * and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the copy runs in the game's
- * own display call, as a strip's does. */
+ * the watchdog in the rows tick): debug 43,160 -> 43,736 B of text and 77,764 -> 77,788 B of data/bss, normal 38,008
+ * -> 38,512 and 76,076 -> 76,092 B, the same pages [measured: check_memory_ledger.py's module rows, both builds, main
+ * 48d6a3b and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the copy runs in the
+ * game's own display call, as a strip's does. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else
@@ -573,7 +574,7 @@
  * VJO_VOCR_STRIP_BYTES may still run on a helper (API 22): it is copied out of this block into
  * the helper's line slot first, so no helper reads it; a larger one runs on the worker's thread. */
 #define VJO_BUDGET_GAME_LINE 516096u
-/* API 51, the pause for the frame (config.ini ocr_pause, off by default; docs/game-pause.md): a job that asks for it
+/* API 52, the pause for the frame (config.ini ocr_pause, off by default; docs/game-pause.md): a job that asks for it
  * copies the region from one frame, in one display call, into this block ("VjoGameVocrFrame": region width x height
  * grey bytes, at most 960 x 544 = 522,240 B, page-rounded), and reads every row from it, a line taller than a strip
  * included (core/vocr_ocr.h VjoGreySource.frozen), so it takes no VJO_BUDGET_GAME_LINE block. When the kernel refuses
@@ -632,7 +633,7 @@
  * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
  * line or frame block or helpers (1,851,392 B of the job's worst case besides the resident weights, LM
  * and cascade model, which a shot keeps: 8,560,640 + 450,560 B under the job's
- * 10,412,032 B, API 51 with VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
+ * 10,412,032 B, API 52 with VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
@@ -661,7 +662,7 @@
  * two text pages (8,192 B, both builds): the job's worst case 10,567,680 -> 10,584,064 B, 11.7 % of that free
  * USER (a real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,297,920 B, is 1,286,144 B
  * less). VOCR6's 4 MB LM (vita-vn-ocr #127, 3,603,552 B against ctclm.2's 3,781,072 B) lowers the LM budget and
- * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. API 51's
+ * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. API 52's
  * frame block (ocr_pause) in place of the tall line's, the larger of the two, adds 8,192 B: 10,412,032 B (11.5 %;
  * a real peak with the pause, that job's frame block beside it at 960 x 544, 9,125,888 B). */
 #define VJO_LIMIT_GAME_JOB 10604544u

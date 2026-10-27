@@ -529,7 +529,7 @@ typedef struct {
     uint32_t settle_left;   /* the job's waiting budget left */
     vocr_textgate_state *gate; /* the gate reading this try's rows, or NULL (VjoVocrPolicy.gate) */
     unsigned gate_next;     /* the next row it takes */
-    /* API 51: the source froze the region at the first pass (VjoGreySource.frozen): every read since and to come
+    /* API 52: the source froze the region at the first pass (VjoGreySource.frozen): every read since and to come
      * returns the same rows, so nothing is waited for or read again to see a change */
     int frozen;
     int err;
@@ -616,7 +616,7 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
         s->err = got < 0 ? got : VJO_E_SOURCE;
         return -1;
     }
-    /* API 51: the first pass's first strip came from a region the source froze (the pause): it is the region now,
+    /* API 52: the first pass's first strip came from a region the source froze (the pause): it is the region now,
      * whatever a wait read before it (those rows' states are forgotten, so a spinner that moved since is no tear) */
     if (first && !y && !s->frozen && s->src->frozen && s->src->frozen(s->src->ud)) {
         bits_clear(s);
@@ -678,7 +678,7 @@ static int stream_pass(Stream *s)
 
 static int settle_on(const Stream *s)
 {
-    /* a frozen region (API 51) cannot change: nothing is left to wait for */
+    /* a frozen region (API 52) cannot change: nothing is left to wait for */
     return s->pol->settle_us && s->p->now_us && s->settle_left && !s->frozen;
 }
 
@@ -1096,7 +1096,7 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *s
         return s->strip + (size_t)(ln->y - s->y0) * s->w + ln->x;
     }
     if (s->frozen) {
-        /* API 51: the frozen region holds it whole, the same bytes a copy of the region gave API 18's recognizer */
+        /* API 52: the frozen region holds it whole, the same bytes a copy of the region gave API 18's recognizer */
         const unsigned char *f = s->src->frozen(s->src->ud);
         s->st->tall++;
         if (!f) {

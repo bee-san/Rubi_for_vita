@@ -798,7 +798,7 @@ static void test_config(void)
     gate = "ocr_text_gate = off\nocr_text_gate = maybe\n";
     vjo_config_parse(&c, gate, strlen(gate));
     TEST_CHECK(c.ocr_text_gate == 0 && c.n_warnings == 1);
-    /* API 51: the pause for the frame (docs/game-pause.md), off by default; it shares the gate's branch, each key its
+    /* API 52: the pause for the frame (docs/game-pause.md), off by default; it shares the gate's branch, each key its
      * own setting, in any case; an unknown value keeps the value, warned */
     vjo_config_defaults(&c);
     TEST_CHECK(c.ocr_pause == 0);
@@ -983,7 +983,7 @@ static void test_config(void)
         TEST_CHECK(d.hook_sites == 1 && strstr(t, "\nhook_sites = on\n")); /* audit-hooks F3 */
         TEST_CHECK(d.hook_trust == 1 && strstr(t, "\nhook_trust = on\n")); /* API 43 */
         TEST_CHECK(d.ocr_wait_hint == 1 && strstr(t, "\nocr_wait_hint = on\n")); /* #358 */
-        TEST_CHECK(d.ocr_pause == 0 && strstr(t, "\nocr_pause = off\n")); /* API 51 */
+        TEST_CHECK(d.ocr_pause == 0 && strstr(t, "\nocr_pause = off\n")); /* API 52 */
         TEST_CHECK(d.reading_time == 0 && strstr(t, "\nreading_time = adaptive\n"));
         /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
         TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&

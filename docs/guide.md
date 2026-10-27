@@ -475,7 +475,7 @@ reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting,
 dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
 switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
 and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
-**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)), and (API 51)
+**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)), and (API 52)
 **Pause the game to read** (`ocr_pause`, OFF by default, the last card: [pause](game-pause.md)).
 Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),

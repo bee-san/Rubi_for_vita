@@ -622,7 +622,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
     } else if (vjo_ieq(key, "ocr_text_gate") || vjo_ieq(key, "ocr_pause")) {
         static const char *const off_on[] VJO_DATA_TABLE(config_off_on_2) = {"off", "on", NULL};
-        /* ocr_text_gate or (API 51) ocr_pause: their fifth letters differ, in either case */
+        /* ocr_text_gate or (API 52) ocr_pause: their fifth letters differ, in either case */
         set_choice(c, key, val, (key[4] | 0x20) == 'p' ? &c->ocr_pause : &c->ocr_text_gate, off_on);
     } else if (vjo_ieq(key, head_key)) {
         /* each value's index is its VJO_HEAD_* bits */

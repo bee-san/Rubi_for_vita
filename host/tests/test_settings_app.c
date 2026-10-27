@@ -132,7 +132,7 @@ typedef struct {
     char gate[16];      /* API 43: its ocr_text_gate value */
     char trust[16];     /* API 43: its hook_trust value */
     char vertical[16];  /* API 47: its ocr_vertical value */
-    char pause[16];     /* API 51: its ocr_pause value */
+    char pause[16];     /* API 52: its ocr_pause value */
     int model_line;   /* it still has an older build's vocr_model or vocr_fallback_model line */
 } Frame;
 /* Each run is one process of the app, as on the console: settings/main.c keeps
@@ -490,7 +490,7 @@ static const char *const CARD_NAMES[CARDS] = {"Model size", "Read text", "Speed 
                                               "Text source", /* API 31 */
                                               "Trusted hooks replace OCR", "Skip OCR on screens without text", /* API 43 */
                                               "Vertical text", /* API 47 */
-                                              "Pause the game to read"}; /* API 51 */
+                                              "Pause the game to read"}; /* API 52 */
 /* Frame f's card i: its top (its title is drawn 30 below it, at x 42), or -1 when not shown. */
 static int card_top(int f, int i)
 {
@@ -953,7 +953,7 @@ static void test_the_page_scrolls_a_card_at_a_time(void)
     static const struct { int frame, focus, top; } want[] = {
         {1, 0, 0}, {3, 1, 0}, {5, 2, 0}, {7, 3, 1}, {9, 4, 2}, {11, 5, 2},
         {13, 4, 2}, {15, 3, 2}, {17, 2, 2}, {19, 1, 1}, {21, 0, 0},
-        {23, 10, 7}, /* Up from the first: the last (API 51: Pause the game to read, Trusted hooks on top) */
+        {23, 10, 7}, /* Up from the first: the last (API 52: Pause the game to read, Trusted hooks on top) */
     };
     for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         int f = want[i].frame, top = card_top(f, want[i].top), mine = card_top(f, want[i].focus);
@@ -967,7 +967,7 @@ static void test_the_page_scrolls_a_card_at_a_time(void)
         check_room(f);
         /* the scroll bar's thumb: where the view is in the 848-pixel column (310 of it shown; API 31's
          * Text source card made it 488 + 4 + 68, API 43's two switches 560 + 2 x (4 + 68), API 47's Vertical text
-         * 704 + 4 + 68, API 51's Pause the game to read 776 + 4 + 68) */
+         * 704 + 4 + 68, API 52's Pause the game to read 776 + 4 + 68) */
         static const int offset[] = {0, 98, 204, 276, 348, 420, 492, 564};
         int thumb = 0;
         for (int k = 0; k < shown[f].rects; k++)
@@ -1130,7 +1130,7 @@ static void test_a_saved_choice_says_when_it_applies(void)
                 "the status line: '%s'", st ? st->text : "(none)");
 }
 
-/* API 31: Text source (Up from the first card reaches the last, API 51's Pause card; four more Ups reach it): Right
+/* API 31: Text source (Up from the first card reaches the last, API 52's Pause card; four more Ups reach it): Right
  * and Left step within its
  * three choices (Automatic, Every game, OCR only: auto, hooks, ocr), Enter takes the next one (OCR only
  * to Automatic), a touch on a choice takes it and elsewhere on the card only focuses. Each change is
@@ -1247,7 +1247,7 @@ static void test_ocr_skip_switches_by_keys_and_touch(void)
         TEST_CHECK(!strcmp(text, "; mine\nvocr_tier = small\nocr_text_gate = off\nhook_trust = on\n"));
         TEST_MSG("%s", text);
     }
-    /* a touch on each card in view switches it (the trust card first once Up has wrapped to API 51's Pause card: the
+    /* a touch on each card in view switches it (the trust card first once Up has wrapped to API 52's Pause card: the
      * column's 564; the gate card 636) */
     card("ocr_text_gate = off\nhook_trust = off\n");
     static const Input taps[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), TAP(300, OCR_Y + 636 - 564 + 30),
@@ -1332,7 +1332,7 @@ static void test_vertical_text_by_keys_and_touch(void)
                     "tap %u: ocr_vertical '%s', want %s", i, shown[6 + 2 * i].vertical, after[i]);
 }
 
-/* API 51: Pause the game to read, the last card (Up from the first card reaches it): Enter switches it, Right is ON
+/* API 52: Pause the game to read, the last card (Up from the first card reaches it): Enter switches it, Right is ON
  * and Left OFF, a touch anywhere on it switches it; each change is config.ini's ocr_pause, every other line kept, and
  * the status line says it applies when the overlay next opens. A file without the line shows OFF (the default) and
  * writes nothing until a change. */
@@ -1655,7 +1655,7 @@ TEST_LIST = {
     {"read_text_and_speed_boost_first_run_auto_and_on_below_the_model_size", test_read_text_and_speed_boost_defaults},
     {"text_source by keys and touch, saved as text_source (API 31)", test_text_source_by_keys_and_touch},
     {"Vertical text by keys and touch, saved as ocr_vertical (API 47)", test_vertical_text_by_keys_and_touch},
-    {"Pause the game to read by keys and touch, saved as ocr_pause (API 51)", test_pause_card_by_keys_and_touch},
+    {"Pause the game to read by keys and touch, saved as ocr_pause (API 52)", test_pause_card_by_keys_and_touch},
     {"the OCR-skipping switches by keys and touch, saved as ocr_text_gate and hook_trust (API 43)",
      test_ocr_skip_switches_by_keys_and_touch},
     {"read_text_and_speed_boost_by_keys_and_touch_saved_as_ocr_mode_and_ocr_boost_clock",
