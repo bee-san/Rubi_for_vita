@@ -325,13 +325,13 @@ its result (a second move) counts once, for the last; one whose result was drawn
 on meanwhile) and one a close forgets before it was drawn count not at all; the render sets the text, and
 paf lays it out in the frame or two after (`LAYOUT_RETRY_FRAMES`), which the figure leaves out. No histogram (≤ 16,
 33, 50, 100 ms): in a measured build its counters and format took 80 B more of the debug Shell's text and 56 B of its
-data, more than the last text page has left (76 B) [measured: the module rows with and without it]. `--collect`'s analysis sums
+data, more than the last text page has left (28 B) [measured: the module rows with and without it]. `--collect`'s analysis sums
 the closes (`lookups shown (N of them): …`). The normal build has none of it (no time taken, nothing per lookup).
 
-Memory: no new allocation, thread or budget; the debug Shell 102,092 → 102,324 B of text (the module's pages: 102,400
-B, 76 B left) and 73,408 → 73,560 B of data/bss (73,728, 168 B left), the done line's and the figure's formats in
+Memory: no new allocation, thread or budget; the debug Shell 102,140 → 102,372 B of text (the module's pages: 102,400
+B, 28 B left) and 73,408 → 73,560 B of data/bss (73,728, 168 B left), the done line's and the figure's formats in
 the data segment (`VJO_DATA_TABLE`); the normal build's three plugins byte for byte main's (sha256) [measured: both
-builds' module rows (`tools/check_memory_ledger.py`) in the fast gate's VitaSDK image, main `bf5da10` and this change].
+builds' module rows (`tools/check_memory_ledger.py`) in the fast gate's VitaSDK image, main `e2c49ee` and this change].
 Host tests: `debug_build_writes_a_lookups_lines_after_its_result`, `debug_build_writes_an_ocr_jobs_lines_after_its_result`
 (at `job_done` none of the held lines is in `log.txt` and the control thread can take the result; then one append, in
 their order), `the_done_line_has_the_exchange_and_log_times`, `debug_build_lookup_shown_figure` (the request, its
