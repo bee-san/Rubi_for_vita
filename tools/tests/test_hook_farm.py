@@ -112,9 +112,19 @@ class HookFarm(unittest.TestCase):
                            "length": {"offset": 20, "width": 4, "scale": 2, "unit": "bytes"}})
         self.assertEqual(hook_farm.farm_site(rec)[2:9], (1, 4, 0x819DBFF0, "VJO_HOOK_ENC_CP932",
                                                          "VJO_PLACE_READ_CELLS", 20, 32))
-        rec = dict(RECORD_628, reader={"schema": "vn-hook-reader/1", "pointer_offsets": [0]}, mode_note="check mode "
-                   "by disassembly", thumb=0)
-        self.assertEqual(hook_farm.farm_site(rec)[2:7], (-1, 5, 0, "VJO_HOOK_ENC_CP932", "VJO_PLACE_READ_DEREF"))
+        rec = dict(RECORD_628, reader={"schema": "vn-hook-reader/1", "pointer_offsets": [0]})
+        self.assertEqual(hook_farm.farm_site(rec)[2:7], (1, 5, 0, "VJO_HOOK_ENC_CP932", "VJO_PLACE_READ_DEREF"))
+        # a record that says to check its mode by disassembly: the mode decided from exactly its bytes, else a stop
+        # (audit-rubi-audit-fix-hooks A-F1)
+        check = "check mode by disassembly"
+        for title, sig, mode in (("PCSG00469", "2de9f04985b000210091041c049183f1", 1),
+                                 ("PCSG00553", "0dc0a0e1f0592de920d04de20db0a0e1", 0)):
+            rec = dict(RECORD_628, title=title, signature=sig.upper(), mode_note=check, thumb=1 - mode)
+            self.assertEqual(hook_farm.farm_site(rec)[2], mode, title)
+        for rec in (dict(RECORD_628, mode_note=check),  # a title not decided
+                    dict(RECORD_628, title="PCSG00469", signature="2de9f04985b000210091041c049183f0", mode_note=check)):
+            with self.assertRaises(SystemExit):
+                hook_farm.farm_site(rec)
         for reader in ({"pointer_offsets": [0, 4]}, {"length": {"offset": 20, "width": 1, "scale": 4, "unit": "bytes"}},
                        {"stride": 2}):
             with self.assertRaises(SystemExit):

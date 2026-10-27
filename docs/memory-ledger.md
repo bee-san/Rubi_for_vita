@@ -24,9 +24,11 @@ pinned image (`tools/check_memory_ledger.py`'s module rows), main `70deda7` agai
   build's short job line pays back (its format, `worker_short_format`, in the data segment: +32 B there): +16 B of text,
   28 B left of its last page; and, with the debug build's hook source line moved into the result's batch (#338's audit
   F2), 32 B of the debug Shell's (28 B left). `vjo_history_append`'s frame 504 → 528 B on VjoNet's fixed 20 KiB stack (`-fstack-usage`, the normal
-  Shell's flags without LTO). Two other forms were measured and left: the rewrite without the end's check (+16 B of
-  normal text instead of +48 B, but it extends a replaced file with zeros, the audit's P6) and the record's start set
-  from the earlier one with a seek to it (+48 B debug and +80 B normal on main `4c5ad04`, a page past both budgets there).
+  Shell's flags without LTO). Two other forms were measured and left: the rewrite without the end's check (on main
+  `9ad8eb5` +16 B of normal text instead of +48 B; on `363f822`, with the format in the data segment, 16 B of normal
+  text less than this form and 16 B of debug text more [audit-rubi-audit-fix-hooks' measurement]; but it extends a
+  replaced file with zeros, the audit's P6) and the record's start set from the earlier one with a seek to it (+48 B
+  debug and +80 B normal on main `4c5ad04`, a page past both budgets there).
 - **The worker**: the cache's trust bit (`VjoHookLearned.trusted`, bit 1 of the 96-byte record's site word) and
   `vjo_hook_select_learned`'s trust argument.
 

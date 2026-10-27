@@ -427,6 +427,11 @@
  * normal (1,156 B), data/bss 36,704 -> 36,712 B and 36,696 -> 36,704 B, the same pages [measured: the build log's
  * module rows, both builds, main 70deda7 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or
  * allocation; the cache's record keeps its 96 B. */
+/* The audit of #397 and #401 (core/hook_luna.c run_ops: an op gated by encoding reads VJO_HOOK_ENC_CP932_A0 as CP932):
+ * every module's row unchanged (worker text 179,856 B debug, 368 B of room left, and 170,924 B normal, 1,108 B), the
+ * kernel and Shell SELF files byte-identical to main's [measured: the build log's module rows, both builds, main
+ * 2eb2d98 and this change, tools/fast_gate.sh's vitasdk image; on main cc25de3 it was -16 B debug, +16 B normal]. No
+ * block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else

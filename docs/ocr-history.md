@@ -140,7 +140,13 @@ record. The rewrite (`shell/history.c` `vjo_history_append`, #338's audit F3):
 
 What a failed rewrite still loses: a write, sync or close that fails after the truncation rolls the file back to where
 the earlier part's record began, as any failed append rolls back to where it began, so the line has no record (its
-earlier part's is gone with it), and a later read of the line writes it as a record of its own. Two lines are
+earlier part's is gone with it), and a later read of the line writes it as a record of its own. The reading total can
+keep the lost part's characters: it had counted them, and when the next record ends exactly where the lost one ended,
+its count finds the file the length it had counted and adds nothing (one record's characters off, until the file is
+counted again: a count of history.csv from its start; audit-rubi-audit-fix-hooks' probe P2c, host). A count that opens
+the file in the moment between the writer's check that none has it open and its truncation, and reads the file's end
+after the truncation, ends "unavailable" until the next Triangle press, as before this order (its probe P3b, host; the
+window is the time of one `sceIoChstat`); nothing is lost. Two lines are
 one record when the second starts with the whole first and comes under 750 ms after it
 ([native-hooks.md](native-hooks.md#no-wait-for-a-trusted-line-api-49): 225 of 8,910 consecutive page pairs of a host
 pool start so, 198 of them a box that adds its lines).

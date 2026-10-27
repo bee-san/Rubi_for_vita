@@ -22,6 +22,9 @@ static int open_error, write_error_after, sync_error, close_error, rollback_erro
 static SceOff last_size;
 
 static int native(int rc) { return rc < 0 ? -errno : rc; }
+/* SCE_O_APPEND as only a position at the open (the end then; each write where the position is), not POSIX's O_APPEND,
+ * which writes each at the end: the console's is not measured (audit-rubi-audit-fix-hooks B-F1). reset() leaves it. */
+static int append_at_open;
 int sceIoOpen(const char *file, int flags, unsigned mode)
 {
     TEST_CHECK(!strcmp(file, "ux0:data/VitaJPOverlay/history.csv"));
@@ -32,7 +35,13 @@ int sceIoOpen(const char *file, int flags, unsigned mode)
     }
     TEST_CHECK(flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND));
     opens++;
-    return open_error ? -71 : native(open(path, flags, mode));
+    if (open_error) return -71;
+    if (append_at_open) {
+        int fd = open(path, O_WRONLY | O_CREAT, mode);
+        if (fd >= 0 && lseek(fd, 0, SEEK_END) < 0) { close(fd); return -77; }
+        return native(fd);
+    }
+    return native(open(path, flags, mode));
 }
 SceOff sceIoLseek(int fd, SceOff off, int whence)
 {
@@ -1067,6 +1076,17 @@ static void test_grown_line_rewrite_fails_safely(void)
     }
 }
 
+/* audit-rubi-audit-fix-hooks B-F1: the grown line's rewrite reads the file's end again after it truncates, so its record
+ * goes where the replaced one began also where SCE_O_APPEND places only the open (POSIX's O_APPEND, which the fake has
+ * otherwise, writes each at the end: no test needed the read). Both grown-line tests with that open. */
+static void test_grown_line_with_append_at_open(void)
+{
+    append_at_open = 1;
+    test_grown_line_replaces_its_record();
+    test_grown_line_rewrite_fails_safely();
+    append_at_open = 0;
+}
+
 static void test_total_counts_the_file_once_then_adds(void)
 {
     reset();
@@ -2020,6 +2040,7 @@ TEST_LIST = {
     {"total: the file counted once, in windows, then each append added", test_total_counts_the_file_once_then_adds},
     {"API 49: a grown line replaces its record; the total counts it once", test_grown_line_replaces_its_record},
     {"#338's audit F3: a grown line's rewrite opens first, never under a count, only over its own record", test_grown_line_rewrite_fails_safely},
+    {"the grown-line rewrite where SCE_O_APPEND places only the open (its second end read)", test_grown_line_with_append_at_open},
     {"total: kept between starts, only what was appended since counted", test_total_kept_between_starts},
     {"total: a torn, foreign or wrong history_total.bin is counted again", test_total_recovers_from_a_bad_kept_total},
     {"total: a replaced history.csv is counted again", test_total_of_a_replaced_file},
