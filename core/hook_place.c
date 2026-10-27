@@ -144,7 +144,9 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
 /* Rubi's own verified sites. CLANNAD (PCSG00415): the function that receives each line in r6 as
  * CP932, at segment 0 + 0x2CA70 (Thumb: STRH.W r2, [r11, #0x32C]; ADDS.W r0, r4, #0x34C, no PC
  * use). From the PR #16 profile (profiles/PCSG00415.vjhook, removed in c35ebf9); proven in Vita3K
- * only (vita-vn-ocr notes 22), not yet on a console.
+ * only (vita-vn-ocr notes 22), not yet on a console. Its line holds the script's name variables, ＊Ａ
+ * and ＊Ｂ, where the game draws the protagonist's names: RF_PCSG00415 writes them (a console's
+ * history.csv, Rubi 0.9.8: 16 of 1,347 hook lines showed *A or *A*B).
  * アマツツミ (PCSG01198, AMATSUTSUMI_PSVITA, APP_VER 01.00): Luna's site 0x800785C8 (r2, CP932, its
  * filter: Luna's entry at the same address post-processes the text), which the placement check refuses
  * as no entry: it is inside a function (0x81070E3A's loop, 0x810745C8 in the game). Its 8 patched bytes
@@ -159,7 +161,7 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
  * read-only. */
 static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
-     {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, 0, 0, 0},
+     {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, VJO_RF_PCSG00415, 0, 0},
     {"PCSG01198", 0x8AA413F2u, 0x745C8u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
      {0x09, 0xEB, 0x87, 0x0E, 0x0E, 0xF5, 0xB1, 0x5E, 0x01, 0x37, 0x4E, 0xF8, 0x04, 0x0B, 0x09, 0x2F}, 0, 0, 0x0100u},
     /* PROTOTYPE engine (psandvita farm, Vita3K only): VJO_RF_PROTOTYPE; PCSG00007 reads through the text struct's buffer pointer */
@@ -254,6 +256,9 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG00648 月に寄りそう乙女の作法 (APP_VER ?): Vita3K 0x81026efa, 1397 farm pages (paired-vita-pcsg00648-20261023); patch: strh r0, [r4]; movw r1, #0x8638; ldrb r0, [r7]; movt r1, #0x8128; Luna's site here (r2, filter none) */
     {"PCSG00648", 0xE5819F44u, 0x26EFAu, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
      {0x20, 0x80, 0x48, 0xF2, 0x38, 0x61, 0x38, 0x78, 0xC8, 0xF2, 0x28, 0x11, 0x7A, 0x78, 0xB1, 0xF9}, VJO_RF_ANGLE_RUBY, 0, 0},
+    /* PCSG00700 蒼の彼方のフォーリズム (APP_VER 01.00): Vita3K 0x81074d48, the page's text set on the text window (r1 = its script string), one hit a page; console-tested (PCH-2000, 3.65, 2026-10-26); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0x1c; movs.w r10, #0x0 */
+    {"PCSG00700", 0x3BB91404u, 0x74D48u, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x87, 0xB0, 0x5F, 0xF0, 0x00, 0x0A, 0x87, 0x69, 0x89, 0x46, 0x87, 0xF8}, VJO_RF_PCSG00700, 0, 0x0100u},
     /* PCSG00713 百花百狼 ～戦国忍法帖～ (APP_VER 01.00): Vita3K 0x81112f46, 1464 farm pages (paired-vita-pcsg00713-20261023); patch: movs.w r10, #0x0; str.w r10, [sp, #0x1c]; add r2, sp, #0x1c; mov r0, r11 */
     {"PCSG00713", 0x08B1647Cu, 0x112F46u, 1, 6, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x5F, 0xF0, 0x00, 0x0A, 0xCD, 0xF8, 0x1C, 0xA0, 0x07, 0xAA, 0x58, 0x46, 0x03, 0x21, 0x09, 0xF7}, 0, 0, 0x0100u},

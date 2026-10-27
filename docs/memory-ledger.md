@@ -5,6 +5,25 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Why the overlay waits (#358)
+
+The open overlay's wait hint ([text-stability.md](text-stability.md#why-the-overlay-waits-358)) is Shell code and
+data only: the choice of status as a try starts (`shell/worker.c` `start_job_kind`), the count's reset when a region
+is saved (`on_command`), `ocr_wait_hint`'s parse (it
+shares `ocr_boost_clock`'s branch: `core/config.c`) and its field in each `VjoConfig` copy. The hint (153 B) and the
+key (14 B) are in the data segment (`VJO_DATA_TABLE`), and so is "Recognizing…" now (15 B), which gives the Shell's
+code that much room back. No block, thread, stack or allocation; no budget raised. Measured with VitaSDK GCC 15.2.0
+in the pinned image (`tools/fast_gate.sh`'s; `tools/check_memory_ledger.py`'s module rows, text + data/bss), main
+`2f68854` against this change (the same Shell rows on `892cfb9` and `48d6a3b`):
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Shell | 101,988 + 73,200 → 102,092 + 73,408 B | 89,884 + 73,232 → 89,980 + 73,416 B | 176,128 / 163,840 B, unchanged |
+| Kernel, game worker | unchanged | unchanged | unchanged |
+
+The normal Shell keeps 132 B of code room (228 B before) and 312 B of data room (496 B); the debug Shell 308 B and
+320 B.
+
 ## Line finder fixes (API 50, vita-vn-ocr #129) and the pin at f8a1856
 
 **The game worker, in the game's partition only: two text pages more in each game that is ON, in both builds**
@@ -53,7 +72,8 @@ shorter wait and the rows-less publication (code only); the worker's watch of tr
 text's hash and length, its trust and site words (four words of `.bss`), the hook pool reused for the watch's text
 (no new buffer); the Shell's pacing bypass, the cursor kept when a line grew, and history's newest record (its place,
 time and the last append's: 32 B of `.bss`). A trusted answer now takes no capture strip at all (its capture is
-published without rows); it takes API 43's strip only when the region shows another scene. No new block, thread or
+published without rows); it takes API 43's strip only when the region shows another scene (API 51: only when the
+region has no screen yet). No new block, thread or
 stack, no budget raised. API 43's follow-up (`same_pipeline` compares `hook_trust`, +16 B of normal Shell text) is
 part of it. The rows [measured: the build log's module rows, VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main
 `b6c715c` and this change, both builds]:

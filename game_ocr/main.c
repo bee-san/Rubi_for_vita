@@ -1590,8 +1590,9 @@ static void hook_show(VjoGameOcrResult *out, const VjoHookCand *k, int ocr, unsi
 }
 
 /* API 49: a trusted answer's capture without a pixel read (VJO_ROWS_HOOK): the kernel publishes the trusted line's
- * scene while the region shows it, 0; else (a menu over the line, an untrusted line since, an older kernel's refusal)
- * the first pass as before, run_hook_pass. No memory: the answer needs no block. */
+ * scene while the region shows it, and (API 51) the region's current scene once it shows another (a menu over the
+ * line, an untrusted line since), 0; else (a region without a screen yet) the first pass as before, run_hook_pass.
+ * No memory: the answer needs no block, so a game with less than VJO_GAME_RESERVE_HOOK_ONLY free still gets it. */
 static int hook_publish(const VjoGameOcrRequest *r)
 {
     VjoGameOcrRows q;
@@ -1926,11 +1927,12 @@ again:
     /* Reported also when refused: each title's real free memory. Each model is
      * checked in turn, its cascade and LM first (check_with_lm); the first that
      * fits runs. The first one's need stays in model_need_* when another runs. */
-    out->free_user = free_user();
-    unsigned used = 0;
+    unsigned used = 0, try_from = 0;
     int fits = 0;
     uint32_t first_workspace = 0, first_weights = 0, first_release = 0;
-    for (unsigned i = 0; i < n; i++) {
+retry_smaller:
+    out->free_user = free_user();
+    for (unsigned i = try_from; i < n; i++) {
         casc = cascade_of(&cand[i], r, top, casc_us);
         fits = check_with_lm(out, cand[i].m, cand[i].bytes, capture_bytes, lm_max, cand[i].tier, &casc, &lm);
         /* Each check is a step (include/vjo_game_ocr.h VJO_GSTEP_CHECK). A smaller
@@ -2133,6 +2135,21 @@ again:
         if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
         steps_drop_blocks(try_steps);
         goto again;
+    }
+    /* The check passed, yet the model's weights could not be had: out of memory before any were read or
+     * held. weights_alloc checks the game's free memory again once this job's own blocks are taken, and the
+     * console reports that memory in whole MiB (every sample of あおかな, PCSG00700, 2026-10-26: 1, 2, 3 or
+     * 4 MiB), so the second look can see a whole MiB less than the check did: a job that passed with less
+     * than 1 MiB to spare finds its weights refused, whatever its tier's reserve. A smaller model may still
+     * fit: give back this job's blocks and check again from the next one, each at most once, as a model
+     * that did not fit the check would have been. */
+    if (rc == VJO_E_OOM && !stats.model_loaded && !stats.model_cached && !stats.stuck && !forced &&
+        used + 1u < n && !cancelled(NULL)) {
+        if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+        try_from = used + 1u;
+        sceClibMemset(&stats, 0, sizeof(stats));
+        capture = (Capture){r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
+        goto retry_smaller;
     }
     /* ocr-first: a job that read no line (or only blank ones) reads what the
      * session's first job with text would otherwise read while the user waits

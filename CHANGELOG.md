@@ -13,6 +13,15 @@ been reported.
 
 ### Added
 
+- The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
+  row (an animated icon or a moving picture in the region), its next try says "Recognizing… Something in the region
+  keeps moving (an animated icon?), so the text never holds still. Press □ to draw a region around just the text."
+  instead of "Recognizing…" alone, until a read shows the text. Before, it said "Recognizing…" for as long as the
+  user waited. With an animated icon, on the host's spinner bench (184 hooked regions, est.), it shows 2.75 s after
+  L + R (median; 4.8 s at most); in the owner's CLANNAD logs no wait for text met a torn read, so it would have shown
+  in none of them. A region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
+  "Recognizing…" (on by default;
+  [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)). Not run on a console yet.
 - A native text hook for 極限脱出ＡＤＶ 善人シボウデス (Zero Escape: Virtue's Last Reward, `PCSG00020`, APP_VER
   01.00), where users reported OCR never worked and took forever. Its LunaTranslator site could never install: the
   eboot is linked at a fixed 0x81000000, so Luna's address is that address, and Rubi's table read it as an offset
@@ -26,6 +35,40 @@ been reported.
   `skp2_psp2.self`, the same engine in another build, so it needs its own entry (the engine's message function at
   another address; the same text clean-up). Its 999 half, the pack's `eboot.bin`, is another engine and still uses
   OCR. Proven in Vita3K with the farm (32 approved pages), not run on a console.
+- A native text hook for 蒼の彼方のフォーリズム (`PCSG00700`, APP_VER 01.00), with Rubi's own clean-up rules for
+  its text (half-width kana, `<a>(｢)`, `<ruby>(n,reading)`). Found in Vita3K with the psandvita farm's capture
+  build: the site gets each page once, 60 pages in a row. **On the console** (a PCH-2000 on 3.65, Rubi 0.9.7 with
+  this entry, before trusted hooks, API 43): the site was hooked (`1 table sites`, 0 refused); of its 19 lines in
+  two sessions, the 15 compared with OCR agreed (score 1000), the ruby line scored 771 before its rule (1000
+  after), 3 scored 0 ([details](docs/native-hooks.md#table-sites)). On `main` the entry is trusted from its first
+  line (API 43), so its lines need no OCR: that mode has not run on a console for this site, and the 3 lines that
+  scored 0 were not examined.
+
+### Fixed
+
+- **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
+  arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
+  read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
+  failed the job although the hook had the line: 蒼の彼方のフォーリズム (`PCSG00700`) sampled 1 to 4 MiB free on a
+  console (#324), so a press some time into a line could fail there. The kernel now marks the answer with the
+  screen's current scene without reading pixels, so a trusted hook (a Luna site, a Rubi verified site, a string copy
+  that earned trust) needs no game memory at all. It still reads the strip only while the region has no screen yet.
+  Not run on a console yet.
+- Building and testing (no change to the app or the plugins): the hook streams' race tests
+  (`host/tests/test_hook_stream.c`) pass or fail by what the code does, no longer by how the threads were scheduled
+  (#344). `replacement_race` failed now and then in CI (`call_replaced > 0`) with nothing wrong: offers never wait,
+  so while one thread held the oldest slot's lock off the CPU, every other caller's hits were dropped and no slot
+  changed hands (12 to 29 runs in 1,000 on one to four CPUs, measured on the fleet box). And the job thread often
+  read before the game threads began: in `concurrent` it read nothing in 378 of 500 runs on one CPU, so a torn read
+  could not have been seen. The threads now start together at a barrier and race until the checks have something
+  to check (every caller has had a slot, the job has read text), and a failed check prints the race's counters. A
+  race put in on purpose (the key check under the slot's lock removed) is caught more often: in 49 runs of 1,000
+  on four CPUs (7 before), 772 unpinned (366 before).
+- **CLANNAD's hooked lines show 岡崎 and 朋也 instead of `*A` and `*A*B`.** CLANNAD's hook reads each line before the
+  game puts the protagonist's names in: its script writes them as the name variables `＊Ａ` (the family name) and
+  `＊Ｂ` (the given name), which Rubi showed as `*A`, so `「ありゃ、岡崎、どこいくんだよっ」` came out as `「ありゃ、*A、どこいくんだよっ」`.
+  The hook's own text filter now writes the names; CLANNAD has no name entry, so they are always 岡崎朋也. Seen in 16
+  of 1,347 hooked lines of a console's history (Rubi 0.9.8).
 
 ### Changed
 

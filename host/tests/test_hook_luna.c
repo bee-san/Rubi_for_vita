@@ -839,6 +839,14 @@ static void rubi_filters(void)
     /* PCSG01194 events 1 and 21: a name, a pause and a voice, half-width kana; narration from @r */
     rubi_to(VJO_RF_PCSG01194, VJO_HOOK_ENC_CP932, "男@r@p10.@vA_男a6_04.｢ぎｬﾞ｣", "男\n「ぎゃ！」");
     rubi_to(VJO_RF_PCSG01194, VJO_HOOK_ENC_CP932, "@rｿﾝﾅ･･私ﾊ･･ﾞ", "そんな……私は……！");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "<a>(｢)……ｿﾛｿﾛ､行ｶﾅｷｬ｣", "「……そろそろ、行かなきゃ」");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "<a>(｢)ｵｲ､泣ｸﾅﾖ｡ｻｯｷ言ｯﾀﾛ､ｿｳｲｳﾉﾊナシだｯﾃ｣",
+            "「おい、泣くなよ。さっき言ったろ、そういうのはナシだって」");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "ぼﾝﾔﾘﾄソフトフォｰカスﾉｶｶｯﾀ世界ﾆ､描ｷ出ｻﾚﾙセピア色ﾉ光景｡",
+            "ぼんやりとソフトフォーカスのかかった世界に、描き出されるセピア色の光景。");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "日本ﾉ南､南洋ﾉ更ﾆ南ﾆ位置ｽﾙ､四ﾂﾉ島ｶﾗﾅﾙ街､<ruby>(2,ｼﾄｳ)四島市――｡",
+            "日本の南、南洋の更に南に位置する、四つの島からなる街、四島市――。");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "<f>ｱ</f>(ｲ)<c>ｳ</c>", "あ(い)う");
     /* PCSG00540: a named line with a voice, a pause and b ruby; narration with and without a voice */
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "c12.大石rv01_0001.ｺﾚﾊw300.bき.<吉>だ･ﾞ", "大石\nこれは吉だ…！");
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "rvzen01.ｿｳｶﾟ", "そうか？");
@@ -855,6 +863,13 @@ static void rubi_filters(void)
     rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "堂元rv0428_03_Tu_0018.｢z140.ﾏﾃ!!u9829.｣", "堂元\n「まて！」");
     /* PCSG00380: the dash pieces, the player's default names (farm pages 37, 158), the page's last line break */
     rubi_to(VJO_RF_PCSG00380, VJO_HOOK_ENC_CP932, "㌫㍊も、\n「おい、㌫㊤㊥㊦」\n", "北條紗希も、\n「おい、北條―――」");
+    /* PCSG00415 CLANNAD: the name variables, from a console's history.csv (Rubi 0.9.8, the verified site's lines) */
+    rubi_to(VJO_RF_PCSG00415, VJO_HOOK_ENC_CP932, "「俺はＤ組の＊Ａ＊Ｂ」", "「俺はＤ組の岡崎朋也」");
+    rubi_to(VJO_RF_PCSG00415, VJO_HOOK_ENC_CP932, "「あ…あの…＊Ａくん…」", "「あ…あの…岡崎くん…」");
+    rubi_to(VJO_RF_PCSG00415, VJO_HOOK_ENC_CP932, "「う、嘘だろっ！？　＊Ａっ、助けてくれっ！」",
+            "「う、嘘だろっ！？　岡崎っ、助けてくれっ！」");
+    rubi_to(VJO_RF_PCSG00415, VJO_HOOK_ENC_CP932, "カーテンのない窓の向こう、代わり映えのしない空。",
+            "カーテンのない窓の向こう、代わり映えのしない空。"); /* no name: unchanged */
     /* PCSG00020: Message::setText's click segments (the farm's page 8, its two: <K> a click wait, <P> the box
      * cleared after it; event 100's <F:B>, which Luna's filter keeps), and Luna's own colour tag example */
     rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "ＯＫ～。<K>", "ＯＫ～。");

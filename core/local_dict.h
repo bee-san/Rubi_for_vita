@@ -36,6 +36,7 @@ int vjo_local_prepare_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg
  * Reads are counted where local_dict.c reads the file, by what they fetch. */
 enum { VJO_READ_HEADER, VJO_READ_INDEX, VJO_READ_GROUP, VJO_READ_HEAD, VJO_READ_PAYLOAD,
        VJO_READ_FILTER, VJO_READ_KINDS };
+enum { VJO_NS_DEINFLECT, VJO_NS_SEARCH, VJO_NS_RANK, VJO_NS_ENTRY, VJO_NS_PAGE, VJO_NS_KINDS };
 typedef struct {
     uint64_t spans;        /* source spans tried, longest first */
     uint64_t candidates;   /* deinflect() output: the span itself and its deinflections */
@@ -51,6 +52,13 @@ typedef struct {
     uint64_t hinted;       /* postings ranked by their posting hints, without the head */
     uint64_t absent_reads; /* index and group reads of probes that found no key */
     uint64_t reads[VJO_READ_KINDS], bytes[VJO_READ_KINDS];
+    /* Host time by stage (CLOCK_MONOTONIC ns, the file reads included):
+     * VJO_NS_DEINFLECT the candidates' generation, VJO_NS_SEARCH every
+     * candidate's search (the key filter, index and key group; the postings'
+     * ranking is inside it and counted again as VJO_NS_RANK), VJO_NS_ENTRY the
+     * shown payload's read and decode, VJO_NS_PAGE the other dictionaries'
+     * entries read for the stack (vjo_local_read_page). */
+    uint64_t ns[VJO_NS_KINDS];
 } VjoLocalStats;
 extern VjoLocalStats vjo_local_stats;
 /* Optional: every candidate search, its key and how it ended

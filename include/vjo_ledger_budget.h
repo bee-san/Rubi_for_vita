@@ -332,6 +332,10 @@
  * unchanged, rodata +32 B, data +68 B, both builds, the same pages [measured: arm-vita-eabi-size -A on both builds'
  * VitaJPOverlay_OCR, main 892cfb9 (#354's build, whose worker differs only in VJO_API_VERSION) and this change,
  * tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
+/* PCSG00700, one more verified entry and its filter: worker text unchanged, rodata +64 B (the entry's 40 B, the
+ * filter's patterns), data +104 B (the filter's ops, the filters' index 64 -> 68 B), both builds, the same pages
+ * [measured: arm-vita-eabi-size, both builds, main cbaa4e3 and this change; rebased on main 892cfb9, VitaSDK 2026.08]. No block, thread or
+ * allocation. */
 /* PCSG00883, one more verified entry (core/hook_place.c; it reuses RF_PCSG00020): worker text unchanged, rodata +16 B
  * (debug) and +0 B (normal), data +40 B, the same pages [measured: arm-vita-eabi-size -A on both builds'
  * VitaJPOverlay_OCR, #356's head 2ea1809 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or
@@ -459,6 +463,11 @@
  * segments 41740+77732 B (debug), 36904+76044 B (normal), rounded 122880/118784 B.
  * Measured with VitaSDK GCC 15.2.0, Release, local minimal-build kernel-measure-ledger.json reports;
  * binary sizes only, console boot/free-pool impact unverified. */
+/* API 51, a trusted answer's capture on another scene (kernel/game_ocr.c VJO_ROWS_HOOK): text 41,444 -> 41,508 B
+ * (debug) and 36,356 -> 36,380 B (normal), data/bss unchanged (77,732 and 76,044 B), the same pages [measured:
+ * arm-vita-eabi-size on both builds' VitaJPOverlay_Kernel, main 892cfb9 and this change, tools/fast_gate.sh's
+ * vitasdk image]. No block, thread or allocation; the worker's API 43 strip is now taken only on a region without a
+ * screen yet. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else
@@ -594,7 +603,8 @@
  * the same reserve, and after 8 such answers in a row gives back the resident weights, LM and cascade
  * model: no new block, and the job's own worst case is the capture block's. API 49: it takes no strip at
  * all while the region shows the trusted line's scene (VJO_ROWS_HOOK publishes its capture without rows),
- * and API 43's strip otherwise. */
+ * and API 43's strip otherwise; API 51: no strip on another scene either (the kernel publishes the region's
+ * current scene), only while the region has no screen yet. */
 #define VJO_GAME_RESERVE_HOOK_ONLY (1u * 1024u * 1024u)
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
  * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of
