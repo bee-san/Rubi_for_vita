@@ -1036,7 +1036,9 @@ OCR & lookup page has the choice (**Vertical text**: OFF, Automatic, ON); it app
 - **off**: every job reads rows, as Rubi did before.
 
 Draw the text box (□) around the vertical text: the check and the columns are the region's. On a whole screen the
-column finder takes a picture's edges and the menu for columns too, and auto keeps rows (measured below).
+column finder takes a picture's edges and the menu for columns too, and auto keeps rows on the measured dialogue
+screens (below); a screen or box of short rows lined up one under another can still look like vertical text to
+it (limits, below).
 
 **How a job reads columns** (`core/vocr_ocr.c`, a model whose `finder_mode` has `VJO_VOCR_FINDER_COLUMNS`; closed
 draft #223's job, on today's main):
@@ -1184,6 +1186,15 @@ app's card.
 - auto misses vertical text whose finder rows do not look like columns (9 % of the tight boxes above, 16 % of
   vita-vn-ocr's development regions; then rows are read), and a whole screen is mostly read as rows. Set `on` for a
   vertical game.
+- auto takes for vertical text some horizontal layouts its measured pages do not have: 5 or more short rows lined
+  up one under another (a game's menu of short items at 24 px, a list of names, a status panel; on a whole screen
+  or in a box) and a tall box around 2 or more short lines. On such a screen it reads columns, which gives no
+  sensible text, and reads the vertical model's weights in place of the size's. Found on constructed screens
+  (generic words in a free font, the row finder and the rule of this build; audit of #335): the rows of vertical
+  text it fired on in Yunohana SpRING! overlap (the median region's median gap between rows: -0.07 to -0.13 of a
+  row's height), those constructed rows have gaps of 0.33-0.6, a difference a later rule could use (its cost in
+  recall unmeasured). Set `off`
+  for a game of such screens that never sets text in columns.
 - The self-test's stages (the debug build, [self-test](self-test.md)) read rows whatever the setting.
 - With `auto`, a region that holds vertical text in some screens and rows in others reads the other model's weights
   (0.8 or 1.2 MB, from the card) at each change, and a job of columns gives back the confidence cascade's

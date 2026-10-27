@@ -146,7 +146,9 @@ been reported.
   - the host tests run with the release models too (a column taller than a strip uses the tall-line block,
     which the tests' fake memory did not know); `docs/vita-vn-ocr.md` kept stale copies of two paragraphs
     (the files the broker accepts, without VOCR5-V, and an older attribution), the first of which
-    `tools/docs_model_names.py` now catches.
+    `tools/docs_model_names.py` now catches; it also names the horizontal screens **Automatic** takes for vertical
+    text (5 or more short rows lined up, as in a menu, a list of names or a status panel, found on constructed
+    screens).
 - **Dictionary lookups, checked against Yomitan on 5,000 hooked visual-novel lines** (64,579 taps; the shown
   entry differed from Yomitan's first on 69.2 taps per 1,000, now 65.8;
   [the report](reports/yomitan-check.md), what remains in [#321]):
