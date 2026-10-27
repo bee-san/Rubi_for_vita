@@ -70,6 +70,12 @@ static int sc3_accept, sc3_open_rc; /* sc3_open_rc: what Open answers (the file'
 static unsigned char sc3_mem[16384] __attribute__((aligned(64)));
 static int sc3_live;
 static unsigned sc3_block;
+/* #368's audit: the charset's read answers BUSY while sc3_read_busy (the kernel's file worker stalled) or fails with
+ * sc3_read_error; its close answers BUSY sc3_close_busy times; its block's base cannot be read while sc3_base_fail
+ * and its free fails sc3_free_fail times; sc3_allocs counts the blocks taken, sc3_double those taken while one is
+ * live */
+static int sc3_read_busy, sc3_read_error, sc3_base_fail;
+static unsigned sc3_close_busy, sc3_free_fail, sc3_allocs, sc3_double;
 const VjoSc3Pin *vjo_hooks_sc3_want(void) { return sc3_set_file ? NULL : sc3_want; }
 int vjo_hooks_sc3_set(const uint8_t *file, uint32_t bytes)
 {
@@ -201,6 +207,8 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
     if (!strcmp(name, "VjoGameVocrProbe")) { probe_allocs++; return -1; }
     TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW);
     if (!strcmp(name, "VjoGameSc3")) {
+        sc3_allocs++;
+        sc3_double += sc3_live != 0;
         TEST_CHECK(!sc3_live && size <= sizeof(sc3_mem));
         sc3_live = 1; sc3_block = size; live_bytes += size;
         return 12;
@@ -222,7 +230,7 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
 {
     if (uid == 11) { TEST_CHECK(capture_live); *base = capture_mem_block; return 0; }
-    if (uid == 12) { TEST_CHECK(sc3_live); *base = sc3_mem; return 0; }
+    if (uid == 12) { TEST_CHECK(sc3_live); if (sc3_base_fail) return -1; *base = sc3_mem; return 0; }
     TEST_CHECK(uid == 10 ? weights_live : uid == 9 && job_live);
     *base = uid == 10 ? (void *)weights_memory : (void *)job_memory;
     return 0;
@@ -241,6 +249,7 @@ int sceKernelFreeMemBlock(SceUID uid)
     }
     if (uid == 12) {
         TEST_CHECK(sc3_live && !sc3_set_file); /* never while the engine holds it */
+        if (sc3_free_fail) { sc3_free_fail--; return -1; }
         sc3_live = 0; live_bytes -= sc3_block; return 0;
     }
     TEST_CHECK(uid == 9 && job_live); job_live = 0; live_bytes -= job_block; return 0;
@@ -318,6 +327,8 @@ int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t n, void *dst)
     if (sc3_file_open) {
         TEST_CHECK(off + n <= (uint32_t)sc3_open_rc && (unsigned char *)dst >= sc3_mem &&
                    (unsigned char *)dst + n <= sc3_mem + sc3_block);
+        if (sc3_read_busy) return VJO_ERR_BUSY;
+        if (sc3_read_error) return sc3_read_error;
         for (uint32_t i = 0; i < n; i++) ((unsigned char *)dst)[i] = (unsigned char)((off + i) * 7u);
         return (int)n;
     }
@@ -327,6 +338,7 @@ int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t n, void *dst)
 int vjoOcrModelClose(uint32_t seq)
 {
     TEST_CHECK(seq == 12);
+    if (sc3_file_open && sc3_close_busy) { sc3_close_busy--; return VJO_ERR_BUSY; }
     if (cache_pending) { cache_closes++; cache_pending = 0; }
     file_open_now = sc3_file_open = 0;
     return 0;
@@ -406,6 +418,7 @@ static void reset(void)
     sc3_uid = -1; sc3_bytes_held = 0; sc3_tries = 0;
     sc3_want = NULL; sc3_set_file = NULL; sc3_set_bytes = 0; sc3_sets = sc3_opens = 0; sc3_accept = 1; sc3_open_rc = 0;
     sc3_live = 0; sc3_block = 0; sc3_file_open = 0;
+    sc3_read_busy = sc3_read_error = sc3_base_fail = 0; sc3_close_busy = sc3_free_fail = sc3_allocs = sc3_double = 0;
 }
 /* One job; between jobs the line cache is emptied so the spy's text is read again. */
 static int run(uint32_t pick, VjoGameOcrResult *out)
@@ -1545,6 +1558,119 @@ static void sc3_charset_loads_once(void)
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !sc3_opens && !sc3_live);
 }
 
+/* #368's audit F1: a charset read that timed out (the kernel's file worker stalled for the read's MODEL_WAIT_US) is
+ * tried again at a later job, as an open that timed out is, three tries in all; a read that failed otherwise is not.
+ * Meanwhile OCR reads the game, and the job's I/O error is its own (none). */
+static void sc3_timed_out_read_is_tried_again(void)
+{
+    static const VjoSc3Pin pin = {"PCSG00146", 5364u, {0}};
+    VjoGameOcrResult out;
+    reset();
+    sc3_want = &pin;
+    sc3_open_rc = (int)pin.bytes;
+    sc3_read_busy = 1;
+    spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, OCR1));
+    TEST_CHECK_(sc3_opens == 1 && !sc3_live && sc3_uid < 0 && !sc3_set_file && !out.io_error,
+                "the timed-out read: %u opens, block %d, io_error 0x%08X", sc3_opens, sc3_live, (unsigned)out.io_error);
+    sc3_read_busy = 0;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+    TEST_CHECK_(sc3_opens == 2 && sc3_live && sc3_set_file == sc3_mem,
+                "a timed-out read is tried again at the next job (opens %u, charset set %d)", sc3_opens,
+                sc3_set_file != NULL);
+    /* reads that keep timing out: three tries in all */
+    reset();
+    sc3_want = &pin;
+    sc3_open_rc = (int)pin.bytes;
+    sc3_read_busy = 1;
+    spy_text = OCR1;
+    for (unsigned k = 1; k <= 4; k++) {
+        TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, OCR1) && !out.io_error);
+        TEST_CHECK_(sc3_opens == (k < 3 ? k : 3) && !sc3_live, "job %u: %u opens", k, sc3_opens);
+    }
+    /* a read that failed otherwise (the kernel's error, not a timeout): once a session */
+    reset();
+    sc3_want = &pin;
+    sc3_open_rc = (int)pin.bytes;
+    sc3_read_error = -456;
+    spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !out.io_error);
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+    TEST_CHECK_(sc3_opens == 1 && !sc3_live, "a failed read: %u opens", sc3_opens);
+}
+
+/* #368's audit F2: the charset is read, but its close does not finish within MODEL_WAIT_US (the kernel's file worker
+ * stalled) and finishes later, at the job's cleanup. Until then the broker is the charset's, so the job's own model
+ * cannot open: the job fails, and its I/O error says why, the close's timeout. Before, it said 0, which the Shell
+ * takes for a missing or damaged model file (shell/worker.c file_bad): it left that model size out for the rest of
+ * the game's activation. With a remembered hook (the hook cache), the cache is not asked for while the broker is held:
+ * the kernel refuses it then (kernel/game_ocr.c hook_cache_locked: VJO_ERR_ARG, another file's operation), and it
+ * would not be asked again this session (hk.cache_attempted); the fake's invariant (no cache call while a file is
+ * open) stands for that refusal. The next job reads the cache, and the game as before. */
+static void sc3_failed_close_is_the_job_s_error(void)
+{
+    static const VjoSc3Pin pin = {"PCSG00146", 5364u, {0}};
+    VjoGameOcrResult out;
+    for (int cached = 0; cached <= 1; cached++) {
+        reset();
+        if (cached) prime_hook_cache(32);
+        sc3_want = &pin;
+        sc3_open_rc = (int)pin.bytes;
+        sc3_close_busy = 2500; /* about 2,000 polls in the load's close, the rest in the job's cleanup */
+        spy_text = OCR1;
+        int rc = run(VJO_HOOK_PICK_AUTO, &out);
+        TEST_CHECK_(rc == VJO_E_OCR_MODEL && out.io_error == VJO_ERR_TIMEOUT && !opens,
+                    "%s: a job that failed because the charset's close timed out reports it (rc %d, io_error 0x%08X)",
+                    cached ? "remembered hook" : "no cache", rc, (unsigned)out.io_error);
+        TEST_CHECK(sc3_set_file == sc3_mem && sc3_live && sc3_opens == 1); /* the charset itself was read */
+        TEST_CHECK_(!cache_loads && !hk.cache_attempted, "%u cache loads while the broker was held", cache_loads);
+        TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, OCR1) && !out.io_error);
+        TEST_CHECK_(opens == 1 && cache_loads == (unsigned)cached && sc3_opens == 1,
+                    "the next job: %u model opens, %u cache loads", opens, cache_loads);
+    }
+}
+
+/* #368's audit N1: a charset block that could not be given back (its base unreadable and its free refused, or a
+ * retried try's free refused) stays recorded, and the next try frees it before it takes another: a block is never
+ * taken over a live one, whose uid would be lost (never freed, not even at the stop). While that free fails, nothing
+ * is taken and no try is counted. */
+static void sc3_block_not_given_back_is_freed_before_another(void)
+{
+    static const VjoSc3Pin pin = {"PCSG00146", 5364u, {0}};
+    VjoGameOcrResult out;
+    /* the block's base cannot be read, and its free fails once */
+    reset();
+    sc3_want = &pin;
+    sc3_open_rc = (int)pin.bytes;
+    sc3_base_fail = 1;
+    sc3_free_fail = 1;
+    spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, OCR1));
+    TEST_CHECK(sc3_uid == 12 && sc3_live && sc3_allocs == 1 && !sc3_opens);
+    sc3_base_fail = 0;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+    TEST_CHECK_(!sc3_double && sc3_allocs == 2 && sc3_opens == 1 && sc3_live && sc3_set_file == sc3_mem,
+                "no second block taken while the first is still held (%u taken, %u over a live one; %u opens)",
+                sc3_allocs, sc3_double, sc3_opens);
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_SC3) == 8192u);
+    /* a timed-out open whose block's free fails twice: the next job takes nothing while it fails, then reads */
+    reset();
+    sc3_want = &pin;
+    sc3_open_rc = VJO_ERR_TIMEOUT;
+    sc3_free_fail = 2;
+    spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+    TEST_CHECK(sc3_uid == 12 && sc3_live && sc3_opens == 1 && sc3_tries == 1);
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+    TEST_CHECK_(sc3_allocs == 1 && sc3_opens == 1 && sc3_live && sc3_tries == 1, "free refused: %u blocks, %u opens",
+                sc3_allocs, sc3_opens);
+    sc3_open_rc = (int)pin.bytes;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+    TEST_CHECK_(!sc3_double && sc3_allocs == 2 && sc3_opens == 2 && sc3_set_file == sc3_mem,
+                "then: %u blocks, %u over a live one, %u opens", sc3_allocs, sc3_double, sc3_opens);
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_SC3) == 8192u);
+}
+
 static void line_fix_follows_the_request(void)
 {
     static const struct { uint32_t speed; unsigned fix; } cases[] = {
@@ -1568,6 +1694,12 @@ static void line_fix_follows_the_request(void)
 TEST_LIST = {
     {"an SC3 site's charset: read once, kept until the stop; refused, missing, short or no memory: given back",
      sc3_charset_loads_once},
+    {"#368's audit: a charset read that timed out is tried again, as an open is; another failed read is not",
+     sc3_timed_out_read_is_tried_again},
+    {"#368's audit: a charset close that failed is the job's error; the hook cache waits for the broker",
+     sc3_failed_close_is_the_job_s_error},
+    {"#368's audit: a charset block not given back is freed before another is taken, never lost",
+     sc3_block_not_given_back_is_freed_before_another},
     {"API 43: a trusted verified site answers without OCR, also short of memory", trusted_verified_site_answers_without_ocr},
     {"API 43: a trusted Luna site keeps the hook-only reserve", trusted_luna_site_in_a_tight_game},
     {"API 43: a trusted answer gives the weights back; no warm-up after it", trusted_answer_gives_back_the_weights},

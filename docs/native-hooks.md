@@ -437,8 +437,11 @@ reader halted at its page 11 on one).
   tables (27,732 B) would take about seven more pages in every game that is ON [estimate: the tables' bytes]; on the
   card each costs memory only in its own game.
 - **The load** (`game_ocr/main.c` `hooks_sc3_load`): at the first job of a game with an SC3 site hooked, before the
-  job's snapshot; a read that was cancelled or timed out again at a later job (three tries in all), any other outcome
-  once a session. The worker cannot always open `ux0:` itself ([worker-loading.md](worker-loading.md)),
+  job's snapshot; an open or a read that was cancelled or timed out again at a later job (three tries in all; a read's
+  timeout since #368's audit), any other outcome once a session. A close that fails is the job's I/O error (the
+  broker is still the charset's, so the job's own files cannot open: the job fails and says so, and the hook cache
+  waits for a later job), and a block an earlier try could not give back is freed before another is taken. The
+  worker cannot always open `ux0:` itself ([worker-loading.md](worker-loading.md)),
   so the kernel's file broker opens it: `vjoOcrModelOpen` with `VJO_GAME_OCR_OPEN_SC3`, for which the kernel builds
   the path from the title ID it reads for the calling process (`loader_title`, the loader's
   `ksceKernelSysrootGetProcessTitleId`; the caller names no path), at most 16,384 B, one read through its staging
@@ -933,8 +936,9 @@ audit-hooks section 3].
 An SC3 site ([SC3 text](#sc3-text)) adds the worker's one block outside this rule, `VjoGameSc3`: its game's charset,
 8 or 16 KiB, from the first job until the worker stops, in those three games only; and 1,216 / 1,184 B of text
 (debug / normal) and 296 / 288 B of data/bss to every game's worker, in the same pages (200,704 and 192,512 B)
-[measured: the build log's module rows on main `199fe31` and this change, both builds; memory-ledger.md "SC3 text"].
-Its hit reads into the same 512-byte capture buffer.
+[measured: the build log's module rows on main `199fe31` and this change, both builds; memory-ledger.md "SC3 text"];
+against its parent on main (`19986c7` → `e2c49ee`), +1,200 / +1,168 B of text and +288 / +280 B of data/bss
+[measured the same way]. Its hit reads into the same 512-byte capture buffer.
 
 Stack, on the game's thread: a site hit about 564 B at most (the observer's 328 B frame and up to 4 B to
 align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `read_game` 48; the

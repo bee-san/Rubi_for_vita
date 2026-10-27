@@ -352,7 +352,9 @@
  * segment): debug text 161,016 -> 162,232 B (1,608 B of room left) and data/bss 35,328 -> 35,624 B, normal 152,084 ->
  * 153,268 B (2,380 B) and 35,320 -> 35,608 B, the same pages [measured: the build log's module rows, both builds, main
  * 199fe31 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameSc3, is in the game pool
- * below. */
+ * below. Merged on main (its parent 19986c7 -> e2c49ee): debug 161,272 -> 162,472 B of text (1,368 B of room left)
+ * and 35,584 -> 35,872 B of data/bss, normal 152,340 -> 153,508 B (2,140 B) and 35,576 -> 35,856 B [measured: the
+ * same rows, both builds of both revisions, #368's audit's follow-up]. */
 /* #324's audit (the retry after refused weights in API 47's retry block: one copy of the tries' bookkeeping):
  * debug text 163,528 -> 163,512 B (328 B of room left), normal 154,548 B unchanged (1,100 B), the same pages
  * [measured: the build log's module rows, both builds, main 84dbad9 and this change, tools/fast_gate.sh's vitasdk
@@ -362,6 +364,11 @@
  * of room left) and 154,548 -> 154,676 B normal (972 B), data/bss unchanged (35,880 / 35,864 B), the same pages; the
  * kernel's and the Shell's rows unchanged [measured: tools/check_memory_ledger.py, main 1c9d048's Release run 40546045095
  * artifacts against this change's fast-gate builds, VitaSDK 2026.08]. No block, thread or allocation. */
+/* SC3 text, #368's audit (a timed-out charset read tried again, a failed close kept as the job's error, a block not
+ * given back freed before another is taken: game_ocr/main.c hooks_sc3_load, sc3_release, hooks_cache_prepare): worker
+ * text 163,656 -> 163,688 B debug (152 B of room left) and 154,692 -> 154,724 B normal (924 B), data/bss unchanged,
+ * the same pages; the kernel's and the Shell's rows unchanged [measured: the build log's module rows, both builds,
+ * main 68041a7 and this change, tools/fast_gate.sh's vitasdk image]. No new block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else

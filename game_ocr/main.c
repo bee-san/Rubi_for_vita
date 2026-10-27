@@ -1715,7 +1715,8 @@ static void hooks_cache_prepare(uint32_t pick)
     uint8_t data[VJO_HOOK_CACHE_BYTES];
     VjoHookLearned learned;
     int n;
-    if (pick != VJO_HOOK_PICK_AUTO || !hk.installed || hk.cache_attempted) return;
+    /* a broker still held (a charset whose close failed, hooks_sc3_load) refuses the cache: tried at a later job */
+    if (pick != VJO_HOOK_PICK_AUTO || !hk.installed || hk.cache_attempted || model_owned) return;
     hk.cache_key.mode = hk.mode;
     hk.cache_attempted = 1;
     if (!IMPORT_READY(vjoOcrHookCache) || !hk.cache_key.title[0] ||
@@ -1750,14 +1751,25 @@ static void hooks_cache_save(void)
         (void)hooks_cache_io(VJO_GAME_OCR_HOOK_CACHE_SAVE, data);
 }
 
+/* The charset's block given back, if one is recorded (0); < 0: its free failed, and it stays recorded. */
+static int sc3_release(void)
+{
+    if (sc3_uid < 0) return 0;
+    if (game_memblock_free(GL_SC3, VJO_GITEM_SC3, sc3_uid, sc3_bytes_held) < 0) return -1;
+    sc3_uid = -1;
+    sc3_bytes_held = 0;
+    return 0;
+}
+
 /* MAGES SC3 sites (game_ocr/hooks.c, docs/native-hooks.md "SC3 text"): their game's charset, which their text needs,
  * at the first job (the kernel's broker is a claimed job's): VJO_GAME_OCR_OPEN_SC3 opens
  * ux0:data/VitaJPOverlay/hooks/<title ID>.sc3, the calling game's own, into a USER_RW block of its size
  * (VJO_BUDGET_GAME_SC3 at most), kept until the worker stops, beside VJO_GAME_RESERVE_HOOK_ONLY as a trusted hook's
  * pass is (the charset is what lets those sites answer without OCR). No file, another file than the pinned one or a
- * failed read: the block goes back, the sites give no text, OCR reads the game, and it is not tried again; a read
- * cancelled or timed out is tried at a later job (SC3_TRIES in all), and with no memory free beside the reserve
- * nothing is tried (again at the next job). */
+ * failed read: the block goes back, the sites give no text, OCR reads the game, and it is not tried again; an open
+ * or a read cancelled or timed out is tried at a later job (SC3_TRIES in all), and with no memory free beside the
+ * reserve nothing is tried (again at the next job). A block an earlier try could not give back (its base unreadable,
+ * its free refused) is freed before another is taken, never left behind; while that free fails nothing is taken. */
 static void hooks_sc3_load(void)
 {
     const VjoSc3Pin *pin = vjo_hooks_sc3_want();
@@ -1766,25 +1778,28 @@ static void hooks_sc3_load(void)
     SceUID leaked;
     uint32_t held, mem;
     int previous_error = io_error, size, ok = 0;
-    if (!pin || sc3_tries >= SC3_TRIES || model_owned) return;
+    if (!pin || sc3_tries >= SC3_TRIES || model_owned || sc3_release()) return;
     if ((int64_t)free_user() - (int64_t)VJO_GAME_RESERVE_HOOK_ONLY < (int64_t)PAGE_ROUND(pin->bytes)) return;
     sc3_tries++;
     sc3_uid = game_memblock_alloc(GL_SC3, VJO_GITEM_SC3, "VjoGameSc3", pin->bytes, LADDER_USER, &base, &leaked, &held,
                                   &mem);
     if (sc3_uid < 0) {
-        sc3_uid = leaked; /* a block whose base could not be read nor freed stays recorded (freed at the stop) */
+        /* a block whose base could not be read nor freed stays recorded: freed at the next try, or at the stop */
+        sc3_uid = leaked;
         return;
     }
     sc3_bytes_held = held;
     size = broker_open(VJO_GAME_OCR_OPEN_SC3, &info);
     if (size == (int)pin->bytes && !file_read(NULL, 0, base, pin->bytes)) ok = vjo_hooks_sc3_set(base, pin->bytes);
-    if (ok || !(size == BROKER_CANCELLED || size == VJO_ERR_TIMEOUT || cancelled(NULL))) sc3_tries = SC3_TRIES;
+    /* #368's audit F1: a read that timed out (file_read's io_error; the job's own is 0 here, its first use of the
+     * broker) is tried again, as an open that timed out is */
+    if (ok || !(size == BROKER_CANCELLED || size == VJO_ERR_TIMEOUT || io_error == VJO_ERR_TIMEOUT || cancelled(NULL)))
+        sc3_tries = SC3_TRIES;
     file_close(NULL);
-    io_error = previous_error; /* a charset that cannot be read is not the job's model error */
-    if (!ok && game_memblock_free(GL_SC3, VJO_GITEM_SC3, sc3_uid, sc3_bytes_held) == 0) {
-        sc3_uid = -1;
-        sc3_bytes_held = 0;
-    }
+    /* A charset that cannot be read is not the job's model error. A close that failed is (#368's audit F2, as
+     * hooks_cache_io): the broker is still the charset's, so the job's own files cannot open, and the job says why. */
+    if (!model_owned) io_error = previous_error;
+    if (!ok) (void)sc3_release();
 }
 
 /* Every result's hook fields; a job that failed shows no text, from any stream, and leaves the
@@ -2588,12 +2603,8 @@ int vjo_game_ocr_worker_stop(void)
     /* The game is exiting or the plugin stops: no weights or LM stay behind, nor an SC3 charset (the worker's
      * thread, which alone reads it, has ended). */
     if (drop_resident()) return VJO_E_OCR_UNAVAILABLE;
-    if (sc3_uid >= 0) {
-        (void)vjo_hooks_sc3_set(NULL, 0);
-        if (game_memblock_free(GL_SC3, VJO_GITEM_SC3, sc3_uid, sc3_bytes_held) < 0) return VJO_E_OCR_UNAVAILABLE;
-        sc3_uid = -1;
-        sc3_bytes_held = 0;
-    }
+    if (sc3_uid >= 0) (void)vjo_hooks_sc3_set(NULL, 0);
+    if (sc3_release()) return VJO_E_OCR_UNAVAILABLE;
     if (claim_outstanding) {
         pending_result.cleanup_status = 0; pending_result.rc = VJO_E_CANCELLED;
         sceClibMemset(pending_result.text, 0, sizeof(pending_result.text));

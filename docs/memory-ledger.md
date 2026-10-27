@@ -5,6 +5,24 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## SC3 text, #368's audit's follow-up (no API change)
+
+The charset's load ([native-hooks.md](native-hooks.md#sc3-text)) tries a timed-out read again, keeps a failed close as
+the job's error and frees a block it could not give back before it takes another (`game_ocr/main.c`
+`hooks_sc3_load`, `sc3_release`); the Rubi app's Install page names the data files and their folder
+(`settings/install.c`). No block, thread, stack or allocation: `VjoGameSc3` is the same block, taken and freed at the
+same places, and never two.
+
+Measured with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text +
+data/bss), main `68041a7` against this change:
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Game worker | 163,656 + 35,880 → 163,688 + 35,880 B | 154,692 + 35,864 → 154,724 + 35,864 B | 200,704 / 192,512 B, unchanged |
+| Kernel, Shell | unchanged | unchanged | unchanged |
+
+The worker keeps 152 B (debug) and 924 B (normal) of its last text page.
+
 ## VOCR6's Normal and Large (vita-vn-ocr #125; no API change)
 
 The Normal and Large sizes' recognizers become VOCR6-N and VOCR6-L (`VOCR6_N_w8_2l.vocr`, `VOCR6_L_w8_2l.vocr`, the
@@ -43,6 +61,7 @@ are the pins]:
 - **The one-VPK payload** gains `VOCR6-ATTRIBUTION.md` (4,222 B): the Rubi app's install copies one more file, with no
   new buffer (`include/vjo_payload.h`). No block, thread or allocation site is new. Nothing of it has run on a
   console.
+
 ## #324's retry, its audit's follow-up (no API change)
 
 The retry after a model's refused weights (#324) now runs in API 47's retry block: the tries' totals, the shared
@@ -117,10 +136,13 @@ same module pages in every build.**
 
   The worker's text is `core/hook_sc3.c` at `-Os` (the span and the decoder), the SC3 read and decode in
   `game_ocr/hooks.c` and the load in `game_ocr/main.c`; its data, the three verified entries (120 B) and the three
-  charsets' pins (144 B) in the data segment ("Tables in the data segment" below) and their state. It keeps 1,608 B
-  (debug) and 2,380 B (normal) of its last text page, 1,240 / 1,256 B of data. The kernel's 196 B are the open's
-  path from the caller's title (`loader_title`) and its size rule; no buffer: the charset crosses the existing
-  32 KiB staging buffer in one read.
+  charsets' pins (144 B) in the data segment ("Tables in the data segment" below) and their state. It kept 1,608 B
+  (debug) and 2,380 B (normal) of its last text page on its branch, 1,240 / 1,256 B of data. Merged on main (its
+  parent `19986c7` → `e2c49ee`) it is +1,200 / +1,168 B of text and +288 / +280 B of data/bss, 161,272 + 35,584 →
+  162,472 + 35,872 B (debug) and 152,340 + 35,576 → 153,508 + 35,856 B (normal), which left 1,368 / 2,140 B of the
+  last text page and 992 / 1,008 B of data [measured: the same rows, both builds of both revisions]. The kernel's
+  196 B are the open's path from the caller's title (`loader_title`) and its size rule; no buffer: the charset
+  crosses the existing 32 KiB staging buffer in one read.
 - **Not added:** the charsets compiled into the worker (27,732 B of tables: about seven more pages in every game that
   is ON [estimate]), or read in the Shell (no room) or by the Rubi app (not running beside a game).
 
@@ -694,11 +716,11 @@ modules (`ctest -R memory_ledger` runs it locally):
   shell pages                         217,088      237,568    1,048,576      811,008
   shell paf                             8,192      241,664      985,088      743,424
   kernel                              155,648      245,760      245,760            0
-  game                                237,568   10,403,840   10,604,544      200,704
+  game                                237,568   10,420,224   10,604,544      184,320
 ```
 
-(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 50 and VOCR6's LMs; the normal
-build's game permanent is 229,376 B.)
+(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 50, VOCR6's LMs and the SC3
+charset's block; the normal build's game permanent is 229,376 B.)
 
 Historical packaged-module output retained from PR #234 before this integration (current combined
 measurements are above):
