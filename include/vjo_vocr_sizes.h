@@ -128,7 +128,7 @@
  * kernel's broker (VJO_GAME_OCR_OPEN_SPOT) by a job with VJO_GAME_OCR_S_SPOT, and its release's ATTRIBUTION.md
  * (kept as ocr/SPOTTER-ATTRIBUTION.md). THE ONE PLACE of its pins: core/vocr_ocr.c (the SHA-256), the kernel
  * (name and bytes), include/vjo_payload.h (PUBLISHED), cmake/VocrOCR.cmake (FORM: the VOCR_TEXTSPOT6_NO_MS
- * default), cmake/VocrSpot.cmake, tools/prepare_ocr.py, package_release.py, package_vpk.py and e2e_package.py
+ * default; the spotter's runtime pins), tools/prepare_ocr.py, package_release.py, package_vpk.py and e2e_package.py
  * all read these lines, one value each (tools/tests/test_spot_pins.py checks the form of each), so pinning
  * a new vita-vn-ocr pick changes one line per constant. An unpublished entry would be VJO_VOCR_SPOT_PUBLISHED 0
  * and a SHA-256 of zeros, which no file has: a job with the spotter then finds no weights and reads with GRAD, and

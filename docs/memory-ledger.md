@@ -509,12 +509,21 @@ uses the spotter, and the spotter's code to the game worker, in every game that 
 - **Its part of the scratch**: its arena and its 1,684 B result, at most 262,144 + 1,696 = 263,840 B
   (`VJO_VOCR_SPOT_ARENA_MAX`), in the scratch GRAD's and the recognizer's arenas reuse in turn, so a job grows by
   what it exceeds the larger of them: at most 79,440 B with the Normal tier's VOCR6-N (its job's 189,376 B), 1,360 B
-  with the Large tier's VOCR6-L (267,456 B). Taken after the memory check passed, in the room it left; without that
-  room the job reads with GRAD. The ledger's largest job (Normal with the Large cascade, the 4 MB LM and both helpers)
+  with the Large tier's VOCR6-L (267,456 B) and 138,960 B with the Small tier's VOCR5-S (129,856 B), the largest
+  growth (with the pinned blob, measured by audit-vocr6-spotter2-rubi: Small +111,936 B for a 900×150 region and
+  +121,424 B at 960×544, Normal +52,416 / +61,904 B, Large 0). Taken after the memory check passed, in the room it left,
+  and before the helpers' line slots (so in a game near its limit it can cost a helper); without that room the job
+  reads with GRAD. A try of columns (auto's, after the spotter and auto's check handed the rows over) takes none of it
+  and none of the spotter's refinement: it reads without the spotter and keeps a verified block that fits beside it,
+  for the next job of rows (`vjo_vocr_job_bytes_spot` of a model of columns is `vjo_vocr_job_bytes`). With
+  `ocr_vertical = on` no job takes the block or the scratch: on's job reads without the spotter. The ledger's largest job (Normal with the Large cascade, the 4 MB LM and both helpers)
   is 1,297,488 B with it (`test_ledger.c`; 1,218,048 B without): the workspace budget and limit rise 1,220,608 → 1,298,432 B, the game
   job's worst case by that and the block, 10,420,224 → 11,014,144 B (with an SC3 charset; 12.2 % of the 90,177,536 B of
   free `USER` #81 measured), and its limit by those and the worker's four text pages (the convention of API 34, #109
   and API 42), 10,604,544 → 11,214,848 B (12.4 %).
+- **Its stack**: `vocr_textspot6_find_rows` peaks at 2,712 B (vita-vn-ocr `eval/textspot6_a9_20261026.json`
+  "stack": the Vita compiler's `-fcallgraph-info` at `-O2`), on the worker's 32 KiB thread stack (`VJO_STACK_GAME`);
+  the worker's whole peak with it is not measured.
 - **The worker's code**: vita-vn-ocr's `runtime/vocr_textspot6.c` at the runtime's `-O2` with
   `VOCR_TEXTSPOT6_NO_MS` (the trunk form of the pin), the runtime's `vocr_line_dark` it calls for each box's dark
   flag, `core/vocr_ocr.c`'s finder path, sizes and auto's vertical hand-over, and `game_ocr/main.c`'s block and job
@@ -531,7 +540,11 @@ text + data/bss:
 | Shell | 98,260 + 77,664 → 98,164 + 77,728 B | 85,980 + 77,488 → 85,900 + 77,552 B | 176,128 / 163,840 B, unchanged |
 | Kernel | 43,356 + 77,772 → 43,432 + 77,780 B | 38,204 + 76,084 → 38,280 + 76,092 B | 122,880 / 118,784 B, unchanged |
 
-The worker's code ends 512 B under its last page in the debug build, 1,252 B in the normal one. Built with the
+The worker's code ends 512 B under its last page in the debug build, 1,252 B in the normal one, on main `3d095b4`.
+#396's audit follow-up (no spotter with `ocr_vertical = on`, a try of columns without the spotter's part, the `spot`
+step across a job's tries) adds 160 B of worker text in the debug build and 144 B in the normal one against main
+`5e18b60` (180,048 → 180,208 B and 171,100 → 171,244 B; data/bss, the Shell and the kernel unchanged), the same
+pages; the debug worker's code keeps 16 B of its last page. Built with the
 spotter's multi-scale paths too (`-DVJO_VOCR_SPOT_NO_MS=OFF`, for a pin of the `ms` form), the worker's text would be
 about 11,900 B more, three more pages (measured on the earlier main `796168e`); `trunk`, the pinned form, builds
 without them, and `cmake/VocrOCR.cmake` refuses `ms` with them left out.

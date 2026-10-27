@@ -272,7 +272,7 @@ if ! seen=\$(python3 tools/prepare_ocr.py --backend vocr-tests --check --output 
   exit 1
 fi
 cmake -S . -B $(q "$OUT/models-debug") -G Ninja -DVJO_DEBUG=ON -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
-  -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") -DVJO_VOCR_MODEL_DIR=$(q "$MODEL_DIR") \\
+  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") -DVJO_VOCR_MODEL_DIR=$(q "$MODEL_DIR") \\
   -DVJO_VOCR_GATE_BLOB=$(q "$MODEL_DIR/textgate_p8_c8_w8.vtd")
 cmake --build $(q "$OUT/models-debug") -j$JOBS
 $anki

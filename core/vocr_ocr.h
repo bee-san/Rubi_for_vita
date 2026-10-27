@@ -690,7 +690,11 @@ typedef struct {
      * must hold vjo_vocr_job_bytes_spot(). spot_refine: VOCR_REFINE_* steps on its boxes in place of refine, which is
      * GRAD's (ocr_spotter_refine; 0: as found). When it cannot run (no verified weights, an arena over
      * VJO_VOCR_SPOT_ARENA_MAX, no room, a refusal), the job finds its lines with GRAD, refine and the gate, exactly as
-     * without it, and says why in stats->spot_rc. spot 0: off, exactly as before. */
+     * without it, and says why in stats->spot_rc. A model of columns reads without it, and so does a job with
+     * vertical_check VJO_VOCR_CHECK_ON (ocr_vertical = on: GRAD's rows and on's check, #379's measured rule, decide,
+     * as without the spotter; stats->spot_rc stays 0). With VJO_VOCR_CHECK_AUTO a region whose boxes it calls
+     * vertical more often than horizontal goes to GRAD's rows and auto's check (stats->spot_rc VJO_E_VERTICAL).
+     * spot 0: off, exactly as before. */
     int spot;
     VjoVocrSpotResident *spot_res;
     unsigned spot_refine;

@@ -408,6 +408,11 @@
  * the build log's module rows, both builds, main 3d095b4 (after VOCR6, #373, #369, #387, #386 and #385; #390 after
  * it changes no module) and this change, tools/fast_gate.sh's vitasdk image].
  * Its weights are a block of their own (VJO_BUDGET_GAME_SPOT), never static; data/bss keep their pages. */
+/* #396's audit (no spotter with ocr_vertical = on; a try of columns keeps the spotter's block without its scratch or
+ * refinement; the job's spot step across its tries): worker text 180,048 -> 180,208 B debug (16 B of the last page
+ * left) and 171,100 -> 171,244 B normal (788 B), data/bss unchanged, the same pages; the kernel's and the Shell's rows
+ * unchanged [measured: the build log's module rows, both builds, main 5e18b60 and this change, tools/fast_gate.sh's
+ * vitasdk image]. No block, thread or allocation. */
 /* #316's audit fixes (PCSG00628's !X escapes and u9829. as 15 more ops of its filter and their 109 B of strings, in the
  * data segment; CP932 0xA0 decoded only in VJO_HOOK_ENC_CP932_A0, the two MSGSET entries' encoding, and vjo_hook_clean's
  * U+F8F0 drop gone; an r15 entry only with segment 0 at 0x81000000): worker text 179,712 B debug unchanged (512 B of

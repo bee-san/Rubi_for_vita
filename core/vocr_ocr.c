@@ -401,7 +401,7 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
 
 /* API 54: the scratch with the spotter's part (its arena and result, vjo_vocr_spot_bytes): the largest of the
  * finder's, the spotter's and the recognizer's, which use it one after the other; the runtime's structs follow it. */
-static void layout_spot(Layout *l, size_t spot_bytes)
+static void layout_spot(Layout *l, size_t spot_bytes) /* a model of rows' only: a model of columns has none */
 {
     if (ALIGN16(spot_bytes) <= l->scratch) return;
     l->scratch = ALIGN16(spot_bytes);
@@ -555,9 +555,11 @@ size_t vjo_vocr_spot_bytes(const VjoVocrSpotResident *res, unsigned width, unsig
 
 size_t vjo_vocr_job_bytes_spot(const char *model, unsigned width, unsigned height, size_t spot_bytes)
 {
+    const VjoVocrModel *m = vjo_vocr_model(model);
     Layout l;
-    if (layout(vjo_vocr_model(model), width, height, &l) < 0) return 0;
-    layout_spot(&l, spot_bytes);
+    if (layout(m, width, height, &l) < 0) return 0;
+    /* a model of columns reads without the spotter (recognize): its job is vjo_vocr_job_bytes' */
+    if (!columns_of(m)) layout_spot(&l, spot_bytes);
     return l.total;
 }
 
@@ -2340,20 +2342,18 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     t0 = clock_us(p);
     int grad = 1; /* GRAD's path finds this try's lines (API 54: without the spotter, after its refusal, or for a
                    * region it does not see as horizontal text when ocr_vertical checks for columns) */
-    if (l->spot && !cols) {
+    if (l->spot && !cols) { /* (l->spot: never with on's check, below; API 54, audit-vocr6-spotter2-rubi F1) */
         /* API 54: the spotter's boxes are the lines (VjoVocrPolicy.spot); a model of columns reads without it. A
          * refusal of the runtime's (not a row that could not be read) leaves this try's lines to GRAD's path below,
          * which reads the rows again, each checked. So does a region whose boxes the spotter calls vertical more
          * often than horizontal when ocr_vertical = auto checks for columns (pol->vertical_check): API 47's rule
          * checks GRAD's rows, as without the spotter (vita-vn-ocr docs/textspot8.md "Vertical text in Rubi": 0 of
          * 1,677 horizontal development and confirmation regions, 160 of 181 vertical development ones). With
-         * ocr_vertical = on, which prefers columns (API 53, #379: columns unless the rows look horizontal), GRAD's
-         * rows decide unless most of its boxes are horizontal: no box, or as many vertical as horizontal ones, is
-         * on's check on GRAD's rows. */
+         * ocr_vertical = on, which prefers columns (API 53, #379), the spotter is not set up at all (the policy's
+         * spot is ignored under VJO_VOCR_CHECK_ON, below): on's job is GRAD's rows and on's check, as without it. */
         unsigned vertical = 0, horizontal = 0;
         rc = spot_find(s, l, ws, &set, st, &vertical, &horizontal);
-        if (!rc && pol->vertical_check &&
-            (pol->vertical_check == VJO_VOCR_CHECK_ON ? horizontal <= vertical : vertical > horizontal)) {
+        if (!rc && pol->vertical_check && vertical > horizontal) {
             st->spot_rc = VJO_E_VERTICAL; /* GRAD's rows decide, below (its finder overwrites the set) */
         } else {
             if (!rc) st->spot_ran = 1;
@@ -2821,11 +2821,12 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     strip_rows = vjo_vocr_strip_rows(image->width, image->height);
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
 
-    if (policy && policy->spot && !columns_of(mi)) {
+    if (policy && policy->spot && !columns_of(mi) && policy->vertical_check != VJO_VOCR_CHECK_ON) {
         /* API 54: the spotter's arena and result in the scratch, before every other part: the job's own workspace
          * as the caller sized it (vjo_vocr_job_bytes_spot). Without its parsed weights, an arena the build takes,
          * or room, the job finds its lines with GRAD (stats->spot_rc says why). A model of columns reads without
-         * it. */
+         * it, and so does on's job (ocr_vertical = on: GRAD's rows and on's check decide, #379's measured rule;
+         * the spotter's boxes were not measured there: audit-vocr6-spotter2-rubi F1). */
         const vocr_textspot6 *m = spot_model(policy->spot_res);
         size_t sb = m ? vjo_vocr_spot_bytes(policy->spot_res, image->width, image->height, policy->spot_frame_w,
                                             policy->spot_frame_h)
@@ -2844,11 +2845,11 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
             l.spot_arena = sb - ALIGN16(sizeof(VocrTextspot6Set));
         }
     }
-    if (policy && (policy->refine || (policy->spot && policy->spot_refine)) && !columns_of(mi)) {
+    if (policy && (policy->refine || (l.spot && policy->spot_refine)) && !columns_of(mi)) {
         /* The refinement's arena ends the job's own workspace; without room the
          * boxes are read as found. A model of columns has none (its boxes are columns).
-         * (API 54: GRAD's boxes by refine, the spotter's by spot_refine; a job that
-         * asks for the spotter may read with GRAD.) */
+         * (API 54: GRAD's boxes by refine, the spotter's by spot_refine, only when the
+         * spotter was set up; a job that asks for the spotter may read with GRAD.) */
         size_t rb = vjo_vocr_refine_bytes(image->width, image->height);
         if (workspace && rb && workspace_size >= front + l.total + rb) {
             l.refine_off = l.total;

@@ -1754,7 +1754,7 @@ guard and hval pages, as the rule says, and were read once on the test sets:
 | hval: other pages of 46 hooked titles (6,327), the selected run | 3.29% | **1.31%** | −1.98 [−5.38, −0.11] |
 | a fresh set of 41 games no spotter trained on (516), the selected run, read once | 4.29% | **1.86%** | −2.43 [−5.69, −0.30] |
 | development, the shipped weights | 2.38% | **1.03%** | −1.34 [−3.93, +0.21] |
-| development, the shipped weights, VOCR6-N → L as the recognizer | 2.41% | **0.99%** | −1.43 [−4.03, +0.15] |
+| development, the shipped weights, VOCR6-N → L as the recognizer (VOCR6's plain `_w8` blobs; Rubi runs the two-level `_w8_2l`, which vocr6-final-gate measured at +0.003 points on its own line plans) | 2.41% | **0.99%** | −1.43 [−4.03, +0.15] |
 | the hooked test title Dance with Devils (2,055), the shipped weights, read once | 0.98% | **0.97%** | −0.01 [−0.26, +0.22] |
 | CLANNAD, each page's region: 2,052 dialogue lines, read once | **0.95%** | 0.97% | +0.02 [−0.21, +0.21] |
 | CLANNAD, each page's region: all 3,048 lines, speaker names included | 2.83% | **1.17%** | −1.67 [−2.00, −1.37] |
@@ -1781,19 +1781,26 @@ guard and hval pages, as the rule says, and were read once on the test sets:
   often than horizontal goes to GRAD's rows, which auto's rule checks as without the spotter (the columns are then read
   with the vertical model). Measured in vita-vn-ocr on the spotter's crop decode with the shipped weights: 0 of
   1,677 horizontal development and confirmation regions, 160 of 181 vertical development regions (77 of 84 VN pages,
-  83 of 97 manga windows; the other 21 are read as the spotter's rows). With
-  `ocr_vertical = on`, which prefers columns ([on's rule](#ons-rule-api-53-379)), GRAD's rows decide unless most of
-  the spotter's boxes are horizontal (none, or as many vertical as horizontal ones, goes to on's check on GRAD's
-  rows); a job of columns reads without the spotter. This on rule was not measured on the spotter's boxes: it hands
-  every case that is not clearly horizontal to on's own measured check.
+  83 of 97 manga windows; the other 21 are read as the spotter's rows; how many of those 21 main's auto would read
+  as columns is not measured). Auto's columns try reads without the spotter: it keeps a verified block that fits
+  beside it, for the next job of rows, takes none of the spotter's scratch or refinement, and the job's `spot` step
+  says `VJO_E_VERTICAL` (`host/tests/test_game_spot.c`). **With `ocr_vertical = on` the spotter does not run**: on's
+  job is GRAD's rows and [on's rule](#ons-rule-api-53-379), which reads none of those 181 vertical regions as rows; the
+  spotter's boxes would have read 12 of them as rows (10 of 97 manga windows, 2 of 84 VN pages; measured by
+  audit-vocr6-spotter2-rubi with vita-vn-ocr's orientation check). So with `on` horizontal text is read with Rubi's
+  finder, as in 0.9.8 (no `spot` step, no block).
 - **What it leaves out.** GRAD's short-line probe (#194) and the text-presence gate are GRAD's: a job whose spotter
-  finds the lines runs neither and reads no gate weights. `ocr_spotter_refine = on` refines its boxes
+  finds the lines runs neither and reads no gate weights. The gate is not set up beside the spotter, so a job whose
+  spotter was set up but whose lines GRAD found (auto's hand-over to rows, or a runtime refusal) also reads without
+  it, even with `ocr_text_gate = on` (off by default). The self-test's stages never send the spotter's bits: a console
+  self-test reads with GRAD and says nothing about the default finder. `ocr_spotter_refine = on` refines its boxes
   (`VOCR_REFINE_DEFAULT`); off, the default, reads them as found (the measured better decode: the rule's
   representatives of crop and crop+refine read development at 0.99% and 1.21%).
 - **When it cannot run, GRAD does.** No weights file, another size or SHA-256, weights the build refuses, no memory
   for its block, no room for its scratch beside the tier, the LM and the cascade, or a refusal by the runtime: the
   job finds its lines with GRAD, refines them by `ocr_refine_lines`, and its `spot` step says why. A job never fails
-  or steps down a model size for the spotter.
+  or steps down a model size for the spotter. Its scratch is taken after the memory check and before the helpers'
+  line slots, so in a game near its limit it can cost a helper (the lines are then read one at a time).
 - **Its weights** are a file beside the models, `ocr/textspot8_t64n8c16_w8.vtsp` (52,176 B, vita-vn-ocr pre-release
   `v0.3.10-textspot8.1`), with its release's `ATTRIBUTION.md` as `ocr/SPOTTER-ATTRIBUTION.md`; the kernel's broker
   opens it only for a request with the spotter's bit (`VJO_GAME_OCR_OPEN_SPOT`), at its pinned size. The worker
@@ -2018,8 +2025,6 @@ cmake --build build/host && ctest --test-dir build/host --output-on-failure
 `vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
 `vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`, `vocr_post.c`,
 `vocr_post.h`, `vocr_vertical.c`, `vocr_vertical.h`: vita-vn-ocr #103's column finder, the same file at the pin) against their
-SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. For the host tests that run
-`vocr_post.h`) against their
 SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. The text spotter's files
 (`vocr_textspot6.c`, `vocr_textspot6.h` and the headers they include from their own directory, `vocr_textspot.h`,
 `vocr_lines.h`, `vocr_lines_rows.h`: [the spotter finder](#the-spotter-finder-api-54)) are pinned at their own
@@ -2036,8 +2041,9 @@ git -C /path/to/vita-vn-ocr-spot checkout 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b5
 ```
 
 `-DVJO_VOCR_SPOT_NO_MS` (default: on for a pinned trunk blob, `VJO_VOCR_SPOT_FORM "trunk"`) builds the spotter
-without its multi-scale networks. For the host tests that run
-the text-presence gate, `cmake/VocrGate.cmake` downloads its pinned weights from the release at configure time and
+without its multi-scale networks.
+
+For the host tests that run the text-presence gate, `cmake/VocrGate.cmake` downloads its pinned weights from the release at configure time and
 checks them (or takes `-DVJO_VOCR_GATE_BLOB=FILE`; without either, those tests skip); the plugins read the file
 from `ocr/` at run time. Copying those files to
 `third_party/vita-vn-ocr/runtime/` works too and needs no source directory.
