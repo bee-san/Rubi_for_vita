@@ -1676,7 +1676,70 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
     TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
 }
 
+/* The tab bar, laid out from its labels since the fifth tab (#312's Stats; rubi-rm3's layout for #313): five tabs
+ * from x 24 to at most 936, in order, TAB_GAP apart, each at least its label's width with 10 px each side (the stub's
+ * labels do not fit an equal share), each label centred in its tab on the old baseline and never cut, the page's own
+ * filled. A touch on a tab shows its page; one in the gap between two tabs does nothing. */
+#define TAB_Y 52
+#define TAB_H 48
+#define TABS 5
+static const char *const TAB_LABELS[TABS] = {"Games", "OCR & lookup", "Anki", "Stats", "Install"};
+typedef struct { int n, x[TABS], w[TABS]; } Tabs;
+static Tabs tabs_of(int f, int active)
+{
+    Tabs t = {0};
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        if (r->y != TAB_Y || r->h != TAB_H) continue;
+        if (t.n < TABS) {
+            t.x[t.n] = r->x;
+            t.w[t.n] = r->w;
+            TEST_CHECK_(r->color == (t.n == active ? ACCENT : CARD), "frame %d: tab %d colour %08X", f, t.n, r->color);
+            const Text *l = text_at(f, TAB_Y + 33, r->x, r->x + r->w);
+            TEST_CHECK_(l && !strcmp(l->text, TAB_LABELS[t.n]) && !l->clipped && l->x >= r->x + 10 &&
+                            l->x + width(l) <= r->x + r->w - 10 && abs(2 * l->x + width(l) - (2 * r->x + r->w)) <= 1 &&
+                            l->color == (t.n == active ? BG_COLOR : WHITE),
+                        "frame %d: tab %d's label '%s'", f, t.n, l ? l->text : "(none)");
+        }
+        t.n++;
+    }
+    TEST_CHECK_(t.n == TABS, "frame %d: %d tabs", f, t.n);
+    TEST_CHECK_(t.x[0] == 24 && t.x[TABS - 1] + t.w[TABS - 1] <= 936, "frame %d: the bar from %d to %d", f, t.x[0],
+                t.x[TABS - 1] + t.w[TABS - 1]);
+    for (int i = 1; i < TABS && i < t.n; i++)
+        TEST_CHECK_(t.x[i] >= t.x[i - 1] + t.w[i - 1] + 8, "frame %d: tab %d at %d, after %d+%d", f, i, t.x[i],
+                    t.x[i - 1], t.w[i - 1]);
+    return t;
+}
+static void test_the_tab_bar(void)
+{
+    Input in[2 * 8];
+    int n = 0;
+    card(NULL);
+    /* the layout, on the Games page; then a touch on each tab's middle, and one in a gap */
+    in[n++] = (Input){0, 0, 0, 0};
+    in[n++] = (Input){0, 0, 0, 0};
+    TEST_ASSERT(run(in, n) >= 2);
+    Tabs t = tabs_of(0, 0);
+    static const int order[] = {1, 3, 4, 0, 3}; /* OCR & lookup, Stats, Install, Games, Stats */
+    n = 0;
+    for (int k = 0; k < 5; k++) {
+        in[n++] = (Input){0, 1, t.x[order[k]] + t.w[order[k]] / 2, TAB_Y + 20};
+        in[n++] = (Input){0, 0, 0, 0};
+    }
+    in[n++] = (Input){0, 1, t.x[1] + t.w[1] + 4, TAB_Y + 20}; /* frame 10: the gap after OCR & lookup: nothing */
+    in[n++] = (Input){0, 0, 0, 0};
+    in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}; /* frame 12: Select from Stats: Install */
+    in[n++] = (Input){0, 0, 0, 0};
+    TEST_ASSERT(run(in, n) >= n);
+    for (int k = 0; k < 5; k++)
+        tabs_of(2 * k, order[k]);
+    tabs_of(10, 3);
+    tabs_of(12, 4);
+}
+
 TEST_LIST = {
+    {"the_tab_bar_five_tabs_fit_their_labels_and_their_touches", test_the_tab_bar},
     {"one_engine_VOCR_its_model_size_on_top_no_lens", test_one_engine_its_model_size_on_top},
     {"a_tap_in_the_cards_top_band_focuses_it_and_chooses_nothing", test_the_cards_top_band_focuses_it},
     {"exit_ends_the_process_without_vita2d_fini", test_exit_ends_the_process_without_vita2d_fini},

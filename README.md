@@ -184,6 +184,8 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
+| Stats | Your reading from `history.csv`: today, the last 14 days, the year's heatmap, the streak, all games and each game (characters, reading time, characters/hour, cards mined), counted as △ counts ([details](docs/guide.md#stats)) | |
+| | **Daily goal**: Off, 2,000 to 50,000 characters or 15 to 120 minutes a day; a day at the goal counts for the streak (with none, any day with reading). Kept in the app's own `app.ini` | Off |
 | Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
 
 Everything else, such as the button that opens the overlay (`toggle_button`), the OCR's timings and
@@ -252,6 +254,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |
 | ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |
+| ❓ | The Rubi app's Stats tab: days, heatmap, streak, daily goal, each game | not run on a console yet; measured on the host ([details](docs/guide.md#stats)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
@@ -326,8 +329,9 @@ release's main download, logs no recognized or looked-up text; the `-debug` buil
 reports, logs both. With **Read text** on **Automatically**, both builds also keep the dialogue they
 read, with its game, time, number of characters and whether a native text hook or the OCR read it,
 in `ux0:data/VitaJPOverlay/history.csv`, for reading statistics (the CSV that GameSentenceMiner
-imports; on a computer, `python3 tools/reading_stats.py history.csv` gives the characters read and
-per hour, by text source, per game and per day; [details](docs/ocr-history.md)). It stays on the
+imports; the Rubi app's **Stats** tab shows them on the Vita, and on a computer
+`python3 tools/reading_stats.py history.csv` gives the characters read and per hour, by text source,
+per game and per day; [details](docs/ocr-history.md)). It stays on the
 Vita too, grows as you read and is never deleted by itself; **Only when I press L + R** saves none.
 
 ### How good is the OCR?

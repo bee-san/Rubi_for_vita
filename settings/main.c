@@ -19,6 +19,7 @@
 #include "preferences.h"
 #include "psp.h"
 #include "search.h"
+#include "stats_page.h"
 #include "text_layout.h"
 #include "../core/hook_titles.h"
 #include "../core/local_dict.h"
@@ -202,12 +203,24 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 #define VJO_APP_VERSION "v" VJO_VERSION_STRING
 #endif
 
-/* The page tabs: Games, OCR & lookup, Anki, Install (docs/one-vpk-install.md). */
-#define PAGES 4
-#define PAGE_INSTALL 3
-#define TAB_PITCH 228
-#define TAB_X(i) (24 + (i) * TAB_PITCH)
-#define TAB_W 220
+/* The page tabs, left to right; Select goes to the next (docs/one-vpk-install.md has the Install page, #312 the
+ * Stats page). A new page is an entry here and a label in tab_label: the tab bar lays itself out (tab_layout). */
+enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_STATS, PAGE_INSTALL, PAGES };
+static const char *const tab_label[PAGES] = {"Games", "OCR & lookup", "Anki", "Stats", "Install"};
+/* The tab bar, from x 24 to 936 under the title row: tabs TAB_GAP apart, at the most TAB_PX pixels of label.
+ * While every label fits an equal share (912 / PAGES, less the gap), the tabs are equal (four were 220 px at a
+ * pitch of 228). Else each tab is its label's width with TAB_PAD each side, the room left shared out equally; and
+ * when even that does not fit, the labels are smaller (TAB_MIN_PX at the least; past that the tabs are equal and
+ * their labels cut at their edges). Laid out once the font is loaded, for the drawing and the touches both.
+ * (rubi-rm3's design for #313's Look up tab, which adds its page here too.) */
+#define TAB_LEFT 24
+#define TAB_ROOM 912
+#define TAB_GAP 8
+#define TAB_PAD 10
+#define TAB_PX 28
+#define TAB_MIN_PX 20
+static int tab_x[PAGES], tab_w[PAGES];
+static float tab_px = TAB_PX;
 /* When this app and the overlay plugins do not match (app_check.h), a red
  * band in place of the title row says so on every page, in two rows. */
 #define BANNER_Y 4
@@ -215,10 +228,51 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 #define BANNER_TEXT_Y 24
 #define BANNER_LINE_H 22
 static char app_banner[192];
+static int tab_clip; /* a label is wider than its tab: the tabs' labels are cut at their edges */
+
+static void tab_layout(void)
+{
+    int share = TAB_ROOM / PAGES - TAB_GAP, room = TAB_ROOM - (PAGES - 1) * TAB_GAP, need = 0, equal = 1;
+    int label[PAGES];
+    for (float px = TAB_PX; px >= TAB_MIN_PX; px -= 2) {
+        tab_px = px;
+        need = 0;
+        equal = 1;
+        for (int i = 0; i < PAGES; i++) {
+            int width = text_width(px, tab_label[i]);
+            label[i] = width + 2 * TAB_PAD;
+            need += label[i];
+            equal &= width <= share;
+        }
+        if (equal || need <= room)
+            break;
+    }
+    if (need > room)
+        equal = 1; /* nothing fits: equal tabs, each label cut at its edges */
+    tab_clip = 0;
+    for (int i = 0, x = TAB_LEFT, left = room - need; i < PAGES; i++) {
+        /* equal shares, else the label's width and its part of what is left (the first ones a pixel more) */
+        int w = equal ? share : label[i] + left / PAGES + (i < left % PAGES);
+        tab_x[i] = x;
+        tab_w[i] = w;
+        tab_clip |= label[i] - 2 * TAB_PAD > w;
+        x += equal ? TAB_ROOM / PAGES : w + TAB_GAP;
+    }
+}
+
+/* The tab at x, y, or -1. */
+static int tab_at(int x, int y)
+{
+    if (y < TAB_Y || y >= TAB_Y + TAB_H)
+        return -1;
+    for (int i = 0; i < PAGES; i++)
+        if (x >= tab_x[i] && x < tab_x[i] + tab_w[i])
+            return i;
+    return -1;
+}
 
 static void header(void)
 {
-    static const char *const tabs[PAGES] = {"Games", "OCR & lookup", "Anki", "Install"};
     static int version_x; /* after the title, measured once */
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
     if (app_banner[0]) {
@@ -231,8 +285,15 @@ static void header(void)
         text(744, 34, DIM, 24, "Select: page");
     }
     for (int i = 0; i < PAGES; i++) {
-        vita2d_draw_rectangle(TAB_X(i), TAB_Y, TAB_W, TAB_H, page == i ? ACCENT : CARD);
-        centered_text(TAB_X(i), TAB_Y + 33, TAB_W, page == i ? BG : WHITE, 28, tabs[i]);
+        vita2d_draw_rectangle(tab_x[i], TAB_Y, tab_w[i], TAB_H, page == i ? ACCENT : CARD);
+        if (tab_clip) { /* a label wider than its tab, even at TAB_MIN_PX: cut at its edges */
+            vita2d_enable_clipping();
+            vita2d_set_clip_rectangle(tab_x[i], TAB_Y, tab_x[i] + tab_w[i], TAB_Y + TAB_H);
+        }
+        centered_text(tab_x[i], TAB_Y + (TAB_H + (int)(tab_px * 0.65f)) / 2, tab_w[i], page == i ? BG : WHITE, tab_px,
+                      tab_label[i]);
+        if (tab_clip)
+            vita2d_disable_clipping();
     }
 }
 
@@ -278,6 +339,9 @@ static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_
                                   WHITE, DIM, ACCENT, OFF, CARD, &buttons};
 
 static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
+/* #312: the Stats page (settings/stats_page.c), drawn with these helpers */
+static const VjoStatsUi stats_ui = {text, text_width, wrapped_text, focus_card, badge, footer_at, header, rect,
+                                    WHITE, DIM, ACCENT, OFF, CARD, SELECTED, &buttons};
 static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }
 static const VjoInstallDraw install_ui = {text, text_width, rect, focus_card, badge, hints_row, header,
                                           WHITE, DIM, ACCENT, OFF, SELECTED, &buttons};
@@ -1231,6 +1295,17 @@ static void search_games(VjoStickScroll *stick, uint32_t *previous, int *touched
     vjo_stick_latch(stick);
 }
 
+/* A page shown (Select, or its tab): the pages with a module of their own read again what they show. */
+static void show_page(int p)
+{
+    if (p == PAGE_ANKI) vjo_anki_page_show(&scratch);
+    if (p == PAGE_STATS) vjo_stats_page_show(&scratch);
+    if (p == PAGE_INSTALL) vjo_install_page_show();
+}
+
+/* Cancel is the page's own (it stops an export), not the app's exit. */
+static int page_holds_cancel(void) { return page == PAGE_ANKI && vjo_anki_page_busy(); }
+
 /* ---- what the app ran with, in log.txt (log_file = on, the default) ---- */
 
 /* settings/sysapp.c: newlib's heap, one block of this size taken before main. */
@@ -1326,6 +1401,7 @@ int main(void)
         if (width > em_width) em_width = width;
     }
     if (em_width > 0) font_em = (float)em_width;
+    tab_layout(); /* by the labels' widths: the tab bar's drawing and its touches */
     vita2d_set_clear_color(BG);
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG); /* the left stick scrolls, as in VitaShell */
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
@@ -1358,7 +1434,7 @@ int main(void)
         /* An install runs: the app neither leaves nor changes page (install_page.h). */
         int installing = vjo_install_page_busy();
         uint32_t triggers = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER;
-        if (!page && (pad.buttons & triggers) == triggers) {
+        if (page == PAGE_GAMES && (pad.buttons & triggers) == triggers) {
             direction = 0; /* L+R opens search once, never a page jump or a repeated dialog. */
             if (!search_held) {
                 search_held = 1;
@@ -1366,19 +1442,18 @@ int main(void)
                 continue;
             }
         } else search_held = 0;
-        if ((pressed & buttons.cancel) && !(page == 2 && vjo_anki_page_busy()) && !installing) break;
+        if ((pressed & buttons.cancel) && !page_holds_cancel() && !installing) break;
         if ((pressed & SCE_CTRL_SELECT) && !installing) {
             page = (page + 1) % PAGES;
             repeat_at = now + 350000;
             /* The new page takes no move from a stick still pushed, this frame or until it is let go. */
             vjo_stick_latch(&stick_state);
             stick = 0;
-            if (page == 2) vjo_anki_page_show(&scratch);
-            if (page == PAGE_INSTALL) vjo_install_page_show();
+            show_page(page);
         }
-        if (page == 2 || page == PAGE_INSTALL) {
-            /* anki_page.c and install_page.c read their own buttons and touches */
-        } else if (page) {
+        if (page == PAGE_ANKI || page == PAGE_STATS || page == PAGE_INSTALL) {
+            /* anki_page.c, stats_page.c and install_page.c read their own buttons and touches */
+        } else if (page == PAGE_OCR) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
             /* The d-pad first; the stick stops at the first and last card. */
@@ -1394,11 +1469,11 @@ int main(void)
             if (pressed & SCE_CTRL_SQUARE) change_filter();
             if (pressed & SCE_CTRL_START) scan();
         }
-        if (!page && direction && ((pressed & direction) || now >= repeat_at)) {
+        if (page == PAGE_GAMES && direction && ((pressed & direction) || now >= repeat_at)) {
             /* A key just pressed acts at once; one held repeats. */
             list_key(pressed & direction ? pressed & direction : direction);
             repeat_at = now + ((pressed & direction) ? 350000 : 90000);
-        } else if (!page && stick) {
+        } else if (page == PAGE_GAMES && stick) {
             move(stick); /* the d-pad first (VitaShell takes Up first, from either) */
         }
         previous = pad.buttons;
@@ -1408,21 +1483,19 @@ int main(void)
         int touch_x = -1, touch_y = -1;
         if (touch.reportNum && !touched) {
             int x = touch.report[0].x / 2, y = touch.report[0].y / 2;
-            int tab = y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 24 + PAGES * TAB_PITCH &&
-                      (x - 24) % TAB_PITCH < TAB_W && !installing ? (x - 24) / TAB_PITCH : -1;
+            int tab = installing ? -1 : tab_at(x, y);
             if (tab >= 0) {
-                if (tab == 2 && page != 2) vjo_anki_page_show(&scratch);
-                if (tab == PAGE_INSTALL && page != PAGE_INSTALL) vjo_install_page_show();
                 if (tab != page) { /* as Select */
+                    show_page(tab);
                     vjo_stick_latch(&stick_state);
                     stick = 0;
                 }
                 page = tab;
             }
-            else if (page == 2 || page == PAGE_INSTALL) { touch_x = x; touch_y = y; }
-            else if (page == 1 && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
+            else if (page == PAGE_ANKI || page == PAGE_STATS || page == PAGE_INSTALL) { touch_x = x; touch_y = y; }
+            else if (page == PAGE_OCR && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
                 touch_preference(x, y); /* the OCR & lookup page's cards */
-            else if (page) { /* no game actions on the OCR page */ }
+            else if (page != PAGE_GAMES) { /* no game actions on the other pages */ }
             else if (y >= GAME_NAV_Y && y < GAME_NAV_Y + GAME_NAV_H) {
                 if (x >= 24 && x < 444) {
                     search_games(&stick_state, &previous, &touched, &repeat_at);
@@ -1457,14 +1530,18 @@ int main(void)
             vjo_install_page_frame(&install_ui, pressed, touch_x, touch_y);
             vita2d_end_drawing();
             vita2d_swap_buffers();
-        } else if (page == 2) {
+        } else if (page == PAGE_ANKI) {
             vjo_anki_page_stick(stick);
             vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch);
+        } else if (page == PAGE_STATS) {
+            vjo_stats_page_stick(stick);
+            vjo_stats_page_frame(&stats_ui, pressed, touch_x, touch_y, &scratch);
         }
-        else if (page) draw_preferences(); else draw();
+        else if (page == PAGE_OCR) draw_preferences(); else draw();
         sceDisplayWaitVblankStart();
     }
     vjo_anki_page_quit();
+    vjo_stats_page_quit();
     vjo_install_page_quit();
     vita2d_wait_rendering_done();
     clear_icons();

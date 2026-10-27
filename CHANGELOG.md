@@ -13,6 +13,19 @@ been reported.
 
 ### Added
 
+- **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
+  △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
+  games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the
+  **Last 14 days** as bars; **This year** as a heatmap of characters a day; **All games**; and a row per game, the one
+  read last first, with today, in all, its cards mined and cards per 10,000 characters, and the last day read.
+  **Daily goal**: Off (the default), 2,000 to 50,000 characters or 15 to 120 minutes a day, in the app's own
+  `app.ini`; a day at the goal counts for the streak, or with no goal any day with reading. No sessions. The count
+  runs on its own thread and is kept in `stats_cache.bin`, so the next one reads only what was added; a replaced or
+  shorter `history.csv`, another time zone or `reading_time`, or a damaged cache counts it again. 20 MB of history
+  took 40 ms on a computer [measured on the host]; the Vita's time is unmeasured. The tab bar lays itself out from its
+  labels for the fifth tab. Only the app changes: the Shell, the game worker, the kernel and the RCO are byte-identical
+  to main's in both builds. Not run on a console yet.
+
 - **A text box suggested on first use** (#358; API 52; [first-box.md](docs/first-box.md)). A game with no box of its
   own is read on its whole screen, picture and buttons included, which first-time users took for recognition that did
   not work. Now the first time the overlay is open over such a game's text, it opens the region mode with a box drawn

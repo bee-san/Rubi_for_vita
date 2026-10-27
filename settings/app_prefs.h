@@ -27,6 +27,9 @@ enum { VJO_DUPLICATES_TAG = 0, VJO_DUPLICATES_SKIP = 1, VJO_DUPLICATES_KEEP = 2 
 
 typedef struct {
     int anki_duplicates; /* VJO_DUPLICATES_*: tag (the default), skip or keep */
+    /* stats_daily_goal (#312): the Stats tab's Daily goal, core/stats.h VJO_GOAL_*: off (the default), a number of
+     * characters (2,000 to 50,000) or of minutes (15 to 120) a day */
+    int stats_daily_goal;
 } VjoAppPrefs;
 
 /* Every setting at its default (here, so that code which only follows the settings, as the export does, needs no
@@ -35,6 +38,7 @@ static inline void vjo_app_prefs_defaults(VjoAppPrefs *p)
 {
     memset(p, 0, sizeof(*p));
     p->anki_duplicates = VJO_DUPLICATES_TAG;
+    p->stats_daily_goal = 0; /* VJO_GOAL_OFF */
 }
 /* app.ini's text (len bytes) over p: each line of a known key with a known value sets it. */
 void vjo_app_prefs_parse(VjoAppPrefs *p, const char *text, size_t len);

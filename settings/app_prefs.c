@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "preferences.h"
+#include "../core/stats.h" /* VJO_GOAL_* */
 
 #define BACKUP VJO_APP_PREFS_PATH ".bak"
 #define VALUE_MAX 32 /* a value's name, NUL included */
@@ -15,9 +16,15 @@ typedef struct {
 } Row;
 
 static const char *const duplicates[] = {"tag", "skip", "keep", NULL}; /* VJO_DUPLICATES_*'s order */
+/* VJO_GOAL_*'s order (core/stats.h) */
+static const char *const daily_goals[] = {"off", "2000_characters", "5000_characters", "10000_characters",
+                                          "20000_characters", "50000_characters", "15_minutes", "30_minutes",
+                                          "60_minutes", "120_minutes", NULL};
+_Static_assert(sizeof(daily_goals) / sizeof(daily_goals[0]) == VJO_GOALS + 1, "a name for each VJO_GOAL_*");
 
 static const Row rows[] = {
     {"anki_duplicates", offsetof(VjoAppPrefs, anki_duplicates), duplicates},
+    {"stats_daily_goal", offsetof(VjoAppPrefs, stats_daily_goal), daily_goals},
 };
 #define ROWS ((int)(sizeof(rows) / sizeof(rows[0])))
 

@@ -416,6 +416,12 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
+# The Stats tab (settings/stats_page.c, #312): history.csv counted with the Triangle view's own reading-time rule
+# (core/history_lines.c's vjo_reading_time_add, the Shell's; of it the link keeps what the tab calls), per game and
+# per day (core/stats.c) and the record reader (core/history_read.c); the goal is app.ini's (settings/app_prefs.c).
+set(VJO_SETTINGS_STATS_SRC
+  ${ROOT}/settings/stats_page.c ${ROOT}/core/stats.c ${ROOT}/core/history_read.c
+  ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c ${ROOT}/core/text_rows.c)
 set(VJO_SETTINGS_SRC
   ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c ${ROOT}/settings/app_prefs.c
   ${ROOT}/settings/icons.c ${ROOT}/settings/search.c ${ROOT}/settings/text_layout.c ${ROOT}/core/linebreak.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
@@ -426,7 +432,7 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/core/regions.c # #358: Suggest a text box, region.ini's line for every game (settings/preferences.c)
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
-  ${VJO_SETTINGS_ANKI_SRC})
+  ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_STATS_SRC})
 # API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, the worker's verified table
 # itself (core/hook_place.c: of it only vjo_place_title_verified, vjo_place_verified and the table stay
 # linked), and the games of Luna's
