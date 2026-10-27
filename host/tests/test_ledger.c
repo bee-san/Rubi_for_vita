@@ -106,6 +106,17 @@ static void test_budget_table_is_consistent(void)
                VJO_LIMIT_GAME_WEIGHTS == (2500000u + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE);
     /* the PAF limit is the measured free heap minus the runtime reserve */
     TEST_CHECK(VJO_LIMIT_SHELL_PAF == VJO_PAF_FREE_MEASURED - VJO_PAF_RESERVE && VJO_PAF_FREE_MEASURED < VJO_PAF_HEAP);
+    /* API 53: the text spotter's block: the largest blob the protocol admits and its parsed form on the Vita
+     * (sizeof(vocr_textspot6), 3,964 B with the Vita compiler; core/vocr_ocr.c checks it on 32-bit builds),
+     * page-rounded; the pin within it; counted in the game job's worst case */
+    TEST_CHECK(VJO_BUDGET_GAME_SPOT % VJO_LEDGER_PAGE == 0 &&
+               VJO_BUDGET_GAME_SPOT == (((VJO_VOCR_SPOT_MAX_BYTES + 15u) & ~15u) + ((3964u + 15u) & ~15u) +
+                                        VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE);
+    TEST_CHECK(VJO_VOCR_SPOT_BYTES <= VJO_VOCR_SPOT_MAX_BYTES && VJO_VOCR_SPOT_MAX_BYTES == 512000u &&
+               VJO_VOCR_SPOT_ARENA_MAX == 262144u);
+    TEST_CHECK(VJO_WORST_GAME_JOB == VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE +
+                                     VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE +
+                                     VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SPOT);
 }
 
 #ifdef VJO_WITH_VOCR
@@ -115,13 +126,22 @@ static void test_budget_table_is_consistent(void)
  * cascade's extras (game_ocr/main.c extra_job_bytes; cascade_of: a request by
  * name's VOCR4-W20 beside a smaller model, a request by tiers' next tier up), and
  * (API 22) the line slots of the most helpers a job takes. */
-static size_t full_job(const char *model, const char *cascade)
+static size_t job_of(const char *model, const char *cascade, unsigned w, unsigned h, size_t spot)
 {
-    /* API 22: with the most helpers a job takes (ocr_threads 3), whose line slots end the workspace */
-    return vjo_vocr_job_bytes(model, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT) +
-           vjo_vocr_refine_bytes(VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT) + vjo_vocr_lm_job_bytes(model) +
+    return vjo_vocr_job_bytes_spot(model, w, h, spot) + vjo_vocr_refine_bytes(w, h) + vjo_vocr_lm_job_bytes(model) +
            VJO_GAME_OCR_TEXT_BYTES + (cascade ? vjo_vocr_cascade_job_bytes(cascade) : 0) +
            vjo_vocr_helpers_bytes(model, VJO_VOCR_HELPERS_MAX);
+}
+static size_t full_job(const char *model, const char *cascade)
+{
+    /* API 22: with the most helpers a job takes (ocr_threads 3), whose line slots end the workspace. API 53: with the
+     * text spotter's part (the pin's arena for a 960 x 544 frame, VJO_VOCR_SPOT_ARENA), the larger of the full
+     * screen's job (the region is the frame: no frame stream of its own) and a job one row shorter (the frame read
+     * beside it: its strip and rows' state, vjo_vocr_spot_bytes_max); every smaller region's needs no more. */
+    const unsigned w = VJO_OCR_MAX_WIDTH, h = VJO_OCR_MAX_HEIGHT;
+    size_t whole = job_of(model, cascade, w, h, vjo_vocr_spot_bytes_pin(w, h, w, h));
+    size_t beside = job_of(model, cascade, w, h - 1u, vjo_vocr_spot_bytes_max());
+    return whole > beside ? whole : beside;
 }
 static void test_game_workspace_budget_matches_the_layout(void)
 {
@@ -158,6 +178,24 @@ static void test_game_workspace_budget_matches_the_layout(void)
     TEST_CHECK_((largest + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE == VJO_BUDGET_GAME_WORKSPACE,
                 "largest full-screen job %zu B (%s, cascade %s)", largest, which, which_casc);
     TEST_MSG("largest full-screen job %zu B: %s with the cascade %s", largest, which, which_casc);
+    /* API 53: the spotter's part grows only a job whose recognizer's arena is the smaller (VOCR5-N's, not VOCR5-L's) */
+    TEST_CHECK(vjo_vocr_spot_bytes_max() > 0 &&
+               vjo_vocr_job_bytes_spot(VJO_VOCR_TIER2_NAME, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT, 0) ==
+                   vjo_vocr_job_bytes(VJO_VOCR_TIER2_NAME, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT));
+    TEST_MSG("the spotter's part: %zu B beside the frame (%zu B as the frame); VOCR5-N's job %zu -> %zu B (%u x %u), "
+             "VOCR5-L's %zu -> %zu B", vjo_vocr_spot_bytes_max(),
+             vjo_vocr_spot_bytes_pin(VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT),
+             vjo_vocr_job_bytes(VJO_VOCR_TIER2_NAME, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT - 1u),
+             vjo_vocr_job_bytes_spot(VJO_VOCR_TIER2_NAME, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT - 1u,
+                                     vjo_vocr_spot_bytes_max()), VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT - 1u,
+             vjo_vocr_job_bytes(VJO_VOCR_TIER3_NAME, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT - 1u),
+             vjo_vocr_job_bytes_spot(VJO_VOCR_TIER3_NAME, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT - 1u,
+                                     vjo_vocr_spot_bytes_max()));
+    TEST_MSG("the full screen's job (the region is the frame) %zu B, one row shorter %zu B",
+             job_of(VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT,
+                    vjo_vocr_spot_bytes_pin(VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT)),
+             job_of(VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT - 1u,
+                    vjo_vocr_spot_bytes_max()));
 }
 
 /* vita-vn-ocr #99: the vertical job (config.ini ocr_vertical) at the full screen, as game_ocr/main.c sizes

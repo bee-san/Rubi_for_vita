@@ -138,6 +138,12 @@ typedef struct {
      * the frame-strip rule, for regions drawn with a margin; 3 (all) also the touching-rows split; 0 (off) the
      * frozen finder. Last, as above. */
     int ocr_line_fix;         /* 0 off, 1 on, 2 junk, 3 all */
+    /* Local OCR (vocr, API 53): the line finder of a job, VJO_FINDER_GRAD (Rubi's GRAD with the refinement, the
+     * line fixes and the short-line probe, as every build before) or VJO_FINDER_SPOTTER (vita-vn-ocr #128's text
+     * spotter on the game's whole frame, then textspot7's post-pass in the region, core/vocr_ocr.h
+     * VjoVocrPolicy.spot: its boxes are the lines; a job that cannot have its weights reads with GRAD). Last, as
+     * above. */
+    int ocr_finder;           /* VJO_FINDER_* */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
@@ -163,6 +169,12 @@ typedef struct {
 /* ocr_line_fix's default (docs/vita-vn-ocr.md, "Line finder fixes": the measurements). */
 #define VJO_LINE_FIX_DEFAULT 1
 #define VJO_LINE_FIX_DEFAULT_TEXT "on"
+/* API 53: ocr_finder (config.ini grad | spotter) and its default (docs/vita-vn-ocr.md, "The spotter finder": grad,
+ * as vita-vn-ocr #128's textspot7 pick is not resolved better than GRAD + refine with the line fixes on unseen
+ * games; the default is one line here and its text the next). */
+enum { VJO_FINDER_GRAD = 0, VJO_FINDER_SPOTTER = 1 };
+#define VJO_FINDER_DEFAULT VJO_FINDER_GRAD
+#define VJO_FINDER_DEFAULT_TEXT "grad"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and

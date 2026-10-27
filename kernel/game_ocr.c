@@ -51,6 +51,9 @@ static struct {
 static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
 typedef char vjo_hook_cache_stage_check[VJO_GAME_OCR_HOOK_CACHE_BYTES <= sizeof(model_stage) ? 1 : -1];
 typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage) ? 1 : -1];
+/* API 53: the spotter's pinned name, as every name the broker opens, fits a request's model field (the copy below) */
+typedef char vjo_spot_name_check[sizeof(VJO_VOCR_SPOT_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                 sizeof(VJO_VOCR_GATE_NAME) <= VJO_GAME_OCR_MODEL_BYTES ? 1 : -1];
 /* exFAT's first file extension while a game ran took 20.9 s on the console;
  * overwriting reserved space took 6 ms. Keep one maximum-sized spare on disk,
  * prepared while the broker is idle. No image or extra buffer is kept here. */
@@ -541,8 +544,8 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     VjoGameOcrRowsInfo info;
     SceUID pid = ksceKernelGetProcessId();
     uint64_t deadline;
-    uint32_t span = 0, kbytes = 0, bpp;
-    int rc = 0, armed = 0, kalloc = 0, rgba;
+    uint32_t span = 0, kbytes = 0, bpp, rw = 0, rh = 0;
+    int rc = 0, armed = 0, kalloc = 0, rgba, frame;
     ENTER_SYSCALL(state);
     memset(&info, 0, sizeof(info));
     info.size = sizeof(info);
@@ -553,8 +556,13 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
      * publishes no capture. */
     rgba = (req.flags & VJO_ROWS_RGBA) != 0;
     bpp = rgba ? 4u : 1u;
+    /* API 53: the text spotter's rows are the whole frame's (the rectangle 0, 0, fb_width, fb_height), the region's
+     * otherwise: rw x rh, read below under the lock */
+    frame = (req.flags & VJO_ROWS_FRAME) != 0;
     VJO_LOCK();
     sync_locked();
+    rw = frame ? request.fb_width : request.width;
+    rh = frame ? request.fb_height : request.height;
     if (pid <= 0 || pid != request_pid) rc = VJO_ERR_PERM;
     else if (!valid || !claimed || req.seq != request.seq || req.size != sizeof(req)) rc = VJO_ERR_ARG;
     else if (cancelled || !registration_current(pid)) rc = VJO_ERR_CANCELLED;
@@ -591,9 +599,13 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         }
         goto out; /* no rows: the info says none were armed */
     }
-    else if (!req.n || req.n > VJO_GAME_OCR_ROWS_MAX || req.y >= request.height || req.n > request.height - req.y ||
-             req.dst_stride < request.width * bpp || req.dst_stride > VJO_MAX_W * bpp ||
-             (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_RGBA)) ||
+    /* API 53: a frame's rows alone, for a region job with the spotter (never a probe's or a shot's) */
+    else if (frame && (req.flags != VJO_ROWS_FRAME || !(request.speed & VJO_GAME_OCR_S_SPOT) || !rw ||
+                       rw > VJO_MAX_W || (request.flags & (VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT))))
+        rc = VJO_ERR_ARG;
+    else if (!req.n || req.n > VJO_GAME_OCR_ROWS_MAX || req.y >= rh || req.n > rh - req.y ||
+             req.dst_stride < rw * bpp || req.dst_stride > VJO_MAX_W * bpp ||
+             (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_RGBA | VJO_ROWS_FRAME)) ||
              ((req.flags & VJO_ROWS_LAST) && !(req.flags & VJO_ROWS_SIG)) ||
              rgba != !!(request.flags & VJO_GAME_OCR_F_SHOT) || (rgba && (req.flags & VJO_ROWS_SIG)) ||
              (req.mode != VJO_GAME_OCR_SRC_HOOK && req.mode != VJO_GAME_OCR_SRC_KSTRIP))
@@ -605,29 +617,29 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     else if (rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
     else {
         /* <= 61,440 B grey, 245,760 B in colour (64 rows of 960 px): no wrap */
-        uint64_t bytes = (uint64_t)(req.n - 1u) * req.dst_stride + request.width * bpp;
+        uint64_t bytes = (uint64_t)(req.n - 1u) * req.dst_stride + rw * bpp;
         span = (uint32_t)bytes;
         if (bytes > 0xFFFFFFFFu || !user_range_ok(pid, (uintptr_t)dst, span)) rc = VJO_ERR_ARG;
     }
     if (!rc && req.mode == VJO_GAME_OCR_SRC_KSTRIP) {
-        kbytes = req.n * request.width * bpp; /* over VJO_GAME_OCR_KSTRIP_MAX: refused (ARG) */
+        kbytes = req.n * rw * bpp; /* over VJO_GAME_OCR_KSTRIP_MAX: refused (ARG) */
         rc = buffers_kstrip_alloc(kbytes);
         info.kstrip_rc = rc;
         if (!rc) kalloc = 1;
     }
     if (!rc) {
         memset(&rows.job, 0, sizeof(rows.job));
-        rows.job.x0 = request.x;
-        rows.job.y0 = request.y;
-        rows.job.w = request.width;
-        rows.job.h = request.height;
+        rows.job.x0 = frame ? 0u : request.x;
+        rows.job.y0 = frame ? 0u : request.y;
+        rows.job.w = rw;
+        rows.job.h = rh;
         rows.job.fb_w = request.fb_width;
         rows.job.fb_h = request.fb_height;
         rows.job.y = req.y;
         rows.job.n = req.n;
         if (kalloc) {
             rows.job.dst_kernel = buffers_kstrip();
-            rows.job.stride = request.width * bpp;
+            rows.job.stride = rw * bpp;
         } else {
             rows.job.dst_user = (uintptr_t)dst;
             rows.job.stride = req.dst_stride;
@@ -707,8 +719,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         /* Last rung of the ladder: the hook filled the kernel strip; copy it out here. */
         const uint8_t *k = buffers_kstrip();
         for (uint32_t r = 0; r < req.n && rc > 0; r++)
-            if (ksceKernelMemcpyKernelToUser((uint8_t *)dst + r * req.dst_stride, k + r * request.width * bpp,
-                                             request.width * bpp) < 0)
+            if (ksceKernelMemcpyKernelToUser((uint8_t *)dst + r * req.dst_stride, k + r * rw * bpp, rw * bpp) < 0)
                 rc = VJO_ERR_COPY;
     }
     if (kalloc) buffers_kstrip_free();
@@ -1004,15 +1015,20 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
      * cascade's pinned model when the request gives it a time ceiling; or (API 21,
      * a request by tiers) the pinned model of one of its tiers, or of the tier
      * above them for the cascade, by its tier; or (API 47) the vertical model,
-     * for a request with a VJO_GAME_OCR_S_VERTICAL mode (on or auto), by tiers or by name. */
+     * for a request with a VJO_GAME_OCR_S_VERTICAL mode (on or auto), by tiers or by name;
+     * or (API 26, 53) the gate's or the spotter's pinned weights, for a request that asks for it. */
     uint32_t size, lm_tier = which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE
                              ? which - VJO_GAME_OCR_OPEN_LM + 1u : 0u;
     uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
                           ? which - VJO_GAME_OCR_OPEN_TIER + 1u : 0u;
     int gate = which == VJO_GAME_OCR_OPEN_GATE; /* API 26: the text-presence gate's weights, for its request only */
+    int spot = which == VJO_GAME_OCR_OPEN_SPOT; /* API 53: the text spotter's weights, for its request only */
     if (gate) {
         if (!(request.speed & VJO_GAME_OCR_S_GATE)) return VJO_ERR_ARG;
         name = VJO_VOCR_GATE_NAME;
+    } else if (spot) {
+        if (!(request.speed & VJO_GAME_OCR_S_SPOT)) return VJO_ERR_ARG;
+        name = VJO_VOCR_SPOT_NAME;
     } else if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
         lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
     else if (model_tier && tier_allowed(&request, model_tier)) name = tier_name(model_tier);
@@ -1027,7 +1043,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     /* API 47: the vertical model opens by its own open only (a request with a vertical mode), never by the name
      * a request gives as its model or fallback */
     if (which != VJO_GAME_OCR_OPEN_VERTICAL && !strcmp(name, VJO_VOCR_VERTICAL_NAME)) return VJO_ERR_ARG;
-    size = gate ? VJO_VOCR_GATE_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
+    size = gate ? VJO_VOCR_GATE_BYTES : spot ? VJO_VOCR_SPOT_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;
     model_io.pid = pid;

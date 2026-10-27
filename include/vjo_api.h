@@ -111,8 +111,15 @@
  * VJO_ROWS_HOOK also publishes the region's current scene once the region shows another than the trusted line's
  * (49 refused it with VJO_ERR_FORMAT, and the worker read the first pass: a strip beside VJO_GAME_RESERVE_HOOK_ONLY,
  * which a game with 1 MiB free refused, so the job failed although the hook had its text). FORMAT now means only
- * that the region has no screen yet. Sizes and layouts are unchanged. */
-#define VJO_API_VERSION 51
+ * that the region has no screen yet. Sizes and layouts are unchanged.
+ * 53: the text spotter as the game worker's finder (vita-vn-ocr #128, textspot7's pick; docs/vita-vn-ocr.md "The
+ * spotter finder"): VjoGameOcrRequest.speed bit 24 (VJO_GAME_OCR_S_SPOT, config.ini ocr_finder = spotter, off by
+ * default) has the job read the game's whole frame with the spotter, then keep, join and grow its boxes in the
+ * region (vocr_textspot7_post_rows); its weights' file in the kernel's broker for such a request
+ * (VJO_GAME_OCR_OPEN_SPOT, VJO_VOCR_SPOT_NAME), a new step kind (spot) and block (VJO_GITEM_SPOT). Sizes and
+ * layouts are unchanged. 52 is draft #355's (ocr_pause); the unmerged branch feat/vocr6-spotter-finder called the
+ * same feature 45, on the region and with a refinement setting, which this one has not. */
+#define VJO_API_VERSION 53
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

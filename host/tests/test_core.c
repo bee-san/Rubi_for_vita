@@ -830,6 +830,31 @@ static void test_config(void)
         TEST_CHECK(c.ocr_line_fix == fixes[k].want && c.n_warnings == fixes[k].warnings);
         TEST_MSG("%s: %d, %d warnings", fixes[k].text, c.ocr_line_fix, c.n_warnings);
     }
+    /* API 53: the finder, GRAD by default (docs/vita-vn-ocr.md "The spotter finder": textspot7's pick is not resolved
+     * better than GRAD + refine with the line fixes on unseen games, so it is opt-in). Any case; an unknown or empty
+     * value keeps the one before, warned with the key's name. ocr_spotter_refine (the unmerged API 45 branch's) is
+     * no setting: warned, nothing set. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_finder == VJO_FINDER_GRAD && VJO_FINDER_DEFAULT == VJO_FINDER_GRAD);
+    static const struct { const char *text, *key; int finder, warnings; } finders[] = {
+        {"ocr_finder = spotter\n", NULL, VJO_FINDER_SPOTTER, 0},
+        {"OCR_Finder = SPOTTER\n", NULL, VJO_FINDER_SPOTTER, 0},
+        {"ocr_finder = spotter\nocr_finder = grad\n", NULL, VJO_FINDER_GRAD, 0},
+        {"ocr_finder = spotter ; vita-vn-ocr's text spotter\n", NULL, VJO_FINDER_SPOTTER, 0},
+        {"ocr_finder = spotter\nocr_finder = textdet\n", "ocr_finder", VJO_FINDER_SPOTTER, 1},
+        {"ocr_finder =\n", "ocr_finder", VJO_FINDER_GRAD, 1},
+        {"ocr_finder = spotter\nocr_spotter_refine = on\n", "ocr_spotter_refine", VJO_FINDER_SPOTTER, 1}};
+    for (unsigned i = 0; i < sizeof(finders) / sizeof(finders[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, finders[i].text, strlen(finders[i].text));
+        TEST_CHECK_(c.ocr_finder == finders[i].finder && c.n_warnings == finders[i].warnings && !c.ocr_text_gate &&
+                        c.ocr_refine_lines == 2 && c.ocr_line_fix == VJO_LINE_FIX_DEFAULT,
+                    "%s", finders[i].text);
+        if (finders[i].key) TEST_CHECK(strstr(c.warnings[0], finders[i].key) != NULL); /* named, never the value */
+    }
+    /* the template names it with its default (docs/config.example.ini is the same text), and nothing else of it */
+    TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_finder = " VJO_FINDER_DEFAULT_TEXT "\n") != NULL &&
+               !strstr(vjo_config_default_text(), "ocr_spotter_refine"));
     /* API 31, audit-hooks F3: the hooks' table sites, on by default; off makes the Shell send
      * VJO_TEXT_SOURCE_NO_SITES (only the string copies hooked). Any case; an unknown value is on, warned. */
     vjo_config_defaults(&c);

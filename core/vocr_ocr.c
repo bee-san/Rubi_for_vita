@@ -2,9 +2,13 @@
  * verified weights (resident between jobs, or one-shot) -> vocr_run per line,
  * straight from the strip that holds it. No copy of the whole region is made.
  * The runtime (vocr.c, vocr_lines.c, vocr_lines_rows.c) is bee-san/vita-vn-ocr's,
- * at the commit cmake/VocrOCR.cmake pins. */
+ * at the commit cmake/VocrOCR.cmake pins; API 53's alternative finder, the text
+ * spotter on the whole frame and textspot7's post-pass in the region
+ * (vocr_textspot6.c, vocr_textspot7.c; VjoVocrPolicy.spot), at the commit it
+ * pins for them. */
 #include "vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
+#include "../include/vjo_ledger_budget.h" /* VJO_BUDGET_GAME_SPOT: the spotter's block, checked below */
 
 #include <bearssl_hash.h>
 #include <string.h>
@@ -19,6 +23,8 @@
 #include "vocr_lm.h"
 #include "vocr_textgate.h"
 #include "vocr_vertical.h"
+#include "vocr_textspot6.h"
+#include "vocr_textspot7.h"
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
 typedef char vjo_vocr_refine_matches_runtime[VJO_VOCR_REFINE_ALL == VOCR_REFINE_DEFAULT ? 1 : -1];
@@ -27,6 +33,16 @@ typedef char vjo_vocr_gate_mode_matches_runtime[VJO_VOCR_GATE_MODE == VOCR_TEXTG
 /* A model of columns keeps the column finder's flags in finder_mode's low byte. */
 typedef char vjo_vocr_column_flags_fit[(VOCR_COLUMNS_FLAGS & ~0xFFu) == 0 && (VJO_VOCR_FINDER_COLUMNS & 0xFFu) == 0
                                        ? 1 : -1];
+/* API 53: the spotter's pins (include/vjo_vocr_sizes.h): a blob the protocol's rule admits, its SHA-256 as 64 hex
+ * digits, an arena within the rule's, and a frame the runtime reads (VOCR_TEXTSPOT_MAX_SIDE). Its post-pass takes
+ * every box the spotter can give (VOCR_TEXTSPOT_MAX_BOXES <= VOCR_T7_MAX_BOXES). */
+typedef char vjo_vocr_spot_pins_fit[VJO_VOCR_SPOT_BYTES > 32u && VJO_VOCR_SPOT_BYTES <= VJO_VOCR_SPOT_MAX_BYTES &&
+                                    sizeof(VJO_VOCR_SPOT_SHA256) == 65u && VJO_VOCR_SPOT_ARENA > 0u &&
+                                    VJO_VOCR_SPOT_ARENA <= VJO_VOCR_SPOT_ARENA_MAX &&
+                                    VJO_VOCR_SPOT_ARENA_MAX < 0x7FFFFF00u ? 1 : -1];
+typedef char vjo_vocr_spot_frame_fits[VJO_OCR_MAX_WIDTH <= VOCR_TEXTSPOT_MAX_SIDE &&
+                                      VJO_OCR_MAX_HEIGHT <= VOCR_TEXTSPOT_MAX_SIDE &&
+                                      VOCR_TEXTSPOT_MAX_BOXES <= VOCR_T7_MAX_BOXES ? 1 : -1];
 /* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.3.0 (VOCR5, the
  * three model tiers), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0
  * (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
@@ -179,6 +195,14 @@ static void lm_opts(const VjoVocrLm *lm, vocr_lm_opts *o)
 typedef char vjo_vocr_vita_structs_pinned[ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx)) ==
                                           VJO_VOCR_VITA_STRUCTS ? 1 : -1];
 #endif
+/* API 53: the spotter's block (its weights and their parsed form) for the pin is exactly the ledger's budget on the
+ * Vita's 32-bit build (include/vjo_ledger_budget.h VJO_BUDGET_GAME_SPOT: another pin moves that line too); the
+ * 64-bit host's parsed form is larger, and the host tests' own pin (VJO_VOCR_SPOT_TEST) a smaller blob. */
+#ifndef VJO_VOCR_SPOT_TEST
+typedef char vjo_vocr_spot_block_fits[sizeof(void *) != 4u ||
+                                      ((ALIGN16((size_t)VJO_VOCR_SPOT_BYTES) + ALIGN16(sizeof(vocr_textspot6)) +
+                                        4095u) & ~(size_t)4095u) == VJO_BUDGET_GAME_SPOT ? 1 : -1];
+#endif
 /* Weights are read and hashed in pieces of this size: the game worker's kernel
  * broker stages exactly one piece per request (VJO_GAME_OCR_MODEL_CHUNK). */
 #define READ_CHUNK 32768u
@@ -212,6 +236,18 @@ typedef struct {
     size_t refine_off, refine_bytes; /* the refinement's arena, inside total (0 bytes: off) */
     size_t gate_off, gate_bytes;     /* the gate's arena, inside the scratch after the finder's (0 bytes: off) */
     vocr_textgate_model gate;        /* its weights (VjoVocrPolicy.gate_res), loaded for the job */
+    /* API 53: the text spotter (VjoVocrPolicy.spot) finds the lines: its part of the scratch (SpotLayout, from the
+     * scratch's start), the recognizer's arena over it once the lines are taken */
+    int spot;
+    const vocr_textspot6 *spot_m;    /* its parsed weights, in VjoVocrPolicy.spot_res's block */
+    struct SpotLayout {
+        size_t arena;                /* the spotter's arena (vocr_textspot6_frame_arena_bytes for the frame) */
+        size_t result, fboxes, rboxes; /* offsets: its VocrTextspot6Set, the frame's and the region's VocrT7Box */
+        size_t post, post_bytes;     /* the post-pass's arena (vocr_textspot7_rows_arena_bytes_steps) */
+        size_t strip, state;         /* the frame's strip and its rows' state, when strip_rows */
+        unsigned strip_rows;         /* the frame's strip rows; 0: the region is the frame (its stream reads it) */
+        size_t total;
+    } sp;
     unsigned helpers;     /* helpers laid out (VjoVocrPool), 0: none, and no line slots */
     size_t slots_off;     /* the line slots: the caller's (SLOT_BYTES), then each helper's (HELPER_BYTES) */
 } Layout;
@@ -305,9 +341,23 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     l->lm = l->cascade = 0;
     l->refine_off = l->refine_bytes = 0;
     l->gate_off = l->gate_bytes = 0;
+    l->spot = 0;
+    l->spot_m = NULL;
+    memset(&l->sp, 0, sizeof(l->sp));
     l->helpers = 0;
     l->slots_off = 0;
     return 0;
+}
+
+/* API 53: the scratch with the spotter's part (vjo_vocr_spot_bytes): the largest of the finder's arena, the
+ * spotter's part and the recognizer's arena, which use it one after the other; the runtime's structs follow it.
+ * Only a model of rows takes it (a model of columns' rotation buffer would follow the structs). */
+static void layout_spot(Layout *l, size_t spot_bytes)
+{
+    if (ALIGN16(spot_bytes) <= l->scratch) return;
+    l->scratch = ALIGN16(spot_bytes);
+    l->structs_off = l->scratch_off + l->scratch;
+    l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
 }
 
 /* The LM extras, after the job's workspace (VjoVocrPolicy.lm): the top-K of
@@ -416,6 +466,94 @@ size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height)
     return layout(vjo_vocr_model(model), width, height, &l) < 0 ? 0 : l.total;
 }
 
+/* ---- API 53: the text spotter's sizes ---- */
+
+/* The frame's rows' state, when the region is not the whole frame (its own stream, frame_stream): per row its
+ * checksum, SPOT_FRAME_SLOTS earlier states and two bits, as the region's (a Stream's capture block after its strip),
+ * with the fewest earlier states a stream keeps: its rows are read in the spotter's pass, then the kept boxes' rows
+ * once more. */
+#define SPOT_FRAME_SLOTS 2u
+#define BIT_BYTES(h) (((size_t)(h) + 7u) / 8u) /* a bit per row (a Stream's seen and cycled bits) */
+static size_t frame_state_bytes(unsigned h)
+{
+    return 4u * (size_t)h + 2u * SPOT_FRAME_SLOTS * (size_t)h + 2u * BIT_BYTES(h);
+}
+
+/* Its parsed weights in res's block, after the weights; NULL without verified ones. */
+static const vocr_textspot6 *spot_model(const VjoVocrSpotResident *res)
+{
+    return res && res->verified && res->data
+           ? (const vocr_textspot6 *)(const void *)(res->data + ALIGN16((size_t)VJO_VOCR_SPOT_BYTES)) : NULL;
+}
+
+size_t vjo_vocr_spot_block_bytes(void)
+{
+    return ALIGN16((size_t)VJO_VOCR_SPOT_BYTES) + ALIGN16(sizeof(vocr_textspot6));
+}
+
+/* The spotter's part of the scratch for a w x h region of a fw x fh frame (vjo_vocr_spot_bytes), with the arena of
+ * `arena` bytes: 0, or -1 for a region or frame the job does not take. */
+static int spot_layout(size_t arena, unsigned w, unsigned h, unsigned fw, unsigned fh, struct SpotLayout *o)
+{
+    size_t off;
+    memset(o, 0, sizeof(*o));
+    if (!fw || !fh) fw = w, fh = h; /* 0 x 0: the region is the frame */
+    if (!arena || arena > VJO_VOCR_SPOT_ARENA || !region_ok(w, h) || !region_ok(fw, fh) || w > fw || h > fh)
+        return -1;
+    o->arena = arena;
+    off = ALIGN16(arena);
+    o->result = off;
+    off += ALIGN16(sizeof(VocrTextspot6Set));
+    o->fboxes = off;
+    off += ALIGN16(VOCR_T7_MAX_BOXES * sizeof(VocrT7Box));
+    o->rboxes = off;
+    off += ALIGN16(VOCR_T7_MAX_BOXES * sizeof(VocrT7Box));
+    o->post_bytes = vocr_textspot7_rows_arena_bytes_steps(w, h, VJO_VOCR_SPOT_POST);
+    o->post = off;
+    off += ALIGN16(o->post_bytes);
+    if (w != fw || h != fh) { /* the frame read beside the region: its own strip and rows' state */
+        o->strip_rows = vjo_vocr_strip_rows(fw, fh);
+        o->strip = off;
+        off += ALIGN16((size_t)o->strip_rows * fw);
+        o->state = off;
+        off += ALIGN16(frame_state_bytes(fh));
+    }
+    o->total = off;
+    return 0;
+}
+
+size_t vjo_vocr_spot_bytes(const VjoVocrSpotResident *res, unsigned width, unsigned height, unsigned frame_w,
+                           unsigned frame_h)
+{
+    const vocr_textspot6 *m = spot_model(res);
+    struct SpotLayout o;
+    if (!m) return 0;
+    if (!frame_w || !frame_h) frame_w = width, frame_h = height;
+    if (!region_ok(frame_w, frame_h)) return 0;
+    return spot_layout(vocr_textspot6_frame_arena_bytes(m, frame_w, frame_h), width, height, frame_w, frame_h, &o)
+           ? 0 : o.total;
+}
+
+size_t vjo_vocr_job_bytes_spot(const char *model, unsigned width, unsigned height, size_t spot_bytes)
+{
+    Layout l;
+    const VjoVocrModel *m = vjo_vocr_model(model);
+    if (layout(m, width, height, &l) < 0) return 0;
+    if (!columns_of(m)) layout_spot(&l, spot_bytes); /* a model of columns reads without the spotter */
+    return l.total;
+}
+
+size_t vjo_vocr_spot_bytes_pin(unsigned width, unsigned height, unsigned frame_w, unsigned frame_h)
+{
+    struct SpotLayout o;
+    return spot_layout(VJO_VOCR_SPOT_ARENA, width, height, frame_w, frame_h, &o) ? 0 : o.total;
+}
+
+size_t vjo_vocr_spot_bytes_max(void)
+{
+    return vjo_vocr_spot_bytes_pin(VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT - 1u, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT);
+}
+
 size_t vjo_vocr_helper_bytes(const char *model)
 {
     const VjoVocrModel *m = vjo_vocr_model(model);
@@ -456,9 +594,8 @@ unsigned vjo_vocr_strip_rows(unsigned width, unsigned height)
 }
 
 /* Capture block: [strip: rows x width | sums: 4 x height | ring: slots x 2 x
- * height | seen, cycled: 1 bit per row each]. slots: as many earlier states
- * as fit. */
-#define BIT_BYTES(h) (((size_t)(h) + 7u) / 8u)
+ * height | seen, cycled: 1 bit per row each (BIT_BYTES)]. slots: as many earlier
+ * states as fit. */
 static size_t capture_fixed(unsigned width, unsigned height, unsigned rows)
 {
     return ALIGN4((size_t)rows * width) + 4u * (size_t)height + ALIGN4(2u * BIT_BYTES(height));
@@ -504,7 +641,7 @@ static uint32_t clock_us(const VjoPlatform *p)
  * back to one of its recent states (an animated icon; cycle_cap rows at most:
  * new text, or a box that clears, changes more rows than an icon). While
  * settling, a change is only noted (changed). */
-typedef struct {
+typedef struct Stream {
     const VjoGreySource *src;
     const VjoPlatform *p;
     const VjoVocrPolicy *pol; /* never NULL: a zeroed one is API 19's job */
@@ -529,6 +666,10 @@ typedef struct {
     uint32_t settle_left;   /* the job's waiting budget left */
     vocr_textgate_state *gate; /* the gate reading this try's rows, or NULL (VjoVocrPolicy.gate) */
     unsigned gate_next;     /* the next row it takes */
+    /* API 53, the frame's stream (VjoVocrPolicy.spot_frame): the region's, whose rows inside the frame's (at rx, ry)
+     * are checked against it too (cross_check); NULL on the region's own stream */
+    struct Stream *region;
+    unsigned rx, ry;
     int err;
 } Stream;
 
@@ -591,6 +732,19 @@ static void stream_check(Stream *s, unsigned y, const unsigned char *p, int firs
     s->err = VJO_E_SCREEN_CHANGED;
 }
 
+/* API 53: the frame's rows [y, y + n) at dst (a frame stream's read) that lie in the region, checked as reads of
+ * the region's rows (its stream's checksums and recent states: the region's first pass is in before the frame is
+ * read), so that a change of the region between its capture and the spotter's frame is seen as any other is. */
+static void cross_check(Stream *f, unsigned y, unsigned n, const unsigned char *dst)
+{
+    Stream *s = f->region;
+    for (unsigned r = 0; r < n && !s->err; r++) {
+        const unsigned fy = y + r;
+        if (fy >= f->ry && fy - f->ry < s->h) stream_check(s, fy - f->ry, dst + (size_t)r * f->w + f->rx, 0);
+    }
+    if (s->err && !f->err) f->err = s->err;
+}
+
 /* Rows [y, y + n) through the source into dst (stride w), checked. */
 static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
 {
@@ -631,6 +785,7 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
         }
     }
     for (unsigned r = 0; r < n; r++) stream_check(s, y + r, dst + (size_t)r * s->w, first);
+    if (s->region && !s->err) cross_check(s, y, n, dst);
     if (!s->err && !first && s->cover_next >= s->h) {
         s->verified_from = s->cover_from;
         s->verified = 1;
@@ -907,6 +1062,97 @@ static int resident_gate(const VjoPlatform *p, const char *dir, VjoVocrGateResid
     r->size = file.size;
     r->stamp = file.stamp;
     st->gate_read = 1;
+    return VJO_OK;
+}
+
+/* ---- API 53: the text spotter's weights ---- */
+
+/* The pinned SHA-256 (64 lowercase hex digits, include/vjo_vocr_sizes.h VJO_VOCR_SPOT_SHA256) as 32 bytes; 0, or -1
+ * for a string that is not one (no file then matches). The placeholder's zeros decode, and no file has them. */
+static int spot_digest(unsigned char out[32])
+{
+    static const char hex[] = VJO_VOCR_SPOT_SHA256;
+    for (unsigned i = 0; i < 32u; i++) {
+        unsigned v = 0;
+        for (unsigned k = 0; k < 2u; k++) {
+            char c = hex[2u * i + k];
+            unsigned d = c >= '0' && c <= '9' ? (unsigned)(c - '0') : c >= 'a' && c <= 'f' ? (unsigned)(c - 'a') + 10u : 16u;
+            if (d > 15u) return -1;
+            v = v << 4 | d;
+        }
+        out[i] = (unsigned char)v;
+    }
+    return 0;
+}
+
+int vjo_vocr_spot_drop(VjoVocrSpotResident *r)
+{
+    if (!r) return 0;
+    r->verified = 0;
+    r->size = r->stamp = 0;
+    if (!r->data) return 0;
+    if (r->release && r->release(r->ud)) return -1;
+    r->data = NULL;
+    r->capacity = 0;
+    return 0;
+}
+
+static int spot_drop_with(VjoVocrSpotResident *r, int rc)
+{
+    return vjo_vocr_spot_drop(r) ? VJO_E_OCR_UNAVAILABLE : rc;
+}
+
+int vjo_vocr_spot_load(const VjoPlatform *p, const char *dir, VjoVocrSpotResident *r, const VjoGreySource *im,
+                       unsigned *read)
+{
+    static const VjoGreySource no_source; /* no cancel test */
+    char path[256];
+    unsigned char sha[32];
+    VjoFile file;
+    int rc;
+    if (read) *read = 0;
+    if (!p || !dir || !r) return VJO_E_SOURCE;
+    if (!im) im = &no_source;
+    if (spot_digest(sha) < 0 || join_path(path, sizeof(path), dir, VJO_VOCR_SPOT_NAME) < 0)
+        return spot_drop_with(r, VJO_E_OCR_MODEL);
+    memset(&file, 0, sizeof(file));
+    if (!p->file_open || p->file_open(p->ud, path, &file) < 0)
+        /* A cancelled open proves nothing about the file: verified weights stay. */
+        return cancelled(im) ? VJO_E_CANCELLED : spot_drop_with(r, VJO_E_OCR_MODEL);
+    if (file.size != VJO_VOCR_SPOT_BYTES || !file.read || !file.close) {
+        if (file.close) file.close(file.ctx);
+        return spot_drop_with(r, VJO_E_OCR_MODEL);
+    }
+    if (r->verified && r->data && file.stamp && file.stamp == r->stamp && file.size == r->size) {
+        file.close(file.ctx);
+        return VJO_OK;
+    }
+    /* From here until the hash matches and the runtime takes them, the block holds no weights. */
+    r->verified = 0;
+    if (!r->data) {
+        unsigned char *data = r->alloc ? (unsigned char *)r->alloc(r->ud, vjo_vocr_spot_block_bytes()) : NULL;
+        if (!data) {
+            file.close(file.ctx);
+            return VJO_E_OOM;
+        }
+        r->data = data;
+        r->capacity = vjo_vocr_spot_block_bytes();
+        if ((uintptr_t)data & 15u) {
+            file.close(file.ctx);
+            return spot_drop_with(r, VJO_E_OOM);
+        }
+    }
+    rc = read_verified(&file, VJO_VOCR_SPOT_BYTES, sha, r->data, im);
+    file.close(file.ctx);
+    if (rc) return spot_drop_with(r, rc); /* partly read: memory is held only for verified weights */
+    /* Verified bytes the runtime refuses (a multi-scale blob in a VOCR_TEXTSPOT6_NO_MS build) would fail every job. */
+    if (vocr_textspot6_load((vocr_textspot6 *)(void *)(r->data + ALIGN16((size_t)VJO_VOCR_SPOT_BYTES)), r->data,
+                            VJO_VOCR_SPOT_BYTES) != VOCR_LINES_OK)
+        return spot_drop_with(r, VJO_E_OCR_MODEL);
+    r->verified = 1;
+    r->size = file.size;
+    r->stamp = file.stamp;
+    if (read) *read = 1;
     return VJO_OK;
 }
 
@@ -1960,6 +2206,121 @@ static void slot_line(Slot *sl, const unsigned char *pixels, size_t stride, unsi
     sl->img.format = VOCR_GREY8 | (dark ? VOCR_INVERT : 0);
 }
 
+/* API 53: the frame's stream (VjoVocrPolicy.spot_frame), for a region that is not the whole frame: the same
+ * stream as the region's over the frame's rows, its strip and its rows' state in the spotter's part of the scratch,
+ * every row checked as the region's are (its checksum kept at its first read and compared at every later one, an
+ * animated icon's recent states kept as the region's are, with the stable-text wait), those inside the region
+ * against the region's too (cross_check). It never reads a first pass: the region's is the capture the kernel
+ * publishes. */
+static void frame_stream(Stream *f, Stream *s, const struct SpotLayout *sp, unsigned char *base)
+{
+    const VjoGreySource *src = s->pol->spot_frame;
+    memset(f, 0, sizeof(*f));
+    f->src = src;
+    f->p = s->p;
+    f->pol = s->pol;
+    f->st = s->st;
+    f->w = src->width;
+    f->h = src->height;
+    f->strip_rows = sp->strip_rows;
+    f->strip = base + sp->strip;
+    f->slots = SPOT_FRAME_SLOTS;
+    f->sums = (uint32_t *)(void *)(base + sp->state);
+    f->ring = (uint16_t *)(void *)(f->sums + f->h);
+    f->seen = (unsigned char *)(f->ring + (size_t)f->slots * f->h);
+    f->cyc = f->seen + BIT_BYTES(f->h);
+    f->cycle_cap = s->cycle_cap;
+    f->learn = s->learn;
+    f->first_next = f->h; /* no first pass of its own */
+    f->region = s;
+    f->rx = s->pol->spot_x;
+    f->ry = s->pol->spot_y;
+    bits_clear(f);
+}
+
+/* The spotter saw columns in the region and no row, with vertical_check (ocr_vertical = auto): GRAD's path reads
+ * the try, whose check may read the region's columns (spot_lines). */
+#define SPOT_COLUMNS 1
+
+/* API 53: the text spotter's lines for this try (VjoVocrPolicy.spot, l->spot): vocr_textspot6_find_rows on the
+ * game's whole frame at its blob's scale (no SCALE flag) with VOCR_TEXTSPOT_NO_DARK (its one pass over the frame),
+ * then the dark flag of each horizontal box whose centre lies in the region (textspot7's rule; vocr_line_dark_rows,
+ * the runtime's own: the boxes the post-pass keeps, so the frame's other boxes cost no read), then
+ * vocr_textspot7_post_rows with the region (its rows: the region's stream) and VJO_VOCR_SPOT_POST's steps on the
+ * spotter's horizontal boxes in its order (vita-vn-ocr eval/textspot7.py frame_boxes_of). Its boxes, in that order,
+ * are the lines (VJO_VOCR_MAX_LINES at most: truncated past them): the post-pass of vocr_textspot6_find_rows' own
+ * boxes with their dark flags, bit for bit (host/tests/test_vocr_spot.c). A region that is the whole frame is read by
+ * its own stream (the spotter's pass is the region's first); any other region's first pass is read first, then the
+ * frame through its own stream (frame_stream). VOCR_LINES_OK; VOCR_LINES_E_SOURCE when a row could not be read
+ * (s->err says why: the job's error, as on GRAD's path); SPOT_COLUMNS; or the runtime's refusal (GRAD's path reads
+ * the try). */
+static int spot_lines(Stream *s, const Layout *l, unsigned char *ws, VocrLineSet *set, VjoVocrStats *st)
+{
+    const VjoVocrPolicy *pol = s->pol;
+    const struct SpotLayout *sp = &l->sp;
+    unsigned char *base = ws + l->scratch_off;
+    VocrTextspot6Set *out = (VocrTextspot6Set *)(void *)(base + sp->result);
+    VocrT7Box *fb = (VocrT7Box *)(void *)(base + sp->fboxes), *rb = (VocrT7Box *)(void *)(base + sp->rboxes);
+    const int x0 = sp->strip_rows ? (int)pol->spot_x : 0, y0 = sp->strip_rows ? (int)pol->spot_y : 0;
+    const int x1 = x0 + (int)s->w, y1 = y0 + (int)s->h;
+    Stream frame, *f = s;
+    VocrLinesRows rows, region = {s->w, s->h, VOCR_LINES_GREY, stream_row, s};
+    unsigned n = 0, m = 0, in_rows = 0, in_cols = 0, strips = 0;
+    int rc;
+    set->count = set->truncated = 0;
+    if (sp->strip_rows) {
+        if (stream_pass(s) < 0) return VOCR_LINES_E_SOURCE; /* the region's first pass: the capture */
+        frame_stream(&frame, s, sp, base);
+        f = &frame;
+        strips = st->strips;
+    }
+    rows = (VocrLinesRows){f->w, f->h, VOCR_LINES_GREY, stream_row, f};
+    rc = vocr_textspot6_find_rows(l->spot_m, &rows, VOCR_TEXTSPOT_NO_DARK, base, sp->arena, out);
+    for (unsigned i = 0; !rc && i < out->count; i++) {
+        const VocrTextspot6Box *b = &out->boxes[i];
+        const int cx = 2 * (int)b->x + (int)b->w, cy = 2 * (int)b->y + (int)b->h;
+        const int in = 2 * x0 <= cx && cx < 2 * x1 && 2 * y0 <= cy && cy < 2 * y1; /* vocr_textspot7_post's keep */
+        int dark = 0;
+        if (b->vertical) { /* no recognizer here reads a column found this way */
+            in_cols += (unsigned)in;
+            continue;
+        }
+        in_rows += (unsigned)in;
+        if (in && (dark = vocr_line_dark_rows(&rows, b->x, b->y, b->w, b->h)) < 0) rc = dark;
+        fb[n].x = b->x;
+        fb[n].y = b->y;
+        fb[n].w = b->w;
+        fb[n].h = b->h;
+        fb[n].conf = b->conf;
+        fb[n++].dark = dark > 0;
+    }
+    if (f != s) {
+        st->spot_strips = st->strips - strips;
+        if (f->err && !s->err) s->err = f->err; /* the frame's error is the job's (a change of the screen: a retry) */
+    }
+    if (rc) return rc;
+    st->spot_boxes = out->count;
+    st->spot_truncated = out->truncated;
+    if (pol->vertical_check && in_cols && !in_rows) return SPOT_COLUMNS;
+    rc = vocr_textspot7_post_rows(fb, n, x0, y0, x1, y1, &region, VJO_VOCR_SPOT_POST, base + sp->post,
+                                  sp->post_bytes, rb, &m);
+    if (rc) return rc;
+    for (unsigned i = 0; i < m; i++) {
+        VocrLine *ln;
+        if (set->count == VJO_VOCR_MAX_LINES) {
+            set->truncated = 1;
+            break;
+        }
+        ln = &set->lines[set->count++];
+        ln->x = (unsigned)rb[i].x;
+        ln->y = (unsigned)rb[i].y;
+        ln->w = (unsigned)rb[i].w;
+        ln->h = (unsigned)rb[i].h;
+        ln->dark = rb[i].dark;
+    }
+    return VOCR_LINES_OK;
+}
+
 /* One capture of the region: lines, then (weights) each line recognized. */
 static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi,
                      const VjoGreySource *im, VjoVocrResident *res, unsigned char *ws, const Layout *l,
@@ -2010,60 +2371,81 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     st->gate_score = 0;
     st->gate_us = 0;
     if (l->gate_bytes) st->gate_rc = 0;
+    st->spot_ran = st->spot_boxes = st->spot_truncated = st->spot_strips = 0;
+    st->spot_bytes = 0;
+    st->spot_us = 0;
+    if (l->spot) st->spot_rc = 0; /* this try's (a set-up refusal, without l->spot, stays) */
     t0 = clock_us(p);
-    /* API 26: the gate takes the rows the finder reads (stream_row). It scores row boxes: a model of columns
-     * (vertical text, API 47) reads without it. */
-    if (l->gate_bytes && !cols) {
-        int grc = vocr_textgate_begin(&gate, &l->gate, VJO_VOCR_GATE_MODE, VJO_VOCR_GATE_K, w, im->height,
-                                      ws + l->gate_off, l->gate_bytes);
-        if (grc) {
-            st->gate_rc = grc;
-        } else {
-            s->gate = &gate;
-            s->gate_next = 0;
+    int grad = 1; /* GRAD's path finds this try's lines (API 53: without the spotter, or after its refusal) */
+    if (l->spot) {
+        /* API 53: the spotter's boxes are the lines (VjoVocrPolicy.spot). A refusal of the runtime's (not a row that
+         * could not be read), or columns it saw with vertical_check, leaves this try's lines to GRAD's path below,
+         * which reads the rows again, each checked. */
+        const uint32_t s0 = clock_us(p);
+        rc = spot_lines(s, l, ws, &set, st);
+        st->spot_us = clock_us(p) - s0;
+        st->spot_bytes = l->sp.total;
+        if (!rc) st->spot_ran = 1;
+        else if (rc != VOCR_LINES_E_SOURCE) st->spot_rc = rc == SPOT_COLUMNS ? VJO_E_VERTICAL : rc;
+        grad = rc && rc != VOCR_LINES_E_SOURCE;
+        if (grad) rc = VOCR_LINES_OK;
+    }
+    if (grad) {
+        /* GRAD's path, the job's own finder (API 53: the only one without the spotter, and its fallback) */
+        /* API 26: the gate takes the rows the finder reads (stream_row). It scores row boxes: a model of columns
+         * (vertical text, API 47) reads without it. */
+        if (l->gate_bytes && !cols) {
+            int grc = vocr_textgate_begin(&gate, &l->gate, VJO_VOCR_GATE_MODE, VJO_VOCR_GATE_K, w, im->height,
+                                          ws + l->gate_off, l->gate_bytes);
+            if (grc) {
+                st->gate_rc = grc;
+            } else {
+                s->gate = &gate;
+                s->gate_next = 0;
+            }
         }
-    }
-    /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h). API 50: the rows with
-     * pol->line_fix's fixes; 0 is vocr_find_lines_rows exactly (vita-vn-ocr's check-lines-fix). With API 47's
-     * check, a region at least as tall as wide (the rule's first case: a box drawn around columns) is checked on
-     * the frozen finder's rows, which the rule was chosen on: the column fix joins a row's parts across a gap, as
-     * between the columns and a speaker's name, and so hid 52 of 863 such regions of hooked vertical pages from
-     * it. Where they do not look vertical, its rows are found again with the fixes; a wider region is found
-     * once, with them (no hooked horizontal region of 101,651 taken for vertical text either way). */
-    const unsigned fix = cols ? 0u : pol->line_fix;
-    const int frozen_check = fix && pol->vertical_check && im->height >= w;
-    rc = cols ? vocr_find_columns_rows(&region, mi->finder_mode & 0xFFu, ws + l->scratch_off, l->finder, &set)
-              : vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, frozen_check ? 0u : fix,
-                                         ws + l->scratch_off, l->finder, &set);
-    /* API 47, auto (VjoVocrPolicy.vertical_check): rows that look like vertical text are not read, and no
-     * weights are (nor the gate's score, made for rows): the caller reads the region's columns instead
-     * (game_ocr/main.c). */
-    if (!rc && pol->vertical_check && !cols && vjo_vocr_rows_vertical(set.lines, set.count, w, im->height)) {
-        s->gate = NULL;
-        st->find_us = clock_us(p) - t0;
-        st->lines = set.count;
-        st->truncated = set.truncated;
-        return VJO_E_VERTICAL;
-    }
-    if (!rc && frozen_check) /* not vertical: the rows the job reads, with the fixes */
-        rc = vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, fix, ws + l->scratch_off, l->finder, &set);
-    if (s->gate) {
-        /* Scored on the finder's boxes; under the threshold the region holds no text: no line is read
-         * (a hidden text box, a CG screen). Any error keeps the lines (the job reads as without it). */
-        int score = 0, grc;
-        uint32_t g0 = clock_us(p);
-        s->gate = NULL;
-        /* a region the finder found no line in has nothing to stop: not scored */
-        grc = rc || !set.count ? 0 : vocr_textgate_score(&gate, &set, &score);
-        st->gate_us += clock_us(p) - g0;
-        if (grc) st->gate_rc = grc;
-        else if (!rc && set.count) {
-            st->gate_ran = 1;
-            st->gate_score = score;
-            if (score < VJO_VOCR_GATE_T) {
-                st->gate_stopped = set.count;
-                set.count = 0;
-                set.truncated = 0;
+        /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h). API 50: the rows with
+         * pol->line_fix's fixes; 0 is vocr_find_lines_rows exactly (vita-vn-ocr's check-lines-fix). With API 47's
+         * check, a region at least as tall as wide (the rule's first case: a box drawn around columns) is checked
+         * on the frozen finder's rows, which the rule was chosen on: the column fix joins a row's parts across a
+         * gap, as between the columns and a speaker's name, and so hid 52 of 863 such regions of hooked vertical
+         * pages from it. Where they do not look vertical, its rows are found again with the fixes; a wider region
+         * is found once, with them (no hooked horizontal region of 101,651 taken for vertical text either way). */
+        const unsigned fix = cols ? 0u : pol->line_fix;
+        const int frozen_check = fix && pol->vertical_check && im->height >= w;
+        rc = cols ? vocr_find_columns_rows(&region, mi->finder_mode & 0xFFu, ws + l->scratch_off, l->finder, &set)
+                  : vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, frozen_check ? 0u : fix,
+                                             ws + l->scratch_off, l->finder, &set);
+        /* API 47, auto (VjoVocrPolicy.vertical_check): rows that look like vertical text are not read, and no
+         * weights are (nor the gate's score, made for rows): the caller reads the region's columns instead
+         * (game_ocr/main.c). */
+        if (!rc && pol->vertical_check && !cols && vjo_vocr_rows_vertical(set.lines, set.count, w, im->height)) {
+            s->gate = NULL;
+            st->find_us = clock_us(p) - t0;
+            st->lines = set.count;
+            st->truncated = set.truncated;
+            return VJO_E_VERTICAL;
+        }
+        if (!rc && frozen_check) /* not vertical: the rows the job reads, with the fixes */
+            rc = vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, fix, ws + l->scratch_off, l->finder, &set);
+        if (s->gate) {
+            /* Scored on the finder's boxes; under the threshold the region holds no text: no line is read
+             * (a hidden text box, a CG screen). Any error keeps the lines (the job reads as without it). */
+            int score = 0, grc;
+            uint32_t g0 = clock_us(p);
+            s->gate = NULL;
+            /* a region the finder found no line in has nothing to stop: not scored */
+            grc = rc || !set.count ? 0 : vocr_textgate_score(&gate, &set, &score);
+            st->gate_us += clock_us(p) - g0;
+            if (grc) st->gate_rc = grc;
+            else if (!rc && set.count) {
+                st->gate_ran = 1;
+                st->gate_score = score;
+                if (score < VJO_VOCR_GATE_T) {
+                    st->gate_stopped = set.count;
+                    set.count = 0;
+                    set.truncated = 0;
+                }
             }
         }
     }
@@ -2071,9 +2453,12 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     if (rc) return rc == VOCR_LINES_E_ARENA ? VJO_E_OOM : VJO_E_OCR_REGION;
     /* A region inside one strip was read once: read it again, so that a screen
      * that changed while it was read is seen (the strips of a taller region are
-     * all read twice by the finder's two passes already). */
+     * all read twice by the finder's two passes already; with the spotter, API 53,
+     * its first pass, then the frame's rows inside it and its boxes' rows: every
+     * line's rows are read again, each checked, when it is recognized). */
     if (s->strip_rows >= im->height && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
-    if (pol->short_lines && !cols && !set.truncated && probe_short_lines(s, &set) < 0)
+    /* #194's probe is GRAD's: the spotter's boxes are read as its post-pass gave them (API 53) */
+    if (pol->short_lines && !cols && !st->spot_ran && !set.truncated && probe_short_lines(s, &set) < 0)
         return stream_error(s, VJO_E_SOURCE);
     st->find_us = clock_us(p) - t0;
     st->lines = set.count;
@@ -2159,6 +2544,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
 
     L->t0 = clock_us(p);
+    /* API 53: GRAD's boxes are refined by the job's policy; the spotter's are read as its post-pass gave them */
+    const unsigned refine = st->spot_ran ? 0u : pol->refine;
     for (unsigned i = 0, li = 0; i < set.count; i++) {
         const VocrLine *box = &set.lines[i];
         const unsigned char *box_pixels;
@@ -2185,7 +2572,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             parts.lines[0].dark = (unsigned)dark;
             st->dark += (unsigned)dark;
         }
-        if (l->refine_bytes) {
+        if (l->refine_bytes && refine) {
             /* The box refined on the pixels the job holds for it: its strip (the
              * box made strip-relative), or a tall line's own block. Its lines may
              * take the job to VJO_VOCR_MAX_LINES, one kept for each box still to
@@ -2194,7 +2581,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             int tall = box->h > s->strip_rows;
             VocrLinesImage bim = {tall ? box_pixels : s->strip, tall ? box->w : w, tall ? box->h : s->rows,
                                   box_stride, VOCR_LINES_GREY};
-            unsigned ox = tall ? box->x : 0, oy = tall ? box->y : s->y0, flags = pol->refine, room;
+            unsigned ox = tall ? box->x : 0, oy = tall ? box->y : s->y0, flags = refine, room;
             unsigned long rows = 0;
             VocrLineSet one;
             uint32_t r0 = clock_us(p);
@@ -2437,9 +2824,39 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     strip_rows = vjo_vocr_strip_rows(image->width, image->height);
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
 
+    if (policy && policy->spot && !columns_of(mi)) {
+        /* API 53: the spotter's part of the scratch, before every other part: the job's own workspace as the caller
+         * sized it (vjo_vocr_job_bytes_spot). Without its parsed weights, a frame and region it takes, an arena
+         * within VJO_VOCR_SPOT_ARENA, or room, the job finds its lines with GRAD (stats->spot_rc says why). A model
+         * of columns reads its columns without it. */
+        const vocr_textspot6 *m = spot_model(policy->spot_res);
+        const VjoGreySource *fr = policy->spot_frame;
+        const unsigned fw = fr ? fr->width : image->width, fh = fr ? fr->height : image->height;
+        struct SpotLayout sp;
+        Layout t = l;
+        int ok = m && (!fr || (fr->strip && policy->spot_x <= fw && image->width <= fw - policy->spot_x &&
+                               policy->spot_y <= fh && image->height <= fh - policy->spot_y));
+        if (ok && region_ok(fw, fh) &&
+            !spot_layout(vocr_textspot6_frame_arena_bytes(m, fw, fh), image->width, image->height, fw, fh, &sp)) {
+            layout_spot(&t, sp.total);
+        } else {
+            ok = 0;
+        }
+        if (!m) {
+            stats->spot_rc = VJO_E_OCR_MODEL;
+        } else if (!ok || !workspace || workspace_size < front + t.total) {
+            stats->spot_rc = VJO_E_OOM;
+        } else {
+            l = t;
+            l.spot = 1;
+            l.spot_m = m;
+            l.sp = sp;
+        }
+    }
     if (policy && policy->refine && !columns_of(mi)) {
         /* The refinement's arena ends the job's own workspace; without room the
-         * boxes are read as found. A model of columns has none (its boxes are columns). */
+         * boxes are read as found. A model of columns has none (its boxes are columns).
+         * (API 53: GRAD's boxes; a job that asks for the spotter may read with GRAD.) */
         size_t rb = vjo_vocr_refine_bytes(image->width, image->height);
         if (workspace && rb && workspace_size >= front + l.total + rb) {
             l.refine_off = l.total;
@@ -2490,7 +2907,8 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
                                                                               * columns (API 47) reads without */
         /* API 26: the gate's weights (read once, then kept), and its arena in the scratch the finder leaves
          * free (the recognizer's arena is the larger part of it at every region size), so the workspace never
-         * grows for it. Without either the job reads as without the gate (stats->gate_rc says why). */
+         * grows for it. Without either the job reads as without the gate (stats->gate_rc says why). It is
+         * GRAD's: it scores GRAD's boxes only (API 53: a try whose spotter finds the lines runs no gate). */
         int grc = policy->gate_res ? resident_gate(platform, model_dir, policy->gate_res, image, stats)
                                    : VJO_E_OCR_MODEL;
         size_t gb = 0, off = ALIGN16(l.finder);

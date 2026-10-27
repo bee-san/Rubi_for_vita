@@ -57,6 +57,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_line_fix = VJO_LINE_FIX_DEFAULT;   /* docs/vita-vn-ocr.md, "Line finder fixes" */
     c->hook_sites = 1; /* the table sites with the CALL source; off: the CALL source alone */
     c->ocr_head_gate = VJO_HEAD_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Head gate" and "Two-level head" */
+    c->ocr_finder = VJO_FINDER_DEFAULT; /* API 53: docs/vita-vn-ocr.md, "The spotter finder" */
     c->hook_trust = 1; /* a trusted hook answers without OCR; off: Rubi 0.9.7's selection (docs/native-hooks.md) */
     c->ocr_vertical = VJO_VERTICAL_DEFAULT; /* docs/vita-vn-ocr.md, "Vertical text" */
 }
@@ -153,6 +154,9 @@ const char *vjo_config_default_text(void)
            "ocr_head_gate = " VJO_HEAD_GATE_DEFAULT_TEXT "\n"
            "; vocr: line finder fixes: on | junk | all | off\n"
            "ocr_line_fix = " VJO_LINE_FIX_DEFAULT_TEXT "\n"
+           "; vocr: the line finder: grad (Rubi's) | spotter (vita-vn-ocr's text spotter\n"
+           "; on the whole screen; grad when its weights are missing)\n"
+           "ocr_finder = " VJO_FINDER_DEFAULT_TEXT "\n"
            "; vocr: lines read at once (1-3), 444 MHz while reading (on | off: the Rubi\n"
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
@@ -619,6 +623,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_line_fix")) {
         static const char *const fixes[] VJO_DATA_TABLE(config_line_fix_1) = {"off", "on", "junk", "all", NULL};
         set_choice(c, key, val, &c->ocr_line_fix, fixes);
+    } else if (vjo_ieq(key, "ocr_finder")) { /* API 53 */
+        static const char *const finders[] VJO_DATA_TABLE(config_finders_1) = {"grad", "spotter", NULL};
+        set_choice(c, key, val, &c->ocr_finder, finders);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;

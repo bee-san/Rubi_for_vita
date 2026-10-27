@@ -296,6 +296,17 @@ class E2E:
               f"{release.VOCR_VERTICAL_ATTRIBUTION} is the vertical model's pinned attribution ({release.VOCR5V_TAG})")
         expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md", release.VOCR_MODEL_ATTRIBUTION,
                                                     release.VOCR_GATE_ATTRIBUTION, release.VOCR_VERTICAL_ATTRIBUTION}
+        # API 53: the text spotter's weights (in shipped_models) and attribution, once its pin is published; its
+        # placeholder ships neither (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_PUBLISHED)
+        spot = ocr / release.VOCR_SPOT_ATTRIBUTION
+        if release.VOCR_SPOT_PUBLISHED:
+            _, size, sha = release.VOCR_SPOT_ATTRIBUTION_PIN[release.VOCR_SPOT_ATTRIBUTION]
+            check(spot.is_file() and spot.stat().st_size == size and sha256_file(spot) == sha,
+                  f"{release.VOCR_SPOT_ATTRIBUTION} is the text spotter's pinned attribution ({release.VOCR_SPOT_TAG})")
+            expected.add(release.VOCR_SPOT_ATTRIBUTION)
+        else:
+            check(not spot.exists() and not (ocr / release.VOCR_SPOT_MODEL).exists(),
+                  f"no text spotter while its pin is a placeholder ({release.VOCR_SPOT_TAG} unpublished)")
         other = sorted(rel for rel in (p.relative_to(ocr).as_posix() for p in (ocr.rglob("*") if ocr.is_dir() else ())
                                        if not p.is_dir()) if rel not in expected)
         check(not other, "ocr/ has nothing but the shipped models and their attributions"

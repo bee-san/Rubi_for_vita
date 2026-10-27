@@ -118,4 +118,44 @@
 #define VJO_VOCR_GATE_NAME "textgate_p8_c8_w8.vtd"
 #define VJO_VOCR_GATE_BYTES 1540u
 
+/* API 53: the text spotter's int8 weights (vita-vn-ocr #128, docs/textspot7.md: textspot7's pick, a VTSP version-4
+ * trunk, base_t64n8c16 with decode D), the game worker's alternative finder (config.ini ocr_finder = spotter, off by
+ * default): a file beside the models, read through the kernel's broker (VJO_GAME_OCR_OPEN_SPOT) by a job with
+ * VJO_GAME_OCR_S_SPOT, and its release's ATTRIBUTION.md (kept as ocr/SPOTTER-ATTRIBUTION.md). THE ONE PLACE of its
+ * pins: core/vocr_ocr.c (the SHA-256, the arena, the post-pass's steps), the kernel (name and bytes),
+ * include/vjo_payload.h (PUBLISHED), cmake/VocrOCR.cmake (FORM: the VOCR_TEXTSPOT6_NO_MS default),
+ * tools/prepare_ocr.py, package_release.py, package_vpk.py and e2e_package.py all read these lines, one value each
+ * (tools/tests/test_spot_pins.py checks the form of each), so pinning vita-vn-ocr's published pick changes one line
+ * per constant. Until that pre-release's hashes are taken the entry is a placeholder: VJO_VOCR_SPOT_PUBLISHED 0 and
+ * a SHA-256 of zeros, which no file has, so a job with the spotter finds no weights and reads with GRAD, and no
+ * package carries the spotter. TAG: the pre-release; NAME, BYTES, SHA256: its weights; ATTRIBUTION_BYTES, _SHA256:
+ * its ATTRIBUTION.md; FORM: "trunk" (a VTDT trunk: the build leaves out every multi-scale path,
+ * -DVOCR_TEXTSPOT6_NO_MS) or "ms" (a VTMS network); ARENA: its arena for a 960 x 544 frame read at its blob's scale
+ * (vocr_textspot6_arena_bytes(m, 960, 544): every smaller frame's is at most this; 244,607 B for the t64n8c16
+ * shape [measured: the runtime at the pin, vita-vn-ocr's base_t64n8c16 seed 1 blob]), what the memory ledger
+ * counts (a blob that needs more reads with GRAD); POST: the post-pass's steps (vita-vn-ocr runtime/vocr_textspot7.h
+ * VOCR_T7_*: decode D, VOCR_T7_JOIN10 | VOCR_T7_EXTEND). */
+#ifdef VJO_VOCR_SPOT_TEST
+/* Host tests only (host/tests/test_spot_pins.h): the committed random blob's pins, a job's spotter end to end. */
+#include VJO_VOCR_SPOT_TEST
+#else
+#define VJO_VOCR_SPOT_TAG "v0.3.8-textspot6.1"
+#define VJO_VOCR_SPOT_NAME "textspot6_t64n8c16_w8.vtsp"
+#define VJO_VOCR_SPOT_BYTES 52176u
+#define VJO_VOCR_SPOT_SHA256 "0000000000000000000000000000000000000000000000000000000000000000"
+#define VJO_VOCR_SPOT_ATTRIBUTION_BYTES 0u
+#define VJO_VOCR_SPOT_ATTRIBUTION_SHA256 "0000000000000000000000000000000000000000000000000000000000000000"
+#define VJO_VOCR_SPOT_FORM "trunk"
+#define VJO_VOCR_SPOT_PUBLISHED 0
+#define VJO_VOCR_SPOT_ARENA 244607u
+#define VJO_VOCR_SPOT_POST 0x0Cu
+#endif
+/* The ceilings every pin of it must stay within (vita-vn-ocr eval/textspot6_protocol.json and
+ * eval/textspot7_protocol.json, the rule's eligibility: a VTSP blob of at most 512,000 B, an arena of at most
+ * 262,144 B for a 960 x 544 frame); the memory ledger counts the pin's own (VJO_VOCR_SPOT_ARENA, and the block of
+ * VJO_VOCR_SPOT_MAX_BYTES: include/vjo_ledger_budget.h VJO_BUDGET_GAME_SPOT, VJO_BUDGET_GAME_WORKSPACE).
+ * core/vocr_ocr.c and game_ocr/main.c refuse more: a job then reads with GRAD. */
+#define VJO_VOCR_SPOT_MAX_BYTES 512000u
+#define VJO_VOCR_SPOT_ARENA_MAX 262144u
+
 #endif

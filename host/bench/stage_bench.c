@@ -716,7 +716,8 @@ static const char nondefault_config[] =
     "anki_screenshot_trim_bars = off\n"
     "reading_time = 15s\n"
     "hook_trust = off\n"
-    "ocr_line_fix = all\n";
+    "ocr_line_fix = all\n"
+    "ocr_finder = spotter\n";
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {

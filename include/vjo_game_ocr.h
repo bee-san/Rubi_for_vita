@@ -86,7 +86,8 @@
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
  * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below); API 36, bit 16
  * the border rule (below); API 42, bits 18-19 the head gate and the two-level head; API 43, bit 20 trusted hooks;
- * API 50, bits 21-23 the line finder's fixes (below). Other bits are refused, as unknown flags are. */
+ * API 50, bits 21-23 the line finder's fixes; API 53, bit 24 the text spotter (below). Other bits are refused, as
+ * unknown flags are. */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
 #define VJO_GAME_OCR_S_NOCACHE 0x8u
@@ -149,7 +150,17 @@
 #define VJO_GAME_OCR_S_LINE_FIX 0x200000u
 #define VJO_GAME_OCR_S_LINE_JUNK 0x400000u
 #define VJO_GAME_OCR_S_LINE_VALLEY 0x800000u
-#define VJO_GAME_OCR_S_ALL 0x30FD001Fu
+/* API 53, bit 24: the text spotter as the job's finder (vita-vn-ocr #128, textspot7's pick; runtime/vocr_textspot6.c
+ * and vocr_textspot7.c; core/vocr_ocr.h VjoVocrPolicy.spot, config.ini ocr_finder = spotter, off by default) in
+ * place of GRAD: the spotter reads the game's whole frame, row by row through the kernel's strips, and its
+ * horizontal boxes whose centre lies in the region, joined along a row and grown over the ink at their ends
+ * (vocr_textspot7_post_rows on the region's rows), are the lines the recognizer reads. Its weights are the pinned
+ * file VJO_VOCR_SPOT_NAME beside the models (VJO_GAME_OCR_OPEN_SPOT); a job that cannot read or keep them (missing,
+ * wrong, no memory), or whose spotter refuses, reads with GRAD, exactly as without the bit. The Shell sets it in
+ * the user's jobs; the self-test's stages read as before. Not bit 25 (draft #326's VJO_GAME_OCR_S_CHARS) or bit 30
+ * (draft #355's VJO_GAME_OCR_S_PAUSE); not bit 5 (closed draft #228's spotter, whose builds exist). */
+#define VJO_GAME_OCR_S_SPOT 0x1000000u
+#define VJO_GAME_OCR_S_ALL 0x31FD001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
@@ -238,6 +249,9 @@ typedef struct {
 /* API 26: the text-presence gate's weights (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME), for a request with
  * VJO_GAME_OCR_S_GATE only. */
 #define VJO_GAME_OCR_OPEN_GATE 17u
+/* API 53: the text spotter's weights (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_NAME), for a request with
+ * VJO_GAME_OCR_S_SPOT only. (Closed draft #228 used 18 for its spotter too, in an API of its own.) */
+#define VJO_GAME_OCR_OPEN_SPOT 18u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
 #define VJO_GAME_OCR_WEIGHTS_NONE 0u     /* no line found, or the job failed first */
@@ -350,6 +364,17 @@ enum {
                             first rows, 1 the first rows' guess, every row checked, 2 every row came to another
                             picture: read again), bytes = the picture's x << 16 | y, sum = its width << 16 | height
                             (the JPEG's), us the scan's time */
+    VJO_GSTEP_SPOT,      /* API 53, the text spotter (VJO_GAME_OCR_S_SPOT), once per job (its last try): kind 1 when it
+                            found the lines (0: GRAD's path did), arg the lines it gave the recognizer (at most
+                            VJO_GAME_OCR_LINES), rc 0 or why GRAD's path read the try (VJO_E_*, VOCR_LINES_E_*,
+                            VOCR_TEXTSPOT_E_BLOB; VJO_E_VERTICAL: it saw columns in the region and no row, with
+                            ocr_vertical = auto), bytes its part of the job's scratch | VJO_GLM_READ (its weights were
+                            read from the card in this job) | VJO_GLM_RESIDENT (kept from an earlier job), sum every
+                            box it found on the frame (at most 64, bits 0-6) | 0x80 when it had more than
+                            VOCR_TEXTSPOT_MAX_BOXES | the frame's strips it read << 8 (at most 255; 0: the region is
+                            the frame) | its weights' load (the open, and their read and check when they were read)
+                            in ms, at most 0xFFFF, << 16, us its time (the region's first pass, the frame's pass and
+                            network, its decode, the kept boxes' dark flags and the post-pass) */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */
@@ -372,7 +397,8 @@ enum {
 #define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
 #define VJO_GITEM_SHOT 8u      /* "VjoGameShot": a shot's colour strip, encoder and JPEG (API 23) */
-#define VJO_GITEM_COUNT 9u
+#define VJO_GITEM_SPOT 9u      /* "VjoGameVocrSpot": the text spotter's weights and their parsed form (API 53) */
+#define VJO_GITEM_COUNT 10u
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */
@@ -475,7 +501,7 @@ typedef struct {
     uint64_t mtime;     /* last modification, packed (kernel/game_ocr.c); 0 if unknown */
 } VjoGameOcrModelInfo;
 
-/* vjoOcrCaptureRows: rows [y, y + n) of the claimed job's region, as 8-bit grey
+/* vjoOcrCaptureRows: rows [y, y + n) of the claimed job's region (API 53: or of its frame), as 8-bit grey
  * (77 R + 150 G + 29 B) >> 8, width bytes each, dst_stride apart in dst. */
 #define VJO_ROWS_SIG 0x1u  /* these rows continue the job's first pass from row 0 (scene signature) */
 #define VJO_ROWS_LAST 0x2u /* with SIG: the first pass ends here; the capture is published */
@@ -492,16 +518,21 @@ typedef struct {
  * region has no screen yet; the worker then reads the first pass. Never with another VJO_ROWS_* flag, nor for a
  * full-frame, probe or shot job. */
 #define VJO_ROWS_HOOK 0x8u
+/* API 53: rows [y, y + n) of the claimed job's whole frame (fb_width x fb_height, the frame its region is cut from)
+ * instead of its region's, grey as the region's, dst_stride >= the frame's width: the text spotter's
+ * (VJO_GAME_OCR_S_SPOT), for a region job with that bit only (not a probe or a shot), never with another VJO_ROWS_*
+ * flag. They continue no signature and publish nothing: the region's first pass is the job's capture. */
+#define VJO_ROWS_FRAME 0x10u
 #define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call */
 #define VJO_GAME_OCR_KSTRIP_MAX (64u * 1024u) /* the kernel strip's largest size */
 
 typedef struct {
     uint32_t size;       /* sizeof(VjoGameOcrRows) */
     uint32_t seq;        /* the claimed job */
-    uint32_t y, n;       /* region rows; 1 <= n <= VJO_GAME_OCR_ROWS_MAX */
+    uint32_t y, n;       /* region rows (frame rows with VJO_ROWS_FRAME); 1 <= n <= VJO_GAME_OCR_ROWS_MAX */
     uint32_t mode;       /* VJO_GAME_OCR_SRC_HOOK or VJO_GAME_OCR_SRC_KSTRIP */
     uint32_t flags;      /* VJO_ROWS_* */
-    uint32_t dst_stride; /* >= the region's width */
+    uint32_t dst_stride; /* >= the region's width (the frame's with VJO_ROWS_FRAME) */
     uint32_t reserved;
 } VjoGameOcrRows;
 

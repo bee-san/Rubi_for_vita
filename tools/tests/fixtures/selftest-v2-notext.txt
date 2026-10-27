@@ -1,4 +1,4 @@
-selftest v2 api=51
+selftest v2 api=53
 boot seq=2 mode=0 prev=0/0/0/0 failures=0 write=0x00000000
 config backend=2 model=VOCR5_N_w8g2.vocr fallback=VOCR5_S_w8g.vocr tier=normal dictionary=3 anki=0
 step boot t=0

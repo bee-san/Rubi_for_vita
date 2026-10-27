@@ -181,6 +181,54 @@ typedef struct {
     uint64_t size, stamp;    /* of the file they were read from */
 } VjoVocrGateResident;
 
+/* API 53: the text spotter's weights (VjoVocrPolicy.spot_res; vita-vn-ocr #128, runtime/vocr_textspot6.c), kept
+ * between jobs as the LM's are: the file VJO_VOCR_SPOT_NAME in the job's model directory, of its pinned size and
+ * SHA-256 (include/vjo_vocr_sizes.h), then parsed once (vocr_textspot6_load: its header, its CRC-32 over every byte,
+ * its tables), both in one block of vjo_vocr_spot_block_bytes() that alloc gives (16-byte aligned, or NULL: no
+ * memory). The weights are never a static array (52-450 KB: pages in every game). vjo_vocr_spot_load opens the file
+ * in every job that uses the spotter and reads and checks it again only when its size or stamp changed or nothing
+ * verified is held; a missing, wrong or refused file, or a failed read, releases the block (memory is held only
+ * for verified weights). The caller owns it (the worker: a static) and zero-initializes its state fields. */
+typedef struct {
+    void *(*alloc)(void *ud, size_t bytes);
+    int (*release)(void *ud);    /* 0, or nonzero when the block could not be freed (it stays held, unused) */
+    void *ud;
+    int verified;                /* 1: data holds the pinned weights and their parsed form */
+    unsigned char *data;         /* the block held, or NULL */
+    size_t capacity;
+    uint64_t size, stamp;        /* VjoFile.size and .stamp of the file they were read from */
+} VjoVocrSpotResident;
+/* The block's bytes: the weights (VJO_VOCR_SPOT_BYTES, 16-byte aligned), then their parsed form. */
+size_t vjo_vocr_spot_block_bytes(void);
+/* Verified, parsed weights in res (see VjoVocrSpotResident). VJO_OK; VJO_E_OCR_MODEL (missing, wrong size or hash,
+ * refused by the runtime), VJO_E_OOM (no block), VJO_E_CANCELLED (im's cancel test; im may be NULL),
+ * VJO_E_OCR_UNAVAILABLE (a block that could not be released). *read: 1 when this call read the file (else they
+ * were resident: the file is unchanged). A job without them reads with GRAD. */
+int vjo_vocr_spot_load(const VjoPlatform *platform, const char *model_dir, VjoVocrSpotResident *res,
+                       const VjoGreySource *im, unsigned *read);
+/* Releases the block: 0, or the release callback's failure (the block is then still held, and unverified). */
+int vjo_vocr_spot_drop(VjoVocrSpotResident *res);
+/* The spotter's part of a job's scratch for a width x height region of a frame_w x frame_h frame (VjoVocrPolicy.spot;
+ * a frame of the region's size, or 0 x 0, is the region itself), each part 16-byte aligned: the spotter's arena
+ * (vocr_textspot6_frame_arena_bytes for the frame, at its blob's scale), its result (VocrTextspot6Set), the frame's
+ * and the region's boxes for the post-pass (VocrT7Box x VOCR_T7_MAX_BOXES each), the post-pass's arena
+ * (vocr_textspot7_rows_arena_bytes_steps for the region and VJO_VOCR_SPOT_POST) and, unless the region is the frame,
+ * the frame's strip and its rows' state (its own stream). 0 when res holds no verified weights, the region or the
+ * frame is not one the job takes, or the arena is over VJO_VOCR_SPOT_ARENA (the job then reads with GRAD). */
+size_t vjo_vocr_spot_bytes(const VjoVocrSpotResident *res, unsigned width, unsigned height, unsigned frame_w,
+                           unsigned frame_h);
+/* vjo_vocr_job_bytes() with the spotter's scratch of spot_bytes (vjo_vocr_spot_bytes; 0: without it): the scratch
+ * is the largest of the finder's arena, the spotter's part and the recognizer's arena, which use it one after the
+ * other. The refinement's arena, the LM extras, the cascade's and the helpers' follow it as without the spotter. */
+size_t vjo_vocr_job_bytes_spot(const char *model, unsigned width, unsigned height, size_t spot_bytes);
+/* vjo_vocr_spot_bytes() with the pin's arena for a 960 x 544 frame, VJO_VOCR_SPOT_ARENA (the most any frame up to it
+ * needs), without weights: the memory ledger's figures (host/tests/test_ledger.c). */
+size_t vjo_vocr_spot_bytes_pin(unsigned width, unsigned height, unsigned frame_w, unsigned frame_h);
+/* The most vjo_vocr_spot_bytes() gives this build's pin for any region of a frame up to VJO_OCR_MAX_WIDTH x
+ * VJO_OCR_MAX_HEIGHT: vjo_vocr_spot_bytes_pin for a region as wide as that frame and one row shorter (so read beside
+ * the frame's own stream). */
+size_t vjo_vocr_spot_bytes_max(void);
+
 /* More job workspace a job on `model` needs to decode with an LM: the top-K
  * buffers, the decoder's structs and its workspace (bounded by
  * VJO_VOCR_LM_WS_BYTES); 0 for an unsupported model. */
@@ -364,6 +412,16 @@ typedef struct {
     /* Vertical text (a model of columns, VJO_VOCR_FINDER_COLUMNS). */
     unsigned columns;        /* 1: the lines were columns, each read turned 90 degrees */
     unsigned rotate_skipped; /* columns left out: more than VJO_VOCR_ROTATE_BYTES */
+    /* The text spotter (VjoVocrPolicy.spot, API 53), of the last try. */
+    unsigned spot_ran;       /* 1: it found this try's lines (0: GRAD's path did, or the job has no spotter) */
+    int spot_rc;             /* 0, or why GRAD's path found them (VJO_E_*, VOCR_LINES_E_*, VOCR_TEXTSPOT_E_BLOB;
+                                VJO_E_VERTICAL: it saw columns in the region and no row, with vertical_check) */
+    unsigned spot_boxes;     /* every box it found on the frame, vertical ones and the region's others too */
+    unsigned spot_truncated; /* 1: it had more candidates than VOCR_TEXTSPOT_MAX_BOXES */
+    unsigned spot_strips;    /* the frame's strips it read (0: the region is the frame, whose strips count as its) */
+    size_t spot_bytes;       /* its part of the job's scratch (0: it did not run) */
+    uint32_t spot_us;        /* its time: the region's first pass, the frame's pass and its network, its decode, the
+                                kept boxes' dark flags and the post-pass */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. A column (a model of
@@ -593,6 +651,29 @@ typedef struct {
      * as it can drop a text line in a region drawn tight) and VALLEY (two touching rows split; opt-in). The same
      * arena, rows and dark flags as vocr_find_lines_rows. 0: the frozen finder, exactly as before. */
     unsigned line_fix;
+    /* API 53: the text spotter (vita-vn-ocr #128, textspot7's pick: runtime/vocr_textspot6.c on the game's whole
+     * frame, then vocr_textspot7.c's post-pass, decode D, in the region; docs/vita-vn-ocr.md "The spotter finder") as
+     * the job's finder in place of GRAD's: vocr_textspot6_find_rows on the frame's rows at its blob's scale (no SCALE
+     * flag: a half-scale blob halves a 960 x 544 frame, as it was trained), the dark flag of each horizontal box
+     * whose centre lies in the region, then vocr_textspot7_post_rows with the region (its own rows) and
+     * VJO_VOCR_SPOT_POST's steps: those boxes, clipped, joined along a row and grown over the ink at their ends,
+     * in the spotter's order, are the lines (at most VJO_VOCR_MAX_LINES: truncated past them), read as they are (no
+     * refinement, line fixes or short-line probe: those are GRAD's). spot_frame: the game's whole frame, through a
+     * strip source of its own as the region's (every row checked as the region's are, and those inside the region
+     * against the region's own: its first pass is read first), with the region's origin in it (spot_x, spot_y);
+     * NULL when the region is the whole frame, whose own rows the spotter then reads (its pass is the region's
+     * first). Its weights are spot_res's, loaded before the job (vjo_vocr_spot_load: their parsed form sizes its
+     * arena), and its part of the job's scratch is vjo_vocr_spot_bytes()'s, which the recognizer's arena reuses
+     * after it: the workspace must hold vjo_vocr_job_bytes_spot(). When it cannot run (no verified weights, an
+     * arena over VJO_VOCR_SPOT_ARENA, a frame or region it does not take, no room, a refusal of the runtime's), and,
+     * with vertical_check, where it saw columns in the region and no row, the job finds this try's lines with GRAD's
+     * path exactly as without it, its refinement, fixes, probe and gate included (stats->spot_rc says why); a row
+     * that cannot be read is the job's error, as on GRAD's path. spot 0: off, exactly as before. A model of columns
+     * (VJO_VOCR_FINDER_COLUMNS) reads its columns without it. */
+    int spot;
+    VjoVocrSpotResident *spot_res;
+    const VjoGreySource *spot_frame;
+    unsigned spot_x, spot_y;
 } VjoVocrPolicy;
 #define VJO_VOCR_COUNTER_TAU 6000
 #define VJO_VOCR_COUNTER_OPEN 4000

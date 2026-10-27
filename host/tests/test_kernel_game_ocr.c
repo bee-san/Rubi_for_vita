@@ -1076,9 +1076,11 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x20000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 36: but bit 16) */
     r.speed = 0x100000; TEST_CHECK(vjoOcrSubmit(&r) > 0); /* API 43: bit 20, a trusted hook may answer (S_TRUST) */
-    r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19; API 43: 20; API 50: 21-23) */
+    setup(); r = make_request(); /* the one queued above */
+    r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) > 0); /* API 53: bit 24, the text spotter (S_SPOT) */
+    setup(); r = make_request();
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
-    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 25 (bits 24-27 in flight elsewhere; 21-23 are API 50's), 30-31 */
+    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 25 (25-27 in flight elsewhere; 21-23 are API 50's, 24 API 53's), 30-31 */
     r.speed = 0x40000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(VJO_GAME_OCR_S_VERTICAL == 0x30000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_VERTICAL) ==
                                                             VJO_GAME_OCR_S_VERTICAL);
@@ -1182,6 +1184,65 @@ static void rows_hook_copies_grey_and_publishes_the_capture(void)
     TEST_CHECK(rows_call(seq, 3, 5, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == 5 && rows_match(user_rows, 3, 5, 32, 0));
     TEST_CHECK(game_ocr_capture_busy_locked()); /* the job still owns the capture */
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
+}
+/* API 53: the text spotter's rows (VJO_ROWS_FRAME) are the whole frame's, from its top-left, for a region job with
+ * VJO_GAME_OCR_S_SPOT only, never with another flag, a shorter stride than the frame's width or rows past its height;
+ * they continue no signature and publish nothing, through the hook or a kernel strip; the region's own rows are
+ * unchanged beside them. */
+static void rows_frame_reads_the_whole_frame_for_the_spotter(void)
+{
+    VjoGameOcrRowsInfo info;
+    VjoGameOcrRequest r;
+    uint32_t seq, done;
+    /* without the spotter's bit: refused */
+    setup(); seq = submit(); take(seq);
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_FRAME, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(!info.armed && !hook_frames && rows.state == ROWS_IDLE);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* with it, a region smaller than the frame (the kernel's normalized one, set here: the test frame is the
+     * smallest region a request can have) */
+    setup(); r = make_request(); r.speed = VJO_GAME_OCR_S_SPOT;
+    caller = 3; seq = (uint32_t)vjoOcrSubmit(&r); TEST_ASSERT((int)seq > 0); take(seq);
+    request.x = 4; request.y = 2; request.width = 20; request.height = 10;
+    done = g.done_seq;
+    memset(user_rows, 0xCC, sizeof(user_rows));
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_FRAME, 40, user_rows, &info) == 16);
+    TEST_CHECK(rows_match(user_rows, 0, 16, 40, 0) && user_rows[32] == 0xCC); /* the frame's 32 columns from x 0 */
+    TEST_CHECK(info.rc == 16 && info.fb_width == FB_W && !allocations && !kstrip_allocs && !locks && !syscall_depth);
+    /* rows past the region's height, inside the frame's */
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 16, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_FRAME, 32, user_rows, &info) == 16 &&
+               rows_match(user_rows, 16, 16, 32, 0));
+    TEST_CHECK(g.done_seq == done && !capture_events); /* no signature, nothing published */
+    /* through a kernel strip */
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 8, 8, VJO_GAME_OCR_SRC_KSTRIP, VJO_ROWS_FRAME, 48, user_rows, &info) == 8 &&
+               rows_match(user_rows, 8, 8, 48, 0) && kstrip_allocs == 1 && kstrip_frees == 1 &&
+               info.kstrip_bytes == 8 * FB_W && !info.kstrip_rc);
+    /* the region's rows beside them: its own rectangle, as before */
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, 0, 20, user_rows, &info) == 4);
+    for (unsigned y = 0; y < 4; y++)
+        for (unsigned x = 0; x < 20; x++) TEST_CHECK(user_rows[y * 20 + x] == grey_of(4 + x, 2 + y));
+    frames_come = 1; /* past the region's height: its own rows end there */
+    TEST_CHECK(rows_call(seq, 10, 1, VJO_GAME_OCR_SRC_HOOK, 0, 20, user_rows, &info) == VJO_ERR_ARG);
+    /* refused: another flag beside it, a short stride, rows past the frame, no rows */
+    static const uint32_t bad_flags[] = {VJO_ROWS_FRAME | VJO_ROWS_SIG, VJO_ROWS_FRAME | VJO_ROWS_SIG | VJO_ROWS_LAST,
+                                         VJO_ROWS_FRAME | VJO_ROWS_RGBA, VJO_ROWS_FRAME | VJO_ROWS_HOOK};
+    for (unsigned k = 0; k < sizeof(bad_flags) / sizeof(bad_flags[0]); k++) {
+        frames_come = 1;
+        TEST_CHECK_(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, bad_flags[k], 40, user_rows, &info) == VJO_ERR_ARG,
+                    "flags 0x%X", (unsigned)bad_flags[k]);
+    }
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_FRAME, 31, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 24, 9, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_FRAME, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 32, 1, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_FRAME, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 0, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_FRAME, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(g.done_seq == done && !capture_events && rows.state == ROWS_IDLE && !locks && !syscall_depth);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
 }
 /* API 41: the registered worker's thread reports a hooked line between jobs (vjoOcrHookLine): the region
  * gets a new scene, held while the line draws, the last capture stops standing for the screen, the Shell is
@@ -2364,6 +2425,43 @@ static void gate_weights_open_only_with_the_gate(void)
         }
 }
 
+/* API 53: the text spotter's weights, the same way: a pinned name the kernel knows, at its pinned size, for a request
+ * that asks for the spotter (VJO_GAME_OCR_S_SPOT, bit 24) only, by tiers or by name; Submit knows the bit, and the
+ * word's bit beside it (25, draft #326's) is still refused. */
+static void spot_weights_open_only_with_the_spotter(void)
+{
+    TEST_CHECK(VJO_GAME_OCR_S_SPOT == 0x1000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_SPOT) &&
+               !(VJO_GAME_OCR_S_ALL & 0x2000000u));
+    for (unsigned spot = 0; spot <= 2; spot++)
+        for (unsigned tiers = 0; tiers <= 1; tiers++) {
+            setup(); VjoGameOcrRequest r = make_request();
+            r.speed = spot == 1 ? VJO_GAME_OCR_S_SPOT : 0u;
+            if (spot == 2) { /* an unknown bit beside it: Submit refuses the request */
+                r.speed = VJO_GAME_OCR_S_SPOT | 0x2000000u;
+                caller = 3;
+                TEST_CHECK(vjoOcrSubmit(&r) < 0);
+                continue;
+            }
+            if (tiers) { strcpy(r.model, VJO_VOCR_TIER1_NAME); r.tiers = 1u; }
+            caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+            if (spot != 1) {
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == VJO_ERR_ARG && !model_opens);
+            } else {
+                expect_lm = VJO_VOCR_SPOT_NAME; expected_model_size = VJO_VOCR_SPOT_BYTES;
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == VJO_ERR_BUSY);
+                model_tick();
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == (int)VJO_VOCR_SPOT_BYTES &&
+                           model_opens == 1);
+                close_model(seq);
+                expect_lm = NULL;
+                /* the gate's file stays the gate's request's */
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE, NULL) == VJO_ERR_ARG);
+            }
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT + 1u, NULL) == VJO_ERR_ARG);
+            TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+        }
+}
+
 /* API 21: a request by tiers names the model sizes its job may run (bit t - 1);
  * the game opens a size's pinned model by its tier, never by a name: the kernel
  * opens exactly the request's tiers, and with a cascade ceiling the tier above
@@ -2694,6 +2792,8 @@ TEST_LIST = {
     {"an LM tier opens by its pinned name, up to the request's tier", lm_tiers_open_up_to_the_requested_tier},
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"API 26: the gate's weights open by their pinned name, only with the gate", gate_weights_open_only_with_the_gate},
+    {"API 53: the spotter's weights open by their pinned name, only with the spotter", spot_weights_open_only_with_the_spotter},
+    {"API 53: the spotter's rows are the whole frame's, only with the spotter", rows_frame_reads_the_whole_frame_for_the_spotter},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
     {"API 47: the vertical model opens only for a job with a vertical mode, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
     {"the Large size's file opens at its pinned length only (VOCR5-L: 2,473,696 B)", the_large_size_opens_at_its_pinned_length_only},

@@ -2202,6 +2202,17 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("ocr_head_gate bits %d: speed 0x%08X", bits, (unsigned)fake_game_request.speed);
         mem_free();
     }
+    /* API 53: the text spotter rides in the speed word only with ocr_finder = spotter (GRAD by default: no bit) */
+    for (int finder = VJO_FINDER_GRAD; finder <= VJO_FINDER_SPOTTER; finder++) {
+        reset();
+        TEST_CHECK(cfg.ocr_finder == VJO_FINDER_GRAD); /* the default */
+        cfg.ocr_finder = finder;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK && !!(fake_game_request.speed & VJO_GAME_OCR_S_SPOT) == finder &&
+                   !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+        TEST_MSG("ocr_finder %d: speed 0x%08X", finder, (unsigned)fake_game_request.speed);
+        mem_free();
+    }
     /* API 36: the border rule (core/textnorm.h) rides in the speed word with non_japanese_filter = lines, the
      * default, and not with none */
     reset();

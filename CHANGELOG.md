@@ -110,6 +110,20 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   ([farm checks](docs/native-hooks.md#farm-checks)).
 - `tools/hook_farm.py` checks every verified entry against the farm's recorded hook bytes and texts; the host
   tests run 50 short excerpts of them through the worker's own hook path.
+- **An alternative line finder, vita-vn-ocr's text spotter** (`ocr_finder = spotter` in `config.ini`; the default
+  stays `grad`, Rubi's finder): a small network trained on the owner's hooked PS Vita and PSP pages (vita-vn-ocr
+  #128) finds the text lines inside your region, which the recognizer then reads as before. It reads the region
+  halved, as it was trained on the 960×544 screen (a PSP game in Adrenaline too), and gives the recognizer its
+  horizontal lines in its reading order; `ocr_spotter_refine = on` also tightens and splits its boxes. Its weights
+  (about 50-450 KB) are a file beside the models, read once into the game's memory and kept, as the LM is; when they
+  are missing, wrong or there is no memory for them, the job reads with Rubi's finder as before, and never steps down a
+  model size. Until vita-vn-ocr publishes its pick (pre-release `v0.3.8-textspot6.1`), its pin is a placeholder, so no
+  package carries the weights and `spotter` reads with Rubi's finder. Memory (exact bytes, [memory
+  ledger](docs/memory-ledger.md#the-spotter-finder-api-45)): its block, at most 516,096 B, and its part of the job's
+  scratch, at most 79,392 B more for a full screen, only in jobs that use it; its code, 16 KiB more of the OCR worker's
+  pages in every game that is ON, whichever finder it uses (196,608 B, 204,800 B in the debug build). Its time is
+  estimated at 79-105 ms for a 900×200 text box at 333 MHz (vita-vn-ocr's cycle model; nothing of it has run on a
+  console) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-45); API 45).
 
 ### Changed
 
