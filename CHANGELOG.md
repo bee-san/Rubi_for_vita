@@ -171,8 +171,8 @@ been reported.
   gate). A Normal job with the 2 MB LM (`ocr_lm = 2000k`) decodes with VOCR6-N's own settings for it (vita-vn-ocr #151:
   LM weight 0.4, bonus 1.5 nats, both line flags); every other size and LM tier keeps its settings, the default 1 MB
   LM's included. Normal's weights block is a page smaller (1,187,840 B), Large's the same (2,478,080 B), and no budget
-  changes: the game worker's code is 128 B (debug) and 112 B (normal) larger, in the same pages, and the Shell's and the
-  kernel's pages are unchanged (measured on both Vita builds). VOCR6's attribution ships as `ocr/VOCR6-ATTRIBUTION.md`: non-commercial use only, trained
+  changes: the game worker's code is 128 B larger in both builds, in the same pages, and the Shell and the kernel are
+  unchanged (measured on both Vita builds). VOCR6's attribution ships as `ocr/VOCR6-ATTRIBUTION.md`: non-commercial use only, trained
   on copyrighted game data, which is not redistributed. An update leaves 0.9.8's `VOCR5_N_w8g2.vocr` and
   `VOCR5_L_w8g2.vocr` (3,666,880 B) in `ux0:data/VitaJPOverlay/ocr/`: nothing reads them any more, so they may be
   deleted. Nothing of VOCR6 has run on a console ([details](docs/vita-vn-ocr.md#models)).

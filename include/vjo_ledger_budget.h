@@ -358,11 +358,10 @@
  * [measured: the build log's module rows, both builds, main 84dbad9 and this change, tools/fast_gate.sh's vitasdk
  * image]. No block, thread or allocation. */
 /* VOCR6's Normal and Large (vita-vn-ocr #125) and VOCR6-N's settings for the 2000k LM (core/vocr_ocr.c lm_retuned,
- * vjo_vocr_lm_settings, the job model passed to both decoders' lm_opts): worker text 161,272 -> 161,400 B debug (2,440 B
- * of room left) and 152,340 -> 152,452 B normal (3,196 B), data/bss unchanged (35,584 / 35,576 B), the same pages; the
- * kernel's debug text +4 B (the broker's longer names), the Shell's rows unchanged [measured: tools/check_memory_ledger.py,
- * main 19986c7's Release run 40519670391 artifacts against this change's fast-gate builds, VitaSDK 2026.08]. No block,
- * thread or allocation. */
+ * vjo_vocr_lm_settings, the job model passed to both decoders' lm_opts): worker text 162,472 -> 162,600 B debug (1,240 B
+ * of room left) and 153,508 -> 153,636 B normal (2,012 B), data/bss unchanged (35,872 / 35,856 B), the same pages; the
+ * kernel's and the Shell's rows unchanged [measured: tools/check_memory_ledger.py, main 8da24c8's Release run 40523323424
+ * artifacts against this change's fast-gate builds, VitaSDK 2026.08]. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
