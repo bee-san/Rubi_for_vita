@@ -120,7 +120,7 @@
  * VJO_GAME_OCR_S_VERTICAL 1 reads the region's rows first, as 2 does, and its columns unless the rows look like
  * horizontal text (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON); with 1 or 2 a job of columns whose model cannot be
  * read or has no room reads the rows; the find step's kinds 4 and 5 say so. A job of columns reads its columns' rows
- * once, in batches (VJO_VOCR_COLUMNS_BATCH), no longer once per column. The Shell leaves out a size whose model failed
+ * once, the rectangle around them (VJO_VOCR_COLUMNS_BATCH), no longer once per column. The Shell leaves out a size whose model failed
  * with ON too. Sizes and layouts are unchanged. 52 is #369's (merged first), so this is 53. */
 #define VJO_API_VERSION 53
 

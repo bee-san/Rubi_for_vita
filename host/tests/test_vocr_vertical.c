@@ -868,12 +868,14 @@ static void test_rotation_buffer_bound(void)
                     st.rotate_skipped, st.recognized);
         TEST_CHECK_(!strcmp(text, wide ? ref.text[0] : ref.joined), "wide %u: \"%s\"", wide, text);
         /* the column at the right went through the line buffer; the skipped one was never read. #379: two columns
-         * are fetched together, in one block for both (the batch); one alone in its own, as before */
-        const size_t right = (size_t)ref.set.lines[0].w * ref.set.lines[0].h;
-        TEST_CHECK_(st.tall == 2u - wide && st.line_bytes == (wide ? right : right + bytes) &&
-                        st.gathered == (wide ? 0u : 2u) && st.gather_batches == 1u - wide,
-                    "wide %u: %u tall, %zu B the largest, %u gathered in %u batches", wide, st.tall, st.line_bytes,
-                    st.gathered, st.gather_batches);
+         * are fetched together, the rectangle around both in one block; one alone in its own, as before */
+        const VocrLine *c0 = &ref.set.lines[0];
+        const unsigned gx = b->x, gy = b->y < c0->y ? b->y : c0->y;
+        const unsigned gx1 = c0->x + c0->w, gy1 = b->y + b->h > c0->y + c0->h ? b->y + b->h : c0->y + c0->h;
+        const size_t rect = (size_t)(gx1 - gx) * (gy1 - gy), right = (size_t)c0->w * c0->h;
+        TEST_CHECK_(st.tall == 2u - wide && st.line_bytes == (wide ? right : rect) && st.gathered == (wide ? 0u : 2u),
+                    "wide %u: %u tall, %zu B the largest (%zu), %u gathered", wide, st.tall, st.line_bytes,
+                    wide ? right : rect, st.gathered);
     }
 }
 
@@ -1227,13 +1229,13 @@ static void test_check_changes_no_row_job(void)
 
 void vjo_vocr_test_batch_bytes(size_t bytes);
 
-/* #379: a job of columns in a region taller than a strip reads the rows its columns span once, after its checks,
- * every column copied out of each strip (core/vocr_ocr.h VJO_VOCR_COLUMNS_BATCH), where it read each column's rows on
- * its own before, a strip a column at a time: the more columns, the more reads, each a frame of the game, and an icon
- * that rested for less than all of them tore every try that a job of rows, reading once, did not (the issue's
+/* #379: a job of columns in a region taller than a strip reads the rows its columns span once, before it recognizes
+ * any, every column copied out of each strip (core/vocr_ocr.h VJO_VOCR_COLUMNS_BATCH), where it read each column's
+ * rows on its own before, between their recognitions: the more columns, the more reads, each a frame of the game, and
+ * an icon that rested for less than all of them tore every try that a job of rows, reading once, did not (the issue's
  * "Recognizing…" for ever, a horizontal box read as 16 columns). The same columns, pixels, readings and text as
- * column by column (the batch's bound made 1 B: no batch), from fewer reads: the column-by-column reads less the
- * span's once; batches split where the bound says, and a block the source refuses has each column read as before. */
+ * column by column (the bound made 1 B: nothing gathered), from fewer reads: the column-by-column reads less the
+ * span's once; a rectangle over the bound, or a block the source refuses, has every column read as before. */
 static void test_columns_gathered_once(void)
 {
     static const unsigned glyphs[4] = {6, 4, 7, 3};
@@ -1247,15 +1249,16 @@ static void test_columns_gathered_once(void)
     TEST_ASSERT(ref.set.count == 4);
     const unsigned rows = vjo_vocr_strip_rows(RW, RH);
     TEST_ASSERT(rows < RH); /* taller than a strip */
-    unsigned y0 = RH, y1 = 0, per_column = 0;
-    size_t all = 0;
+    unsigned x0 = RW, x1 = 0, y0 = RH, y1 = 0, per_column = 0;
     for (unsigned i = 0; i < 4; i++) {
         const VocrLine *c = &ref.set.lines[i];
         per_column += (c->h + rows - 1u) / rows;
-        all += (size_t)c->w * c->h;
+        if (c->x < x0) x0 = c->x;
+        if (c->x + c->w > x1) x1 = c->x + c->w;
         if (c->y < y0) y0 = c->y;
         if (c->y + c->h > y1) y1 = c->y + c->h;
     }
+    const size_t all = (size_t)(x1 - x0) * (y1 - y0); /* the rectangle around them */
     const unsigned once = (y1 - y0 + rows - 1u) / rows;
     /* column by column */
     vjo_vocr_test_batch_bytes(1);
@@ -1263,27 +1266,27 @@ static void test_columns_gathered_once(void)
     TEST_ASSERT(job(M_COLS, &o, one_by_one, sizeof one_by_one, NULL, 0, &st) == VJO_OK);
     check_columns(&ref, one_by_one, &st, "one by one");
     const unsigned strips_one = st.strips;
-    TEST_CHECK_(!st.gathered && !st.gather_batches && st.tall == 4, "one by one: %u gathered, %u tall", st.gathered,
-                st.tall);
-    /* together: one batch */
+    TEST_CHECK_(!st.gathered && st.tall == 4, "one by one: %u gathered, %u tall", st.gathered, st.tall);
+    /* together */
     vjo_vocr_test_batch_bytes(0);
     TEST_ASSERT(job(M_COLS, &o, text, sizeof text, NULL, 0, &st) == VJO_OK);
     check_columns(&ref, text, &st, "together");
-    TEST_CHECK_(!strcmp(text, one_by_one) && st.gathered == 4 && st.gather_batches == 1 && st.tall == 4 &&
-                    st.line_bytes == all && strips_one - st.strips == per_column - once,
-                "together: %u gathered in %u batches, %zu B (%zu), %u strips against %u one by one (%u less, want %u)",
-                st.gathered, st.gather_batches, st.line_bytes, all, st.strips, strips_one, strips_one - st.strips,
-                per_column - once);
+    TEST_CHECK_(!strcmp(text, one_by_one) && st.gathered == 4 && st.tall == 4 && st.line_bytes == all &&
+                    strips_one - st.strips == per_column - once,
+                "together: %u gathered, %zu B (%zu), %u strips against %u one by one (%u less, want %u)", st.gathered,
+                st.line_bytes, all, st.strips, strips_one, strips_one - st.strips, per_column - once);
     printf("strips read: %u column by column, %u together (%u columns, %u rows a strip)\n", strips_one, st.strips, 4u,
            rows);
-    /* two batches: the bound holds the first two columns' bytes */
-    vjo_vocr_test_batch_bytes((size_t)ref.set.lines[0].w * ref.set.lines[0].h +
-                              (size_t)ref.set.lines[1].w * ref.set.lines[1].h);
+    /* a rectangle a byte over the bound: each column as before */
+    vjo_vocr_test_batch_bytes(all - 1u);
     TEST_ASSERT(job(M_COLS, &o, text, sizeof text, NULL, 0, &st) == VJO_OK);
-    check_columns(&ref, text, &st, "two batches");
-    TEST_CHECK_(!strcmp(text, one_by_one) && st.gathered == 4 && st.gather_batches == 2 && st.strips < strips_one,
-                "two batches: %u gathered in %u, %u strips", st.gathered, st.gather_batches, st.strips);
-    /* the batch's block refused (the source gives one column's at most): each column as before */
+    check_columns(&ref, text, &st, "over the bound");
+    TEST_CHECK_(!strcmp(text, one_by_one) && !st.gathered && st.tall == 4 && st.strips == strips_one,
+                "over the bound: %u gathered, %u strips", st.gathered, st.strips);
+    vjo_vocr_test_batch_bytes(all); /* at the bound: together */
+    TEST_ASSERT(job(M_COLS, &o, text, sizeof text, NULL, 0, &st) == VJO_OK);
+    TEST_CHECK_(!strcmp(text, one_by_one) && st.gathered == 4, "at the bound: %u gathered", st.gathered);
+    /* the block refused (the source gives one column's at most): each column as before */
     vjo_vocr_test_batch_bytes(0);
     line_limit = 0;
     for (unsigned i = 0; i < 4; i++) {
@@ -1293,8 +1296,10 @@ static void test_columns_gathered_once(void)
     line_asks = 0;
     TEST_ASSERT(job(M_COLS, &o, text, sizeof text, NULL, 0, &st) == VJO_OK);
     check_columns(&ref, text, &st, "refused");
-    TEST_CHECK_(!strcmp(text, one_by_one) && !st.gathered && st.strips == strips_one && line_asks == 1u + 4u,
-                "refused: %u gathered, %u strips (%u one by one), %u asks", st.gathered, st.strips, strips_one, line_asks);
+    TEST_CHECK_(!strcmp(text, one_by_one) && !st.gathered && st.strips == strips_one && line_asks == 1u + 4u &&
+                    st.tall == 4 && !st.tall_skipped,
+                "refused: %u gathered, %u strips (%u one by one), %u asks, %u tall, %u skipped", st.gathered, st.strips,
+                strips_one, line_asks, st.tall, st.tall_skipped);
     line_limit = 0;
     seen_ph = 0;
     /* a region inside one strip: the strip holds every column, nothing gathered (test_columns_read_right_to_left's
@@ -1314,8 +1319,8 @@ static int horizontal_of(const unsigned (*boxes)[4], unsigned n, unsigned w, uns
 }
 
 /* API 53, on's rule (core/vocr_ocr.c vjo_vocr_rows_horizontal): the row finder's lines of horizontal dialogue (the
- * boxes and screen of test_rows_vertical_rule), a speaker's name above them, an icon or a short line below; never
- * the rows of vertical text (the same pages' rows) or what is not a few lines one under another, at each edge. */
+ * boxes and screen of test_rows_vertical_rule); never the rows of vertical text (the same pages' rows) or what is not a
+ * few lines one under another, at each edge. */
 static void test_rows_horizontal_rule(void)
 {
     static const unsigned two[8][4] = {{12, 11, 59, 28}, {14, 36, 57, 26}, {12, 59, 59, 28}, {13, 83, 58, 27},
@@ -1333,33 +1338,26 @@ static void test_rows_horizontal_rule(void)
     TEST_CHECK(!horizontal_of(screen, 6, 960, 544) && !horizontal_of(screen, 5, 960, 544)); /* more than 4 rows */
     TEST_CHECK(horizontal_of(screen, 2, 960, 544)); /* two lines of it */
     TEST_CHECK(!horizontal_of(psp, 0, 358, 94) && !vjo_vocr_rows_horizontal(NULL, 2, 358, 94));
-    {   /* a name above two lines; below them an icon, or a short line; never in between, never two, never taller
-         * than the lines, and only beside a line at least 8 times as wide as tall */
+    {   /* a speaker's name above the lines, an icon below them: not lines (on reads the columns) */
         static const unsigned name[3][4] = {{12, 0, 60, 24}, {12, 30, 300, 24}, {12, 60, 280, 24}};
         static const unsigned icon[3][4] = {{12, 0, 300, 24}, {12, 30, 280, 24}, {280, 60, 24, 24}};
-        static const unsigned middle[3][4] = {{12, 0, 300, 24}, {12, 30, 60, 24}, {12, 60, 280, 24}};
-        static const unsigned two_odd[4][4] = {{12, 0, 60, 24}, {12, 30, 300, 24}, {12, 60, 280, 24}, {280, 90, 24, 24}};
-        static const unsigned tall_name[3][4] = {{12, 0, 60, 30}, {12, 36, 300, 24}, {12, 66, 280, 24}};
-        static const unsigned short_lines[2][4] = {{12, 0, 60, 24}, {12, 30, 150, 24}}; /* 150 < 8 x 24 */
-        static const unsigned long_line[2][4] = {{12, 0, 60, 24}, {12, 30, 192, 24}};   /* 192 = 8 x 24 */
-        TEST_CHECK(horizontal_of(name, 3, 330, 90) && horizontal_of(icon, 3, 330, 90));
-        TEST_CHECK(!horizontal_of(middle, 3, 330, 90) && !horizontal_of(two_odd, 4, 330, 120));
-        TEST_CHECK(!horizontal_of(tall_name, 3, 330, 96));
-        TEST_CHECK(!horizontal_of(short_lines, 2, 330, 60) && horizontal_of(long_line, 2, 330, 60));
-        TEST_CHECK(!horizontal_of(name, 1, 330, 90)); /* one row and it no line */
+        TEST_CHECK(!horizontal_of(name, 3, 330, 90) && !horizontal_of(icon, 3, 330, 90));
+        TEST_CHECK(horizontal_of(name + 1, 2, 330, 90) && horizontal_of(icon, 2, 330, 90)); /* the lines alone */
     }
     {   /* each row: 3 times as wide as tall (72 x 24, not 71) and at most 96 px tall; each next to the one above it,
          * at most twice the taller one's height between them, and over part of its span */
         static const unsigned edge[2][4] = {{0, 0, 72, 24}, {0, 30, 300, 24}};
-        static const unsigned under[2][4] = {{0, 0, 71, 24}, {0, 30, 71, 24}};
+        static const unsigned under[2][4] = {{0, 0, 71, 24}, {0, 30, 300, 24}};
         static const unsigned big[1][4] = {{0, 0, 900, 97}};
+        static const unsigned tall_ok[1][4] = {{0, 0, 900, 96}};
         static const unsigned near[2][4] = {{0, 0, 300, 24}, {0, 72, 300, 24}};  /* 48 px between: twice 24 */
         static const unsigned far[2][4] = {{0, 0, 300, 24}, {0, 73, 300, 24}};   /* 49 */
         static const unsigned apart[2][4] = {{0, 0, 300, 24}, {300, 30, 300, 24}}; /* side by side, not under */
+        static const unsigned touch[2][4] = {{0, 0, 300, 24}, {299, 30, 300, 24}}; /* one pixel of span shared */
         TEST_CHECK(horizontal_of(edge, 2, 320, 60) && !horizontal_of(under, 2, 320, 60));
-        TEST_CHECK(!horizontal_of(big, 1, 960, 120));
+        TEST_CHECK(!horizontal_of(big, 1, 960, 120) && horizontal_of(tall_ok, 1, 960, 120));
         TEST_CHECK(horizontal_of(near, 2, 320, 100) && !horizontal_of(far, 2, 320, 100));
-        TEST_CHECK(!horizontal_of(apart, 2, 620, 60));
+        TEST_CHECK(!horizontal_of(apart, 2, 620, 60) && horizontal_of(touch, 2, 620, 60));
     }
     {   /* rows auto takes for vertical text are not: in a region as tall as wide, two rows at most 4 times as wide as
          * tall (here 3.3: wide enough for on's rule) */
@@ -1437,7 +1435,7 @@ TEST_LIST = {
      test_columns_read_right_to_left},
     {"columns: helpers and the line cache give the serial job's text", test_helpers_and_cache},
     {"columns: one larger than the rotation buffer is left out, never read, and counted", test_rotation_buffer_bound},
-    {"columns (#379): a region's columns read once, in batches, as column by column; a refused block as before",
+    {"columns (#379): a region's columns read once, before any is recognized, as column by column; a refused block as before",
      test_columns_gathered_once},
     {"on (API 53): the rule on the row finder's rows, horizontal and vertical, and its edges", test_rows_horizontal_rule},
     {"on (API 53): rows of horizontal text are off's job; other rows read nothing (VJO_E_VERTICAL)", test_on_check},

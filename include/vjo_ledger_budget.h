@@ -380,6 +380,13 @@
  * and tools/check_memory_ledger.py on both builds' VitaJPOverlay_OCR, main 19986c7 and this change, tools/fast_gate.sh's
  * vitasdk image]. No block, thread or allocation: the batch is the tall-line block (VJO_BUDGET_GAME_LINE, its bound
  * unchanged). */
+/* API 53 (#379, vertical text ON prefers columns; a job of columns reads its columns' rows once): the worker's code
+ * segment 163,528 -> 163,640 B (debug: 200 B of the last page left) and 154,548 -> 154,724 B (normal: 924 B), its data
+ * segment 35,880 -> 36,360 B and 35,864 -> 36,344 B (core/vocr_ocr.c's pinned model table, 480 B, moved there:
+ * VJO_DATA_TABLE), the same pages; the Shell's 102,372 + 73,664 -> 102,356 + 73,712 B (debug: one debug log line, 52
+ * B, moved to its data segment) and 90,044 -> 90,076 B (normal), the same pages [measured: tools/check_memory_ledger.py
+ * on both builds, main a786bfd and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the
+ * columns' rectangle is the tall-line block (VJO_BUDGET_GAME_LINE, its bound unchanged). */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
@@ -611,8 +618,8 @@
  * block) = 516,096 B; a larger band is left out and counted. A tall line of at most
  * VJO_VOCR_STRIP_BYTES may still run on a helper (API 22): it is copied out of this block into
  * the helper's line slot first, so no helper reads it; a larger one runs on the worker's thread. API 53 (#379): a job
- * of columns holds a batch of its columns in it at once (core/vocr_ocr.h VJO_VOCR_COLUMNS_BATCH, this bound), each
- * column copied out of it into the rotation buffer as it is read. */
+ * of columns holds the rectangle around its columns in it (core/vocr_ocr.h VJO_VOCR_COLUMNS_BATCH, this bound), each
+ * column turned out of it into the rotation buffer as it is read. */
 #define VJO_BUDGET_GAME_LINE 516096u
 /* API 20: the beam + LM decoder's LM, resident like the weights while the game is the
  * active one, USER_RW only: the largest tier, 3,603,552 B (include/vjo_vocr_sizes.h; VOCR6's

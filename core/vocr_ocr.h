@@ -128,12 +128,13 @@ typedef struct {
  * (width x height) is left out, never read, and counted (VjoVocrStats.rotate_skipped): one wider than
  * 105 px at the full 544-px height. */
 #define VJO_VOCR_ROTATE_BYTES VJO_VOCR_STRIP_BYTES
-/* #379: a job of columns in a region taller than a strip fetches its columns in batches of at most this many bytes
- * (their width x height; the line block's bound, VJO_VOCR_LINE_MAX_BYTES), in reading order: one pass over the rows a
- * batch spans, each row read once and checked as always, every column of the batch copied out of each strip into one
- * line_buffer block. Before, each column was read on its own, a pass over its rows each: a box of 16 one-character
- * columns read its rows 16 times, a strip a frame, and an animated icon resting for less than that tore every try
- * (VJO_E_SCREEN_CHANGED) where a job of rows, reading them once, did not. A block refused: each column as before. */
+/* #379: a job of columns in a region taller than a strip fetches its columns together, before it recognizes any: the
+ * rectangle around them, at most this many bytes (the line block's bound, VJO_VOCR_LINE_MAX_BYTES), read through
+ * line_buffer as a tall line is, each row once and checked as always; each column is a part of it. Before, each column
+ * was read on its own, a pass over its rows each, between the recognitions: a box of 16 one-character columns read its
+ * rows 16 times, a strip a frame, and an animated icon resting for less than that tore every try (VJO_E_SCREEN_CHANGED)
+ * where a job of rows, reading them once, did not. A larger rectangle, or a block refused, has each column read as
+ * before. */
 #define VJO_VOCR_COLUMNS_BATCH VJO_VOCR_LINE_MAX_BYTES
 /* API 47, config.ini ocr_vertical = auto (VjoVocrPolicy.vertical_check): whether the row finder's n lines
  * (vita-vn-ocr's VocrLine, vocr_lines.h) on a w x h region look like vertical text read as rows, so that the
@@ -385,9 +386,8 @@ typedef struct {
     /* Vertical text (a model of columns, VJO_VOCR_FINDER_COLUMNS). */
     unsigned columns;        /* 1: the lines were columns, each read turned 90 degrees */
     unsigned rotate_skipped; /* columns left out: more than VJO_VOCR_ROTATE_BYTES */
-    /* #379: the columns fetched together, a batch's rows read once (VJO_VOCR_COLUMNS_BATCH), and the batches: in a
-     * region taller than a strip, every column of the batch out of each strip into one line_buffer block */
-    unsigned gathered, gather_batches;
+    /* #379: the columns fetched together, the rectangle around them read once (VJO_VOCR_COLUMNS_BATCH); 0: none */
+    unsigned gathered;
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. A column (a model of
@@ -616,12 +616,12 @@ typedef struct {
      * exactly as before; a model of columns ignores it. API 50: with line_fix too, a region at least as tall as
      * wide is checked on the frozen finder's rows (the rule's), then, where they are not vertical text, found
      * again with line_fix's fixes and read; a wider region is found once, with them. */
-    int vertical_check;
     /* API 53 (config.ini ocr_vertical = on, #379): vertical_check VJO_VOCR_CHECK_ON has a job of rows return
      * VJO_E_VERTICAL, reading nothing, wherever its rows do not look like horizontal text
      * (vjo_vocr_rows_horizontal), and read them where they do: on prefers columns. Its rows are checked as auto's
      * are (with line_fix, a region at least as tall as wide on the frozen finder's rows, then found again with the
      * fixes and read). VJO_VOCR_CHECK_AUTO (1) is API 47's auto. */
+    int vertical_check;
     /* API 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.h): VOCR_FIX_* flags for
      * vocr_find_lines_fix_rows, the finder with COLGAP (a line's parts across a full-width space stay one line; the
      * default), JUNK (frame strips on the region's top or bottom edge and repeating ornaments are not lines; opt-in,

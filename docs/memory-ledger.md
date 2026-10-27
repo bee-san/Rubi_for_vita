@@ -338,18 +338,31 @@ keeps; main's rows: `include/vjo_ledger_budget.h`, API 50) and on `b6c715c` (the
 thread or allocation.
 
 **Vertical text ON prefers columns (API 53, #379).** No block, thread or stack is added. A job of columns now asks
-the tall-line block (`VjoGameVocrLine`, the same one, freed with the job) for a batch of its columns at once, where it
-asked for one column at a time: the batch is at most `VJO_VOCR_COLUMNS_BATCH` = `VJO_VOCR_LINE_MAX_BYTES`, 516,096 B,
-the block's bound and `VJO_BUDGET_GAME_LINE` as before, so the game's worst case is unchanged; refused, the job asks
-for each column alone, as before. On the host's measured regions the batch's block was 22-24 KB on drawn boxes
-(median; 52 KB at most) and 116 KB on whole screens (303 KB at most), where a column's was at most 57,344 B
+the tall-line block (`VjoGameVocrLine`, the same one, freed with the job) for the rectangle around its columns, where it
+asked for one column at a time: at most `VJO_VOCR_COLUMNS_BATCH` = `VJO_VOCR_LINE_MAX_BYTES`, 516,096 B, the block's
+bound and `VJO_BUDGET_GAME_LINE` as before, so the game's worst case is unchanged; a larger rectangle, or a refused
+block, has each column read alone, as before. On the host's measured regions the rectangle was 29-34 KB on drawn boxes
+(median; 153 KB at most) and 428 KB on whole screens (516 KB at most), where a column's was at most 57,344 B
 ([on's rule](vita-vn-ocr.md#ons-rule-api-53-379)). On's rows try first is a job of rows, the size's own blocks, freed
-before its columns try takes the vertical model's, as auto's tries do. Code [measured: `arm-vita-eabi-size -A`, both
-builds' VitaJPOverlay_OCR and VitaJPOverlay_Shell, main `19986c7` and this change, `tools/fast_gate.sh`'s VitaSDK
-image]: the game worker's text 122,554 → 123,432 B (normal) and 126,776 → 127,640 B (debug), the same pages (its code
-segment 153,220 and 162,136 B: 2,428 and 1,704 B of the last page left); the Shell's 66,968 → 66,992 B (normal: its
-code segment 90,036 B, 76 B of the last page left) and 74,544 → 74,624 B (debug: 188 B left), the same pages; their
-data unchanged. The Rubi app's two help strings are its own.
+before its columns try takes the vertical model's, as auto's tries do.
+
+The code had no room: `main` `a786bfd` (after #369) left the debug worker 312 B of its last code page and the debug
+Shell 28 B. So two read-only tables move to the data segments (`VJO_DATA_TABLE`), whose last pages had room: the game
+worker's pinned model table (`core/vocr_ocr.c` `models`, 480 B) and one debug log line of the Shell's (52 B), and on's
+rule is the plain one (126 B; the one that allowed a name or an icon beside the lines took 200 B). The module rows
+[measured: `tools/check_memory_ledger.py` and `arm-vita-eabi-size -A`, both builds, `main` `a786bfd` and this change,
+`tools/fast_gate.sh`'s VitaSDK image]:
+
+| module | `main` `a786bfd` | this change | pages |
+|---|---:|---:|---:|
+| Game worker, debug | 163,528 + 35,880 B | 163,640 + 36,360 B | 200,704 B both |
+| Game worker, normal | 154,548 + 35,864 B | 154,724 + 36,344 B | 192,512 B both |
+| Shell, debug | 102,372 + 73,664 B | 102,356 + 73,712 B | 176,128 B both |
+| Shell, normal | 90,044 + 73,520 B | 90,076 + 73,520 B | 163,840 B both |
+
+The worker's code segment grows by 112 B (debug) and 176 B (normal): the change's 592 and 656 B less the table's 480 B
+moved out; the debug worker has 200 B of its last code page left and 504 B of its data page, the normal one 924 and 520
+B; the debug Shell 44 and 16 B, the normal Shell 36 and 208 B. None of it is measured on a console.
 
 ## Trusted hooks and the OCR-skip switches (API 43)
 

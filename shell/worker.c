@@ -1989,7 +1989,11 @@ static int cancel_outdated_job(const VjoState *st)
         shows_screen(job_capture_scene, job_capture_seq, st))
         return 0;
     job_cancelled = 1;
-    vjo_dlog("job cancelled: the screen changed since its capture");
+    {   /* (in the data segment: the debug Shell's code pages are full, #379) */
+        static const char cancelled_line[] VJO_DATA_TABLE(job_cancelled_line) =
+            "job cancelled: the screen changed since its capture";
+        vjo_dlog("%s", cancelled_line);
+    }
     return 1;
 }
 

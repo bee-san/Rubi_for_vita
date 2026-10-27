@@ -175,16 +175,17 @@ been reported.
   quietly and tries again, so the text never came; a job of rows reads its lines once. And each try published the
   waiting overlay again, which redrew it at every try: the flicker at its bottom. Now:
   - **ON prefers columns.** It reads the region's rows first, as Automatic does, and the columns unless the rows are
-    plainly lines of horizontal text (1 to 4 wide rows one under another; a name above or an icon below allowed): then
-    it is OFF's job exactly. Where the vertical model cannot be read or has no room, ON reads the rows too, as
+    plainly lines of horizontal text (1 to 4 wide rows, one under another): then it is OFF's job exactly. Where the vertical model cannot be read or has no room, ON reads the rows too, as
     Automatic does (it failed before), and a size whose model fails is left out with ON as with the others. On the
     host the rule read none of 3,715 regions of vertical text as rows (Yunohana SpRING!'s 3,353: tight boxes, boxes with
     the name tag, boxes drawn once and whole screens; vita-vn-ocr #103's 362 development regions; through the job, the
-    same text as before on every one), and read 96.2 % of 50,945 hooked horizontal dialogue boxes of 44
-    titles as rows (16.5 % of whole screens; [on's rule](docs/vita-vn-ocr.md#ons-rule-api-53-379)). The rule was
-    chosen on these regions: nothing held out checks it.
-  - **A job of columns reads its columns' rows once**, in batches (Automatic's columns too), before it recognizes
-    them: the same text as column by column, from fewer strips (4 columns over 3 strips: 18 → 11 in the host test).
+    same text as before on every one), and read 94.6 % of 50,945 hooked horizontal dialogue boxes of 44
+    titles as rows (15.6 % of whole screens; [on's rule](docs/vita-vn-ocr.md#ons-rule-api-53-379)). The rule was
+    chosen on these regions: nothing held out checks it. A box with a speaker's name or an icon beside its lines is
+    still read as columns: draw it around the lines.
+  - **A job of columns reads its columns' rows once**, the rectangle around them (Automatic's columns too), before it
+    recognizes them: the same text as column by column, from fewer strips (4 columns over 3 strips: 18 → 11 in the
+    host test).
   - **A retry no longer redraws the waiting overlay**: the view is published again only when what it shows changes
     (the wait hint, the text).
 

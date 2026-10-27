@@ -1113,11 +1113,10 @@ draft #223's job, on today's main):
   region), and the job computes the same flag (`vocr_line_dark`) on the pixels it fetches for the column. The finder's
   arena is the larger of the two finders': 83,619 B at 960×544 (GRAD's 83,323 B), under the model's 124,832 B.
 - **Each column is a line.** In a region taller than a strip (most of them) the columns are fetched together before any
-  is read (#379): the rows a batch of columns spans are read once, a strip at a time, each row checked as always, and
-  every column of the batch is copied out of each strip into the tall-line block (a batch: as many columns, in reading
-  order, as `VJO_VOCR_COLUMNS_BATCH`, 516,096 B, holds; a block refused, each column as before, its rows a strip at a
-  time); in a region inside one strip, from the strip. Each is turned 90° anticlockwise (`vocr_column_rotate`, its top
-  to the left) into the
+  is read (#379): the rectangle around them is read through the tall-line block as a tall line is, each row once and
+  checked as always, and each column is a part of it (a rectangle over `VJO_VOCR_COLUMNS_BATCH`, 516,096 B, or a block
+  refused: each column on its own, as before); in a region inside one strip, from the strip. Each is turned 90°
+  anticlockwise (`vocr_column_rotate`, its top to the left) into the
   job's rotation buffer, and from there it is the line: the blank-line check, the line cache, the helpers' copies,
   `vocr_run` (grey, inverted for dark text), the counter re-decode and the LM decoder take the turned strip. The
   column's box on the screen stays the line's geometry (`game vocr lines:` in the log), and its line flags carry
@@ -1184,8 +1183,8 @@ was read. Two causes, both found on the host (nothing of this has run on a conso
 
 **What changed.** On reads rows first, by the rule below: on a horizontal box it is off's job, and the bench's box
 shows its text in 12 of 12 at 30 and 60 frames a second, at off's times, in each of its five icons (turning 15-30
-frames, resting 15-45). A job of columns reads the rows its columns span once, in batches, before it recognizes any of
-them (`core/vocr_ocr.h` `VJO_VOCR_COLUMNS_BATCH`, below), for on and auto alike: the same pixels, readings and text as
+frames, resting 15-45). A job of columns reads its columns' rows once, the rectangle around them, before it recognizes
+any of them (`core/vocr_ocr.h` `VJO_VOCR_COLUMNS_BATCH`), for on and auto alike: the same pixels, readings and text as
 column by column (`host/tests/test_vocr_vertical.c`). On the bench's vertical box (`host/samples/vertical.jpg`'s four
 columns, 220 × 380 px, the icon under the last one) on reads the columns in 12 of 12 for every icon, before and after
 (auto reads that box's rows, which its rule does not take for columns: 9 and 10 of 12 with the quickest icon). And a try
@@ -1195,11 +1194,13 @@ while the open overlay already waits with that status and no text publishes noth
 **The rule** (`core/vocr_ocr.c` `vjo_vocr_rows_horizontal`, on the rows auto's check takes: with `ocr_line_fix` on, in a
 region at least as tall as wide the frozen finder's, where a name tag beside the columns, joined to them by the fixes,
 made one wide row of 3 of 863 such boxes of vertical text): the rows are lines of horizontal text when there are 1 to 4
-of them, each at least 3 times as wide as tall and at most 96 px tall, or all but one, the first or the last (a
-speaker's name above the lines, a short line or an icon below them), no taller than the others, beside a row at least 8
-times as wide as tall; each next to the one above it (at most twice the taller one's height between them) and over part
-of its span; and auto's rule does not take them for vertical text. Integer arithmetic on at most 4 boxes.
-Elsewhere on's job returns `VJO_E_VERTICAL`, as auto's does, and the worker reads the columns.
+of them, each at least 3 times as wide as tall and at most 96 px tall, each next to the one above it (at most twice the
+taller one's height between them) and over part of its span, and auto's rule does not take them for vertical text.
+Integer arithmetic on at most 4 boxes. Elsewhere on's job returns `VJO_E_VERTICAL`, as auto's does, and the worker
+reads the columns. A speaker's name or an icon in the box beside the lines makes a row too short for it: such a box is
+read as columns (a rule that allowed one such row, the first or the last, read 96.2 % of the boxes below as rows, not
+94.6 %, also with no region of vertical text, but took 200 B of the worker's code where this one takes 126 B, and the
+debug worker's last page had 200 B left with this one).
 
 On the regions above (`vjo-page-ocr --find-only --line-fix on`, whose `horizontal` is the job's check's verdict):
 
@@ -1207,28 +1208,29 @@ On the regions above (`vjo-page-ocr --find-only --line-fix on`, whose `horizonta
 |---|---:|
 | Yunohana SpRING!: tight, with the name tag, drawn once, whole screens (863, 863, 764, 863) | 0, 0, 0, 0 |
 | vita-vn-ocr #103's development regions: tight, whole pages (181, 181) | 0, 0 |
-| the hooked corpus's 44 other titles: drawn boxes (50,945) | 48,987 (96.2 %; a title 80.7-100 %, median 97.1 %) |
-| the same titles: whole screens (50,706) | 8,377 (16.5 %) |
-| VNDB's PS Vita and PSP screenshots, whole screens (2,837) | 85 (3.0 %) |
+| the hooked corpus's 44 other titles: drawn boxes (50,945) | 48,178 (94.6 %; a title 69.6-100 %, median 95.5 %) |
+| the same titles: whole screens (50,706) | 7,903 (15.6 %) |
+| VNDB's PS Vita and PSP screenshots, whole screens (2,837) | 77 (2.7 %) |
 
 The rule's thresholds were tried on these same regions: no held-out set checks it. Through the job (`vertical_eval.py
 run`, `--vertical on --line-fix on`, this change against main `19986c7`): on gave main's text on every one of the 3,353
 Yunohana and 362 development regions, all read as columns; on 3,080 hooked horizontal regions (60 drawn boxes and 10
-whole screens a title) it read rows in 2,614, each of them off's job exactly (text, lines, CTC frames, strips), where
-main's on read columns in all of them.
+whole screens a title) it read rows in 2,572 (2,493 of the 2,640 boxes), each of them off's job exactly (text, lines,
+CTC frames, strips), where main's on read columns in all of them.
 
 **What it costs.** On horizontal text read as rows, nothing: off's job. On vertical text, the check's passes come first,
 as auto's do, and the columns are read once: strips read (median / 90th percentile, main's on → this change's on) 23/31
-→ 36/46 on the tight boxes, 27/37 → 37/47 with the name tag, 27/33 → 45/47 drawn once, 64/93 → 60/66 on whole screens;
+→ 36/46 on the tight boxes, 27/37 → 37/47 with the name tag, 27/33 → 45/47 drawn once, 64/93 → 60/67 on whole screens;
 on the development regions 14/25 → 18/35 and 39/75 → 58/65. On the box drawn once that is about 0.3 s more at 60 frames
-a second, 0.6 s at 30 (estimates: a strip a frame). The batch's block (the tall-line block, `VjoGameVocrLine`) holds a
-batch's columns where it held one column (at most 57,344 B) before: 22 KB on the tight boxes (median; 52 KB at most), 24
-KB drawn once, 116 KB on a whole screen (303 KB at most), within its bound and budget, 516,096 B (`VJO_VOCR_LINE_MAX_BYTES`,
-`VJO_BUDGET_GAME_LINE`); refused, each column is read as before.
+a second, 0.6 s at 30 (estimates: a strip a frame). The tall-line block (`VjoGameVocrLine`) holds the rectangle around
+the columns where it held one column (at most 57,344 B) before: 29 KB on the tight boxes (median; 51 KB at most), 34 KB
+drawn once (60 KB), 428 KB on a whole screen (516 KB), within its bound and budget, 516,096 B (`VJO_VOCR_LINE_MAX_BYTES`,
+`VJO_BUDGET_GAME_LINE`); 32 of 863 whole screens had a larger one and read column by column, as before.
 
-**Limits.** With on, a region of 5 or more lines (an NVL page, a menu), or of lines far apart, is read as columns, as
-before. A short block of three or more columns of one or two characters, wider than tall, looks like lines and is read
-as rows (none in the regions measured).
+**Limits.** With on, a region of 5 or more lines (an NVL page, a menu), of lines far apart, or with a speaker's name or
+an icon beside its lines, is read as columns, as before: draw the box around the lines alone, or use Automatic. A short
+block of columns of one or two characters, wider than tall, could look like lines and be read as rows (none in the
+regions measured).
 
 **The request (API 47).** `VjoGameOcrRequest.speed` bits 28-29 (`VJO_GAME_OCR_S_VERTICAL`): 0 rows, 1 columns, 2
 auto; 3 is refused, as unknown bits are, by the kernel and by the game worker. The Shell sends the setting as it is
