@@ -14,14 +14,19 @@ been reported.
 ### Added
 
 - The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
-  row (an animated icon or a moving picture in the region), its next try says "Recognizing… Something in the region
-  keeps moving (an animated icon?), so the text never holds still. Press □ to draw a region around just the text."
-  instead of "Recognizing…" alone, until a read shows the text. Before, it said "Recognizing…" for as long as the
-  user waited. With an animated icon, on the host's spinner bench (184 hooked regions, est.), it shows 2.75 s after
-  L + R (median; 4.8 s at most); in the owner's CLANNAD logs no wait for text met a torn read, so it would have shown
-  in none of them. A region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
-  "Recognizing…" (on by default;
-  [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)). Not run on a console yet.
+  row (an animated icon, a moving picture or text still typing in the region), its next try says "Recognizing…
+  Something in the region keeps moving (an animated icon? text still typing?). If a region around just the text
+  leaves it out, press □ to draw one." instead of "Recognizing…" alone, until a read shows the text. Before, it said
+  "Recognizing…" for as long as the user waited.
+  - **When:** with an animated icon, on the host's spinner bench (184 hooked regions, 23 scenarios, est.), 2.85 s after
+    L + R (median; 4.8 s at most). In the owner's CLANNAD logs no wait for text met a torn read, so it would have shown
+    in none of them.
+  - **The fix it names** is a condition: a region drawn with □ leaves out an icon beside the text, not one inside a
+    line, a picture behind the text or a line still typing (the audit's follow-up; #364 said "Press □" outright).
+    Pause the game to read joins it with #355.
+  - **The setting:** a region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
+    "Recognizing…" (on by default; [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)).
+  - Not run on a console yet.
 - A native text hook for 極限脱出ＡＤＶ 善人シボウデス (Zero Escape: Virtue's Last Reward, `PCSG00020`, APP_VER
   01.00), where users reported OCR never worked and took forever. Its LunaTranslator site could never install: the
   eboot is linked at a fixed 0x81000000, so Luna's address is that address, and Rubi's table read it as an offset

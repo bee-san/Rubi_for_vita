@@ -57,8 +57,8 @@ typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 :
  * next try starts at once, from the second in a row SCREEN_RETRY_MS later,
  * doubling up to SCREEN_RETRY_MAX_MS. The try itself waits in the game for the
  * text to hold still (vocr_run_one's request). Nothing is shown for either,
- * until WAIT_HINT_AFTER in a row: then the open overlay says why it waits
- * (ocr_wait_hint, #358: start_job_kind). */
+ * until a try of the open overlay starts after WAIT_HINT_AFTER in a row: that
+ * one says why it waits (ocr_wait_hint, #358: start_job_kind). */
 #define SCREEN_RETRY_MS      250u
 #define SCREEN_RETRY_MAX_MS 4000u
 #define WAIT_HINT_AFTER 2u /* #358: measured (docs/text-stability.md "Why the overlay waits") */
@@ -1764,10 +1764,12 @@ static int net_busy(void)
 /* #358 (the owner: "Say why the user is waiting"): what the open overlay says, with ocr_wait_hint on, as it starts a
  * try at its text once WAIT_HINT_AFTER jobs in a row found the text changed under every read (screen_changed_streak,
  * note_screen_changed; the press's own tries, or Automatically's before it): why it still is recognizing, and what
- * helps. Not an error: the tries go on, and a read shows its text. In the data segment (the normal Shell's code room). */
+ * helps. A region drawn with □ helps only where it can leave the moving thing out (an icon beside the text), not an
+ * icon inside a line, a picture behind the text or text still typing: so the fix is said as a condition (audit F1).
+ * Not an error: the tries go on, and a read shows its text. In the data segment (the normal Shell's code room). */
 static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) =
-    "Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ "
-    "to draw a region around just the text.";
+    "Recognizing… Something in the region keeps moving (an animated icon? text still typing?). If a region around "
+    "just the text leaves it out, press □ to draw one.";
 /* the overlay's and the strip's status while a job runs, in the data segment too (#358: its code room back) */
 static const char RECOGNIZING[] VJO_DATA_TABLE(RECOGNIZING) = "Recognizing…";
 

@@ -4394,10 +4394,12 @@ static void test_selftest_waits_for_text_in_the_region(void)
 #endif
 
 /* Nothing about a changed screen reaches the user (#81 request 4), but the open overlay's wait hint after
- * WAIT_HINT_AFTER torn jobs in a row (#358: test_open_overlay_says_why_it_waits). */
+ * WAIT_HINT_AFTER torn jobs in a row (#358: test_open_overlay_says_why_it_waits), which is allowed by its text
+ * (not by the words it happens to avoid) and is never an error. */
 static void check_quiet(void)
 {
-    TEST_CHECK(!g_view.status_is_error && !strstr(g_view.status, "changed") && !strstr(g_view.status, "reopen"));
+    TEST_CHECK(!g_view.status_is_error && (!strcmp(g_view.status, WAIT_HINT) ||
+                                           (!strstr(g_view.status, "changed") && !strstr(g_view.status, "reopen"))));
     TEST_CHECK(g_view.strip_kind != VJO_STRIP_ERROR && !strstr(g_view.strip_text, "changed"));
 }
 
@@ -4538,6 +4540,38 @@ static void check_shown(const char *text, const char *meaning, uint32_t cursor)
     check_quiet();
 }
 
+/* As finish_current_job, with the job cancelled for a newer screen (cancel_outdated_job, a region or a game change)
+ * after the game answered and before the control thread takes the result; with sentence, its sentence was shown
+ * first (on_job_text). A job cancelled before its read never reads (VJO_E_CANCELLED): this one's result is the
+ * game's, VJO_E_SCREEN_CHANGED with fake_screen_changes. */
+static void finish_current_job_cancelled(int sentence)
+{
+    TEST_ASSERT(job_running);
+    test_thread = NET_THREAD;
+    net_phase = NET_IDLE;
+#if !VJO_DEBUG
+    net_job_begin();
+#endif
+    net_job();
+#if !VJO_DEBUG
+    net_job_end();
+#endif
+    test_thread = CTL_THREAD;
+    TEST_ASSERT(job_done);
+    if (sentence) {
+        TEST_ASSERT(job_text_ready);
+        on_job_text();
+        TEST_ASSERT(view_job_text && g_view.list == &job_text_list);
+    }
+    job_cancelled = 1;
+    on_job_done();
+#if !VJO_DEBUG
+    test_thread = NET_THREAD;
+    net_idle_write();
+    test_thread = CTL_THREAD;
+#endif
+}
+
 /* The open overlay waits for its text and says only "Recognizing…" (as it always did). */
 static void check_waiting(const char *status)
 {
@@ -4548,14 +4582,19 @@ static void check_waiting(const char *status)
 /* #358 (the owner: "Say why the user is waiting. After a few seconds of 'Recognizing…' on torn reads, name the cause
  * and the fix"): once WAIT_HINT_AFTER (2) jobs in a row found the screen changed under every read, the open overlay's
  * next tries say why it still is recognizing and what helps (WAIT_HINT, from the data segment), never as an error,
- * until a read shows its text. One torn read never does; Automatically's torn jobs before the press count (the press
- * says why at once); a try cancelled after it showed its sentence keeps it; ocr_wait_hint = off says "Recognizing…"
- * all along; a region drawn as it asks, or a new game, starts over; a refresh's torn reads leave the shown text alone;
- * the subtitle strip never shows it. */
+ * until a read shows its text. One torn read never does. Automatically's torn jobs before the press count: a press in
+ * the pace's gap starts a try that says why at once, one while Automatically's next try runs says "Recognizing…"
+ * until that try ends, and the overlay's own next try says why. A try cancelled after it showed its sentence keeps
+ * it; a torn try cancelled after the game answered counts for no screen. ocr_wait_hint = off says "Recognizing…" all
+ * along; a region drawn as it asks, or a new game, starts over; a refresh's torn reads leave the shown text alone;
+ * the subtitle strip never says why, with the overlay open or closed. */
 static void test_open_overlay_says_why_it_waits(void)
 {
+    /* still trying; the cause (an icon, or text still typing); the fix as a condition (audit F1: □ cannot leave out an
+     * icon inside a line, a picture behind the text or a line still typing) */
     TEST_CHECK(strstr(WAIT_HINT, "Recognizing…") == WAIT_HINT && strstr(WAIT_HINT, "keeps moving") &&
-               strstr(WAIT_HINT, "□") && strlen(WAIT_HINT) < sizeof(g_view.status)); /* still trying; the cause, the fix */
+               strstr(WAIT_HINT, "typing") && strstr(WAIT_HINT, "If a region around just the text leaves it out") &&
+               strstr(WAIT_HINT, "□") && strlen(WAIT_HINT) < sizeof(g_view.status));
 
     /* Three torn reads after the press, then one that reads its screen. */
     cursor_setup();
@@ -4596,7 +4635,8 @@ static void test_open_overlay_says_why_it_waits(void)
     check_current_definition("cat", 0);
     close_overlay(); mem_free();
 
-    /* Automatically's two torn jobs while the overlay is closed show nothing; the press after them says why at once. */
+    /* Automatically's two torn jobs while the overlay is closed show nothing; a press in the pace's gap (no job runs)
+     * starts a try of its own, which says why at once. */
     cursor_setup();
     fake_screen_changes = 3;
     stable_pending = 1; control_tick(0);
@@ -4626,31 +4666,65 @@ static void test_open_overlay_says_why_it_waits(void)
     test_now += 250000; control_tick(0);
     TEST_ASSERT(job_running);
     check_waiting(WAIT_HINT);
-    test_thread = NET_THREAD;
-    net_phase = NET_IDLE;
-#if !VJO_DEBUG
-    net_job_begin();
-#endif
-    net_job();
-#if !VJO_DEBUG
-    net_job_end();
-#endif
-    test_thread = CTL_THREAD;
-    TEST_ASSERT(job_text_ready && job_done);
-    on_job_text();
-    TEST_ASSERT(view_job_text && g_view.list == &job_text_list);
-    job_cancelled = 1; /* a newer screen (cancel_outdated_job) */
-    on_job_done();
+    finish_current_job_cancelled(1); /* its sentence shown, then cancelled for a newer screen */
     TEST_ASSERT(job_running && !view_job_text);
     check_waiting(WAIT_HINT);
-#if !VJO_DEBUG
-    test_thread = NET_THREAD;
-    net_idle_write();
-    test_thread = CTL_THREAD;
-#endif
     finish_current_job();
     check_current_definition("cat", 0);
     close_overlay(); mem_free();
+
+    /* A press while Automatically's next try runs (the common case: that try starts once the pace allows) says
+     * "Recognizing…" until the try ends; it tore too, so the overlay's own next try, after the pace, says why
+     * (audit F4: not at once). */
+    cursor_setup();
+    fake_screen_changes = 3;
+    stable_pending = 1; control_tick(0); finish_current_job();
+    control_tick(0); finish_current_job();
+    TEST_CHECK(screen_changed_streak == 2 && !job_running);
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running && job_prepares); /* Automatically's third try */
+    open_overlay();
+    TEST_CHECK(ov == OV_OPEN_OLD_JOB);
+    check_waiting("Recognizing…");
+    finish_current_job(); /* torn: the overlay's try waits out the 500 ms pace */
+    TEST_CHECK(!job_running && open_retry && screen_changed_streak == 3);
+    check_waiting("Recognizing…");
+    test_now += 500000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT);
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* A torn try cancelled for a newer screen after the game answered counts for no screen (on_job_done): the count
+     * stays at 1, the next try starts at once and says "Recognizing…" (audit F5). */
+    cursor_setup();
+    fake_screen_changes = 2;
+    open_overlay(); finish_current_job();
+    TEST_ASSERT(job_running && screen_changed_streak == 1);
+    finish_current_job_cancelled(0); /* torn too, and cancelled */
+    TEST_CHECK(screen_changed_streak == 1);
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* The subtitle strip never says why: with the overlay closed and the count at 2, Select + R's strip says
+     * "Recognizing…" while its job runs (audit F5). */
+    cursor_setup();
+    fake_screen_changes = 2;
+    stable_pending = 1; control_tick(0); finish_current_job();
+    control_tick(0); finish_current_job();
+    TEST_CHECK(screen_changed_streak == 2 && ov == OV_CLOSED && !job_running);
+    control_tick(VJO_EV_SUBTITLE); /* Select + R */
+    TEST_CHECK_(subtitles && g_view.strip_kind == VJO_STRIP_STATUS && !strcmp(g_view.strip_text, "Recognizing…"),
+                "strip '%s' (kind %d)", g_view.strip_text, g_view.strip_kind);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+    subtitles = 0;
+    mem_free();
 
     /* ocr_wait_hint = off: "Recognizing…" all along, as before #358. */
     cursor_setup();
@@ -4679,9 +4753,9 @@ static void test_open_overlay_says_why_it_waits(void)
     VjoRect drawn = {10, 10, 200, 60};
     vjo_post_command(VJO_CMD_SET_REGION, &drawn); control_tick(0); /* saved: the overlay closes, the try cancelled */
     TEST_CHECK(ov == OV_CLOSED && job_running && job_cancelled && !screen_changed_streak && !screen_retry_until);
-    finish_current_job(); /* cancelled before its read: it counts for no region */
-    TEST_CHECK(!screen_changed_streak && !screen_retry_until);
-    fake_screen_changes = 1; /* the new region: one torn read, then the text */
+    finish_current_job(); /* cancelled before its read: VJO_E_CANCELLED, no read (the third torn result is left) */
+    TEST_CHECK(!screen_changed_streak && !screen_retry_until && fake_screen_changes == 1);
+    /* the new region: that one torn read, then the text */
     open_overlay();
     TEST_ASSERT(job_running);
     check_waiting("Recognizing…");
