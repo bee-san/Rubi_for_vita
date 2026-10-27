@@ -437,6 +437,14 @@ class LogGrammar(unittest.TestCase):
         log = hr.parse(a_log() + a_log())
         self.assertIn("a second hooks.log", " ".join(log["warnings"]))
         self.assertIsNone(hr.parse("not a log\n"))
+        # taiHEN without the import hook (game_ocr/hooks.c install_calls returns first): no import line, the total
+        # still 0 of 8 (the engine test's own log, test_main_module); not a log that stops or does not add up
+        log = hr.parse("T0000001: text source 1\nmain module g NID 00000001 seg0 81000000+1000 APP_VER 0000; "
+                       "0 verified, 1 Luna sites\nluna 80004201 r0 refused: tai\n bytes 10B56F46\n"
+                       "sites hooked 0, refused 1; CALL imports hooked 0 of 8\n")
+        self.assertEqual((log["unknown"], log["warnings"], log["imports"]), ([], [], []))
+        log = hr.parse(a_log().replace("CALL imports hooked 7 of 8", "CALL imports hooked 6 of 8"))
+        self.assertIn("counts 6 of 8 imports hooked, its import lines 7 of 8", " ".join(log["warnings"]))
 
     def test_the_docs_example_is_a_log_the_worker_writes(self):
         text = DOC.read_text(encoding="utf-8")

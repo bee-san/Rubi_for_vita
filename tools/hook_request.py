@@ -224,7 +224,9 @@ def check(log):
     if "hooked" in t and (hooked, refused) != (t["hooked"], t["refused"]):
         w.append(f"its last line counts {t['hooked']} sites hooked and {t['refused']} refused, its site lines "
                  f"{hooked} and {refused}")
-    if (calls, len(log["imports"])) != (t["calls"], t["imports"]):
+    # a taiHEN without the import hook writes no import line and still counts CALL_IMPORTS (game_ocr/hooks.c
+    # install_calls): only import lines that are there are counted against the total
+    if calls != t["calls"] or (log["imports"] and len(log["imports"]) != t["imports"]):
         w.append(f"its last line counts {t['calls']} of {t['imports']} imports hooked, its import lines {calls} of "
                  f"{len(log['imports'])}")
     m = log["module"]
