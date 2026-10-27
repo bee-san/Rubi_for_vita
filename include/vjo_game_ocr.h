@@ -238,6 +238,14 @@ typedef struct {
 /* API 26: the text-presence gate's weights (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME), for a request with
  * VJO_GAME_OCR_S_GATE only. */
 #define VJO_GAME_OCR_OPEN_GATE 17u
+/* A MAGES SC3 hook's charset (core/hook_sc3.h, docs/native-hooks.md "SC3 text"): the calling game's own,
+ * VJO_GAME_OCR_SC3_DIR <title ID>.sc3, by the title ID the kernel reads for the caller's process (no path from the
+ * caller), any OCR job's, at most VJO_GAME_OCR_SC3_BYTES (one read through the staging buffer); Open answers the
+ * file's size. No API change: a kernel without it refuses the open (VJO_ERR_ARG) and the worker's SC3 sites give no
+ * text, as without the file. */
+#define VJO_GAME_OCR_OPEN_SC3 18u
+#define VJO_GAME_OCR_SC3_DIR "ux0:data/VitaJPOverlay/hooks/"
+#define VJO_GAME_OCR_SC3_BYTES 16384u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
 #define VJO_GAME_OCR_WEIGHTS_NONE 0u     /* no line found, or the job failed first */
@@ -372,7 +380,8 @@ enum {
 #define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
 #define VJO_GITEM_SHOT 8u      /* "VjoGameShot": a shot's colour strip, encoder and JPEG (API 23) */
-#define VJO_GITEM_COUNT 9u
+#define VJO_GITEM_SC3 9u       /* "VjoGameSc3": an SC3 hook's charset, from the first job until the worker stops */
+#define VJO_GITEM_COUNT 10u
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */

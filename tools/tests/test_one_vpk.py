@@ -129,8 +129,12 @@ class BuildCheck(unittest.TestCase):
 class PayloadList(unittest.TestCase):
     def test_the_python_list_is_the_compiled_one(self):
         files = vpk.payload_files()
-        # the bundled PSP/Vita names are a separate payload file; API 47: VOCR5-V and VERTICAL-ATTRIBUTION.md
-        self.assertEqual(len(files), 20)
+        # the bundled PSP/Vita names are a separate payload file; API 47: VOCR5-V and VERTICAL-ATTRIBUTION.md;
+        # the SC3 hooks' three charsets (docs/native-hooks.md "SC3 text")
+        self.assertEqual(len(files), 23)
+        self.assertEqual(sorted(d for d, _ in files if "/hooks/" in d),
+                         ["ux0:data/VitaJPOverlay/hooks/%s.sc3" % t for t in ("PCSG00146", "PCSG00352", "PCSG00555")])
+        self.assertTrue(all(k == "copy" for d, k in files if "/hooks/" in d))
         header = (ROOT / "include/vjo_payload.h").read_text()
         kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", header).group(1))
         self.assertEqual(files[kernel], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))

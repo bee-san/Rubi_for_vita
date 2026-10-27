@@ -16,6 +16,14 @@
 #define vjoOcrHookCache test_kernel_hook_cache
 #include "../../kernel/game_ocr.c"
 
+/* An SC3 charset's open (VJO_GAME_OCR_OPEN_SC3) asks the loader for the caller's title ID: this harness has no
+ * loader, so that open is refused, as with a loader that is off. */
+__attribute__((weak)) int loader_title(SceUID pid, char *title, SceSize len)
+{
+    (void)pid; (void)title; (void)len;
+    return -1;
+}
+
 /* The model-only and allocation harnesses never write a screenshot. They still
  * link the whole broker; the screenshot harness overrides this with its real
  * file truncation. Fail immediately if another harness unexpectedly reaches it. */

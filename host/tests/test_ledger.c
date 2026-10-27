@@ -87,6 +87,8 @@ static void test_budget_table_is_consistent(void)
     }
     TEST_CHECK(VJO_WORST_KERNEL <= VJO_LIMIT_KERNEL);
     TEST_CHECK(VJO_WORST_GAME_JOB <= VJO_LIMIT_GAME_JOB);
+    /* an SC3 hook's charset block: its largest file, page-rounded (core/hook_sc3.h, the kernel's open's limit) */
+    TEST_CHECK(VJO_BUDGET_GAME_SC3 == VJO_GAME_OCR_SC3_BYTES && VJO_BUDGET_GAME_SC3 % VJO_LEDGER_PAGE == 0);
     TEST_CHECK(VJO_BUDGET_GAME_WEIGHTS <= VJO_LIMIT_GAME_WEIGHTS && VJO_BUDGET_GAME_WORKSPACE <= VJO_LIMIT_GAME_WORKSPACE);
     /* page-rounded figures are page-rounded */
     TEST_CHECK(VJO_BUDGET_SHELL_MODULE_PAGES % VJO_LEDGER_PAGE == 0 && VJO_BUDGET_WORKER_IN_SHELL_PAGES % VJO_LEDGER_PAGE == 0 &&

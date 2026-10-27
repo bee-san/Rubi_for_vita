@@ -406,7 +406,8 @@ reported console run. The behaviour below is checked on the host.
   no hook number, source-status label or Triangle source picker. Technical source details remain in
   the debug log.
 - **The Games page** tags a game with a hook entry: `Hook` for one of Rubi's own verified entries (CLANNAD,
-  アマツツミ and the 26 Vita3K-farm games of 0.9.7: the worker's own table, so each new entry is tagged), `Luna hook`
+  アマツツミ and the 26 Vita3K-farm games of 0.9.7, then the three MAGES SC3 games, STEINS;GATE 比翼恋理のだーりん,
+  ROBOTICS;NOTES ELITE and CHAOS;CHILD: the worker's own table, so each new entry is tagged), `Luna hook`
   for a ported site in LunaTranslator's table (its entries are not checked by Rubi; the worker installs one only where
   the game's code there looks as the entry expects). The seven titles above, whose every site in the
   table is unported, have no tag.

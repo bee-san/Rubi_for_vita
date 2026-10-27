@@ -32,7 +32,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SEG0 = 0x81000000
 CHECK_SOURCES = ["host/hook_farm_check.c", "core/hook_place.c", "core/hook_luna.c", "core/hook_re.c",
-                 "core/hook_text.c", "core/textnorm.c"]
+                 "core/hook_text.c", "core/hook_sc3.c", "core/textnorm.c"]
 CODECS = {"cp932": "cp932", "utf-8": "utf-8", "utf-16le": "utf-16-le"}
 # The player names Rubi's filters write for a name code (core/hook_luna.c VJO_RF_*): where the farm's text
 # dropped the code instead, the glyph count of the farm's own boxes shows the name drawn (PCSG00469 page 80:
@@ -91,7 +91,8 @@ def build_checker(out_dir):
     exe = os.path.join(out_dir, "hook_farm_check")
     cc = os.environ.get("CC", "cc")
     subprocess.run([cc, "-O1", "-std=gnu11", "-I", os.path.join(ROOT, "core"), "-I", os.path.join(ROOT, "include"),
-                    "-o", exe] + [os.path.join(ROOT, s) for s in CHECK_SOURCES], check=True)
+                    '-DVJO_SOURCE_DIR="%s"' % ROOT, "-o", exe] + [os.path.join(ROOT, s) for s in CHECK_SOURCES],
+                   check=True)
     return exe
 
 

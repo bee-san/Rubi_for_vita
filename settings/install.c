@@ -1749,7 +1749,8 @@ static int run_install(Run *x, VjoInstallScan *s)
         vjo_log("install: %s, app0: unmount 0x%08X", s->title, (unsigned)umount);
     }
     static const char *const dirs[] = {"ur0:tai", "ur0:data/VitaJPOverlay", "ux0:data/VitaJPOverlay",
-                                       "ux0:data/VitaJPOverlay/ocr", "ux0:data/VitaJPOverlay/dictionaries"};
+                                       "ux0:data/VitaJPOverlay/ocr", "ux0:data/VitaJPOverlay/hooks",
+                                       "ux0:data/VitaJPOverlay/dictionaries"};
     step(x, "Checking that every folder can be written", NULL);
     sceIoMkdir("ur0:data", 0777);
     sceIoMkdir("ux0:data", 0777);

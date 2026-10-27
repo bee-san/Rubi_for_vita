@@ -1,19 +1,22 @@
 /* Rubi's text for hook bytes a farm recorded (tools/hook_farm.py check): each stdin line
  *   TITLE <tab> OFFSET <tab> APP_VER <tab> RAW [<tab> FARM]
  * (the verified entry's segment-0 offset and the game's APP_VER, both hex; RAW the bytes the farm read at
- * the entry's register, hex: a cell record's cells for VJO_PLACE_READ_CELLS; FARM, hex of UTF-8, the farm's
+ * the entry's register, hex: a cell record's cells for VJO_PLACE_READ_CELLS, an SC3 string's bytes (through its end
+ * token, or more) for VJO_PLACE_READ_SC3; FARM, hex of UTF-8, the farm's
  * text) gives one stdout line
  *   STATUS <tab> TEXT <tab> SHOWN <tab> FARM_SHOWN
  * with TEXT (hex of UTF-8) what the game worker would show for that hit: the capture as game_ocr/hooks.c
  * site_hit makes it (at most VJO_HOOK_RAW_BYTES, up to the first NUL unit of the entry's encoding, or the
  * entry's own read), then vjo_hooks_text's path (the entry's filter, or the Luna site's at its address, or
- * the decoder; then vjo_hook_clean). STATUS: ok, noentry (no verified entry of TITLE at OFFSET), empty (no
+ * the decoder, or for an SC3 entry the committed charset of its title, third_party/sc3-charsets; then
+ * vjo_hook_clean). STATUS: ok, noentry (no verified entry of TITLE at OFFSET), empty (no
  * text: the filter dropped it) or cut (the capture was cut at VJO_HOOK_RAW_BYTES). SHOWN and FARM_SHOWN are
  * TEXT and FARM normalised as the worker normalises every text it shows (core/textnorm.h, every rule:
  * full-width ASCII as ASCII, the dashes, the ellipses...), so a form the overlay never shows compares equal.
  *
  * The same functions the worker links (core/hook_place.c, core/hook_luna.c, core/hook_re.c,
- * core/hook_text.c, core/textnorm.c), built for the host. A development tool: host/tests/test_hooks_engine.c runs the
+ * core/hook_text.c, core/hook_sc3.c, core/textnorm.c), built for the host. A development tool:
+ * host/tests/test_hooks_engine.c runs the
  * worker's own capture on the committed excerpts (host/tests/fixtures/hook_farm.inc). */
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +24,7 @@
 
 #include "../core/hook_luna.h"
 #include "../core/hook_place.h"
+#include "../core/hook_sc3.h"
 #include "../core/hook_text.h"
 #include "../core/textnorm.h"
 
@@ -33,6 +37,27 @@ static int hexval(int c)
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
     if (c >= 'A' && c <= 'F') return c - 'A' + 10;
     return -1;
+}
+
+/* The committed charset of an SC3 title (VJO_SOURCE_DIR/third_party/sc3-charsets/TITLE.sc3), read once: its glyph
+ * table and count; NULL when there is none. */
+static const uint8_t *sc3_table(const char *title, unsigned *count)
+{
+    static char loaded[12];
+    static uint8_t file[VJO_SC3_MAX_BYTES];
+    static size_t n;
+    if (strcmp(loaded, title)) {
+        char path[512];
+        FILE *f;
+        snprintf(path, sizeof path, "%s/third_party/sc3-charsets/%s.sc3", VJO_SOURCE_DIR, title);
+        f = fopen(path, "rb");
+        n = f ? fread(file, 1, sizeof file, f) : 0;
+        if (f) fclose(f);
+        snprintf(loaded, sizeof loaded, "%s", title);
+    }
+    if (n < VJO_SC3_HEADER) return NULL;
+    *count = (unsigned)(n - VJO_SC3_HEADER) / 2u;
+    return file + VJO_SC3_HEADER;
 }
 
 static size_t unhex(const char *s, uint8_t *out, size_t cap)
@@ -75,7 +100,10 @@ int main(void)
         }
         m = unhex(f[3], mem, sizeof mem);
         unit = ver->encoding == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
-        if (ver->read == VJO_PLACE_READ_CELLS) { /* the farm read the record's count of cells: these */
+        if (ver->read == VJO_PLACE_READ_SC3) { /* site_hit: the string through its end token, within RAW_BYTES */
+            n = vjo_sc3_span(mem, m < RAW_BYTES ? (unsigned)m : RAW_BYTES);
+            if (!n && m > RAW_BYTES) cut = 1;
+        } else if (ver->read == VJO_PLACE_READ_CELLS) { /* the farm read the record's count of cells: these */
             unsigned cells = (unsigned)(m / 2u);
             if (cells > RAW_BYTES / 2u) cells = RAW_BYTES / 2u, cut = 1;
             n = vjo_place_cells(mem, cells);
@@ -92,7 +120,11 @@ int main(void)
          * VJO_LUNA_SEG0 reading decides, as it did before vjo_luna_offset (no farm entry is at an address that only
          * the other reading places) */
         same = vjo_luna_site_at(sites, nl, ver->off, (uint16_t)appv, 0x81000000u, 0xFFFFFFFFu);
-        if (ver->filter)
+        if (ver->encoding == VJO_HOOK_ENC_SC3) {
+            unsigned count = 0;
+            const uint8_t *table = sc3_table(f[0], &count);
+            len = table ? vjo_sc3_decode(table, count, mem, n, out, sizeof out) : 0;
+        } else if (ver->filter)
             len = vjo_luna_text_filter(same, ver->filter, ver->encoding, mem, n, ver->encoding, out, sizeof out);
         else if (same)
             len = vjo_luna_text(same, mem, n, ver->encoding, out, sizeof out);

@@ -389,6 +389,8 @@ class PackageVariants(unittest.TestCase):
             z.writestr("Rubi.vpk", vpk.getvalue())
             z.writestr(release.APP_RECORD, stamp)
             z.writestr("ux0/data/VitaJPOverlay/dictionaries/" + release.FILENAME, self.dictionary)
+            for sc3 in sorted((ROOT / "third_party/sc3-charsets").glob("*.sc3")):  # the SC3 hooks' charsets
+                z.writestr("ux0/data/VitaJPOverlay/hooks/" + sc3.name, sc3.read_bytes())
             z.writestr("README.md", readme)
             z.writestr("tools/install_ftp.sh", b"#!/bin/sh\n")
             for name in ("LICENSE", "docs/plaintext-attribution.txt", "docs/JMdict-LICENSE.html"):

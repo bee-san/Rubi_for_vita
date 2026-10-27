@@ -271,6 +271,11 @@ static void worker_for(SceUID pid)
          (unsigned)mod, status);
 }
 
+int loader_title(SceUID pid, char *title, SceSize len)
+{
+    return get_title ? get_title(pid, title, len) : -1;
+}
+
 static int start_preloading_patched(SceUID pid)
 {
     int ret;
