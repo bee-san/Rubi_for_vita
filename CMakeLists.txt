@@ -48,7 +48,7 @@ set(CORE_SRC
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
-  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
+  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c core/sentence_reading.c
   core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
@@ -73,6 +73,11 @@ target_compile_options(vjo_host PRIVATE -Wall -Wextra)
 
 add_executable(vjo-cli host/cli.c)
 target_link_libraries(vjo-cli vjo_host)
+# The readings the Rubi app writes into a card's SentenceFurigana (core/sentence_reading.h) for lines of text,
+# with the file reads they take: tools/sentence_readings/'s measurement (docs/anki.md, "Sentence readings").
+add_executable(vjo-sentence-readings host/sentence_readings.c)
+target_link_libraries(vjo-sentence-readings vjo_host)
+target_compile_options(vjo-sentence-readings PRIVATE -Wall -Wextra)
 
 # Runs a local OCR backend on a raw RGBA region, as the Shell would (vjo-ocr --help).
 if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
