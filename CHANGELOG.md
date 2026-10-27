@@ -378,25 +378,35 @@ been reported.
   - **A box at least as tall as wide is read as columns at once**, as in 0.9.8, with the columns' rows read once: ON's
     rule had read none of the 2,659 such boxes of vertical text measured as rows. On the host's bench a box of four
     columns showed its text in 1.6-2.0 s at 30 frames a second and 1.0-2.1 s at 60, against 2.2-3.3 s and 1.8-4.7 s
-    (the rows' try first) and 0.9.8's 2.0-5.3 s and 1.3-6.3 s (estimates: each line's CTC frames at the console's
-    measured time a frame).
+    (the rows' try first) and 0.9.8's 2.0-5.3 s and 1.3-6.3 s (estimates: each line's CTC frames at a time a frame
+    measured for rows in test.4's logs and estimated for columns, the stable-text wait a press had before #413).
   - **The columns' rectangle keeps the job's reserve** (AGENTS.md rule 3). Up to 516,096 B, it was taken outside the
     job's memory check: it could cut 504 KiB into the 4 MiB the job leaves the game, or, with
     `ocr_skip_blank_lines` on, take the room of the weights read after it, so that the job read the columns' text as
     rows. Now a block larger than a column is taken only from what the game has free beyond the reserve and the
     weights (and LM) the job has still to read; otherwise the columns are read one by one, as in 0.9.8
-    ([memory ledger](docs/memory-ledger.md)).
+    ([memory ledger](docs/memory-ledger.md)). The same holds for a band of rows that large (a picture, or lines the
+    finder could not part, on many whole screens): in a game short of memory a job of rows, OFF's and Automatic's
+    too, leaves it out, and its lines are missing from the text.
   - **The step log keeps the last try's steps**: a try of rows whose rows went to the columns leaves the log with its
     memory checks too, so that ON's and Automatic's columns keep their normalisation and parallel steps within the 20.
   - **The bench charges recognition**: it charged none (its clock stood still while a line was read), and now charges
-    each line's CTC frames at the console's measured time a frame. Its table, the docs' account of #379 and the
+    each line's CTC frames, at a time a frame measured for rows (test.4) and estimated for columns, including the first
+    line of each of the job's own retries (#411's audit; one table cell moved: 2.0 s, not 1.4 s). Its table, the
+    docs' account of #379 and the
     limits are restated ([on's rule](docs/vita-vn-ocr.md#ons-rule-api-53-379)): a name above the lines and short lines
     (4 characters or fewer) make a box columns, the box Rubi suggests on first use is read as rows in 72 % of the
     measured pages, and an animated icon can still hold a whole screen on "Recognizing…" where its columns are too
     many to read at once.
+  - **A press without the stable-text wait** (#413) does not learn an animated icon's rows, so each change of the icon
+    between two reads tears the read: on the bench's box with an icon that turns for 15 frames and rests for 15, OFF
+    and ON then showed the text after 5.0 s at 30 frames a second (2.0 s with the wait) and not within 20 s at 60
+    (1.7 s with it); with slower icons the press was quicker than with the wait. A bench estimate, not a console's;
+    `--settle-ms 150` gives the press with the wait ([details](docs/vita-vn-ocr.md#ons-rule-api-53-379)).
   - Tests: the empty box (ON's reads equal OFF's), the columns' weights refused after their check (the rows read), the
-    longest step log of ON's and Automatic's tries, and the rectangle at a page short of room; each fails without its
-    fix. No module takes a page more ([memory ledger](docs/memory-ledger.md)). Not run on a console.
+    longest step log of ON's and Automatic's tries, the rectangle a byte short of room and the LM's room beside it, a
+    square box, and a game whose vertical model's file failed; each fails without its fix. No module takes a page more
+    ([memory ledger](docs/memory-ledger.md)). Not run on a console.
 
 - **Trusted hooks, #338's audit.**
   - With **Trusted hooks replace OCR** off (`hook_trust = off`), the hook cache is 0.9.7's again: 0.9.8 saved a

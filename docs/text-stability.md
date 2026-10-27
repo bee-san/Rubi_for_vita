@@ -64,6 +64,14 @@ when a background read, quiet refresh or diagnostic job may recognize:
 The gap this leaves is known ([auto-vs-press.md](auto-vs-press.md#what-settled-means)): a
 typewriter pause longer than the window passes as settled.
 
+A read without the wait (a press since #413) does not learn an icon either: the icon rule above applies only while the
+wait is on (`core/vocr_ocr.c` `stream_check`, `learn`), so each change of an animated icon in the region between two
+reads of its rows is a tear, and the press's retries are presses too. On the host bench of #379's box
+(`host/vertical_on_bench.c`, a 24-px icon turning for 15 frames and resting for 15, recognition charged per CTC
+frame), a press showed the text after 5.0 s at 30 frames a second (2.0 s with the wait) and in 0 of 12 presses within
+20 s at 60 (1.7 s with it), in every `ocr_vertical` mode; with slower icons it was quicker than with the wait
+([vertical text](vita-vn-ocr.md#ons-rule-api-53-379)). An estimate of the bench's, not a console's.
+
 ## What the console runs show
 
 **The data.** Every game window of a debug build of API 20 or later in the owner's logs:
