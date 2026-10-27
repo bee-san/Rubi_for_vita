@@ -217,6 +217,12 @@ target_include_directories(vjo-hook-stream-tests PRIVATE third_party/acutest/inc
 target_compile_options(vjo-hook-stream-tests PRIVATE -Wall -Wextra)
 target_link_libraries(vjo-hook-stream-tests Threads::Threads)
 add_test(NAME hook_stream COMMAND vjo-hook-stream-tests)
+# #366: the CALL slots' replacement at each point where another thread can act, one interleaving at a time: the suite
+# includes core/hook_stream.c with its seam (VJO_STREAM_SEAM, nothing in the worker) defined.
+add_executable(vjo-hook-stream-seams-tests host/tests/test_hook_stream_seams.c core/hook_place.c)
+target_include_directories(vjo-hook-stream-seams-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-hook-stream-seams-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_stream_seams COMMAND vjo-hook-stream-seams-tests)
 # The hook engine itself (game_ocr/hooks.c, audit-hooks F4) against stubbed taiHEN, modulemgr, sysmem and io
 # (host/tests/hooks_stubs before game_stubs), in this build's variant (VJO_DEBUG: its hooks.log too).
 add_executable(vjo-hooks-engine-tests host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c

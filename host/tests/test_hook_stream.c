@@ -140,6 +140,55 @@ static void test_replacement_age(void)
     TEST_CHECK(offer_from(slots, 3, &c, 0xE0u, "eeee") == 1 && slots[0].key == 0xE0u && c.call_replaced == 2);
 }
 
+/* A new caller whose first text is the very one its slot held (another caller's copy of the same bytes) still stores
+ * it as new: its stream's first text, with a new seq and its own hits (#366: no longer by storing seq 0 first). */
+static void test_replacement_same_text(void)
+{
+    static VjoStreamSlot slots[1];
+    VjoStreamClock c = {0, 0, 0, 0};
+    memset(slots, 0, sizeof(slots));
+    TEST_CHECK(offer_from(slots, 1, &c, 0xA0u, "same") == 1 && offer_from(slots, 1, &c, 0xA0u, "same") == 0);
+    TEST_CHECK(slots[0].seq == 1 && slots[0].hits == 2);
+    TEST_CHECK(offer_from(slots, 1, &c, 0xB0u, "same") == 1);
+    TEST_CHECK(slots[0].key == 0xB0u && slots[0].seq == 2 && slots[0].hits == 1 && c.call_replaced == 1);
+    TEST_CHECK(offer_from(slots, 1, &c, 0xB0u, "same") == 0 && slots[0].seq == 2 && slots[0].hits == 2);
+}
+
+/* #366: the least recently written slot is the one with the earliest seq, whatever the clock read as the new
+ * caller's scan began. A caller that stores while the scan runs gets a seq after that reading: main read the clock
+ * once, before the scan, so that slot's age (clock - seq) wrapped to about 2^32 and the newest stream lost its slot.
+ * The state such a scan saw, built by hand as the issue built it: B stored 1, 2 and 1,000 times after the clock was
+ * read, and once across the clock's wrap; then two controls, B's last text before the reading, and A's text 2^31 - 1
+ * new texts before B's (the serial order's range, which the job's comparisons assume as well). Every time, C takes
+ * A's slot (seq 1, the least recently written), and B keeps its own. Single-threaded: the same result on every run
+ * (host/tests/test_hook_stream_seams.c runs such stores at the scan's own points). */
+static void test_replacement_newer_than_clock(void)
+{
+    static const struct {
+        uint32_t clock, a, b;
+    } st[] = {
+        {10, 1, 11}, {10, 1, 12}, {10, 1, 1010},
+        {0xFFFFFFFFu, 0xFFFFFFF0u, 1}, /* B's seq 1 follows 0xFFFFFFFF (0 is skipped) */
+        {10, 1, 10},                   /* the control */
+        {0x80000000u, 1, 0x80000000u}, /* and A 2^31 - 1 new texts before B: the serial order's range */
+    };
+    static VjoStreamSlot slots[2];
+    for (unsigned k = 0; k < sizeof(st) / sizeof(st[0]); k++) {
+        VjoStreamClock c = {0, 0, 0, 0};
+        memset(slots, 0, sizeof(slots));
+        TEST_CHECK(offer_from(slots, 2, &c, 0xA0u, "aaaa") == 1 && offer_from(slots, 2, &c, 0xB0u, "bbbb") == 1);
+        slots[0].seq = st[k].a;
+        slots[1].seq = st[k].b;
+        c.clock = st[k].clock;
+        TEST_CHECK(offer_from(slots, 2, &c, 0xC0u, "cccc") == 1);
+        TEST_CHECK_(slots[0].key == 0xC0u && !memcmp(slots[0].raw, "cccc", 4) && slots[1].key == 0xB0u &&
+                        slots[1].seq == st[k].b && !memcmp(slots[1].raw, "bbbb", 4) && c.call_replaced == 1,
+                    "clock %#x, A seq %#x, B seq %#x: C takes A's slot (slot 0 key %#x, slot 1 key %#x)",
+                    (unsigned)st[k].clock, (unsigned)st[k].a, (unsigned)st[k].b, (unsigned)slots[0].key,
+                    (unsigned)slots[1].key);
+    }
+}
+
 /* The two races below (#344): game threads and the job (the test's own thread) start together, at a
  * barrier, and the game threads go on, RACE_ROUNDS hits each at least, until the job has seen what the
  * race's checks need (the race is covered). With a fixed count of rounds a check could pass having tested
@@ -235,8 +284,11 @@ static unsigned race_result(int r)
  * six callers for two. Each caller offers one text of its own, again and again, so a stored (new) text is
  * a caller taking a slot: one of the two first claims, or a replacement (call_replaced). A hit written into
  * another caller's stream stores a new text besides (and so does that caller's next hit), counted whether
- * or not the job reads the slot in time. Covered: every caller has had text stored (two slots to claim: at
- * least four callers took theirs from another one) and the job has read text. */
+ * or not the job reads the slot in time. The job also reads each slot's seq and length without its lock, as the
+ * worker's hook watch does (game_ocr/hooks.c vjo_hooks_seq): once it has seen text there, a slot never reads as
+ * empty (seq 0), which a replacement's plain `seq = 0` before its new text made it (#366). Covered: every caller has
+ * had text stored (two slots to claim: at least four callers took theirs from another one) and the job has read
+ * text. */
 #define RACERS 6
 static pthread_barrier_t race_barrier;
 static VjoStreamSlot race_slots[2];
@@ -245,6 +297,8 @@ static unsigned race_had_text;        /* atomic: a bit per caller whose text has
 static unsigned race_hits[RACERS][5]; /* each caller's hits dropped, identical, stored, made, other results */
 static unsigned race_reads, race_tries, race_wrong;
 static VjoStreamSlot race_first_wrong; /* the first read with another caller's text */
+static unsigned race_watch_had[2];     /* the job's reads without the lock: the slot had text (seq not 0) */
+static unsigned race_watch_reads, race_watch_empty; /* those reads, and those of a slot that had text with seq 0 */
 
 static void *racer(void *arg)
 {
@@ -288,6 +342,8 @@ static void race_counters(void)
         TEST_MSG("slot %u: lock %u, key %#x, seq %u, hits %u", k, race_slots[k].lock, race_slots[k].key,
                  race_slots[k].seq, race_slots[k].hits);
     TEST_MSG("the job: %u reads of %u tries, %u with another caller's text", race_reads, race_tries, race_wrong);
+    TEST_MSG("the job without the lock: %u reads, %u of a slot that had text with seq 0", race_watch_reads,
+             race_watch_empty);
     if (race_wrong)
         TEST_MSG("the first: key %#x, %u bytes, %02x %02x .. %02x", race_first_wrong.key, race_first_wrong.n,
                  race_first_wrong.raw[0], race_first_wrong.raw[1], race_first_wrong.raw[7]);
@@ -306,10 +362,17 @@ static void test_replacement_race(void)
     memset(race_hits, 0, sizeof(race_hits));
     memset(&race_first_wrong, 0, sizeof(race_first_wrong));
     race_had_text = race_reads = race_tries = race_wrong = 0;
+    race_watch_had[0] = race_watch_had[1] = race_watch_reads = race_watch_empty = 0;
     race_start(&race_barrier, t, RACERS, racer);
     for (unsigned pass = 1;; pass++) {
         int covered;
         for (unsigned k = 0; k < 2; k++) {
+            /* vjo_hooks_seq's loads: the length (each text's is 8), then the seq */
+            uint32_t n = __atomic_load_n(&race_slots[k].n, __ATOMIC_RELAXED);
+            uint32_t seq = __atomic_load_n(&race_slots[k].seq, __ATOMIC_ACQUIRE);
+            race_watch_reads++;
+            if (!seq && race_watch_had[k]) race_watch_empty++;
+            if (seq && n == 8) race_watch_had[k] = 1;
             race_tries++;
             if (!vjo_stream_read(&race_slots[k], &out)) continue;
             race_reads++;
@@ -335,6 +398,8 @@ static void test_replacement_race(void)
     if (!TEST_CHECK(race_clock.call_dropped <= race_clock.dropped) && !shown++) race_counters();
     if (!TEST_CHECK(stored == race_clock.clock && dropped == race_clock.dropped) && !shown++) race_counters();
     if (!TEST_CHECK(other == 0) && !shown++) race_counters();
+    /* the hook watch never saw a slot that had text as empty (#366) */
+    if (!TEST_CHECK(race_watch_empty == 0) && !shown++) race_counters();
 }
 
 /* Game threads offering whole texts (every byte one value, the length from it) into three slots, two
@@ -437,6 +502,8 @@ TEST_LIST = {
     {"caller_claim", test_caller_claim},
     {"caller_replacement", test_caller_replacement},
     {"replacement_age", test_replacement_age},
+    {"replacement_same_text", test_replacement_same_text},
+    {"replacement_newer_than_clock", test_replacement_newer_than_clock},
     {"replacement_race", test_replacement_race},
     {"concurrent", test_concurrent},
     {NULL, NULL},
