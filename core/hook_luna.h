@@ -10,10 +10,20 @@
  *
  * Luna's addresses are Vita3K guest addresses after vita3k.cpp's addr_offset: the
  * main module's (eboot.bin's) first segment starts at VJO_LUNA_SEG0 in that space,
- * so a site's offset in segment 0 is addr - VJO_LUNA_SEG0. Vita3K hooks a site when
- * its JIT compiles a block that starts there: a function's entry, or a block inside
- * one. Nothing here touches the game: the worker (game_ocr/hooks.c) resolves the
- * offset against the real segment, checks the bytes there and decides. */
+ * so a site's offset in segment 0 is addr - VJO_LUNA_SEG0. Some entries are not in
+ * that space: Luna had no addr_offset before f237a9f4 (2026-05-20), and an entry added
+ * before it can be the guest address itself. Vita3K loads an executable linked at
+ * 0x81000000 there (a fixed-address one must be there, on a console too), and from
+ * 0.2.1 4033 every main module (Luna's addr_offset for it, -0xFFC000, is VJO_LUNA_SEG0
+ * - 0x81000000), so such an entry is the site's address on a console when segment 0 is
+ * at 0x81000000 (VJO_LUNA_GUEST_SEG0). TIME TRAVELERS' 0x8119ADDA (added 2025-09-24) is
+ * +0x19ADDA of its 0x31258C-byte segment 0 at 0x81000000 (public Vita3K logs); less
+ * VJO_LUNA_SEG0 it is past the segment's end. The psandvita farm hooked PCSG00172's
+ * 0x810A2486 at that guest address in Vita3K and read its dialogue. vjo_luna_offset
+ * reads an address both ways. Vita3K hooks a site when its JIT compiles a block that
+ * starts there: a function's entry, or a block inside one. Nothing here touches the
+ * game: the worker (game_ocr/hooks.c) resolves the offset against the real segment,
+ * checks the bytes there and decides. */
 #ifndef VJO_HOOK_LUNA_H
 #define VJO_HOOK_LUNA_H
 
@@ -53,10 +63,23 @@ typedef struct {
  * tried. 1 yes, 0 no. */
 int vjo_luna_version_ok(const VjoLunaSite *all, unsigned n, const VjoLunaSite *s, uint16_t app_ver);
 
-/* The site of all[0..n) at segment-0 offset off (its address less VJO_LUNA_SEG0, the Thumb bit
- * cleared) that is ported and that app_ver may try (vjo_luna_version_ok), or NULL. A Rubi verified
- * entry at the same address takes its text's hookfunc and filter from it (game_ocr/hooks.c). */
-const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t off, uint16_t app_ver);
+/* The segment-0 offset of Luna's address addr (bit 0 ignored) in a main module whose segment 0 is code_size
+ * bytes at seg_base in the game: addr - VJO_LUNA_SEG0 when that is inside the segment, Luna's space (every
+ * site that main's mapping placed is still placed there); else, when segment 0 is at VJO_LUNA_GUEST_SEG0,
+ * addr - VJO_LUNA_GUEST_SEG0 when that is inside it, an entry recorded at Vita3K's guest address (above);
+ * else VJO_LUNA_NO_OFFSET. A segment 0 elsewhere (a relocatable executable the console loaded at another
+ * address, or one linked elsewhere) takes no second reading: Vita3K's guest address is then not the game's.
+ * The two readings are 0xFFC000 apart, so in a segment 0 of up to that size at most one of them is inside it.
+ * The bytes there decide as for any Luna site (vjo_place_check). */
+#define VJO_LUNA_GUEST_SEG0 0x81000000u
+#define VJO_LUNA_NO_OFFSET 0xFFFFFFFFu
+uint32_t vjo_luna_offset(uint32_t addr, uint32_t seg_base, uint32_t code_size);
+
+/* The site of all[0..n) at segment-0 offset off (vjo_luna_offset of its address in segment 0's code_size bytes
+ * at seg_base) that is ported and that app_ver may try (vjo_luna_version_ok), or NULL. A Rubi verified entry at
+ * the same address takes its text's hookfunc and filter from it (game_ocr/hooks.c). */
+const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t off, uint16_t app_ver,
+                                    uint32_t seg_base, uint32_t code_size);
 
 /* Reads up to max bytes at the game's address addr into dst, never past the end of
  * the memory block that holds addr. unit 1 or 2: stop after the first NUL unit of

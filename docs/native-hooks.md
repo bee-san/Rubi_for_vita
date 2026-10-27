@@ -211,9 +211,20 @@ Two lists name them:
 - **Luna's table** (`core/hook_luna.h`, `core/hook_luna_table.inc`: LunaTranslator's Vita3K table,
   ported by hooks-luna-port; [hook-titles.md](hook-titles.md)). Luna's addresses are Vita3K's: the
   offset into segment 0 is `addr - 0x80004000` (`VJO_LUNA_SEG0`), which matches the CLANNAD Vita3K run
-  but is unproven on a console. An entry is tried only when it is ported (`ported`) and its game
-  version matches the game's `APP_VER` (`vjo_luna_version_ok`; `APP_VER` is read once from
-  `app0:sce_sys/param.sfo`).
+  but is unproven on a console. Entries older than Luna's `addr_offset` (f237a9f4, 2026-05-20) can hold
+  Vita3K's guest address instead, which is the game's own for an executable whose segment 0 is at
+  0x81000000. So when `addr - 0x80004000` is outside segment 0 and segment 0 is at 0x81000000, the offset
+  is `addr - 0x81000000` (`vjo_luna_offset`, #349). TIME TRAVELERS' two sites are the case that showed it:
+  `0x8119ADDA - 0x80004000` is past the end of its 0x31258C-byte segment 0 (public Vita3K logs), so main
+  refused both as `range` on every console, while `+0x19ADDA` and `+0x1A6052` are inside it. In the public
+  Vita3K logs of 160 of the table's titles, 245 of the 250 sites below 0x81000000 are inside segment 0 in
+  the first reading (the second never applies to them), and 15 sites of 10 titles at or above it only in the
+  second: 7 of executables Vita3K loads at their link address 0x81000000 (fixed-address ones), 8 of
+  relocatable ones, for which the reading holds where a console loads them at 0x81000000 (unseen). 9 sites at
+  or above it are in neither, two of them where Vita3K had segment 0 elsewhere (PCSG00614 linked at
+  0x810007C0, PCSG00397 loaded at 0x81700150), which the rule leaves out. An entry is tried only when it is
+  ported (`ported`) and its game version matches the game's `APP_VER` (`vjo_luna_version_ok`; `APP_VER` is
+  read once from `app0:sce_sys/param.sfo`).
 
 The site's offset must lie in segment 0 with the bytes taiHEN saves (16), and a Luna site must pass the
 placement check (`vjo_place_check`), because taiHEN's offset hook (libsubstitute) overwrites 8 bytes at
@@ -839,7 +850,9 @@ instead of `vocr`, and `line_source` `hook` instead of `ocr`: `shell/history.c`;
 [ocr-history.md](ocr-history.md#line-source)). The debug build writes
 `ux0:data/VitaJPOverlay/hooks.log` at each game start (rewritten): the title, the text source, the main
 module's name, NID and segment 0, `APP_VER`, each site with its verdict, reason and first 16 bytes, and
-each CALL import hooked or not. No text is in it. Job results carry the counts; the Shell's debug log
+each CALL import hooked or not. A Luna site's line has the segment-0 offset its address was read at
+(`luna 8119ADDA r7 +19ADDA hooked, stream 1`; no offset when neither reading is inside segment 0, refused
+as `range`). No text is in it. Job results carry the counts; the Shell's debug log
 shows them (hooks-api). API 41: the debug build's `kernel.txt` has a line for each new line the hook watch
 reports, its sequence, raw length and held scene (`hook line: seq N, B bytes, scene S`, with `, no wakeup`
 for a line reported while the last one was still drawing), no text.
@@ -906,6 +919,15 @@ Hardware is paused; these are for the test issue (#230):
     trusted` and a job each), and the overlay shows the last. With the overlay open and the game on auto: each line
     replaces the text as it starts. Close the game and start it again: the first line is trusted at once (no OCR job
     before it). `history.csv` has one record a line.
+15. #349, a Luna entry at Vita3K's guest address (the debug build, `text_source = auto`): TIME TRAVELERS
+    (`PCSG00062`). `hooks.log` shows `main module tt1_rom NID … seg0 81000000+31258C APP_VER 0100` (01.01:
+    `+306C90 APP_VER 0101`) and the two sites at their offsets, `luna 8119ADDA r7 +19ADDA` and
+    `luna 811A6052 r8 +1A6052`, each `hooked` or refused with its 16 bytes (`entry` or `window`: then the NID,
+    `APP_VER` and those bytes are what a verified entry needs). Hooked: a dialogue line opens in the overlay
+    from the hook (Triangle: Source Hook, flags with SITE and NO_OCR) and matches the screen, ruby and colour
+    tags removed; a choice or a menu shows the last line. A segment 0 anywhere but 0x81000000 logs both as
+    `range`. Any game of the other eight titles the rule unlocks (PCSG00139, PCSG00172, PCSG00216, PCSG00272,
+    PCSG00708, PCSG01046, PCSG01049, with PCSG00787's fifth site) shows the same in its `hooks.log`.
 
 ## PSP probe (debug build)
 

@@ -21,6 +21,17 @@ been reported.
   screen's current scene without reading pixels, so a trusted hook (a Luna site, a Rubi verified site, a string copy
   that earned trust) needs no game memory at all. It still reads the strip only while the region has no screen yet.
   Not run on a console yet.
+- Native hooks (#349): TIME TRAVELERS' (`PCSG00062`) Luna hook was never installed. Its two sites, `0x8119ADDA` and
+  `0x811A6052`, are Vita3K's guest addresses (Luna added them before its `addr_offset`), and Rubi read every Luna
+  address as `address − 0x80004000`: past the end of the game's 0x31258C-byte segment 0 at 0x81000000 (public
+  Vita3K logs), so both were refused as `range` before a byte was read, on every console. Now, when that reading is
+  outside segment 0 and segment 0 is at 0x81000000, the worker reads `address − 0x81000000` (`+0x19ADDA`,
+  `+0x1A6052`), and the placement check decides on the game's bytes as for any Luna site. The same rule reaches 11
+  more ported sites of 8 more titles (PCSG00139, PCSG00172, PCSG00216, PCSG00272, PCSG00708, PCSG00787, PCSG01046,
+  PCSG01049); every site main placed is placed as before. Whether the game's bytes there pass the check is not
+  known (no dump of the game here): the debug build's `hooks.log` shows each site's offset and verdict, with its
+  bytes when refused. Not run on a console. STEINS;GATE: no Vita release has a hook entry, in Luna's table or
+  Rubi's ([hook-titles.md](docs/hook-titles.md#steinsgate-no-hook-entry-in-any-release)).
 
 ### Changed
 

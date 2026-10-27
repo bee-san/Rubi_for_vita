@@ -712,24 +712,25 @@ static const Form *form(int thumb, int entry, const char *src)
     return NULL;
 }
 
-/* A function entry the site check accepts at code + off (16 bytes: the patch and taiHEN's saved bytes):
+/* A function entry the site check accepts at seg + off (16 bytes: the patch and taiHEN's saved bytes):
  * Thumb PUSH {r4, lr} then MOV r7, sp; ARM PUSH {r4, lr} then SUB sp, sp, #16 (the assembler's bytes).
  * window: the instruction after the entry instead (a refused one). */
-static void put_site(uint32_t off, int thumb, const Form *window)
+static void put_site_at(uint8_t *seg, uint32_t off, int thumb, const Form *window)
 {
     const Form *e = form(thumb, 1, "push {r4, lr}"), *w = form(thumb, 0, thumb ? "mov r7, sp" : "sub sp, sp, #16");
     unsigned pos = 0;
-    memcpy(code + off, e->b, e->n);
+    memcpy(seg + off, e->b, e->n);
     pos = e->n;
     if (window) {
-        memcpy(code + off + pos, window->b, window->n);
+        memcpy(seg + off + pos, window->b, window->n);
         pos += window->n;
     }
     while (pos < VJO_PLACE_SAVE_BYTES) {
-        memcpy(code + off + pos, w->b, w->n);
+        memcpy(seg + off + pos, w->b, w->n);
         pos += w->n;
     }
 }
+static void put_site(uint32_t off, int thumb, const Form *window) { put_site_at(code, off, thumb, window); }
 
 static VjoLunaSite luna_site(uint32_t off, int thumb, uint8_t reg, uint8_t ported, uint16_t version)
 {
@@ -801,6 +802,9 @@ static void test_install_order(void)
     uint32_t mode, inst, refused;
     char outcomes[256];
     reset();
+    /* the out-of-range sites below are out of range in both of vjo_luna_offset's readings: the code buffer is not
+     * at VJO_LUNA_GUEST_SEG0, so only VJO_LUNA_SEG0's reading applies */
+    TEST_ASSERT(a32(code) != VJO_LUNA_GUEST_SEG0);
     put_site(0x100, 1, NULL);
     put_site(0x200, 1, NULL);
     put_site(0x300, 0, NULL);
@@ -1740,6 +1744,145 @@ static void test_farm_excerpts(void)
     TEST_CHECK_(titles >= 13, "excerpts of %u titles", titles);
 }
 
+/* TIME TRAVELERS (PCSG00062): Luna's two sites, the real table's (0x8119ADDA r7 and 0x811A6052 r8, CP932, its filter
+ * PCSG00062), in a main module laid out as the game's eboot.bin is in public Vita3K logs (compatibility #400): a
+ * fixed-address executable, segment 0 at its link address 0x81000000, 0x31258C bytes (APP_VER 01.00; 01.01's is
+ * 0x306C90). Less VJO_LUNA_SEG0 the sites are 0x1196DDA and 0x11A2052, past the segment's end: main refused both as
+ * range without reading a byte of them. Luna's entry (2025-09-24) predates its addr_offset (2026-05-20): the
+ * addresses are Vita3K's guest addresses, +0x19ADDA and +0x1A6052 of that segment, where the placement check now
+ * reads the bytes. Zeros there (as for a block inside a function, which a console run may show) refuse both as no
+ * entry, with the bytes in the debug log; a function's entry at both hooks both, and a hit's text goes through Luna's
+ * filter. With segment 0 anywhere but 0x81000000 the guest address is not read. The game's own bytes there are not
+ * known here (no dump of it): its console run decides. */
+static void test_luna_own_address(void)
+{
+    enum { TT_SEG0 = 0x81000000u, TT_SIZE = 0x31258Cu, TT_MAP = 0x315000u }; /* TT_MAP: segment 0 a page higher too */
+    /* [時間/じかん]を<#FF0000>旅</#>する\n人 (a literal backslash and n) and <b>未来</b>は[変/か]わる, CP932 */
+    static const char l7[] = "[\x8E\x9E\x8A\xD4/\x82\xB6\x82\xA9\x82\xF1]\x82\xF0<#FF0000>\x97\xB7</#>\x82\xB7\x82\xE9"
+                             "\\n\x90\x6C";
+    static const char l8[] = "<b>\x96\xA2\x97\x88</b>\x82\xCD[\x95\xCF/\x82\xA9]\x82\xED\x82\xE9";
+    static uint8_t *tt;
+    const VjoLunaSite *real;
+    uint32_t frame[16], inst, refused;
+    VjoHookSnap s;
+    char text[128];
+    _Static_assert(sizeof l7 == 39 && sizeof l8 == 25, "the two lines' CP932 bytes and their NUL");
+    TEST_ASSERT(vjo_luna_sites("PCSG00062", &real) == 2);
+    TEST_ASSERT(real[0].addr == 0x8119ADDAu && real[0].reg == 7 && real[1].addr == 0x811A6052u && real[1].reg == 8);
+    TEST_CHECK(real[0].addr - VJO_LUNA_SEG0 >= TT_SIZE && real[1].addr - VJO_LUNA_SEG0 >= TT_SIZE);
+    if (!tt) {
+        int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+        void *p;
+#ifdef MAP_FIXED_NOREPLACE
+        flags |= MAP_FIXED_NOREPLACE;
+#endif
+        p = mmap((void *)(uintptr_t)TT_SEG0, TT_MAP + PAGE, PROT_READ | PROT_WRITE, flags, -1, 0);
+        TEST_ASSERT_(p == (void *)(uintptr_t)TT_SEG0, "a segment 0 at 0x81000000 (mmap gave %p)", p);
+        TEST_ASSERT(!mprotect((uint8_t *)p + TT_MAP, PAGE, PROT_NONE));
+        tt = p;
+    }
+
+    /* zeros at both sites: no function's entry there, refused, with the bytes the check read */
+    reset();
+    memset(tt, 0, TT_MAP);
+    mod.seg0 = tt;
+    mod.seg0_size = TT_SIZE;
+    set_sfo("01.00");
+    vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(n_offs == 0 && offset_calls == 0 && inst >> 16 == 0 && refused == 2);
+#if VJO_DEBUG
+    {
+        char outcomes[64];
+        log_outcomes(outcomes, sizeof outcomes);
+        TEST_CHECK_(!strcmp(outcomes, "entry,entry"), "outcomes %s", outcomes);
+        TEST_CHECK(strstr(logbuf, "seg0 81000000+31258C APP_VER 0100; 0 verified, 2 Luna sites\n") != NULL);
+        TEST_CHECK(strstr(logbuf, "luna 8119ADDA r7 +19ADDA refused: entry\n bytes 00000000000000000000000000000000\n") !=
+                   NULL);
+        TEST_CHECK(strstr(logbuf, "luna 811A6052 r8 +1A6052 refused: entry\n bytes ") != NULL);
+        TEST_MSG("%s", logbuf);
+    }
+#endif
+
+    /* a function's entry at both: both hooked, as Thumb sites (both addresses are 2 mod 4: 12 bytes patched) */
+    reset();
+    memset(tt, 0, TT_MAP);
+    put_site_at(tt, 0x19ADDAu, 1, NULL);
+    put_site_at(tt, 0x1A6052u, 1, NULL);
+    mod.seg0 = tt;
+    mod.seg0_size = TT_SIZE;
+    set_sfo("01.00");
+    add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_ASSERT(n_offs == 2 && n_sites == 2);
+    TEST_CHECK(offs[0].offset == 0x19ADDAu && offs[0].thumb == 1 && offs[1].offset == 0x1A6052u && offs[1].thumb == 1);
+    TEST_CHECK(site_info[0].luna == &real[0] && site_info[1].luna == &real[1] && !site_info[0].ver);
+    TEST_CHECK(site_info[0].addr == TT_SEG0 + 0x19ADDAu && site_info[1].addr == TT_SEG0 + 0x1A6052u);
+    TEST_CHECK(slots[0].key == 0x19ADDBu && slots[1].key == 0x1A6053u);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(inst >> 16 == 2 && refused == 0);
+#if VJO_DEBUG
+    TEST_CHECK(strstr(logbuf, "luna 8119ADDA r7 +19ADDA hooked, stream 1\n") != NULL);
+    TEST_CHECK(strstr(logbuf, "luna 811A6052 r8 +1A6052 hooked, stream 2\n") != NULL);
+#endif
+    /* a hit at each, the text in r7 and r8; Luna's filter: [base/reading] to the base, <tags> and the literal \n */
+    memcpy(data + 0x40, l7, sizeof l7);
+    memset(frame, 0, sizeof frame);
+    frame[7] = a32(data) + 0x40;
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_CHECK(frame[15] == TT_SEG0 + 0x19ADDAu);
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.kind == VJO_HOOK_KIND_SITE && s.key == 0x19ADDAu && s.site == &real[0] && s.n == sizeof l7 - 1);
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) > 0 && !strcmp(text, "時間を旅する\n人"));
+    TEST_MSG("got [%s]", text);
+    memcpy(data + 0x100, l8, sizeof l8);
+    frame[8] = a32(data) + 0x100;
+    TEST_CHECK(vjo_hooks_observe(1, frame) == (uintptr_t)CONT(1));
+    TEST_ASSERT(vjo_hooks_snap(2, &s));
+    TEST_CHECK(s.key == 0x1A6052u && s.site == &real[1] && s.n == sizeof l8 - 1);
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) > 0 && !strcmp(text, "未来は変わる"));
+    TEST_MSG("got [%s]", text);
+
+    /* 01.01's segment 0 (0x306C90 bytes) holds both; one that ends between them: the second is out of range in
+     * both readings */
+    for (unsigned k = 0; k < 2; k++) {
+        static const uint32_t size[2] = {0x306C90u, 0x1A0000u};
+        reset();
+        memset(tt, 0, TT_MAP);
+        put_site_at(tt, 0x19ADDAu, 1, NULL);
+        put_site_at(tt, 0x1A6052u, 1, NULL);
+        mod.seg0 = tt;
+        mod.seg0_size = size[k];
+        set_sfo(k ? "01.00" : "01.01");
+        vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
+        vjo_hooks_counts(NULL, &inst, &refused);
+        TEST_CHECK_(inst >> 16 == (k ? 1u : 2u) && refused == k, "segment 0 of 0x%X bytes", (unsigned)size[k]);
+#if VJO_DEBUG
+        if (k) TEST_CHECK(strstr(logbuf, "luna 811A6052 r8 refused: range\n bytes \n") != NULL);
+#endif
+    }
+
+    /* the same code with segment 0 one page higher (a relocated executable): Vita3K's guest address is not the
+     * game's there, so neither site is read at all */
+    reset();
+    memset(tt, 0, TT_MAP);
+    put_site_at(tt + PAGE, 0x19ADDAu, 1, NULL);
+    put_site_at(tt + PAGE, 0x1A6052u, 1, NULL);
+    mod.seg0 = tt + PAGE;
+    mod.seg0_size = TT_SIZE;
+    set_sfo("01.00");
+    vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(n_offs == 0 && inst >> 16 == 0 && refused == 2);
+#if VJO_DEBUG
+    {
+        char outcomes[64];
+        log_outcomes(outcomes, sizeof outcomes);
+        TEST_CHECK_(!strcmp(outcomes, "range,range"), "outcomes %s", outcomes);
+    }
+#endif
+}
+
 /* VJO_PLACE_READ_CELLS: the record at the register + padding (here r15, the site's own address); exactly its
  * count of cells, at most 256 (512 bytes), as CP932 bytes; an unreadable count or cells, or a count of 0, give
  * no hit. The record's layout is the farm's (PCSG00380 reader-config.json, PCSG00914's): its count at +0x14,
@@ -1821,6 +1964,7 @@ TEST_LIST = {
     {"a verified entry's APP_VER: only that version, read without Luna sites", test_verified_version},
     {"a verified entry's page record of cells, at the site's distance", test_verified_cells},
     {"the farm's excerpts through each verified entry: its bytes, register, read and filter", test_farm_excerpts},
+    {"TIME TRAVELERS: Luna's sites at their own addresses in a segment 0 at 0x81000000", test_luna_own_address},
     {"clean controls from CALL and table-site streams in every encoding", test_clean_stream_text},
     {"exact build SHA-256: whole executable, worker only, safe failure", test_exact_build_identity},
     {"call_hit: 4..512 bytes, the NUL rules, the pointer-array shape", test_call_hit_bounds},

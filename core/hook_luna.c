@@ -105,13 +105,22 @@ int vjo_luna_version_ok(const VjoLunaSite *all, unsigned n, const VjoLunaSite *s
     return 1;
 }
 
-const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t off, uint16_t app_ver)
+uint32_t vjo_luna_offset(uint32_t addr, uint32_t seg_base, uint32_t code_size)
+{
+    const uint32_t a = addr & ~1u;
+    if (a >= VJO_LUNA_SEG0 && a - VJO_LUNA_SEG0 < code_size) return a - VJO_LUNA_SEG0;
+    /* Vita3K's guest address: the game's own only where segment 0 is where Vita3K had it */
+    if (seg_base == VJO_LUNA_GUEST_SEG0 && a >= seg_base && a - seg_base < code_size) return a - seg_base;
+    return VJO_LUNA_NO_OFFSET;
+}
+
+const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t off, uint16_t app_ver,
+                                    uint32_t seg_base, uint32_t code_size)
 {
     for (unsigned i = 0; all && i < n; i++) {
         const VjoLunaSite *s = &all[i];
-        uint32_t a = s->addr & ~1u;
-        if (a >= VJO_LUNA_SEG0 && a - VJO_LUNA_SEG0 == off && vjo_luna_ported(s) &&
-            vjo_luna_version_ok(all, n, s, app_ver))
+        const uint32_t o = vjo_luna_offset(s->addr, seg_base, code_size);
+        if (o != VJO_LUNA_NO_OFFSET && o == off && vjo_luna_ported(s) && vjo_luna_version_ok(all, n, s, app_ver))
             return s;
     }
     return NULL;

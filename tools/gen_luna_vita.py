@@ -50,6 +50,7 @@ PINNED = {
     "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
 }
 SEG0 = 0x80004000  # core/hook_luna.h VJO_LUNA_SEG0
+GUEST_SEG0 = 0x81000000  # core/hook_luna.h VJO_LUNA_GUEST_SEG0 (vjo_luna_offset's second reading)
 BLOB = "../third_party/LunaTranslator/"  # the vendored copies (docs/hook-titles.md links into them)
 
 # Luna's hookfuncs (text_fun): name -> (C index name, ported, what the port does or why not).
@@ -605,17 +606,22 @@ def render_doc():
     out.append("")
     out.append("## Vita titles")
     out.append("")
-    out.append("Seg-0 offset: the site's offset in the game executable's first segment, Luna's address "
-               "\u2212 0x80004000 (not yet seen on a console). Version: the game version Luna's comment names "
-               "(the site is tried only in that version; a site without one only when no site of its title "
-               "names the game's version). Reg: the register that holds the text's address at the site.")
+    out.append("Seg-0 offset: the site's offset in the game executable's first segment, Luna's address \u2212 0x80004000 "
+               "(not yet seen on a console). An address at or above 0x81000000 shows two: that one, taken when segment 0 "
+               "is that large, else, when segment 0 is at 0x81000000, the address \u2212 0x81000000 (an entry Luna "
+               "recorded at Vita3K's guest address: `vjo_luna_offset`, core/hook_luna.h). Version: the game version "
+               "Luna's comment names (the site is tried only in that version; a site without one only when no site of "
+               "its title names the game's version). Reg: the register that holds the text's address at the site.")
     out.append("")
     out.append("| Title ID | Region | Game (Luna's comment) | Address | Seg-0 offset | Version | Reg | Padding | "
                "Encoding | Flags | Hookfunc | Filter | Luna's note | Status |")
     out.append("| --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |")
     for s in sites:
-        out.append("| %s | %s | %s | [0x%08X](%svita3k_1.cpp#L%d) | 0x%X | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
-            s["id"], REGION.get(s["id"][:4], "?"), md(s["game"]), s["addr"], BLOB, s["line"], s["addr"] - SEG0,
+        off = "0x%X" % (s["addr"] - SEG0)
+        if s["addr"] >= GUEST_SEG0:
+            off += " or 0x%X" % (s["addr"] - GUEST_SEG0)
+        out.append("| %s | %s | %s | [0x%08X](%svita3k_1.cpp#L%d) | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
+            s["id"], REGION.get(s["id"][:4], "?"), md(s["game"]), s["addr"], BLOB, s["line"], off,
             ver_text(s["version"]), REGS[s["reg"]], hex(s["padding"]) if s["padding"] else "0",
             s["enc"].replace("UTF16", "UTF-16LE").replace("UTF8", "UTF-8"), " ".join(s["flags"]),
             s["func"], md(s["filter"]), note_text(s["note"]), md(status_text(s))))
