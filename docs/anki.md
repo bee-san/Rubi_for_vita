@@ -29,11 +29,15 @@ directory.
    text-only cards. **Trim black bars**, below that, is ON by default too
    (`anki_screenshot_trim_bars`): the picture leaves out the black borders
    around the game's picture, as a PSP game shown smaller than the screen has
-   them ([black bars](#black-bars)). **Duplicates**, below it, says what an export does with a card of
-   a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)); **Cards: N queued**
-   opens the [Cards page](#the-cards-page): each card before it is exported, to delete it, fix its
-   sentence or drop its picture; and **Known words** imports the words you know from Anki
-   ([below](#known-words)). The page's eight rows scroll a row at a time.
+   them ([black bars](#black-bars)). Then three choices for the exported cards
+   ([below](#card-type-game-tag-and-sentence-readings)): **Card type** (Word, the default; Sentence, Both or
+   Click: what the card's front shows), **Game tag** (ON: each note gets its game's tag) and **Sentence
+   readings** (ON: readings over the sentence's kanji). **Duplicates**, below them, says what an export does
+   with a card of a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)). These four
+   settings are the app's own, in `ux0:data/VitaJPOverlay/app.ini`, which the overlay never reads; the next
+   export follows them. **Cards: N queued** opens the [Cards page](#the-cards-page): each card before it is
+   exported, to delete it, fix its sentence or drop its picture; and **Known words** imports the words you know
+   from Anki ([below](#known-words)). The page's eleven rows scroll a row at a time.
 2. In a game, open the overlay, select a word and press Enter. The status line
    shows `Saving card…`, then `Saved for Anki`. Enter again on the same
    entry says `Already queued`. In a local character lookup, Enter saves
@@ -183,7 +187,7 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 | `ExpressionReading` | The reading in kana |
 | `MainDefinition` | The entry shown, as Yomitan writes one dictionary's glossary: `<div class="yomitan-glossary"><ol><li data-dictionary="JMdict">…</li></ol></div>`, so Lapis names its page after the dictionary |
 | `Sentence` | The recognized text, the word in `<b>`, its lines joined where the game wrapped the sentence (a speaker's name line and a new sentence keep their `<br>`; [words split over two lines](touch-lookup.md#words-split-over-two-lines)). The queue keeps the text as recognized, so this happens at export, also for cards queued before |
-| `SentenceFurigana` | Empty, as Lapis's README asks (Lapis then shows `{{furigana:Sentence}}`); only a card queued with the removed online dictionaries, which gave readings per word, fills it |
+| `SentenceFurigana` | With **Sentence readings** ON (the default), the sentence (joined as `Sentence` is) with the readings of its words in Anki's furigana syntax, `今日は<b>学校[がっこう]</b>へ 行[い]って`, the mined word in `<b>` with the card's own reading, so that Lapis's back shows them over the kanji ([below](#sentence-readings)); a word the dictionaries cannot read for certain has none. Empty when the sentence gets no reading or the setting is OFF, as Lapis's README asks (Lapis then shows `{{furigana:Sentence}}`); a card queued with the removed online dictionaries, which gave readings per word, keeps its own |
 | `Picture` | `<img src="vitajp_….jpg">`: the card's screenshot, when it has one ([below](#the-screenshot)) |
 | `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more (Dictionaries shown above 1); Lapis hides the ones `MainDefinition` has |
 | `PitchPosition`, `PitchCategories` | Pitch accents, when the dictionary has them (Yomitan's `[2]` markup and `heiban,kifuku`) |
@@ -191,10 +195,12 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 | `FreqSort` | The rank; `9999999` without one, as Yomitan's `{frequency-harmonic-rank}`, so sorting by it puts such cards last |
 | `MiscInfo` | The game's name and the local date and time of the Enter press: `CLANNAD (2026-10-14 17:12)` |
 
-The other fields (`ExpressionAudio`, `SelectionText`, `DefinitionPicture`,
-`SentenceAudio`, `Hint` and the `Is…Card` switches) stay empty. Every note has
-the tag `vita-jp-overlay`, one whose word an earlier card has also `duplicate`
-([below](#duplicates)), and one of a word you know `known` ([below](#known-words)). The bundled dictionary, Bee's Ultimate Dictionary,
+`IsSentenceCard`, `IsWordAndSentenceCard` and `IsClickCard` follow **Card type**: `x` in the one of the chosen
+type, none for a Word card ([below](#card-type)). The other fields (`ExpressionAudio`, `SelectionText`,
+`DefinitionPicture`, `SentenceAudio`, `Hint` and `IsAudioCard`) stay empty. Every note has the tag
+`vita-jp-overlay`, with **Game tag** ON its game's tag, `Game::CLANNAD` ([below](#game-tag)), one whose word an
+earlier card has also `duplicate` ([below](#duplicates)), and one of a word you know `known`
+([below](#known-words)). The bundled dictionary, Bee's Ultimate Dictionary,
 gives every entry its Jiten global frequency rank
 ([frequency ranks](local-dictionaries.md#frequency-ranks)): a ranked entry
 fills `Frequency` and `FreqSort`; an unranked one leaves `Frequency` empty, and
@@ -207,6 +213,89 @@ none imports pitch accents ([local dictionaries](local-dictionaries.md)).
 jpdb.io and jiten.moe, the online dictionaries that also gave pitch accents and
 readings per word, have been removed; cards they queued before still export
 with all of theirs.
+
+### Card type, game tag and sentence readings
+
+Three settings of the Rubi app's Anki page (#311) decide what an export makes of each card. They are the
+app's own: `ux0:data/VitaJPOverlay/app.ini`, beside `config.ini`, which the overlay never reads (a key the
+overlay does not know in `config.ini` shows "unknown setting" in the open overlay), in `config.ini`'s line
+format:
+
+```ini
+anki_card_type = word            ; word (the default), sentence, word_sentence or click
+anki_game_tag = on               ; on (the default) or off
+anki_sentence_readings = on      ; on (the default) or off
+```
+
+They are applied at export, from what each card's record keeps (its whole sentence, the word's place in it
+and its game), so they apply to cards queued before too, and **Export all cards** makes every card again with
+the settings of the moment. Anki keeps a note it has (the same GUID, [below](#exporting-again-guids)): to
+change the type, tags or readings of notes already in your collection, choose to update existing notes when
+importing, or change them in Anki.
+
+#### Card type
+
+What the card's front shows, as Lapis's own switches choose it (Lapis 1.7.0's front template):
+
+| Card type | Front | Field set to `x` |
+| --- | --- | --- |
+| **Word** (the default, as before) | The word | none |
+| **Sentence** | The sentence, the word in bold | `IsSentenceCard` |
+| **Both** | The word, the sentence under it | `IsWordAndSentenceCard` |
+| **Click** | The word; a tap (or C) shows the sentence | `IsClickCard` |
+
+The back is the same for all four.
+
+#### Game tag
+
+With **Game tag** ON (the default), each note has its game's tag beside `vita-jp-overlay`, in
+GameSentenceMiner's form (its `_prepare_anki_tags`, under the parent tag `Game`): `Game::` and the game's name as
+the card's record has it, without its spaces (Anki splits tags on ASCII spaces and U+3000, so both go, as do tabs,
+line breaks and other whitespace) and without `::` (which would nest the tag). `CLANNAD` gives `Game::CLANNAD`,
+`グリザイアの果実　-LE FRUIT DE LA GRISAIA-` gives `Game::グリザイアの果実-LEFRUITDELAGRISAIA-`. A record without a
+game (versions 1 and 2) gets no game tag. Tags of Rubi's and GSM's cards match only where both tools name the
+game the same way.
+
+#### Sentence readings
+
+With **Sentence readings** ON (the default), the export fills `SentenceFurigana` with the readings of the
+sentence's words, from the dictionaries the overlay uses (`config.ini`'s `local_dictionary_dir` and
+`local_dictionaries`, in that order; `core/sentence_reading.c`), and Lapis's back shows them over the kanji:
+
+- **The parse** is Yomitan's for its `{sentence-furigana}`: from the sentence's start, the overlay's own lookup
+  at each position (the longest match, with deinflection), the next word where the match ends. The sentence is
+  joined as `Sentence` is (a line the game wrapped is one line).
+- **The reading on the word as written.** A word's reading goes on its kanji as Yomitan's
+  `distributeFuriganaInflected` places it: as the dictionary form reads them, up to where the inflection
+  starts, so 行って from 行く is `行[い]って`, and 来る, 良い and 行く (ゆく) as conjugated (`来[こ]ない`,
+  `来[き]ます`, `来[き]なさい`, `良[よ]かった`). 何 is なん before だ, で, の and the like (`何[なん]で`), なに
+  before the rest. Kana never takes a reading.
+- **The mined word** takes the card's own reading and keeps its `<b>`.
+- **No guessing.** A missing reading is better than a wrong one, so a word gets none when its reading depends
+  on what the dictionaries cannot tell: another entry of the same text, about as frequent (Jiten's ranks
+  within 4 times), reads its kanji otherwise (今日: きょう or こんにち; 明日; 方 alone: ほう or かた); it is a
+  single kanji inside a compound the lookup split (中 of 授業中, 君 of 春原君, 箱 of マッチ箱: ばこ); a part of
+  it, as a word of its own, is far more frequent and reads otherwise (今日は read こんにちは, 自然に read じねんに,
+  彼の read かの); it is a character's name that VNDB's names dictionary romanizes otherwise (一樹 read いちじゅ
+  is Kazuki); it is a counter after a number (三本), a number and 日 (a date or a count of days), or a match
+  that starts or ends inside a number; the game's text gives another reading in brackets after it; or no
+  dictionary has it. A word whose reading the parse did not find at all gets none either.
+
+On 3,000 real visual-novel lines that the rules were not chosen on, the readings were wrong for
+**1.8 per 1,000 kanji tokens** and missing for 174; Yomitan's `{sentence-furigana}` over the same
+dictionaries gives more readings (34 per 1,000 missing) and more wrong ones (about 46 per 1,000)
+([reports/sentence-readings.md](../reports/sentence-readings.md): the protocol, the threshold fixed before the
+measurement, the comparison with a morphological analyser). That is why it is ON by default. Host
+measurements; not run on a console yet.
+
+**Time.** An export looks up each card's sentence again: on the host 17 lookups and 98 file reads a line of
+29 characters on average (the 3,000 test lines), about 0.5 s a card on the console by the lookup's fit in
+[docs/lookup-performance.md](lookup-performance.md) (13.1 ms + 2.98 ms a read; an estimate: the app's lookups
+have not been timed on a console). The export's progress then counts every card; Cancel stops it, and nothing
+changes. With the setting OFF an export takes as long as before. A record that already has readings (one of the
+removed online dictionaries) keeps its own. Dictionaries that cannot be read give the cards no readings, and
+`log.txt` says so; the export goes on. Each export's `log.txt` line counts the notes given readings, the words
+read and left without, the lookups and the time.
 
 ### Exporting again: GUIDs
 
@@ -824,7 +913,11 @@ budget), not one of the plugins, so it is not in the plugins' [memory
 ledger](memory-ledger.md). Its Anki page holds a static 2 MiB arena for an
 export (`VJO_EXPORT_MEM`: the list of cards, 32 B each for up to 20,000, the
 writers' state, about 40 KiB, and one card's work at a time) and a 64 KiB stack
-for the one worker thread that exports while the page keeps drawing. It uses no
+for the one worker thread that exports while the page keeps drawing. The sentence readings (#311) add two
+static blocks, the lookups' scratch (`VJO_READINGS_SCRATCH`, 192 KiB: one lookup's 64 KiB result and 48 KiB
+scratch budgets, and the longest sentence's copies and readings, host test
+`a_longest_sentence_fits_its_scratch`) and the dictionaries' session (8 KiB); a card's field itself is made in
+the export's arena, among its card's work. It uses no
 network. Measured on the host (`vjo-apkg-tests`, "measure:" lines): an export
 of 20,005 cards (the 20,000 a package holds, 10,182,874 B) peaked at 1,121,712 B of
 the 2 MiB (804,713 B before [duplicates](#duplicates), whose check holds every card's

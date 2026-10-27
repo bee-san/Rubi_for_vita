@@ -9,7 +9,13 @@
 
 #include "../core/anki_queue.h"
 #include "../core/errors.h"
+#include "../core/json.h"
 #include "../core/word_key.h"
+#include "../core/lapis.h"
+#include "../core/local_dict.h"
+#include "../core/sentence_reading.h"
+#include "../core/utf.h"
+#include "app_platform.h"
 #include "cards.h"
 
 void vjo_log(const char *fmt, ...); /* the app's log.txt lines (settings/applog.c) */
@@ -196,12 +202,37 @@ static const uint8_t *read_jpeg(VjoArena *a, int archive, const char *hex, size_
     return NULL;
 }
 
+/* A record's game (#311, for its tag), read as core/anki_queue.c reads the record's other strings: absent, null,
+ * not a string, or with a control character or an escaped NUL in it, none (never a card that cannot be read).
+ * vjo_queue_decode leaves the game in the file, and the Shell links that code, which #311 leaves byte for byte as it
+ * was: so the app reads it here. Its tokens stay in the arena with the note (16 B a token, a record's 40 or so),
+ * which the package's writer releases after each note. */
+static const char *record_game(VjoArena *a, const char *json, size_t len)
+{
+    VjoJson j;
+    int t;
+    if (vjo_json_parse(a, json, len, &j) < 0 || !vjo_json_is_type(&j, 0, JSMN_OBJECT) ||
+        (t = vjo_json_obj_get(&j, 0, "game")) < 0 || !vjo_json_is_type(&j, t, JSMN_STRING))
+        return NULL;
+    for (int i = j.t[t].start; i < j.t[t].end; i++) {
+        if ((unsigned char)json[i] < 0x20)
+            return NULL;
+        if (json[i] == '\\') {
+            if (i + 5 < j.t[t].end && !memcmp(json + i, "\\u0000", 6))
+                return NULL;
+            i++;
+        }
+    }
+    return vjo_json_str(a, &j, t);
+}
+
 /* A card's record, checked against its name (the ID is its checksum) and
- * decoded into note. 0, or -1 (logged). */
-static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *note, int *picture)
+ * decoded into note, with (game) its game from version 3 on (record_game). 0, or -1 (logged). */
+static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *note, int *picture, int game)
 {
     char path[VJO_EXPORT_PATH_MAX], actual[VJO_QUEUE_ID_SIZE], *json;
     size_t len;
+    int version;
     card_path(path, archive, hex, "json");
     if (!(json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, NULL)))
         return -1;
@@ -210,10 +241,12 @@ static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *not
         vjo_log("anki export: %s: checksum mismatch (edited or damaged)", path);
         return -1;
     }
-    if (vjo_queue_decode(a, json, len, note, picture) < 0) {
+    if ((version = vjo_queue_decode(a, json, len, note, picture)) < 0) {
         vjo_log("anki export: %s: invalid or unsupported card format", path);
         return -1;
     }
+    if (game && version >= 3)
+        note->game = record_game(a, json, len);
     return 0;
 }
 
@@ -486,7 +519,7 @@ static int word_of(void *ud, const char *hex)
     if (!b->n)
         b->w = slot;
     mark = vjo_arena_mark(b->a);
-    if (read_card(b->a, !b->queue, hex, &note, &picture) < 0) {
+    if (read_card(b->a, !b->queue, hex, &note, &picture, 0) < 0) {
         b->unreadable++;
         vjo_arena_release(b->a, before); /* its place too */
         return 0;
@@ -1055,7 +1088,7 @@ static int list_card(void *ud, const char *hex)
     if (status_every(l->ui, "Reading the cards", ++l->seen, l->total) < 0)
         return -1;
     memset(&c, 0, sizeof(c));
-    if (read_card(l->a, l->archive, hex, &note, &picture) < 0) {
+    if (read_card(l->a, l->archive, hex, &note, &picture, 0) < 0) {
         l->unreadable++;
         vjo_arena_release(l->a, mark);
         return 0;
@@ -1133,7 +1166,81 @@ typedef struct {
     SceUID fd;
     const VjoExportUi *ui;
     int total;
+    /* #311: what the app's settings add to the notes */
+    const VjoAppPrefs *prefs;
+    const VjoConfig *dicts;    /* the dictionaries for sentence readings (config.ini's); NULL: none */
+    VjoPlatform platform;      /* their files (settings/app_platform.h), the session below */
+    VjoReadingStats readings;  /* for log.txt */
+    int readings_off;          /* the dictionaries could not be read: no more lookups this export */
+    int readings_notes;        /* notes given readings */
+    uint64_t readings_us;      /* the time they took */
 } Out;
+
+/* ---------------- what the notes get from the app's settings (#311) ---------------- */
+
+/* The sentence readings' scratch (core/sentence_reading.h VJO_READINGS_SCRATCH) and their dictionaries'
+ * session: the export's, one at a time (the app's own code does not malloc). */
+static unsigned char readings_mem[VJO_READINGS_SCRATCH] __attribute__((aligned(16)));
+static uint64_t session_mem[8u * 1024u / 8u];
+typedef char VjoExportSessionFits[sizeof(session_mem) >= 7u * 1024u ? 1 : -1]; /* local_dict.c's SessionFits */
+
+void vjo_export_game_tag(const char *game, char *out, size_t cap)
+{
+    size_t n = game ? strlen(game) : 0, i = 0, used;
+    static const char prefix[] = "Game::";
+    out[0] = '\0';
+    if (!n || cap <= sizeof(prefix))
+        return;
+    memcpy(out, prefix, sizeof(prefix));
+    used = sizeof(prefix) - 1;
+    while (i < n) {
+        size_t at = i;
+        uint32_t c = vjo_utf8_next(game, n, &i);
+        /* Anki splits tags on whitespace (ASCII and U+3000), and "::" would nest the tag: both go, as GSM's
+         * _prepare_anki_tags removes " " and "::"; control characters too */
+        if (c <= 0x20 || c == 0x7F || c == 0x3000 || c == 0xA0 || (c >= 0x2000 && c <= 0x200B))
+            continue;
+        if (c == ':' && i < n && game[i] == ':') {
+            i++;
+            continue;
+        }
+        if (used + (i - at) >= cap)
+            break;
+        memcpy(out + used, game + at, i - at);
+        used += i - at;
+    }
+    out[used] = '\0';
+    if (used == sizeof(prefix) - 1)
+        out[0] = '\0'; /* nothing of the title is left: no tag */
+}
+
+/* VjoApkgOps.sentence_furigana: readings over the note's sentence, from the dictionaries (NULL: the record's
+ * own, when it has some, or the setting is off, or the dictionaries cannot be read). */
+static const char *note_sentence_furigana(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note)
+{
+    Out *o = (Out *)ud;
+    VjoArena scratch;
+    uint64_t t0;
+    char *html;
+    int rc;
+    (void)c;
+    if (!o->dicts || !o->prefs->anki_sentence_readings || o->readings_off || !note->sentence ||
+        (note->sentence_furigana && strcmp(note->sentence_furigana, note->sentence)))
+        return NULL;
+    vjo_arena_init(&scratch, readings_mem, sizeof(readings_mem));
+    t0 = o->platform.now_us(o->platform.ud);
+    html = vjo_sentence_furigana(a, &scratch, &o->platform, o->dicts, NULL, note, &o->readings, &rc);
+    o->readings_us += o->platform.now_us(o->platform.ud) - t0;
+    if (!html) {
+        if (rc == VJO_E_LOCAL_IO || rc == VJO_E_LOCAL_FORMAT) {
+            vjo_log("anki export: sentence readings: the dictionaries cannot be read (%d): the cards get none", rc);
+            o->readings_off = 1;
+        }
+        return NULL;
+    }
+    o->readings_notes += html[0] != '\0';
+    return html;
+}
 
 static int out_write(void *ud, uint64_t off, const void *src, size_t n)
 {
@@ -1173,7 +1280,7 @@ static int load(void *ud, VjoArena *a, const VjoApkgCard *c, VjoAnkiNote *note, 
     to_hex(c->id, hex);
     *jpeg = NULL;
     *len = 0;
-    if (note && (read_card(a, c->exported, hex, note, &picture) < 0 ||
+    if (note && (read_card(a, c->exported, hex, note, &picture, 1) < 0 ||
                  !!picture != !!(c->picture || c->missing_picture)))
         return -1;
     if (c->picture && !(*jpeg = read_jpeg(a, c->exported, hex, len, NULL)))
@@ -1188,8 +1295,8 @@ static void progress(void *ud, int done, int total, const char *step)
     if (!o->ui->status)
         return;
     if (!strcmp(step, "notes")) {
-        if (done % 8 && done != total)
-            return;
+        if (done % 8 && done != total && !(o->dicts && o->prefs->anki_sentence_readings && !o->readings_off))
+            return; /* (each card while its readings are looked up: about half a second a card, estimated) */
         snprintf(msg, sizeof(msg), "Writing the cards… %d of %d", done, total);
     } else {
         snprintf(msg, sizeof(msg), "%s", !strcmp(step, "media") ? "Adding the screenshots…" : "Checking the file…");
@@ -1204,14 +1311,28 @@ static int out_stopped(void *ud)
 }
 
 /* A note's tags besides vita-jp-overlay (VjoApkgOps.tags): `duplicate` (#314: the tag an English Anki's Find
- * Duplicates adds) for a card whose word an earlier card has, and `known` for a word of known_words.txt. */
+ * Duplicates adds) for a card whose word an earlier card has, `known` for a word of known_words.txt, and with Game
+ * tag ON (#311) its game's, Game::<title> (none for a record without a game). (Out of arena, only the game's tag is
+ * lost here; the note's own record, made next in the same arena, then fails and leaves the card out.) */
 static const char *export_tags(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note)
 {
     static const char *const tags[4] = {NULL, "duplicate", "known", "duplicate known"};
-    (void)ud;
-    (void)a;
-    (void)note;
-    return tags[c->flags & (CARD_DUPLICATE | CARD_KNOWN)];
+    const Out *o = (const Out *)ud;
+    const char *flags = tags[c->flags & (CARD_DUPLICATE | CARD_KNOWN)];
+    char game[VJO_EXPORT_TAG_MAX];
+    VjoBuf b;
+    game[0] = '\0';
+    if (o && o->prefs && o->prefs->anki_game_tag && note && note->game)
+        vjo_export_game_tag(note->game, game, sizeof(game));
+    if (!game[0])
+        return flags;
+    vjo_buf_init(&b, a);
+    if (flags) {
+        vjo_buf_puts(&b, flags);
+        vjo_buf_putc(&b, ' ');
+    }
+    vjo_buf_puts(&b, game);
+    return b.oom ? flags : vjo_buf_cstr(&b);
 }
 
 /* ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>[-all]-<N>cards[-k].apkg: a
@@ -1410,8 +1531,8 @@ static int remove_orphans(const SceDateTime *made)
     return n;
 }
 
-int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExportUi *ui, VjoExportResult *r,
-                   char *msg, size_t cap)
+int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConfig *dicts, const VjoExportUi *ui,
+                   VjoExportResult *r, char *msg, size_t cap)
 {
     List l;
     Out o;
@@ -1559,8 +1680,14 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
     /* (its final name, with the number of notes written, once it is checked) */
     snprintf(tmp, sizeof(tmp), "%s/%04d-%02d-%02d_%02d%02d%02d%s.apkg.tmp", VJO_EXPORT_DIR, t.year, t.month, t.day,
              t.hour, t.minute, t.second, all ? "-all" : "");
+    memset(&o, 0, sizeof(o));
     o.ui = ui;
     o.total = l.n;
+    o.prefs = prefs;
+    o.dicts = dicts && vjo_local_names_valid(dicts->local_dictionaries) && dicts->local_dictionary_dir[0] ? dicts : NULL;
+    vjo_app_platform(&o.platform);
+    memset(session_mem, 0, sizeof(session_mem));
+    o.platform.local_session = (VjoLocalSession *)session_mem;
     if ((o.fd = sceIoOpen(tmp, SCE_O_RDWR | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0) {
         io_fail("open", tmp, o.fd);
         snprintf(msg, cap, "Cannot create a file in %s (memory card full?). Nothing was changed.", VJO_EXPORT_DIR);
@@ -1575,7 +1702,18 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
     ops.progress = progress;
     ops.stopped = out_stopped;
     ops.tags = export_tags;
+    ops.card_type = prefs->anki_card_type >= 0 && prefs->anki_card_type < VJO_CARD_TYPES ? prefs->anki_card_type : 0;
+    ops.sentence_furigana = note_sentence_furigana;
     rc = vjo_apkg_write(a, &ops, l.cards, l.n, &clock, &pr);
+    vjo_local_session_close(o.platform.local_session);
+    if (o.dicts && prefs->anki_sentence_readings)
+        vjo_log("anki export: sentence readings: %d of %d notes, %u of %u words read (%u ambiguous, %u in compounds, "
+                "%u parts, %u names, %u other), %u lookups, %u ms%s",
+                o.readings_notes, l.n, o.readings.read, o.readings.words, o.readings.ambiguous, o.readings.compound,
+                o.readings.part + o.readings.phrase, o.readings.name,
+                o.readings.shorter + o.readings.counters + o.readings.unplaced + o.readings.unchecked +
+                    o.readings.inline_readings,
+                o.readings.lookups, (unsigned)(o.readings_us / 1000u), o.readings_off ? "; dictionaries unreadable" : "");
     if (!rc) {
         int k = sceIoSyncByFd(o.fd, 0);
         if (k < 0)

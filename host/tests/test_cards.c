@@ -383,10 +383,13 @@ static int list_of(int which, const VjoCardRow *bound, int cap)
     return vjo_cards_list(&A, which, bound, &list, NULL);
 }
 
+/* settings/app_platform.c's clock (#311: the export's sentence readings, none here: no dictionaries) */
+uint64_t sceKernelGetProcessTimeWide(void) { return 0; }
+
 static int export_now(int all, VjoExportResult *r, char *msg)
 {
     arena();
-    return vjo_export_run(&A, all, NULL, &(VjoExportUi){NULL, NULL, NULL}, r, msg, 300);
+    return vjo_export_run(&A, all, NULL, NULL, &(VjoExportUi){NULL, NULL, NULL}, r, msg, 300);
 }
 
 /* ---------------- tests ---------------- */

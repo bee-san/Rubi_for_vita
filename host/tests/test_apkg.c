@@ -37,6 +37,8 @@
 #include <psp2/io/stat.h>
 #include <psp2/rtc.h>
 
+uint64_t sceKernelGetProcessTimeWide(void) { return 0; } /* settings/app_platform.c's clock */
+
 /* ---------------- the memory card: real files, with failures ---------------- */
 
 static char logs[16384];
@@ -520,7 +522,7 @@ static char *snapshot(void)
 static int run(int all, VjoExportResult *r, char *msg)
 {
     vjo_arena_init(&A, mem, sizeof(mem));
-    return vjo_export_run(&A, all, NULL, &ui, r, msg, 300);
+    return vjo_export_run(&A, all, NULL, NULL, &ui, r, msg, 300);
 }
 
 /* The same with app.ini's Duplicates (#314), in an arena of `bytes` (0: the whole). */
@@ -530,7 +532,7 @@ static int run_dupes(int all, int duplicates, size_t bytes, VjoExportResult *r, 
     vjo_app_prefs_defaults(&p);
     p.anki_duplicates = duplicates;
     vjo_arena_init(&A, mem, bytes ? bytes : sizeof(mem));
-    return vjo_export_run(&A, all, &p, &ui, r, msg, 300);
+    return vjo_export_run(&A, all, &p, NULL, &ui, r, msg, 300);
 }
 
 /* ---------------- the package, read here ---------------- */
@@ -697,7 +699,7 @@ static void test_lapis_fields(void)
                        "<ul style=\"text-align: left;\"><li>Jiten: 384</li></ul>"));
     {
         size_t len;
-        char *all = vjo_lapis_fields(&A, &n, NULL, &len);
+        char *all = vjo_lapis_fields(&A, &n, NULL, NULL, &len);
         int seps = 0;
         TEST_ASSERT(all != NULL);
         for (size_t i = 0; i < len; i++)
@@ -712,7 +714,7 @@ static void test_lapis_fields(void)
         char *all;
         n.meanings = odd;
         n.n_meanings = 1;
-        all = vjo_lapis_fields(&A, &n, NULL, &len);
+        all = vjo_lapis_fields(&A, &n, NULL, NULL, &len);
         for (size_t i = 0; i < len; i++)
             seps += all[i] == 0x1F;
         TEST_CHECK(seps == 21);
@@ -961,6 +963,87 @@ static size_t get_bytes(const char *path, uint8_t *p, size_t cap)
     if (!f)
         return 0;
     n = fread(p, 1, cap, f);
+    fclose(f);
+    return n;
+}
+
+/* #311: a note's card type sets its Lapis switch to "x" (a word card none), and the export's own
+ * SentenceFurigana takes the record's place. */
+static void test_lapis_card_types_and_sentence_readings(void)
+{
+    VjoAnkiNote n;
+    const char *m[1] = {"cat"};
+    memset(&n, 0, sizeof(n));
+    n.spelling = "猫";
+    n.reading = "ねこ";
+    n.meanings = m;
+    n.n_meanings = 1;
+    n.sentence = "猫が好き";
+    n.hl_start = 0;
+    n.hl_end = 3;
+    n.sf_hl_start = n.sf_hl_end = -1;
+    vjo_arena_init(&A, mem, sizeof(mem));
+    TEST_CHECK(vjo_lapis_card_field(VJO_CARD_WORD) == -1 &&
+               vjo_lapis_card_field(VJO_CARD_SENTENCE) == VJO_LAPIS_IS_SENTENCE_CARD &&
+               vjo_lapis_card_field(VJO_CARD_WORD_SENTENCE) == VJO_LAPIS_IS_WORD_AND_SENTENCE_CARD &&
+               vjo_lapis_card_field(VJO_CARD_CLICK) == VJO_LAPIS_IS_CLICK_CARD && vjo_lapis_card_field(9) == -1);
+    for (int type = 0; type < VJO_CARD_TYPES; type++) {
+        VjoLapisExtra x = {type, type == VJO_CARD_CLICK ? "<b> 猫[ねこ]</b>が 好[す]き" : NULL};
+        size_t len;
+        char *all = vjo_lapis_fields(&A, &n, NULL, &x, &len), *f[VJO_LAPIS_FIELDS], *p;
+        int k = 0;
+        TEST_ASSERT(all != NULL);
+        for (p = all, f[k++] = p; k < VJO_LAPIS_FIELDS && (p = strchr(p, 0x1F)); f[k++] = ++p)
+            *p = '\0';
+        TEST_ASSERT(k == VJO_LAPIS_FIELDS);
+        for (int fi = VJO_LAPIS_IS_WORD_AND_SENTENCE_CARD; fi <= VJO_LAPIS_IS_AUDIO_CARD; fi++)
+            TEST_CHECK_(!strcmp(f[fi], fi == vjo_lapis_card_field(type) ? "x" : ""), "type %d, field %d: '%s'", type, fi,
+                        f[fi]);
+        TEST_CHECK(!strcmp(f[VJO_LAPIS_SENTENCE_FURIGANA], type == VJO_CARD_CLICK ? "<b> 猫[ねこ]</b>が 好[す]き" : ""));
+        TEST_CHECK(!strcmp(f[VJO_LAPIS_SENTENCE], "<b>猫</b>が好き"));
+    }
+}
+
+/* #311: the game's tag as GameSentenceMiner writes it (_prepare_anki_tags): Game::, the title without its
+ * whitespace (ASCII, U+3000 and the like) and "::", nothing for no game; cut on a character boundary. */
+static void test_game_tag(void)
+{
+    static const struct {
+        const char *game, *tag;
+    } cases[] = {
+        {"CLANNAD", "Game::CLANNAD"},
+        {"SOME GAME", "Game::SOMEGAME"},
+        {"グリザイアの果実\u3000-LE FRUIT DE LA GRISAIA-", "Game::グリザイアの果実-LEFRUITDELAGRISAIA-"},
+        {"STEINS;GATE 比翼恋理のだーりん", "Game::STEINS;GATE比翼恋理のだーりん"},
+        {"A::B::C", "Game::ABC"},
+        {"Code:Realize ～創世の姫君～", "Game::Code:Realize～創世の姫君～"},
+        {"tab\tand\nnew line\r", "Game::tabandnewline"},
+        {"no\xC2\xA0" "break", "Game::nobreak"},
+        {"   ", ""},
+        {"\u3000", ""},
+        {"::", ""},
+        {"", ""},
+        {NULL, ""},
+    };
+    char out[VJO_EXPORT_TAG_MAX], title[400];
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        vjo_export_game_tag(cases[i].game, out, sizeof(out));
+        TEST_CHECK_(!strcmp(out, cases[i].tag), "'%s': '%s'", cases[i].game ? cases[i].game : "(null)", out);
+    }
+    title[0] = '\0';
+    for (int i = 0; i < 100; i++)
+        strcat(title, "あ");
+    vjo_export_game_tag(title, out, sizeof(out));
+    TEST_CHECK(strlen(out) == 6 + 3 * 51 && !strncmp(out, "Game::あ", 9)); /* 159 bytes, whole characters */
+}
+
+/* The package's bytes (stored, uncompressed: a field's text is in them as written). */
+static size_t package_bytes(const char *path, uint8_t *out, size_t cap)
+{
+    FILE *f = fopen(path, "rb");
+    size_t n;
+    TEST_ASSERT(f != NULL);
+    n = fread(out, 1, cap, f);
     fclose(f);
     return n;
 }
@@ -1318,6 +1401,155 @@ static void test_the_words_and_their_records(void)
     TEST_MSG("%s", msg);
 }
 
+/* #311: the export follows the app's settings: every note's card type, and its game's tag (a record
+ * without a game, version 1, gets none). */
+static void test_the_export_follows_the_app_settings(void)
+{
+    static uint8_t file[256 * 1024];
+    for (int type = 0; type < VJO_CARD_TYPES; type++)
+        for (int tag = 0; tag < 2; tag++) {
+            VjoAppPrefs prefs;
+            VjoExportResult r;
+            char msg[300];
+            size_t n;
+            vjo_app_prefs_defaults(&prefs);
+            TEST_CHECK(prefs.anki_card_type == VJO_CARD_WORD && prefs.anki_game_tag && prefs.anki_sentence_readings);
+            prefs.anki_card_type = type;
+            prefs.anki_game_tag = tag;
+            prefs.anki_duplicates = VJO_DUPLICATES_KEEP; /* (the v1 record's 猫 is earlier: Tag would add duplicate) */
+            reset();
+            queue_card(&cat, 0);
+            queue_json(v1, 0);
+            vjo_arena_init(&A, mem, sizeof(mem));
+            TEST_ASSERT(vjo_export_run(&A, 0, &prefs, NULL, &ui, &r, msg, sizeof(msg)) == VJO_OK && r.cards == 2);
+            n = package_bytes(r.path, file, sizeof(file));
+            TEST_CHECK_(occurrences(file, n, "\x1fx\x1f") == (type ? 2 : 0), "type %d: %d switches", type,
+                        occurrences(file, n, "\x1fx\x1f"));
+            TEST_CHECK(occurrences(file, n, " vita-jp-overlay ") == 2);
+            TEST_CHECK_(occurrences(file, n, " vita-jp-overlay Game::SOMEGAME ") == tag, "tag %d", tag);
+        }
+    /* with #314's Duplicates (Tag, the default): the 猫 after the v1 record's has both tags, the game's last */
+    {
+        VjoExportResult r;
+        char msg[300];
+        size_t n;
+        reset();
+        queue_card(&cat, 0);
+        queue_json(v1, 0);
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK && r.cards == 2 && r.duplicates == 1);
+        n = package_bytes(r.path, file, sizeof(file));
+        TEST_CHECK(occurrences(file, n, " vita-jp-overlay duplicate Game::SOMEGAME ") == 1 &&
+                   occurrences(file, n, " vita-jp-overlay ") == 2);
+    }
+}
+
+/* #311: a record's game, which the app reads itself (core/anki_queue.c's decode, the Shell's code too, leaves it in the
+ * file): a version 3 or 4 record's string gives the tag; not a string, a raw control character or an escaped NUL in
+ * it, and a version 2 record's (versions 1 and 2 have none) give none, and every card is exported as before. */
+static void test_a_record_s_game_is_read_by_the_app(void)
+{
+    static uint8_t file[256 * 1024];
+    static const struct {
+        const char *game; /* the record's "game" value, as JSON */
+        int version, tagged;
+    } cases[] = {
+        {"\"SOME GAME\"", 4, 1}, {"\"SOME\\u0020GAME\"", 4, 1}, {"123", 4, 0},  {"null", 4, 0},
+        {"[\"SOME GAME\"]", 4, 0}, {"\"SOME\tGAME\"", 4, 0},       {"\"SOME\\u0000GAME\"", 4, 0},
+        {"\"SOME GAME\"", 2, 0},
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        VjoAnkiNote n;
+        VjoExportResult r;
+        const char *m[1] = {"cat"};
+        char msg[300], json[1024], *enc, *at;
+        size_t len;
+        int k;
+        reset();
+        memset(&n, 0, sizeof(n));
+        n.spelling = "猫";
+        n.reading = "ねこ";
+        n.rank = 1234;
+        n.meanings = m;
+        n.n_meanings = 1;
+        n.sentence = "猫が好き";
+        n.hl_start = 0;
+        n.hl_end = 3;
+        n.sf_hl_start = n.sf_hl_end = -1;
+        n.game = "SOME GAME";
+        n.unix_time = 1791738660;
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_ASSERT((enc = vjo_queue_encode(&A, &n, 0)) != NULL);
+        TEST_ASSERT((at = strstr(enc, "\"game\":\"SOME GAME\"")) != NULL);
+        k = snprintf(json, sizeof(json), "%.*s\"game\":%s%s", (int)(at - enc), enc, cases[i].game,
+                     at + strlen("\"game\":\"SOME GAME\""));
+        TEST_ASSERT(k > 0 && k < (int)sizeof(json));
+        if (cases[i].version != 4) { /* an older record with the same keys: only its version differs */
+            char *v = strstr(json, "\"version\":4");
+            TEST_ASSERT(v != NULL);
+            v[strlen("\"version\":")] = (char)('0' + cases[i].version);
+        }
+        queue_json(json, 0);
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+        TEST_CHECK_(r.cards == 1 && !r.unreadable, "case %u: %d cards, %d unreadable: %s", i, r.cards, r.unreadable,
+                    msg);
+        len = package_bytes(r.path, file, sizeof(file));
+        TEST_CHECK_(occurrences(file, len, " vita-jp-overlay Game::SOMEGAME ") == cases[i].tagged &&
+                        occurrences(file, len, "Game::") == cases[i].tagged,
+                    "case %u (%s, version %d): tagged %d", i, cases[i].game, cases[i].version,
+                    occurrences(file, len, "Game::"));
+    }
+}
+
+/* #311: readings over the sentence at export, from the bundled dictionary (VJO_PLAINTEXT_DIR; without it this
+ * checks only that a missing dictionary leaves the cards as they were): the mined word with the card's own
+ * reading, in <b>; none with the setting off; the export unchanged when the dictionaries cannot be read. */
+static void test_sentence_readings_at_export(void)
+{
+    static uint8_t file[256 * 1024];
+    const char *dir = getenv("VJO_PLAINTEXT_DIR");
+    char path[PATH_MAX];
+    struct stat st;
+    Card school = cat;
+    VjoConfig dicts;
+    school.spelling = "学校";
+    school.reading = "がっこう";
+    school.sentence = "今日は学校へ行って、友達と一緒に勉強した。";
+    school.hl_start = 9;
+    school.hl_end = 15;
+    vjo_config_defaults(&dicts);
+    snprintf(dicts.local_dictionaries, sizeof(dicts.local_dictionaries), "plaintext.vjdict");
+    for (int c = 0; c < 3; c++) {
+        VjoAppPrefs prefs;
+        VjoExportResult r;
+        char msg[300];
+        size_t n;
+        int have = 0;
+        vjo_app_prefs_defaults(&prefs);
+        prefs.anki_sentence_readings = c != 1;
+        if (c == 2) {
+            snprintf(dicts.local_dictionary_dir, sizeof(dicts.local_dictionary_dir), "%s", "no/such/directory");
+        } else {
+            snprintf(path, sizeof(path), "%s/plaintext.vjdict", dir ? dir : "");
+            if (!dir || stat(path, &st)) {
+                TEST_MSG("no plaintext.vjdict (VJO_PLAINTEXT_DIR): its readings are not checked");
+                continue;
+            }
+            snprintf(dicts.local_dictionary_dir, sizeof(dicts.local_dictionary_dir), "%s", dir);
+            have = c == 0;
+        }
+        reset();
+        queue_card(&school, 0);
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_ASSERT(vjo_export_run(&A, 0, &prefs, &dicts, &ui, &r, msg, sizeof(msg)) == VJO_OK && r.cards == 1);
+        n = package_bytes(r.path, file, sizeof(file));
+        TEST_CHECK_(occurrences(file, n, "<b>学校[がっこう]</b>へ 行[い]って、 友達[ともだち]と 一緒[いっしょ]に 勉強[べんきょう]した。") == have,
+                    "case %d\n%s", c, logs);
+        TEST_CHECK(occurrences(file, n, "<b>学校</b>へ") == 1); /* Sentence, as before */
+        TEST_CHECK_(!!strstr(logs, "anki export: sentence readings: ") == (c != 1), "case %d\n%s", c, logs);
+        TEST_CHECK_(!!strstr(logs, "the dictionaries cannot be read") == (c == 2), "case %d\n%s", c, logs);
+    }
+}
+
 static void test_export_writes_a_dated_verified_package_and_clears_the_queue(void)
 {
     VjoExportResult r;
@@ -1510,7 +1742,7 @@ static void test_a_package_that_reads_back_wrong_never_gets_its_name(void)
             io.corrupt_read = bad == 0;
             io.fail_open_read = bad == 1;
             crash_point = "apkg_renamed";
-            vjo_export_run(&A, 0, NULL, &ui, &r, msg, sizeof(msg));
+            vjo_export_run(&A, 0, NULL, NULL, &ui, &r, msg, sizeof(msg));
             _exit(0);
         }
         TEST_ASSERT(pid > 0 && waitpid(pid, &status, 0) == pid);
@@ -1854,7 +2086,7 @@ static void test_screenshot_io_and_memory_failures_keep_the_card(void)
     put_file(path, mem, jpeg(mem, 7, 16000));
     snprintf(before, sizeof(before), "%s", snapshot());
     vjo_arena_init(&A, mem, 8192); /* enough for the text; not the JPEG */
-    TEST_CHECK(vjo_export_run(&A, 0, NULL, &ui, &r, msg, sizeof(msg)) != VJO_OK);
+    TEST_CHECK(vjo_export_run(&A, 0, NULL, NULL, &ui, &r, msg, sizeof(msg)) != VJO_OK);
     TEST_CHECK(r.unreadable == 1 && !r.missing_picture && !strcmp(before, snapshot()));
     TEST_CHECK(strstr(logs, "out of memory reading 16000 bytes") != NULL);
     TEST_CHECK(run(0, &r, msg) == VJO_OK && r.media == 1 && !r.missing_picture);
@@ -2199,8 +2431,8 @@ static int write_packages(const char *dir)
     FILE *f;
     Card a = cat, b = dog, c = eat;
     const char *ids[8];
-    char saved[12][VJO_QUEUE_ID_SIZE], edited[2][VJO_QUEUE_ID_SIZE];
-    int n = 0, e0 = 0; /* e0: the first of the edited package's cards in saved (#315), after the second run's */
+    char saved[12][VJO_QUEUE_ID_SIZE], edited[2][VJO_QUEUE_ID_SIZE], richer[VJO_QUEUE_ID_SIZE];
+    int n = 0, e0 = 0, readings; /* e0: the first of the edited package's cards in saved (#315), after the second run's */
     reset();
     /* first: three cards, one with a screenshot (a real JPEG, the game worker's encoder's: API 23);
      * v1 and v2 records too */
@@ -2336,6 +2568,35 @@ static int write_packages(const char *dir)
         if (take_package(r.path, path))
             return 1;
     }
+    /* richer (#311): a sentence card, with its game's tag and, with the bundled dictionary, readings */
+    {
+        Card school = cat;
+        VjoAppPrefs prefs;
+        VjoConfig dicts;
+        const char *pdir = getenv("VJO_PLAINTEXT_DIR");
+        struct stat st;
+        char dict[PATH_MAX];
+        snprintf(dict, sizeof(dict), "%s/plaintext.vjdict", pdir ? pdir : "");
+        readings = pdir && !stat(dict, &st);
+        school.spelling = "学校";
+        school.reading = "がっこう";
+        school.sentence = "今日は学校へ行って、友達と一緒に勉強した。";
+        school.hl_start = 9;
+        school.hl_end = 15;
+        school.time += 600;
+        snprintf(richer, sizeof(richer), "%s", queue_card(&school, 0));
+        vjo_app_prefs_defaults(&prefs);
+        prefs.anki_card_type = VJO_CARD_SENTENCE;
+        vjo_config_defaults(&dicts);
+        snprintf(dicts.local_dictionary_dir, sizeof(dicts.local_dictionary_dir), "%s", pdir ? pdir : "");
+        snprintf(dicts.local_dictionaries, sizeof(dicts.local_dictionaries), "plaintext.vjdict");
+        vjo_arena_init(&A, mem, sizeof(mem));
+        if (vjo_export_run(&A, 0, &prefs, readings ? &dicts : NULL, &ui, &r, msg, sizeof(msg)) != VJO_OK)
+            return fprintf(stderr, "%s\n%s", msg, logs), 1;
+        snprintf(path, sizeof(path), "%s/richer.apkg", dir);
+        if (take_package(r.path, path))
+            return 1;
+    }
     /* what the first two must hold: each card's ID (its GUID's source) */
     snprintf(path, sizeof(path), "%s/expected.json", dir);
     if (!(f = fopen(path, "w")))
@@ -2354,8 +2615,9 @@ static int write_packages(const char *dir)
     fprintf(f, ",\"edited\":{\"fixed\":\"%s\",\"word\":\"猫舌\",\"sentence\":\"猫舌なので、\\n熱いのは苦手\","
                "\"dropped\":\"%s\",\"replaced\":[\"%s\",\"%s\"],\"deleted\":\"%s\"}", edited[0], edited[1], saved[e0],
             saved[e0 + 1], saved[e0 + 2]);
-    fprintf(f, ",\"many\":700,\"notetype_id\":%lld,\"deck_id\":%lld,\"deck\":\"%s\"}\n", vjo_lapis_notetype_id,
-            vjo_lapis_deck_id, vjo_lapis_deck_name);
+    fprintf(f, ",\"many\":700,\"notetype_id\":%lld,\"deck_id\":%lld,\"deck\":\"%s\",\"richer\":\"%s\","
+               "\"readings\":%s}\n",
+            vjo_lapis_notetype_id, vjo_lapis_deck_id, vjo_lapis_deck_name, richer, readings ? "true" : "false");
     fclose(f);
     return 0;
 }
@@ -2375,6 +2637,11 @@ TEST_LIST = {
     {"known_lines", test_known_lines},
     {"known_import", test_known_import},
     {"known_cards_are_tagged", test_known_cards_are_tagged},
+    {"lapis_card_types_and_sentence_readings", test_lapis_card_types_and_sentence_readings},
+    {"game_tag", test_game_tag},
+    {"the_export_follows_the_app_settings", test_the_export_follows_the_app_settings},
+    {"a_record_s_game_is_read_by_the_app", test_a_record_s_game_is_read_by_the_app},
+    {"sentence_readings_at_export", test_sentence_readings_at_export},
     {"export_writes_a_dated_verified_package_and_clears_the_queue",
      test_export_writes_a_dated_verified_package_and_clears_the_queue},
     {"one_card_and_every_record_version", test_one_card_and_every_record_version},

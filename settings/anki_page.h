@@ -1,6 +1,8 @@
 /* The Rubi app's Anki page: card mining on/off, the cards' screenshots
  * on/off (anki_screenshot, API 23) and their black bars trimmed or kept
- * (anki_screenshot_trim_bars, API 32), what the export does with a word mined
+ * (anki_screenshot_trim_bars, API 32), what the export makes of each card
+ * (#311: Card type, Game tag and Sentence readings, app.ini's anki_card_type,
+ * anki_game_tag and anki_sentence_readings), what it does with a word mined
  * before (#314: Duplicates, app.ini's anki_duplicates: tag, skip or keep), the
  * Cards page (#315, settings/cards_page.c: the queued cards listed, one deleted,
  * its sentence fixed or its picture dropped), and the export of the queued cards

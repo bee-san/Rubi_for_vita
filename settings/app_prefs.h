@@ -25,11 +25,16 @@
 /* anki_duplicates (#314): what the export does with a card whose word an earlier card has. */
 enum { VJO_DUPLICATES_TAG = 0, VJO_DUPLICATES_SKIP = 1, VJO_DUPLICATES_KEEP = 2 };
 
+/* anki_card_type (#311): the cards' Lapis type, core/lapis.h VJO_CARD_*'s order: word (the default), sentence,
+ * word_sentence, click. */
 typedef struct {
     int anki_duplicates; /* VJO_DUPLICATES_*: tag (the default), skip or keep */
     /* stats_daily_goal (#312): the Stats tab's Daily goal, core/stats.h VJO_GOAL_*: off (the default), a number of
      * characters (2,000 to 50,000) or of minutes (15 to 120) a day */
     int stats_daily_goal;
+    int anki_card_type;  /* VJO_CARD_* (core/lapis.h): word, the default */
+    int anki_game_tag;   /* 1 (the default): each note has its game's tag, Game::<title> */
+    int anki_sentence_readings; /* 1 (the default, reports/sentence-readings.md): readings over the sentence */
 } VjoAppPrefs;
 
 /* Every setting at its default (here, so that code which only follows the settings, as the export does, needs no
@@ -39,6 +44,9 @@ static inline void vjo_app_prefs_defaults(VjoAppPrefs *p)
     memset(p, 0, sizeof(*p));
     p->anki_duplicates = VJO_DUPLICATES_TAG;
     p->stats_daily_goal = 0; /* VJO_GOAL_OFF */
+    p->anki_card_type = 0; /* VJO_CARD_WORD */
+    p->anki_game_tag = 1;
+    p->anki_sentence_readings = 1;
 }
 /* app.ini's text (len bytes) over p: each line of a known key with a known value sets it. */
 void vjo_app_prefs_parse(VjoAppPrefs *p, const char *text, size_t len);

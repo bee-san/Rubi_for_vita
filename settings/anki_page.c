@@ -15,14 +15,15 @@
 #include "app_prefs.h"
 #include "cards_page.h"
 #include "preferences.h"
+#include "../core/lapis.h"
 #include "../core/stick_scroll.h"
 /* As in main.c: no vita2d_fini in the system application. */
 #pragma GCC poison vita2d_fini
 
 #define WORKER_STACK (64 * 1024)
 
-/* Seven rows (API 23 added Screenshots, API 32 their black bars, #314 Duplicates and Known words), then the 3-line
- * status box,
+/* Eleven rows (API 23 added Screenshots, API 32 their black bars, #311 Card type, Game tag and Sentence readings,
+ * #314 Duplicates and Known words, #315 Cards), then the 3-line status box,
  * which ends above the controls line main.c draws at y 535: the export rows' help is one line.
  * The rows are more than the room above the box: they scroll a row at a time, the selected one
  * always whole, as the OCR page's cards do (a row cut at the room's bottom shows there is more,
@@ -36,9 +37,12 @@
 #define FOOTER_H 92
 #define SCROLL_X 942
 #define SCROLL_W 6
-/* #315: the Cards page's row after the settings rows, before the actions */
-enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_DUPES, ROW_CARDS, ROW_KNOWN, ROW_EXPORT, ROW_ALL, ROWS };
-static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H, ACTION_H};
+/* (the rows before ROW_CARD_TYPE are config.ini's switches; from it to ROW_DUPES app.ini's settings, #311 and #314;
+ * then #315's Cards page, before the actions) */
+enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_CARD_TYPE, ROW_GAME_TAG, ROW_READINGS, ROW_DUPES, ROW_CARDS, ROW_KNOWN,
+       ROW_EXPORT, ROW_ALL, ROWS };
+static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H,   CARD_H,   CARD_H,  CARD_H,
+                                     CARD_H, CARD_H, ACTION_H, ACTION_H, ACTION_H};
 /* The worker's jobs (`all`): the queue's export, every card's, and (#314 stage C) known_words.txt's import */
 /* JOB_CARDS (#315): a Cards page job (settings/cards_page.c), cards_job */
 enum { JOB_QUEUED, JOB_ALL, JOB_KNOWN, JOB_CARDS };
@@ -52,6 +56,16 @@ static const char *const dupes_name[3] = {"Tag", "Skip", "Keep"}; /* VJO_DUPLICA
 static const char *const dupes_help[3] = {"A word you mined before gets Anki's duplicate tag.",
                                           "A word you mined before stays queued, not exported.",
                                           "Every card is exported, with no duplicate check."};
+/* #311 Card type: a choice row of four, its badges from x 376, 136 px apart, 128 px wide (the last ends where
+ * Duplicates' does, x 912). Its values: core/lapis.h VJO_CARD_*'s order, app.ini's anki_card_type. */
+#define TYPE_X 376
+#define TYPE_PITCH 136
+#define TYPE_W 128
+static const char *const type_name[VJO_CARD_TYPES] = {"Word", "Sentence", "Both", "Click"};
+static const char *const type_help[VJO_CARD_TYPES] = {"The card's front shows the word.",
+                                                     "The card's front shows the word's sentence.",
+                                                     "The card's front shows the word and its sentence.",
+                                                     "The card's front shows the word; a tap, its sentence."};
 /* #314: the words the page reads itself, at most, when it is shown (the export reads every one): the new cards' since
  * it last looked, on the main thread, which waits for them (log.txt's "anki: words counted in N ms"; not measured on
  * a console) */
@@ -74,6 +88,8 @@ static int all, running, finished, cancelled;
 static VjoAnkiJob cards_job;    /* JOB_CARDS's function */
 static int cards_shown;         /* the Cards page was open in the last frame */
 static VjoAppPrefs job_app;     /* the app's settings the export follows, as the page had them at its start */
+static VjoConfig job_dicts;     /* #311: config.ini's dictionaries for its sentence readings, the same */
+static int job_dicts_known;     /* config.ini could be read (else the export looks nothing up) */
 static char progress[160], result[480];
 static int result_error;
 static unsigned char export_mem[VJO_EXPORT_MEM] __attribute__((aligned(16)));
@@ -142,7 +158,8 @@ static int worker_main(SceSize args, void *argp)
         sceKernelUnlockMutex(lock, 1);
         return 0;
     }
-    vjo_export_run(&arena, what == JOB_ALL, &prefs, &ui, &r, msg, sizeof(msg));
+    /* (job_dicts: written before the thread starts, read only here) */
+    vjo_export_run(&arena, what == JOB_ALL, &prefs, job_dicts_known ? &job_dicts : NULL, &ui, &r, msg, sizeof(msg));
     vjo_log("anki: export (%s) rc=%d: %d cards, %d moved, %d kept, %d unreadable, %d too large, %d left, "
             "%d stopped, %d swept, %u bytes, arena peak %u, %d without screenshots, %d duplicates (%s)%s, %d known%s, "
             "%u ms",
@@ -195,6 +212,8 @@ static void start(int job)
     int rc;
     if (running)
         return;
+    job_dicts = cfg; /* (#311: no job runs, so none reads them now) */
+    job_dicts_known = writable;
     if ((rc = launch(job, job == JOB_KNOWN ? "Reading known_words.txt…" : "Reading the cards…")) < 0) {
         snprintf(note, sizeof(note), "Could not start the %s (0x%08X).", job == JOB_KNOWN ? "import" : "export",
                  (unsigned)rc);
@@ -310,24 +329,40 @@ void vjo_anki_page_show(VjoArena *scratch)
     }
 }
 
-/* #314: Duplicates, in app.ini (the overlay never reads it). */
-static void set_duplicates(int value, VjoArena *scratch)
+/* An app.ini setting (#314 Duplicates, #311 Card type, Game tag and Sentence readings; the overlay never reads the
+ * file): key's new value, saved and read back; nothing when it is outside 0..n-1 or already so. */
+static void save_app(const char *key, int value, int n, VjoArena *scratch)
 {
-    static const char *const keys[1] = {"anki_duplicates"};
-    int values[1] = {value}, rc, read_rc;
-    if (value < 0 || value > 2 || value == app.anki_duplicates)
+    int rc, read_rc;
+    if (value < 0 || value >= n || value == vjo_app_prefs_get(&app, key))
         return;
     if (!app_writable) {
         snprintf(note, sizeof(note), "Cannot read app.ini. The choice has not been changed.");
         note_error = 1;
         return;
     }
-    rc = vjo_app_prefs_save(keys, values, 1, scratch);
+    rc = vjo_app_prefs_save(&key, &value, 1, scratch);
     read_rc = vjo_app_prefs_load(&app, scratch);
     app_writable = read_rc >= 0;
-    note_error = rc < 0 || read_rc < 0 || app.anki_duplicates != value;
+    note_error = rc < 0 || read_rc < 0 || vjo_app_prefs_get(&app, key) != value;
     snprintf(note, sizeof(note), "%s", note_error ? "Save not confirmed. Check the choice shown, then retry."
                                                   : "Saved. The next export uses it.");
+}
+
+static void set_duplicates(int value, VjoArena *scratch)
+{
+    save_app("anki_duplicates", value, 3, scratch);
+}
+
+static void set_card_type(int value, VjoArena *scratch)
+{
+    save_app("anki_card_type", value, VJO_CARD_TYPES, scratch);
+}
+
+/* Game tag's and Sentence readings' keys (#311) */
+static const char *switch_key(int row)
+{
+    return row == ROW_GAME_TAG ? "anki_game_tag" : "anki_sentence_readings";
 }
 
 /* ---------------- input and drawing ---------------- */
@@ -342,9 +377,14 @@ int vjo_anki_page_holds_cancel(void)
     return running || vjo_cards_page_is_open();
 }
 
-/* A settings row's switch (the first three rows), as config.ini has it. */
+/* A settings row's switch: the first three rows', as config.ini has it; Game tag's and Sentence readings', as
+ * app.ini has them. */
 static int row_on(int row)
 {
+    if (row == ROW_GAME_TAG)
+        return app.anki_game_tag;
+    if (row == ROW_READINGS)
+        return app.anki_sentence_readings;
     return row == ROW_MINING ? cfg.anki_mining : row == ROW_SHOT ? cfg.anki_screenshot : cfg.anki_screenshot_trim_bars;
 }
 
@@ -352,10 +392,14 @@ static void activate(int row, VjoArena *scratch)
 {
     if (running)
         return;
-    if (row < ROW_DUPES)
+    if (row < ROW_CARD_TYPE)
         save(row == ROW_MINING ? !cfg.anki_mining : cfg.anki_mining,
              row == ROW_SHOT ? !cfg.anki_screenshot : cfg.anki_screenshot,
              row == ROW_TRIM ? !cfg.anki_screenshot_trim_bars : cfg.anki_screenshot_trim_bars, scratch);
+    else if (row == ROW_CARD_TYPE) /* Enter: the next choice, round */
+        set_card_type((app.anki_card_type + 1) % VJO_CARD_TYPES, scratch);
+    else if (row == ROW_GAME_TAG || row == ROW_READINGS)
+        save_app(switch_key(row), !row_on(row), 2, scratch);
     else if (row == ROW_DUPES) /* Enter: the next choice, round */
         set_duplicates((app.anki_duplicates + 1) % 3, scratch);
     else if (row == ROW_CARDS)
@@ -400,10 +444,23 @@ static void count_text(char *out, size_t cap, int n, const char *what)
 /* Row i at y (busy: an export runs; busy_text its progress; total every card). */
 static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *busy_text, int total)
 {
-    static const char *const titles[ROW_DUPES] = {"Card mining", "Screenshots", "Trim black bars"};
+    static const char *const titles[ROW_DUPES] = {"Card mining", "Screenshots",       "Trim black bars",
+                                                  "Card type",   "Game tag",          "Sentence readings"};
     char line[260];
     ui->card(y, row_height[i], selected == i);
-    if (i == ROW_DUPES) { /* #314: each choice shown, the chosen one lit */
+    if (i == ROW_CARD_TYPE) { /* #311: each choice shown, the chosen one lit */
+        int type = app.anki_card_type >= 0 && app.anki_card_type < VJO_CARD_TYPES ? app.anki_card_type : 0;
+        ui->text(42, y + 30, ui->white, 28, titles[i]);
+        for (int k = 0; k < VJO_CARD_TYPES; k++)
+            ui->badge(TYPE_X + k * TYPE_PITCH, y + 6, TYPE_W, 34, type_name[k], app_writable && type == k);
+        ui->text(42, y + 60, ui->dim, 24, app_writable ? type_help[type] : "Cannot read app.ini.");
+    } else if (i == ROW_GAME_TAG || i == ROW_READINGS) { /* #311: app.ini's switches */
+        ui->text(42, y + 30, ui->white, 28, titles[i]);
+        ui->badge(812, y + 6, 108, 34, !app_writable ? "--" : row_on(i) ? "ON" : "OFF", app_writable && row_on(i));
+        ui->text(42, y + 60, ui->dim, 24,
+                 i == ROW_GAME_TAG ? "Each card gets its game's tag, as Game::CLANNAD."
+                                   : "Readings over the sentence's kanji, on the card's back.");
+    } else if (i == ROW_DUPES) { /* #314: each choice shown, the chosen one lit */
         ui->text(42, y + 30, ui->white, 28, "Duplicates");
         for (int k = 0; k < 3; k++)
             ui->badge(CHOICE_X + k * CHOICE_PITCH, y + 6, CHOICE_W, 34, dupes_name[k],
@@ -417,7 +474,7 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
         ui->text(42, y + 30, counts.queued < 0 ? ui->off : ui->white, 28, line);
         ui->badge(812, y + 6, 108, 34, "Open", 0);
         ui->text(42, y + 60, ui->dim, 24, "See each card; delete it, fix its sentence or drop its picture.");
-    } else if (i < ROW_DUPES) {
+    } else if (i < ROW_CARD_TYPE) {
         ui->text(42, y + 30, ui->white, 28, titles[i]);
         ui->badge(812, y + 6, 108, 34, !writable ? "--" : row_on(i) ? "ON" : "OFF", writable && row_on(i));
         if (i == ROW_MINING)
@@ -494,10 +551,12 @@ int vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int 
         selected = vjo_stick_step(selected, ROWS, stick);
     if (pressed & ui->buttons->enter)
         activate(selected, scratch);
-    /* Left/Right: OFF/ON on the three settings' rows; the choice to the left or right on Duplicates */
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < ROW_DUPES && !busy &&
+    /* Left/Right: OFF/ON on the switches' rows; the choice to the left or right on Card type and Duplicates */
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < ROW_DUPES && selected != ROW_CARD_TYPE && !busy &&
         !!(pressed & SCE_CTRL_RIGHT) != row_on(selected))
         activate(selected, scratch);
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == ROW_CARD_TYPE && !busy)
+        set_card_type(app.anki_card_type + (pressed & SCE_CTRL_RIGHT ? 1 : -1), scratch);
     if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == ROW_DUPES && !busy)
         set_duplicates(app.anki_duplicates + (pressed & SCE_CTRL_RIGHT ? 1 : -1), scratch);
     if ((pressed & ui->buttons->cancel) && busy)
@@ -508,12 +567,16 @@ int vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int 
         for (int r = top_row; r < ROWS && row_y(r) < VIEW_END; r++)
             if (touch_y >= row_y(r) && touch_y < row_y(r) + row_height[r]) {
                 int dy = touch_y - row_y(r), k = (touch_x - CHOICE_X) / CHOICE_PITCH;
+                int t = (touch_x - TYPE_X) / TYPE_PITCH;
                 selected = r;
-                /* Duplicates: a touch on a choice takes it; the rest of the row only selects it */
+                /* Duplicates and Card type: a touch on a choice takes it; the rest of the row only selects it */
                 if (r == ROW_DUPES && row_whole(r) && !busy && dy >= 6 && dy < 40 && touch_x >= CHOICE_X &&
                     (touch_x - CHOICE_X) % CHOICE_PITCH < CHOICE_W && k < 3)
                     set_duplicates(k, scratch);
-                else if (r != ROW_DUPES && row_whole(r))
+                else if (r == ROW_CARD_TYPE && row_whole(r) && !busy && dy >= 6 && dy < 40 && touch_x >= TYPE_X &&
+                         (touch_x - TYPE_X) % TYPE_PITCH < TYPE_W && t < VJO_CARD_TYPES)
+                    set_card_type(t, scratch);
+                else if (r != ROW_DUPES && r != ROW_CARD_TYPE && row_whole(r))
                     activate(r, scratch);
                 break;
             }

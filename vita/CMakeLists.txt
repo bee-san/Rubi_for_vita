@@ -411,7 +411,9 @@ add_custom_target(vjo_rco ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.
 include(${ROOT}/cmake/SettingsPNG.cmake)
 # The Anki page (settings/anki_page.c): the export of the queue (settings/anki_export.c) as Lapis
 # notes in an .apkg (core/apkg.c: SQLite, ZIP and the Lapis note type, core/sqlw.c, zipw.c, lapis.c),
-# made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
+# made from the queue's records (core/anki_queue.c) with core/anki.c's fields, and the readings over their
+# sentences from the local dictionaries (#311: core/sentence_reading.c, its files through settings/app_platform.c,
+# the Look up page's, below). No network.
 # The Cards page (#315, settings/cards_page.c): the queue's cards listed, one deleted, its sentence fixed or its
 # picture dropped (settings/cards.c), its picture decoded by the SDK's libjpeg (settings/card_picture.c).
 set(VJO_SETTINGS_ANKI_SRC
@@ -419,7 +421,8 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/cards.c ${ROOT}/settings/cards_page.c ${ROOT}/settings/card_picture.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
-  ${ROOT}/core/word_key.c)
+  ${ROOT}/core/word_key.c
+  ${ROOT}/core/sentence_reading.c) # #311: readings over a card's sentence
 # The Stats tab (settings/stats_page.c, #312): history.csv counted with the Triangle view's own reading-time rule
 # (core/history_lines.c's vjo_reading_time_add, the Shell's; of it the link keeps what the tab calls), per game and
 # per day (core/stats.c) and the record reader (core/history_read.c); the goal is app.ini's (settings/app_prefs.c).
