@@ -100,7 +100,7 @@ int main(int argc, char **argv)
             grey[i] = (unsigned char)((77u * rgb[3 * i] + 150u * rgb[3 * i + 1] + 29u * rgb[3 * i + 2]) >> 8);
         free(rgb);
         Region region = {grey, w, h};
-        VjoGreySource src = {&region, w, h, strip, NULL, line_buffer};
+        VjoGreySource src = {&region, w, h, strip, NULL, line_buffer, NULL};
         unsigned refine = flags & 1u ? VJO_VOCR_REFINE_ALL : 0u;
         /* the worker's workspace for this job (game_ocr/main.c): the job's, the refinement's, the LM and cascade
          * extras; the greedy text after them */

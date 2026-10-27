@@ -118,6 +118,10 @@
  * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
  * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
  * the text spotter, vertical text, trusted hooks).
+ * 52: the pause for the frame (config.ini ocr_pause, #348; docs/game-pause.md): VjoGameOcrRequest.speed bit 30
+ * (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region copied from one frame in one display
+ * call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block (VJO_GITEM_FRAME), which the job reads from;
+ * the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. This is #355's: #354 merged first, as 51.
  * 53: test/combined, the combined test build (v0.9.8-test.3 on; never merged, never main's): main's API 51 with
  * every open draft: #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS), #355's API 52 (speed bit 30,
  * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE) and #318 (no interface change). v0.9.8-test.1 was 51 and

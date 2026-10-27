@@ -534,6 +534,9 @@ typedef struct {
     uint32_t settle_left;   /* the job's waiting budget left */
     vocr_textgate_state *gate; /* the gate reading this try's rows, or NULL (VjoVocrPolicy.gate) */
     unsigned gate_next;     /* the next row it takes */
+    /* API 52: the source froze the region at the first pass (VjoGreySource.frozen): every read since and to come
+     * returns the same rows, so nothing is waited for or read again to see a change */
+    int frozen;
     int err;
 } Stream;
 
@@ -618,6 +621,13 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
         s->err = got < 0 ? got : VJO_E_SOURCE;
         return -1;
     }
+    /* API 52: the first pass's first strip came from a region the source froze (the pause): it is the region now,
+     * whatever a wait read before it (those rows' states are forgotten, so a spinner that moved since is no tear) */
+    if (first && !y && !s->frozen && s->src->frozen && s->src->frozen(s->src->ud)) {
+        bits_clear(s);
+        s->frozen = 1;
+        s->st->frozen = 1;
+    }
     if (flags == VJO_STRIP_FIRST && !first) s->retract = 0;
     if (first) {
         if (!y && !s->held) s->pass_from = t0;
@@ -673,7 +683,8 @@ static int stream_pass(Stream *s)
 
 static int settle_on(const Stream *s)
 {
-    return s->pol->settle_us && s->p->now_us && s->settle_left;
+    /* a frozen region (API 52) cannot change: nothing is left to wait for */
+    return s->pol->settle_us && s->p->now_us && s->settle_left && !s->frozen;
 }
 
 /* Spends us of the job's waiting budget; over: it ran out before the rows held
@@ -1088,6 +1099,17 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *s
         }
         *stride = s->w;
         return s->strip + (size_t)(ln->y - s->y0) * s->w + ln->x;
+    }
+    if (s->frozen) {
+        /* API 52: the frozen region holds it whole, the same bytes a copy of the region gave API 18's recognizer */
+        const unsigned char *f = s->src->frozen(s->src->ud);
+        s->st->tall++;
+        if (!f) {
+            s->err = VJO_E_SOURCE;
+            return NULL;
+        }
+        *stride = s->w;
+        return f + (size_t)ln->y * s->w + ln->x;
     }
     {
         size_t bytes = (size_t)ln->w * ln->h;
@@ -2151,7 +2173,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     /* A region inside one strip was read once: read it again, so that a screen
      * that changed while it was read is seen (the strips of a taller region are
      * all read twice by the finder's two passes already). */
-    if (s->strip_rows >= im->height && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
+    if (s->strip_rows >= im->height && !s->frozen && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
     if (pol->short_lines && !cols && !set.truncated && probe_short_lines(s, &set) < 0)
         return stream_error(s, VJO_E_SOURCE);
     st->find_us = clock_us(p) - t0;

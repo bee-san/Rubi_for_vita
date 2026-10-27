@@ -127,7 +127,7 @@ static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
     unsigned count;
     const VjoVocrModel *models = vjo_vocr_models(&count);
     VjoPlatform platform = {0}; platform.file_open = absent_model;
-    VjoGreySource image = {NULL, WIDTH, HEIGHT, strip, NULL, NULL};
+    VjoGreySource image = {NULL, WIDTH, HEIGHT, strip, NULL, NULL, NULL};
     unsigned char capture[4096];
     TEST_CHECK(vjo_vocr_strip_rows(WIDTH, HEIGHT) == HEIGHT && vjo_vocr_capture_bytes(WIDTH, HEIGHT) <= sizeof(capture));
     for (unsigned i = 0; i < count; i++) {
@@ -191,7 +191,7 @@ static int policy_job(unsigned w, unsigned h, int check, unsigned fix, int gate,
 {
     static VjoVocrGateResident gate_res;
     VjoPlatform platform = {0};
-    VjoGreySource image = {NULL, w, h, strip, NULL, NULL};
+    VjoGreySource image = {NULL, w, h, strip, NULL, NULL, NULL};
     VjoVocrResident res = {heap_alloc, NULL, NULL, NULL, NULL, 0, 0, 0};
     VjoVocrPolicy pol;
     static unsigned char capture[64 * 1024];

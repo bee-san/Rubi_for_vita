@@ -1166,6 +1166,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
                          (job_cfg.ocr_line_fix == 3 ? VJO_GAME_OCR_S_LINE_VALLEY : 0u);
     /* API 46: where each character of the text is on the screen, for the overlay on the game's text */
     if (job_cfg.overlay_on_text && stage < 0) request.speed |= VJO_GAME_OCR_S_CHARS;
+    /* API 52: ocr_pause (off by default) pauses the game for its frame in the user's jobs (docs/game-pause.md) */
+    if (job_cfg.ocr_pause && stage < 0) request.speed |= VJO_GAME_OCR_S_PAUSE;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
     int64_t t0 = now_us();
@@ -1736,9 +1738,17 @@ static int net_busy(void)
  * try at its text once WAIT_HINT_AFTER jobs in a row found the text changed under every read (screen_changed_streak,
  * note_screen_changed; the press's own tries, or Automatically's before it): why it still is recognizing, and what
  * helps. Not an error: the tries go on, and a read shows its text. In the data segment (the normal Shell's code room). */
-static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) =
-    "Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ "
-    "to draw a region around just the text.";
+#define WAIT_HINT_TEXT                                                                                                 \
+    "Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ "  \
+    "to draw a region around just the text."
+static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) = WAIT_HINT_TEXT;
+/* API 52: the same, and the pause (docs/game-pause.md), while ocr_pause is off in a game it works in: it reads the
+ * region from one frame, which an animated icon cannot change. Never in the PSP emulator's process (game_static_fb),
+ * where the kernel refuses it. */
+static const char WAIT_HINT_PAUSE[] VJO_DATA_TABLE(WAIT_HINT_PAUSE) =
+    WAIT_HINT_TEXT " Or turn on Pause the game to read in the Rubi app.";
+/* API 52: the active game is the PSP emulator's (VJO_GAME_STATIC_FB, activate_game): no pause, so no WAIT_HINT_PAUSE */
+static int game_static_fb;
 /* the overlay's and the strip's status while a job runs, in the data segment too (#358: its code room back) */
 static const char RECOGNIZING[] VJO_DATA_TABLE(RECOGNIZING) = "Recognizing…";
 
@@ -1752,8 +1762,10 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     if (job_running)
         return;
     job_prepare = 0;
-    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT) */
-    status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER ? WAIT_HINT : RECOGNIZING;
+    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT; API 52: and the pause, while it is off) */
+    status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER
+                 ? cfg.ocr_pause || game_static_fb ? WAIT_HINT : WAIT_HINT_PAUSE
+                 : RECOGNIZING;
     if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
          * after all capture/model/inference allocations have been freed. */
@@ -2866,6 +2878,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
 {
     const char *tid = id->key;
     int mode = id->mode;
+    game_static_fb = mode == VJO_GAME_STATIC_FB; /* API 52: WAIT_HINT_PAUSE's game */
     if (pid != hook_pid) { /* API 31: log this game session's installation counts again. */
         hook_pid = pid;
         hook_logged[0] = 0;

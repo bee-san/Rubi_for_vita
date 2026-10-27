@@ -87,6 +87,9 @@ if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
     # The stable-text wait's frames and time on a simulated screen (docs/vita-vn-ocr.md).
     add_executable(vjo-settle-bench host/settle_bench.c)
     target_link_libraries(vjo-settle-bench vjo_vocr vjo_host)
+    # API 52, the pause for the frame (docs/game-pause.md): display calls, rows and the game's wait per read.
+    add_executable(vjo-pause-bench host/pause_bench.c)
+    target_link_libraries(vjo-pause-bench vjo_vocr vjo_host)
     # Recognized text normalised as the game worker returns it, line by line (tools/textnorm_eval.py).
     add_executable(vjo-textnorm host/textnorm_tool.c)
     target_link_libraries(vjo-textnorm vjo_vocr)
