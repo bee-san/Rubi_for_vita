@@ -3087,7 +3087,13 @@ static void another_sizes_weights_stay_beside_its_reserve(void)
         snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
         available = (int)(live_bytes + tier_need(&r, 2, 0) - (tight ? 4096u : 0u));
         TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
-        TEST_CHECK(out.text[0] && !out.fallback && resident.model == h15 && out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
+        /* the job read its line with Normal's model: its recognize step, not its text (VOCR6-N reads this synthetic
+         * line as nothing, where VOCR5-N read something) */
+        const VjoGameOcrStep *rs = recognize_step(&out);
+        TEST_CHECK(rs && rs->arg >= 1 && rs->bytes > 0 && !out.fallback && resident.model == h15 &&
+                   out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
+        TEST_MSG("recognized %u line(s), %u frames; text '%s'", rs ? (unsigned)rs->arg : 0u, rs ? (unsigned)rs->bytes : 0u,
+                 out.text);
         int freed = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS),
             workspace = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_WORKSPACE);
         TEST_CHECK(workspace >= 0 && freed >= 0 && (tight ? freed < workspace : freed > workspace));
