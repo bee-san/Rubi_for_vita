@@ -13,6 +13,33 @@ been reported.
 
 ### Added
 
+- **A game's own line finder** (#333; [guide](docs/guide.md#a-games-own-page)). The finder (`ocr_finder`, the
+  spotter by default since API 54) and Rubi's finder's fixes (`ocr_line_fix`, API 50) were one choice for every game,
+  and the best one depends on the game. Now each game can have its own. Hold Enter, or a touch, on a game in the Rubi
+  app's Games list for half a second: its page has the game's ON/OFF and its **Line finder**: Default (`config.ini`'s),
+  Spotter, or Rubi's finder with Off, On, Junk or All. A press or tap let go sooner still turns the game ON or OFF; the
+  list shows `Line finder: On` on a game with its own.
+  - **Measured** (host; the per-page records of the runs behind vita-vn-ocr #129 and #149, counted; VOCR5-N, the 1 MB
+    LM, the cascade): the spotter, the default, is best overall (1.31% on the 46 hooked games, against All's 1.50% and
+    On's 3.29%; 0.97% on 93 other games) and on Narcissu too (63 errors in 4,959 characters, All 137, On 677), the game
+    #333 was opened for. On 17 of the 46 and 23 of the 93 games one of Rubi's finder's values read better (the best of
+    four, picked on the same pages): those games get their own. The default is unchanged.
+  - **Where:** `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one `TITLEID = spotter|off|on|junk|all` line a game in
+    `games.ini`'s form, read by `games.ini`'s reader. `games.ini` is unchanged: earlier builds read it strictly, and a
+    line they do not know makes it unreadable to them (its backup's choices, or every game OFF).
+  - **When:** the Shell reads it with the game's ON/OFF as the game starts or resumes, and the value replaces
+    `config.ini`'s two keys in the user's jobs (with Spotter, `ocr_line_fix` stays `config.ini`'s, for its fallback);
+    `same_pipeline` compares them, and the self-test reads as before. A PSP game without its own follows the shared
+    PSP row (Adrenaline / PSP games without a setting of their own), as its ON/OFF does.
+  - **No built-in table:** a game without its own uses `config.ini`'s.
+  - **log.txt:** the `game … started` line ends with what the game's jobs use (`ocr_finder grad, ocr_line_fix on`),
+    and no longer names the dictionary (Local dictionaries in every build since the online ones went);
+    `tools/analyse_selftest.py` reads both forms. The debug build no longer logs the title's app parameters 9 and 10
+    (answered: 115 starts in test.1–test.4, parameter 9 always refused).
+  - **Memory:** the normal Shell takes 40 B of code and 144 B of data, the debug Shell 48 B and 64 B; no module takes
+    a page more, and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
+  - Not run on a console yet.
+
 - **A Look up tab in the Rubi app** (#313; [guide](docs/guide.md#look-up)): look a word up and mine it later, beside
   the suspended game. **Search**: Triangle opens the Vita keyboard (every language's keyboard, 128 characters) for a
   word or a sentence, looked up with the overlay's own lookup and dictionaries (`local_dictionaries`, their order and

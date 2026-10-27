@@ -495,7 +495,8 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | L + R together, or touch the search field | Open the Vita keyboard and search all indexed games by title or title ID. Latin matching ignores case; Japanese text is matched as entered. The Enabled/Disabled filter still applies. Cancel keeps the current search; accept an empty query or touch Clear to show all games again |
 | Touch Prev / Next | Change the five-game page; the page number is shown between them |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
-| Enter or touch a game | Toggle OCR and overlay input for that game |
+| Enter or touch a game | Toggle OCR and overlay input for that game, as the button or the finger is let go |
+| Hold Enter, or a touch, on a game for half a second | Open [the game's own page](#a-games-own-page): its ON/OFF and its **Line finder** (the spotter, or Rubi's finder with its fixes). The selected game's card says "Hold ×: settings" (○ on a console whose Enter is ○) |
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
@@ -675,6 +676,50 @@ many bubbles is not measured on a console yet. A folder in `ux0:app` that is not
 named like a title ID (nine capital letters and digits) is never taken for a
 bubble, whatever it holds.
 
+### A game's own page
+
+Hold Enter, or a touch, on a game in the list for half a second: its page opens, with its title and ID and two
+settings (#333). A shorter press or tap still turns the game ON or OFF, as it is let go.
+
+- **Rubi in this game**: its ON or OFF, as on the list.
+- **Line finder**: what cuts this game's text box into lines, `config.ini`'s `ocr_finder` and `ocr_line_fix` for this
+  game alone. **Default** (the start) uses `config.ini`'s: the text spotter unless you changed it. **Spotter** is
+  vita-vn-ocr's text spotter ([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-54)). **Off**, **On**,
+  **Junk** and **All** are Rubi's own finder (`ocr_finder = grad`) with that `ocr_line_fix`
+  ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)). The card says what the chosen one does, or what
+  Default gives this game.
+
+Up/Down select a setting; Left/Right or Enter choose (Enter goes round the line finder's choices); touch a choice to
+take it; Cancel goes back to the list, and Select or a tab to another page. A choice is saved at once and applies
+when the game next starts or resumes, as its ON/OFF does; the list then shows `Line finder: On` (for example) on the
+game's card.
+
+Which to choose: keep **Default** unless a game reads badly. The spotter is the measured best overall, and on Narcissu
+too, whose rows touch. On the owner's hooked pages (host, measured: VOCR5-N, the 1 MB LM and the cascade, regions drawn
+with a margin; counted from the per-page records of the runs behind vita-vn-ocr #129 and #149, the spotter as #149
+chose it, before its weights were trained again with these pages), Narcissu (`ULJM05674`) read with 63 errors in 4,959
+characters with the spotter, 137 with All, and 677 with On. Over the 46 hooked games the spotter made 2,135 errors in
+162,471 characters (1.31%), All 2,445 (1.50%), Junk 3,083 (1.90%), On 5,349 (3.29%) and Off 6,296 (3.88%); on 93 other
+games' screenshots 0.97% against All's 1.50% and On's 2.34%. On 17 of the 46 games and 23 of the 93, one of Rubi's
+finder's values made fewer errors than the spotter (the best of the four, picked on the same pages), by up to 35
+errors a game: such a game is the one to give **On** (or another value) here. Draw the box a few pixels outside the text for Junk and All, which can drop a real
+line in a box drawn tight. Rubi has no list of games that get another value: a game gets one only when you choose it.
+
+PSP games follow the same rows as their ON/OFF. A bubble's own choice applies to it; without one it takes the line
+finder of the shared row **Adrenaline / PSP games without a setting of their own** (`NPXS10028`), and without that,
+`config.ini`'s. A PSP game started from inside Adrenaline is Adrenaline's (`PSPEMUCFW`): Rubi does not know which
+game it is, so give the game a bubble for a choice of its own.
+
+The choices are kept in `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one line a game in `games.ini`'s form
+(`PCSG00001 = on`; the values are `spotter`, `off`, `on`, `junk` and `all`), with a backup (`ocr_line_fix.ini.bak`)
+as `games.ini` has: the app reads it after a save that was cut short, and its next save puts the file back. They
+are not in `games.ini` itself: earlier builds read that file strictly, and a line they do not know would make it
+unreadable to them (its backup's choices, or every game OFF). A file the app cannot read (a line edited by hand that
+is not one of the five values, say) is left as it is, and the page says so; the Shell then uses `config.ini`'s line
+finder for every game. The game's start line in `log.txt` names what its jobs use: `game PCSG00001 started: trigger
+l+r, subtitles select+r, ocr_mode auto, ocr_finder grad, ocr_line_fix on` (with the spotter, `ocr_line_fix` is its
+fallback's). Not run on a console yet.
+
 ## Settings and dictionaries
 
 `ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens. A line
@@ -824,6 +869,9 @@ much on regions drawn tight.
 - `all` is `junk` plus a split of two touching rows (Narcissu), so it is for regions drawn with a margin too.
 - `off` is the frozen finder
   ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)).
+- A game can have its own line finder, which replaces `ocr_finder` and `ocr_line_fix` in its jobs: the **Line
+  finder** on [its page in the Rubi app](#a-games-own-page) (#333), for a game that reads better with Rubi's finder
+  than with the spotter.
 
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM

@@ -1610,12 +1610,39 @@ games worse than `on` (v10972 38 → 70 errors, v6985 6 → 7), and it carries `
   reads 0.6-0.7% more CTC frames on hval and development (host, measured), because a line's parts stay together.
   What that costs on the console is an estimate; nothing of it has run on a console.
 - **The host tool.** `vjo-ocr --line-fix on|junk|all` reads a region as the worker does with the setting.
+- **A game's own line finder (#333).** One finder and one `ocr_line_fix` for every game make a player choose for the
+  game that reads worst. A game can have its own instead: the Rubi app's game page (hold Enter on the game:
+  [the guide](guide.md#a-games-own-page)) writes `TITLEID = spotter` (or `off`, `on`, `junk`, `all`: Rubi's finder,
+  `ocr_finder = grad`, with that `ocr_line_fix`) into `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, and the Shell reads it
+  with the game's ON/OFF as the game starts or resumes (`shell/game.c` `vjo_game_enabled`). From then on it replaces
+  `config.ini`'s two keys in `cfg` (`shell/worker.c` `apply_config`; with `spotter`, `ocr_line_fix` stays
+  `config.ini`'s, for its fallback), so it is what the user's jobs send (the bits above and API 54's), what
+  `same_pipeline` compares and what the game's start line in `log.txt` names
+  (`..., ocr_mode auto, ocr_finder grad, ocr_line_fix on`); the self-test's stages carry no bits, as before. A PSP game
+  without a row of its own takes the shared PSP row's (`NPXS10028`), as its ON/OFF does; a game started from inside
+  Adrenaline is `PSPEMUCFW`'s. A game with no row uses `config.ini`'s: there is no table of games in the build, since
+  a rule for one title cannot pass #129's rule across titles and would need measuring again with each model.
+  - **What the choice is worth, measured** (host; the per-page records of the runs behind #129 and #149, counted: the
+    spotter as #149 chose it, before its weights were trained again with the hooked pages; VOCR5-N, the 1 MB LM, the
+    cascade; regions with a margin). The spotter, the default, is best overall and on Narcissu (`ULJM05674`) too, whose
+    touching rows were `all`'s case: 63 errors in its 4,959 characters, against `all`'s 137 and `on`'s 677. Over the 46
+    hooked games: spotter 2,135 errors of 162,471 characters, `all` 2,445, `junk` 3,083, `on` 5,349, `off` 6,296; over
+    the 93 development games, 0.97% against `all`'s 1.50% and `on`'s 2.34%. On 17 of the 46 games and 23 of the 93 one
+    of Rubi's finder's four values made fewer errors than the spotter (the best of the four, picked on the same pages),
+    by up to 35 errors a game: those are the games a player gives their own line finder.
+  - Nothing of it has run on a console.
 
 **To test on console.**
 - A line with a full-width space after ！: one line with `on`, two parts with `off`.
 - A box whose frame or ornament touches the region, with `junk` and a margin.
 - A Narcissu page with `all`.
 - The job time with the setting on and off.
+- #333: Narcissu with its own **Line finder** set to All on its page in the Rubi app, then a Vita game left on Default,
+  in one session. `log.txt`'s start lines say `ocr_finder grad, ocr_line_fix all` and `ocr_finder spotter, ocr_line_fix
+  on`; Narcissu's touching rows come out as two lines (two crops in `game vocr lines:`), and the other game's text is
+  as before. Then Narcissu on Default (the spotter): the same rows as two lines too, as measured on the host. And the
+  job time on the same Narcissu page with All and with Default.
+
 ## The spotter finder (API 54)
 
 ```ini

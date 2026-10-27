@@ -590,7 +590,16 @@ int vjo_game_identify(SceUID pid, VjoGameId *out)
     if (!identify_rc) *out = identified; else memset(out, 0, sizeof(*out));
     return identify_rc;
 }
-int vjo_game_enabled(const char *id, int psp, VjoArena *a) { enabled_psp = psp; return game_enabled; }
+/* #333: the game's own ocr_line_fix the stub reports (-1: none, config.ini's), and the key it was asked for */
+static int game_line_fix = -1;
+static char enabled_key[VJO_TITLE_ID_SIZE];
+int vjo_game_enabled(const char *id, int psp, int *line_fix, VjoArena *a)
+{
+    enabled_psp = psp;
+    snprintf(enabled_key, sizeof(enabled_key), "%s", id);
+    *line_fix = game_enabled ? game_line_fix : -1; /* as shell/game.c: only an enabled game's file is read */
+    return game_enabled;
+}
 static void activate(SceUID pid, const char *tid, int mode)
 {
     VjoGameId id;
@@ -1020,6 +1029,7 @@ static void reset(void)
     posted = user_allocs = user_frees = heap_allocs = heap_frees = 0;
     fail_alloc = fail_base = input_blocked = fail_input_block = input_block_error = 0;
     game_enabled = 1;
+    game_line_fix = title_line_fix = -1; /* #333: no game's own ocr_line_fix */
     running = 1; threads_started = 0;
     vocr_allocs = vocr_frees = vocr_paf_allocs = 0;
     fail_vocr_user = fail_vocr_paf = 0;
@@ -2416,6 +2426,101 @@ static void test_vocr_request_carries_the_job_policy(void)
         job_refresh = 0;
         mem_free();
     }
+}
+
+/* #333: a game's own line finder (ocr_line_fix.ini, read by vjo_game_enabled as the game starts or resumes)
+ * replaces config.ini's in cfg from its activation: the spotter (VJO_LINE_FINDER_SPOTTER: ocr_finder = spotter, with
+ * config.ini's ocr_line_fix for its fallback), or Rubi's finder (ocr_finder = grad) with its own ocr_line_fix. Its
+ * user jobs' speed bits (API 54's spotter bit, API 50's 21-23) and the game's start line say what the jobs use; a
+ * game without one uses config.ini's two keys. same_pipeline compares that: a config.ini change the game's own
+ * replaces keeps the cache, one that its jobs still use (the spotter's fallback's fixes) drops it. The next game
+ * starts from its own value or config.ini's, never the last game's. */
+static void test_a_games_own_line_fix(void)
+{
+    const uint32_t lf = VJO_GAME_OCR_S_LINE_FIX, junk = VJO_GAME_OCR_S_LINE_JUNK, valley = VJO_GAME_OCR_S_LINE_VALLEY;
+    const uint32_t spot = VJO_GAME_OCR_S_SPOT, bits = lf | junk | valley | spot;
+    const uint32_t fixes[4] = {0u, lf, lf | junk, lf | junk | valley};
+    static const char *const names[4] = {"off", "on", "junk", "all"};
+    /* own: -1 none, the spotter, or Rubi's finder with a fix (its value VJO_LINE_FINDER_GRAD(fix)) */
+    static const struct { int own, finder, fix; } cases[] = {
+        {VJO_LINE_FINDER_GRAD(3), VJO_FINDER_SPOTTER, 1}, {VJO_LINE_FINDER_GRAD(0), VJO_FINDER_SPOTTER, 3},
+        {VJO_LINE_FINDER_GRAD(2), VJO_FINDER_GRAD, 0}, {VJO_LINE_FINDER_GRAD(1), VJO_FINDER_SPOTTER, 3},
+        {VJO_LINE_FINDER_SPOTTER, VJO_FINDER_GRAD, 2}, {VJO_LINE_FINDER_SPOTTER, VJO_FINDER_SPOTTER, 0},
+        {-1, VJO_FINDER_SPOTTER, 1}, {-1, VJO_FINDER_GRAD, 3}, {-1, VJO_FINDER_SPOTTER, 0}};
+    for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        reset();
+        loaded.ocr_finder = cases[k].finder;
+        loaded.ocr_line_fix = cases[k].fix;
+        game_line_fix = cases[k].own;
+        unsigned before = log_count;
+        activate(123, "ULJM05674", VJO_GAME);
+        int own = cases[k].own, grad = own >= 0 ? own != VJO_LINE_FINDER_SPOTTER : cases[k].finder == VJO_FINDER_GRAD;
+        int fix = own >= 0 && own != VJO_LINE_FINDER_SPOTTER ? own - VJO_LINE_FINDER_GRAD(0) : cases[k].fix;
+        TEST_CHECK_(game_active() && !strcmp(enabled_key, "ULJM05674") && cfg.ocr_finder == (grad ? VJO_FINDER_GRAD :
+                    VJO_FINDER_SPOTTER) && cfg.ocr_line_fix == fix, "case %u: finder %d, fix %d", k, cfg.ocr_finder,
+                    cfg.ocr_line_fix);
+        char line[160];
+        snprintf(line, sizeof(line), "game ULJM05674 started: trigger l+r, subtitles select+r, ocr_mode auto, "
+                                     "ocr_finder %s, ocr_line_fix %s", grad ? "grad" : "spotter", names[fix]);
+        const char *got = logged("game ULJM05674 started: ");
+        TEST_CHECK_(got && !strcmp(got, line) && log_count > before, "case %u: '%s'", k, got ? got : "(none)");
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & bits) == (fixes[fix] | (grad ? 0u : spot)));
+        TEST_MSG("case %u: speed 0x%08X", k, (unsigned)fake_game_request.speed);
+        mem_free();
+    }
+    /* same_pipeline: config.ini's two keys change under the game's own Rubi's finder (all); then at a resume */
+    reset();
+    loaded.ocr_line_fix = 1;
+    game_line_fix = VJO_LINE_FINDER_GRAD(3);
+    activate(123, "ULJM05674", VJO_GAME);
+    cache_ok = 1;
+    loaded.ocr_line_fix = 2;
+    loaded.ocr_finder = VJO_FINDER_GRAD;
+    apply_config(); /* each overlay open reads config.ini again */
+    TEST_CHECK(cache_ok && cfg.ocr_line_fix == 3 && cfg.ocr_finder == VJO_FINDER_GRAD);
+    loaded.ocr_line_fix = 0;
+    loaded.ocr_finder = VJO_FINDER_SPOTTER;
+    apply_config();
+    TEST_CHECK(cache_ok && cfg.ocr_line_fix == 3 && cfg.ocr_finder == VJO_FINDER_GRAD);
+    /* the Rubi app sets this game's own to the spotter, and the game resumes: the spotter from then on, whose
+     * fallback reads with config.ini's fixes, so their change now drops the cache */
+    game_line_fix = VJO_LINE_FINDER_SPOTTER;
+    on_game_exit();
+    on_game_start();
+    activate(123, "ULJM05674", VJO_GAME);
+    TEST_CHECK(cfg.ocr_finder == VJO_FINDER_SPOTTER && cfg.ocr_line_fix == 0);
+    cache_ok = 1;
+    loaded.ocr_finder = VJO_FINDER_GRAD; /* replaced by the game's own: kept */
+    apply_config();
+    TEST_CHECK(cache_ok && cfg.ocr_finder == VJO_FINDER_SPOTTER);
+    loaded.ocr_line_fix = 2; /* the fallback's: dropped */
+    apply_config();
+    TEST_CHECK(!cache_ok && cfg.ocr_line_fix == 2 && cfg.ocr_finder == VJO_FINDER_SPOTTER);
+    /* another game, without its own: config.ini's (Rubi's finder, junk), and its change drops the cache */
+    game_line_fix = -1;
+    on_game_exit();
+    on_game_start();
+    activate(124, "PCSG00415", VJO_GAME);
+    TEST_CHECK(cfg.ocr_line_fix == 2 && cfg.ocr_finder == VJO_FINDER_GRAD && title_line_fix == -1);
+    cache_ok = 1;
+    loaded.ocr_line_fix = 3;
+    apply_config();
+    TEST_CHECK(!cache_ok && cfg.ocr_line_fix == 3);
+    /* a game turned OFF has none (its file is not read): the next enabled game's own is read afresh */
+    game_enabled = 0;
+    game_line_fix = VJO_LINE_FINDER_GRAD(2);
+    on_game_exit();
+    on_game_start();
+    activate(125, "PCSA00029", VJO_GAME);
+    TEST_CHECK(!game_active() && title_line_fix == -1);
+    game_enabled = 1;
+    loaded.ocr_finder = VJO_FINDER_SPOTTER;
+    on_game_start();
+    activate(126, "PCSG00940", VJO_GAME);
+    TEST_CHECK(game_active() && title_line_fix == VJO_LINE_FINDER_GRAD(2) && cfg.ocr_line_fix == 2 &&
+               cfg.ocr_finder == VJO_FINDER_GRAD);
+    mem_free();
 }
 
 /* The whole status line the user sees for an OCR-stage error. */
@@ -8985,6 +9090,7 @@ TEST_LIST = {
     {"vocr_job_log_is_appended_in_batches", test_vocr_job_log_is_appended_in_batches},
 #endif
     {"vocr_request_carries_the_job_policy", test_vocr_request_carries_the_job_policy},
+    {"a_games_own_line_fix", test_a_games_own_line_fix},
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"vocr_oom_statistics_are_cached", test_vocr_oom_statistics_are_cached},
     {"vocr_unusable_model_uses_the_fallback", test_vocr_unusable_model_uses_the_fallback},

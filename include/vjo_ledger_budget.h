@@ -102,7 +102,10 @@
  * same rows, main 2bb09c4 and this change]. #321's lookups (docs/memory-ledger.md, "Lookups: #321") put the rule
  * table (deinflect_rules, 4,266 B) in the data segment and its bucket offsets in 130 B (from 514): 102,372 + 73,664
  * -> 98,284 + 77,608 on main 68041a7, a text page fewer and a data page more, the same 176,128 B (20 and 216 B left)
- * [measured: the same rows, main 68041a7 and this change]. */
+ * [measured: the same rows, main 68041a7 and this change]. A game's own line finder (#333: ocr_line_fix.ini read
+ * with games.ini, the spotter or Rubi's finder with its fixes in cfg; the parameters' log line gone, the tables in the
+ * data segment) makes it 98,164 + 77,728 -> 98,212 + 77,792 on main 9ad8eb5, the same pages (92 and 32 B left)
+ * [measured: the same rows, main 9ad8eb5 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -140,7 +143,10 @@
  * 2bb09c4, the same text bytes, 92 B of text room [measured: the same rows, main 2bb09c4 and this change].
  * #321's lookups (above) make it 90,044 + 73,520 -> 85,948 + 77,488 on main 68041a7, a text page fewer and a data
  * page more, the same 163,840 B, 68 B of text room and 336 B of data room [measured: the same rows, main 68041a7 and
- * this change]. Its check is exact (--exact): this must equal its pages. */
+ * this change]. A game's own line finder (#333, above; the title read into its caller's buffer, the self-test's
+ * notice in the data segment) makes it 85,900 + 77,552 -> 85,940 + 77,696 on main 9ad8eb5, the same pages, 76 B of
+ * text room and 128 B of data room [measured: the same rows, main 9ad8eb5 and this change]. Its check is exact
+ * (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
@@ -537,6 +543,9 @@
  * size rule) adds 196 B of text in both builds, no data, no buffer: 43,160 -> 43,356 B (debug) and 38,008 ->
  * 38,204 B (normal), the same pages [measured: the build log's module rows, both builds, main 199fe31 and this
  * change]. */
+/* #333: games.ini's reader shared with ocr_line_fix.ini's (core/games.c vjo_games_parse_kind and vjo_games_row_as;
+ * the kernel reads games.ini only): text 43,432 -> 43,508 B (debug) and 38,280 -> 38,356 B (normal), data/bss
+ * unchanged, the same pages [measured: tools/check_memory_ledger.py on both builds, main 9ad8eb5 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else

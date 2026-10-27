@@ -176,6 +176,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | Page | Setting | Default |
 | --- | --- | --- |
 | Games | Each game ON or OFF, and **Default** ON or OFF ([details](docs/guide.md#per-game-settings)) | ON |
+| | **Line finder** for one game (hold Enter on it): what cuts its text box into lines, the spotter or Rubi's finder with its fixes (`config.ini`'s `ocr_finder` and `ocr_line_fix` for that game alone), for a game the spotter reads worse ([details](docs/guide.md#a-games-own-page)) | Default (`config.ini`'s, the spotter) |
 | OCR & lookup | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
 | | **Read text**: Automatically (when it changes), or Only when I press L + R | Automatically |
 | | **Speed boost while reading (444 MHz)** | ON |
@@ -268,6 +269,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |
 | ❓ | The Rubi app's Stats tab: days, heatmap, streak, daily goal, each game | not run on a console yet; measured on the host ([details](docs/guide.md#stats)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
+| ❓ | A game's own line finder (its page in the Rubi app) | not run on a console yet ([details](docs/guide.md#a-games-own-page)) |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
 | ❓ | Trim black bars on Anki screenshots | not run on a console yet ([details](docs/anki.md#black-bars)) |

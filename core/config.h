@@ -193,6 +193,8 @@ typedef struct {
  * unseen-game set better than GRAD and is the default; GRAD stays its fallback and ocr_finder = grad the switch;
  * each default is one line here and its text the next). */
 enum { VJO_FINDER_GRAD = 0, VJO_FINDER_SPOTTER = 1 };
+/* ocr_finder's names by value (core/config.c; the Shell's game start line names the finder with them, #333) */
+extern const char *const vjo_finder_names[];
 #define VJO_FINDER_DEFAULT VJO_FINDER_SPOTTER
 #define VJO_FINDER_DEFAULT_TEXT "spotter"
 #define VJO_SPOTTER_REFINE_DEFAULT 0

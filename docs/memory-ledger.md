@@ -5,6 +5,47 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## A game's own line finder (#333)
+
+A game's own line finder ([guide](guide.md#a-games-own-page)) is read by the Shell with the game's ON/OFF, into the
+`VjoGames` table that read already takes from the control thread's static 24 KiB scratch (`shell/game.c`
+`vjo_game_enabled`: games.ini's rows, then ocr_line_fix.ini's into the same 8,200 B, and the file's text, at most
+`VJO_GAMES_TEXT_MAX`, 12,288 B: arena marks, released before the call returns). **No block, thread, stack or
+allocation; no module takes a page more; no budget raised.**
+
+- **The Shell:** `games.ini`'s reader with the line finder's five names (`core/games.c` `vjo_games_parse_kind`), the
+  row lookup both reads use (`vjo_games_row_as`, not inlined: two inlined copies were 48 B more of the normal Shell's
+  code [measured]), the second read and the value's place in `cfg` (`apply_config`: `ocr_finder`, and for Rubi's
+  finder `ocr_line_fix`), `title_line_fix` (4 B), and the game's start line's two fields. Its tables are in the data
+  segment ("Tables in the data segment" below): the five names (`vjo_line_finder_names`, whose last four are
+  `config.c`'s `ocr_line_fix` table now: 24 B for its 20), `ocr_finder`'s two (`vjo_finder_names`, config.c's own table
+  before, now shared with the start line), `games.ini`'s two (12 B, code before), the new file's path (40 B), and the
+  start line's format, 1 B longer for its two fields than with the dictionary's name.
+- **Room for it in the Shell's code:** `vjo_title_name` reads the title into its caller's buffer, without its two
+  128 B buffers and the debug build's line of both parameters, which a console run answered (in test.1-test.4's logs
+  every one of the 115 game starts had parameter 9 refused, 0x80801000, and parameter 10 the title: the owner's
+  `--collect` logs, counted); the normal build's self-test notice (83 B) is in the data segment.
+- **The kernel:** `games.ini`'s reader is the Shell's (`core/games.c`, built with `VJO_KERNEL`, which leaves the line
+  finder's names out): +76 B of code for the names' loop and the row lookup, the same pages. Its two names stay in its
+  code pages, which have room, where its data page has less.
+- **The Rubi app** (its own process, not SceShell's): the game page and the file's table, 16,816 B more `.bss` (the
+  table's two copies, 8,200 B each, as `games.ini`'s two; the list's status while the page shows its own) and
+  6,020 B (normal) / 6,208 B (debug) more code.
+- **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text
+  + data/bss; the app's ELF with `arm-vita-eabi-size`), main `9ad8eb5` (#396) against this change:
+
+  | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+  |---|---:|---:|---:|
+  | Shell | 98,164 + 77,728 → 98,212 + 77,792 B | 85,900 + 77,552 → 85,940 + 77,696 B | 176,128 / 163,840 B, unchanged |
+  | Kernel | 43,432 + 77,780 → 43,508 + 77,780 B | 38,280 + 76,092 → 38,356 + 76,092 B | 122,880 / 118,784 B, unchanged |
+  | Game worker | 179,712 + 36,416 B, unchanged | 170,780 + 36,408 B, unchanged | unchanged |
+  | Rubi app (ELF: text, data, bss) | 642,100, 15,928, 6,830,872 → 648,308, 16,000, 6,847,688 B | 641,700, 15,920, 6,830,840 → 647,720, 15,992, 6,847,656 B | its own process |
+
+  Room left in the last pages: the normal Shell 76 B of code (116 before) and 128 B of data (272); the debug Shell
+  92 B of code (140) and 32 B of data (96); the debug kernel 1,548 B of code and 44 B of data.
+- **Time:** at a game's start or resume the Shell opens and reads one more small file (at most 12 KiB; a missing one
+  is one failed open), unmeasured on the console. Nothing changes per job or per frame.
+
 ## #382's and #387's audit's follow-up (no API change)
 
 A try that hands the job to its next one leaves the log its blocks' steps, as before, but keeps the FREE step of a
@@ -1508,7 +1549,10 @@ Only tables and cold strings are so marked. In the Shell: `core/local_dict.c`,
 (which pay for PR #233's `characters` column: [ocr-history](ocr-history.md)) and the reading total's two
 (`counting…`, `unavailable`), `core/history_lines.c`'s number format, `shell/worker.c`'s
 out-of-memory and model-storage messages, and line history's strings in `shell/overlay.cpp` and
-`shell/anki.c`. In the game worker: Luna's title-ID table (`core/hook_luna_table.inc`, API 33) and
+`shell/anki.c`; since #333, `core/games.c`'s value names (`games.ini`'s two and the line finder's five, which
+`core/config.c` reads too) and `core/config.c`'s `ocr_finder` names, `vita/games_storage.c`'s path of
+`ocr_line_fix.ini`, `shell/worker.c`'s game start line and the normal build's self-test notice
+([above](#a-games-own-line-finder-333)). In the game worker: Luna's title-ID table (`core/hook_luna_table.inc`, API 33) and
 Rubi's filters' ops arrays and their index (`core/hook_luna.c`, 776 B, PR #292, whose code took the
 debug build's worker text 8 B past its pages without them; the numbers are in
 `include/vjo_ledger_budget.h`), and Rubi's verified entries (`core/hook_place.c`'s `verified`, 28 rows,
