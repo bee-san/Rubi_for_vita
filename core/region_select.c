@@ -156,6 +156,35 @@ int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in)
     return ev;
 }
 
+int vjo_rsel_preset(VjoRegionSelect *s, uint32_t rows)
+{
+    if (rows - 1u >= VJO_RSEL_H) /* 0, or more than the screen */
+        return 0;
+    s->anchored = 1;
+    s->ax = 0;
+    s->ay = VJO_RSEL_H - (int)rows;
+    s->x = (VJO_RSEL_W - 1) << 8 | 128;
+    s->y = (VJO_RSEL_H - 1) << 8 | 128;
+    return 1;
+}
+
+void vjo_rsel_publish(uint32_t *suggest, uint32_t rows)
+{
+    uint32_t was = __atomic_load_n(suggest, __ATOMIC_RELAXED);
+    while (was != VJO_RSEL_TAKEN &&
+           !__atomic_compare_exchange_n(suggest, &was, rows, 1, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+    }
+}
+
+uint32_t vjo_rsel_take(uint32_t *suggest)
+{
+    uint32_t rows = __atomic_load_n(suggest, __ATOMIC_RELAXED);
+    if (rows - 1u >= VJO_RSEL_H || /* none, or taken */
+        !__atomic_compare_exchange_n(suggest, &rows, VJO_RSEL_TAKEN, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+        return 0;
+    return rows;
+}
+
 void vjo_rsel_cursor(const VjoRegionSelect *s, int *x, int *y)
 {
     *x = s->x >> 8;

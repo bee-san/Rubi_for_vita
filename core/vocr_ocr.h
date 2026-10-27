@@ -211,8 +211,11 @@ typedef struct {
     /* API 22 (ocr-speed) */
     uint8_t slot;            /* who recognized it: 0 the caller's thread, 1.. a helper (VjoVocrPool) */
     uint8_t cached;          /* 1: its pixels were unchanged since a job read them (VjoVocrCache): no vocr_run */
-    uint16_t pad;
+    /* #358, the box suggested on first use (core/region_suggest.h): the kana and kanji of the text it was read as
+     * (vjo_suggest_kana; before API 52 a pad), and its box's top left in region pixels (a column's, too) */
+    uint16_t kana;
     uint32_t cpu_us;         /* the recognizing thread's run time for it (VjoVocrPool.thread_us), else 0 */
+    uint16_t x, y;
 } VjoVocrLineStat;
 /* flags: the line's confidence, the smallest softmax-max probability over the
  * frames that write a character of its greedy text (vocr_extra.conf_min), in
@@ -379,6 +382,12 @@ typedef struct {
     const char *greedy;           /* its greedy text (the same as text without the LM) */
     unsigned flags;               /* VJO_VOCR_LINE_* */
 } VjoVocrLineInfo;
+
+/* API 52 (#358): the text box a job's recognized lines suggest (core/region_suggest.h vjo_region_suggest, on each
+ * line's box and kana count), for a job of rows on a whole fb_w x fb_h frame, as VjoGameOcrResult.suggest_rows
+ * carries it: the band's rows on the 960 x 544 screen (vjo_region_rows), or 0 (no line like dialogue, or the lines
+ * were columns). The game worker's (game_ocr/main.c) and the host tools' (host/page_ocr.c); core/region_suggest.c. */
+uint32_t vjo_vocr_suggest(const VjoVocrStats *st, unsigned fb_w, unsigned fb_h);
 
 /* Weights kept between jobs. The caller supplies their memory: alloc returns
  * 16-byte aligned memory for `bytes`, or NULL (the job then fails with

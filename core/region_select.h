@@ -86,6 +86,25 @@ typedef struct {
 
 /* Starts a selection: the cursor at the screen's centre, no first corner. */
 void vjo_rsel_begin(VjoRegionSelect *s, int64_t now_us);
+/* #358, the text box suggested on first use: a selection begun with the box already drawn, the screen's bottom `rows`
+ * rows across its whole width (include/vjo_game_ocr.h VjoGameOcrResult.suggest_rows), its first corner at the top left
+ * and the cursor on the bottom right pixel, so that enter saves it as it is and the stick or the d-pad move its bottom
+ * right corner. Returns 1, or 0 with nothing changed for 0 or more than VJO_RSEL_H rows (the box comes from the game's
+ * process). A band under VJO_RSEL_MIN rows is drawn, and enter refuses it as any box (VJO_RSEL_SMALL). */
+int vjo_rsel_preset(VjoRegionSelect *s, uint32_t rows);
+/* #358, the Shell's word for the text box suggested on first use (shell/shell.h VjoView.suggest), without the view's
+ * lock: 0, no box (yet); a band's rows (1..VJO_RSEL_H, vjo_rsel_preset), the one the game's newest job on the whole
+ * screen suggests; VJO_RSEL_TAKEN, none any more in this activation of the game (a start or a resume): it has a region
+ * of its own, or the overlay offered the box or its region mode was used. The control thread stores 0 or TAKEN as a
+ * game starts or resumes or a region is saved (shell/worker.c push_region) and publishes each job's box
+ * (on_job_done); the overlay takes it, and stores TAKEN as its region mode ends (shell/overlay.cpp). */
+#define VJO_RSEL_TAKEN 0xFFFFFFFFu
+/* The control thread: a job's box (its rows; 0: none) becomes the newest, unless the activation's was taken (an
+ * atomic compare-and-swap: a take between the read and the store is never undone). */
+void vjo_rsel_publish(uint32_t *suggest, uint32_t rows);
+/* The overlay: the box it offers now, its rows, taken (none after it in this activation); 0 for none, one taken, or a
+ * word that changed meanwhile (the next call looks again). */
+uint32_t vjo_rsel_take(uint32_t *suggest);
 /* One frame: touch, then the d-pad and the stick (not during a drag), then
  * cancel, then enter. Returns VJO_RSEL_*. */
 int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in);

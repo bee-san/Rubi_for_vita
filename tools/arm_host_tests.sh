@@ -117,6 +117,8 @@ build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c 
 # the self-test's memory routes: the debug build's only
 [ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
+# #358: the box suggested on first use (core/region_suggest.c: its 32-bit normalization, the kana count's UTF-8)
+build region_suggest host/tests/test_region_suggest.c core/region_suggest.c core/regions.c core/arena.c
 # API 31: the kernel's text source (its word and the loader's process table, their atomics) and the Shell's
 # triangle cycle and label, the Rubi app's Games tag (Rubi's own entries; Luna's table where
 # hooks/luna-port's file is in the tree).
@@ -194,7 +196,8 @@ build hook_sc3 -I host/tests -I third_party/bearssl/inc -I "$BS" -DVJO_SOURCE_DI
   host/tests/test_hook_sc3.c core/hook_sc3.c core/hook_place.c core/hook_luna.c core/hook_re.c core/hook_text.c \
   "$BS/hash/sha2small.c" "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
 
-TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
+TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select
+       region_suggest)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna hook_sc3 psp_probe hooks_engine)
@@ -207,10 +210,11 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c &&
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_capture.o" kernel/capture.c &&
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_scene.o" kernel/scene.c &&
+    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_suggest.o" core/region_suggest.c && # #358: the kana count (VJO_HOST)
     "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
       "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
       -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
-      "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
+      "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$OUT/parity_suggest.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
       "$RT/vocr_lines_rows.c" "$RT/vocr_lines_fix.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
       "$RT/vocr_vertical.c" third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
       third_party/bearssl/src/codec/enc32be.c -lm

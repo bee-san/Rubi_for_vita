@@ -3,6 +3,8 @@
 #include <psp2/io/stat.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "../core/regions.h"
 #define BACKUP VJO_PREFERENCES_PATH ".bak"
 #define TEMP VJO_PREFERENCES_PATH ".tmp"
 #define MISSING ((int)0x80010002u)
@@ -293,4 +295,83 @@ int vjo_preferences_publish_text(const char *next, size_t len, VjoArena *a)
 done:
     vjo_arena_release(a, mark);
     return rc;
+}
+
+/* #358: Suggest a text box, in region.ini (preferences.h). The save writes the new file beside it, keeps the old one
+ * as region.ini.bak until the new one is in place (restored when the rename fails), then removes it; a load that finds
+ * only the backup (a save cut short) puts it back first. */
+#define REGION_TEMP VJO_PREFERENCES_REGION_PATH ".tmp"
+#define REGION_BACKUP VJO_PREFERENCES_REGION_PATH ".bak"
+
+static void region_restore(void)
+{
+    SceIoStat st;
+    if (sceIoGetstat(VJO_PREFERENCES_REGION_PATH, &st) == MISSING && sceIoGetstat(REGION_BACKUP, &st) >= 0 &&
+        sceIoRename(REGION_BACKUP, VJO_PREFERENCES_REGION_PATH) >= 0)
+        sceIoSync("ux0:", 0);
+}
+
+int vjo_preferences_suggest(VjoArena *a)
+{
+    size_t mark = vjo_arena_mark(a), bytes = 0;
+    char *text = NULL;
+    VjoRect r;
+    int rc;
+    region_restore();
+    rc = read_text(VJO_PREFERENCES_REGION_PATH, a, &text, &bytes);
+    if (rc == 0) rc = vjo_region_parse(text, bytes, NULL, &r) == VJO_REGION_ALL ? 0 : 1;
+    else if (rc == 1) rc = 1; /* no region.ini: no line for every game */
+    vjo_arena_release(a, mark);
+    return rc;
+}
+
+int vjo_preferences_save_suggest(int on, VjoArena *a)
+{
+    static const VjoRect full = {0, 0, 0, 0};
+    size_t mark = vjo_arena_mark(a), bytes = 0;
+    char *text = NULL, *next;
+    int rc, len, used = 0;
+    SceUID fd;
+    SceIoStat st;
+    if (on != 0 && on != 1) return -1;
+    region_restore();
+    rc = read_text(VJO_PREFERENCES_REGION_PATH, a, &text, &bytes);
+    if (rc < 0) goto fail; /* never rewrite a file that exists but could not be read: it holds every game's box */
+    if (rc == 1) { /* no region.ini yet: on is how it is */
+        if (on) {
+            vjo_arena_release(a, mark);
+            return 0;
+        }
+        text = (char *)"";
+        bytes = 0;
+    }
+    next = on ? vjo_region_drop(a, text, bytes, VJO_REGION_FALLBACK)
+              : vjo_region_update(a, text, bytes, VJO_REGION_FALLBACK, &full);
+    if (!next) goto fail;
+    len = (int)strlen(next);
+    sceIoMkdir("ux0:data", 0777);
+    sceIoMkdir("ux0:data/VitaJPOverlay", 0777);
+    fd = sceIoOpen(REGION_TEMP, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (fd < 0) goto fail;
+    while (used < len) {
+        int n = sceIoWrite(fd, next + used, (size_t)(len - used));
+        if (n <= 0 || n > len - used) break;
+        used += n;
+    }
+    if (sceIoClose(fd) < 0 || used != len || sceIoSync("ux0:", 0) < 0) goto fail;
+    if (rc == 0) {
+        if (sceIoGetstat(REGION_BACKUP, &st) >= 0 && sceIoRemove(REGION_BACKUP) < 0) goto fail;
+        if (sceIoRename(VJO_PREFERENCES_REGION_PATH, REGION_BACKUP) < 0) goto fail;
+    }
+    if (sceIoRename(REGION_TEMP, VJO_PREFERENCES_REGION_PATH) < 0) {
+        if (rc == 0) sceIoRename(REGION_BACKUP, VJO_PREFERENCES_REGION_PATH); /* the old file back */
+        sceIoSync("ux0:", 0);
+        goto fail;
+    }
+    if (rc == 0) sceIoRemove(REGION_BACKUP);
+    vjo_arena_release(a, mark);
+    return sceIoSync("ux0:", 0) < 0 ? -1 : 0;
+fail:
+    vjo_arena_release(a, mark);
+    return -1;
 }

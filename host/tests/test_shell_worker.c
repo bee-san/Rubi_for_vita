@@ -452,8 +452,26 @@ static const char *logged(const char *needle)
 #else
 #define DLOGGED(needle) (logged(needle) == NULL)
 #endif
-int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
-int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
+/* #358: region.ini's line for every game, "region = full" (the Rubi app's Suggest a text box OFF) */
+static int saved_region_all_full;
+int vjo_region_load(const char *id, VjoRect *out, VjoArena *a)
+{
+    if (!saved_region.w) {
+        memset(out, 0, sizeof(*out));
+        return saved_region_all_full ? VJO_REGION_ALL : 0;
+    }
+    *out = saved_region;
+    return VJO_REGION_GAME;
+}
+/* #358: the saves (the last one's rect; NULL: the full screen) */
+static int region_saves, region_save_failure;
+static VjoRect region_saved_rect;
+int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a)
+{
+    region_saves++;
+    region_saved_rect = r ? *r : (VjoRect){0, 0, 0, 0};
+    return region_save_failure ? -1 : 0;
+}
 /* The Rubi app's stamps and its eboot.bin (shell/files.c), scripted (core/app_stamp.h). */
 static char app_installed[64], app_record[64];
 static int app_installed_rc, app_record_rc, app_eboot;
@@ -755,6 +773,8 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out);
 /* API 31: the next results' text_from, hook_flags, hook_score, hook_streams, hook_mode, hook_installed and
  * hook_refused (zero: a game where the worker hooked nothing) */
 static uint32_t fake_hook[7];
+/* API 52 (#358): the next successful results' suggested band, its rows (0: none) */
+static uint32_t fake_suggest_rows;
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
 {
     int rc = fake_ocr_read(seq, out);
@@ -905,6 +925,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
     fake_game_result.hook_score = fake_hook[2]; fake_game_result.hook_streams = fake_hook[3];
     fake_game_result.hook_mode = fake_hook[4]; fake_game_result.hook_installed = fake_hook[5];
     fake_game_result.hook_refused = fake_hook[6];
+    fake_game_result.suggest_rows = fake_game_result.rc == VJO_OK ? fake_suggest_rows : 0; /* (a failure: none) */
     *out = fake_game_result;
     return 0;
 }
@@ -917,7 +938,11 @@ static void reset(void)
     hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
 #ifdef VJO_WITH_VOCR
     memset(fake_hook, 0, sizeof(fake_hook));
+    fake_suggest_rows = 0; /* #358: no box suggested */
 #endif
+    g_view.suggest = 0; /* #358: no game's box */
+    saved_region_all_full = region_save_failure = 0;
+    region_saves = 0;
     /* the logger stub: no batch open, no append recorded; the harness runs as the control thread */
     open_batch = NULL;
     batch_lines_held = batch_bytes_held = 0;
@@ -3461,7 +3486,9 @@ static void test_character_scene_change_keeps_the_shown_text(void)
         TEST_CHECK(job_running && !job_cursor_only && !g_view.list);
         job_running = 0;
     }
-    for (int cmd = VJO_CMD_SET_REGION; cmd <= VJO_CMD_CLEAR_REGION; cmd++) {
+    static const int region_cmds[] = {VJO_CMD_SET_REGION, VJO_CMD_CLEAR_REGION};
+    for (unsigned k = 0; k < 2; k++) {
+        int cmd = region_cmds[k];
         cursor_saved_text(); open_overlay(); finish_current_job();
         uint32_t generation = local_text_generation;
         VjoRect r = {2, 4, 100, 50};
@@ -3473,6 +3500,93 @@ static void test_character_scene_change_keeps_the_shown_text(void)
         job_running = 0;
     }
 }
+/* #358, the text box suggested on first use: a job on the whole screen of a game with no region line at all puts the
+ * band its result carries in the view once the job is done (on_job_done), the newest screen's: one without dialogue
+ * takes an earlier screen's out. A game with a region line (its own, or region.ini's "full" for every game: the Rubi
+ * app's Suggest a text box OFF) gets none, nor one whose box the overlay took in this activation
+ * (core/region_select.h VJO_RSEL_TAKEN), until it next starts or resumes (push_region). The overlay's enter saves the
+ * box as a drawn one is (VJO_CMD_SET_REGION): the overlay closes, and the game has its region. */
+static void test_the_suggested_box_reaches_the_view_once_an_activation(void)
+{
+    const VjoRect r = vjo_rsel_rect(0, 544 - 169, 960, 169);
+    unsigned scene = 3;
+    cursor_setup();
+    saved_region.w = 0;
+    push_region();
+    TEST_CHECK(g_view.suggest == 0);
+    fake_suggest_rows = 169;
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+#define NEXT_SCREEN() /* Auto's job on a newly settled screen, the overlay closed */ \
+    do { \
+        state.scene = state.capture_scene = state.region_scene = scene++; \
+        stable_pending = 1; auto_prefetch(); \
+        TEST_ASSERT(job_running); \
+        finish_current_job(); \
+    } while (0)
+    NEXT_SCREEN();
+    TEST_CHECK_(g_view.suggest == 169, "%u", g_view.suggest);
+    /* a later screen without dialogue: its job's result has no box, and takes the earlier screen's out */
+    fake_suggest_rows = 0;
+    NEXT_SCREEN();
+    TEST_CHECK_(g_view.suggest == 0, "%u", g_view.suggest);
+    /* the next screen's box; the overlay takes it (shell/overlay.cpp): none after it in this activation */
+    fake_suggest_rows = 170;
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == 170 && vjo_rsel_take(&g_view.suggest) == 170);
+    fake_suggest_rows = 169;
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN && !vjo_rsel_take(&g_view.suggest));
+    /* the game resumes (activate_game's push_region): its next box is offered again */
+    push_region();
+    TEST_CHECK(g_view.suggest == 0);
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == 169);
+    /* a game with a region of its own: none, and its jobs' boxes are not taken */
+    saved_region = (VjoRect){100, 200, 30000, 8000};
+    push_region();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    /* region.ini's line for every game ("region = full"): none either */
+    saved_region.w = 0;
+    saved_region_all_full = 1;
+    push_region();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN && logged("region: all games', full screen"));
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    saved_region_all_full = 0;
+    /* the box taken with the overlay open and saved by its enter, as a drawn one is: the overlay closes, the game's
+     * region is the box, none after it */
+    push_region();
+    NEXT_SCREEN();
+    open_overlay();
+    if (job_running) finish_current_job();
+    TEST_CHECK(ov == OV_OPEN && vjo_rsel_take(&g_view.suggest) == 169);
+    region_saves = 0;
+    saved_region = r; /* what region.ini holds once saved (the stub's save keeps no file) */
+    vjo_post_command(VJO_CMD_SET_REGION, &r); on_command();
+    TEST_CHECK(region_saves == 1 && !memcmp(&region_saved_rect, &r, sizeof(r)) && logged("region set for PCSG00415"));
+    TEST_CHECK(ov == OV_CLOSED && !__atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE));
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN); /* push_region: the box is this game's region now */
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    /* a region.ini that cannot be written: the game keeps its whole screen (no line), and is not asked again in this
+     * activation */
+    saved_region.w = 0;
+    push_region();
+    NEXT_SCREEN();
+    TEST_CHECK(vjo_rsel_take(&g_view.suggest) == 169);
+    region_save_failure = 1;
+    vjo_post_command(VJO_CMD_SET_REGION, &r); on_command();
+    TEST_CHECK(region_saves == 2 && logged("region.ini: write failed") && g_view.suggest == VJO_RSEL_TAKEN);
+    NEXT_SCREEN();
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    region_save_failure = 0;
+#undef NEXT_SCREEN
+    fake_suggest_rows = 0;
+    saved_region.w = 0;
+}
+
 static void test_character_command_priority_and_generation_boundaries(void)
 {
     cursor_saved_text(); open_overlay(); finish_current_job();
@@ -8740,6 +8854,7 @@ TEST_LIST = {
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
     {"character_scene_change_keeps_the_shown_text_and_region_change_retires_it", test_character_scene_change_keeps_the_shown_text},
+    {"the_suggested_box_reaches_the_view_once_an_activation", test_the_suggested_box_reaches_the_view_once_an_activation},
     {"character_commands_preserve_close_region_priority_and_nonzero_generations", test_character_command_priority_and_generation_boundaries},
     {"dictionary_pages_read_one_entry_each_in_the_single_arena", test_dictionary_pages_read_one_entry_each},
     {"dictionary_count_change_looks_up_again_without_OCR", test_dictionary_count_change_relooks_up_without_ocr},

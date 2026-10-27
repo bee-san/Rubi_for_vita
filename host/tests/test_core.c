@@ -1109,6 +1109,28 @@ static void test_regions(void)
         t = vjo_region_update(&A, "", 0, "PCSG00123", &q);
         TEST_CHECK(t && !strcmp(t, "PCSG00123 = 5,6,7,8\n"));
     }
+
+    /* #358, drop: the Rubi app's Suggest a text box ON takes the line for every game out (every one of them), the
+     * games' own lines and the rest kept; a text without it unchanged but for its last newline and blank lines */
+    {
+        const char *ini = "region = full\n; note\nPCSG00123 = 2,2,2,2\n\n region =1,1,1,1\r\nregions = 1,1,1,1\n"
+                          "PCSG00124 = full";
+        t = vjo_region_drop(&A, ini, strlen(ini), VJO_REGION_FALLBACK);
+        TEST_CHECK(t && !strcmp(t, "; note\nPCSG00123 = 2,2,2,2\nregions = 1,1,1,1\nPCSG00124 = full\n"));
+        TEST_CHECK(t && P(t, "PCSB00001", &g) == 0 && P(t, "PCSG00124", &g) == VJO_REGION_GAME);
+        t = vjo_region_drop(&A, "", 0, VJO_REGION_FALLBACK);
+        TEST_CHECK(t && !strcmp(t, ""));
+        t = vjo_region_drop(&A, "PCSG00123 = full", 16, VJO_REGION_FALLBACK);
+        TEST_CHECK(t && !strcmp(t, "PCSG00123 = full\n"));
+        /* OFF and ON again: the file as it was */
+        VjoRect full = {0, 0, 0, 0};
+        const char *games = "PCSG00123 = 2,2,2,2\n";
+        t = vjo_region_update(&A, games, strlen(games), VJO_REGION_FALLBACK, &full);
+        TEST_CHECK(t && !strcmp(t, "PCSG00123 = 2,2,2,2\nregion = full\n") && P(t, "PCSB00001", &g) == VJO_REGION_ALL &&
+                   g.w == 0);
+        t = vjo_region_drop(&A, t, strlen(t), VJO_REGION_FALLBACK);
+        TEST_CHECK(t && !strcmp(t, games));
+    }
 #undef P
 }
 

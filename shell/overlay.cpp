@@ -709,7 +709,7 @@ static void region_hint(int force)
         "or drag on screen · %s cancel · hold □ full screen</font>";
     int x, y, w = 0, h = 0, corner = vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     int64_t now = sceKernelGetProcessTimeWide();
-    char hint[192]; /* the longest is 144 B */
+    char hint[192]; /* the longest is 154 B */
     if (!force && corner == s_hint_box[0] &&
         ((w == s_hint_box[1] && h == s_hint_box[2]) || now - s_hint_us < 100000))
         return;
@@ -726,7 +726,8 @@ static void region_hint(int force)
                         w == s_refused[0] && h == s_refused[1] ? "#ff8a80" : "#b8c0cc", w, h, VJO_RSEL_MIN,
                         VJO_RSEL_MIN, s_btn.cancel_glyph);
     else
-        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffd24a\">Box %d x %d</font><font color=\"#ffffff\">"
+        /* #358: a box drawn, the suggested one or the user's: the question enter answers */
+        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffd24a\">Use this box? %d x %d</font><font color=\"#ffffff\">"
                         " · stick / ◀▶▲▼ opposite corner · %s save · %s undo corner</font>", w, h,
                         s_btn.enter_glyph, s_btn.cancel_glyph);
     set_rich(s_region_hint, hint);
@@ -752,13 +753,16 @@ static void touch_write(int action)
 #endif
 }
 
-static void enter_region_mode(void)
+/* rows: #358's suggested box, drawn from the start (core/region_select.h vjo_rsel_preset), or 0 (□: by hand; a box the
+ * selector refuses too). */
+static void enter_region_mode(uint32_t rows)
 {
     s_mode = MODE_REGION;
     touch_write(vjo_touch_hold(&s_touch));
     s_square_down_us = sceKernelGetProcessTimeWide();
     s_square_clear_armed = 1;
     vjo_rsel_begin(&s_rsel, s_square_down_us);
+    vjo_rsel_preset(&s_rsel, rows);
     if (s_panel)
         s_panel->Hide();
     if (s_region_layer)
@@ -772,6 +776,9 @@ static void enter_region_mode(void)
 static void leave_region_mode(void)
 {
     s_mode = MODE_OVERLAY;
+    /* #358: the region mode was used in this activation of the game (a suggested box offered, or □): no box is offered
+     * after it until the game next starts or resumes (core/region_select.h VJO_RSEL_TAKEN) */
+    __atomic_store_n(&g_view.suggest, VJO_RSEL_TAKEN, __ATOMIC_RELAXED);
     vjo_stick_cursor_latch(&s_stick); /* a stick still drawing the box does not move the cursor */
     if (s_region_layer)
         s_region_layer->Hide();
@@ -1140,10 +1147,14 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
      * cursor) to the offline queue; the Rubi app exports it. */
     if ((pressed & s_btn.enter) && s_anki_enabled && s_selected < s_n_entries)
         vjo_anki_post_add(s_list_seq, s_selected);
+    /* #358: a game with no region of its own: the box its whole-screen job suggests, offered once an activation
+     * (core/region_select.h vjo_rsel_take), after this frame's buttons (a press as it comes is the overlay's, never
+     * the question's), and never as cancel closes the overlay */
+    uint32_t offer;
     if (pressed & s_btn.cancel)
         vjo_post_command(VJO_CMD_CLOSED, NULL);
-    if (pressed & SCE_CTRL_SQUARE)
-        enter_region_mode();
+    else if ((offer = vjo_rsel_take(&g_view.suggest)) != 0 || (pressed & SCE_CTRL_SQUARE))
+        enter_region_mode(offer);
 }
 
 static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
@@ -1190,7 +1201,7 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
         VjoRect r = vjo_rsel_rect(x, y, w, h);
         vjo_dlog("region box %d,%d %dx%d", x, y, w, h);
         leave_region_mode();
-        vjo_post_command(VJO_CMD_SET_REGION, &r);
+        vjo_post_command(VJO_CMD_SET_REGION, &r); /* #358: the suggested box too, saved as a drawn one is */
         return;
     }
     if (ev == VJO_RSEL_CANCEL) {

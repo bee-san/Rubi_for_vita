@@ -535,6 +535,85 @@ static void saved_region_round_trips_region_ini(void)
     }
 }
 
+/* #358: the suggested box drawn from the start (vjo_rsel_preset): the screen's bottom `rows` rows across its width, its
+ * first corner at the top left, the cursor on the bottom right pixel, so that enter saves the box as it is and the stick
+ * or the d-pad move its bottom right corner; cancel takes the corner back as for any box. Rows from the game's process
+ * that are 0 or more than the screen's are refused, the selection as it was; a band too short is drawn and enter
+ * refuses it as any box. */
+static void a_suggested_box_is_drawn_and_saved_as_it_is(void)
+{
+    Rig r;
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, 170)); /* the game worker's band: 374 down to the bottom */
+    TEST_CHECK(box_is(&r, 0, 374, 960, 170) && cx(&r) == 959 && cy(&r) == 543);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
+    /* the stick moves the bottom right corner; enter saves the box as it is then */
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, 170));
+    dpad_to(&r, 700, 500);
+    TEST_CHECK(box_is(&r, 0, 374, 701, 127));
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
+    /* cancel takes its corner back: drawing by hand from the cursor; cancel again leaves */
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, 170));
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_BACK);
+    {
+        int x, y, w, h;
+        TEST_CHECK(!vjo_rsel_box(&r.s, &x, &y, &w, &h) && cx(&r) == 959 && cy(&r) == 543);
+    }
+    frame(&r, 0, FRAME_US);
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_CANCEL);
+    /* the shortest band enter saves, 32 rows; 31 is drawn and refused by enter (VJO_RSEL_SMALL); the whole screen */
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, 32) && box_is(&r, 0, 512, 960, 32));
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, 31) && box_is(&r, 0, 513, 960, 31));
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SMALL);
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, 544) && box_is(&r, 0, 0, 960, 544));
+    /* refused, the selection as it was: none, more than the screen, the Shell's word for a box taken */
+    {
+        static const uint32_t refused[] = {0, 545, 1023, VJO_RSEL_TAKEN};
+        for (unsigned i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+            rig_begin(&r, 0);
+            TEST_CHECK_(!vjo_rsel_preset(&r.s, refused[i]) && !r.s.anchored && cx(&r) == VJO_RSEL_W / 2 &&
+                        cy(&r) == VJO_RSEL_H / 2, "rows %u kept the selection as it was", refused[i]);
+        }
+    }
+}
+
+/* #358: the Shell's word for the suggested box (shell/shell.h VjoView.suggest): the newest job's box is offered once in
+ * an activation of the game; none after it, nor for a game with a region (VJO_RSEL_TAKEN), until the control thread
+ * stores 0 as the game next starts or resumes (shell/worker.c push_region). */
+static void a_suggested_box_is_offered_once_an_activation(void)
+{
+    uint32_t word = 0;
+    TEST_CHECK(vjo_rsel_take(&word) == 0 && word == 0); /* none yet */
+    vjo_rsel_publish(&word, 169);
+    vjo_rsel_publish(&word, 0); /* the newest screen holds no dialogue: none for it */
+    TEST_CHECK(vjo_rsel_take(&word) == 0 && word == 0);
+    vjo_rsel_publish(&word, 200);
+    vjo_rsel_publish(&word, 169); /* the newest screen's */
+    TEST_CHECK(vjo_rsel_take(&word) == 169 && word == VJO_RSEL_TAKEN);
+    TEST_CHECK(vjo_rsel_take(&word) == 0); /* once */
+    vjo_rsel_publish(&word, 170);         /* later jobs': none after it */
+    vjo_rsel_publish(&word, 0);
+    TEST_CHECK(word == VJO_RSEL_TAKEN && vjo_rsel_take(&word) == 0);
+    word = 0; /* the game resumes */
+    vjo_rsel_publish(&word, 170);
+    TEST_CHECK(vjo_rsel_take(&word) == 170 && word == VJO_RSEL_TAKEN);
+    /* rows from the game's process that make no band are never offered, nor taken */
+    word = 0;
+    vjo_rsel_publish(&word, 545);
+    TEST_CHECK(vjo_rsel_take(&word) == 0 && word == 545);
+    vjo_rsel_publish(&word, 544);
+    TEST_CHECK(vjo_rsel_take(&word) == 544);
+    word = 0;
+    vjo_rsel_publish(&word, VJO_RSEL_TAKEN); /* the word for taken: none, as if taken */
+    TEST_CHECK(vjo_rsel_take(&word) == 0 && word == VJO_RSEL_TAKEN);
+}
+
 TEST_LIST = {
     {"starts centred, without a box", starts_centred_without_a_box},
     {"dead zone ignores idle drift", dead_zone_ignores_idle_drift},
@@ -551,5 +630,7 @@ TEST_LIST = {
     {"touch draws, the stick finishes", touch_draws_and_the_stick_finishes},
     {"cancel during a drag waits for the finger", cancel_during_a_drag_waits_for_the_finger},
     {"saved region round-trips region.ini", saved_region_round_trips_region_ini},
+    {"a suggested box is drawn and saved as it is (#358)", a_suggested_box_is_drawn_and_saved_as_it_is},
+    {"a suggested box is offered once an activation (#358)", a_suggested_box_is_offered_once_an_activation},
     {NULL, NULL}
 };

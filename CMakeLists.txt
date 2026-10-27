@@ -269,6 +269,13 @@ target_include_directories(vjo-region-select-tests PRIVATE third_party/acutest/i
 target_link_libraries(vjo-region-select-tests vjo_host)
 target_compile_options(vjo-region-select-tests PRIVATE -Wall -Wextra)
 add_test(NAME region_select COMMAND vjo-region-select-tests)
+# The text box suggested on first use (#358, core/region_suggest.c): the game worker's rule on the lines of a
+# job on the whole frame, its box's normalization and each line's kana count.
+add_executable(vjo-region-suggest-tests host/tests/test_region_suggest.c core/region_suggest.c)
+target_include_directories(vjo-region-suggest-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-region-suggest-tests vjo_host)
+target_compile_options(vjo-region-suggest-tests PRIVATE -Wall -Wextra)
+add_test(NAME region_suggest COMMAND vjo-region-suggest-tests)
 # The Rubi app's left-stick list scrolling (core/stick_scroll.h), against VitaShell's readPad.
 add_executable(vjo-stick-scroll-tests host/tests/test_stick_scroll.c)
 target_include_directories(vjo-stick-scroll-tests PRIVATE third_party/acutest/include core)
@@ -445,7 +452,7 @@ target_compile_options(vjo-platform-vita-tests PRIVATE -Wall -Wextra -Wno-unused
 add_test(NAME platform_vita COMMAND vjo-platform-vita-tests)
 set_tests_properties(platform_vita PROPERTIES TIMEOUT 60) # a read loop that never ends fails, not hangs
 
-add_executable(vjo-shell-worker-tests host/tests/test_shell_worker.c)
+add_executable(vjo-shell-worker-tests host/tests/test_shell_worker.c core/region_select.c) # #358: its box word
 target_include_directories(vjo-shell-worker-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-shell-worker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 find_package(Threads REQUIRED) # VjoNet's paint runs on a real thread with a known stack
@@ -459,7 +466,7 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-shell-worker-tests vjo_vocr)
 endif()
 add_test(NAME shell_worker COMMAND vjo-shell-worker-tests)
-add_executable(vjo-shell-worker-paf-tests host/tests/test_shell_worker.c)
+add_executable(vjo-shell-worker-paf-tests host/tests/test_shell_worker.c core/region_select.c)
 target_include_directories(vjo-shell-worker-paf-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-shell-worker-paf-tests PRIVATE VJO_PAF_ALLOC=1)
 target_compile_options(vjo-shell-worker-paf-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -561,7 +568,7 @@ if(VJO_WITH_VOCR)
   add_test(NAME textnorm COMMAND vjo-textnorm-tests)
   # ocr-speed: parallel lines (VjoVocrPool) and the line cache with real vocr_run
   # calls on a tiny weights blob the test builds and pins itself (no release files).
-  add_executable(vjo-vocr-parallel-tests host/tests/test_vocr_parallel.c core/vocr_ocr.c)
+  add_executable(vjo-vocr-parallel-tests host/tests/test_vocr_parallel.c core/vocr_ocr.c core/region_suggest.c)
   target_include_directories(vjo-vocr-parallel-tests PRIVATE third_party/acutest/include host/tests core include
     third_party/bearssl/inc)
   target_compile_options(vjo-vocr-parallel-tests PRIVATE -Wall -Wextra)
@@ -572,7 +579,7 @@ if(VJO_WITH_VOCR)
   # vita-vn-ocr #99: vertical text (a model of columns) through the actual core adapter, with real
   # vocr_run calls on tiny weights blobs the test builds and pins itself (no release files), and the
   # job of rows today's exactly (main 796168e's core with the runtime API 50 pins, vita-vn-ocr f8a1856).
-  add_executable(vjo-vocr-vertical-tests host/tests/test_vocr_vertical.c core/vocr_ocr.c)
+  add_executable(vjo-vocr-vertical-tests host/tests/test_vocr_vertical.c core/vocr_ocr.c core/region_suggest.c)
   target_include_directories(vjo-vocr-vertical-tests PRIVATE third_party/acutest/include host/tests core include
     third_party/bearssl/inc)
   target_compile_options(vjo-vocr-vertical-tests PRIVATE -Wall -Wextra)
@@ -591,7 +598,7 @@ if(VJO_WITH_VOCR)
   target_include_directories(vjo_parity_kernel PRIVATE host/tests/vita_stubs)
   target_compile_definitions(vjo_parity_kernel PRIVATE VJO_HOST=1)
   add_executable(vjo-capture-parity-tests host/tests/test_capture_parity.c host/tests/parity_api18.c
-    host/tests/parity_api19.c $<TARGET_OBJECTS:vjo_parity_kernel>)
+    host/tests/parity_api19.c core/region_suggest.c $<TARGET_OBJECTS:vjo_parity_kernel>)
   target_include_directories(vjo-capture-parity-tests PRIVATE third_party/acutest/include)
   target_link_libraries(vjo-capture-parity-tests vjo_vocr_rt vjo_core)
   target_compile_options(vjo-capture-parity-tests PRIVATE -Wall -Wextra)
@@ -599,7 +606,7 @@ if(VJO_WITH_VOCR)
   add_test(NAME capture_parity COMMAND vjo-capture-parity-tests)
   # Exercise the real adapter with only the finder call replaced by a spy.
   # This verifies dispatch and capture ownership without weights or inference.
-  add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c)
+  add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c core/region_suggest.c)
   target_include_directories(vjo-vocr-mode-tests PRIVATE third_party/acutest/include)
   target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines_rows=vjo_test_find_lines_rows
     vocr_find_columns_rows=vjo_test_find_columns_rows
@@ -898,7 +905,8 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-game-vocr-shared-tests vjo_vocr)
   add_test(NAME game_vocr_shared_tiers COMMAND vjo-game-vocr-shared-tests)
   # the Shell's tier names come from core/config.c, compiled in with the same map
-  add_executable(vjo-shell-worker-shared-tests host/tests/test_shell_worker.c core/config.c core/vocr_models.c)
+  add_executable(vjo-shell-worker-shared-tests host/tests/test_shell_worker.c core/config.c core/vocr_models.c
+    core/region_select.c)
   target_include_directories(vjo-shell-worker-shared-tests PRIVATE third_party/acutest/include host/tests/vita_stubs
     host/tests)
   target_compile_options(vjo-shell-worker-shared-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -908,7 +916,7 @@ if(VJO_WITH_VOCR)
   # The actual game worker and core adapter with synthetic pinned weights and a
   # spy runtime: the resident-weights lifecycle runs without release files (CI).
   add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c core/textnorm.c
-    host/tests/hooks_none.c)
+    core/region_suggest.c host/tests/hooks_none.c)
   target_include_directories(vjo-game-resident-tests PRIVATE third_party/acutest/include
     host/tests/game_stubs host/tests)
   target_compile_options(vjo-game-resident-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -922,7 +930,8 @@ if(VJO_WITH_VOCR)
   # Native hooks in the job path (docs/native-hooks.md): the actual worker with the resident test's spies and
   # a fake of game_ocr/hooks.h: a stream answers with the first capture pass only, or replaces OCR's agreeing
   # text; nothing installed is OCR as before.
-  add_executable(vjo-game-hooks-tests host/tests/test_game_hooks.c core/vocr_ocr.c core/textnorm.c)
+  add_executable(vjo-game-hooks-tests host/tests/test_game_hooks.c core/vocr_ocr.c core/textnorm.c
+    core/region_suggest.c)
   target_include_directories(vjo-game-hooks-tests PRIVATE third_party/acutest/include host/tests/game_stubs host/tests)
   target_compile_options(vjo-game-hooks-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-hooks-tests PRIVATE

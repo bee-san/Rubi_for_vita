@@ -35,6 +35,16 @@ int vjo_preferences_save_text_source(int source, VjoArena *a);
 int vjo_preferences_save_skips(int text_gate, int hook_trust, VjoArena *a);
 /* API 47: config.ini ocr_vertical (core/config.h VJO_VERTICAL_*), published as the other saves are. */
 int vjo_preferences_save_vertical(int mode, VjoArena *a);
+/* #358, Suggest a text box (docs/first-box.md), kept in region.ini, the Shell's file of every game's box
+ * (core/regions.h): OFF is its line for every game without one of its own (VJO_REGION_FALLBACK), "region = full",
+ * so such a game reads its whole screen and is offered no box; ON (the default: no such line) offers the box the
+ * game worker finds there. The Shell reads region.ini as a game starts or resumes. vjo_preferences_suggest: 1 on, 0
+ * off (any such line: an old install's box for every game too), -1 unreadable. The save: on drops that line, off
+ * writes it, every game's own line kept; a temp file, synced, then renamed in its place, the old file kept as
+ * region.ini.bak until then (and put back when a save was cut short). 0 or -1. */
+#define VJO_PREFERENCES_REGION_PATH "ux0:data/VitaJPOverlay/region.ini"
+int vjo_preferences_suggest(VjoArena *a);
+int vjo_preferences_save_suggest(int on, VjoArena *a);
 /* config.ini's text as the app's load reads it (into the arena): 0 config.ini; 1 its backup
  * (config.ini.bak, when config.ini is missing: a save that stopped between its two renames); 2 there
  * is neither (*out NULL); -1 unreadable. The installer's update patches this text and writes the

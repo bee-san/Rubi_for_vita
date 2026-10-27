@@ -90,8 +90,9 @@
  * has (hook_trust) */
 #define PREF_TRUST 7
 #define PREF_GATE 8
-#define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical), the last card */
-#define PREFERENCES 10
+#define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical) */
+#define PREF_SUGGEST 10 /* #358: Suggest a text box (region.ini's line for every game: preferences.h), the last card */
+#define PREFERENCES 11
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -133,6 +134,8 @@ static int writable = 1;
 static char game_query[VJO_SEARCH_BYTES];
 static char status[256];
 static VjoConfig preferences;
+/* #358: Suggest a text box, from region.ini (settings/preferences.h vjo_preferences_suggest): 1 on, 0 off, -1 not read */
+static int suggest_on = -1;
 static int page, preference_selected, preferences_writable;
 static VjoEngineCard engine; /* the OCR card: the chosen size, its model files */
 static char preference_status[160];
@@ -584,6 +587,7 @@ static void check_models(void)
 static void load_preferences(void)
 {
     int rc = vjo_preferences_load(&preferences, &scratch);
+    suggest_on = vjo_preferences_suggest(&scratch);
     preferences_writable = rc >= 0;
     preference_error = rc < 0;
     snprintf(preference_status, sizeof(preference_status), "%s", rc < 0
@@ -655,6 +659,20 @@ static void set_skips(int text_gate, int hook_trust)
     preference_saved(vjo_preferences_save_skips(text_gate, hook_trust, &scratch));
 }
 
+/* #358, Suggest a text box (docs/first-box.md): in region.ini, not config.ini, so it is saved whatever config.ini's
+ * state; the Shell reads region.ini as a game starts or resumes, so the save says so. */
+static void set_suggest(int on)
+{
+    int rc;
+    if (on == suggest_on || suggest_on < 0) return;
+    rc = vjo_preferences_save_suggest(on, &scratch);
+    suggest_on = vjo_preferences_suggest(&scratch);
+    preference_error = rc < 0 || suggest_on < 0;
+    snprintf(preference_status, sizeof(preference_status), "%s", preference_error
+        ? "Save not confirmed. Check the displayed choices, then retry."
+        : "Saved. It applies when the game next starts or resumes.");
+}
+
 /* API 47, Vertical text (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text"): its three choices left to
  * right, OFF (rows, as before), Automatic (columns where the rows look like vertical text), ON (columns in every
  * game); the Shell reads it each time the overlay opens. */
@@ -717,6 +735,10 @@ static void toggle_preference(void)
                   preferences.hook_trust ^ (preference_selected == PREF_TRUST));
         return;
     }
+    if (preference_selected == PREF_SUGGEST) {
+        set_suggest(!suggest_on);
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? !preferences.highlight_mode : preferences.highlight_mode,
@@ -756,6 +778,10 @@ static void set_preference(int right)
                   preference_selected == PREF_TRUST ? right : preferences.hook_trust);
         return;
     }
+    if (preference_selected == PREF_SUGGEST) {
+        set_suggest(right);
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? right : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
@@ -765,7 +791,7 @@ static void set_preference(int right)
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
 static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H,
-                                             CARD_H};
+                                             CARD_H, CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -975,6 +1001,16 @@ static void draw_vertical_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
 }
 
+/* #358: a game with no text box of its own (the first time in it) is offered the box the game worker finds around
+ * its dialogue (docs/first-box.md). */
+static void draw_suggest_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Suggest a text box");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, suggest_on < 0 ? "--" : suggest_on ? "ON" : "OFF", suggest_on > 0);
+    text(42, y + CARD_HELP_Y, DIM, 24, suggest_on < 0 ? "Cannot read region.ini."
+                                                      : "ON: a game without a box is offered the one Rubi finds.");
+}
+
 static void draw_card(int i, int y)
 {
     switch (i) {
@@ -987,6 +1023,7 @@ static void draw_card(int i, int y)
     case PREF_TRUST: draw_trust_card(y); break;
     case PREF_GATE: draw_gate_card(y); break;
     case PREF_VERTICAL: draw_vertical_card(y); break;
+    case PREF_SUGGEST: draw_suggest_card(y); break;
     default: draw_results_card(y); break;
     }
 }
@@ -1083,7 +1120,7 @@ static void touch_preference(int x, int y)
             (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
             set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
         break;
-    default: /* the ON/OFF cards: Speed boost, Japanese characters only and (API 43) the two OCR skips */
+    default: /* the ON/OFF cards: Speed boost, Japanese characters only, (API 43) the two OCR skips, (#358) Suggest */
         toggle_preference();
     }
 }
