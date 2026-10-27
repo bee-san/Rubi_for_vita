@@ -86,6 +86,14 @@ typedef struct {
 
 /* Starts a selection: the cursor at the screen's centre, no first corner. */
 void vjo_rsel_begin(VjoRegionSelect *s, int64_t now_us);
+/* #358, the text box suggested on first use: a selection begun with the box already drawn, box x0, y0, x1, y1 on the
+ * screen (include/vjo_game_ocr.h VjoGameOcrResult.suggest: the pixels x0..x1 - 1, y0..y1 - 1), its first corner at
+ * the top left and the cursor on the bottom right one, so that enter saves it as it is and the stick or the d-pad
+ * move its bottom right corner. Returns 1, or 0 with nothing changed for a far corner off the screen or NULL (the box
+ * comes from the game's process). A box under VJO_RSEL_MIN either way is drawn, and enter refuses it as any box
+ * (VJO_RSEL_SMALL); x1 <= x0 or y1 <= y0 is the box between the two corners, as a drag the other way is; a first
+ * corner past the screen is clamped where the box is saved (vjo_rsel_rect). */
+int vjo_rsel_preset(VjoRegionSelect *s, const uint16_t *box);
 /* One frame: touch, then the d-pad and the stick (not during a drag), then
  * cancel, then enter. Returns VJO_RSEL_*. */
 int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in);

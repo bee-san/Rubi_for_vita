@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "fbgrey.h"
+#include "region_suggest.h" /* #358: a line's kana and kanji (vjo_suggest_kana) */
 #include "vocr.h"
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
@@ -1460,8 +1461,9 @@ uint32_t vjo_vocr_test_line_length(unsigned w, unsigned h, int cols)
 }
 #endif
 
+/* text: the line's text as it is placed (#358: its kana and kanji, core/region_suggest.h). */
 static void line_stat(Lines *L, const Pending *e, unsigned frames, uint16_t flags, uint32_t us, uint32_t cpu_us,
-                      unsigned slot, int cached)
+                      unsigned slot, int cached, const char *text)
 {
     VjoVocrLineStat *ls;
     if (L->st->recognized >= VJO_VOCR_MAX_LINES) return;
@@ -1473,8 +1475,10 @@ static void line_stat(Lines *L, const Pending *e, unsigned frames, uint16_t flag
     ls->us = us; /* without a re-read: frames and time are the job's model's */
     ls->slot = (uint8_t)slot;
     ls->cached = (uint8_t)(cached != 0);
-    ls->pad = 0;
+    ls->kana = vjo_suggest_kana(text);
     ls->cpu_us = cpu_us;
+    ls->x = e->x;
+    ls->y = e->y;
 }
 
 /* Lengths of the queued lines after the one being placed that need no more work
@@ -1754,7 +1758,7 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
     st->frames += ex->frames;
     st->head_gated += ex->gated;
     st->head_escaped += ex->escaped;
-    line_stat(L, e, ex->frames, flags, line_us, cpu_us, slot, 0);
+    line_stat(L, e, ex->frames, flags, line_us, cpu_us, slot, 0, text + start);
     if (pol->line) {
         VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 0,
                                 text + start, run_us + (clock_us(p) - f0), greedy, flags};
@@ -1836,7 +1840,7 @@ static int place(Lines *L)
             return RETRY_NOCACHE;
         }
         memcpy(L->text + start, h->text, (size_t)h->len + 1);
-        line_stat(L, e, h->frames, h->flags, 0, 0, 0, 1);
+        line_stat(L, e, h->frames, h->flags, 0, 0, 0, 1, L->text + start);
         st->cached++;
         if (pol->line) {
             VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 0,

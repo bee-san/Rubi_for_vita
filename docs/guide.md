@@ -448,6 +448,28 @@ corner before Enter. Hold Square for one second for the full screen. The cursor
 and its acceleration are covered by host tests; how they feel on the console is
 not tested yet.
 
+#### The box Rubi suggests
+
+A game with no box of its own (no line for it in `region.ini`, not even a full screen saved with Square held) is
+read on its whole screen, which reads the picture, the buttons and the menus as well as the dialogue. So the first
+time the overlay shows that game's text, Rubi offers a box: the region mode opens by itself with the box drawn
+around the screen's dialogue and asks **Use this box?** Enter takes it: it is saved as this game's region, as a box
+drawn with Square is, and the overlay reads it at once. The stick and the d-pad move its bottom right corner first
+(Enter then takes the box as it is); Cancel takes its corner back to draw your own, and Cancel again leaves the whole
+screen as it was. The question comes once each time the game starts or resumes, and never again once the game has a
+box (any box, or the full screen with Square held).
+
+The box is the screen's width, from just above the dialogue's first line to the screen's bottom, so the longer and
+the extra lines of the screens after it fit too. The game worker finds the dialogue among the lines it read on the
+whole screen: the lines with Japanese in them at a dialogue line's height, grouped into blocks of lines that follow
+each other closely, the block with the most Japanese. On the hooked pages of 42 games, read on a computer, the box
+holds 96.6 % of the dialogue lines of the same game's later screens (the half of the games the rule was not chosen
+on) and reads a quarter of the whole screen's other lines; where no block looks like dialogue (a title screen, a
+menu), nothing is offered ([first-box.md](first-box.md): the rule, its measurement and its limits). The Rubi app's
+**Suggest a text box** OFF (OCR & lookup page) writes `region = full` in `region.ini`, the line for every game
+without its own, so that such a game reads its whole screen and is offered nothing; ON takes the line out. Not run
+on a console yet.
+
 ## Per-game settings
 
 The **Rubi** app shows five games per page, with compact titles, visible
@@ -482,10 +504,12 @@ reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting,
 dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
 switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
 and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
-and **Vertical text** (`ocr_vertical`, the last card: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)), and
+**Suggest a text box** (the last card, ON by default: [the box Rubi suggests](#the-box-rubi-suggests); kept in
+`region.ini`, so it applies when a game next starts or resumes).
 Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
-Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection and two skip cards,
+Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection, two skip and Suggest cards,
 Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, Automatic/Every
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the

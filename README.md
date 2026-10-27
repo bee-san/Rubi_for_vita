@@ -143,10 +143,12 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
 
 1. **Open it.** In a game, press **L + R** when there is text on the screen. The overlay shows the
    dialogue at the top and a word's entry below it. **L + R** or **Cancel** closes it.
-2. **Draw the text box, once per game.** With the overlay open, press **□**: a cursor appears. Move
-   it with the left stick (or the d-pad, a pixel at a time), press **Enter** at one corner of the
-   dialogue box, then again at the opposite corner. A tight box needs less memory and makes fewer
-   mistakes. Hold **□** for a second to go back to the whole screen.
+2. **Set the text box, once per game.** The first time a game's text is shown, Rubi draws a box
+   around its dialogue and asks **Use this box?** Press **Enter** to take it
+   ([how it is found](docs/first-box.md)), or **Cancel** to draw your own. Or later: press **□**: a
+   cursor appears. Move it with the left stick (or the d-pad, a pixel at a time), press **Enter** at
+   one corner of the dialogue box, then again at the opposite corner. A tight box needs less memory
+   and makes fewer mistakes. Hold **□** for a second to go back to the whole screen.
 3. **Look a word up.** **◀ ▶** go word by word and **▲ ▼** a row up or down. The left stick goes a
    character at a time, faster while held, and looks up the word that starts where it stops. Or tap
    a word. The right stick scrolls a long entry. **▲** on the top row goes back to this game's earlier
@@ -177,6 +179,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready as soon as the game writes it ([details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns in every game) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
+| | **Suggest a text box**: a game without a box of its own is offered the one Rubi finds around its dialogue, once each time it starts or resumes ([details](docs/first-box.md)) | ON |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -246,6 +249,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
+| ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |
 | ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |

@@ -1068,8 +1068,9 @@ class GameStartLines(unittest.TestCase):
         # the format string the analyser reads, as shell/worker.c has it: the dictionary's name is
         # core/config.h's VJO_DICT_NAME, the only dictionary since the Hachidori relay's removal
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
-        self.assertIn('vjo_log("game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s"',
-                      worker)
+        # (in the data segment since #358: a VJO_DATA_TABLE string, logged as vjo_log(started, ...))
+        self.assertIn('"game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s";', worker)
+        self.assertIn("vjo_log(started, title_id,", worker)
         self.assertIn('#define VJO_DICT_NAME "Local dictionaries"\n', (ROOT / "core/config.h").read_text(encoding="utf-8"))
         self.assertNotIn("(key %s)", worker)
         line = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
@@ -1577,7 +1578,8 @@ class ClockWindows(unittest.TestCase):
         shell = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
         body = shell[re.search(r"\nstatic void activate_game\(", shell).start():]
         body = body[:body.index("\n}\n")]
-        self.assertLess(body.index("apply_config();"), body.index('vjo_log("game %s started: '))
+        self.assertLess(body.index("apply_config();"), body.index('"game %s started: '))  # (#358: a data-segment format)
+        self.assertLess(body.index('"game %s started: '), body.index("vjo_log(started, "))
 
     def test_the_test3_style_fixture_reads_its_boost_off_window_plainly(self):
         # tools/tests/fixtures/log-test3-style.txt: synthetic (no console, no game), test.3's checklist in order:
@@ -2550,7 +2552,9 @@ class OverlayAppSummary(unittest.TestCase):
     def test_the_line_the_shell_writes_is_read_whole(self):
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
         fmt = "Rubi app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)"
-        self.assertIn(f'vjo_log("{fmt}",', worker, "shell/worker.c check_app's line changed: update APP_CHECK")
+        # (in the data segment since #358: a VJO_DATA_TABLE string, logged as vjo_log(line, ...))
+        self.assertIn(f'"{fmt}";', worker, "shell/worker.c check_app's line changed: update APP_CHECK")
+        self.assertIn("vjo_log(line, s == VJO_APP_OK", worker)
         # an earlier build's line (before the Rubi rename) reads the same
         old = fmt.replace("Rubi app", "overlay app", 1) % ("MISMATCH", "", 0x80010002, 1, self.STAMP, 0x26)
         self.assertEqual(a.APP_CHECK.match(old).group(1, 2, 3), ("MISMATCH", "", "0x80010002"))

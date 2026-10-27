@@ -105,6 +105,13 @@ typedef struct {
     char strip_text[VJO_STRIP_MAX]; /* "" = no strip drawn */
     int strip_kind;           /* VJO_STRIP_* */
     int strip_busy;           /* a recognition is running */
+    /* #358, the text box suggested on first use: the box a job that read the whole screen suggests
+     * (VjoGameOcrResult.suggest: x0, y0, x1, y1 on the screen; x1 0: none), kept while this game has no region
+     * of its own and config.ini region_suggest is on, and the game's activation it was read in (worker.c
+     * game_generation): the overlay offers it once an activation (overlay.cpp). Last, so that no other field
+     * moves. */
+    uint16_t suggest[4];
+    uint32_t suggest_gen;
 } VjoView;
 
 extern VjoView g_view;
@@ -122,6 +129,8 @@ enum {
     VJO_CMD_NONE = 0,
     VJO_CMD_CLOSED,          /* overlay closed by the cancel button */
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command) */
+    VJO_CMD_USE_BOX,         /* #358: the suggested box, saved as SET_REGION's and read at once (the overlay stays);
+                              * SET_REGION + 1 (overlay.cpp input_region) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
     /* (after CURSOR: a cursor move or a page takes their slot, worker.c vjo_post_cursor) */

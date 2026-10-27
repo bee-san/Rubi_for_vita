@@ -2318,6 +2318,11 @@ retry_smaller:
         step_add(VJO_GSTEP_GATE, VJO_VOCR_GATE_MODE, stats.gate_stopped, stats.gate_rc,
                  (uint32_t)(stats.gate_score + 129) | (uint32_t)(VJO_VOCR_GATE_T + 129) << 16 |
                      (stats.gate_read ? VJO_GLM_READ : 0u), stats.gate_rows, stats.gate_us + 1u, 0);
+    /* API 52 (#358): a job of rows that read the whole frame says where its dialogue is (core/region_suggest.h);
+     * the Shell offers that box in a game with no region of its own. Its lines' region pixels are the frame's
+     * here; host/page_ocr.c measures the same call (docs/first-box.md). */
+    if (!rc && !r->x && !r->y && r->width == r->fb_width && r->height == r->fb_height)
+        vjo_vocr_suggest(&stats, r->fb_width, r->fb_height, out->suggest);
     /* A helper that could not be joined may still run in the workspace: keep it,
      * and take no more jobs (core/vocr_ocr.h VjoVocrPool). */
     if (stats.stuck) { blocked = 1; hook_owns_workspace = 1; }
@@ -2363,7 +2368,10 @@ done:
         else if (cancelled(NULL)) rc = VJO_E_CANCELLED;
         out->io_error = io_error;
     }
-    if (rc) sceClibMemset(out->text, 0, sizeof(out->text));
+    if (rc) { /* a failed result carries no text, and no box (API 52) */
+        sceClibMemset(out->text, 0, sizeof(out->text));
+        sceClibMemset(out->suggest, 0, sizeof(out->suggest));
+    }
     hooks_result(out, rc);
     out->rc = rc; active_seq = 0;
     log_to = NULL;

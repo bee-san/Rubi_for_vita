@@ -56,6 +56,7 @@ extern "C" {
 #include "../core/stick_cursor.h"
 #include "../vita/buttons_vita.h"
 /* The region selector and the enter/cancel buttons take the pad's own button bits. */
+static_assert(VJO_CMD_USE_BOX == VJO_CMD_SET_REGION + 1, "input_region: the suggested box's command"); /* #358 */
 static_assert(VJO_RSEL_UP == SCE_CTRL_UP && VJO_RSEL_RIGHT == SCE_CTRL_RIGHT && VJO_RSEL_DOWN == SCE_CTRL_DOWN &&
               VJO_RSEL_LEFT == SCE_CTRL_LEFT && VJO_BUTTON_CIRCLE == SCE_CTRL_CIRCLE &&
               VJO_BUTTON_CROSS == SCE_CTRL_CROSS, "region selector buttons are SCE_CTRL_* bits");
@@ -194,6 +195,12 @@ static int s_refused[2];               /* the box size enter was refused for: to
 static int64_t s_hint_us;
 static int64_t s_square_down_us;
 static int s_square_clear_armed;
+/* #358, the text box suggested on first use (worker.c on_job_done): the view's box and its activation, copied with
+ * the frame's other view fields; the activation whose box was offered; 1 while region mode shows it, its corner
+ * neither taken back nor dragged anew nor refused for its size (Enter takes it and reads it at once). */
+static uint16_t s_suggest[4];
+static uint32_t s_suggest_gen, s_offered_gen;
+static int s_suggesting;
 
 /* The text-building arena, taken from the PAF heap while the overlay page is
  * open and given back when it closes, so no page of SceShell's partition is
@@ -707,6 +714,10 @@ static void region_hint(int force)
     static const char first_corner[] VJO_DATA_TABLE(region_first_corner) =
         "<font color=\"#ffffff\">Stick / ◀▶▲▼ move · %s first corner · "
         "or drag on screen · %s cancel · hold □ full screen</font>";
+    /* #358: the suggested box's question while it is drawn as suggested or resized (Enter takes it as it is then;
+     * cancel takes its corner back, as for any box: drawing by hand from there) */
+    static const char suggest[] VJO_DATA_TABLE(region_suggest_hint) =
+        "<font color=\"#ffd24a\">Use this box?</font><font color=\"#ffffff\"> %s yes · %s draw your own</font>";
     int x, y, w = 0, h = 0, corner = vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     int64_t now = sceKernelGetProcessTimeWide();
     char hint[192]; /* the longest is 144 B */
@@ -717,8 +728,8 @@ static void region_hint(int force)
     s_hint_box[1] = w;
     s_hint_box[2] = h;
     s_hint_us = now;
-    if (!corner)
-        sceClibSnprintf(hint, sizeof(hint), first_corner,
+    if (s_suggesting || !corner) /* both take enter's glyph, then cancel's */
+        sceClibSnprintf(hint, sizeof(hint), s_suggesting ? suggest : first_corner,
                         s_btn.enter_glyph, s_btn.cancel_glyph);
     else if (w < VJO_RSEL_MIN || h < VJO_RSEL_MIN)
         sceClibSnprintf(hint, sizeof(hint), "<font color=\"%s\">Box %d x %d (min. %d x %d)</font>"
@@ -752,13 +763,17 @@ static void touch_write(int action)
 #endif
 }
 
-static void enter_region_mode(void)
+/* box: #358's suggested box, drawn from the start (core/region_select.h vjo_rsel_preset), or NULL (□: by hand). */
+static void enter_region_mode(const uint16_t *box)
 {
     s_mode = MODE_REGION;
     touch_write(vjo_touch_hold(&s_touch));
     s_square_down_us = sceKernelGetProcessTimeWide();
     s_square_clear_armed = 1;
     vjo_rsel_begin(&s_rsel, s_square_down_us);
+    s_suggesting = vjo_rsel_preset(&s_rsel, box);
+    if (box)
+        vjo_dlog("region box suggested: %u,%u to %u,%u%s", box[0], box[1], box[2], box[3], s_suggesting ? "" : " (refused)");
     if (s_panel)
         s_panel->Hide();
     if (s_region_layer)
@@ -771,7 +786,7 @@ static void enter_region_mode(void)
 
 static void leave_region_mode(void)
 {
-    s_mode = MODE_OVERLAY;
+    s_mode = MODE_OVERLAY; /* (s_suggesting: every entry sets it) */
     vjo_stick_cursor_latch(&s_stick); /* a stick still drawing the box does not move the cursor */
     if (s_region_layer)
         s_region_layer->Hide();
@@ -1142,8 +1157,13 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         vjo_anki_post_add(s_list_seq, s_selected);
     if (pressed & s_btn.cancel)
         vjo_post_command(VJO_CMD_CLOSED, NULL);
-    if (pressed & SCE_CTRL_SQUARE)
-        enter_region_mode();
+    /* #358: a game with no region of its own: the box its whole-screen job suggests, offered once an activation,
+     * after this frame's buttons (a press as it comes is the overlay's, never the question's); □ draws by hand */
+    int offer = s_suggest[2] && s_suggest_gen != s_offered_gen;
+    if (offer)
+        s_offered_gen = s_suggest_gen;
+    if (offer || (pressed & SCE_CTRL_SQUARE))
+        enter_region_mode(offer ? s_suggest : NULL); /* a box the selector refuses: drawing by hand */
 }
 
 static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
@@ -1188,9 +1208,10 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
     vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     if (ev == VJO_RSEL_SAVE) {
         VjoRect r = vjo_rsel_rect(x, y, w, h);
+        int cmd = VJO_CMD_SET_REGION + s_suggesting; /* #358: VJO_CMD_USE_BOX, the suggested box, read at once */
         vjo_dlog("region box %d,%d %dx%d", x, y, w, h);
         leave_region_mode();
-        vjo_post_command(VJO_CMD_SET_REGION, &r);
+        vjo_post_command(cmd, &r);
         return;
     }
     if (ev == VJO_RSEL_CANCEL) {
@@ -1207,6 +1228,8 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
         s_refused[0] = w;
         s_refused[1] = h;
     }
+    if (ev != VJO_RSEL_NONE) /* #358: its corner taken back, a drag, a refused size: the user's box from now on */
+        s_suggesting = 0;
     show_region();
     region_hint(ev != VJO_RSEL_NONE);
 }
@@ -1234,6 +1257,8 @@ static void frame(void *arg)
     anki_version = g_view.anki_version;
     want_strip = g_view.strip_on && g_view.strip_text[0] && !want_open;
     strip_version = g_view.strip_version;
+    sceClibMemcpy(s_suggest, g_view.suggest, sizeof(s_suggest)); /* #358 */
+    s_suggest_gen = g_view.suggest_gen;
     vjo_view_unlock();
 
     /* the strip first: it closes before the overlay opens */

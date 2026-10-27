@@ -111,8 +111,11 @@
  * VJO_ROWS_HOOK also publishes the region's current scene once the region shows another than the trusted line's
  * (49 refused it with VJO_ERR_FORMAT, and the worker read the first pass: a strip beside VJO_GAME_RESERVE_HOOK_ONLY,
  * which a game with 1 MiB free refused, so the job failed although the hook had its text). FORMAT now means only
- * that the region has no screen yet. Sizes and layouts are unchanged. */
-#define VJO_API_VERSION 51
+ * that the region has no screen yet. Sizes and layouts are unchanged.
+ * 52: the text box suggested on first use (#358, core/region_suggest.h, docs/first-box.md): VjoGameOcrResult.suggest
+ * (four 16-bit screen coordinates before text: the result is 8 bytes longer), where a successful job of rows on the
+ * whole frame says the dialogue is. The request is unchanged. 51 is #354's (merged first), so this is 52. */
+#define VJO_API_VERSION 52
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

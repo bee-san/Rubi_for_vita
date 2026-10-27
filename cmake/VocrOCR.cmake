@@ -102,8 +102,10 @@ else()
 endif()
 
 
-# core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h).
-add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c")
+# core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h). core/region_suggest.c (API 52,
+# #358): the text box a job on the whole frame suggests, and each line's kana count it reads.
+add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c"
+  "${VJO_ROOT}/core/region_suggest.c")
 target_link_libraries(vjo_vocr PUBLIC vjo_vocr_rt)
 target_compile_options(vjo_vocr PRIVATE -Wall -Wextra -ffunction-sections -fdata-sections)
 if(VJO_BUILD_VITA)
@@ -112,6 +114,7 @@ if(VJO_BUILD_VITA)
   # and cascade set-up, a few hundred bytes of text normalisation once per job):
   # built for size, the worker's pages. The per-pixel work, the recognizer and
   # the decoder, is the runtime's (vjo_vocr_rt, -O2).
-  set_source_files_properties("${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c" PROPERTIES
+  set_source_files_properties("${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c"
+    "${VJO_ROOT}/core/region_suggest.c" PROPERTIES
     COMPILE_OPTIONS "-Os")
 endif()

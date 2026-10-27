@@ -1950,12 +1950,18 @@ static void apply_config(void)
  * self-test uses it as it is; its full-screen stage asks for the whole frame
  * itself (VJO_GAME_OCR_F_FULL). */
 static VjoRect game_region;
+/* #358: the game has no region line at all (not even "full", nor region.ini's line for every game, which the Rubi
+ * app's Suggest a text box OFF writes as "region = full"): its jobs read the whole screen, and the box they suggest
+ * is offered (on_job_done). */
+static int region_none;
 
 static void push_region(void)
 {
     VjoRect r;
     int found = vjo_region_load(title_id, &r, &scratch);
     vjoSetRegion(found && r.w ? &r : NULL);
+    region_none = !found;
+    g_view.suggest[2] = 0; /* another game's box, or one this region replaces: never offered (a word: no lock) */
     if (found && r.w) game_region = r;
     else sceClibMemset(&game_region, 0, sizeof(game_region));
     vjo_log("region: %s%s", found == VJO_REGION_GAME ? "this game's" : found ? "all games'" : "none",
@@ -2609,6 +2615,16 @@ static void on_job_done(void)
     }
     screen_changed_streak = 0; /* this job read its screen */
     screen_retry_until = 0;
+#ifdef VJO_WITH_VOCR
+    /* #358: the box this job on the whole screen suggests, for a game with no region of its own (the overlay
+     * offers it once an activation); the network thread is done with the result */
+    if (region_none && vocr_result.suggest[2]) {
+        vjo_view_lock();
+        sceClibMemcpy(g_view.suggest, vocr_result.suggest, sizeof(g_view.suggest));
+        g_view.suggest_gen = game_generation;
+        vjo_view_unlock();
+    }
+#endif
     ocr_failed = d->failed_stage == VJO_STAGE_OCR;
     backoff_note(&ocr_backoff, ocr_failed);
     if (!ocr_failed) /* OCR works again: the refreshes need not wait for theirs either */
@@ -2808,16 +2824,17 @@ static void on_command(void)
         history_ask(cmd == VJO_CMD_EARLIER ? 1 : -1);
         break;
     case VJO_CMD_SET_REGION:
+    case VJO_CMD_USE_BOX:
     case VJO_CMD_CLEAR_REGION:
         if (!game_active()) { /* the game exited meanwhile */
             close_overlay();
             break;
         }
-        if (cmd == VJO_CMD_SET_REGION)
+        if (cmd != VJO_CMD_CLEAR_REGION)
             vjo_log("region set for %s: %u,%u,%u,%u", title_id, r.x, r.y, r.w, r.h);
         else
             vjo_log("region for %s: full screen", title_id);
-        if (vjo_region_save(title_id, cmd == VJO_CMD_SET_REGION ? &r : NULL, &scratch) < 0)
+        if (vjo_region_save(title_id, cmd != VJO_CMD_CLEAR_REGION ? &r : NULL, &scratch) < 0)
             vjo_log("region.ini: write failed");
         push_region();
         cache_ok = 0;
@@ -2826,12 +2843,20 @@ static void on_command(void)
          * and the retry pace start over, as a new game's do (invalidate_game_work) */
         screen_changed_streak = 0;
         screen_retry_until = 0;
-        close_overlay();
         /* A job in progress read the old region (a lookup or a refresh, which the
-         * close dropped, or OCR): its result goes, as the text and the cache did;
+         * close below drops, or OCR): its result goes, as the text and the cache did;
          * an OCR job's would publish the old region's text and lookup again (#182). */
         if (job_running)
             job_cancelled = 1;
+        /* #358: the suggested box: the overlay stays and reads it as an open does (a job that runs, cancelled above,
+         * is followed by the new one: restart_old_job, or the cancelled job's end; else one starts now and says
+         * "Recognizing…"). Closed meanwhile, it is saved as a drawn box is. */
+        if (cmd == VJO_CMD_USE_BOX && ov != OV_CLOSED) {
+            if (job_running) ov = OV_OPEN_OLD_JOB;
+            start_job("overlay opened", 1);
+            break;
+        }
+        close_overlay();
         if (subtitles) {
             if (!job_running) {
                 start_job("region changed", want_lookup());
@@ -2884,9 +2909,13 @@ static void check_app(void)
                     : vjo_app_stamp_api(installed) > vjo_app_stamp_api(package) ? VJO_APP_NOTICE_NEWER : VJO_APP_NOTICE;
     g_view.notice_shown = 0;
     vjo_view_unlock();
-    vjo_log("Rubi app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)",
-            s == VJO_APP_OK ? "ok" : s == VJO_APP_MISMATCH ? "MISMATCH" : "unknown", installed, irc, app, package,
-            prc);
+    {
+        /* once an answer: in the data segment, for the normal Shell's code room (#358) */
+        static const char line[] VJO_DATA_TABLE(worker_app_state) =
+            "Rubi app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)";
+        vjo_log(line, s == VJO_APP_OK ? "ok" : s == VJO_APP_MISMATCH ? "MISMATCH" : "unknown", installed, irc, app,
+                package, prc);
+    }
 }
 
 static void activate_game(SceUID pid, const VjoGameId *id)
@@ -2917,9 +2946,13 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     backoff_note(&dict_backoff, 0);
     backoff_note(&refresh_backoff, 0);
     vjoSetGameActive(pid, mode);
-    vjo_log("game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s", title_id,
-            vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
-            cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
+    {
+        /* once a game start: in the data segment, for the normal Shell's code room (#358) */
+        static const char started[] VJO_DATA_TABLE(worker_game_started) =
+            "game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s";
+        vjo_log(started, title_id, vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
+                cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
+    }
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);
     check_app(); /* after the game is active: its file reads never delay that */

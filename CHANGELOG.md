@@ -13,6 +13,19 @@ been reported.
 
 ### Added
 
+- **A text box suggested on first use** (#358; API 52; [first-box.md](docs/first-box.md)). A game with no box of its
+  own is read on its whole screen, picture and buttons included, which first-time users took for recognition that did
+  not work. Now the first time the overlay shows such a game's text, it opens the region mode with a box drawn around
+  the dialogue and asks **Use this box?**: Enter saves it as the game's region and reads it at once; the stick moves
+  its corner, Cancel draws your own. Asked once each time the game starts or resumes, and never once the game has a
+  box. The game worker finds the dialogue among the lines its job on the whole frame recognized
+  (the block of lines with the most kana and kanji) and suggests the screen's width from just above it to the bottom.
+  Measured on a computer on the hooked pages of 20 games the rule was not chosen on: the box holds 96.6 % of the
+  dialogue lines of the same game's later screens and reads 0.89 other lines a screen against the whole screen's 3.45
+  (0.21 with Japanese, against 0.83). The Rubi app's **Suggest a text box** (OCR & lookup, ON) turns it off: it writes
+  `region = full` in `region.ini`, the line for every game without its own. Not run on a console yet.
+  The worker takes 1,104 B more of its pages and the normal Shell 120 B (12 B of its last text page left); no module
+  takes a page more, and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
 - The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
   row (an animated icon, a moving picture or text still typing in the region), its next try says "Recognizing…
   Something in the region keeps moving (an animated icon? text still typing?). If a region around just the text

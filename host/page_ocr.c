@@ -18,7 +18,9 @@
  * JOBS: for each region a header line "ID WIDTH HEIGHT [PSP]\n" (ID without spaces; PSP 1: a PSP game's frame,
  * whose rows the job refines, as --psp), then WIDTH x HEIGHT RGBA bytes.
  * RESULTS: one JSON object per job: rc, the text shown, whether it was read as columns (and whether auto's check
- * switched to them), every line read (its box in the region, dark flag, VJO_VOCR_LINE_* flags, text), the job's
+ * switched to them), every line read (its box in the region, dark flag, VJO_VOCR_LINE_* flags, text), the box the
+ * worker suggests for the region read as a whole frame (API 52, #358: "suggest", x0, y0, x1, y1 on the 960 x 544
+ * screen; all 0 none; tools/firstbox_eval.py), the job's
  * strips, finder, recognition and wall times (host clock: the work divides as on the Vita, the times are this
  * machine's), its workspace and the stats the worker's log carries. Host only; private frames stay with the
  * caller (tools/vertical_eval.py).
@@ -411,7 +413,11 @@ int main(int argc, char **argv)
             json_text(stdout, kept.l[i].text);
             putchar('}');
         }
-        printf("], \"found\": %u, \"truncated\": %u, \"recognized\": %u, \"frames\": %u, \"strips\": %u, "
+        /* API 52 (#358): the box the game worker's job on this whole frame suggests (core/region_suggest.h) */
+        uint16_t sug[4];
+        if (rc || !vjo_vocr_suggest(&st, w, h, sug)) memset(sug, 0, sizeof(sug));
+        printf("], \"suggest\": [%u, %u, %u, %u]", sug[0], sug[1], sug[2], sug[3]);
+        printf(", \"found\": %u, \"truncated\": %u, \"recognized\": %u, \"frames\": %u, \"strips\": %u, "
                "\"rotate_skipped\": %u, \"find_us\": %u, \"recognize_us\": %u, \"wall_us\": %.0f, \"workspace\": %zu, "
                "\"first\": {\"found\": %u, \"strips\": %u, \"find_us\": %u, \"wall_us\": %.0f, \"workspace\": %zu}}\n",
                st.lines, st.truncated, st.recognized, st.frames, st.strips, rotate_skipped, (unsigned)st.find_us,

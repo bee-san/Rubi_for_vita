@@ -468,6 +468,13 @@ typedef struct {
      * failed result carries them too, with text_from and hook_flags 0 (it has no text). */
     uint32_t text_from, hook_flags, hook_score, hook_streams;
     uint32_t hook_mode, hook_installed, hook_refused;
+    /* API 52 (#358), the text box suggested on first use: a successful job of rows on the whole frame (its region
+     * the frame's every pixel) returns where its lines say the dialogue is (core/region_suggest.h): x0, y0, x1, y1
+     * on the 960 x 544 screen the overlay draws on, the pixels the kernel reads for the box as region.ini would
+     * keep it (all 0: none; another job, or no line that looks like dialogue). The Shell offers it in a game with
+     * no region of its own (config.ini region_suggest), the box from the game's process checked as a user's box
+     * is (core/region_select.h vjo_rsel_preset). */
+    uint16_t suggest[4];
     /* UTF-8 OCR text on success; every failed result carries empty text. API 20:
      * the text is normalised (core/textnorm.h) and the recognizer's own text
      * follows its NUL (vjo_text_raw), for the log. */

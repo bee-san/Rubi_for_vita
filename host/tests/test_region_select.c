@@ -535,6 +535,88 @@ static void saved_region_round_trips_region_ini(void)
     }
 }
 
+/* #358: the suggested box drawn from the start (vjo_rsel_preset): its first corner at the top left, the cursor on the
+ * bottom right pixel, so that enter saves the box as it is and the stick or the d-pad move its bottom right corner;
+ * cancel takes the corner back as for any box. A box from the game's process whose far corner is off the screen is
+ * refused, the selection as it was; one too small is drawn and enter refuses it as any box; a first corner past the
+ * screen is clamped where the box is saved. */
+static void a_suggested_box_is_drawn_and_saved_as_it_is(void)
+{
+    Rig r;
+    const uint16_t band[4] = {0, 374, 960, 544}; /* the game worker's band: the width, 374 down to the bottom */
+    VjoRect saved;
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, band));
+    TEST_CHECK(box_is(&r, 0, 374, 960, 170) && cx(&r) == 959 && cy(&r) == 543);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
+    {
+        int x, y, w, h;
+        vjo_rsel_box(&r.s, &x, &y, &w, &h);
+        saved = vjo_rsel_rect(x, y, w, h);
+    }
+    /* the region read back is the band's pixels (kernel/capture.c: the origin floored, the far edge ceiled) */
+    TEST_CHECK_(saved.x == 0 && saved.w == 65535 && (uint32_t)saved.y * 544 / 65536 == 374 &&
+                ((uint32_t)(saved.y + saved.h) * 544 + 65535) / 65536 == 544, "%u,%u,%u,%u", saved.x, saved.y, saved.w,
+                saved.h);
+    /* the stick moves the bottom right corner; enter saves the box as it is then */
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, band));
+    dpad_to(&r, 700, 500);
+    TEST_CHECK(box_is(&r, 0, 374, 701, 127));
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
+    /* cancel takes its corner back: drawing by hand from the cursor; cancel again leaves */
+    rig_begin(&r, 0);
+    TEST_CHECK(vjo_rsel_preset(&r.s, band));
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_BACK);
+    {
+        int x, y, w, h;
+        TEST_CHECK(!vjo_rsel_box(&r.s, &x, &y, &w, &h) && cx(&r) == 959 && cy(&r) == 543);
+    }
+    frame(&r, 0, FRAME_US);
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_CANCEL);
+    /* the smallest box enter saves; one narrower or shorter is drawn and refused by enter (VJO_RSEL_SMALL) */
+    {
+        static const uint16_t ok[4] = {928, 512, 960, 544}, narrow[4] = {929, 0, 960, 544}, low[4] = {0, 513, 960, 544};
+        rig_begin(&r, 0);
+        TEST_CHECK(vjo_rsel_preset(&r.s, ok) && box_is(&r, 928, 512, 32, 32));
+        TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
+        rig_begin(&r, 0);
+        TEST_CHECK(vjo_rsel_preset(&r.s, narrow) && box_is(&r, 929, 0, 31, 544));
+        TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SMALL);
+        rig_begin(&r, 0);
+        TEST_CHECK(vjo_rsel_preset(&r.s, low) && box_is(&r, 0, 513, 960, 31));
+        TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SMALL);
+    }
+    /* a reversed box is the one between its two corners, as a drag the other way; a first corner past the screen is
+     * clamped where the box is saved */
+    {
+        static const uint16_t reversed[4] = {500, 0, 400, 544}, past[4] = {2000, 3000, 960, 544};
+        int x, y, w, h;
+        rig_begin(&r, 0);
+        TEST_CHECK(vjo_rsel_preset(&r.s, reversed) && box_is(&r, 399, 0, 102, 544));
+        rig_begin(&r, 0);
+        TEST_CHECK(vjo_rsel_preset(&r.s, past) && cx(&r) == 959 && cy(&r) == 543);
+        TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
+        vjo_rsel_box(&r.s, &x, &y, &w, &h);
+        {
+            VjoRect q = vjo_rsel_rect(x, y, w, h), whole = vjo_rsel_rect(959, 543, 1, 1);
+            TEST_CHECK_(!memcmp(&q, &whole, sizeof(q)), "%u,%u,%u,%u", q.x, q.y, q.w, q.h); /* clamped: the corner's pixel */
+        }
+    }
+    /* refused, the selection as it was: a far corner past the screen or at 0, NULL */
+    {
+        static const uint16_t refused[][4] = {{0, 0, 961, 544}, {0, 0, 960, 545}, {0, 0, 0, 544}, {0, 0, 960, 0},
+                                              {0, 0, 0, 0}, {0, 0, 65535, 65535}};
+        for (unsigned i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+            rig_begin(&r, 0);
+            TEST_CHECK_(!vjo_rsel_preset(&r.s, refused[i]) && !r.s.anchored && cx(&r) == VJO_RSEL_W / 2 &&
+                        cy(&r) == VJO_RSEL_H / 2, "box %u kept the selection as it was", i);
+        }
+        rig_begin(&r, 0);
+        TEST_CHECK(!vjo_rsel_preset(&r.s, NULL) && !r.s.anchored);
+    }
+}
+
 TEST_LIST = {
     {"starts centred, without a box", starts_centred_without_a_box},
     {"dead zone ignores idle drift", dead_zone_ignores_idle_drift},
@@ -551,5 +633,6 @@ TEST_LIST = {
     {"touch draws, the stick finishes", touch_draws_and_the_stick_finishes},
     {"cancel during a drag waits for the finger", cancel_during_a_drag_waits_for_the_finger},
     {"saved region round-trips region.ini", saved_region_round_trips_region_ini},
+    {"a suggested box is drawn and saved as it is (#358)", a_suggested_box_is_drawn_and_saved_as_it_is},
     {NULL, NULL}
 };

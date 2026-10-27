@@ -5,6 +5,41 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## The box suggested on first use (API 52, #358)
+
+[The box](first-box.md) rides in the result: no block, thread, stack or allocation, and no module takes a page more.
+
+- **The game worker** runs the rule on its job's recognized lines (`core/region_suggest.c`, `-Os` like the job's
+  control code; `vjo_region_suggest`'s frame 240 B and `vjo_vocr_suggest`'s 208 B on the worker's 32 KiB stack,
+  `-fstack-usage`) and counts each line's kana as it places its text. `VjoVocrLineStat` keeps the line's box and
+  kana count (in its pad and 4 B more: 16 lines, 64 B of the job's stats on that stack).
+- **The result** is 8 B longer (`suggest`, four screen coordinates before the text): the kernel's two copies of it
+  are 16 B more of `.bss`.
+- **The Shell** copies the box into its view (8 B and the activation's number) when a job on the whole screen of a
+  game with no region line returns one, and the overlay opens the region mode with it (`vjo_rsel_preset`) once an
+  activation. The setting is the Rubi app's, in `region.ini` (no `config.ini` key: no parse in the Shell, no field
+  in its three `VjoConfig` copies). To keep the normal Shell's text in its pages, two cold log formats (the game's
+  start line and the Rubi app check's) moved into the data segment (`VJO_DATA_TABLE`), as earlier changes did.
+- **Fitting the normal Shell.** With #364's wait hint before it, the first version was 20 B past the normal Shell's
+  last text page and 52 B past its last data page. The Enter path now starts the open's own job (no second
+  "Recognizing…" publish), the region mode is entered from one place (the □ press and the offer: one inlined copy),
+  the question is "Use this box?" (100 B in the data segment, from 175), and `vjo_rsel_preset` checks the box's far
+  corner, the cursor, only: a first corner past the screen is drawn clipped and clamped where the box is saved
+  (`vjo_rsel_rect`), as a touch's is.
+- **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text +
+  data/bss), main `13a567e` against this change:
+
+  | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+  |---|---:|---:|---:|
+  | Game worker | 161,048 + 35,368 → 162,168 + 35,376 B | 152,100 + 35,360 → 153,204 + 35,368 B | 200,704 / 192,512 B, unchanged |
+  | Shell | 102,092 + 73,408 → 102,268 + 73,696 B | 89,980 + 73,416 → 90,100 + 73,716 B | 176,128 / 163,840 B, unchanged |
+  | Kernel | 43,160 + 77,764 → 43,160 + 77,780 B | 38,008 + 76,076 → 38,008 + 76,092 B | 122,880 / 118,784 B, unchanged |
+
+  The normal Shell keeps 12 B of its last text page (132 B before) and 12 B of its last data page (312 B); the debug
+  Shell 132 B and 32 B; the debug kernel 44 B of its last data page; the worker 1,672 B (debug) and 2,444 B (normal)
+  of text. The Shell's frames: `region_hint` 256 B (its 192-byte hint buffer, as before), `enter_region_mode` 16 B
+  (`-fstack-usage`, the overlay's flags without LTO).
+
 ## SC3 text: MAGES' script strings (no API change)
 
 STEINS;GATE 比翼恋理のだーりん, ROBOTICS;NOTES ELITE and CHAOS;CHILD get verified entries whose text is decoded with

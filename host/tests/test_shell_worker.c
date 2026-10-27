@@ -453,7 +453,15 @@ static const char *logged(const char *needle)
 #define DLOGGED(needle) (logged(needle) == NULL)
 #endif
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
-int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
+/* #358: the saves (the last one's rect; NULL: the full screen) */
+static int region_saves;
+static VjoRect region_saved_rect;
+int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a)
+{
+    region_saves++;
+    region_saved_rect = r ? *r : (VjoRect){0, 0, 0, 0};
+    return 0;
+}
 /* The Rubi app's stamps and its eboot.bin (shell/files.c), scripted (core/app_stamp.h). */
 static char app_installed[64], app_record[64];
 static int app_installed_rc, app_record_rc, app_eboot;
@@ -755,6 +763,8 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out);
 /* API 31: the next results' text_from, hook_flags, hook_score, hook_streams, hook_mode, hook_installed and
  * hook_refused (zero: a game where the worker hooked nothing) */
 static uint32_t fake_hook[7];
+/* API 52 (#358): the next successful results' suggested box (zero: none) */
+static uint16_t fake_suggest[4];
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
 {
     int rc = fake_ocr_read(seq, out);
@@ -905,6 +915,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
     fake_game_result.hook_score = fake_hook[2]; fake_game_result.hook_streams = fake_hook[3];
     fake_game_result.hook_mode = fake_hook[4]; fake_game_result.hook_installed = fake_hook[5];
     fake_game_result.hook_refused = fake_hook[6];
+    if (fake_game_result.rc == VJO_OK) memcpy(fake_game_result.suggest, fake_suggest, sizeof(fake_suggest));
     *out = fake_game_result;
     return 0;
 }
@@ -917,7 +928,10 @@ static void reset(void)
     hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
 #ifdef VJO_WITH_VOCR
     memset(fake_hook, 0, sizeof(fake_hook));
+    memset(fake_suggest, 0, sizeof(fake_suggest)); /* #358: no box suggested, a game with a region */
 #endif
+    region_none = 0;
+    region_saves = 0;
     /* the logger stub: no batch open, no append recorded; the harness runs as the control thread */
     open_batch = NULL;
     batch_lines_held = batch_bytes_held = 0;
@@ -3461,7 +3475,9 @@ static void test_character_scene_change_keeps_the_shown_text(void)
         TEST_CHECK(job_running && !job_cursor_only && !g_view.list);
         job_running = 0;
     }
-    for (int cmd = VJO_CMD_SET_REGION; cmd <= VJO_CMD_CLEAR_REGION; cmd++) {
+    static const int region_cmds[] = {VJO_CMD_SET_REGION, VJO_CMD_CLEAR_REGION}; /* (#358's USE_BOX: its own test) */
+    for (unsigned k = 0; k < 2; k++) {
+        int cmd = region_cmds[k];
         cursor_saved_text(); open_overlay(); finish_current_job();
         uint32_t generation = local_text_generation;
         VjoRect r = {2, 4, 100, 50};
@@ -3473,6 +3489,84 @@ static void test_character_scene_change_keeps_the_shown_text(void)
         job_running = 0;
     }
 }
+/* #358, the text box suggested on first use: a job on the whole screen of a game with no region line at all puts the
+ * box its result carries in the view once the job is done (on_job_done), with the game's activation; a game with one
+ * (its own, "full", or region.ini's line for every game) puts none; a region saved, or a game's start, takes the box
+ * out of the view (push_region). The box taken (VJO_CMD_USE_BOX) is saved as a drawn one is and read at once, the
+ * overlay open on "Recognizing…"; taken as the overlay closed, it is saved, and nothing opens. */
+static void test_the_suggested_box_reaches_the_view_and_is_read_at_once(void)
+{
+    static const uint16_t band[4] = {0, 375, 960, 544};
+    VjoRect r = {0, 44994, 65535, 20542};
+    cursor_setup();
+    saved_region.w = 0;
+    push_region();
+    TEST_CHECK(region_none && !g_view.suggest[2]);
+    memcpy(fake_suggest, band, sizeof(band));
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+    stable_pending = 1; auto_prefetch(); /* Auto's job on the settled screen, the overlay closed */
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    TEST_CHECK(!memcmp(g_view.suggest, band, sizeof(band)) && g_view.suggest_gen == game_generation);
+    /* a later job's result without a box leaves the view's as it is */
+    memset(fake_suggest, 0, sizeof(fake_suggest));
+    state.scene = state.capture_scene = state.region_scene = 3;
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    TEST_CHECK(!memcmp(g_view.suggest, band, sizeof(band)));
+    /* a game with a region of its own: the box goes, and its jobs' boxes are not taken */
+    saved_region = (VjoRect){100, 200, 30000, 8000};
+    push_region();
+    TEST_CHECK(!region_none && !g_view.suggest[2]);
+    memcpy(fake_suggest, band, sizeof(band));
+    state.scene = state.capture_scene = state.region_scene = 4;
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    TEST_CHECK(!g_view.suggest[2]);
+    /* the box taken with the overlay open: saved, the overlay stays and reads it */
+    saved_region.w = 0;
+    push_region();
+    state.scene = state.capture_scene = state.region_scene = 5;
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    open_overlay();
+    if (job_running) finish_current_job();
+    TEST_CHECK(ov == OV_OPEN && !memcmp(g_view.suggest, band, sizeof(band)));
+    region_saves = 0;
+    vjo_post_command(VJO_CMD_USE_BOX, &r); on_command();
+    TEST_CHECK(region_saves == 1 && !memcmp(&region_saved_rect, &r, sizeof(r)) && logged("region set for PCSG00415"));
+    TEST_CHECK(!g_view.suggest[2]); /* push_region: the box is this game's region now */
+    TEST_CHECK(ov != OV_CLOSED && __atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE) &&
+               !strcmp(g_view.status, "Recognizing…") && !g_view.list);
+    TEST_ASSERT(job_running && !job_cursor_only && job_lookup);
+    finish_current_job();
+    TEST_CHECK(ov == OV_OPEN && local_text_valid && g_view.list != NULL);
+    /* taken while a job runs (the open's, on a newer screen): that job is cancelled, and its end starts the box's */
+    saved_region.w = 0;
+    push_region();
+    close_overlay();
+    state.scene = state.capture_scene = state.region_scene = 6;
+    state.region_seq = 9; /* a newer capture: the shown text is not this screen's */
+    open_overlay(); /* "Recognizing…": its job runs */
+    TEST_ASSERT(job_running && !job_cursor_only);
+    region_saves = 0;
+    vjo_post_command(VJO_CMD_USE_BOX, &r); on_command();
+    TEST_CHECK(region_saves == 1 && job_cancelled && ov == OV_OPEN_OLD_JOB && g_view.open);
+    finish_current_job(); /* the cancelled job's end: the box's job starts */
+    TEST_CHECK(job_running && !job_cancelled && ov != OV_CLOSED && !strcmp(g_view.status, "Recognizing…"));
+    finish_current_job();
+    TEST_CHECK(ov == OV_OPEN && local_text_valid && g_view.list != NULL);
+    /* taken as the overlay closed (L + R meanwhile): saved as one drawn is, nothing opens */
+    close_overlay();
+    vjo_post_command(VJO_CMD_USE_BOX, &r); on_command();
+    TEST_CHECK(region_saves == 2 && ov == OV_CLOSED && !__atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE));
+    memset(fake_suggest, 0, sizeof(fake_suggest));
+    saved_region.w = 0;
+}
+
 static void test_character_command_priority_and_generation_boundaries(void)
 {
     cursor_saved_text(); open_overlay(); finish_current_job();
@@ -3481,7 +3575,7 @@ static void test_character_command_priority_and_generation_boundaries(void)
     vjo_post_cursor(1, generation); vjo_post_cursor(9, generation);
     vjo_post_cursor(0, generation + 1);
     TEST_CHECK(pending_cmd == VJO_CMD_NONE && !job_running && cursor_opens == n);
-    const int commands[] = {VJO_CMD_CLOSED, VJO_CMD_SET_REGION, VJO_CMD_CLEAR_REGION};
+    const int commands[] = {VJO_CMD_CLOSED, VJO_CMD_SET_REGION, VJO_CMD_USE_BOX, VJO_CMD_CLEAR_REGION};
     for (size_t i = 0; i < sizeof(commands)/sizeof(commands[0]); i++) {
         vjo_post_command(commands[i], NULL);
         vjo_post_cursor(3, generation);
@@ -8740,6 +8834,7 @@ TEST_LIST = {
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
     {"character_scene_change_keeps_the_shown_text_and_region_change_retires_it", test_character_scene_change_keeps_the_shown_text},
+    {"the_suggested_box_reaches_the_view_and_is_read_at_once", test_the_suggested_box_reaches_the_view_and_is_read_at_once},
     {"character_commands_preserve_close_region_priority_and_nonzero_generations", test_character_command_priority_and_generation_boundaries},
     {"dictionary_pages_read_one_entry_each_in_the_single_arena", test_dictionary_pages_read_one_entry_each},
     {"dictionary_count_change_looks_up_again_without_OCR", test_dictionary_count_change_relooks_up_without_ocr},
