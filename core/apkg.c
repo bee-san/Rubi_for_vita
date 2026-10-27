@@ -348,9 +348,9 @@ static int write_note(VjoArena *a, const VjoApkgOps *ops, VjoSqlw *w, const VjoA
 {
     VjoAnkiNote note;
     const uint8_t *jpeg = NULL;
-    size_t jpeg_len = 0, flds_len, len;
+    size_t jpeg_len = 0, flds_len, len, tags_len = sizeof(TAGS) - 1;
     char guid[VJO_APKG_GUID_MAX], name[48], *flds;
-    const char *picture = NULL;
+    const char *picture = NULL, *tags = TAGS;
     uint8_t *rec, d[32];
     int added = 0;
     if (ops->load(ops->ud, a, c, &note, &jpeg, &jpeg_len) < 0 || !jpeg_len != !c->picture)
@@ -364,13 +364,27 @@ static int write_note(VjoArena *a, const VjoApkgOps *ops, VjoSqlw *w, const VjoA
     if (!(flds = vjo_lapis_fields(a, &note, picture, &flds_len)))
         return 1;
     {
+        /* notes.tags: every tag between spaces, " vita-jp-overlay " and the caller's */
+        const char *extra = ops->tags ? ops->tags(ops->ud, a, c, &note) : NULL;
+        if (extra && *extra) {
+            VjoBuf b;
+            vjo_buf_init(&b, a);
+            vjo_buf_puts(&b, TAGS);
+            vjo_buf_puts(&b, extra);
+            vjo_buf_putc(&b, ' ');
+            if (!(tags = vjo_buf_cstr(&b)))
+                return 1;
+            tags_len = b.len;
+        }
+    }
+    {
         VjoSqlwVal v[11] = {
             {VJO_SQLW_NULL, 0, NULL, 0},
             {VJO_SQLW_TEXT, 0, guid, strlen(guid)},
             {VJO_SQLW_INT, vjo_lapis_notetype_id, NULL, 0},
             {VJO_SQLW_INT, c->time > 0 ? c->time : VJO_APKG_NO_TIME, NULL, 0},
             {VJO_SQLW_INT, -1, NULL, 0},
-            {VJO_SQLW_TEXT, 0, TAGS, sizeof(TAGS) - 1},
+            {VJO_SQLW_TEXT, 0, tags, tags_len},
             {VJO_SQLW_TEXT, 0, flds, flds_len},
             {VJO_SQLW_TEXT, 0, note.spelling, strlen(note.spelling)},
             {VJO_SQLW_INT, (int64_t)field_checksum(note.spelling), NULL, 0},
