@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """host/spinner_bench.c on its synthetic box with the release models (rubi-spinner, #353): an animated icon beside the
 text or after its last line, at a constant or a variable speed, a moving picture outside the text or behind it, and a
-line typing out beside a variable-speed icon. With the line watch (core/vocr_ocr.c) the overlay shows the text in
-every one, within the time the job's waits allow, and the same text as on the still screen wherever the motion is
-outside the lines' boxes (an icon after the last character, or a picture moving behind the glyphs, is in a line's crop:
-its pixels are read with the line's, as on main). Before the watch it showed nothing in 11 of the 15
+line typing out beside a variable-speed icon, and audit-rubi-spinner's slow typewriters (a character every 10 or 15
+frames), typing pauses and icons that follow the typed end. With the line watch (core/vocr_ocr.c) the overlay shows
+the text in every one, within the time the job's waits allow, and the same text as on the still screen wherever the
+motion is outside the lines' boxes (an icon after the last character, or a picture moving behind the glyphs, is in a
+line's crop: its pixels are read with the line's, as on main). Before the watch it showed nothing in 11 of the first 15
 (docs/text-stability.md "Animated icons and moving pictures").
 
     test_spinner_bench.py BENCH MODEL_DIR"""
@@ -34,7 +35,8 @@ def main():
             why.append(f"not shown ({r['jobs']} jobs, {r['screen_changed']} with the screen changed)")
         elif r["show_ms"] > MAX_SHOW_MS:
             why.append(f"shown {r['show_ms']} ms after the press")
-        if r["shown"] and not name.startswith("inline-") and name != "bg-behind" and r["text"] != still["text"]:
+        inside = name.startswith("inline-") or "-follow-" in name or name == "bg-behind"  # motion in a line's crop
+        if r["shown"] and not inside and r["text"] != still["text"]:
             why.append("another text than the still screen's")
         if r["memory"]["allocations"] and name != "still":
             why.append(f"{r['memory']['allocations']} allocations (the first job's weights and LM only)")
@@ -42,7 +44,7 @@ def main():
               + (": " + "; ".join(why) if why else ""))
         if why:
             bad.append(name)
-    if len(rows) < 15:
+    if len(rows) < 23:
         bad.append(f"{len(rows)} scenarios")
     if bad:
         sys.exit("FAILED: " + ", ".join(bad))

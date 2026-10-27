@@ -128,13 +128,16 @@ def summary(results, max_ms):
     for name, rs in by.items():
         shown = [r for r in rs if r["shown"] and r["text"]]
         times = sorted(r["show_ms"] for r in shown)
-        sim_still, sim_hook, missed_chars, same = [], [], 0, 0
+        sim_still, sim_hook, missed_chars, same, shorter = [], [], 0, 0, 0
         for r in rs:
             base = still.get(r["id"])
             if r["shown"] and base and base["shown"]:
-                sim_still.append(similarity(r["text"], base["text"]) if fold(base["text"]) else 1000)
-                same += fold(r["text"]) == fold(base["text"])
-                missed_chars += max(0, len(fold(base["text"])) - len(fold(r["text"])))
+                a, b = fold(base["text"]), fold(r["text"])
+                sim_still.append(similarity(r["text"], base["text"]) if a else 1000)
+                same += a == b
+                missed_chars += max(0, len(a) - len(b))
+                # a line read before it was whole: the still text's beginning, shorter (audit-rubi-spinner F1's rule)
+                shorter += bool(b) and len(b) < len(a) and a.startswith(b[:max(1, len(b) - 2)])
             if r["shown"] and r["hook"]:
                 sim_hook.append(similarity(r["text"], r["hook"]))
         table[name] = {
@@ -151,6 +154,7 @@ def summary(results, max_ms):
             "shown_by_background_result": sum(1 for r in shown
                                               if r["how"] in ("the background result", "the shown text")),
             "same_text_as_still": same,
+            "shorter_than_still": shorter,
             "similarity_to_still_mean": round(statistics.mean(sim_still), 1) if sim_still else None,
             "chars_missed_vs_still": missed_chars,
             "similarity_to_hook_mean": round(statistics.mean(sim_hook), 1) if sim_hook else None,
