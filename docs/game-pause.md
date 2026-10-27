@@ -35,6 +35,13 @@ job stops where it would recognize (rc -115), so a -115 is a read that worked. E
 | the same, paused | -115 | 1 | 135 | 16 |
 | blinking next mark, strip by strip | -115 | 27 | 1,614 | 483 |
 | the same, paused | -115 | 1 | 135 | 16 |
+| spinner, one shade a frame, asked while not settled, strip by strip | **-120** | 129 | 8,142 | 2,150 (then nothing) |
+| the same, paused | -115 | 121 | 7,815 | 2,016 |
+
+The last two rows are a job asked while the screen was still changing (`F_SETTLE_FIRST`). It waits on the live
+screen before its first pass, as before. A spinner that never comes back to a shade it showed never lets that wait
+end, so it spends the wait's whole budget, `ocr_settle_max_ms` (2 s; a press, `ocr_settle_press_ms`, 1 s), and then
+copies its frame. Paused, the text is shown that much later. Strip by strip it is never shown.
 
 `host/tests/test_alloc_sim.c` gives the same result with the real game worker, the real kernel transport, the
 display hook's copy and the release models (the gate's models lane), on a 917 × 126 box with a spinner. Strip by
@@ -158,6 +165,11 @@ No kernel or system thread is ever paused. No game thread is suspended, and noth
   recognizer). A typewriter that pauses longer than the kernel's settled window (300 ms) is then read as typed so far,
   where strip by strip it needed about 0.5 s (est., [text stability](text-stability.md#the-replay)). A job on a screen
   still changing waits as before.
+- **A spinner the kernel cannot mask.** The kernel's tracker masks a cell that cycles through its recent states
+  ([text stability](text-stability.md#when-a-read-starts-and-what-counts-as-stable)). A spinner that never returns
+  to a state keeps the screen unsettled. Each job then waits out its budget on the live screen (above) before it
+  copies its frame: an estimated 2 s with **Read text: Automatically**, 1 s for a press. Skipping that wait for a
+  paused job would read a line still typing out, so this PR keeps it.
 - **The screen is not frozen while it is recognized.** Only the copy is still. The game goes on during recognition,
   as it does with the setting OFF.
 - **A game that draws into the buffer it shows.** A single-buffered game could change its frame while its own
@@ -214,7 +226,8 @@ A console run measures it: the debug build's `gstep pause` step (its us) and ker
 ## What a console run must check
 
 - With the setting ON, in a game with an animated icon in the text box: a line is shown, and the job's
-  `gstep pause` step says kind 1.
+  `gstep pause` step says kind 1. How long after the line it is shown (about 2 s, or 1 s for a press, when the
+  icon keeps the screen unsettled: the job's `gstep job settle` line has `rc=0x00000002`, the wait's limit).
 - The game's wait per reading, from the step's us and kernel.txt's line. Does the game stutter?
 - With it ON in CLANNAD: text as before, and lines not read before they are whole.
 - With it OFF: nothing changes (no `pause` step).
