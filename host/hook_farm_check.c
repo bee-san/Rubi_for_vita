@@ -88,7 +88,10 @@ int main(void)
             if (n + unit > RAW_BYTES && n < m) cut = 1;
         }
         nl = vjo_luna_sites(f[0], &sites);
-        same = vjo_luna_site_at(sites, nl, ver->off, (uint16_t)appv);
+        /* no segment-0 dump here: segment 0 at the farm's 0x81000000 as large as an address can say, so Luna's
+         * VJO_LUNA_SEG0 reading decides, as it did before vjo_luna_offset (no farm entry is at an address that only
+         * the other reading places) */
+        same = vjo_luna_site_at(sites, nl, ver->off, (uint16_t)appv, 0x81000000u, 0xFFFFFFFFu);
         if (ver->filter)
             len = vjo_luna_text_filter(same, ver->filter, ver->encoding, mem, n, ver->encoding, out, sizeof out);
         else if (same)
