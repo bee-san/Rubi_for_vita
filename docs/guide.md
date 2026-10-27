@@ -212,9 +212,11 @@ configuration). Over the same build, Check and repair leaves your `config.ini` a
 another build's and its Install page offers **Update**. **Uninstall** is on the same page: it removes
 the overlay's lines (with a dated backup first) and keeps the files and your settings and cards.
 
-The release also has `Rubi-<version>-debug.vpk`, the test builds' own build with every log
-line, the self-test and the timings. Install it only when asked for a full log; either installs over
-the other and the settings carry over ([release-variants](release-variants.md)).
+Releases up to 0.9.6 also have `Rubi-<version>-debug.vpk`, the test builds' own build with every log
+line, the self-test and the timings; 0.9.7 and later releases are the normal build only, and every test build (a
+pre-release) has the debug one. Install it only when asked for a full log, or for a
+[hook request](hook-requests.md); either installs over the other and the settings carry over
+([release-variants](release-variants.md)).
 
 Open **Rubi** from LiveArea to enable or disable individual games. Older builds call it **Overlay**
 (the 0.8.0 test builds) or **JP Overlay Settings** (0.7.12 and older); the title ID (`VJOSET001`) is
@@ -423,7 +425,7 @@ reported console run. The behaviour below is checked on the host.
   PCSG00415: text source auto, 1 table sites and 8 string copies hooked, 0 sites refused`; the normal
   build only where something was hooked or refused); the debug build also rewrites
   `ux0:data/VitaJPOverlay/hooks.log` at each game start (each site's verdict and why, each string copy
-  hooked or not, no text: [native-hooks.md](native-hooks.md#logs)), and adds to `log.txt` each job's source, flags,
+  hooked or not, the game's version, no text: [native-hooks.md](native-hooks.md#logs)), and adds to `log.txt` each job's source, flags,
   agreement score, the streams with text and the pick (`game vocr source: hook 9, flags 0x03, score
   1000, streams 0x00901, pick 0`) and logs the shown text, a hook's too. The normal build logs no
   hook text, as it logs no OCR text. `history.csv` gets the text shown, with `hook` instead of `vocr`
@@ -432,6 +434,10 @@ reported console run. The behaviour below is checked on the host.
 - **If a game misbehaves with hooks**, hold L while starting it (no Rubi in it at all), turn it OFF
   on the Games page, or set Text source to OCR only (`text_source = ocr`): each applies at the
   game's next start. A safe boot ([boot safety](boot-safety.md)) installs no hook anywhere.
+- **A game without a hook** (or whose hook the worker refuses): ask for one with a
+  [hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml). Play the game once with
+  the debug build and Text source on Automatic, then send its `hooks.log`; `tools/install_ftp.sh --collect` fetches it,
+  and from a debug zip made after v0.9.8-test.2 writes `hook-request.md` beside it ([hook requests](hook-requests.md)).
 - **Table sites off, for a test**: `hook_sites = off` in `config.ini` (no setting in the app; `on` by
   default) installs no table site in any game, only the string copies, from a game's next start, so a
   console run can tell the two apart; `kernel.txt`'s `text source N` is then 256 more than the mode
@@ -451,6 +457,14 @@ lands, and after it lifts the stick or the d-pad can still move the opposite
 corner before Enter. Hold Square for one second for the full screen. The cursor
 and its acceleration are covered by host tests; how they feel on the console is
 not tested yet.
+
+A game's animated "wait" or "next" icon, or a picture moving in the box, can stay
+inside the region: Rubi then judges the text by its lines' own pixels and reads
+it once they hold still, or reads it anyway at the wait's limit (`ocr_settle_press_ms`
+for a press, `ocr_settle_max_ms` in the background;
+[text stability](text-stability.md#animated-icons-and-moving-pictures-353)). If
+the text still does not show after a few seconds, a region drawn around the text
+alone, leaving the icon out, is read at once.
 
 ## Per-game settings
 
@@ -486,7 +500,7 @@ reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting,
 dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
 switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
 and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
-**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)), and (API 51)
+**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)), and (API 52)
 **Pause the game to read** (`ocr_pause`, OFF by default, the last card: [pause](game-pause.md)).
 Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
@@ -712,7 +726,10 @@ every row of the region has held still for `ocr_settle_ms` (150 ms by default,
 `0` turns it off), waiting at most `ocr_settle_max_ms` (2000) per recognition,
 or `ocr_settle_press_ms` (1000; `0`: the same limit) when the open overlay waits
 for it ([first-ocr.md](first-ocr.md)), and a blinking "next" icon does not hold it up; on the console
-it has read no dialogue line early ([text stability](text-stability.md)). `ocr_skip_blank_lines = on`
+it has read no dialogue line early ([text stability](text-stability.md)). When the text changed under
+every read of two jobs in a row (an animated icon in the region, say), the open overlay says so as it
+tries again, and what helps: a region drawn around just the text (`ocr_wait_hint = off` keeps
+"Recognizing…"; [why the overlay waits](text-stability.md#why-the-overlay-waits-358)). `ocr_skip_blank_lines = on`
 skips found lines with no text-like ink; it is off by default, because once it
 keeps soft text (a PSP game shown 2x, an upscaled render) it finds next to
 nothing to skip in the test screenshots. Both are logged per job; see
@@ -756,8 +773,9 @@ the host it read a vertical PS Vita VN's dialogue at 4.5-23 % CER, depending on 
 no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console).
 `ocr_pause = on` (the Rubi app's **Pause the game to read**; off by default) copies each reading's text box from one
 frame at once, inside that frame's display call, which the game waits in for as long: an estimated 2.4-6.4 ms for a
-dialogue box at 333 MHz, at most 100 ms. The OCR reads that still copy, so a spinning or blinking icon in the box
-cannot stop the read ([pause](game-pause.md); not run on a console). PSP games in Adrenaline read as before.
+dialogue box at 333 MHz, and 10.8-29.0 ms for the whole screen, the region before a text box is drawn (draw one with
+□ first), at most 100 ms. The OCR reads that still copy, so a spinning icon in the box cannot stop the read
+([pause](game-pause.md); not run on a console). PSP games in Adrenaline read as before.
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
 #100's text-presence gate in front of the finder: a region it says holds no text (the game hid its text box, a CG
 screen) returns no line, so nothing is recognized and no junk is read off the picture. It stays off because it also

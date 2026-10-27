@@ -31,17 +31,49 @@ been reported.
   characters, so with the setting on every read recognizes (also in hooked games) and skips the line cache.
   Off, nothing of it runs; the game worker's code is one page (4,096 B) larger in each game that is ON, SceShell's
   pages are unchanged. Nothing of it has run on a console. It builds on closed draft #271 (API 37).
-- **Pause the game to read** (API 51, #348; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR & lookup
-  page, OFF by default): each reading copies the text box from one frame at once, inside that frame's display call,
-  which the game waits in for as long, and the OCR reads that still copy. A spinning or blinking icon in the box can
-  no longer make the job give up with the screen changed under it and show nothing. On the host, through the real job
-  and line finder, an 852 × 135 box with a spinner of 20 shades read strip by strip failed after 2.15 s and 129 frames;
-  paused it reached the recognizer at the first frame (the release models read its 3 lines, `test_alloc_sim.c`). The
-  game's wait per reading is an estimated 2.4-6.4 ms for a dialogue box and 10.8-29.0 ms for a whole screen at
-  333 MHz, at most 100 ms. A kernel watchdog turns pausing off until the next boot if a copy ever runs past 200 ms.
-  No game thread is suspended, and nothing waits for another thread. PSP games in Adrenaline read as before. The job
-  holds one block of the region's size more (at most 524,288 B, only when it fits; the memory ledger counts it in
-  place of a tall line's block). Not run on a console ([details](docs/game-pause.md)).
+- The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
+  row (an animated icon or a moving picture in the region), its next try says "Recognizing… Something in the region
+  keeps moving (an animated icon?), so the text never holds still. Press □ to draw a region around just the text."
+  instead of "Recognizing…" alone, until a read shows the text. Before, it said "Recognizing…" for as long as the
+  user waited. With an animated icon, on the host's spinner bench (184 hooked regions, est.), it shows 2.75 s after
+  L + R (median; 4.8 s at most); in the owner's CLANNAD logs no wait for text met a torn read, so it would have shown
+  in none of them. A region saved with □ starts the count over. `config.ini` `ocr_wait_hint = off` keeps
+  "Recognizing…" (on by default;
+  [why 2 jobs](docs/text-stability.md#why-the-overlay-waits-358)). Not run on a console yet.
+- A native text hook for 極限脱出ＡＤＶ 善人シボウデス (Zero Escape: Virtue's Last Reward, `PCSG00020`, APP_VER
+  01.00), where users reported OCR never worked and took forever. Its LunaTranslator site could never install: the
+  eboot is linked at a fixed 0x81000000, so Luna's address is that address, and Rubi's table read it as an offset
+  past the end of the game's code. That site is also inside Lua's pattern matcher, which sees every string, not only
+  dialogue. The new site is the entry of the engine's `GUI.Message::setText`, one call per click segment (UTF-8,
+  `<K>`, `<P>`, `<F:B>` and other tags removed); a box that grows by clicks shows its newest segment. Found and proven in
+  the Vita3K emulator with the psandvita farm (53 pages an AI reviewer approved against the frames the game drew),
+  not run on a console ([details](docs/native-hooks.md#table-sites)).
+- The same hook for the 善人シボウデス half of ZERO ESCAPE ９時間９人９の扉 善人シボウデス ダブルパック (`PCSG00883`, APP_VER
+  01.00), which a user reported broken: the Double Pack starts its 善人シボウデス as a second executable,
+  `skp2_psp2.self`, the same engine in another build, so it needs its own entry (the engine's message function at
+  another address; the same text clean-up). Its 999 half, the pack's `eboot.bin`, is another engine and still uses
+  OCR. Proven in Vita3K with the farm (32 approved pages), not run on a console.
+- A native text hook for 蒼の彼方のフォーリズム (`PCSG00700`, APP_VER 01.00), with Rubi's own clean-up rules for
+  its text (half-width kana, `<a>(｢)`, `<ruby>(n,reading)`). Found in Vita3K with the psandvita farm's capture
+  build: the site gets each page once, 60 pages in a row. **On the console** (a PCH-2000 on 3.65, Rubi 0.9.7 with
+  this entry, before trusted hooks, API 43): the site was hooked (`1 table sites`, 0 refused); of its 19 lines in
+  two sessions, the 15 compared with OCR agreed (score 1000), the ruby line scored 771 before its rule (1000
+  after), 3 scored 0 ([details](docs/native-hooks.md#table-sites)). On `main` the entry is trusted from its first
+  line (API 43), so its lines need no OCR: that mode has not run on a console for this site, and the 3 lines that
+  scored 0 were not examined.
+- Hook requests ([#358](https://github.com/bee-san/Rubi_for_vita/issues/358)): a way to ask for a native text hook
+  for a game that has none, or whose hook the worker refuses. The
+  [hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml) issue form asks for the
+  debug build's `ux0:data/VitaJPOverlay/hooks.log` (it holds no game text) and says how to get it: install the debug
+  build, Text source on Automatic, play the game, copy the file over USB or FTP, or run
+  `tools/install_ftp.sh --collect`. [docs/hook-requests.md](docs/hook-requests.md) has the steps, what each line of the
+  log says and how the owner's hook farm turns a request into a verified entry. `tools/hook_request.py` (in the
+  release zip) reads a `hooks.log`, a `--collect` folder or zip, or a request's text, and says what the console saw:
+  the game's main module, module NID and `APP_VER`, each site's verdict with the bytes at a refused one, the string
+  copies, and what is needed next; in a checkout it compares the log with the tree's tables, and with `--bucket` with
+  the farm's hook for the title (did the farm prove this console's build?).
+- `tools/install_ftp.sh --collect` fetches `hooks.log` too (it did not), writes `hook-request.md` into the collect's
+  folder and zip and prints its one line.
 
 ### Changed (draft #318, test build only)
 
@@ -49,6 +81,24 @@ been reported.
   text; the normal build's keeps its pages, and so do both Shells ([memory ledger](docs/memory-ledger.md#psp-text-and-the-psp-probe-format-4)).
   A Vita game's remembered hook (`hooks.cache`) is learned again once after this build: the hook engine's files
   changed, so their revision did.
+- Draft #318's bound on the open overlay's changed-screen retries (#278's fix: stop after three with "The screen
+  keeps changing…") is not in this build: `main`'s #364 (the open overlay says why it waits, #358) supersedes it,
+  and the tries go on with its hint.
+
+- **Pause the game to read** (API 52, #348; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR & lookup
+  page, OFF by default): each reading copies the text box from one frame at once, inside that frame's display call,
+  which the game waits in for as long, and the OCR reads that still copy. A spinning icon or an animated background
+  in the box can no longer make the job give up with the screen changed under it and show nothing. On the host, through the real job
+  and line finder, an 852 × 135 box with a spinner of 20 shades read strip by strip failed after 2.15 s and 129 frames;
+  paused it reached the recognizer at the first frame (the release models read its 3 lines, `test_alloc_sim.c`). The
+  game's wait per reading is an estimated 2.4-6.4 ms for a dialogue box and 10.8-29.0 ms for a whole screen at
+  333 MHz (draw a text box first), at most 100 ms: a copy that reaches it turns pausing off for that game until it
+  next starts, and a kernel watchdog turns it off until the next boot if a copy ever runs past 200 ms.
+  No game thread is suspended, and nothing waits for another thread. PSP games in Adrenaline read as before. The job
+  holds one block of the region's size more (at most 524,288 B, only when it fits; the memory ledger counts it in
+  place of a tall line's block). While it is OFF in a Vita game, the open overlay's hint for text that keeps changing
+  (#358, above) adds "Or turn on Pause the game to read in the Rubi app." Not run on a console
+  ([details](docs/game-pause.md)).
 
 ### Fixed
 
@@ -58,12 +108,99 @@ been reported.
   the UID error for a missing block. It now accepts exactly that error behind a readable, non-wrapping mapping
   (#278's fix), runs with Automatic or Every game (OCR only turns it off), logs Rubi's PSP text profile check and
   each job's text source, and writes format 4 to `psp_probe.log`. Not run on a console in this form.
-- **The open overlay no longer waits for ever on a screen that keeps changing:** after three captures in a row
-  refused because the screen changed (34 of 47 PSP jobs in #248), it says so ("The screen keeps changing. Close and
-  reopen the overlay when the text stops."); reading in the background keeps its own backoff (#278's fix).
+- An animated icon or a moving picture in the OCR region no longer keeps the text from being shown (#353, from a
+  user's report: a spinning "wait" icon in the region, the overlay empty while the log had read the dialogue). An
+  icon with more frames than the stable-text wait keeps of a row (16) never settled, so every job tore and was
+  dropped, and the overlay said "Recognizing…" for as long as one waited. Once the region keeps changing, a job now
+  watches its found lines' own pixels: a change elsewhere sends the line finder again, other lines (text typing on, a
+  new line) are watched in their place, and at the wait's limit the lines are read anyway, then found again once they
+  would have settled (twice `ocr_settle_ms` after they were found): a line that typed on meanwhile ends the job, and
+  the next one reads it whole. On 184 hooked pages of 46 games with such an icon or picture, through the kernel's
+  change detection, the job and the Shell's decisions on a computer (`host/spinner_bench.c`, `tools/spinner_eval.py`;
+  times estimated, no console run): shown in 0-5 of the 184 before, 179-181 now (the still pages' text in 177-181),
+  median 0.3-1.8 s and 90 % within 1.6-2.5 s after L + R; no region shown before is lost, and an icon that rests
+  between its turns is shown in 13 and 7 more regions. Of the 1,777 runs that showed the whole line before, 4 (text
+  typed slowly, or with pauses) now show part of it first, and the whole line 0.4-2.3 s later
+  ([details](docs/text-stability.md#animated-icons-and-moving-pictures-353)). No new memory: the line checksums take
+  the row states' place in the job's capture block (its size unchanged); the debug worker keeps 56 B of its last code
+  page ([ledger](docs/memory-ledger.md#the-line-watch-353)).
+- The log says when text was recognized but never shown: the third job in a row whose screen changed under every
+  read logs (both builds) `ocr: the screen changed under every read of 3 jobs in a row, the last with N line(s)
+  recognized and not shown` (the overlay says why it waits: #358, above). The debug build's `gstep job settle` says
+  what the line watch did (its kind), and `tools/analyse_selftest.py --collect` sums it.
+
+- **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
+  arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
+  read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
+  failed the job although the hook had the line: 蒼の彼方のフォーリズム (`PCSG00700`) sampled 1 to 4 MiB free on a
+  console (#324), so a press some time into a line could fail there. The kernel now marks the answer with the
+  screen's current scene without reading pixels, so a trusted hook (a Luna site, a Rubi verified site, a string copy
+  that earned trust) needs no game memory at all. It still reads the strip only while the region has no screen yet.
+  Not run on a console yet.
+- Building and testing (no change to the app or the plugins): the hook streams' race tests
+  (`host/tests/test_hook_stream.c`) pass or fail by what the code does, no longer by how the threads were scheduled
+  (#344). `replacement_race` failed now and then in CI (`call_replaced > 0`) with nothing wrong: offers never wait,
+  so while one thread held the oldest slot's lock off the CPU, every other caller's hits were dropped and no slot
+  changed hands (12 to 29 runs in 1,000 on one to four CPUs, measured on the fleet box). And the job thread often
+  read before the game threads began: in `concurrent` it read nothing in 378 of 500 runs on one CPU, so a torn read
+  could not have been seen. The threads now start together at a barrier and race until the checks have something
+  to check (every caller has had a slot, the job has read text), and a failed check prints the race's counters. A
+  race put in on purpose (the key check under the slot's lock removed) is caught more often: in 49 runs of 1,000
+  on four CPUs (7 before), 772 unpinned (366 before).
+- **CLANNAD's hooked lines show 岡崎 and 朋也 instead of `*A` and `*A*B`.** CLANNAD's hook reads each line before the
+  game puts the protagonist's names in: its script writes them as the name variables `＊Ａ` (the family name) and
+  `＊Ｂ` (the given name), which Rubi showed as `*A`, so `「ありゃ、岡崎、どこいくんだよっ」` came out as `「ありゃ、*A、どこいくんだよっ」`.
+  The hook's own text filter now writes the names; CLANNAD has no name entry, so they are always 岡崎朋也. Seen in 16
+  of 1,347 hooked lines of a console's history (Rubi 0.9.8).
+- Native hooks (#349): TIME TRAVELERS' (`PCSG00062`) Luna hook was never installed. Its two sites, `0x8119ADDA` and
+  `0x811A6052`, are Vita3K's guest addresses (Luna added them before its `addr_offset`), and Rubi read every Luna
+  address as `address − 0x80004000`: past the end of the game's 0x31258C-byte segment 0 at 0x81000000 (public
+  Vita3K logs), so both were refused as `range` before a byte was read, on every console. Such an address is the
+  game's own only in a fixed-address executable, so the generator now marks the 7 sites whose executable a public
+  Vita3K log shows as fixed-address (TIME TRAVELERS ×2, PCSG00139, PCSG00172, PCSG00216, PCSG00272 ×2:
+  [the list and its evidence](docs/hook-titles.md#sites-at-vita3ks-guest-address)), and for those, when that reading
+  is outside segment 0 and segment 0 is at 0x81000000, the worker reads `address − 0x81000000` (`+0x19ADDA`,
+  `+0x1A6052`); the placement check then decides on the game's bytes as for any Luna site. Every other site is read
+  as before: the 8 that relocatable executables have at or above 0x81000000 stay refused (their addresses are
+  another module's). Whether the game's bytes there pass the check is not known (no dump of the game here): the
+  debug build's `hooks.log` shows each site's offset and verdict, with its bytes when refused. Not run on a console.
+  STEINS;GATE: no Vita release has a hook entry, in Luna's table or Rubi's
+  ([hook-titles.md](docs/hook-titles.md#steinsgate-no-hook-entry-in-any-release)).
+- **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
+  arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
+  read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
+  failed the job although the hook had the line: 蒼の彼方のフォーリズム (`PCSG00700`) sampled 1 to 4 MiB free on a
+  console (#324), so a press some time into a line could fail there. The kernel now marks the answer with the
+  screen's current scene without reading pixels, so a trusted hook (a Luna site, a Rubi verified site, a string copy
+  that earned trust) needs no game memory at all. It still reads the strip only while the region has no screen yet.
+  Not run on a console yet.
 
 ### Changed
 
+- The debug build's `hooks.log` names the game's version (`APP_VER`) for every game whose table sites are tried; it
+  read `param.sfo` only for a game with a Luna site or an entry that names its version, and logged `APP_VER 0000`
+  for the others, the games a hook request is mostly for. The hooks installed are the same in both builds: `APP_VER`
+  decides nothing for those games, and the normal build reads it as before (host-tested; not run on a console).
+- **A cold dictionary lookup makes about 2 file reads fewer** (#360, change 3), with the same entries shown. With
+  both bundled dictionaries, a cursor lookup that the lookahead has not located made 8.12 reads and now makes 5.98
+  (host, all 64,579 taps of rubi-dict-check's corpus, each tap's result byte-identical; est. 37.2 → 28.6 ms median on
+  the console at the test.4 fit); the lookahead's own work for a word drops from 7.13 reads to 4.98. The open overlay's
+  dictionary session now keeps every dictionary's key-filter directory (226 + 10 blocks in the same 1,024 B that
+  held one), so the two files no longer re-read their page 0 at each lookup (1.88 reads); a one-character word (は,
+  が, を) is checked against the filter block a longer span has just loaded, where the names dictionary answers
+  "absent" without reading an index page (0.27 reads); and the Shell reads a file with one `sceIoPread` instead of
+  a seek and a read (its saving unmeasured). Not run on a console.
+  decides nothing for those games, and the normal build reads it as before (host-tested; not run on a console). As
+  every change to the hook code does, it renews the hook definitions' revision, so a string-copy source Rubi had
+  learned for a game is confirmed with OCR once more after the update.
+- Hook requests, #367's audit: the form, [docs/hook-requests.md](docs/hook-requests.md) and the README say what the
+  farm does and does not (Japanese releases of visual novels, a bounded number of attempts, no PSP path yet: not every
+  request gets an entry), which debug zips write `hook-request.md` (test builds after v0.9.8-test.2), and that a
+  `--collect` zip (logs with text, Anki cards, settings, taiHEN configurations, crash dumps) is sent privately, never
+  attached to a public request. `tools/hook_request.py` says so too (a release that is not Japanese, a PSP game, an
+  entry refused as `tai` or `full`: a bug report), reads a reply that quotes the log, warns when `log.txt` shows the
+  log is from an earlier session, and exits 2 with a message, never a traceback, on a damaged zip, an unwritable
+  `--out` or a malformed farm `rubi-hook.json`.
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
   tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a

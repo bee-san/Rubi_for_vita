@@ -33,7 +33,7 @@ int vjo_preferences_save_text_source(int source, VjoArena *a);
  * trusted hook's line with no OCR at all, docs/native-hooks.md "Trusted hooks"), each 0 or 1 (else -1, nothing
  * saved); both apply when the overlay next opens. */
 int vjo_preferences_save_skips(int text_gate, int hook_trust, VjoArena *a);
-/* API 51: config.ini ocr_pause (1 on: the game waits a moment for each reading while its frame is copied,
+/* API 52: config.ini ocr_pause (1 on: the game waits a moment for each reading while its frame is copied,
  * docs/game-pause.md; 0 off, the default), published as the other saves are; 0, or -1 (any other value: nothing
  * saved). It applies when the overlay next opens. */
 int vjo_preferences_save_pause(int on, VjoArena *a);

@@ -139,7 +139,12 @@ typedef struct {
      * the frame-strip rule, for regions drawn with a margin; 3 (all) also the touching-rows split; 0 (off) the
      * frozen finder. Last, as above. */
     int ocr_line_fix;         /* 0 off, 1 on, 2 junk, 3 all */
-    /* The pause for the frame (API 51, #348; docs/game-pause.md): 1 (ocr_pause = on) has each of the user's jobs copy
+    /* Why the open overlay waits (#358; docs/text-stability.md "Why the overlay waits"): 1 (the default) has its try
+     * after two jobs in a row that ended VJO_E_SCREEN_CHANGED (the text changed under every read) say why it still is
+     * recognizing and what helps, instead of "Recognizing…"; 0 (ocr_wait_hint = off): "Recognizing…" all along, as
+     * before. Read by the Shell only. Last, as above. */
+    int ocr_wait_hint;        /* 0/1, on by default */
+    /* The pause for the frame (API 52, #348; docs/game-pause.md): 1 (ocr_pause = on) has each of the user's jobs copy
      * its region from one frame, in that frame's display call, which the game waits in for as long (at most
      * VJO_GAME_OCR_PAUSE_MAX_US), and read every row from that copy; 0 (off, the default) reads strip by strip, as
      * before. The Shell sends it as VJO_GAME_OCR_S_PAUSE in each job's speed word. Last, as above. */

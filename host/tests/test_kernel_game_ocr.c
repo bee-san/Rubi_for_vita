@@ -9,6 +9,29 @@ int taiGetModuleInfoForKernel(SceUID, const char *, tai_module_info_t *);
 #include "../../kernel/capture.c"
 #include "test_tier_pins.h"
 
+/* The display hook itself (kernel/display.c; the audit's F3a), its taiHEN calls and the firmware's display call
+ * stubbed: display_continue is the game's call going on (TAI_CONTINUE). */
+typedef struct { SceSize size; void *base; unsigned pitch, pixelformat, width, height; } SceDisplayFrameBuf;
+typedef uintptr_t tai_hook_ref_t;
+static unsigned display_continues;
+static int display_continue(int head, int index, const SceDisplayFrameBuf *p, int sync)
+{
+    (void)head; (void)index; (void)p; (void)sync;
+    display_continues++;
+    return 0;
+}
+#define TAI_CONTINUE(type, ref, ...) ((void)(ref), (type)display_continue(__VA_ARGS__))
+SceUID taiHookFunctionExportForKernel(SceUID pid, tai_hook_ref_t *ref, const char *module, uint32_t lib, uint32_t nid,
+                                      const void *fn)
+{
+    TEST_CHECK(pid == KERNEL_PID && !strcmp(module, "SceDisplay") && lib == 0x9FED47AC && nid == 0x16466675 && fn);
+    *ref = 1;
+    return 0x4321;
+}
+int taiHookReleaseForKernel(SceUID uid, tai_hook_ref_t ref) { TEST_CHECK(uid == 0x4321 && ref == 1); return 0; }
+int ksceDisplayGetPrimaryHead(void) { return 0; }
+#include "../../kernel/display.c"
+
 VjoKernelState g;
 unsigned syscall_depth;
 static SceUID caller;
@@ -35,13 +58,15 @@ static uint32_t fb_fmt;
 static unsigned fb_w = FB_W, fb_h = FB_H;
 static int frames_come, frame_pid, in_hook, user_block_ok, hook_copy_fail, kstrip_alloc_fail;
 static int stall_copy; /* the hook starts the copy and has not finished it (another core) */
-static unsigned slow_copy_us; /* API 51: each read of a frame row in the hook takes this long (the clock moves) */
+static unsigned slow_copy_us; /* API 52: each read of a frame row in the hook takes this long (the clock moves) */
 static unsigned hook_row_reads; /* the hook's reads of the game's frame (rows) */
 static int gone_after_frame; /* the game exits right after its frame, while the rows call is in the kernel */
 static unsigned frees_seen_at_exit;
 static unsigned rows_events, capture_events, hook_frames, kstrip_allocs, kstrip_frees;
 static unsigned quiet_events; /* API 41: vjoOcrHookLine's wakeup of the Shell */
 static unsigned char user_rows[64 * 64]; /* the worker's capture block */
+static unsigned char big_rows[32u * (VJO_MAX_W + 1u)]; /* a destination for any stride (N8 of the audit) */
+static int big_rows_ok;
 
 static unsigned klogs, delays;
 static const char *last_klog = "";
@@ -87,16 +112,34 @@ SceUID ksceKernelFindProcMemBlockByAddr(SceUID pid, const void *addr, SceSize si
 {
     const unsigned char *p = addr;
     TEST_CHECK(size == 0);
+    if (pid == 7 && big_rows_ok && p >= big_rows && p < big_rows + sizeof(big_rows)) return 42;
     if (pid != 7 || !user_block_ok || p < user_rows || p >= user_rows + sizeof(user_rows)) return -1;
     return 41;
 }
 /* The game submits a frame: the display hook runs in its thread, no lock held. */
+static int frames_via_display; /* the game's frames come through kernel/display.c's hook (the audit's F3a) */
+static SceDisplayFrameBuf display_fb(void)
+{
+    SceDisplayFrameBuf fb = {sizeof(fb), game_fb, FB_PITCH, fb_fmt, fb_w, fb_h};
+    return fb;
+}
 static void game_frame(void)
 {
     in_hook = 1; hook_frames++;
-    game_ocr_rows_hook(frame_pid, (uintptr_t)game_fb, FB_PITCH, fb_fmt, fb_w, fb_h);
+    if (frames_via_display) {
+        SceDisplayFrameBuf fb = display_fb();
+        SceUID saved = caller;
+        caller = frame_pid; /* the game's display call, in its own thread */
+        (void)display_hook(0, 0, &fb, 1);
+        caller = saved;
+    } else {
+        game_ocr_rows_hook(frame_pid, (uintptr_t)game_fb, FB_PITCH, fb_fmt, fb_w, fb_h);
+    }
     in_hook = 0;
 }
+/* another of the game's threads submits a frame while the hook copies (once) */
+static int second_display_call;
+static unsigned second_display_reads;
 static void model_tick(void);
 /* A model syscall waiting for the kernel worker: g.lock is not held, so the
  * worker can run (wait_runs_worker) and finish the queued operation. */
@@ -104,7 +147,7 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
 {
     if (bits == MEV_ROWS) { /* a rows call waits for the game's next frame, without the lock */
         TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout && *timeout <= 50000);
-        /* the hook's start, as game_ocr_rows_hook writes it before its claim (API 51's watchdog reads it) */
+        /* the hook's start, as game_ocr_rows_hook writes it before its claim (API 52's watchdog reads it) */
         if (stall_copy && rows.job.frame && rows.state == ROWS_PENDING) rows.frame_start = (uint32_t)model_clock | 1u;
         if (stall_copy && __sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING)) {
             model_clock += *timeout;
@@ -421,6 +464,13 @@ int ksceKernelMemcpyUserToKernel(void *dst, const void *src, SceSize bytes)
     TEST_CHECK(syscall_depth <= 1);
     if (copy_in_fail || !src) return -1;
     if (in_hook) { hook_row_reads++; model_clock += slow_copy_us; } /* the game's frame, a row at a time */
+    if (in_hook && second_display_call) {
+        SceDisplayFrameBuf fb = display_fb();
+        unsigned before = hook_row_reads;
+        second_display_call = 0;
+        (void)display_hook(0, 0, &fb, 1); /* frame_busy: it goes on at once */
+        second_display_reads = hook_row_reads - before;
+    }
     memcpy(dst, src, bytes); return 0;
 }
 int ksceKernelMemcpyKernelToUser(void *dst, const void *src, SceSize bytes)
@@ -473,6 +523,7 @@ static void setup(void)
     frames_come = 0; frame_pid = 7; in_hook = 0; user_block_ok = 1; hook_copy_fail = kstrip_alloc_fail = 0;
     stall_copy = gone_after_frame = 0;
     slow_copy_us = hook_row_reads = 0;
+    frames_via_display = second_display_call = 0; second_display_reads = display_continues = 0;
     kledger_init();
     rows_events = capture_events = hook_frames = kstrip_allocs = kstrip_frees = 0;
     quiet_events = 0;
@@ -1085,9 +1136,9 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19; API 43: 20; API 50: 21-23) */
     r.speed = 0x4000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 46: but bit 25) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
-    r.speed = 0x8000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 27 (24, 26 and 27 in flight elsewhere; 21-23 are API 50's, 25 API 46's, 30 API 51's), 31 */
+    r.speed = 0x8000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 27 (24, 26 and 27 in flight elsewhere; 21-23 are API 50's, 25 API 46's, 30 #355's), 31 */
     r.speed = 0x80000000u; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
-    /* API 51: bit 30, the pause for the frame, an OCR job's, never a shot's */
+    /* API 52: bit 30, the pause for the frame, an OCR job's, never a shot's */
     TEST_CHECK(VJO_GAME_OCR_S_PAUSE == 0x40000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_PAUSE) &&
                !(VJO_GAME_OCR_S_PAUSE & VJO_GAME_OCR_S_SHOT_ALL));
     setup(); r = make_request();
@@ -1276,8 +1327,9 @@ static void take_waits_the_asked_time(void)
 
 /* API 49: a trusted source's line (VJO_HOOK_LINE_TRUSTED) wakes the Shell even while the last line still draws, and
  * its scene is g.hook_scene; an untrusted line after it is not (0 again). VJO_ROWS_HOOK then publishes a trusted
- * answer's capture as that scene, with no rows armed, no frame waited for and no signature: refused (FORMAT) once
- * the region shows another scene, and (ARG) with rows, a destination, other flags or for a full-frame job. */
+ * answer's capture as that scene, with no rows armed, no frame waited for and no signature, and (API 51) once the
+ * region shows another scene, as that one, the same way: refused (FORMAT) only while the region has no screen yet,
+ * and (ARG) with rows, a destination, other flags or for a full-frame job. */
 static void trusted_hook_line_reads_at_once(void)
 {
     VjoGameOcrRows q;
@@ -1308,18 +1360,33 @@ static void trusted_hook_line_reads_at_once(void)
     TEST_CHECK(capture_events == 1 && !hook_frames && !g.capture_sig.w && !locks && !syscall_depth);
     message.size = sizeof(message); message.seq = seq;
     TEST_CHECK(vjoOcrComplete(&message) == 0);
-    /* an untrusted line since: no hook scene; a trusted answer's capture then reads the pass */
+    /* an untrusted line since: no hook scene. While the region has no screen (no frame's signature yet: this test
+     * feeds none) a trusted answer's capture is refused and the worker reads the pass; API 51: once it has one,
+     * the capture is the untrusted line's scene, without pixels (the pass found that scene too) */
     model_clock += 1000;
     TEST_CHECK(vjoOcrHookLine(7, 24) == 1 && !g.hook_scene); /* the last one still draws: nobody woken */
     seq = submit(); take(seq); caller = 7; q.seq = seq;
-    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 1);
+    TEST_CHECK(!g.tracker.ref.w && vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 1);
+    g.tracker.ref.w = request.width; g.tracker.ref.h = request.height; /* a frame's signature set the screen */
+    g.capture_sig.w = 1;
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == 0 && info.rc == 0 && !info.armed);
+    TEST_CHECK(g.capture_scene == g.tracker.id && g.capture_scene == before + 2 && !g.capture_sig.w);
+    TEST_CHECK(capture_events == 2 && !hook_frames && rows.state == ROWS_IDLE && !locks && !syscall_depth);
     message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
-    /* a trusted line, then the region shows another screen (a menu over it): refused */
+    /* a trusted line, then the region shows another screen (a menu over it): API 49 refused it (the worker read the
+     * pass, a strip beside a 1 MiB reserve); API 51 publishes the menu's scene */
     g.tracker.stable = 1; g.tracker.hook_drawn = 1;
     TEST_CHECK(vjoOcrHookLine(8, 24 | VJO_HOOK_LINE_TRUSTED) == 0 && g.hook_scene == g.tracker.id);
     g.tracker.hook_us = 0; g.tracker.id++; /* what scene_update does on a larger change once the line is drawn */
     seq = submit(); take(seq); caller = 7; q.seq = seq;
-    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 1);
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == 0 && !info.armed && capture_events == 3);
+    TEST_CHECK(g.capture_scene == g.tracker.id && g.hook_scene == g.tracker.id - 1u && !hook_frames);
+    TEST_CHECK(g.region_seq == request.capture_seq && g.done_seq == request.capture_seq);
+    message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* the region set again (scene_reset): no screen, and no trusted line since: refused, the worker reads the pass */
+    scene_reset(&g.tracker);
+    seq = submit(); take(seq); caller = 7; q.seq = seq;
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 3);
     message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
     /* a full-frame job never stands for the region */
     TEST_CHECK(vjoOcrHookLine(9, 24 | VJO_HOOK_LINE_TRUSTED) == 0);
@@ -1329,7 +1396,7 @@ static void trusted_hook_line_reads_at_once(void)
         seq = (uint32_t)vjoOcrSubmit(&r); TEST_CHECK((int)seq > 0); take(seq);
     }
     caller = 7; q.seq = seq;
-    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG && capture_events == 1);
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG && capture_events == 3);
     message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
     caller = 3;
 }
@@ -2673,7 +2740,7 @@ static void hook_cache_failures_preserve_previous_file(void)
 }
 
 
-/* ---- API 51: the pause for the frame (VJO_ROWS_FRAME, docs/game-pause.md) ---- */
+/* ---- API 52: the pause for the frame (VJO_ROWS_FRAME, docs/game-pause.md) ---- */
 static uint32_t submit_paused(uint32_t flags)
 {
     VjoGameOcrRequest r = make_request();
@@ -2813,6 +2880,12 @@ static void pause_watchdog_turns_pausing_off(void)
     model_clock += 10u * PAUSE_WATCHDOG_US;
     game_ocr_rows_tick();
     TEST_CHECK(!pause_off);
+    /* a copy of 150 ms, past the cap and the chunk after it (the longest a capped copy runs): no, the threshold is
+     * 200 ms (the audit's F3d) */
+    rows.job.frame = 1; rows.frame_start = (uint32_t)model_clock | 1u;
+    model_clock += 150000u;
+    game_ocr_rows_tick();
+    TEST_CHECK(!pause_off && klogs == k0 && PAUSE_WATCHDOG_US == 200000u);
     /* a frame copy within twice its cap: no */
     rows.job.frame = 1; rows.frame_start = (uint32_t)model_clock | 1u;
     model_clock += PAUSE_WATCHDOG_US - 1000u;
@@ -2850,12 +2923,69 @@ static void pause_watchdog_turns_pausing_off(void)
     stall_copy = 0;
 }
 
+/* The audit's F3a: kernel/display.c's own paths, with the real hook. The game's display call (index 0, its process)
+ * copies an armed frame job's rows and goes on to the firmware's call; another display call while that copy runs
+ * (another of the game's threads) goes on at once and reads nothing (frame_busy); a call from another process, of
+ * another index or with no frame goes on at once; the static framebuffer's sampling runs only in a
+ * VJO_GAME_STATIC_FB game (where a frame copy is refused when it is armed: pause_refuses_other_shapes_and_games). */
+static void pause_through_the_display_hook(void)
+{
+    setup(); uint32_t seq = submit_paused(0); take(seq);
+    VjoGameOcrRowsInfo info;
+    TEST_CHECK(display_hook_install() == 0 && hook_uid == 0x4321);
+    frame_n = VJO_CHECK_EVERY_FRAMES - 2u; /* this frame takes no region signature; a second call's would */
+    frames_via_display = 1; second_display_call = 1; frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == 32);
+    TEST_CHECK(rows_match(user_rows, 0, 32, 40, 0) && hook_frames == 1 && hook_row_reads == 32 && !in_hook);
+    TEST_CHECK_(display_continues == 2 && !second_display_call && !second_display_reads && !frame_busy &&
+                frame_n == VJO_CHECK_EVERY_FRAMES - 1u, "%u calls went on, the second read %u rows, frame %u",
+                display_continues, second_display_reads, frame_n);
+    TEST_CHECK(g.done_seq == request.capture_seq && rows.state == ROWS_IDLE && !locks && !syscall_depth);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* not the game's frame: on at once, nothing read */
+    SceDisplayFrameBuf fb = display_fb();
+    const unsigned reads = hook_row_reads;
+    caller = 8; (void)display_hook(0, 0, &fb, 1);
+    caller = 7; (void)display_hook(0, 1, &fb, 1);
+    (void)display_hook(0, 0, NULL, 1);
+    (void)display_hook(1, 0, &fb, 1);
+    TEST_CHECK(display_continues == 6 && hook_row_reads == reads && !frame_busy);
+    /* the static framebuffer's sampling (the pad calls'): a Vita game is never sampled, a PSP one is */
+    model_clock += 1000000u; /* the last frame submitted is stale */
+    g.fb_w = 0;
+    display_static_fb_sample();
+    TEST_CHECK(g.fb_w == 0);
+    g.game_active = VJO_GAME_STATIC_FB;
+    display_static_fb_sample();
+    TEST_CHECK(g.fb_w == fb_w && !frame_busy);
+    g.game_active = VJO_GAME;
+    display_hook_release();
+    TEST_CHECK(hook_uid < 0);
+    frames_via_display = 0;
+}
+/* N8 of the audit: the frame copy's stride bound alone. A destination big enough for any stride (one block of the
+ * worker's): VJO_MAX_W is the largest stride a frame copy takes, one more is refused before it is armed. */
+static void pause_refuses_a_stride_past_the_widest_row(void)
+{
+    setup(); uint32_t seq = submit_paused(0); take(seq);
+    VjoGameOcrRowsInfo info;
+    big_rows_ok = 1;
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, VJO_MAX_W + 1u, big_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(!hook_frames && rows.state == ROWS_IDLE && !info.armed);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, VJO_MAX_W, big_rows, &info) == 32 && hook_frames == 1);
+    big_rows_ok = 0;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
 TEST_LIST = {
-    {"API 51: the pause copies the whole region in one display call and publishes it", pause_copies_the_region_in_one_display_call},
-    {"API 51: the pause refuses any other shape, a job without it and a game with no display call", pause_refuses_other_shapes_and_games},
-    {"API 51: the pause stops at its cap; the job then reads strip by strip", pause_stops_at_its_cap},
-    {"API 51: every other end of the pause returns the game's display call", pause_every_other_end_returns_the_display_call},
-    {"API 51: the watchdog turns pausing off when a copy outlives twice its cap", pause_watchdog_turns_pausing_off},
+    {"API 52: the pause copies the whole region in one display call and publishes it", pause_copies_the_region_in_one_display_call},
+    {"API 52: the pause refuses any other shape, a job without it and a game with no display call", pause_refuses_other_shapes_and_games},
+    {"API 52: the pause stops at its cap; the job then reads strip by strip", pause_stops_at_its_cap},
+    {"API 52: every other end of the pause returns the game's display call", pause_every_other_end_returns_the_display_call},
+    {"API 52: the pause through kernel/display.c's hook", pause_through_the_display_hook},
+    {"API 52: a frame copy's stride is at most VJO_MAX_W", pause_refuses_a_stride_past_the_widest_row},
+    {"API 52: the watchdog turns pausing off when a copy outlives twice its cap", pause_watchdog_turns_pausing_off},
     {"hook cache: bounded authenticated broker and recoverable replacement", hook_cache_persists_with_bounded_broker},
     {"hook cache: copy IO size cancellation and close failures", hook_cache_failures_preserve_previous_file},
     {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},

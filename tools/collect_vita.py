@@ -14,8 +14,9 @@ with curl as the installer does:
                            .apkg packages) is listed only
                            vjo_app.txt (the record of the Rubi app the plugins came with)
                            installed.txt (the one-VPK install's record, core/payload.h)
-                           hooks.log and psp_probe.log (the game worker's: the native hooks' and
-                           the debug build's PSP probe's, docs/native-hooks.md)
+                           hooks.log (the debug build's record of the native hooks at the last game
+                           start, never text: docs/native-hooks.md, docs/hook-requests.md) and
+                           psp_probe.log (the debug build's read-only PSP probe's; never text either)
   ur0:data/VitaJPOverlay/  boot.txt
   ux0:app/VJOSET001/       vjo_app.txt (the installed Rubi app's stamp, core/app_stamp.h); its eboot.bin
                            is hashed, never kept. Both are read as install_ftp.sh --check-app reads them
@@ -67,8 +68,9 @@ APP_STAMP, APP_EBOOT = f"{APP}/vjo_app.txt", f"{APP}/eboot.bin"
 FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt", "selftest.txt", "status.txt",
                                   "status.prev.txt", "kernel.txt", "kernel.prev.txt", "config.ini", "games.ini",
                                   "region.ini", "vjo_app.txt", "installed.txt",
-                                  # the game worker's logs: the native hooks' (never text) and the debug build's
-                                  # read-only PSP probe's (docs/native-hooks.md; never text either)
+                                  # the game worker's logs: its record of the native hooks (the debug build's;
+                                  # never text; a hook request sends it: docs/hook-requests.md) and the debug
+                                  # build's read-only PSP probe's (docs/native-hooks.md; never text either)
                                   "hooks.log", "psp_probe.log")]
 FILES += ["ur0:/data/VitaJPOverlay/boot.txt", "ur0:/tai/config.txt", "ur0:/tai/config.txt.vjo-bak",
           "ux0:/tai/config.txt", "ux0:/tai/config.txt.vjo-bak"]

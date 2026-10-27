@@ -368,7 +368,8 @@ class E2E:
                     "font_size_ja": "20", "ocr_lm": template["ocr_lm"], "ocr_cascade_ms": template["ocr_cascade_ms"],
                     # the old file's explicit choice stays, though the default is off since 2026-10-20
                     "japanese_only_selection": "on", **settings}
-            for k in ("ocr_boost_clock", "ocr_threads", "ocr_vertical"):  # #93, #99: new keys get the template's value
+            for k in ("ocr_boost_clock", "ocr_threads", "ocr_vertical", "ocr_wait_hint"):  # #93, #99, #358: new keys,
+                # the template's value
                 if k in template:
                     want[k] = template[k]
             for k, v in want.items():
@@ -444,6 +445,16 @@ class E2E:
                                       "ocr worker registered: game pid 0x20000 module 0x30000\n"
                                       "foreground 0x20000 -> 0x0 (suspend) t=3000000 ms\ngame exit\n")
         (d / "kernel.prev.txt").write_text(f"Rubi kernel {api} started (normal mode)\n")
+        # the debug build's record of the game's hooks (game_ocr/hooks.c's lines, no text): --collect fetches it and
+        # the package's tools/hook_request.py reads it (docs/hook-requests.md)
+        (d / "hooks.log").write_text(
+            "PCSG00415: text source 1\n"
+            "main module game NID C5187D60 seg0 81000000+1C4000 APP_VER 0100; 1 verified, 0 Luna sites\n"
+            "verified +2CA70 thumb r6 hooked, stream 1\n"
+            + "".join(f"import {lib}/{nid}: {'hooked' if k < 6 else 'not hooked'}\n" for k, (lib, nid) in enumerate((
+                ("BE43BB07", "7205BFDB"), ("BE43BB07", "85B924B7"), ("BE43BB07", "9F87712D"), ("BE43BB07", "AF5C218D"),
+                ("CAE9ACE6", "14E9DBD7"), ("CAE9ACE6", "C458D60A"), ("CAE9ACE6", "2CDFCD1C"), ("CAE9ACE6", "AC595E68"))))
+            + "sites hooked 1, refused 0; CALL imports hooked 6 of 8\n")
         (dev / "ur0/data/VitaJPOverlay/boot.txt").write_text(
             f"vjoboot1 seq=1 mode=0 stage=4 inert=0 fault=0 failures=0 api={api} prev=0/0/0/0\n")
         start = time.time() - 3600
@@ -477,8 +488,12 @@ class E2E:
                     "ux0/data/VitaJPOverlay/anki_queue/exported/" + "1" * 32 + ".json",
                     "ux0/app/VJOSET001/vjo_app.txt", "ur0/data/VitaJPOverlay/boot.txt", "ur0/tai/config.txt",
                     "ur0/tai/config.txt.vjo-bak", "ux0/data/psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp",
-                    "COLLECT.json", "analysis.txt", "analysis.json", "timeline.txt"):
+                    "ux0/data/VitaJPOverlay/hooks.log", "COLLECT.json", "analysis.txt", "analysis.json", "timeline.txt",
+                    "hook-request.md"):
             check(top + rel in names, f"A in the zip: {rel}")
+        check("hooks.log: PCSG00415, APP_VER 01.00, main module game (NID 0xC5187D60): Rubi's verified entry is installed "
+              "in this game; 6 string-copy imports hooked. Report: " in a, "A --collect prints the hook request's line "
+              "(the package's tools/hook_request.py)")
         check(not any(x.endswith(".apkg") for x in names) and "2 exported card(s), 1 .apkg package(s) in anki/" in a,
               "A the zip lists the .apkg packages (the analysis counts 1) but does not copy them")
         check(not any(s.encode() in blob for s in SECRETS), "A no credential is in any file of the zip")

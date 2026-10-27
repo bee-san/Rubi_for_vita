@@ -981,7 +981,7 @@ LOG = {
     # shell/worker.c net_stack_paint: no paint this boot (no thread info, another size, the frame outside it)
     "net_stack_off": re.compile(r"^VjoNet stack: not painted \((.+)\)"),
     # API 20, include/vjo_game_ocr.h: the stable-text wait (rc 1 held, 2 limit reached) and a skipped blank line
-    "settle": re.compile(r"^gstep job settle kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    "settle": re.compile(r"^gstep job settle kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     "blank": re.compile(r"^gstep job blank kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     # API 20: the beam + LM decoder (include/vjo_game_ocr.h VJO_GSTEP_LM)
     "lm": re.compile(r"^gstep job lm kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
@@ -2069,7 +2069,7 @@ def presses_and_rereads(text):
             continue
         m = LOG["settle"].match(line)
         if m:  # passes, rc (1 held, 2 the limit), ms
-            job["settle"] = (int(m.group(1)), int(m.group(2), 16), int(m.group(5)) // 1000)
+            job["settle"] = (int(m.group(2)), int(m.group(3), 16), int(m.group(6)) // 1000)
             continue
         m = JOB_END.match(line)
         if m:
@@ -2296,7 +2296,8 @@ def summarise_log(text):
                   "exported": 0, "export_fail": 0, "export_ok": 0, "export_partial": 0, "export_empty": 0,
                   "export_stopped": 0, "export_left": 0, "export_swept": 0, "export_problems": []}, "trouble": {},
          "gstep_fail": {}, "config_warnings": [], "tier_misses": [],
-         "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
+         "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0,
+                    "lines": 0, "anyway": 0, "looks": 0},
          "blank": {"lines": 0, "sizes": [], "edges": []},
          "norm": {"jobs": 0, "changed": 0, "width": 0, "tilde": 0, "dash": 0, "ellipsis": 0, "long_vowel": 0,
                   "kanji_one": 0, "garbage": 0, "us": []},
@@ -2387,14 +2388,20 @@ def summarise_log(text):
         short_log_line(s, line)  # the normal build's own lines (summarise_short)
         m = LOG["settle"].match(line)
         if m:
-            st, rc = s["settle"], int(m.group(2), 16)
+            st, rc = s["settle"], int(m.group(3), 16)
             st["jobs"] += 1
             st[{1: "held", 2: "timeout"}.get(rc, "none")] += 1
             if rc in (1, 2):
-                st["ms"].append(int(m.group(5)) // 1000)
-                st["passes"].append(int(m.group(1)))
-            st["changes"] += int(m.group(3))
-            st["toggling_jobs"] += (int(m.group(4), 16) >> 16) > 0
+                st["ms"].append(int(m.group(6)) // 1000)
+                st["passes"].append(int(m.group(2)))
+            st["changes"] += int(m.group(4))
+            st["toggling_jobs"] += (int(m.group(5), 16) >> 16) > 0
+            # #353: the line watch (VJO_GSETTLE_K_*: 1 its lines watched, 2 read anyway, bits 2-7 the finder's runs);
+            # "-" from a build before it
+            kind = int(m.group(1)) if m.group(1).isdigit() else 0
+            st["lines"] += kind & 1
+            st["anyway"] += (kind >> 1) & 1
+            st["looks"] += kind >> 2
             continue
         m = LOG["lm"].match(line)
         if m:
@@ -3472,7 +3479,9 @@ def render_collect(c):
     # it could not enter the folder: test.3's, #138, while the Shell read the stamp in it)
     missing = [m for m in c["record"].get("missing") or [] if not m.startswith(APP_FOLDER + "/")]
     if missing:
-        L.append(f"  not on the Vita: {', '.join(missing)}")
+        # hooks.log is the debug build's only, written with a hook text source (docs/hook-requests.md)
+        notes = {"ux0:/data/VitaJPOverlay/hooks.log": " (the debug build's)"}
+        L.append(f"  not on the Vita: {', '.join(m + notes.get(m, '') for m in missing)}")
     for e in c["record"].get("errors") or []:
         L.append(f"  collect error: {e}")
     if c.get("app"):
@@ -3571,7 +3580,11 @@ def render_collect(c):
             L.append(f"  stable-text wait: {st['jobs']} job(s): rows held still in {st['held']}, the limit reached in "
                      f"{st['timeout']}, no line to wait for in {st['none']}; waited {_span(st['ms'])} ms "
                      f"({_span(st['passes'])} passes); {st['changes']} row change(s) seen while waiting (text typing "
-                     f"out); rows toggling (an icon) in {st['toggling_jobs']} job(s)")
+                     f"out); rows toggling (an icon) in {st['toggling_jobs']} job(s)"
+                     + (f"; the region kept changing in {st['lines']} job(s), which watched their lines' own pixels "
+                        f"({st['looks']} finder run(s) to check them), {st['anyway']} of them read anyway at the limit "
+                        "(an icon inside a line, a picture moving behind it: docs/text-stability.md)"
+                        if st.get("lines") else ""))
         L += render_presses(lg)
         lm = lg.get("lm") or {}
         if lm.get("jobs"):

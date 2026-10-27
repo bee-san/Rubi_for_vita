@@ -590,7 +590,8 @@ static void test_call_hooks(void)
     }
     vjo_hooks_counts(&mode, &inst, &refused);
     TEST_CHECK(mode == VJO_TEXT_SOURCE_HOOKS && inst == CALL_IMPORTS && refused == 0);
-    TEST_CHECK(n_offs == 0 && sfo_opens == 0);
+    /* no table entry: APP_VER decides nothing; the debug build reads it for hooks.log only */
+    TEST_CHECK(n_offs == 0 && sfo_opens == (VJO_DEBUG ? 1u : 0u));
     TEST_CHECK(slots[VJO_HOOK_SITE_STREAMS].kind == VJO_HOOK_KIND_CALL && slots[0].kind == VJO_HOOK_KIND_SITE);
 
     memset(d, 0x55, sizeof(d));
@@ -718,24 +719,25 @@ static const Form *form(int thumb, int entry, const char *src)
     return NULL;
 }
 
-/* A function entry the site check accepts at code + off (16 bytes: the patch and taiHEN's saved bytes):
+/* A function entry the site check accepts at seg + off (16 bytes: the patch and taiHEN's saved bytes):
  * Thumb PUSH {r4, lr} then MOV r7, sp; ARM PUSH {r4, lr} then SUB sp, sp, #16 (the assembler's bytes).
  * window: the instruction after the entry instead (a refused one). */
-static void put_site(uint32_t off, int thumb, const Form *window)
+static void put_site_at(uint8_t *seg, uint32_t off, int thumb, const Form *window)
 {
     const Form *e = form(thumb, 1, "push {r4, lr}"), *w = form(thumb, 0, thumb ? "mov r7, sp" : "sub sp, sp, #16");
     unsigned pos = 0;
-    memcpy(code + off, e->b, e->n);
+    memcpy(seg + off, e->b, e->n);
     pos = e->n;
     if (window) {
-        memcpy(code + off + pos, window->b, window->n);
+        memcpy(seg + off + pos, window->b, window->n);
         pos += window->n;
     }
     while (pos < VJO_PLACE_SAVE_BYTES) {
-        memcpy(code + off + pos, w->b, w->n);
+        memcpy(seg + off + pos, w->b, w->n);
         pos += w->n;
     }
 }
+static void put_site(uint32_t off, int thumb, const Form *window) { put_site_at(code, off, thumb, window); }
 
 static VjoLunaSite luna_site(uint32_t off, int thumb, uint8_t reg, uint8_t ported, uint16_t version)
 {
@@ -807,6 +809,9 @@ static void test_install_order(void)
     uint32_t mode, inst, refused;
     char outcomes[256];
     reset();
+    /* the out-of-range sites below are out of range in both of vjo_luna_offset's readings: the code buffer is not
+     * at VJO_LUNA_GUEST_SEG0, so only VJO_LUNA_SEG0's reading applies */
+    TEST_ASSERT(a32(code) != VJO_LUNA_GUEST_SEG0);
     put_site(0x100, 1, NULL);
     put_site(0x200, 1, NULL);
     put_site(0x300, 0, NULL);
@@ -969,7 +974,11 @@ static void test_word(void)
         TEST_CHECK_(n_imp == cases[c].imports && n_offs == cases[c].sites, "case %u: %u imports, %u sites", c, n_imp,
                     n_offs);
         TEST_CHECK_(inst == (cases[c].sites << 16 | cases[c].imports), "case %u: installed %08X", c, (unsigned)inst);
-        TEST_CHECK_(sfo_opens == (cases[c].sites ? 1u : 0u), "case %u: param.sfo read only for Luna's sites", c);
+        /* APP_VER: for Luna's sites (the normal build), for every native game whose sites are tried (the debug
+         * build's hooks.log), never with hook_sites = off */
+        TEST_CHECK_(sfo_opens == (VJO_DEBUG ? (cases[c].imports && !(cases[c].mode & VJO_TEXT_SOURCE_NO_SITES) ? 1u : 0u)
+                                            : (cases[c].sites ? 1u : 0u)),
+                    "case %u: param.sfo read %u", c, sfo_opens);
         TEST_CHECK_(live == (cases[c].imports ? 1u : 0u), "case %u: live", c);
 #if VJO_DEBUG
         TEST_CHECK_(log_opens == (cases[c].mode != VJO_TEXT_SOURCE_OCR), "case %u: hooks.log", c);
@@ -997,7 +1006,7 @@ static void test_auto_all_native(void)
     t_ver = &v;
     t_nver = 1;
     vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
-    TEST_CHECK(n_imp == 8 && n_offs == 1 && sfo_opens == 0);
+    TEST_CHECK(n_imp == 8 && n_offs == 1 && sfo_opens == (VJO_DEBUG ? 1u : 0u)); /* the entry names no version */
     reset();
     put_site(0x200, 1, NULL);
     l = luna_site(0x200, 1, 0, 1, 0);
@@ -1034,7 +1043,8 @@ static void test_auto_all_native(void)
             reset();
             vjo_hooks_start(none[i], VJO_TEXT_SOURCE_AUTO, 0);
             TEST_CHECK_(n_imp == 8 && n_offs == 0 && live, "%s: generic hooks in auto", none[i]);
-            TEST_CHECK_(sfo_opens == (i < 7 ? 1u : 0u), "%s: APP_VER only when there are Luna sites", none[i]);
+            TEST_CHECK_(sfo_opens == (i < 7 || VJO_DEBUG ? 1u : 0u),
+                        "%s: APP_VER when there are Luna sites (and for hooks.log in the debug build)", none[i]);
             TEST_CHECK_(i < 7 ? n_refused > 0 : n_refused == 0, "%s: refuse unported sites", none[i]);
         }
     }
@@ -1437,6 +1447,46 @@ static void test_app_version(void)
     TEST_CHECK(app_version() == 0 && sfo_opens == 0);
 }
 
+/* A hook request (docs/hook-requests.md) needs the player's version, and most requests are for games with no entry:
+ * the debug build's hooks.log names APP_VER for every game whose table sites are tried, entries or none, and the
+ * hooks are the same in both builds (APP_VER decides nothing without a Luna site or an entry that names it). */
+static void test_app_ver_for_requests(void)
+{
+    static const struct {
+        const char *title, *sfo, *line;
+        unsigned entry; /* 1: a verified entry that names no version */
+    } cases[] = {
+        {UNLISTED, "01.02", "main module TestGame NID 12345678 seg0 %08X+4000 APP_VER 0102; 0 verified, 0 Luna sites\n", 0},
+        {UNLISTED, NULL, "main module TestGame NID 12345678 seg0 %08X+4000 APP_VER 0000; 0 verified, 0 Luna sites\n", 0},
+        {TITLE, "01.00", "main module TestGame NID 12345678 seg0 %08X+4000 APP_VER 0100; 1 verified, 0 Luna sites\n", 1},
+    };
+    for (unsigned c = 0; c < sizeof cases / sizeof cases[0]; c++) {
+        VjoPlaceVerified v;
+        uint32_t mode, inst, refused;
+        char want[160];
+        reset();
+        put_site(0x100, 1, NULL);
+        if (cases[c].entry) {
+            v = verified_entry(0x100, mod.nid, 6, 0);
+            t_ver = &v;
+            t_nver = 1;
+        }
+        if (cases[c].sfo) set_sfo(cases[c].sfo);
+        vjo_hooks_start(cases[c].title, VJO_TEXT_SOURCE_AUTO, 0);
+        vjo_hooks_counts(&mode, &inst, &refused);
+        TEST_CHECK_(mode == VJO_TEXT_SOURCE_AUTO && inst == (cases[c].entry << 16 | CALL_IMPORTS) && refused == 0,
+                    "case %u: installed %08X, refused %u", c, (unsigned)inst, (unsigned)refused);
+        TEST_CHECK_(n_offs == cases[c].entry && n_imp == CALL_IMPORTS, "case %u: the same hooks in both builds", c);
+#if VJO_DEBUG
+        snprintf(want, sizeof(want), cases[c].line, (unsigned)a32(code));
+        TEST_CHECK_(sfo_opens == 1 && strstr(logbuf, want) != NULL, "case %u: %s", c, logbuf);
+#else
+        (void)want;
+        TEST_CHECK_(sfo_opens == 0 && log_opens == 0, "case %u: the normal build reads no APP_VER for it", c);
+#endif
+    }
+}
+
 static void test_exact_build_identity(void)
 {
     static const uint8_t abc_sha[32] = {
@@ -1647,7 +1697,8 @@ static void test_verified_version(void)
         if (cases[k].sfo) set_sfo(cases[k].sfo);
         vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
         vjo_hooks_counts(NULL, &inst, &refused);
-        TEST_CHECK_(sfo_opens == (cases[k].app_ver ? 1u : 0u), "case %u: APP_VER read once, for the entry's", k);
+        TEST_CHECK_(sfo_opens == (cases[k].app_ver || VJO_DEBUG ? 1u : 0u),
+                    "case %u: APP_VER read once, for the entry's (and hooks.log's in the debug build)", k);
         TEST_CHECK_((inst >> 16) == (unsigned)cases[k].hooked && refused == (unsigned)!cases[k].hooked &&
                         n_offs == (unsigned)cases[k].hooked,
                     "case %u: app_ver %04X, APP_VER %s: hooked %u, refused %u", k, (unsigned)cases[k].app_ver,
@@ -1744,6 +1795,174 @@ static void test_farm_excerpts(void)
             memset(seg + v->off + v->padding, 0, REC_CELLS + row->n);
     }
     TEST_CHECK_(titles >= 13, "excerpts of %u titles", titles);
+}
+
+/* TIME TRAVELERS (PCSG00062): Luna's two sites, the real table's (0x8119ADDA r7 and 0x811A6052 r8, CP932, its filter
+ * PCSG00062), in a main module laid out as the game's eboot.bin is in public Vita3K logs (compatibility #400): a
+ * fixed-address executable, segment 0 at its link address 0x81000000, 0x31258C bytes (APP_VER 01.00; 01.01's is
+ * 0x306C90). Less VJO_LUNA_SEG0 the sites are 0x1196DDA and 0x11A2052, past the segment's end: main refused both as
+ * range without reading a byte of them. Luna's entry (2025-09-24) predates its addr_offset (2026-05-20): the
+ * addresses are Vita3K's guest addresses, +0x19ADDA and +0x1A6052 of that segment, where the placement check now
+ * reads the bytes (the generator marks both VJO_LUNA_F_GUEST: the logs show a fixed-address executable). Zeros there
+ * (as for a block inside a function, which a console run may show) refuse both as no entry, with the bytes in the
+ * debug log; a function's entry at both hooks both, and a hit's text goes through Luna's filter. With segment 0
+ * anywhere but 0x81000000 the guest address is not read, nor for a relocatable executable's unmarked site. The game's
+ * own bytes there are not known here (no dump of it): its console run decides. The test maps 0x81000000 itself
+ * (MAP_FIXED_NOREPLACE: an address already taken fails the test cleanly, nothing is overwritten); under x86-64 ASan
+ * that address is shadow memory (0x7fff8000-0x8fff6fff), so the test cannot run in such a build. */
+static void test_luna_own_address(void)
+{
+    enum { TT_SEG0 = 0x81000000u, TT_SIZE = 0x31258Cu, TT_MAP = 0x315000u }; /* TT_MAP: segment 0 a page higher too */
+    /* [時間/じかん]を<#FF0000>旅</#>する\n人 (a literal backslash and n) and <b>未来</b>は[変/か]わる, CP932 */
+    static const char l7[] = "[\x8E\x9E\x8A\xD4/\x82\xB6\x82\xA9\x82\xF1]\x82\xF0<#FF0000>\x97\xB7</#>\x82\xB7\x82\xE9"
+                             "\\n\x90\x6C";
+    static const char l8[] = "<b>\x96\xA2\x97\x88</b>\x82\xCD[\x95\xCF/\x82\xA9]\x82\xED\x82\xE9";
+    static uint8_t *tt;
+    const VjoLunaSite *real;
+    uint32_t frame[16], inst, refused;
+    VjoHookSnap s;
+    char text[128];
+    _Static_assert(sizeof l7 == 39 && sizeof l8 == 25, "the two lines' CP932 bytes and their NUL");
+    TEST_ASSERT(vjo_luna_sites("PCSG00062", &real) == 2);
+    TEST_ASSERT(real[0].addr == 0x8119ADDAu && real[0].reg == 7 && real[1].addr == 0x811A6052u && real[1].reg == 8);
+    TEST_CHECK(real[0].addr - VJO_LUNA_SEG0 >= TT_SIZE && real[1].addr - VJO_LUNA_SEG0 >= TT_SIZE);
+    if (!tt) {
+        int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+        void *p;
+#ifdef MAP_FIXED_NOREPLACE
+        flags |= MAP_FIXED_NOREPLACE;
+#endif
+        p = mmap((void *)(uintptr_t)TT_SEG0, TT_MAP + PAGE, PROT_READ | PROT_WRITE, flags, -1, 0);
+        TEST_ASSERT_(p == (void *)(uintptr_t)TT_SEG0, "a segment 0 at 0x81000000 (mmap gave %p)", p);
+        TEST_ASSERT(!mprotect((uint8_t *)p + TT_MAP, PAGE, PROT_NONE));
+        tt = p;
+    }
+
+    /* zeros at both sites: no function's entry there, refused, with the bytes the check read */
+    reset();
+    memset(tt, 0, TT_MAP);
+    mod.seg0 = tt;
+    mod.seg0_size = TT_SIZE;
+    set_sfo("01.00");
+    vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(n_offs == 0 && offset_calls == 0 && inst >> 16 == 0 && refused == 2);
+#if VJO_DEBUG
+    {
+        char outcomes[64];
+        log_outcomes(outcomes, sizeof outcomes);
+        TEST_CHECK_(!strcmp(outcomes, "entry,entry"), "outcomes %s", outcomes);
+        TEST_CHECK(strstr(logbuf, "seg0 81000000+31258C APP_VER 0100; 0 verified, 2 Luna sites\n") != NULL);
+        TEST_CHECK(strstr(logbuf, "luna 8119ADDA r7 +19ADDA refused: entry\n bytes 00000000000000000000000000000000\n") !=
+                   NULL);
+        TEST_CHECK(strstr(logbuf, "luna 811A6052 r8 +1A6052 refused: entry\n bytes ") != NULL);
+        TEST_MSG("%s", logbuf);
+    }
+#endif
+
+    /* a function's entry at both: both hooked, as Thumb sites (both addresses are 2 mod 4: 12 bytes patched) */
+    reset();
+    memset(tt, 0, TT_MAP);
+    put_site_at(tt, 0x19ADDAu, 1, NULL);
+    put_site_at(tt, 0x1A6052u, 1, NULL);
+    mod.seg0 = tt;
+    mod.seg0_size = TT_SIZE;
+    set_sfo("01.00");
+    add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_ASSERT(n_offs == 2 && n_sites == 2);
+    TEST_CHECK(offs[0].offset == 0x19ADDAu && offs[0].thumb == 1 && offs[1].offset == 0x1A6052u && offs[1].thumb == 1);
+    TEST_CHECK(site_info[0].luna == &real[0] && site_info[1].luna == &real[1] && !site_info[0].ver);
+    TEST_CHECK(site_info[0].addr == TT_SEG0 + 0x19ADDAu && site_info[1].addr == TT_SEG0 + 0x1A6052u);
+    TEST_CHECK(slots[0].key == 0x19ADDBu && slots[1].key == 0x1A6053u);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(inst >> 16 == 2 && refused == 0);
+#if VJO_DEBUG
+    TEST_CHECK(strstr(logbuf, "luna 8119ADDA r7 +19ADDA hooked, stream 1\n") != NULL);
+    TEST_CHECK(strstr(logbuf, "luna 811A6052 r8 +1A6052 hooked, stream 2\n") != NULL);
+#endif
+    /* a hit at each, the text in r7 and r8; Luna's filter: [base/reading] to the base, <tags> and the literal \n */
+    memcpy(data + 0x40, l7, sizeof l7);
+    memset(frame, 0, sizeof frame);
+    frame[7] = a32(data) + 0x40;
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_CHECK(frame[15] == TT_SEG0 + 0x19ADDAu);
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.kind == VJO_HOOK_KIND_SITE && s.key == 0x19ADDAu && s.site == &real[0] && s.n == sizeof l7 - 1);
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) > 0 && !strcmp(text, "時間を旅する\n人"));
+    TEST_MSG("got [%s]", text);
+    memcpy(data + 0x100, l8, sizeof l8);
+    frame[8] = a32(data) + 0x100;
+    TEST_CHECK(vjo_hooks_observe(1, frame) == (uintptr_t)CONT(1));
+    TEST_ASSERT(vjo_hooks_snap(2, &s));
+    TEST_CHECK(s.key == 0x1A6052u && s.site == &real[1] && s.n == sizeof l8 - 1);
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) > 0 && !strcmp(text, "未来は変わる"));
+    TEST_MSG("got [%s]", text);
+
+    /* 01.01's segment 0 (0x306C90 bytes) holds both; one that ends between them: the second is out of range in
+     * both readings */
+    for (unsigned k = 0; k < 2; k++) {
+        static const uint32_t size[2] = {0x306C90u, 0x1A0000u};
+        reset();
+        memset(tt, 0, TT_MAP);
+        put_site_at(tt, 0x19ADDAu, 1, NULL);
+        put_site_at(tt, 0x1A6052u, 1, NULL);
+        mod.seg0 = tt;
+        mod.seg0_size = size[k];
+        set_sfo(k ? "01.00" : "01.01");
+        vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
+        vjo_hooks_counts(NULL, &inst, &refused);
+        TEST_CHECK_(inst >> 16 == (k ? 1u : 2u) && refused == k, "segment 0 of 0x%X bytes", (unsigned)size[k]);
+#if VJO_DEBUG
+        if (k) TEST_CHECK(strstr(logbuf, "luna 811A6052 r8 refused: range\n bytes \n") != NULL);
+#endif
+    }
+
+    /* segment 0 one page higher (not where a fixed-address executable is): no guest reading. The entries are where
+     * a rule that read the address less any segment base would look (0x8119ADDA itself, +0x199DDA of this segment),
+     * so such a rule would hook them, in both builds */
+    reset();
+    memset(tt, 0, TT_MAP);
+    put_site_at(tt, 0x19ADDAu, 1, NULL);
+    put_site_at(tt, 0x1A6052u, 1, NULL);
+    mod.seg0 = tt + PAGE;
+    mod.seg0_size = TT_SIZE;
+    set_sfo("01.00");
+    vjo_hooks_start("PCSG00062", VJO_TEXT_SOURCE_AUTO, 0);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(n_offs == 0 && offset_calls == 0 && inst >> 16 == 0 && refused == 2);
+#if VJO_DEBUG
+    {
+        char outcomes[64];
+        log_outcomes(outcomes, sizeof outcomes);
+        TEST_CHECK_(!strcmp(outcomes, "range,range"), "outcomes %s", outcomes);
+    }
+#endif
+
+    /* a relocatable executable's site at or above 0x81000000 (PCSG00787's 0x810286C8, not marked: its address is not
+     * the eboot's own) in a segment 0 at 0x81000000 of its logged 0xCE687 bytes, with a function's entry at the
+     * guest offset 0x286C8: not read there, refused as range as on main; its other sites and its verified entry
+     * find zeros. Nothing is hooked, in both builds */
+    {
+        const VjoLunaSite *l;
+        unsigned nl = vjo_luna_sites("PCSG00787", &l), k = 0;
+        while (k < nl && l[k].addr != 0x810286C8u) k++;
+        TEST_ASSERT_(k < nl && l[k].ported && !(l[k].flags & VJO_LUNA_F_GUEST), "PCSG00787's site 0x810286C8, unmarked");
+        reset();
+        memset(tt, 0, TT_MAP);
+        put_site_at(tt, 0x286C8u, 1, NULL);
+        mod.seg0 = tt;
+        mod.seg0_size = 0xCE687u;
+        set_sfo("01.00");
+        vjo_hooks_start("PCSG00787", VJO_TEXT_SOURCE_AUTO, 0);
+        vjo_hooks_counts(NULL, &inst, &refused);
+        TEST_CHECK_(n_offs == 0 && offset_calls == 0 && inst >> 16 == 0 && refused == 1u + nl, "%u sites, %u refused",
+                    (unsigned)(inst >> 16), (unsigned)refused);
+#if VJO_DEBUG
+        TEST_CHECK(strstr(logbuf, "luna 810286C8 r0 refused: range\n bytes \n") != NULL);
+        TEST_MSG("%s", logbuf);
+#endif
+    }
 }
 
 /* VJO_PLACE_READ_CELLS: the record at the register + padding (here r15, the site's own address); exactly its
@@ -1945,6 +2164,7 @@ TEST_LIST = {
     {"a verified entry's APP_VER: only that version, read without Luna sites", test_verified_version},
     {"a verified entry's page record of cells, at the site's distance", test_verified_cells},
     {"the farm's excerpts through each verified entry: its bytes, register, read and filter", test_farm_excerpts},
+    {"TIME TRAVELERS: Luna's sites at their own addresses in a segment 0 at 0x81000000", test_luna_own_address},
     {"clean controls from CALL and table-site streams in every encoding", test_clean_stream_text},
     {"exact build SHA-256: whole executable, worker only, safe failure", test_exact_build_identity},
     {"call_hit: 4..512 bytes, the NUL rules, the pointer-array shape", test_call_hit_bounds},
@@ -1960,6 +2180,7 @@ TEST_LIST = {
     {"vjo_hooks_keep: only while the slot holds the caller the job saw", test_keep_key},
     {"vjo_hooks_stop: newest first, once; STOP_FAIL while a thread is inside", test_stop},
     {"APP_VER of param.sfo", test_app_version},
+    {"hooks.log names APP_VER for a hook request; the same hooks in both builds", test_app_ver_for_requests},
     {"PSP text: Every game in the PSP emulator; the profile's page in stream 1; another game, revision, no view", test_psp_text},
     {NULL, NULL},
 };

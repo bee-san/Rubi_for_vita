@@ -174,6 +174,41 @@ class DictLookupBench(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "shown result changed"):
             self.run_bench("--before-dicts", "other.vjdict", "--modes", "words")
 
+    def test_a_session_reads_page_zero_once_and_one_character_words_from_the_loaded_blocks(self):
+        """Every read of two filtered files in one session (VJO_DICT_BENCH_SESSION=1: one a line, as an open
+        overlay keeps one), Right through two lines. Page 0 of each file is read once, when the session
+        opens it: the session's pool holds both filter directories (before it the session kept one, and
+        each lookup read both pages 0 again: 2 header reads a lookup). は, を and が, keys of neither
+        file, are answered absent by the blocks their longer spans (は猫を見ました ...) loaded: no index
+        read (before: one bucket page a file). At 猫, the first file's head read has dropped the names'
+        block from the 4-page cache: the names' 猫 searches its index, as before, and its block is not
+        read again (filter 2, as for は). Before this, the lookups made 8, 6, 8, 6, 8 and 8, 6, 8 reads."""
+        self.build(ROWS + [term(f"語彙{i:05d}", gloss=["filler"]) for i in range(1200)])
+        names = [term("渚", "なぎさ", ["a name"]), term("古河", "ふるかわ", ["a family name"])]
+        self.build(names + [term(f"名前{i:05d}", gloss=["filler"]) for i in range(1200)], "names.vjdict")
+        bench.write_tsv([("one", "今日は猫を見ました。"), ("two", "猫が見ている")], self.lines, "fixture")
+        trace = self.dir / "trace.tsv"
+        run = subprocess.run([BENCH, str(self.dir), "main.vjdict,names.vjdict", str(self.lines), "words", "1"],
+                             capture_output=True, text=True, timeout=60, check=False,
+                             env={**os.environ, "VJO_DICT_BENCH_SESSION": "1", "VJO_DICT_TRACE": str(trace)})
+        self.assertEqual(run.returncode, 0, run.stderr)
+        rows = [q for line in run.stdout.splitlines() if "summary" not in (q := json.loads(line))]
+        kinds = lambda **n: {"header": 0, "index": 0, "group": 0, "head": 0, "payload": 0, "filter": 2, **n}
+        found = kinds(index=2, group=1, head=1)
+        self.assertEqual([(q["line"], q["cursor"], q["reads_by"]) for q in rows], [
+            (0, 0, kinds(header=2, index=1, group=1, head=1, filter=3)),  # 今日, the files opened
+            (0, 6, kinds()), (0, 9, found), (0, 12, kinds()),  # は, 猫, を
+            (0, 15, kinds(index=1, group=1, head=1, filter=3)),  # 見ました
+            (1, 0, kinds(header=2, index=2, group=1, head=1)), (1, 3, kinds()),  # 猫 (opened), が
+            (1, 6, kinds(index=1, group=1, head=1, filter=3))])  # 見ている
+        self.assertEqual([q["reads"] for q in rows], [8, 2, 6, 2, 6, 8, 2, 6])
+        # Every one-character probe: answered by its file's loaded block (2, filtered), or found (4) in the
+        # index; the names' 猫, its block dropped, from the index (0, absent).
+        probes = [line.split("\t") for line in trace.read_text().splitlines()]
+        one = [(int(q), int(d), int(outcome), key) for q, d, _, _, outcome, key in probes if len(key) == 1]
+        self.assertEqual(one, [(1, 0, 2, "は"), (1, 1, 2, "は"), (2, 0, 4, "猫"), (2, 1, 0, "猫"), (3, 0, 2, "を"),
+                               (3, 1, 2, "を"), (5, 0, 4, "猫"), (5, 1, 0, "猫"), (6, 0, 2, "が"), (6, 1, 2, "が")])
+
 
 class PoolSample(unittest.TestCase):
     def test_kept_lines_by_screen_without_names_or_test_vns(self):

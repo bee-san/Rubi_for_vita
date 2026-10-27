@@ -717,6 +717,7 @@ static const char nondefault_config[] =
     "reading_time = 15s\n"
     "hook_trust = off\n"
     "ocr_line_fix = all\n"
+    "ocr_wait_hint = off\n"
     "overlay_on_text = on\n" /* API 46 */
     "ocr_pause = on\n";
 

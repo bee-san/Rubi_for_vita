@@ -490,13 +490,17 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
     unsigned nv = vjo_place_verified(title_id, &ver), nl = vjo_luna_sites(title_id, &sites), need = nl;
     uint16_t appv;
     for (unsigned i = 0; i < nv; i++) need |= ver[i].app_ver; /* an entry that names its version */
-    appv = need ? app_version() : 0;
+    /* APP_VER decides only for a Luna site or an entry that names its version. The debug build reads it for every
+     * game, for hooks.log's line below: a hook request needs the player's version (docs/hook-requests.md), and the
+     * long tail is the games with no entry. Without such a site or entry no decision reads it, so both builds
+     * install the same hooks. */
+    appv = need || VJO_DEBUG ? app_version() : 0;
     DLOG("main module %s NID %08X seg0 %08X+%X APP_VER %04X; %u verified, %u Luna sites\n", tai->name,
          (unsigned)tai->module_nid, (unsigned)seg_base, (unsigned)code_size, (unsigned)appv, nv, nl);
     for (unsigned i = 0; i < nv; i++) {
         const VjoPlaceVerified *v = &ver[i];
         /* a Luna site at the same address: the entry reads the text, Luna's hookfunc and filter post-process it */
-        const VjoLunaSite *same = vjo_luna_site_at(sites, nl, v->off, appv);
+        const VjoLunaSite *same = vjo_luna_site_at(sites, nl, v->off, appv, seg_base, code_size);
         int r = vjo_place_verified_version(v, appv) ? vjo_place_check_verified(v, code, code_size, seg_base,
                                                                               tai->module_nid)
                                                      : VJO_PLACE_VERSION;
@@ -507,12 +511,14 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
     }
     for (unsigned i = 0; i < nl; i++) {
         const VjoLunaSite *l = &sites[i];
-        uint32_t a = l->addr & ~1u, off = a - VJO_LUNA_SEG0;
+        /* Luna's space, or a marked site's guest address in a fixed-address executable (core/hook_luna.h) */
+        const uint32_t off = vjo_luna_offset(l, seg_base, code_size);
         int r = VJO_PLACE_OK, thumb = 0;
-        DLOG("luna %08X r%u", (unsigned)l->addr, (unsigned)l->reg);
+        if (off == VJO_LUNA_NO_OFFSET) DLOG("luna %08X r%u", (unsigned)l->addr, (unsigned)l->reg);
+        else DLOG("luna %08X r%u +%X", (unsigned)l->addr, (unsigned)l->reg, (unsigned)off);
         if (!l->ported) r = VJO_PLACE_UNPORTED;
         else if (!vjo_luna_version_ok(sites, nl, l, appv)) r = VJO_PLACE_VERSION;
-        else if (a < VJO_LUNA_SEG0 || off >= code_size) r = VJO_PLACE_RANGE;
+        else if (off == VJO_LUNA_NO_OFFSET) r = VJO_PLACE_RANGE;
         else if ((thumb = vjo_place_isa(code + off, code_size - off, l->addr)) < 0) r = VJO_PLACE_ENTRY;
         else r = vjo_place_check(code, code_size, seg_base, off, thumb);
         if (r == VJO_PLACE_OK) r = hook_site(tai->modid, off, thumb, l, NULL);
@@ -541,7 +547,7 @@ static void start(const char *title_id, unsigned word, int psp)
         return;
     }
     if (!title_id || !title_id[0]) {
-        DLOG("nothing: no title ID\n");
+        DLOG("nothing: %s\n", "no title ID"); /* main's format (tools/hook_request.py reads it) */
         return;
     }
     if (main_module(&tai, &mi) < 0) {

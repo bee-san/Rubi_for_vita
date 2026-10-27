@@ -127,10 +127,11 @@
  * its lines' column flag, config.ini ocr_vertical's parse; its key, the model's name and one cold message of the
  * OCR's in the data segment, VJO_DATA_TABLE) makes it 89,252 -> 89,300 + 73,048 -> 73,160 on main 796168e, the same
  * pages, 812 B of text room [measured: the same rows, main 796168e and this change; the debug build 101,460 ->
- * 101,548 + 73,008 -> 73,152, the same pages]. API 51's ocr_pause (its key beside the text gate's in the parse, one
- * speed bit, VjoConfig's 4 B) makes it 89,884 -> 89,956 + 73,232 on main 892cfb9, the same pages, 156 B of text room
- * [measured: the same rows, main 892cfb9 and this change; the debug build 101,988 -> 102,124 + 73,200 -> 73,224, the
- * same pages]. Its check is
+ * 101,548 + 73,008 -> 73,152, the same pages]. API 52's ocr_pause (its key beside the text gate's in the parse, one
+ * speed bit, VjoConfig's 4 B; #358's wait hint with the pause's clause, WAIT_HINT_PAUSE in the data segment, and the
+ * active game's STATIC_FB flag) makes it 89,980 -> 90,068 + 73,416 -> 73,648 on main 2a92864, the same pages, 44 B of
+ * text room and 80 B of data room [measured: the same rows, main 2a92864 and this change; the debug build 102,092 ->
+ * 102,220 + 73,408 -> 73,616, the same pages]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
@@ -331,6 +332,18 @@
  * text 160,648 -> 160,888 B (2,952 B of room left), normal 151,748 -> 151,988 B (3,660 B), the same pages [measured:
  * the build log's module rows, both builds, the fixes on main 241e09f, whose plugins main 16fa362 keeps; main's rows
  * as above]. No block, thread or allocation. */
+/* PCSG00020, one more verified entry and its filter (core/hook_place.c, core/hook_luna.c r_PCSG00020): worker text
+ * unchanged, rodata +32 B, data +68 B, both builds, the same pages [measured: arm-vita-eabi-size -A on both builds'
+ * VitaJPOverlay_OCR, main 892cfb9 (#354's build, whose worker differs only in VJO_API_VERSION) and this change,
+ * tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
+/* PCSG00700, one more verified entry and its filter: worker text unchanged, rodata +64 B (the entry's 40 B, the
+ * filter's patterns), data +104 B (the filter's ops, the filters' index 64 -> 68 B), both builds, the same pages
+ * [measured: arm-vita-eabi-size, both builds, main cbaa4e3 and this change; rebased on main 892cfb9, VitaSDK 2026.08]. No block, thread or
+ * allocation. */
+/* PCSG00883, one more verified entry (core/hook_place.c; it reuses RF_PCSG00020): worker text unchanged, rodata +16 B
+ * (debug) and +0 B (normal), data +40 B, the same pages [measured: arm-vita-eabi-size -A on both builds'
+ * VitaJPOverlay_OCR, #356's head 2ea1809 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or
+ * allocation. */
 /* PSP text and the PSP probe's format 4 (docs/native-hooks.md "PSP text (Adrenaline)", "PSP probe (debug build)"):
  * one more page in the DEBUG build only, 188,416 -> 192,512 B, in each game that is ON (the game's partition, never
  * SceShell's). Both builds gain PSP text (core/psp_text.c at -Os, its two profiles in the data segment; the 5pb. and
@@ -351,22 +364,18 @@
  * at the end of its workspace block (VJO_BUDGET_GAME_WORKSPACE), only with overlay_on_text on [measured: the build
  * log's module rows, both builds of main e2100e0 and this change, the gate's vitasdk container]. So each game that
  * is ON holds 188,416 -> 192,512 B (debug) and 180,224 -> 184,320 B (normal), the setting on or off. */
-/* API 51, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
- * memory check and step; core/vocr_ocr.c's frozen region): debug text 160,888 -> 162,008 B (1,832 B of room left) and
- * data/bss 35,328 -> 35,392 B, normal 151,988 -> 153,076 B (2,572 B) and 35,320 -> 35,384 B, the same pages
- * [measured: the build log's module rows, both builds, main 892cfb9 and this change (the gate's run on 20d4874),
- * tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's; no thread. */
-/* test/combined (the combined test build v0.9.8-test.N, never merged): main + every open draft, #318 (PSP text,
- * measured on main 627a673), #326 (API 46, the overlay on the game's text, measured on main e2100e0) and #355 (API 51,
- * the pause for the frame, measured on main 892cfb9), in the game's partition only: the debug worker's text
- * 160,888 -> 174,488 B and data/bss 35,328 -> 35,776 B, 200,704 -> 212,992 B of pages (three more; 1,640 B of text
- * room left); the normal worker's 151,988 -> 160,476 B and 35,320 -> 35,688 B, 192,512 -> 200,704 B (two more;
- * 3,364 B left) [measured: the build log's module rows, both builds of this branch at 71824d3, tools/fast_gate.sh's
- * vitasdk image; main's rows as the API 47 audit entry above gives them]. The kernel's and both Shells' pages are
- * main's (the normal Shell 93,540 + 69,376 B in 163,840 B: #326 moves s_cursor_text into the PAF UI block). No
- * block, thread or allocation beyond the PRs'. (v0.9.8-test.1, without #355: 212,992 / 196,608 B.) */
+/* API 52, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
+ * memory check, its step and the cap's switch; core/vocr_ocr.c's frozen region): debug text 161,144 ->
+ * 162,456 B (1,384 B of room left) and data/bss 35,544 -> 35,608 B, normal 152,196 -> 153,540 B
+ * (2,108 B) and 35,536 -> 35,600 B, the same pages [measured: check_memory_ledger.py's module rows, both
+ * builds, main 2a92864 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is
+ * VJO_BUDGET_GAME_FRAME's; no thread. */
+/* test/combined (the combined test build v0.9.8-test.N, never merged): main + every open draft (#318, #326, #355,
+ * #359), in the game's partition only: 200,704 -> 217,088 B of pages (debug: 177,624 + 36,032 B) and 192,512 -> 200,704 B
+ * (normal: 163,580 + 35,944 B) [measured: the gate's module rows, both builds, 5aa8a47]. The kernel's and both Shells'
+ * pages are main's (two of the drafts' Shell strings are in .rodata here: shell/worker.c). No block, thread or alloc. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 212992u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #endif
@@ -492,11 +501,16 @@
  * segments 41740+77732 B (debug), 36904+76044 B (normal), rounded 122880/118784 B.
  * Measured with VitaSDK GCC 15.2.0, Release, local minimal-build kernel-measure-ledger.json reports;
  * binary sizes only, console boot/free-pool impact unverified. */
-/* API 51, the pause for the frame (kernel/game_ocr.c: VJO_ROWS_FRAME's checks, the hook's chunked copy and its cap,
- * the watchdog in the rows tick): debug 43,096 -> 43,672 B of text and 77,764 -> 77,788 B of data/bss, normal 37,992
- * -> 38,480 and 76,076 -> 76,092 B, the same pages [measured: the build log's module rows, both builds, main 892cfb9
- * and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the copy runs in the game's
- * own display call, as a strip's does. */
+/* API 51, a trusted answer's capture on another scene (kernel/game_ocr.c VJO_ROWS_HOOK): text 41,444 -> 41,508 B
+ * (debug) and 36,356 -> 36,380 B (normal), data/bss unchanged (77,732 and 76,044 B), the same pages [measured:
+ * arm-vita-eabi-size on both builds' VitaJPOverlay_Kernel, main 892cfb9 and this change, tools/fast_gate.sh's
+ * vitasdk image]. No block, thread or allocation; the worker's API 43 strip is now taken only on a region without a
+ * screen yet. */
+/* API 52, the pause for the frame (kernel/game_ocr.c: VJO_ROWS_FRAME's checks, the hook's chunked copy and its cap,
+ * the watchdog in the rows tick): debug 43,160 -> 43,736 B of text and 77,764 -> 77,788 B of data/bss, normal 38,008
+ * -> 38,512 and 76,076 -> 76,092 B, the same pages [measured: check_memory_ledger.py's module rows, both builds, main
+ * 2a92864 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the copy runs in the
+ * game's own display call, as a strip's does. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else
@@ -596,14 +610,15 @@
  * VJO_VOCR_STRIP_BYTES may still run on a helper (API 22): it is copied out of this block into
  * the helper's line slot first, so no helper reads it; a larger one runs on the worker's thread. */
 #define VJO_BUDGET_GAME_LINE 516096u
-/* API 51, the pause for the frame (config.ini ocr_pause, off by default; docs/game-pause.md): a job that asks for it
+/* API 52, the pause for the frame (config.ini ocr_pause, off by default; docs/game-pause.md): a job that asks for it
  * copies the region from one frame, in one display call, into this block ("VjoGameVocrFrame": region width x height
  * grey bytes, at most 960 x 544 = 522,240 B, page-rounded), and reads every row from it, a line taller than a strip
  * included (core/vocr_ocr.h VjoGreySource.frozen), so it takes no VJO_BUDGET_GAME_LINE block. When the kernel refuses
  * the copy or cannot finish it, the worker frees the block before the job reads on, so a job holds this block or a
  * tall line's, never both: the worst case counts the larger (game_ocr/main.c checks both at compile time). Taken only
  * when it fits beside everything the job's memory check chose, with that check's reserve (never at the cost of a model
- * tier, the LM, the cascade or a helper), on the same ladder (USER_RW, CDRAM, phycont), freed with the job. */
+ * tier, the LM or the cascade, nor of another model's resident weights; it may cost a helper), on the same ladder
+ * (USER_RW, CDRAM, phycont), freed with the job. */
 #define VJO_BUDGET_GAME_FRAME 524288u
 #define VJO_BUDGET_GAME_LINE_OR_FRAME VJO_BUDGET_GAME_FRAME
 /* API 20: the beam + LM decoder's LM, resident like the weights while the game is the
@@ -645,7 +660,8 @@
  * the same reserve, and after 8 such answers in a row gives back the resident weights, LM and cascade
  * model: no new block, and the job's own worst case is the capture block's. API 49: it takes no strip at
  * all while the region shows the trusted line's scene (VJO_ROWS_HOOK publishes its capture without rows),
- * and API 43's strip otherwise. */
+ * and API 43's strip otherwise; API 51: no strip on another scene either (the kernel publishes the region's
+ * current scene), only while the region has no screen yet. */
 #define VJO_GAME_RESERVE_HOOK_ONLY (1u * 1024u * 1024u)
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
  * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of
@@ -654,7 +670,7 @@
  * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
  * line or frame block or helpers (1,851,392 B of the job's worst case besides the resident weights, LM
  * and cascade model, which a shot keeps: 8,560,640 + 450,560 B under the job's
- * 10,412,032 B, API 51 with VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
+ * 10,412,032 B, API 52 with VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
@@ -684,11 +700,11 @@
  * two text pages (8,192 B, both builds): the job's worst case 10,567,680 -> 10,584,064 B, 11.7 % of that free
  * USER (a real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,297,920 B, is 1,286,144 B
  * less). VOCR6's 4 MB LM (vita-vn-ocr #127, 3,603,552 B against ctclm.2's 3,781,072 B) lowers the LM budget and
- * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. API 51's
- * frame block (ocr_pause, draft #355) in place of the tall line's, the larger of the two, adds 8,192 B: 10,412,032 B
- * (11.5 %; a real peak with the pause, that job's frame block beside it at 960 x 544, 9,125,888 B). test/combined:
- * API 46 (overlay_on_text, draft #326) adds the workspace's page for a job's characters (a job of rows only:
- * columns get no places), 10,412,032 -> 10,416,128 B, within this ceiling. */
+ * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. API 52's
+ * frame block (ocr_pause) in place of the tall line's, the larger of the two, adds 8,192 B: 10,412,032 B (11.5 %;
+ * a real peak with the pause, that job's frame block beside it at 960 x 544, 9,125,888 B).
+ * test/combined: API 46 (overlay_on_text, draft #326) adds the workspace's page for a job's characters (a job
+ * of rows only: columns get no places), within this ceiling (the ledger's game row, this branch). */
 #define VJO_LIMIT_GAME_JOB 10604544u
 
 #endif

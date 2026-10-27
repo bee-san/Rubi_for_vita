@@ -633,6 +633,7 @@ static int fake_memory_fallback, fake_missing_with_fallback, fake_cancel_on_mode
 static int32_t fake_missing_io;
 static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
+static unsigned fake_changed_recognized; /* #353: the lines such a read's last try recognized (its result's) */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
 static int fake_rows_vertical; /* API 47, ocr_vertical = auto: the worker found the rows to be vertical text */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
@@ -734,6 +735,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.rc = VJO_E_SCREEN_CHANGED;
         fake_game_result.text[0] = 0;
         fake_game_result.tears = 3;
+        fake_game_result.recognized = fake_changed_recognized;
         vocr_frees++; /* the worker freed the job's workspace before answering */
         *out = fake_game_result;
         return 0;
@@ -870,6 +872,7 @@ static void reset(void)
 {
     /* API 31: no game session's hook state, no hook fields in the results */
     hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
+    game_static_fb = 0; /* API 52: a native game (WAIT_HINT_PAUSE) until a test starts the PSP emulator's */
 #ifdef VJO_WITH_VOCR
     memset(fake_hook, 0, sizeof(fake_hook));
 #endif
@@ -2247,7 +2250,7 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("ocr_line_fix %d: speed 0x%08X", fixes[k].cfg, (unsigned)fake_game_request.speed);
         mem_free();
     }
-    /* API 51: ocr_pause (off by default) rides in the speed word as VJO_GAME_OCR_S_PAUSE only when on */
+    /* API 52: ocr_pause (off by default) rides in the speed word as VJO_GAME_OCR_S_PAUSE only when on */
     reset();
     fake_recognized_text = "猫";
     TEST_CHECK(!cfg.ocr_pause);
@@ -2540,7 +2543,8 @@ static void test_psp_launch_uses_its_identity(void)
         state.game_pid = 77;
         on_game_start();
         classify_pending();
-        TEST_CHECK_(pending_pid == 0 && active_mode == VJO_GAME_STATIC_FB && enabled_psp == 1, "%s", games[i].key);
+        TEST_CHECK_(pending_pid == 0 && active_mode == VJO_GAME_STATIC_FB && enabled_psp == 1 && game_static_fb, "%s",
+                    games[i].key);
         TEST_CHECK_(!strcmp(title_id, games[i].key) && !strcmp(anki_tid, games[i].tid) && anki_psp == 1, "%s", games[i].key);
         /* No description: the name comes from the title's app parameters, as for a Vita game. */
         TEST_CHECK_(!strcmp(anki_game, games[i].name[0] ? games[i].name : "Title of PSPEMU006"), "%s", anki_game);
@@ -2566,6 +2570,7 @@ static void test_psp_launch_uses_its_identity(void)
     on_game_start();
     classify_pending();
     TEST_CHECK(active_mode == VJO_GAME && enabled_psp == 0 && !strcmp(title_id, "PCSG00415") && !anki_psp);
+    TEST_CHECK(!game_static_fb); /* API 52: a Vita game is paused for its frame when asked (WAIT_HINT_PAUSE) */
     identify_rc = -1;
     reset();
     state.game_pid = 80;
@@ -4306,7 +4311,7 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     TEST_CHECK(selftest_ends == 5 && selftest_rcs[0] == VJO_E_OOM && selftest_rcs[1] == VJO_E_OOM && selftest_done);
     fail_vocr_user = 0; fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
     mem_free();
-    /* API 51: no stage pauses the game, whatever ocr_pause says (the user's jobs only, as the gate) */
+    /* API 52: no stage pauses the game, whatever ocr_pause says (the user's jobs only, as the gate) */
     reset();
     cfg.ocr_pause = 1;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
@@ -4365,7 +4370,8 @@ static void test_selftest_waits_for_text_in_the_region(void)
 }
 #endif
 
-/* Nothing about a changed screen reaches the user (#81 request 4). */
+/* Nothing about a changed screen reaches the user (#81 request 4), but the open overlay's wait hint after
+ * WAIT_HINT_AFTER torn jobs in a row (#358: test_open_overlay_says_why_it_waits). */
 static void check_quiet(void)
 {
     TEST_CHECK(!g_view.status_is_error && !strstr(g_view.status, "changed") && !strstr(g_view.status, "reopen"));
@@ -4455,7 +4461,8 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
     mem_free();
 
     cursor_setup();
-    fake_screen_changes = 2;
+    fake_screen_changes = 3;
+    fake_changed_recognized = 2;
     open_overlay();
     TEST_ASSERT(job_running);
     finish_current_job(); /* the first: again at once */
@@ -4467,26 +4474,19 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
     TEST_CHECK(!job_running);
     test_now += 1000; control_tick(0);
     TEST_ASSERT(job_running && !open_retry);
-    finish_current_job(); /* the third reads the screen */
+    /* #353: the third failure in a row says so in the log (both builds), with the lines its game worker had
+     * recognized; the overlay's status is #358's */
+    TEST_CHECK(logged("ocr: the screen changed under every read") == NULL);
+    finish_current_job(); /* the third: 500 ms */
+    TEST_CHECK(logged("ocr: the screen changed under every read of 3 jobs in a row, the last with 2 line(s) "
+                      "recognized and not shown") != NULL);
+    test_now += 500000; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
     check_current_definition("cat", 0);
     check_quiet();
     close_overlay(); mem_free();
-
-    /* A sustained animated capture stops the foreground wait; no indefinite spinner or more jobs
-     * while the message is open. Closing it lets Auto recover and reopening uses the new text. */
-    cursor_setup();
-    fake_screen_changes = 3;
-    open_overlay(); finish_current_job(); finish_current_job();
-    test_now += 250000; control_tick(0); finish_current_job();
-    TEST_CHECK(!job_running && !open_retry && !view_waiting && !view_job_text && !g_view.list &&
-               g_view.status_is_error && strstr(g_view.status, "screen keeps changing"));
-    for (int tick = 0; tick < 20; tick++) { test_now += 1000000; control_tick(0); TEST_CHECK(!job_running); }
-    close_overlay(); control_tick(0);
-    TEST_ASSERT(job_running);
-    finish_current_job();
-    open_overlay();
-    check_current_definition("cat", 0);
-    check_quiet(); close_overlay(); mem_free();
+    fake_changed_recognized = 0;
 
     cursor_setup();
     fake_screen_changes = 2;
@@ -4520,6 +4520,221 @@ static void check_shown(const char *text, const char *meaning, uint32_t cursor)
     TEST_CHECK(strstr(g_view.list->entries[0].text, meaning) != NULL && g_view.list->entries[0].hl_start == (int)cursor);
     TEST_CHECK(!held_cmd && !held_view);
     check_quiet();
+}
+
+/* The open overlay waits for its text and says only "Recognizing…" (as it always did). */
+static void check_waiting(const char *status)
+{
+    TEST_CHECK_(!strcmp(g_view.status, status), "status '%s', not '%s'", g_view.status, status);
+    TEST_CHECK(g_view.open && !g_view.list && !g_view.status_is_error);
+}
+
+/* #358 (the owner: "Say why the user is waiting. After a few seconds of 'Recognizing…' on torn reads, name the cause
+ * and the fix"): once WAIT_HINT_AFTER (2) jobs in a row found the screen changed under every read, the open overlay's
+ * next tries say why it still is recognizing and what helps (WAIT_HINT, from the data segment), never as an error,
+ * until a read shows its text. One torn read never does; Automatically's torn jobs before the press count (the press
+ * says why at once); a try cancelled after it showed its sentence keeps it; ocr_wait_hint = off says "Recognizing…"
+ * all along; a region drawn as it asks, or a new game, starts over; a refresh's torn reads leave the shown text alone;
+ * the subtitle strip never shows it. API 52: with ocr_pause off (the default) in a game the pause works in, the hint
+ * also names it (WAIT_HINT_PAUSE); with it on, or in a PSP game (which the kernel never pauses), it does not. */
+static void test_open_overlay_says_why_it_waits(void)
+{
+    TEST_CHECK(strstr(WAIT_HINT, "Recognizing…") == WAIT_HINT && strstr(WAIT_HINT, "keeps moving") &&
+               strstr(WAIT_HINT, "□") && strlen(WAIT_HINT) < sizeof(g_view.status)); /* still trying; the cause, the fix */
+    TEST_CHECK(!strncmp(WAIT_HINT_PAUSE, WAIT_HINT, strlen(WAIT_HINT)) &&
+               !strcmp(WAIT_HINT_PAUSE + strlen(WAIT_HINT), " Or turn on Pause the game to read in the Rubi app.") &&
+               strlen(WAIT_HINT_PAUSE) < sizeof(g_view.status)); /* the same, and the pause; it fits the status */
+
+    /* Three torn reads after the press, then one that reads its screen. */
+    cursor_setup();
+    TEST_CHECK(loaded.ocr_wait_hint == 1); /* on by default */
+    fake_screen_changes = 3;
+    open_overlay();
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job(); /* the first torn: again at once, still "Recognizing…" */
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job(); /* the second: the next try 250 ms later */
+    TEST_CHECK(!job_running && open_retry);
+    check_waiting("Recognizing…");
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running); /* the third try, after two in a row: why */
+    check_waiting(WAIT_HINT_PAUSE);
+    TEST_CHECK(DLOGGED("job start (the screen changed during the last one)"));
+    finish_current_job(); /* the third torn: 500 ms; the hint stays meanwhile */
+    TEST_CHECK(!job_running && open_retry);
+    check_waiting(WAIT_HINT_PAUSE);
+    test_now += 500000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT_PAUSE);
+    finish_current_job(); /* it reads its screen: the text and its word replace the hint */
+    check_current_definition("cat", 0);
+    TEST_CHECK(!g_view.status[0] && !screen_changed_streak);
+    check_quiet();
+    close_overlay(); mem_free();
+
+    /* One torn read, then a read: never the hint. */
+    cursor_setup();
+    fake_screen_changes = 1;
+    open_overlay(); finish_current_job();
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* Automatically's two torn jobs while the overlay is closed show nothing; the press after them says why at once. */
+    cursor_setup();
+    fake_screen_changes = 3;
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && job_prepares);
+    finish_current_job();
+    control_tick(0);
+    TEST_ASSERT(job_running); /* again at once */
+    finish_current_job();
+    TEST_CHECK(screen_changed_streak == 2 && !g_view.open && !g_view.status[0]);
+    check_quiet();
+    open_overlay();
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT_PAUSE);
+    finish_current_job(); /* torn: 500 ms */
+    check_waiting(WAIT_HINT_PAUSE);
+    test_now += 500000; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* A try that showed its sentence ("Looking up words…") and was then cancelled for a newer screen: the next try
+     * still says why (start_job_kind gives both its publishes the same status). */
+    cursor_setup();
+    fake_screen_changes = 2;
+    open_overlay(); finish_current_job(); finish_current_job();
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT_PAUSE);
+    test_thread = NET_THREAD;
+    net_phase = NET_IDLE;
+#if !VJO_DEBUG
+    net_job_begin();
+#endif
+    net_job();
+#if !VJO_DEBUG
+    net_job_end();
+#endif
+    test_thread = CTL_THREAD;
+    TEST_ASSERT(job_text_ready && job_done);
+    on_job_text();
+    TEST_ASSERT(view_job_text && g_view.list == &job_text_list);
+    job_cancelled = 1; /* a newer screen (cancel_outdated_job) */
+    on_job_done();
+    TEST_ASSERT(job_running && !view_job_text);
+    check_waiting(WAIT_HINT_PAUSE);
+#if !VJO_DEBUG
+    test_thread = NET_THREAD;
+    net_idle_write();
+    test_thread = CTL_THREAD;
+#endif
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* ocr_wait_hint = off: "Recognizing…" all along, as before #358. */
+    cursor_setup();
+    cfg.ocr_wait_hint = loaded.ocr_wait_hint = 0; /* the overlay's opening loads the settings */
+    fake_screen_changes = 3;
+    open_overlay(); finish_current_job(); finish_current_job();
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job();
+    test_now += 500000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* API 52: ocr_pause on, or a PSP game (the emulator's process, never paused) with it off: the hint without the
+     * pause's clause. */
+    for (int psp = 0; psp < 2; psp++) {
+        cursor_setup();
+        if (psp) game_static_fb = 1;
+        else cfg.ocr_pause = loaded.ocr_pause = 1; /* the overlay's opening loads the settings */
+        fake_screen_changes = 3;
+        open_overlay(); finish_current_job(); finish_current_job();
+        test_now += 250000; control_tick(0);
+        TEST_ASSERT(job_running);
+        check_waiting(WAIT_HINT);
+        finish_current_job();
+        test_now += 500000; control_tick(0);
+        TEST_ASSERT(job_running);
+        finish_current_job();
+        check_current_definition("cat", 0);
+        close_overlay(); mem_free();
+    }
+
+    /* The region drawn as the hint asks (□, a box, Enter) starts over: the old region's try, cancelled, counts for
+     * no region, and the next press says "Recognizing…" again, with no retry pace held over. */
+    cursor_setup();
+    fake_screen_changes = 3;
+    open_overlay(); finish_current_job(); finish_current_job();
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT_PAUSE);
+    VjoRect drawn = {10, 10, 200, 60};
+    vjo_post_command(VJO_CMD_SET_REGION, &drawn); control_tick(0); /* saved: the overlay closes, the try cancelled */
+    TEST_CHECK(ov == OV_CLOSED && job_running && job_cancelled && !screen_changed_streak && !screen_retry_until);
+    finish_current_job(); /* cancelled before its read: it counts for no region */
+    TEST_CHECK(!screen_changed_streak && !screen_retry_until);
+    fake_screen_changes = 1; /* the new region: one torn read, then the text */
+    open_overlay();
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job(); /* one in a row: again at once, still "Recognizing…" */
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* Another game (or the same one restarted) starts over: its press says "Recognizing…". */
+    cursor_setup();
+    fake_screen_changes = 2;
+    stable_pending = 1; control_tick(0); finish_current_job();
+    control_tick(0); finish_current_job();
+    TEST_CHECK(screen_changed_streak == 2);
+    invalidate_game_work();
+    open_overlay();
+    TEST_ASSERT(job_running);
+    check_waiting("Recognizing…");
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+
+    /* The open overlay shows a text: its refreshes' torn reads count, but leave that text, its entry and its status
+     * alone (a refresh publishes no status), and the subtitle strip shows the text, never the hint. */
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    const VjoEntryList *shown = g_view.list;
+    unsigned seq = g_view.list_seq;
+    subtitles = 1;
+    fake_screen_changes = 3;
+    for (uint32_t i = 0; i < 3; i++) {
+        next_scene(20 + i);
+        test_now += 10 * REFRESH_GAP_US;
+        control_tick(VJO_EV_REGION_STABLE);
+        TEST_ASSERT(job_running && job_refresh);
+        finish_current_job();
+        TEST_CHECK(g_view.list == shown && g_view.list_seq == seq && !g_view.status[0]);
+        TEST_CHECK(!strstr(g_view.strip_text, "keeps moving"));
+    }
+    TEST_CHECK(screen_changed_streak == 3);
+    check_shown("猫犬鳥", "cat", 0);
+    subtitles = 0;
+    close_overlay(); mem_free();
 }
 
 /* ---- line history (docs/line-history.md) ---- */
@@ -8112,6 +8327,7 @@ TEST_LIST = {
     {"selftest_waits_for_text_in_the_region_a_bounded_number_of_screens", test_selftest_waits_for_text_in_the_region},
 #endif
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
+    {"open_overlay_says_why_it_waits", test_open_overlay_says_why_it_waits},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
     {"api49_trusted_hook_line_is_read_at_once", test_trusted_hook_line_is_read_at_once},
     {"history_up_walks_back_and_down_returns", test_history_up_walks_back_and_down_returns},

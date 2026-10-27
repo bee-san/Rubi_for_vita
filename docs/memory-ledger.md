@@ -5,6 +5,51 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## The line watch (#353)
+
+The stable-text wait's line watch ([text-stability.md](text-stability.md#animated-icons-and-moving-pictures-353)) adds
+code to the game worker and a log line to the Shell, and no block, thread or allocation: the line checksums take the
+row states' place in the job's capture block (its size, `vjo_vocr_capture_bytes`, unchanged), the finder's runs its own
+arena in the job's workspace. On the worker's stack (32 KiB) the job's frame grows from 1,512 to 2,616 B (`run_job`,
+with the line sets it watches) and a finder's run takes `look_alike`'s 360 B on its way [measured: `arm-vita-eabi-gcc
+-Os -fstack-usage`, the build's flags]. In the Shell the log line's string is in the data segment (`VJO_DATA_TABLE`);
+its code is `note_screen_changed`'s call. No budget is raised. The module rows [measured: the build log's module rows,
+VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main `2a92864` and this change rebased on it, both builds]:
+
+| Module | main `2a92864` | this change | pages |
+|---|---:|---:|---:|
+| worker, debug | 161,144 + 35,544 B | 163,784 + 35,544 B | 200,704 B both |
+| worker, normal | 152,196 + 35,536 B | 154,836 + 35,536 B | 192,512 B both (exact) |
+| Shell, debug | 102,092 + 73,408 B | 102,124 + 73,592 B | 176,128 B both |
+| Shell, normal | 89,980 + 73,416 B | 89,996 + 73,608 B | 163,840 B both (exact) |
+| kernel | 43,160 + 77,764 B (debug), 38,008 + 76,076 B (normal) | the same | 122,880 / 118,784 B |
+
+The debug worker keeps 56 B of its last text page (2,696 B before), the normal worker 812 B (3,452 B); the normal
+Shell 116 B of code room (132 B) and 120 B of data room (312 B). The next change that adds worker code or rodata (a
+hook entry adds 32-64 B of rodata) takes the debug worker a page further, a budget raise of its own (AGENTS.md rule
+10), unless it trims. Of the worker's text, `core/vocr_ocr.c` is 2,594 B (17,886 → 20,480 B at `-Os`: `run_job` 6,852
+→ 7,856 B, the row checks' `stream_read` 684 → 996 B, `lines_alike` 410 B, `relook` 200 B, `hold_still` 186 B,
+`watch_pause` 124 B and smaller helpers); the rest is the step's kind in `game_ocr/main.c`.
+
+## Why the overlay waits (#358)
+
+The open overlay's wait hint ([text-stability.md](text-stability.md#why-the-overlay-waits-358)) is Shell code and
+data only: the choice of status as a try starts (`shell/worker.c` `start_job_kind`), the count's reset when a region
+is saved (`on_command`), `ocr_wait_hint`'s parse (it
+shares `ocr_boost_clock`'s branch: `core/config.c`) and its field in each `VjoConfig` copy. The hint (153 B) and the
+key (14 B) are in the data segment (`VJO_DATA_TABLE`), and so is "Recognizing…" now (15 B), which gives the Shell's
+code that much room back. No block, thread, stack or allocation; no budget raised. Measured with VitaSDK GCC 15.2.0
+in the pinned image (`tools/fast_gate.sh`'s; `tools/check_memory_ledger.py`'s module rows, text + data/bss), main
+`2f68854` against this change (the same Shell rows on `892cfb9` and `48d6a3b`):
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Shell | 101,988 + 73,200 → 102,092 + 73,408 B | 89,884 + 73,232 → 89,980 + 73,416 B | 176,128 / 163,840 B, unchanged |
+| Kernel, game worker | unchanged | unchanged | unchanged |
+
+The normal Shell keeps 132 B of code room (228 B before) and 312 B of data room (496 B); the debug Shell 308 B and
+320 B.
+
 ## Line finder fixes (API 50, vita-vn-ocr #129) and the pin at f8a1856
 
 **The game worker, in the game's partition only: two text pages more in each game that is ON, in both builds**
@@ -53,7 +98,8 @@ shorter wait and the rows-less publication (code only); the worker's watch of tr
 text's hash and length, its trust and site words (four words of `.bss`), the hook pool reused for the watch's text
 (no new buffer); the Shell's pacing bypass, the cursor kept when a line grew, and history's newest record (its place,
 time and the last append's: 32 B of `.bss`). A trusted answer now takes no capture strip at all (its capture is
-published without rows); it takes API 43's strip only when the region shows another scene. No new block, thread or
+published without rows); it takes API 43's strip only when the region shows another scene (API 51: only when the
+region has no screen yet). No new block, thread or
 stack, no budget raised. API 43's follow-up (`same_pipeline` compares `hook_trust`, +16 B of normal Shell text) is
 part of it. The rows [measured: the build log's module rows, VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main
 `b6c715c` and this change, both builds]:
@@ -594,7 +640,7 @@ modules (`ctest -R memory_ledger` runs it locally):
   game                                237,568   10,412,032   10,604,544      192,512
 ```
 
-(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 51 and VOCR6's LMs; the normal
+(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 52 and VOCR6's LMs; the normal
 build's game permanent is 229,376 B.)
 
 Historical packaged-module output retained from PR #234 before this integration (current combined
@@ -1033,8 +1079,8 @@ fails a module that still exports or imports either syscall.
 | VjoGameVocrCapture | 65,536 at most | one strip of grey rows and, per region row, its checksum, its recent states (16, or as many as fit) and two bits: at most 65,536 B at any region (`VJO_VOCR_CAPTURE_LIMIT`; 65,480 B at 960 × 544, 61,388 B at 917 × 125), per job; `USER_RW`, else CDRAM, else phycont | `vjo_vocr_capture_bytes` |
 | VjoGameShot | 450,560 at most | API 23, an Anki card's screenshot: the JPEG encoder's state (4,096 B at most), one strip of 64 colour rows at 960 px (245,760 B) and the JPEG (196,608 B at most), page-rounded, only while the screenshot runs; `USER_RW`, else CDRAM, else phycont, after its own check that the game keeps 4 MiB beside it. PR #235's trimming scans the strip and encodes its picture sub-rectangle in this same block, with no additional buffer. A screenshot is a job of the one job slot, so this block is never held with an OCR job's workspace, capture block, tall line or helpers (1,843,200 B of the job's worst case since API 42's workspace, 1,835,008 B before): not in the sum | `game_ocr/main.c` `SHOT_BLOCK_BYTES`, checked against the budget at compile time; `host/tests/test_game_shot.c` |
 | VjoGameVocrLine | 516,096 at most | a line taller than a strip (a finder band), kept whole at its own width × height, only when one occurs (41 of 372 linefind dev regions; 78,884 B at most there), and since API 47 for most columns of a job of columns: a column's crop, at most 57,344 B (`VJO_VOCR_ROTATE_BYTES`: a larger column is left out before it is fetched), one block at a time, given back with the job and before each of `auto`'s retries; `USER_RW`, else CDRAM, else phycont (in their 256 KiB and 1 MiB units); sized as what fitted the API 19 job limit (2,392,064 B) with F20, the workspace and the capture block, unchanged since | `core/vocr_ocr.h` `VJO_VOCR_LINE_MAX_BYTES`; `host/tests/test_game_vocr.c` |
-| VjoGameVocrFrame | 524,288 at most | API 51, the pause for the frame (`ocr_pause`, off by default; [game-pause.md](game-pause.md)): the region's grey rows copied from one frame in one display call (width × height, page-rounded: 118,784 B for an 852 × 135 box, 524,288 B at 960 × 544), every read of the job from it, a tall line's included, so the job takes no VjoGameVocrLine; given back before the job reads on when the kernel refuses or cuts the copy, so a job holds one of the two, never both: the worst case counts the larger (`VJO_BUDGET_GAME_LINE_OR_FRAME`); taken only when it fits beside everything the memory check chose, with that check's reserve; `USER_RW`, else CDRAM, else phycont; freed with the job | `game_ocr/main.c` `vjo_frame_budget_check`; `host/tests/test_game_resident.c`, `test_alloc_sim.c` |
-| **limits** | weights 2,502,656; workspace 1,220,608; job 10,604,544 | the recognizer's ceiling: weights at most the owner's 2.5 MB for the Large size (2026-10-14 18:09Z; 2,500,000 B page-rounded; 1,601,536 B, Normal's 1.6 MB, before VOCR5's Large), which the preflight (free `USER` minus the job's reserve: 4, 8 or 16 MiB by the largest model size it holds since API 21, `VJO_GAME_RESERVE_*`; memory left to the game, never taken) has to cover before anything is allocated, and since API 20 the 4 MB LM and the cascade's model (the job limit raised from 2,392,064 B by their blocks and workspace; a job takes either only when it fits, and #81's CLANNAD log shows 90,177,536 B free at the least); since API 22 the helpers' slots and stacks (614,400 B more at the worst; a job takes one fewer helper at a time, down to none, when the game is short, at the same reserve, 8,720,384 B); and for VOCR5's Large its weights and cascade budgets (913,408 B more each) and the larger workspace: 10,567,680 B, 11.7 % of that free `USER`; API 34's and #109's worker pages (12,288 B) and API 42's head gate and two-level head (the Large blob's page in both model budgets, the workspace's two pages and the worker's two: 24,576 B) make the limit 10,604,544 B, 11.8 %; VOCR6's 4 MB LM (vita-vn-ocr #127) lowers the LM budget by 180,224 B (a job's worst case is 10,403,840 B, 11.5 %; its real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,117,696 B, is 1,286,144 B less); API 51's frame block in place of the tall line's adds 8,192 B: 10,412,032 B, 11.5 % | the owner's ceilings (prompts' rules, 2026-10-14 18:09Z); vita-vn-ocr [`docs/vita-memory-budget.md`](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vita-memory-budget.md); #81 [measured] |
+| VjoGameVocrFrame | 524,288 at most | API 52, the pause for the frame (`ocr_pause`, off by default; [game-pause.md](game-pause.md)): the region's grey rows copied from one frame in one display call (width × height, page-rounded: 118,784 B for an 852 × 135 box, 524,288 B at 960 × 544), every read of the job from it, a tall line's included, so the job takes no VjoGameVocrLine; given back before the job reads on when the kernel refuses or cuts the copy, so a job holds one of the two, never both: the worst case counts the larger (`VJO_BUDGET_GAME_LINE_OR_FRAME`); taken only when it fits beside everything the memory check chose, with that check's reserve; `USER_RW`, else CDRAM, else phycont; freed with the job | `game_ocr/main.c` `vjo_frame_budget_check`; `host/tests/test_game_resident.c`, `test_alloc_sim.c` |
+| **limits** | weights 2,502,656; workspace 1,220,608; job 10,604,544 | the recognizer's ceiling: weights at most the owner's 2.5 MB for the Large size (2026-10-14 18:09Z; 2,500,000 B page-rounded; 1,601,536 B, Normal's 1.6 MB, before VOCR5's Large), which the preflight (free `USER` minus the job's reserve: 4, 8 or 16 MiB by the largest model size it holds since API 21, `VJO_GAME_RESERVE_*`; memory left to the game, never taken) has to cover before anything is allocated, and since API 20 the 4 MB LM and the cascade's model (the job limit raised from 2,392,064 B by their blocks and workspace; a job takes either only when it fits, and #81's CLANNAD log shows 90,177,536 B free at the least); since API 22 the helpers' slots and stacks (614,400 B more at the worst; a job takes one fewer helper at a time, down to none, when the game is short, at the same reserve, 8,720,384 B); and for VOCR5's Large its weights and cascade budgets (913,408 B more each) and the larger workspace: 10,567,680 B, 11.7 % of that free `USER`; API 34's and #109's worker pages (12,288 B) and API 42's head gate and two-level head (the Large blob's page in both model budgets, the workspace's two pages and the worker's two: 24,576 B) make the limit 10,604,544 B, 11.8 %; VOCR6's 4 MB LM (vita-vn-ocr #127) lowers the LM budget by 180,224 B (a job's worst case is 10,403,840 B, 11.5 %; its real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,117,696 B, is 1,286,144 B less); API 52's frame block in place of the tall line's adds 8,192 B: 10,412,032 B, 11.5 % | the owner's ceilings (prompts' rules, 2026-10-14 18:09Z); vita-vn-ocr [`docs/vita-memory-budget.md`](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vita-memory-budget.md); #81 [measured] |
 
 ## The two builds
 

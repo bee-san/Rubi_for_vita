@@ -92,7 +92,7 @@
 #define PREF_GATE 8
 #define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical) */
 #define PREF_ONTEXT 10 /* API 46: Overlay on the game's text (config.ini overlay_on_text) */
-#define PREF_PAUSE 11  /* API 51: Pause the game to read (config.ini ocr_pause), the last card (test/combined) */
+#define PREF_PAUSE 11  /* API 52: Pause the game to read (config.ini ocr_pause), the last card (test/combined) */
 #define PREFERENCES 12
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
@@ -678,7 +678,7 @@ static void set_on_text(int on)
     preference_saved(vjo_preferences_save_overlay_on_text(on, &scratch));
 }
 
-/* API 51, Pause the game to read (config.ini ocr_pause, docs/game-pause.md): applies when the overlay next opens. */
+/* API 52, Pause the game to read (config.ini ocr_pause, docs/game-pause.md): applies when the overlay next opens. */
 static void set_pause(int on)
 {
     if (on == preferences.ocr_pause) return;
@@ -1019,14 +1019,14 @@ static void draw_ontext_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, "ON: words marked where the game shows them; tap one.");
 }
 
-/* API 51: the game's frame held while Rubi copies the text box from it, so the OCR reads one still picture
+/* API 52: the game's frame held while Rubi copies the text box from it, so the OCR reads one still picture
  * (docs/game-pause.md); OFF reads it strip by strip over a few frames, as before. */
 static void draw_pause_card(int y)
 {
     text(42, y + CARD_TITLE_Y, WHITE, 28, "Pause the game to read");
     badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
           preferences.ocr_pause ? "ON" : "OFF", preferences_writable && preferences.ocr_pause);
-    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a brief pause, so an animated icon can't spoil a read.");
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a brief pause, so an icon can't spoil a read. Draw a box.");
 }
 
 static void draw_card(int i, int y)
@@ -1140,7 +1140,7 @@ static void touch_preference(int x, int y)
             set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
         break;
     default: /* the ON/OFF cards: Speed boost, Japanese characters only, (API 43) the two OCR skips, (API 46)
-              * Overlay on the game's text and (API 51) the pause */
+              * Overlay on the game's text and (API 52) the pause */
         toggle_preference();
     }
 }

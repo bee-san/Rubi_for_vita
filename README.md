@@ -178,7 +178,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns in every game) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | | **Overlay on the game's text** (testing): the word is marked where the game shows it, a tap on the game's text looks it up, and the popup sits beside the text ([details](docs/overlay-on-text.md)) | OFF |
-| | **Pause the game to read**: each reading copies the text box from one frame at once, the game waiting a moment (an estimated 2-6 ms for a dialogue box), so a spinning or blinking icon in it can't stop the read ([details](docs/game-pause.md)) | OFF |
+| | **Pause the game to read**: each reading copies the text box from one frame at once, the game waiting a moment (an estimated 2-6 ms for a drawn text box, 11-29 ms for the whole screen: draw a box with □ first), so a spinning icon in it can't stop the read ([details](docs/game-pause.md)) | OFF |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -201,12 +201,12 @@ Older installs may have kept **OCR only**, so choose Automatic once if needed.
 | --- | --- | --- |
 | **CLANNAD**, Japanese Vita release (`PCSG00415`) | Automatic; string-copy hooks and Rubi's own game profile | String-copy extraction confirmed in the combined debug test build, including readings without OCR. The separate game profile's hook site remains unverified on a real Vita. |
 | **175 Vita title IDs from LunaTranslator's table** | Automatic attempts using 294 ported hook sites, plus string-copy hooks | Experimental: these game-specific hook sites have not been verified on a real Vita. Examples include **TIME TRAVELERS** (`PCSG00062`), **Code:Realize ～創世の姫君～** (`PCSG00402`) and **DRAMAtical Murder** (`PCSG00420`). |
-| **28 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 16 are games of Luna's table: for 15 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita. |
+| **31 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8, **極限脱出ＡＤＶ 善人シボウデス** (`PCSG00020`, Zero Escape: Virtue's Last Reward), **蒼の彼方のフォーリズム** (`PCSG00700`) and the **ZERO ESCAPE ダブルパック**'s 善人シボウデス (`PCSG00883`) on `main`), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 17 are games of Luna's table: for 15 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita; 蒼の彼方のフォーリズム also on a PS Vita (15 of its hook's 19 lines agreed with OCR; 3 scored 0, not examined). |
 | Other native Vita games | Automatic tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. OCR is used until a matching source is found. **Every game** makes the same attempts. |
 | PSP games in Adrenaline: **Memories Off 6 ～T-wave～** (`NPJH50382`/`ULJM05467`) and **Memories Off ～それから～** (`NPJH50132`/`ULJM05350`) | With **Every game** only: Rubi reads the game's dialogue page from PSP memory, read-only, when the game's ID and code are the expected ones; OCR must agree before the text is shown | Experimental: proven in the PPSSPP emulator only (the farm), not on a real Vita ([PSP text](docs/native-hooks.md#psp-text-adrenaline)). |
 | Other PSP games in Adrenaline | OCR only | PSP text hooks in the game itself (a PSP plugin) are not implemented, in any mode. |
 
-That is **188 Vita title IDs with game-specific hook entries**, including CLANNAD; Automatic also
+That is **190 Vita title IDs with game-specific hook entries**, including CLANNAD; Automatic also
 tries generic string-copy hooks in other enabled native Vita games.
 See the **[full Vita game list](docs/hook-titles.md#vita-titles)** for title
 IDs, versions and individual hook status; entries marked **refused** are not installed. The PSP table
@@ -218,6 +218,12 @@ text against OCR initially and periodically afterwards, and falls back to OCR wh
 supply it. Both text sources work
 offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 [technical design](docs/native-hooks.md) covers string-copy hooks and game-specific hook sites.
+
+**Your game has no hook, or its hook is refused?** Ask for one with a
+[hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml): play the game once
+with the debug build and send its `hooks.log` (no game text in it). The owner's hook farm can turn a request into a
+verified entry: it works on the Japanese releases of visual novels, and not every request gets one
+([how it works](docs/hook-requests.md)).
 
 ## Supported
 
@@ -345,7 +351,7 @@ and copy them to the memory card; up to eight are used, in your order
 - [Anki cards](docs/anki.md) · [Your own dictionaries](docs/local-dictionaries.md) ·
   [Read text: automatically or on a press](docs/auto-vs-press.md) · [The OCR](docs/vita-vn-ocr.md) ·
   [The one-VPK install](docs/one-vpk-install.md) · [Safe boot](docs/boot-safety.md) ·
-  [Vita memory](docs/vita-memory.md)
+  [Vita memory](docs/vita-memory.md) · [Hook requests](docs/hook-requests.md)
 
 ## Contributing
 
@@ -354,7 +360,8 @@ Bug reports, ideas and pull requests are welcome in
 [Discord](http://discord.skerritt.blog). With a bug, the logs help most: from a computer, with
 VitaShell's FTP on, `bash tools/install_ftp.sh --collect VITA_IP` gathers them into one zip
 ([what it collects](docs/self-test.md#collecting-everything---collect)). A good first contribution:
-try Rubi on a Vita Slim, a PS TV or a game nobody has tested yet, and send that zip in an issue. To
+try Rubi on a Vita Slim, a PS TV or a game nobody has tested yet, and send that zip in an issue; for a game
+without a text hook, a [hook request](docs/hook-requests.md) with its `hooks.log`. To
 build and test Rubi, see the guide's [Build and validation](docs/guide.md#build-and-validation);
 [AGENTS.md](AGENTS.md) has the rules every change follows.
 

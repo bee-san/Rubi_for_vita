@@ -57,14 +57,13 @@ typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 :
 /* VJO_E_SCREEN_CHANGED (the screen changed under every read of a job): the
  * next try starts at once, from the second in a row SCREEN_RETRY_MS later,
  * doubling up to SCREEN_RETRY_MAX_MS. The try itself waits in the game for the
- * text to hold still (vocr_run_one's request). After three consecutive failed
- * captures the open overlay stops waiting and shows a message; closed-overlay
- * prefetch and quiet refreshes retain their backoff. */
+ * text to hold still (vocr_run_one's request). Nothing is shown for either,
+ * until WAIT_HINT_AFTER in a row: then the open overlay says why it waits
+ * (ocr_wait_hint, #358: start_job_kind). test/combined: main's #364 here, not draft #318's
+ * stop after three tries (#278's), which #364 supersedes: the tries go on with the hint. */
 #define SCREEN_RETRY_MS      250u
 #define SCREEN_RETRY_MAX_MS 4000u
-#define SCREEN_OPEN_TRIES 3
-static const char SCREEN_CHANGED_MESSAGE[] VJO_DATA_TABLE(SCREEN_CHANGED_MESSAGE) =
-    "The screen keeps changing. Close and reopen the overlay when the text stops.";
+#define WAIT_HINT_AFTER 2u /* #358: measured (docs/text-stability.md "Why the overlay waits") */
 
 VjoView g_view;
 
@@ -1163,7 +1162,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
                          (job_cfg.ocr_line_fix == 3 ? VJO_GAME_OCR_S_LINE_VALLEY : 0u);
     /* API 46: where each character of the text is on the screen, for the overlay on the game's text */
     if (job_cfg.overlay_on_text && stage < 0) request.speed |= VJO_GAME_OCR_S_CHARS;
-    /* API 51: ocr_pause (off by default) pauses the game for its frame in the user's jobs (docs/game-pause.md) */
+    /* API 52: ocr_pause (off by default) pauses the game for its frame in the user's jobs (docs/game-pause.md) */
     if (job_cfg.ocr_pause && stage < 0) request.speed |= VJO_GAME_OCR_S_PAUSE;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
@@ -1731,21 +1730,46 @@ static int net_busy(void)
     return job_running;
 }
 
+/* #358 (the owner: "Say why the user is waiting"): what the open overlay says, with ocr_wait_hint on, as it starts a
+ * try at its text once WAIT_HINT_AFTER jobs in a row found the text changed under every read (screen_changed_streak,
+ * note_screen_changed; the press's own tries, or Automatically's before it): why it still is recognizing, and what
+ * helps. Not an error: the tries go on, and a read shows its text. In the data segment (the normal Shell's code room). */
+#define WAIT_HINT_TEXT                                                                                                 \
+    "Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ "  \
+    "to draw a region around just the text."
+static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) = WAIT_HINT_TEXT;
+/* API 52: the same, and the pause (docs/game-pause.md), while ocr_pause is off in a game it works in: it reads the
+ * region from one frame, which an animated icon cannot change. Never in the PSP emulator's process (game_static_fb),
+ * where the kernel refuses it. */
+/* test/combined: in .rodata (the code segment), not the data segment: with every draft the normal Shell's data pages
+ * were full (69,888 B in 69,632), its code pages had room (SceShell's pages may only shrink: AGENTS.md rule 1) */
+static const char WAIT_HINT_PAUSE[] =
+    WAIT_HINT_TEXT " Or turn on Pause the game to read in the Rubi app.";
+/* API 52: the active game is the PSP emulator's (VJO_GAME_STATIC_FB, activate_game): no pause, so no WAIT_HINT_PAUSE */
+static int game_static_fb;
+/* the overlay's and the strip's status while a job runs, in the data segment too (#358: its code room back) */
+static const char RECOGNIZING[] VJO_DATA_TABLE(RECOGNIZING) = "Recognizing…";
+
 /* lookup = 0: OCR only (the subtitles' sentence). refresh: the open
  * overlay's quiet refresh (background_open), which keeps what the overlay shows:
  * no retirement, no "Recognizing…", the result arena stays, and its result
  * goes to cache_data[1] (local lookups use [0] and one arena). */
 static void start_job_kind(const char *why, int lookup, int refresh)
 {
+    const char *status;
     if (job_running)
         return;
     job_prepare = 0;
+    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT; API 52: and the pause, while it is off) */
+    status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER
+                 ? cfg.ocr_pause || game_static_fb ? WAIT_HINT : WAIT_HINT_PAUSE
+                 : RECOGNIZING;
     if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
          * after all capture/model/inference allocations have been freed. */
         retire_local_text(0); /* atomic request exclusion and view detachment */
         if (ov != OV_CLOSED)
-            view_publish(1, NULL, "Recognizing…", 0);
+            view_publish(1, NULL, status, 0);
         mem_free();
     }
     vjo_dlog("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
@@ -1771,7 +1795,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     job_cancelled = 0;
     if (view_job_text) { /* its arena may be the new job's (never with a refresh: the overlay shows a lookup) */
         view_job_text = 0;
-        view_publish(1, NULL, "Recognizing…", 0);
+        view_publish(1, NULL, status, 0);
     }
     job_done = 0;
     job_text_ready = 0;
@@ -2025,7 +2049,7 @@ static void open_overlay(void)
             : !cache_ok || active < 0 ? "no background result"
                                       : "screen changed since the background result",
             st.stable, st.quiet);
-    view_publish(1, NULL, "Recognizing…", 0);
+    view_publish(1, NULL, RECOGNIZING, 0);
     view_waiting = 1;
     if (job_running) {
         ov = OV_OPEN_OLD_JOB; /* a cancelled one is followed by a new one */
@@ -2348,7 +2372,17 @@ static void on_cursor_done(void)
  * worker reads a region again up to VJO_VOCR_TRIES times), so nothing is
  * shown for it, no error either. The next try starts at once, from the
  * second in a row SCREEN_RETRY_MS later, doubling up to SCREEN_RETRY_MAX_MS;
- * a job that reads its screen ends the run. */
+ * a job that reads its screen ends the run. #353: the third in a row says so in
+ * the log (both builds), with the lines its game worker had recognized and that
+ * are not shown (the string in the data segment: the normal Shell's code room);
+ * the open overlay says why it waits from WAIT_HINT_AFTER on (#358,
+ * start_job_kind). */
+#ifdef VJO_WITH_VOCR
+/* test/combined: in .rodata, as WAIT_HINT_PAUSE (the data pages full with every draft) */
+static const char SCREEN_MOVING_LOG[] =
+    "ocr: the screen changed under every read of %d jobs in a row, the last with %u line(s) recognized and not "
+    "shown: an animated icon or a moving picture in the region? (docs/text-stability.md)";
+#endif
 static void note_screen_changed(const char *what)
 {
     uint32_t wait_ms = screen_changed_streak ? SCREEN_RETRY_MS << (screen_changed_streak - 1) : 0;
@@ -2359,6 +2393,10 @@ static void note_screen_changed(const char *what)
     screen_retry_until = now_us() + (int64_t)wait_ms * 1000;
     vjo_dlog("%s dropped: the screen changed under it (%d in a row), next try in %u ms", what,
             screen_changed_streak, (unsigned)wait_ms);
+#ifdef VJO_WITH_VOCR
+    if (screen_changed_streak == 3) /* (the network thread's result: read after job_done) */
+        vjo_log(SCREEN_MOVING_LOG, screen_changed_streak, (unsigned)vocr_result.recognized);
+#endif
 }
 
 /* A refresh ended (#81 request 4). Whatever happened, the shown text stays
@@ -2548,20 +2586,14 @@ static void on_job_done(void)
             retire_local_text(1);
         job_cancelled = 0;
         stable_pending = game_active(); /* only the current game's next screen (Auto) */
-        if (ov != OV_CLOSED && stable_pending &&
-            (d->err.rc != VJO_E_SCREEN_CHANGED || screen_changed_streak < SCREEN_OPEN_TRIES)) {
-            ov = OV_OPEN; /* the overlay waits for this screen's */
+        if (ov != OV_CLOSED && stable_pending) { /* the overlay waits for this screen's */
+            ov = OV_OPEN;
             if (now_us() < screen_retry_until)
                 open_retry = 1; /* "Recognizing…" stays until background_open retries */
             else
                 start_job("the screen changed during the last one", 1);
-        } else {
-            if (ov != OV_CLOSED && stable_pending) { /* SCREEN_OPEN_TRIES in a row: the open overlay stops waiting */
-                ov = OV_OPEN;
-                open_retry = view_waiting = view_job_text = 0;
-                view_publish(1, NULL, SCREEN_CHANGED_MESSAGE, 1);
-            }
-            if (subtitles) vjo_strip_set_busy(0);
+        } else if (subtitles) {
+            vjo_strip_set_busy(0);
         }
         strip_after_wait(); /* a region drawn during it: the strip's job for the new region (#182) */
         return;
@@ -2695,7 +2727,7 @@ static void subtitles_show(const VjoState *st)
             vjo_strip_show(text, VJO_STRIP_SENTENCE, 0);
         return;
     }
-    vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
+    vjo_strip_show(RECOGNIZING, VJO_STRIP_STATUS, 1);
     /* A job in progress that brings the strip nothing: a lookup, a refresh, or
      * one that was cancelled (a region, game or pipeline change; not the
      * self-test's, whose end shows the strip's sentence itself): its end does
@@ -2781,6 +2813,10 @@ static void on_command(void)
         push_region();
         cache_ok = 0;
         retire_local_text(1);
+        /* #358: the old region's tears say nothing of the new one's: the wait hint (the region drawn as it asks)
+         * and the retry pace start over, as a new game's do (invalidate_game_work) */
+        screen_changed_streak = 0;
+        screen_retry_until = 0;
         close_overlay();
         /* A job in progress read the old region (a lookup or a refresh, which the
          * close dropped, or OCR): its result goes, as the text and the cache did;
@@ -2794,7 +2830,7 @@ static void on_command(void)
                 /* The strip's job for the new region cannot start beside it: the
                  * strip waits for its end (strip_after_wait). Before, it kept the
                  * old region's sentence until a screen settled (#182 a). */
-                vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
+                vjo_strip_show(RECOGNIZING, VJO_STRIP_STATUS, 1);
                 strip_waiting = 1;
             }
         }
@@ -2848,6 +2884,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
 {
     const char *tid = id->key;
     int mode = id->mode;
+    game_static_fb = mode == VJO_GAME_STATIC_FB; /* API 52: WAIT_HINT_PAUSE's game */
     if (pid != hook_pid) { /* API 31: log this game session's installation counts again. */
         hook_pid = pid;
         hook_logged[0] = 0;

@@ -107,23 +107,28 @@
  * (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT, _JUNK, _VALLEY), VjoVocrPolicy.line_fix, config.ini ocr_line_fix.
  * Sizes and layouts are unchanged. This is #330: 47's and 49's notes kept 44 and then 48 for it, and it merged
  * after 49, so it is 50.
+ * 51: a trusted answer needs no memory (docs/native-hooks.md, "No wait for a trusted line"): vjoOcrCaptureRows'
+ * VJO_ROWS_HOOK also publishes the region's current scene once the region shows another than the trusted line's
+ * (49 refused it with VJO_ERR_FORMAT, and the worker read the first pass: a strip beside VJO_GAME_RESERVE_HOOK_ONLY,
+ * which a game with 1 MiB free refused, so the job failed although the hook had its text). FORMAT now means only
+ * that the region has no screen yet. Sizes and layouts are unchanged.
  * 46: the overlay on the game's text (docs/overlay-on-text.md, #309; closed draft #271's API 37, renumbered):
  * VjoGameOcrRequest.speed bit 25 (VJO_GAME_OCR_S_CHARS): the game worker writes where each character of the text
  * it returns is on the screen (core/charmap.h), after the text and its recognizer's copy in VjoGameOcrResult.text,
  * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
  * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
  * the text spotter, vertical text, trusted hooks).
- * 51: the pause for the frame (config.ini ocr_pause, #348; docs/game-pause.md): VjoGameOcrRequest.speed bit 30
+ * 52: the pause for the frame (config.ini ocr_pause, #348; docs/game-pause.md): VjoGameOcrRequest.speed bit 30
  * (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region copied from one frame in one display
  * call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block (VJO_GITEM_FRAME), which the job reads from;
- * the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. (Draft #355's number; #354 has 51 too.)
- * 52: test/combined, the combined test build (v0.9.8-test.2 on; never merged, never main's): main's API 50 with
- * every open draft: #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS), #355's API 51 (speed bit 30,
- * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE) and #318 (no interface change). v0.9.8-test.1 was 51
- * (main's 50 with #326 and #318); #354 and #355 claim 51 on their branches, so this build takes 52, a number
- * no other build has. With the characters' places a job selects without API 43's trusted answers
- * (game_ocr/main.c): it recognizes to place a hook's text. */
-#define VJO_API_VERSION 52
+ * the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. This is #355's: #354 merged first, as 51.
+ * 53: test/combined, the combined test build (v0.9.8-test.3 on; never merged, never main's): main's API 51 with
+ * every open draft: #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS), #355's API 52 (speed bit 30,
+ * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE), #318 and #359 (no interface change). v0.9.8-test.1 was 51 and
+ * test.2 was 52 (with main's 50); main has 51 (#354) and #355's branch 52, so this build takes 53, a number no
+ * other build has. With the characters' places a job selects without API 43's trusted answers (game_ocr/main.c):
+ * it recognizes to place a hook's text. */
+#define VJO_API_VERSION 53
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

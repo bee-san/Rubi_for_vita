@@ -156,7 +156,7 @@
  * number, now the trusted hooks') or bits 20-24 (the line finder's fixes, the text spotter, vertical text: in
  * flight), so all of them can merge. */
 #define VJO_GAME_OCR_S_CHARS 0x2000000u
-/* API 51, bit 30: pause the game for its frame (config.ini ocr_pause, off by default; docs/game-pause.md, #348). The
+/* API 52, bit 30: pause the game for its frame (config.ini ocr_pause, off by default; docs/game-pause.md, #348). The
  * job's first pass asks for the whole region at once (VJO_ROWS_FRAME): the display hook copies every row of it from
  * one frame, inside the game's display call, which waits that long (at most VJO_GAME_OCR_PAUSE_MAX_US), into the
  * worker's frame block; every later read of the job is from that copy, so a spinning icon or an animated background
@@ -165,7 +165,7 @@
  * block that does not fit beside the job, or a copy that fails reads as before, strip by strip. Not bits 24-27
  * (VOCR6's spotter finder, draft #326's text overlay: VJO_GAME_OCR_S_CHARS 0x2000000) nor 17 (closed draft #271). */
 #define VJO_GAME_OCR_S_PAUSE 0x40000000u
-#define VJO_GAME_OCR_S_ALL 0x72FD001Fu /* test/combined: main's 0x30FD001F, API 46's bit 25 and API 51's bit 30 */
+#define VJO_GAME_OCR_S_ALL 0x72FD001Fu /* test/combined: main's 0x30FD001F, API 46's bit 25 and #355's bit 30 */
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
@@ -313,7 +313,8 @@ enum {
                             rows' checksum, bytes copied */
     VJO_GSTEP_SETTLE,    /* API 20, the stable-text wait: rc VJO_GSETTLE_*, arg passes read waiting, bytes row
                             changes to a new state seen (text typing out), sum = distinct rows that went back
-                            to their previous state (an icon) << 16 | such returns (at most 0xFFFF), us the wait */
+                            to their previous state (an icon) << 16 | such returns (at most 0xFFFF), us the wait;
+                            #353: kind the line watch (VJO_GSETTLE_K_*) */
     VJO_GSTEP_BLANK,     /* API 20, a found line skipped as blank: arg its index, rc the job's skipped lines,
                             bytes = width << 16 | height, sum = contrast (98th - 2nd percentile grey) << 16 |
                             sharp edges per 10,000 pixels (core/vocr_ocr.h VjoVocrInk), us the job's time
@@ -366,7 +367,7 @@ enum {
                             first rows, 1 the first rows' guess, every row checked, 2 every row came to another
                             picture: read again), bytes = the picture's x << 16 | y, sum = its width << 16 | height
                             (the JPEG's), us the scan's time */
-    VJO_GSTEP_PAUSE,     /* API 51, the pause for the frame (VJO_GAME_OCR_S_PAUSE), once per job that asked for it:
+    VJO_GSTEP_PAUSE,     /* API 52, the pause for the frame (VJO_GAME_OCR_S_PAUSE), once per job that asked for it:
                             kind 1 when every read of the job came from one frame copied in one display call, 0 when
                             the job read as before; arg the rows that display call copied (the region's height), rc
                             0 or why not (the kernel's VJO_ERR_*: UNSUPPORTED a game it does not pause or the
@@ -388,11 +389,20 @@ enum {
 #define VJO_GSETTLE_NONE 0     /* not asked for, or no line to read */
 #define VJO_GSETTLE_HELD 1     /* the rows held still settle long before the lines were read */
 #define VJO_GSETTLE_TIMEOUT 2  /* the job's waiting budget ran out first: read without it */
-/* VJO_GSTEP_PAUSE sum (API 51). */
+/* VJO_GSTEP_PAUSE sum (API 52). */
 #define VJO_GPAUSE_FROZEN 0u   /* the region came from one frame, copied in one display call: every read is from it */
 #define VJO_GPAUSE_NO_ROOM 1u  /* the frame block did not fit beside the job (its memory check) or was refused */
 #define VJO_GPAUSE_REFUSED 2u  /* the kernel refused the copy or could not finish it (rc says why) */
 #define VJO_GPAUSE_UNUSED 3u   /* the job ended before its first pass (cancelled, a wait that failed) */
+#define VJO_GPAUSE_CAPPED 4u   /* not asked: an earlier copy in this game reached the cap (rc VJO_ERR_TIMEOUT); the game
+                                  is not paused again until it next starts */
+/* VJO_GSTEP_SETTLE kind (rubi-spinner, #353; log only, 0 before it): the line watch. LINES: the region kept changing,
+ * so the wait (HELD: the lines held) and the tear check took the found lines' own pixels, the finder deciding whether
+ * a change elsewhere was text (core/vocr_ocr.c); ANYWAY: their own pixels kept changing past the limit (TIMEOUT), and
+ * the job read them once the finder found them alike twice; bits 2-7: the finder's runs that checked them. */
+#define VJO_GSETTLE_K_LINES 0x01u
+#define VJO_GSETTLE_K_ANYWAY 0x02u
+#define VJO_GSETTLE_K_LOOKS_MAX 63u
 /* VJO_GSTEP_ALLOC/FREE arg: which block. */
 #define VJO_GITEM_CAPTURE 1u   /* "VjoGameVocrCapture": the strip and the row checksums */
 #define VJO_GITEM_WORKSPACE 2u /* "VjoGameVocr": the finder's then the recognizer's arena */
@@ -402,7 +412,7 @@ enum {
 #define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
 #define VJO_GITEM_SHOT 8u      /* "VjoGameShot": a shot's colour strip, encoder and JPEG (API 23) */
-#define VJO_GITEM_FRAME 9u     /* "VjoGameVocrFrame": the region from one frame, a paused job's (API 51) */
+#define VJO_GITEM_FRAME 9u     /* "VjoGameVocrFrame": the region from one frame, a paused job's (API 52) */
 #define VJO_GITEM_COUNT 10u
 
 typedef struct {
@@ -517,10 +527,13 @@ typedef struct {
 /* API 49: no rows (n 0, dst NULL, dst_stride 0): a trusted hook answers the claimed region job (API 43), so its
  * capture is published without reading a pixel, as the scene of the newest line a trusted hook reported
  * (VjoState.hook_scene), while the region still shows that scene: 0, and the Shell takes the job's text for that
- * screen. Any other scene (a menu over the line, an untrusted line since): VJO_ERR_FORMAT, and the worker reads
- * the first pass as before. Never with another VJO_ROWS_* flag, nor for a full-frame, probe or shot job. */
+ * screen. API 51: any other scene (a menu over the line, an untrusted line since, a larger change once the line
+ * drew) is published the same way, as the region's current scene (API 49 refused it and the worker read the
+ * first pass, a strip beside VJO_GAME_RESERVE_HOOK_ONLY, for the same answer). VJO_ERR_FORMAT only while the
+ * region has no screen yet; the worker then reads the first pass. Never with another VJO_ROWS_* flag, nor for a
+ * full-frame, probe or shot job. */
 #define VJO_ROWS_HOOK 0x8u
-/* API 51 (VJO_GAME_OCR_S_PAUSE, docs/game-pause.md): with SIG and LAST, and only so, the whole region at once: y 0, n
+/* API 52 (VJO_GAME_OCR_S_PAUSE, docs/game-pause.md): with SIG and LAST, and only so, the whole region at once: y 0, n
  * the region's height, through the hook (mode VJO_GAME_OCR_SRC_HOOK) into one block of the caller (dst_stride apart,
  * at most VJO_MAX_W). The display hook copies every row from the frame the game submits, in that one display call,
  * which waits as long: the game's pause. It stops at VJO_GAME_OCR_PAUSE_MAX_US (VJO_ERR_TIMEOUT: the rows copied so far
@@ -622,7 +635,8 @@ int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data);
 int vjoOcrHookLine(uint32_t seq, uint32_t bytes);
 /* API 49, in vjoOcrHookLine's bytes: the line is a trusted source's (API 43, VJO_HOOK_R_TRUSTED): the Shell is
  * woken even while the last line still draws (0, never 1), and the scene is VjoState.hook_scene until the region
- * shows another, so the Shell reads it at once and VJO_ROWS_HOOK publishes it. */
+ * shows another, so the Shell reads it at once and VJO_ROWS_HOOK publishes it (API 51: and the region's current
+ * scene after that). */
 #define VJO_HOOK_LINE_TRUSTED 0x80000000u
 #ifdef __cplusplus
 }

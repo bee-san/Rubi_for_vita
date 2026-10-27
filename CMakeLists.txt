@@ -87,9 +87,14 @@ if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
     # The stable-text wait's frames and time on a simulated screen (docs/vita-vn-ocr.md).
     add_executable(vjo-settle-bench host/settle_bench.c)
     target_link_libraries(vjo-settle-bench vjo_vocr vjo_host)
-    # API 51, the pause for the frame (docs/game-pause.md): display calls, rows and the game's wait per read.
+    # API 52, the pause for the frame (docs/game-pause.md): display calls, rows and the game's wait per read.
     add_executable(vjo-pause-bench host/pause_bench.c)
     target_link_libraries(vjo-pause-bench vjo_vocr vjo_host)
+    # An animated icon or background in the region, end to end: the kernel's change detection (kernel/scene.c),
+    # the game worker's job and a model of the Shell's decisions, frame by frame (tools/spinner_eval.py).
+    add_executable(vjo-spinner-bench host/spinner_bench.c kernel/scene.c)
+    target_link_libraries(vjo-spinner-bench vjo_vocr vjo_host m)
+    target_compile_options(vjo-spinner-bench PRIVATE -Wall -Wextra)
     # Recognized text normalised as the game worker returns it, line by line (tools/textnorm_eval.py).
     add_executable(vjo-textnorm host/textnorm_tool.c)
     target_link_libraries(vjo-textnorm vjo_vocr)
@@ -622,6 +627,10 @@ if(VJO_WITH_VOCR)
   if(VJO_VOCR_MODEL_DIR)
     add_test(NAME vocr_model COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_local_ocr.py
       --cli $<TARGET_FILE:vjo-ocr> --backend vocr --model ${VJO_VOCR_MODEL_DIR})
+    # An animated icon or a moving picture in the region, end to end (host/spinner_bench.c's synthetic box): the
+    # text is shown in every scenario (#353; the line watch reads the lines, so the release models).
+    add_test(NAME spinner_bench COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_spinner_bench.py
+      $<TARGET_FILE:vjo-spinner-bench> ${VJO_VOCR_MODEL_DIR})
   endif()
 endif()
 # The tools' Python suites (tools/tests/test_*.py), one test per module, tools_<module>: one
@@ -700,6 +709,12 @@ add_executable(vjo-dict-bench host/dict_bench.c core/local_dict.c core/textnorm.
 target_compile_definitions(vjo-dict-bench PRIVATE VJO_LOCAL_STATS=1)
 target_link_libraries(vjo-dict-bench vjo_host)
 target_compile_options(vjo-dict-bench PRIVATE -Wall -Wextra -Wno-unused-parameter)
+# The Shell's cursor lookup at every tap of a corpus, each stage timed and every read
+# attributed (tools/dict_stage_report.py): its own local_dict.c with the counters and stage clocks on.
+add_executable(vjo-dict-stage-bench host/dict_stage_bench.c core/local_dict.c)
+target_compile_definitions(vjo-dict-stage-bench PRIVATE VJO_LOCAL_STATS=1)
+target_link_libraries(vjo-dict-stage-bench vjo_host)
+target_compile_options(vjo-dict-stage-bench PRIVATE -Wall -Wextra -Wno-unused-parameter)
 # What every lookup of the committed lines shows with the bundled dictionary
 # (tools/dict_lookup_golden.tsv): a lookup change that alters one fails.
 if(_vjo_plaintext_dir)

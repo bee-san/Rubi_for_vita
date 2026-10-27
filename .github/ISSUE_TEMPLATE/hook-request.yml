@@ -1,0 +1,113 @@
+name: Hook request
+description: "Ask for a native text hook for a PS Vita game: send the debug build's hooks.log."
+title: "Hook request: "
+labels: ["hook request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A native text hook gives Rubi the game's own text instead of OCR's reading of the screen. On the Rubi app's
+        **Games** page a game tagged **Hook** has one of Rubi's verified entries and **Luna hook** a LunaTranslator
+        site; a game with no tag has no entry, and Rubi reads it with OCR (after trying its string copies). PS Vita
+        games only: PSP games in Adrenaline have no native hooks yet.
+
+        The owner's hook farm can turn a request into a verified entry. It works on the Japanese releases of visual
+        novels (title IDs PCSG, PCSH, VLJM, VLJS), gives each title a bounded number of attempts, and a hook must pass
+        Rubi's checks, so not every request gets one. What it needs from you is one small file, the debug build's
+        `hooks.log`. The whole process:
+        [docs/hook-requests.md](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/hook-requests.md).
+
+        **1. Install the debug build.** Only the debug build writes `hooks.log`. Recent releases are the normal build
+        only; every test build has the debug one: the newest pre-release on the
+        [releases page](https://github.com/bee-san/Rubi_for_vita/releases), file `Rubi-<version>-debug.vpk`
+        ([#351](https://github.com/bee-san/Rubi_for_vita/issues/351) says what is in it). Close the Rubi app if it is
+        open, install the VPK with VitaShell, open Rubi, choose **Update** on its Install page (over a release it says
+        it goes back to the test build's version: a test build sorts before its release), then restart the Vita.
+        Your settings, games and cards stay.
+
+        **2. Check two settings in the Rubi app.** The game is **ON** on the **Games** page, and **OCR & lookup →
+        Text source** is **Automatic** (or **Every game**). With **OCR only**, no `hooks.log` is written.
+
+        **3. Start the game** and play until its first dialogue is on screen, then close it.
+
+        **4. Copy `ux0:data/VitaJPOverlay/hooks.log`** before you start another game: each game's start rewrites it
+        (VitaShell and the Rubi app do not). Any of these works:
+        - VitaShell's USB connection: the file is `data/VitaJPOverlay/hooks.log` on the memory card's drive.
+        - VitaShell's FTP connection: `curl -o hooks.log ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/hooks.log`, or any
+          FTP client, in `ux0:/data/VitaJPOverlay/`.
+        - From a computer, in the extracted `Rubi-<version>-debug.zip`: `bash tools/install_ftp.sh --collect VITA_IP`
+          fetches it with the other logs. A debug zip that has `tools/hook_request.py` (test builds after
+          v0.9.8-test.2) also writes `hook-request.md`, what the log says, beside them; v0.9.8-test.1 and test.2 fetch
+          the log only, and older zips do not fetch it: copy it over USB or FTP then.
+
+        Debug builds made before [#367](https://github.com/bee-san/Rubi_for_vita/pull/367) (v0.9.8-test.2 and older)
+        write `APP_VER 0000` for a game with no entry: then give the game's version below. `hooks.log` holds no game
+        text: only the game's title ID, version, module name and NID, and the code bytes at each hook site Rubi
+        tried. Paste it below (and attach `hook-request.md` if you have one). Never attach the game or any of its
+        files, and send a `--collect` zip only privately: it holds more than this (below).
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      description: "Its title, as on its LiveArea, and its VNDB page if you know it."
+      placeholder: "ALIA's CARNIVAL! サクラメント, https://vndb.org/v..."
+    validations:
+      required: true
+  - type: input
+    id: title-id
+    attributes:
+      label: Title ID
+      description: "Nine characters: the first word of hooks.log, also on the Rubi app's Games page."
+      placeholder: "PCSG00628"
+    validations:
+      required: true
+  - type: input
+    id: game-version
+    attributes:
+      label: Game version
+      description: "Optional: APP_VER, such as 01.00, and whether an update is installed. hooks.log records it too."
+      placeholder: "01.00"
+  - type: input
+    id: rubi-version
+    attributes:
+      label: Rubi version
+      description: "As the Rubi app shows it beside its title: the debug build says debug."
+      placeholder: "Rubi v0.9.8-test.2 debug"
+    validations:
+      required: true
+  - type: dropdown
+    id: text-now
+    attributes:
+      label: What the popup shows in this game now
+      options:
+        - "OCR's reading: no hook text"
+        - "A hook's text, but it is wrong or incomplete"
+        - "I can't tell"
+    validations:
+      required: true
+  - type: textarea
+    id: hooks-log
+    attributes:
+      label: hooks.log
+      description: "Paste the whole file, copied right after you played this game."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: >-
+        Optional: your console (PCH-1000, PCH-2000, PS TV) and firmware, what the popup shows, and hook-request.md
+        (drag it here). Do not attach a --collect zip here: it holds the debug build's log.txt (the text Rubi read),
+        your Anki cards, your settings, both taiHEN configurations (your other plugins) and any crash dumps (memory
+        images of a crashed game or of the home screen). Send it to the owner privately if asked (Discord).
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: "I looked for an open hook request for this title ID first."
+          required: true
+        - label: "The hooks.log is from the debug build, with Text source on Automatic (or Every game), copied after I played this game."
+          required: true
