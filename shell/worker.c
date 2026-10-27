@@ -1106,7 +1106,10 @@ static void log_tier_checks(const VjoGameOcrResult *r)
  * shown, a hook's included). */
 static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
 {
-    static const char hook_format[] VJO_DATA_TABLE(hook_format) = "hooks in %s: text source %s%s, %u table sites and %u string copies hooked, %u sites refused";
+    /* test/combined: in .rodata (the code segment), not the data segment: with every draft and main's #321 the normal
+     * Shell's data is 64 B past its 18th page and its code page has 180 B of room (SceShell's pages may only shrink:
+     * AGENTS.md rule 1) */
+    static const char hook_format[] = "hooks in %s: text source %s%s, %u table sites and %u string copies hooked, %u sites refused";
     static const char *const modes[] = {"ocr", "auto", "hooks"};
     if ((VJO_DEBUG || r->hook_installed || r->hook_refused) &&
         (hook_logged[0] != r->hook_mode + 1u || hook_logged[1] != r->hook_installed || hook_logged[2] != r->hook_refused)) {

@@ -1180,7 +1180,8 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's GUIDE_PAGES_PLACEHOLDER (API 31's native hooks and
+holds the worker's 225,280 B of module pages (237,568 B in the debug build; the combined test build's: main's
+208,896 B and 217,088 B with every open draft; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
 two-level head 8,192 B, API 47's vertical text 4,096 B, API 50's line finder fixes with vita-vn-ocr f8a1856's

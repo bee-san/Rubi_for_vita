@@ -5159,7 +5159,7 @@ static void test_torn_tries_leave_the_waiting_view_alone(void)
     finish_current_job(); /* torn 2: 250 ms; the third try says why, once */
     test_now += 250000; control_tick(0);
     TEST_ASSERT(job_running);
-    check_waiting(WAIT_HINT);
+    check_waiting(WAIT_HINT_PAUSE); /* test/combined: #355's hint (a Vita game, the pause off) */
     TEST_CHECK_(g_view.version != version, "the hint: version +%u", g_view.version - version);
     version = g_view.version;
     seq = g_view.list_seq;
@@ -5169,7 +5169,7 @@ static void test_torn_tries_leave_the_waiting_view_alone(void)
         TEST_CHECK(!job_running && open_retry);
         test_now += waits[i] * 1000; control_tick(0);
         TEST_ASSERT(job_running);
-        check_waiting(WAIT_HINT);
+        check_waiting(WAIT_HINT_PAUSE);
         TEST_CHECK_(g_view.version == version && g_view.list_seq == seq, "try %d: version +%u, list +%u", i + 4,
                     g_view.version - version, g_view.list_seq - seq);
     }

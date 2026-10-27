@@ -1133,7 +1133,7 @@ if(VJO_WITH_VOCR)
   # their own, kept and given back, and GRAD whenever it cannot run; the real spotter on the committed random blob,
   # spies for the recognizer and GRAD (host/tests/test_game_spot.c).
   add_executable(vjo-game-spot-tests host/tests/test_game_spot.c core/vocr_ocr.c core/textnorm.c core/region_suggest.c
-    host/tests/hooks_none.c)
+    core/charmap_build.c host/tests/hooks_none.c) # test/combined: draft #326's char map writer (game_ocr/main.c)
   target_include_directories(vjo-game-spot-tests PRIVATE third_party/acutest/include host/tests/game_stubs host/tests)
   target_compile_options(vjo-game-spot-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-spot-tests PRIVATE VJO_VOCR_TEST_MODELS="test_spot_models.h"
