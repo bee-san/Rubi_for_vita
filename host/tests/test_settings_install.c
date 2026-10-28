@@ -2763,18 +2763,34 @@ static size_t install_golden_plan(const char *record, size_t n, char *out, size_
         used += (size_t)snprintf(out + used, cap - used, "%s\n", install_golden_scan->config_changes[i]);
     return used;
 }
+/* A record's line: config_ini when it is not the empty file's, the lines its plan drops from and adds to the empty
+ * file's plan, and the lines counted past the list; a record whose plan is the empty file's is counted, not listed. */
+static unsigned install_golden_quiet;
+static int install_golden_full; /* a real file's: a line a change */
 static void install_golden_record(const char *record, size_t n, void *arg)
 {
     static char plan[sizeof(install_golden_base)];
     GoldenOut *o = (GoldenOut *)arg;
     size_t len = install_golden_plan(record, n, plan, sizeof(plan));
+    if (install_golden_full) {
+        golden_printf(o, "  config_ini=%d\n", install_golden_scan->config_ini);
+        golden_line_diff(o, install_golden_base, install_golden_base_len, plan, len);
+        if (install_golden_scan->config_change_more) golden_printf(o, "  more=%d\n", install_golden_scan->config_change_more);
+        return;
+    }
+    if (install_golden_scan->config_ini == install_golden_base_ini && len == install_golden_base_len &&
+        !memcmp(plan, install_golden_base, len) && !install_golden_scan->config_change_more) {
+        install_golden_quiet++;
+        return;
+    }
     golden_puts(o, "> ");
     golden_escape_short(o, record, n);
-    golden_puts(o, "\n");
+    golden_puts(o, " =>");
     if (install_golden_scan->config_ini != install_golden_base_ini)
-        golden_printf(o, "  config_ini=%d\n", install_golden_scan->config_ini);
-    golden_line_diff(o, install_golden_base, install_golden_base_len, plan, len);
-    if (install_golden_scan->config_change_more) golden_printf(o, "  more=%d\n", install_golden_scan->config_change_more);
+        golden_printf(o, " config_ini=%d", install_golden_scan->config_ini);
+    golden_line_diff_inline(o, install_golden_base, install_golden_base_len, plan, len);
+    if (install_golden_scan->config_change_more) golden_printf(o, " more=%d", install_golden_scan->config_change_more);
+    golden_puts(o, "\n");
 }
 
 static void the_install_plans_every_config_ini_record_as_its_golden_file(void)
@@ -2800,10 +2816,14 @@ static void the_install_plans_every_config_ini_record_as_its_golden_file(void)
         char *text = slurp(path, &len);
         TEST_ASSERT_(text != NULL, "%s", path);
         golden_printf(&o, "= %s\n", files[i]);
+        install_golden_full = 1;
         install_golden_record(text, len, &o);
+        install_golden_full = 0;
     }
+    install_golden_quiet = 0;
     TEST_CHECK(golden_records(VJO_SOURCE_DIR "/host/tests/fixtures/config-lines.txt", install_golden_record, &o) > 300);
     golden_long_records(install_golden_record, &o);
+    golden_printf(&o, "= %u records plan as the empty file\n", install_golden_quiet);
     int rc = golden_check(&o, VJO_DEBUG ? VJO_SOURCE_DIR "/host/tests/fixtures/config-install-debug.golden"
                                         : VJO_SOURCE_DIR "/host/tests/fixtures/config-install-normal.golden", why, sizeof(why));
     TEST_CHECK_(rc >= 0, "%s", why);

@@ -1036,22 +1036,31 @@ static void test_config(void)
     }
 }
 
+static unsigned golden_parse_quiet; /* records whose parse is the defaults' with no warning */
 static void golden_parse_record(const char *record, size_t n, void *arg)
 {
     GoldenOut *o = (GoldenOut *)arg;
     VjoConfig d, c;
+    size_t mark = o->n;
     vjo_config_defaults(&d);
     vjo_config_defaults(&c);
     vjo_config_parse(&c, record, n);
     golden_puts(o, "> ");
     golden_escape_short(o, record, n);
-    golden_puts(o, "\n");
-    golden_dump_config(o, &c, &d);
+    golden_puts(o, " =>");
+    if (golden_dump_config_line(o, &c, &d)) {
+        golden_puts(o, "\n");
+    } else { /* nothing: counted, not listed (a change to it adds its line) */
+        o->n = mark;
+        o->p[mark] = '\0';
+        golden_parse_quiet++;
+    }
 }
 
 /* #418 (cleanup package P2): every VjoConfig field and warning the parser makes of the fixtures, the template and
  * each record of host/tests/fixtures/config-lines.txt (alone, over the defaults), against
- * host/tests/fixtures/config-parse.golden; a change to the parser shows as that file's diff (config_golden.h). */
+ * host/tests/fixtures/config-parse.golden: the defaults' fields once, then one line a record with the fields that
+ * differ from them and its warnings (config_golden.h); a change to the parser shows as that file's diff. */
 static void test_config_golden(void)
 {
     static const struct { const char *path, *name; } files[] = {
@@ -1059,13 +1068,13 @@ static void test_config_golden(void)
         {"/../tests/fixtures/config-test3-owner.ini", "host/tests/fixtures/config-test3-owner.ini"},
         {"/../../docs/config.example.ini", "docs/config.example.ini"}};
     GoldenOut o = {0};
-    VjoConfig c;
+    VjoConfig c, d;
     char path[512], why[GOLDEN_WHY];
     golden_puts(&o, "# The parse of the config fixtures (host/tests/test_core.c config_golden; VJO_UPDATE_GOLDEN=1 "
-                    "rewrites this file)\n");
-    vjo_config_defaults(&c);
+                    "rewrites this file): the defaults, then each file and record with the fields that differ\n");
+    vjo_config_defaults(&d);
     golden_puts(&o, "= the defaults\n");
-    golden_dump_config(&o, &c, NULL);
+    golden_dump_config(&o, &d, NULL);
     for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
         size_t len;
         snprintf(path, sizeof(path), "%s%s", VJO_FIXTURES, files[i].path);
@@ -1073,13 +1082,16 @@ static void test_config_golden(void)
         TEST_ASSERT_(text != NULL, "%s", path);
         vjo_config_defaults(&c);
         vjo_config_parse(&c, text, len);
-        golden_printf(&o, "= %s\n", files[i].name);
-        golden_dump_config(&o, &c, NULL);
+        golden_printf(&o, "= %s =>", files[i].name);
+        golden_dump_config_line(&o, &c, &d);
+        golden_puts(&o, "\n");
         free(text);
     }
+    golden_parse_quiet = 0;
     snprintf(path, sizeof(path), "%s/../tests/fixtures/config-lines.txt", VJO_FIXTURES);
     TEST_CHECK(golden_records(path, golden_parse_record, &o) > 300);
     golden_long_records(golden_parse_record, &o);
+    golden_printf(&o, "= %u records parse as the defaults, with no warning\n", golden_parse_quiet);
     snprintf(path, sizeof(path), "%s/../tests/fixtures/config-parse.golden", VJO_FIXTURES);
     int rc = golden_check(&o, path, why, sizeof(why));
     TEST_CHECK_(rc >= 0, "%s", why);

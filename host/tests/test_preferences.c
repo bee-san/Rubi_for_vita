@@ -1219,60 +1219,60 @@ static void test_a_bom_led_line_is_the_same_setting_to_every_writer(void)
 /* #418 (cleanup package P2): the Rubi app's saves of a config.ini text (len bytes): the four-preference save made
  * with the text's own values (as the install's, settings/install.c plan_config_ini), the Anki page's keys, the
  * secrets-free copy a save publishes first (vjo_config_patch_keys with no key) and app.ini's patch, which has no
- * removed-key rules. full: each output on its line, escaped; else (a fixture's, long) its bytes, a hash and the lines
- * it drops and adds (golden_line_diff, P2's audit F4). */
-static void golden_saves(GoldenOut *o, const char *text, size_t len, int full)
+ * removed-key rules. */
+static const char *const golden_anki_keys[] = {"anki_mining", "anki_screenshot", "anki_screenshot_trim_bars"};
+static const char *const golden_anki_values[] = {"on", "off", "on"};
+static const char *const golden_save_names[] = {"preferences", "anki_keys", "clean", "app_ini"};
+static int golden_save(int k, const char *text, size_t len, const VjoConfig *c, char *out, size_t cap)
 {
-    static char out[2 * (VJO_CONFIG_TEXT_MAX + 1)], keys_out[2 * (VJO_CONFIG_TEXT_MAX + 1)];
-    static const char *const anki_keys[] = {"anki_mining", "anki_screenshot", "anki_screenshot_trim_bars"};
-    static const char *const anki_values[] = {"on", "off", "on"};
-    static const char *const what[] = {"preferences", "anki_keys", "clean", "app_ini"};
+    return k == 0 ? vjo_config_patch_preferences(text, len, c->vocr_tier, c->japanese_only_selection, c->highlight_mode,
+                                                 c->local_dictionary_results, out, cap)
+         : k == 1 ? vjo_config_patch_keys(text, len, golden_anki_keys, golden_anki_values, 3, out, cap)
+         : k == 2 ? vjo_config_patch_keys(text, len, NULL, NULL, 0, out, cap)
+                  : vjo_ini_patch_keys(text, len, golden_anki_keys, golden_anki_values, 3, out, cap);
+}
+
+/* The real files' saves: each output's bytes, a hash, and the lines it drops from and adds to the input. */
+static void golden_saves_file(GoldenOut *o, const char *text, size_t len)
+{
+    static char out[2 * (VJO_CONFIG_TEXT_MAX + 1)];
     VjoConfig c;
-    int keys_n = -1;
     vjo_config_defaults(&c);
     vjo_config_parse(&c, text, len);
     for (int k = 0; k < 4; k++) {
-        int n = k == 0 ? vjo_config_patch_preferences(text, len, c.vocr_tier, c.japanese_only_selection, c.highlight_mode,
-                                                      c.local_dictionary_results, out, sizeof(out))
-              : k == 1 ? vjo_config_patch_keys(text, len, anki_keys, anki_values, 3, out, sizeof(out))
-              : k == 2 ? vjo_config_patch_keys(text, len, NULL, NULL, 0, out, sizeof(out))
-                       : vjo_ini_patch_keys(text, len, anki_keys, anki_values, 3, out, sizeof(out));
-        golden_printf(o, "  %s: ", what[k]);
-        if (k == 1 && n >= 0) {
-            memcpy(keys_out, out, (size_t)n);
-            keys_n = n;
-        }
-        if (n < 0) {
-            golden_printf(o, "%d\n", n);
-        } else if (full && k == 2 && (size_t)n == len && !memcmp(out, text, len)) {
-            golden_puts(o, "(unchanged)\n"); /* the copy a save makes without a secret's line */
-        } else if (full && k == 3 && n == keys_n && !memcmp(out, keys_out, (size_t)n)) {
-            golden_puts(o, "(as anki_keys)\n"); /* no removed-key line to keep */
-        } else if (full) {
-            golden_puts(o, "\"");
-            golden_escape_short(o, out, (size_t)n);
-            golden_puts(o, "\"\n");
-        } else {
-            golden_printf(o, "%d bytes, fnv1a %016llx\n", n, golden_hash(out, (size_t)n));
-            golden_line_diff(o, text, len, out, (size_t)n);
-        }
+        int n = golden_save(k, text, len, &c, out, sizeof(out));
+        golden_printf(o, "  %s: %d bytes", golden_save_names[k], n);
+        if (n >= 0) golden_printf(o, ", fnv1a %016llx", golden_hash(out, (size_t)n));
+        golden_puts(o, "\n");
+        if (n >= 0) golden_line_diff(o, text, len, out, (size_t)n);
     }
 }
 
-/* A record's lines as vjo_config_removed_line sees them (K keep, D drop, R replace with its line, S a removed
- * setting dropped), then its saves. */
+/* A record's line: what vjo_config_removed_line says of each of its lines when one is not K (keep), then each save
+ * whose output is not the record with the save's own lines appended (the four preferences with the record's values,
+ * or the Anki keys; none for the clean copy), after a newline where the record ends without one: the output's
+ * difference from that, as the lines it drops and adds. A record with neither is counted, not listed. */
+static unsigned golden_saves_quiet;
 static void golden_saves_record(const char *record, size_t n, void *arg)
 {
+    static char out[2 * (VJO_CONFIG_TEXT_MAX + 1)], want[2 * (VJO_CONFIG_TEXT_MAX + 1)];
     GoldenOut *o = (GoldenOut *)arg;
+    size_t mark = o->n, at;
+    int noisy = 0, all_keep = 1;
+    VjoConfig c;
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, record, n);
     golden_puts(o, "> ");
     golden_escape_short(o, record, n);
-    golden_puts(o, "\n  removed_line:");
+    at = o->n;
+    golden_puts(o, " | removed_line:");
     for (size_t i = 0; i < n;) {
         size_t b = i;
         const char *r = NULL;
         while (i < n && record[i] != '\n') i++;
         if (i < n) i++;
         int kind = vjo_config_removed_line(record + b, i - b, &r);
+        all_keep &= kind == VJO_LINE_KEEP;
         golden_printf(o, " %c", kind >= 0 && kind <= 3 ? "KDRS"[kind] : '?');
         if (r) {
             golden_puts(o, "(");
@@ -1280,8 +1280,43 @@ static void golden_saves_record(const char *record, size_t n, void *arg)
             golden_puts(o, ")");
         }
     }
-    golden_puts(o, "\n");
-    golden_saves(o, record, n, 1);
+    if (all_keep) {
+        o->n = at;
+        o->p[at] = '\0';
+    } else
+        noisy = 1;
+    for (int k = 0; k < 4; k++) {
+        int got = golden_save(k, record, n, &c, out, sizeof(out));
+        size_t w = 0;
+        if (got >= 0) {
+            char tail[256];
+            int t = k == 0 ? snprintf(tail, sizeof(tail), "japanese_only_selection = %s\nhighlight_mode = %s\n"
+                                      "local_dictionary_results = %d\nvocr_tier = %s\n",
+                                      c.japanese_only_selection ? "on" : "off",
+                                      c.highlight_mode == VJO_HIGHLIGHT_WORD ? "word" : "character",
+                                      c.local_dictionary_results, vjo_vocr_tier_id(c.vocr_tier))
+                  : k == 2 ? 0
+                           : snprintf(tail, sizeof(tail), "anki_mining = on\nanki_screenshot = off\n"
+                                      "anki_screenshot_trim_bars = on\n");
+            memcpy(want, record, n);
+            w = n;
+            if (t > 0 && n && record[n - 1] != '\n') want[w++] = '\n';
+            if (t > 0) memcpy(want + w, tail, (size_t)t);
+            w += t > 0 ? (size_t)t : 0;
+            if ((size_t)got == w && !memcmp(out, want, w)) continue;
+        }
+        noisy = 1;
+        golden_printf(o, " | %s:", golden_save_names[k]);
+        if (got < 0) golden_printf(o, " %d", got);
+        else golden_line_diff_inline(o, want, w, out, (size_t)got);
+    }
+    if (noisy) {
+        golden_puts(o, "\n");
+    } else {
+        o->n = mark;
+        o->p[mark] = '\0';
+        golden_saves_quiet++;
+    }
 }
 
 /* The saves' refusals and limits (P2's audit F4: the branches no record reaches): invalid choices, keys and values,
@@ -1371,12 +1406,16 @@ static void test_config_saves_golden(void)
         char *text = golden_read(path, &len);
         TEST_ASSERT_(text != NULL, "%s", path);
         golden_printf(&o, "= %s\n", files[i]);
-        golden_saves(&o, text, len, 0);
+        golden_saves_file(&o, text, len);
         free(text);
     }
+    golden_puts(&o, "= each record's saves where they differ from keeping its lines and appending the save's own (the four "
+                    "preferences with its values, the Anki keys; nothing for the clean copy)\n");
+    golden_saves_quiet = 0;
     snprintf(path, sizeof(path), "%s/host/tests/fixtures/config-lines.txt", VJO_SOURCE_DIR);
     TEST_CHECK(golden_records(path, golden_saves_record, &o) > 300);
     golden_long_records(golden_saves_record, &o);
+    golden_printf(&o, "= %u records keep every line in all four saves\n", golden_saves_quiet);
     golden_save_limits(&o);
     snprintf(path, sizeof(path), "%s/host/tests/fixtures/config-saves.golden", VJO_SOURCE_DIR);
     int rc = golden_check(&o, path, why, sizeof(why));
