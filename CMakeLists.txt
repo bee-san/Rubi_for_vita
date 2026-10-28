@@ -160,28 +160,14 @@ vjo_suite(kernel_input SOURCES host/tests/test_kernel_input.c kernel/triggers.c 
 vjo_suite(kernel_text_source SOURCES host/tests/test_kernel_text_source.c INCLUDES host/tests/vita_stubs
   DEFINES VJO_HOST=1)
 # API 31: text-source config helpers and diagnostic pick/label utilities; the Games tag reads Rubi's
-# verified entries from the worker's own table (core/hook_place.c).
-target_sources(vjo_core PRIVATE core/hook_pick.c core/hook_titles.c core/hook_place.c)
-# The Rubi app's Games tag (core/hook_titles.c) knows Luna's games once core/hook_luna.c is there
-# (hooks/luna-port), as the Vita app's build does (vita/CMakeLists.txt).
-if(EXISTS ${CMAKE_SOURCE_DIR}/core/hook_luna.c)
-  foreach(_vjo_luna hook_luna.c hook_re.c hook_text.c)
-    if(EXISTS ${CMAKE_SOURCE_DIR}/core/${_vjo_luna})
-      target_sources(vjo_core PRIVATE core/${_vjo_luna})
-    endif()
-  endforeach()
-  set_property(SOURCE core/hook_titles.c APPEND PROPERTY COMPILE_DEFINITIONS VJO_HOOK_LUNA=1)
-endif()
+# verified entries from the worker's own table (core/hook_place.c) and knows Luna's games (core/hook_luna.c), as the
+# Vita app's build does (vita/CMakeLists.txt).
+target_sources(vjo_core PRIVATE core/hook_pick.c core/hook_titles.c core/hook_place.c core/hook_luna.c core/hook_re.c
+  core/hook_text.c)
+set_property(SOURCE core/hook_titles.c APPEND PROPERTY COMPILE_DEFINITIONS VJO_HOOK_LUNA=1)
 vjo_suite(hook_pick SOURCES host/tests/test_hook_pick.c core/hook_pick.c DEFINES VJO_HOST=1)
 # API 31: the Rubi app's Games tag (core/hook_titles.c), through the host core.
-add_executable(vjo-hook-titles-tests host/tests/test_hook_titles.c)
-target_include_directories(vjo-hook-titles-tests PRIVATE third_party/acutest/include)
-target_compile_options(vjo-hook-titles-tests PRIVATE -Wall -Wextra)
-target_link_libraries(vjo-hook-titles-tests vjo_core)
-if(EXISTS ${CMAKE_SOURCE_DIR}/core/hook_luna.c)
-  target_compile_definitions(vjo-hook-titles-tests PRIVATE VJO_HOOK_LUNA=1)
-endif()
-add_test(NAME hook_titles COMMAND vjo-hook-titles-tests)
+vjo_suite(hook_titles SOURCES host/tests/test_hook_titles.c DEFINES VJO_HOOK_LUNA=1 LIBS vjo_core)
 # #104: the process event hook releases the game's input block in the same event
 # (kernel/lifecycle.c with the real foreground state machine).
 vjo_suite(kernel_lifecycle SOURCES host/tests/test_kernel_lifecycle.c kernel/foreground.c
