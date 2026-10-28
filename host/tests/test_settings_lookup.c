@@ -40,6 +40,7 @@
 
 #define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE)
 #include "fakes/sceio_posix.h"
+#include "fakes/vjdict_writer.h"
 static int open_files;
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
@@ -255,46 +256,15 @@ static void keyboard_types(const char *s)
 /* ---------------- the card's files: dictionaries, history.csv, the queue ---------------- */
 
 #define DICT_DIR "ux0:data/VitaJPOverlay/dictionaries"
-static void put16(uint8_t *p, uint16_t x) { p[0] = (uint8_t)x; p[1] = (uint8_t)(x >> 8); }
-static void put32(uint8_t *p, uint32_t x) { put16(p, (uint16_t)x); put16(p + 2, (uint16_t)(x >> 16)); }
-static void put64(uint8_t *p, uint64_t x) { put32(p, (uint32_t)x); put32(p + 4, (uint32_t)(x >> 32)); }
-static uint64_t key_hash(const char *s)
-{
-    uint64_t h = UINT64_C(14695981039346656037);
-    for (; *s; s++) h = (h ^ (uint8_t)*s) * UINT64_C(1099511628211);
-    h ^= h >> 33; h *= UINT64_C(0xff51afd7ed558ccd);
-    h ^= h >> 33; h *= UINT64_C(0xc4ceb9fe1a85ec53);
-    return h ^ (h >> 33);
-}
-/* A VJDICT2 file of one key with one entry (as test_shell_anki.c builds them), its own name in page 0. */
+/* A VJDICT2 file of one key with one entry (fakes/vjdict_writer.h), its own name in page 0. */
 static void put_dictionary(const char *name, const char *key, const char *spelling, const char *reading,
                            const char *meaning, const char *title)
 {
     static uint8_t bytes[16384];
-    size_t off = 8192, key_len = strlen(key), posting, payload;
-    const char *parts[] = {spelling, reading, meaning};
+    size_t off = vjdict2_one(bytes, sizeof(bytes), key, spelling, reading, meaning, title);
     char path[256];
     FILE *f;
-    memset(bytes, 0, sizeof(bytes));
-    memcpy(bytes, "VJDICT2\0", 8);
-    put32(bytes + 8, 2); put32(bytes + 12, 64);
-    put32(bytes + 16, 1); put32(bytes + 20, 24);
-    put64(bytes + 24, 4096); put64(bytes + 32, off);
-    put64(bytes + 48, 1); put64(bytes + 56, 1);
-    memcpy(bytes + 192, title, strlen(title));
-    memcpy(bytes + 4096, "VJHP", 4);
-    put64(bytes + 4112, key_hash(key)); put64(bytes + 4120, off);
-    put32(bytes + 4128, 1); put16(bytes + 4132, (uint16_t)key_len);
-    memcpy(bytes + off, key, key_len); off += key_len;
-    posting = off; off += 16;
-    payload = off;
-    for (int i = 0; i < 3; i++) {
-        size_t n = strlen(parts[i]) + 1;
-        memcpy(bytes + off, parts[i], n); off += n;
-    }
-    put64(bytes + posting, payload); put32(bytes + posting + 8, (uint32_t)(off - payload));
-    put32(bytes + 4100, 1);
-    put64(bytes + 40, off);
+    TEST_ASSERT(off > 0);
     snprintf(path, sizeof(path), DICT_DIR "/%s", name);
     TEST_ASSERT((f = fopen(path, "wb")) != NULL);
     TEST_ASSERT(fwrite(bytes, 1, off, f) == off && fclose(f) == 0);
