@@ -223,7 +223,7 @@ longer opens `VOCR2_FL10_w8.vocr`; the file may be deleted.
    use), a strip at a time into the game worker's own capture block. No copy
    of the region exists; the kernel gives OCR no buffer.
 2. The polarity-agnostic line finder (`vocr_find_lines`, gradient/contrast
-   projection) finds up to 16 lines. Unlike the PP-OCRv5 backend's bright-pixel
+   projection) finds up to 16 lines. Unlike the former PP-OCRv5 backend's bright-pixel
    finder it reads dark text on light boxes, outlined text and coloured names,
    and never rejects a region. A region with no line ends here: the weights
    file is not read.
@@ -2285,14 +2285,15 @@ falls from two 128 KiB arenas to one 64 KiB arena (192 KiB less requested heap).
 New static text/UI buffers and code also occupy Shell memory, so that reduction
 is not a claim of 192 KiB more total free memory. These remain host measurements.
 
-`tools/benchmark_local_ocr.py` runs the host `vjo-ocr` tool (the same
+`tools/benchmark_local_ocr.py` (removed with the ncnn backend, #418; its SHA-256 and
+command are in the benchmark's JSON) ran the host `vjo-ocr` tool (the same
 finder, workspace and model checks as the game worker) once per region, in a fresh
 process, on vita-vn-ocr's hand-checked regions: vita-test (84 regions from 16
 Vita games, 960×544 screenshots) and psp-test (93 regions from 14 PSP games, at
 the PSP's native 480×272). Accuracy is eval's region-level concat CER: all
 lines a backend read, top to bottom, against all lines of the region; a refused
 region counts all its characters as errors. The ncnn row is this repository's
-own PP-OCRv5 mobile backend (`-DVJO_WITH_NCNN=ON`, the pinned 8,242,276-byte
+former PP-OCRv5 mobile backend (`-DVJO_WITH_NCNN=ON`, since removed; the pinned 8,242,276-byte
 model) with its bright-pixel line finder. Details:
 [benchmarks/vocr-vs-ncnn-20261010.json](benchmarks/vocr-vs-ncnn-20261010.json).
 

@@ -50,27 +50,6 @@ as the app; the SDK installation is not modified. Source is fetched into the
 build directory. [Libpng notice](licenses/libpng.txt),
 [native runtime compatibility check](../docs/settings-png-runtime.md).
 
-Fetched for the optional/default-enabled local OCR build:
-
-- ncnn: https://github.com/Tencent/ncnn at
-  `3798be64cfeeebc0afcfcebfb43ed5c9e1b72e82` (BSD-3-Clause plus bundled notices).
-  The PP-OCRv5 character dictionary comes from the same revision's
-  `examples/ppocrv5_dict.h` (Copyright 2025 Tencent, BSD-3-Clause).
-  Full notices: [licenses/ncnn.txt](licenses/ncnn.txt).
-- Converted PP-OCRv5 mobile recognizer graph/weights:
-  https://github.com/nihui/ncnn-android-ppocrv5 at
-  `671ac4a72299a86ddee160131ba88fed748df425`, under `app/src/main/assets/`.
-  Model conversion credited to nihui; no Android application code is included.
-- PP-OCRv5 model originates in https://github.com/PaddlePaddle/PaddleOCR
-  (Apache-2.0): [licenses/PaddleOCR.txt](licenses/PaddleOCR.txt).
-
-`tools/prepare_ocr.py` records expected asset sizes and SHA-256 hashes. The
-model weights are downloaded, not committed. The generated graph/vocabulary
-header is a build artifact. This port changes ncnn's build configuration,
-replaces its global-allocation source with placement operators only, and
-replaces shape-expression evaluation with a rejecting implementation; it
-does not modify the checked-out upstream sources.
-
 The OCR, vita-vn-ocr (not vendored; `VJO_WITH_VOCR`, on in every build: the only engine):
 
 - Runtime: https://github.com/bee-san/vita-vn-ocr's `runtime/` C sources (GPL-3.0-or-later) at the commit
