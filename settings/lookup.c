@@ -37,11 +37,6 @@ static VjoOverlayData data;
 static char error[256];
 static VjoRowNav nav;
 
-size_t vjo_lookup_static_bytes(void)
-{
-    return sizeof(block) + sizeof(scratch_mem) + sizeof(card_mem) + sizeof(text);
-}
-
 static void setup(void)
 {
     size_t session = vjo_local_session_size();
@@ -64,12 +59,6 @@ void vjo_lookup_configure(const VjoConfig *c)
         vjo_local_session_close(plat.local_session); /* other files: opened again at the next lookup */
     cfg = *c;
     looked_up = (size_t)-1; /* another count of dictionaries or another filter: look up again */
-}
-
-const VjoConfig *vjo_lookup_config(void)
-{
-    setup();
-    return &cfg;
 }
 
 void vjo_lookup_close(void)
