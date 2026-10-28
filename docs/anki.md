@@ -315,7 +315,8 @@ Tag/Skip/Keep export setting still works for words previously mined in Rubi.
 The retained format is `known_words.txt`: one UTF-8 spelling per line, optionally a TAB and its reading. A spelling
 without a reading matches every reading. BOM, CRLF, blank lines and `#` comments are supported. The old importer
 keeps at most 65,536 words and publishes an index of 8-byte keys. `tools/known_words.py` can still prepare this
-text from a collection, `.colpkg`, `.apkg`, or Anki plain-text export; importing it is unavailable in the app.
+text from a collection, `.colpkg`, `.apkg`, or Anki plain-text export. For example,
+`python3 tools/known_words.py collection.anki2` prepares the retained text format; importing it is unavailable in the app.
 
 ### Not in the popup
 
