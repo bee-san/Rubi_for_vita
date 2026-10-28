@@ -11,20 +11,25 @@ Select switches destinations. Technical reading options are under **Advanced rea
 Every app page changes immediately; `colour_scheme` in `app.ini` keeps the choice after closing the app.
 Mint is the default for existing installations and unknown values. The in-game overlay keeps its existing colours.
 
-## Vita-inspired appearance
+## Sony Reader-inspired appearance
 
-The visual references are Sony's public PS Vita user guide: [Wi-Fi Settings](https://manuals.playstation.net/document/en/psvita/settings/wifi.html)
-and [Using the screens](https://manuals.playstation.net/document/en/psvita/basic/screens.html).
-The app follows their tinted backgrounds, centered page titles, rounded menu surfaces, glossy controls,
-checkbox-style switches, and lower-left Back control. The five categories remain visible together on one screen.
+The main visual reference is **Sony Reader for PlayStation Vita (PCSC80012)**, as shown in the actual app captures
+in [Aurora's Reader walkthrough](https://wololo.net/2019/12/22/psvita-tutorial-how-to-use-sonys-official-e-book-reader-in-english-with-your-own-books/).
+Rubi follows Reader's charcoal canvas with a soft vignette, silver glossy toolbars, fine row dividers,
+small category icons, and circular lower-left Back control. The five categories remain visible together;
+the two named destinations keep settings easy to find.
+
+Sony's public [Wi-Fi Settings](https://manuals.playstation.net/document/en/psvita/settings/wifi.html) and
+[screen controls](https://manuals.playstation.net/document/en/psvita/basic/screens.html) guide the checkbox-style
+switches and navigation. Mint is charcoal with mint accents, Sakura adds plum and pink, and Paper is the light variant.
 
 The chrome is drawn from original rectangle primitives in `settings/chrome.h`, shared by the app and preview
-harness. No Sony artwork or fonts are bundled. This is a Vita-inspired libvita2d interface; it does not add a
+harness. No Reader executable, artwork, book content, or fonts are bundled. This is a Reader-inspired libvita2d interface; it does not add a
 firmware UI framework, textures, animation, or allocation sites.
 
 ## Three colour schemes
 
-| Mint · navy and mint | Sakura · plum and pink | Paper · warm light and green |
+| Mint · charcoal and mint | Sakura · plum and pink | Paper · warm light and green |
 | --- | --- | --- |
 | ![Mint Settings menu](mint-home.png) | ![Sakura Settings menu](sakura-home.png) | ![Paper Settings menu](paper-home.png) |
 | ![Mint reading settings](mint.png) | ![Sakura reading settings](sakura.png) | ![Paper reading settings](paper.png) |
@@ -37,7 +42,7 @@ These are **host-rendered mock screenshots**, not physical Vita captures. Each P
 loop. Anki and Install & repair run their actual page code over synthetic files, with the shared header composed
 from a `main.c` capture. The Anki queue, game library, installation state, and installer version numbers are examples.
 
-The harness supplies rectangles, text positions, colours, wrapping, and clipping. Its substitute font metrics
+The harness supplies rectangles, text positions, colours, wrapping, alpha blending, and clipping. Its substitute font metrics
 and the renderer's Noto Sans CJK JP font approximate firmware PVF; physical Vita layout and performance remain
 unverified. The app itself continues to use the firmware PVF font.
 

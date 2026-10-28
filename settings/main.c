@@ -389,7 +389,7 @@ static int reading_page(void) { return page == PAGE_OCR || page == PAGE_ADVANCED
 static int back_target(void) { return page == PAGE_ADVANCED ? PAGE_OCR : page == PAGE_GAMES && game_view >= 0 ? PAGE_GAMES : PAGE_SETTINGS; }
 static int back_at(int x, int y)
 {
-    return settings_child() && x >= 16 && x < 112 && y >= 508 && y < 544;
+    return settings_child() && x >= 16 && x < 112 && y >= 504 && y < 544;
 }
 static int advanced_at(int x, int y)
 {
@@ -400,14 +400,14 @@ static void header(void)
 {
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
     vjo_chrome_background(chrome_rect, theme);
-    vita2d_draw_rectangle(0, 4, 960, 44, vjo_chrome_mix(BG, CARD, 160));
+    vita2d_draw_rectangle(0, 4, 960, 44, BG);
     if (app_banner[0]) {
         vita2d_draw_rectangle(0, BANNER_Y, 960, BANNER_H, OFF);
         wrapped_text(24, BANNER_TEXT_Y, 912, BG, 20, BANNER_LINE_H, 2, app_banner);
     } else if (settings_child()) {
         centered_text(24, 35, 912, WHITE, 28, page == PAGE_ADVANCED ? "Reading / Advanced" : category_name[settings_selected]);
         if (page == PAGE_OCR) {
-            vjo_chrome_round(chrome_rect, 744, 8, 192, 38, CARD);
+            vjo_chrome_toolbar(chrome_rect, 744, 8, 192, 38, theme, 0);
             centered_text(744, 35, 192, DIM, 24, "Advanced");
         }
     } else {
@@ -417,13 +417,13 @@ static void header(void)
     }
     for (int i = 0; i < TOP_TABS; i++) {
         int x = TAB_LEFT + i * (TAB_W + TAB_GAP), active = i == (page == PAGE_LOOKUP ? 0 : 1);
-        if (active) vjo_chrome_button(chrome_rect, x, TAB_Y, TAB_W, TAB_H, theme, 1);
-        else vjo_chrome_panel(chrome_rect, x, TAB_Y, TAB_W, TAB_H, theme, 0, 0);
-        centered_text(x, TAB_Y + 33, TAB_W, active ? BG : WHITE, 28, tab_label[i]);
+        vjo_chrome_toolbar(chrome_rect, x, TAB_Y, TAB_W, TAB_H, theme, active);
+        centered_text(x, TAB_Y + 33, TAB_W, WHITE, 28, tab_label[i]);
     }
     if (settings_child()) {
-        vjo_chrome_round(chrome_rect, 16, 510, 96, 34, SELECTED);
-        text(24, 533, WHITE, 22, "← Back");
+        vjo_chrome_back(chrome_rect, theme);
+        text(25, 533, WHITE, 26, "←");
+        text(62, 533, WHITE, 20, "Back");
     }
 }
 
@@ -558,7 +558,7 @@ static void choose_theme(int dir)
 #define THEME_H 278
 static void draw_appearance(void)
 {
-    static const char *const descriptions[VJO_THEMES] = {"Cool navy + mint", "Plum + blossom", "Paper + forest"};
+    static const char *const descriptions[VJO_THEMES] = {"Charcoal + mint", "Plum + blossom", "Paper + forest"};
     vita2d_start_drawing();
     vita2d_clear_screen();
     header();
@@ -600,8 +600,9 @@ static void draw_settings(void)
     for (int i = 0; i < SETTINGS_CATEGORIES; i++) {
         int y = MENU_Y + i * MENU_PITCH;
         vjo_chrome_panel(chrome_rect, 24, y, 912, MENU_H, theme, settings_selected == i, 1);
-        text(42, y + 25, WHITE, 26, category_name[i]);
-        text(42, y + 49, DIM, 20, category_help[i]);
+        vjo_chrome_category_icon(chrome_rect, i, 42, y + 13, theme);
+        text(90, y + 25, WHITE, 26, category_name[i]);
+        text(90, y + 49, DIM, 20, category_help[i]);
         text(896, y + 37, settings_selected == i ? ACCENT : DIM, 28, ">");
     }
     snprintf(controls, sizeof(controls), "Up/Down: category   %s: open   %s: exit", buttons.enter_glyph, buttons.cancel_glyph);

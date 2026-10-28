@@ -16,7 +16,7 @@ typedef struct { int x, y, clip, top, bottom, left, right; unsigned colour; floa
 static struct {
     int active, rects, texts, clip, left, top, right, bottom;
     const char *page;
-    PreviewRect rect[256];
+    PreviewRect rect[512];
     PreviewText text[160];
 } vp;
 
@@ -35,7 +35,8 @@ static inline void vp_clip(int x0, int y0, int x1, int y1)
 }
 static inline void vp_rect(int x, int y, int w, int h, unsigned colour)
 {
-    if (!vp.active || vp.rects >= 256) return;
+    if (!vp.active) return;
+    TEST_ASSERT(vp.rects < 512);
     vp.rect[vp.rects++] = (PreviewRect){x, y, w, h, vp.clip, vp.top, vp.bottom, vp.left, vp.right, colour};
 }
 static inline void vp_text(int x, int y, unsigned colour, float pixels, const char *s)

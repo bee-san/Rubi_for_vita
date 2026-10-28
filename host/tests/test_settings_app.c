@@ -70,11 +70,11 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define CARD_H 68
 #define ROOM_END 422 /* the cards' room ends above the status line */
 #define ACCENT RGBA8(91, 220, 207, 255)
-#define SELECTED RGBA8(35, 56, 70, 255)
-#define CARD RGBA8(21, 31, 44, 255)
-#define WHITE RGBA8(238, 244, 255, 255)
-#define BG_COLOR RGBA8(9, 15, 23, 255)
-#define DIM RGBA8(193, 207, 222, 255)
+#define SELECTED RGBA8(43, 47, 49, 255)
+#define CARD RGBA8(25, 27, 29, 255)
+#define WHITE RGBA8(240, 242, 244, 255)
+#define BG_COLOR RGBA8(15, 16, 17, 255)
+#define DIM RGBA8(184, 187, 191, 255)
 #define OFF RGBA8(244, 160, 167, 255)
 #define MODEL_DIR "ux0:data/VitaJPOverlay/ocr"
 
@@ -122,7 +122,7 @@ typedef struct { int x, y, w, h; unsigned color; int clipped, clip_top, clip_bot
 typedef struct {
     unsigned clear;
     Text text[160]; int texts;
-    Rect rect[256]; int rects;
+    Rect rect[512]; int rects;
     char backend[16]; /* config.ini's ocr_backend value after this frame ("" without the line) */
     char tier[16];    /* its vocr_tier value */
     char mode[16];    /* its ocr_mode value */
@@ -617,7 +617,7 @@ static void check_room(int f)
     for (int i = 0; i < shown[f].rects; i++) {
         const Rect *r = &shown[f].rect[i];
         int bottom = r->y + r->h;
-        if ((r->x == 0 && r->w == 960) || r->y >= 510 || r->y < OCR_Y || (r->x == 24 && r->w == 912 && r->y == ROOM_END + 4)) continue; /* the header; the status box */
+        if ((r->x == 0 && r->w == 960) || (r->x < 112 && r->y >= 504) || r->y < OCR_Y || (r->x == 24 && r->w == 912 && r->y == ROOM_END + 4)) continue; /* the header; the status box */
         if (r->clipped && r->clip_bottom < bottom) bottom = r->clip_bottom;
         TEST_CHECK_(bottom <= ROOM_END || r->y >= bottom, "frame %d: a %dx%d rectangle at %d,%d reaches %d", f, r->w,
                     r->h, r->x, r->y, bottom);
@@ -1602,10 +1602,8 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
     TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
 }
 
-/* The tab bar, laid out from its labels since the fifth tab (#313's Look up; #312's Stats came and went): six tabs
- * from x 24 to at most 936, in order, TAB_GAP apart, each at least its label's width with 10 px each side (the stub's
- * labels do not fit an equal share), each label centred in its tab on the old baseline and never cut, the page's own
- * filled. A touch on a tab shows its page; one in the gap between two tabs does nothing. */
+/* Two glossy destination controls from x 24 to at most 936, with centred labels and visible selection.
+ * The rounded control's central rectangle supplies its full width and excludes its corner strips. */
 #define TAB_Y 52
 #define TAB_H 48
 #define TABS 2
@@ -1616,15 +1614,15 @@ static Tabs tabs_of(int f, int active)
     Tabs t = {0};
     for (int i = 0; i < shown[f].rects; i++) {
         const Rect *r = &shown[f].rect[i];
-        if (r->y != TAB_Y || r->h != TAB_H) continue;
+        if (r->y != TAB_Y + 8 || r->h != TAB_H - 16) continue;
         if (t.n < TABS) {
             t.x[t.n] = r->x;
             t.w[t.n] = r->w;
-            TEST_CHECK_(r->color == (t.n == active ? ACCENT : CARD), "frame %d: tab %d colour %08X", f, t.n, r->color);
+            TEST_CHECK_(r->color == (t.n == active ? SELECTED : CARD), "frame %d: tab %d colour %08X", f, t.n, r->color);
             const Text *l = text_at(f, TAB_Y + 33, r->x, r->x + r->w);
             TEST_CHECK_(l && !strcmp(l->text, TAB_LABELS[t.n]) && !l->clipped && l->x >= r->x + 10 &&
                             l->x + width(l) <= r->x + r->w - 10 && abs(2 * l->x + width(l) - (2 * r->x + r->w)) <= 1 &&
-                            l->color == (t.n == active ? BG_COLOR : WHITE),
+                            l->color == WHITE,
                         "frame %d: tab %d's label '%s'", f, t.n, l ? l->text : "(none)");
         }
         t.n++;

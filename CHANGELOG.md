@@ -17,11 +17,12 @@ been reported.
   and groups Games, Reading & dictionaries, Anki, Appearance, and Install & repair. Cancel/Back returns to the
   category menu. Technical reading options are under Advanced reading, and installation problems still open their
   repair screen automatically.
-- **Three app colour schemes** in **Settings → Appearance**: Mint (the original), Sakura (plum and pink), and
+- **Three app colour schemes** in **Settings → Appearance**: Mint (charcoal and mint), Sakura (plum and pink), and
   Paper (warm light with green). Touch a preview card or use Left/Right and Enter; every app page changes immediately,
   including dictionary text, and the choice is kept in `app.ini` across launches.
-- **Vita-inspired app styling:** tinted backgrounds, rounded category rows, glossy controls, centered page titles,
-  checkbox-style switches, and a lower-left Back button. A [15-picture settings walkthrough](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/WALKTHROUGH.md)
+- **Sony Reader-inspired app styling:** a soft charcoal vignette, silver glossy toolbars, divided lists with
+  category icons, centered page titles, checkbox-style switches, and a round lower-left Back button.
+  A [15-picture settings walkthrough](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/WALKTHROUGH.md)
   shows every category, the options further down each page, and the state-dependent installer actions; the pictures
   are host-rendered previews with sample data and substitute fonts.
 

@@ -2,6 +2,8 @@
 
 Rubi opens here. Everything configurable in the app is inside **Settings**; **Look up** is the other destination.
 Choose a category with Up/Down and Enter, or touch its row. **Select** switches between Look up and Settings.
+The appearance follows Sony Reader's glossy toolbar, quiet background, and divided lists, with category icons
+and an accent on the focused row.
 
 ![Settings home with all five categories](walkthrough/walk-home.png)
 

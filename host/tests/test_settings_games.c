@@ -88,7 +88,7 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define LF_X(i) (42 + (i) * 146)
 #define LF_BADGE_Y (GP_LF_Y + 42)
 #define LF_HELP_Y (GP_LF_Y + 104)
-#define SELECTED RGBA8(35, 56, 70, 255)
+#define SELECTED RGBA8(43, 47, 49, 255)
 #define ACCENT RGBA8(91, 220, 207, 255)
 #define CDRAM_BLOCK (256 * 1024)
 

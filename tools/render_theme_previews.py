@@ -34,7 +34,12 @@ def render(record, font_path, target):
             y = max(y, top)
             h = end - y
         if w > 0 and h > 0:
-            draw.rectangle((x * scale, y * scale, (x + w) * scale - 1, (y + h) * scale - 1), fill=rgba(color))
+            if color >> 24 == 255:
+                draw.rectangle((x * scale, y * scale, (x + w) * scale - 1, (y + h) * scale - 1), fill=rgba(color))
+            else:
+                # Match libvita2d's source-alpha blending for the procedural vignette.
+                shade = Image.new("RGBA", (w * scale, h * scale), rgba(color))
+                screen.alpha_composite(shade, (x * scale, y * scale))
     for x, y, color, size, clipped, top, bottom, clip_left, clip_right, text in record["texts"]:
         if not text:
             continue

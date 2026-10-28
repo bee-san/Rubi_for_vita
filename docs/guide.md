@@ -987,8 +987,8 @@ request and have no cloud fallback: the local dictionaries are the only ones.
 
 ### App colour schemes
 
-Open Rubi's **Settings → Appearance** category. Choose **Mint** (the original
-navy and mint), **Sakura** (plum and pink), or **Paper** (warm light with forest green). Tap a preview card,
+Open Rubi's **Settings → Appearance** category. Choose **Mint** (charcoal and mint),
+**Sakura** (plum and pink), or **Paper** (warm light with forest green). Tap a preview card,
 press Left/Right, or press Enter to cycle through the three. The labelled **Selected** card is the saved choice.
 Colours change immediately on every app page, including Look up's dictionary text, and stay after closing the app.
 The in-game overlay keeps its existing colours.
