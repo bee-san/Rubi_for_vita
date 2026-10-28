@@ -1,5 +1,5 @@
 /* The Rubi app's Anki page itself (settings/anki_page.c; #163 c3), on the host. The page draws
- * through main.c's helpers (VjoAnkiUi), recorded here; its ten rows (API 32 added Trim black bars, #311 Card
+ * through main.c's helpers (VjoPageUi), recorded here; its ten rows (API 32 added Trim black bars, #311 Card
  * type, Game tag and Sentence readings, #314 Duplicates and Known words), which
  * scroll a row at a time, are checked for their layout and clipping, Up/Down and the left stick,
  * Left/Right, Enter and touch on each, each settings row's save into a
@@ -253,8 +253,11 @@ static int width_of(const char *s, float px)
 }
 
 static VjoButtons buttons;
-static const VjoAnkiUi ui = {d_text, d_wrapped, d_card, d_badge, d_footer, d_header, WHITE, DIM, ACCENT, OFF, CARD,
-                             &buttons};
+/* (the page's own rectangles, its scroll bar's, are recorded with the ones it draws itself) */
+static void d_rect(int x, int y, int w, int h, unsigned color) { vita2d_draw_rectangle(x, y, w, h, color); }
+static const VjoPageUi ui = {.text = d_text, .wrapped = d_wrapped, .rect = d_rect, .card = d_card, .badge = d_badge,
+                             .footer = d_footer, .header = d_header, .white = WHITE, .dim = DIM, .accent = ACCENT,
+                             .off = OFF, .track = CARD, .buttons = &buttons};
 
 int sceDisplayWaitVblankStart(void) { return 0; }
 static unsigned char scratch_mem[64 * 1024];

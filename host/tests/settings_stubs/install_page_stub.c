@@ -6,7 +6,7 @@
 
 int vjo_install_page_start(void) { return 0; }
 void vjo_install_page_show(void) {}
-void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touch_x, int touch_y)
+void vjo_install_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int touch_y)
 {
     (void)pressed; (void)touch_x; (void)touch_y;
     ui->header();
