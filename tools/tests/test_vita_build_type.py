@@ -4,8 +4,8 @@ Rubi app does not build. Every documented configure of a VitaSDK project (vita/,
 tools/vita3k_smoke/) passes -DCMAKE_BUILD_TYPE=Release, and vita/ uses Release when none is given.
 
 A documented command is code in the project's Markdown (what git tracks or would: a clone inside
-the checkout, ignored files, another project's vita-vn-ocr and dated records such as reports/ or a
-...-YYYYMMDD.md left out): a fenced block's lines, an inline code span (its lines joined, so a
+the checkout, ignored files, another project's vita-vn-ocr and dated records such as reports/,
+docs/history/ or a ...-YYYYMMDD.md left out): a fenced block's lines, an inline code span (its lines joined, so a
 span may wrap) or <code>, and a cmake line that starts a block (an indented block, or a paragraph);
 in the two CMake files, a comment. It configures one of these projects when its source, -S's value
 or a positional path outside a build directory, ends in vita or tools/vita3k_smoke (a vita-vn-ocr
@@ -19,7 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SKIP = {"build", ".refs", ".git", "third_party", "node_modules", "vita-vn-ocr"}
-DATED = re.compile(r"(?:^|/)reports/|-20\d{6}\.md$")  # reports/, docs/todo-20261011.md, ...-20261015.md
+DATED = re.compile(r"(?:^|/)reports/|(?:^|/)docs/history/|(?:^|/)docs/memory-ledger-history\.md$|-20\d{6}\.md$")
+# reports/, docs/history/ (#418: dated records, verbatim), the ledger's history, ...-20261015.md
 CMAKE_HEADERS = ("vita/CMakeLists.txt", "tools/vita3k_smoke/CMakeLists.txt")
 # vita, ./vita, vita/, $ROOT/vita, "$root"/vita (quotes removed), $(pwd)/vita, an absolute path ...
 VITA_PROJECT = re.compile(r"(?:^|/)(?:vita|tools/vita3k_smoke)/?$")
@@ -323,7 +324,7 @@ class VitaBuildType(unittest.TestCase):
 
     def test_the_documents_read(self):
         names = ("README.md", "docs/a.md", "docs/new.md", "reports/r.md", "docs/todo-20261011.md", "scratch/s.md",
-                 "vvo/notes/n.md", "vita-vn-ocr/notes/v.md")
+                 "vvo/notes/n.md", "vita-vn-ocr/notes/v.md", "docs/history/h.md", "docs/memory-ledger-history.md")
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             for name in names:
