@@ -17,8 +17,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tools/tests"))
 import package_vpk as vpk  # noqa: E402
 import prepare_ocr  # noqa: E402  (API 54: the text spotter's pinned name)
+from self_fixture import Segment, fself  # noqa: E402
 # the tree's API (include/vjo_api.h): the app's stamp in these fixtures
 API = int(re.search(r"#define VJO_API_VERSION (\d+)", (ROOT / "include/vjo_api.h").read_text()).group(1))
 
@@ -55,18 +57,7 @@ def make_self(imports=(), strings=b""):
         struct.pack_into("<HHHH", segment, at, entry_size, 1, 0, functions)
         struct.pack_into("<I", segment, at + 20, base + name_at)
         struct.pack_into("<I", segment, at + 28, base + nids_at)
-    elf_off, ph_off = 0xA0, 0xA0 + 0x34
-    info_off = ph_off + 32
-    data_off = info_off + 32
-    data = bytearray(b"SCE\0" + b"\0" * (data_off - 4))
-    struct.pack_into("<QQ", data, 0x40, elf_off, ph_off)
-    struct.pack_into("<Q", data, 0x58, info_off)
-    data[elf_off:elf_off + 6] = b"\x7fELF\x01\x01"
-    struct.pack_into("<I", data, elf_off + 24, 0)  # e_entry: segment 0, offset 0
-    struct.pack_into("<HH", data, elf_off + 42, 32, 1)
-    struct.pack_into("<8I", data, ph_off, 1, 0, base, 0, len(segment), len(segment), 5, 0x1000)
-    struct.pack_into("<4Q", data, info_off, data_off, len(segment), 1, 2)
-    return bytes(data) + bytes(segment)
+    return fself(Segment(bytes(segment), vaddr=base))  # e_entry 0: the module info at the segment's start
 
 
 def app_eboot(version="0.8.0", debug=False, worker="kernel", imports=(("SceShellUtil", [0x7C79BDD7]),)):
