@@ -12,14 +12,15 @@
  * path, and a change the three must agree on (a struct's layout, a syscall, a flag bit, a step kind, a value's
  * meaning) takes the next number. A number names one interface only, so numbers only grow, past those that drafts
  * or reverted changes used.
- * 56: current-game hook profiles, loaded by vjoOcrHookProfile before hook installation.
+ * 57: current-game hook profiles, loaded by vjoOcrHookProfile before hook installation, and VJO_EV_FULL_SCREEN,
+ * the rear double tap while the overlay blocks game input, for one full-screen OCR lookup.
  * 55: the pause for the frame (config.ini ocr_pause, off by default; #348, docs/game-pause.md):
  * VjoGameOcrRequest.speed bit 30 (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region
  * copied from one frame in one display call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block
  * (VJO_GITEM_FRAME), which the job reads from; the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged.
- * What each earlier number changed: 14 to 55 one by one in this comment as main f5d66795 has it (git show
+ * What each earlier number changed: 14 to 57 one by one in this comment as main f5d66795 has it (git show
  * f5d66795:include/vjo_api.h), and CHANGELOG.md (the releases that changed it name it). */
-#define VJO_API_VERSION 56
+#define VJO_API_VERSION 57
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
@@ -67,7 +68,8 @@ enum VjoTrigger {
 #define VJO_EV_SUBTITLE      0x20u /* subtitle trigger pressed */
 #define VJO_EV_REGION_QUIET  0x40u /* the region became quiet (VjoState.quiet) */
 #define VJO_EV_SHELL         0x80u /* local command/text/result ready: inspect Shell state */
-#define VJO_EV_ALL           0xFFu
+#define VJO_EV_FULL_SCREEN   0x100u /* rear double tap with the overlay open: one full-screen OCR lookup */
+#define VJO_EV_ALL           0x1FFu
 
 typedef struct {
     uint32_t size;          /* sizeof(VjoState), set by caller */

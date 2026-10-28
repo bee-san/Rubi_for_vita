@@ -166,6 +166,11 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
    pick an earlier line of a game (L/R), and look its words up; Enter saves the word as a card, without a picture
    ([details](docs/guide.md#look-up)).
 
+Text outside the dialogue box? With the overlay open, **double-tap the rear touchpad** to read the
+whole screen once through the text spotter, OCR and configured language-model decoder. Look its words
+up as usual; close to return to your saved dialogue box. On `main`, not in 0.10.0; not tested on a console
+yet ([details](docs/guide.md#use-in-a-game)).
+
 Every control, setting and file is in the [guide](docs/guide.md#use-in-a-game).
 
 ## Settings

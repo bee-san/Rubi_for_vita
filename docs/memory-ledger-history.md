@@ -5,6 +5,27 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## Rear double-tap full-screen OCR (API 57)
+
+The open overlay's rear double tap submits the existing `VJO_GAME_OCR_F_FULL` job through the game's
+spotter, recognizer and configured LM decoder. The saved region is untouched. No block, thread or
+allocation site is added: full-screen workspace and model checks use the existing game-worker ledger,
+reserve and fallback. The Shell adds three control integers (the pending/pinned mode, its job snapshot,
+and a one-shot UI flag); the kernel adds one rear-gesture mode integer. No pool or module budget is raised.
+
+Measured from the packaged modules with VitaSDK GCC 15.2.0 in local Release builds
+(`tools/check_memory_ledger.py`, normal with `--exact`), not measured on a console:
+
+| Module | Debug: text + data/bss | Normal: text + data/bss | Loaded pages, debug / normal |
+|---|---:|---:|---:|
+| Shell | 97,996 + 69,184 B | 85,724 + 69,116 B | 167,936 / 155,648 B, unchanged |
+| Kernel | 43,832 + 72,412 B | 38,640 + 70,724 B | 118,784 / 114,688 B, unchanged |
+| Game worker | 180,672 + 32,424 B | 171,740 + 32,408 B | 217,088 / 204,800 B, unchanged |
+
+The normal Shell has 292 B of code room and 516 B of data room in its last pages; the debug Shell
+308 B and 448 B. Both builds pass the module and allocation ledger checks. Console CPU and latency
+remain unmeasured.
+
 ## psandvita #1's six verified entries (no API change)
 
 Six more verified entries ([native-hooks.md](native-hooks.md#table-sites)), four filters
@@ -2155,7 +2176,7 @@ screenshot were removed (#130, #125), and local OCR (API 19) and the Anki screen
 read the screen in the game. On the owner's 3.65 that 2,088,960 B request failed with
 0x80024302 at every attempt (#74).
 
-## Current-game hook profiles (API 56)
+## Current-game hook profiles (API 57)
 
 The worker's full Luna/verified tables and per-game filter/postprocessor programs move to an indexed
 disk archive. Only the current title is read at startup. Its bounded file buffer and decoded records

@@ -16,10 +16,17 @@ been reported.
 - Native Vita hooks load only the current game's profile from an indexed disk archive, including its
   filters and version/signature checks. The worker uses 12 KiB fewer loaded pages in both builds
   (measured from the packaged binaries); CALL discovery and OCR remain available if a profile is missing
-  or invalid. Full updates include the archive. API 56; console startup timing is unmeasured.
+  or invalid. Full updates include the archive. API 57; console startup timing is unmeasured.
 
 ### Added
 
+- **Read the whole screen from the open overlay** (API 57): double-tap the rear touchpad for one scan
+  through the text spotter, OCR and configured language-model decoder, forcing OCR even with trusted hooks.
+  Navigate, look up and save its words as usual. The results stay until close or rescan; closing returns
+  to the saved dialogue box. No region is saved, and the scan does not add menus to dialogue history.
+  Rear double-tap's configured open/subtitle action still applies while closed; Cancel closes when it
+  is the opening trigger. Existing per-game memory checks, model and spotter fallback apply. Host-tested
+  only, not tested on a console yet ([controls](docs/guide.md#use-in-a-game)).
 - **Native text hooks for six more games, from the psandvita hook farm** (psandvita #1; proven in the Vita3K
   emulator only, not on a console): **フォトカノ Kiss** (`PCSG00139`), **デュラララ!! 3way standoff -alley- V**
   (`PCSG00370`), **ニル・アドミラリの天秤 帝都幻惑綺譚** (`PCSG00766`), **逢魔が刻～かくりよの縁～** (`PCSG00769`),

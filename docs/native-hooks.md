@@ -1257,7 +1257,7 @@ module stays loaded, so no code a game thread may still run in is unloaded. The 
 few instructions the in-flight count does not (the observer's assembly around its C call, a CALL
 hook's prologue and epilogue): a thread there when the hooks were released has left after it.
 
-## Current-game profiles (API 56)
+## Current-game profiles (API 57)
 
 The game worker loads only the current Vita game's hook profile. The complete catalogue stays in
 `ux0:data/VitaJPOverlay/hooks/profiles.vjhp`: a sorted index on disk, followed by one blob per title.

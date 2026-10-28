@@ -30,7 +30,8 @@ class ReleaseInstall(unittest.TestCase):
         self.package = self.root / "package"
         self.device = self.root / "device"
         for folder in ("tools", "ur0/tai", "ur0/data/VitaJPOverlay",
-                       "ux0/data/VitaJPOverlay/ocr", "ux0/data/VitaJPOverlay/dictionaries"):
+                       "ux0/data/VitaJPOverlay/ocr", "ux0/data/VitaJPOverlay/dictionaries",
+                       "ux0/data/VitaJPOverlay/hooks"):
             (self.package / folder).mkdir(parents=True, exist_ok=True)
         for name in ("install_ftp.sh", "package_release.py", "prepare_ocr.py", "prepare_plaintext.py", "prepare_vndb.py",
                      "migrate_config.py", "patch_tai_config.py", "collect_vita.py", "analyse_selftest.py",
@@ -46,7 +47,8 @@ class ReleaseInstall(unittest.TestCase):
                      "ux0/data/VitaJPOverlay/ocr/vocr_lm6_o3_4000k.vlm", "ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md",
                      "ux0/data/VitaJPOverlay/ocr/MODEL-ATTRIBUTION.md", "ux0/data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr",
                      "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict",
-                     "ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict"):
+                     "ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict",
+                     "ux0/data/VitaJPOverlay/hooks/profiles.vjhp"):
             (self.package / name).write_bytes(("test payload " + name).encode())
         self.worker = "kernel"
         self.write_manifest()
@@ -160,6 +162,7 @@ class ReleaseInstall(unittest.TestCase):
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
         for name in ("dictionaries/plaintext.vjdict", "dictionaries/vndb-names.vjdict",
+                     "hooks/profiles.vjhp",
                      "ocr/VOCR3_H15_w8.vocr", "ocr/VOCR3_FL10_w8.vocr", "ocr/vocr_lm6_o3_4000k.vlm",
                      "ocr/LM-ATTRIBUTION.md", "ocr/MODEL-ATTRIBUTION.md", "ocr/VOCR4_W20_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),
