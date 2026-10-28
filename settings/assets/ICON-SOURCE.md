@@ -63,7 +63,8 @@ strokes, no font; it said "Overlay" before the rename) and `bg.png` (a soft grad
 faint あ bubbles, sparkles, the
 mascot and the wordmark; `pic0.png`, the 960 x 544 launch splash, is the same
 picture scaled to the full height with its plain edges extended), each quantized to at most 256 colours as an opaque 8-bit
-palette PNG.
+palette PNG. `python3 tools/make_settings_assets.py --check` builds them afresh in a temporary directory and fails
+unless each is the committed file byte for byte; ctest runs it (`tools_make_settings_assets`).
 
 ## The other candidates
 
