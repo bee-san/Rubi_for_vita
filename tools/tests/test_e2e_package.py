@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -37,11 +38,20 @@ def segments(part, build, version="0.8.0"):
     return b"\0code\0" + b"\0".join(strings) + b"\0rodata\0"
 
 
-def fake_package(path, variant="normal", build=None, worker=None, app_version="0.8.0", ocr=None, app_extra=b""):
+def package_tool_files():
+    """{name: bytes} of the tools/ a package of this tree holds (e2e_package.package_tools of the tree's installers;
+    the spotter header is include/'s)."""
+    return {name: (ROOT / ("include" if name == "vjo_vocr_sizes.h" else "tools") / name).read_bytes()
+            for name in e2e_package.package_tools(ROOT)}
+
+
+def fake_package(path, variant="normal", build=None, worker=None, app_version="0.8.0", ocr=None, app_extra=b"",
+                 tools=None):
     """A package as the e2e reads it: its manifest (variant None: a manifest that names none; app_version None: one
     without app_version), the config template, the app's record, the four modules of `build` (default: the
-    manifest's variant, else debug; `worker`: the worker's build, if another; app_extra: more strings in the app)
-    and the files under ocr/ ({name: bytes})."""
+    manifest's variant, else debug; `worker`: the worker's build, if another; app_extra: more strings in the app),
+    the files under ocr/ ({name: bytes}) and under tools/ (this tree's package tools, with `tools` {name: bytes, or
+    None to leave one out} applied)."""
     build = build or variant or "debug"
     manifest = {"version": "0.8.0", "files": {}}
     if variant is not None:
@@ -60,6 +70,11 @@ def fake_package(path, variant="normal", build=None, worker=None, app_version="0
         z.writestr("Rubi.vpk", vpk.getvalue())
         for name, blob in (ocr or {}).items():
             z.writestr(OCR + name, blob)
+        for name, blob in {**package_tool_files(), **(tools or {})}.items():
+            if blob is not None:
+                z.writestr("tools/" + name, blob)
+        # the bridge's sources, whose CMakeLists.txt runs ../../tools/check_adrenaline_vsh.py (as the zip has them)
+        z.write(ROOT / "compat/adrenaline_vsh/CMakeLists.txt", "compat/adrenaline_vsh/CMakeLists.txt")
     return path
 
 
@@ -279,6 +294,15 @@ class E2EPackageEdges(unittest.TestCase):
              ["ocr/ has nothing but the shipped models and their attributions (other files: FL10_w8.vocr)"]),
             ("an extra LM and a file in a subdirectory", {}, {"x.vlm": b"lm", "old/m.vocr": blob},
              ["(other files: old/m.vocr, x.vlm)"]),
+            # tools/ (#418 P8): what the installers run and import and the documents tell a user to run, nothing else
+            ("a tool a document tells a user to run, missing", {"tools": {"known_words.py": None}}, {},
+             ["the tools the documents tell a user to run (missing: known_words.py)"]),
+            ("a module an installer's tool imports, missing", {"tools": {"convert_dictionary.py": None}}, {},
+             ["(missing: convert_dictionary.py)"]),
+            ("the SELF reader the zip's checks import, missing", {"tools": {"vita_self.py": None}}, {},
+             ["(missing: vita_self.py)"]),
+            ("a checkout's tool in the package", {"tools": {"package_variants.py": b"# the release's own\n"}}, {},
+             ["tools/ has nothing a user never runs from the package (others: package_variants.py)"]),
         )
         with mock.patch.object(release, "shipped_models", return_value=[("m.vocr", pins, "v0", "a size")]), \
                 mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
@@ -312,6 +336,18 @@ class E2EPackageEdges(unittest.TestCase):
                     self.assertEqual(len(failed), len(want), failed)
                     for part, label in zip(want, failed):
                         self.assertIn(part, label)
+
+    def test_each_user_tool_is_named_by_its_document_and_the_zip_ships_the_list(self):
+        """USER_TOOLS: each document (shipped in the zip) tells a user to run `python3 tools/<tool>`, and the release
+        target copies exactly e2e_package.package_tools of this tree's installers into the zip's tools/."""
+        for tool, doc in e2e_package.USER_TOOLS.items():
+            with self.subTest(tool=tool):
+                self.assertIn(f"python3 tools/{tool}", (ROOT / doc).read_text(encoding="utf-8"))
+        cmake = (ROOT / "vita/CMakeLists.txt").read_text(encoding="utf-8")
+        release = cmake[cmake.index("add_custom_target(release"):cmake.index("Packaging Rubi-")]
+        copied = set(re.findall(r"\$\{ROOT\}/tools/([A-Za-z0-9_.-]+)", release))
+        copied |= {name for name in re.findall(r"\$\{ROOT\}/include/([A-Za-z0-9_.-]+) \$\{STAGE\}/tools/", release)}
+        self.assertEqual(sorted(copied), sorted(e2e_package.package_tools(ROOT)))
 
     def test_self_test_says_the_normal_build_has_none_only_in_the_normal_build(self):
         """audit-overlay-release-variants-e note 4 (M17): install_ftp.sh --self-test arms the marker in either build,

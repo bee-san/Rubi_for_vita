@@ -44,6 +44,7 @@ PASS or FAIL line per check and a JSON summary; exits 1 on any failure. After a 
 are removed unless --keep; DIR keeps the scenarios' logs.
 """
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -75,6 +76,56 @@ MARKER = ".e2e_package"  # written before any entry: the entries beside it are t
 
 def config_values(text):
     return {k: v for k, v in re.findall(r"^(\w+) = ?(.*)$", text, re.M)}
+
+
+# The package's tools/ (vita/CMakeLists.txt's release target), besides what its installers run and import: what a
+# user runs by hand from the package, each with the shipped document that tells them to, and the data files the
+# tools read beside themselves. Anything else under tools/ is a checkout's (the release's own tools, the benches).
+USER_TOOLS = {"convert_dictionary.py": "docs/local-dictionaries.md",  # a Yomitan dictionary to a .vjdict
+              "install_dictionary.py": "docs/local-dictionaries.md",  # and onto the Vita
+              "known_words.py": "docs/anki.md",                       # the words of an Anki collection
+              "reading_stats.py": "README.md",                        # history.csv's characters and hours
+              "analyse_timeline.py": "docs/first-ocr.md",             # a --collect zip's job timelines
+              "analyse_selftest.py": "docs/self-test.md",             # a self-test report
+              "hook_request.py": "docs/hook-requests.md"}             # a hooks.log's hook request
+TOOL_DATA = ("model_tiers.json",   # prepare_ocr.py's and analyse_selftest.py's tiers
+             "vjo_vocr_sizes.h")   # prepare_ocr.py's text spotter pins (VOCR_SPOT_HEADER_NAME)
+# imports a packaged tool makes only in a checkout: hook_request.py's --bucket reads the farm (hook_farm.py)
+CHECKOUT_ONLY = {"hook_farm.py"}
+TOOL_RUN = re.compile(r"(?<![\w.-])tools/([A-Za-z0-9_-]+\.(?:py|sh|json))")  # also $PACKAGE/tools/, ../../tools/
+
+
+def tool_imports(source):
+    """The modules a Python tool imports, at any depth (a function's own import too), by their file names."""
+    out = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            out |= {a.name.split(".")[0] + ".py" for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            out.add(node.module.split(".")[0] + ".py")
+    return out
+
+
+def package_tools(pkg, tools=ROOT / "tools"):
+    """The files a package's tools/ must hold: every script its installers (install-vita.sh, tools/install_ftp.sh)
+    and compat/adrenaline_vsh's CMakeLists.txt run, every module those import from tools/ (at any depth; this tree's
+    tools/ say which names are tools), USER_TOOLS with their imports, and TOOL_DATA."""
+    runners = [pkg / "install-vita.sh", pkg / "tools/install_ftp.sh", pkg / "compat/adrenaline_vsh/CMakeLists.txt"]
+    want = {"install_ftp.sh", *USER_TOOLS, *TOOL_DATA}
+    for path in runners:
+        if path.is_file():
+            want |= set(TOOL_RUN.findall(path.read_text(encoding="utf-8", errors="replace")))
+    todo = sorted(n for n in want if n.endswith(".py"))
+    while todo:
+        name = todo.pop()
+        source = pkg / "tools" / name if (pkg / "tools" / name).is_file() else tools / name
+        if not source.is_file():
+            continue
+        for module in sorted(tool_imports(source.read_text(encoding="utf-8")) - want - CHECKOUT_ONLY):
+            if (tools / module).is_file():
+                want.add(module)
+                todo.append(module)
+    return want
 
 
 def remove(path):
@@ -317,6 +368,16 @@ class E2E:
                                        if not p.is_dir()) if rel not in expected)
         check(not other, "ocr/ has nothing but the shipped models and their attributions"
               + (f" (other files: {', '.join(other)})" if other else ""))  # -e note 2: an extra model is uploaded too
+        # tools/: everything the installers run and import and a user is told to run (a missing one fails on the user's
+        # computer, not here), and nothing else (vita/CMakeLists.txt's release target copies them)
+        tools = self.pkg / "tools"
+        want = package_tools(self.pkg)
+        have = {p.name for p in tools.iterdir() if p.is_file()} if tools.is_dir() else set()
+        missing, extra = sorted(want - have), sorted(have - want)
+        check(not missing, "tools/ has every script install-vita.sh and install_ftp.sh run, the modules they import "
+              "and the tools the documents tell a user to run" + (f" (missing: {', '.join(missing)})" if missing else ""))
+        check(not extra, "tools/ has nothing a user never runs from the package"
+              + (f" (others: {', '.join(extra)})" if extra else ""))
 
     # ---------------- scenario A: over v0.8.0-test.2 with test.1's app (the owner's state, #101) ----------------
     def scenario_a(self):
