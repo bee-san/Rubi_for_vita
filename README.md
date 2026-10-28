@@ -81,12 +81,12 @@
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
 **Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.8/Rubi-0.9.8.zip)
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.10.0/Rubi-0.10.0.zip)
 and extract it.
 
 ### 1. Transfer modules
 
-Using VitaShell FTP, transfer the files from `Rubi-0.9.8/ur0/tai/` to `ur0:tai/` on the Vita:
+Using VitaShell FTP, transfer the files from `Rubi-0.10.0/ur0/tai/` to `ur0:tai/` on the Vita:
 
 - `VitaJPOverlay_Kernel.skprx`
 - `VitaJPOverlay_OCR.suprx`
@@ -113,13 +113,13 @@ If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the en
 
 ### 3. Transfer data files for the plugin
 
-Transfer `Rubi-0.9.8/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+Transfer `Rubi-0.10.0/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
 as `ur0:data/VitaJPOverlay`.
 
 ### 4. Transfer data files for OCR and the dictionary
 
 **This is a separate folder, not a duplicate of step 3.** Transfer
-`Rubi-0.9.8/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+`Rubi-0.10.0/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
 as `ux0:data/VitaJPOverlay`.
 
 If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
@@ -128,7 +128,7 @@ and keep your existing settings file when copying the data.
 ### 5. Transfer and install the VPK / companion app
 
 Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
-top-right corner of its LiveArea page. Transfer `Rubi-0.9.8/Rubi.vpk` to the Vita and install
+top-right corner of its LiveArea page. Transfer `Rubi-0.10.0/Rubi.vpk` to the Vita and install
 (promote) it with VitaShell. Accept the installation and extended-permissions prompts.
 
 ### 6. Reboot the Vita
@@ -215,7 +215,7 @@ Older installs may have kept **OCR only**, so choose Automatic once if needed.
 | --- | --- | --- |
 | **CLANNAD**, Japanese Vita release (`PCSG00415`) | Automatic; string-copy hooks and Rubi's own game profile | String-copy extraction confirmed in the combined debug test build, including readings without OCR. The separate game profile's hook site remains unverified on a real Vita. |
 | **175 Vita title IDs from LunaTranslator's table** | Automatic attempts using 294 ported hook sites, plus string-copy hooks | Experimental: these game-specific hook sites have not been verified on a real Vita. Examples include **TIME TRAVELERS** (`PCSG00062`), **Code:Realize ～創世の姫君～** (`PCSG00402`) and **DRAMAtical Murder** (`PCSG00420`). |
-| **54 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8, **極限脱出ＡＤＶ 善人シボウデス** (`PCSG00020`, Zero Escape: Virtue's Last Reward), **蒼の彼方のフォーリズム** (`PCSG00700`), the **ZERO ESCAPE ダブルパック**'s 善人シボウデス (`PCSG00883`) and the SC3 games **STEINS;GATE 比翼恋理のだーりん** (`PCSG00146`), **ROBOTICS;NOTES ELITE** (`PCSG00352`) and **CHAOS;CHILD** (`PCSG00555`), and 20 from the farm's hook farm such as **マブラヴ オルタネイティヴ** (`PCSG00777`), **大図書館の羊飼い -Library Party-** (`PCSG00505`), **DIABOLIK LOVERS** (`PCSG00272` and four more) and **ISLAND** (`PCSG01000`), on `main`), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 29 are games of Luna's table: for 17 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita; 蒼の彼方のフォーリズム also on a PS Vita (15 of its hook's 19 lines agreed with OCR; 3 scored 0, not examined). For ALIA's CARNIVAL! サクラメント and 真 流行り神 a jump from elsewhere in the game's code into the hook's patched bytes is unchecked (the farm had no copy of their code): one would crash the game. |
+| **54 more Vita title IDs with Rubi's own verified entries** (26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8, **極限脱出ＡＤＶ 善人シボウデス** (`PCSG00020`, Zero Escape: Virtue's Last Reward), **蒼の彼方のフォーリズム** (`PCSG00700`), the **ZERO ESCAPE ダブルパック**'s 善人シボウデス (`PCSG00883`) and the SC3 games **STEINS;GATE 比翼恋理のだーりん** (`PCSG00146`), **ROBOTICS;NOTES ELITE** (`PCSG00352`) and **CHAOS;CHILD** (`PCSG00555`), and 20 from the owner's hook farm such as **マブラヴ オルタネイティヴ** (`PCSG00777`), **大図書館の羊飼い -Library Party-** (`PCSG00505`), **DIABOLIK LOVERS** (`PCSG00272` and four more) and **ISLAND** (`PCSG01000`) in 0.10.0), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 29 are games of Luna's table: for 17 of them the entry unlocks Luna's own site, which Rubi's placement check refused | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita; 蒼の彼方のフォーリズム also on a PS Vita (15 of its hook's 19 lines agreed with OCR; 3 scored 0, not examined). For ALIA's CARNIVAL! サクラメント and 真 流行り神 a jump from elsewhere in the game's code into the hook's patched bytes is unchecked (the farm had no copy of their code): one would crash the game. |
 | Other native Vita games | Automatic tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. OCR is used until a matching source is found. **Every game** makes the same attempts. |
 | PSP games in Adrenaline | OCR only | Native PSP text hooks are not implemented, including in Every game mode. |
 
@@ -256,8 +256,8 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | A first install, on a Vita without Rubi | not run on a console yet |
 | ✅ | Model sizes Normal and Large | Large fitted in CLANNAD's free memory |
 | ❓ | Model size Small | 0.8.0's Small model has not run on a console |
-| ⚠️ | OCR in a game short of memory, with the 1 MiB reserve | [#277](https://github.com/bee-san/Rubi_for_vita/issues/277)'s test build (0.9.4 with it): the owner reports that it works, with no figures; in [#324](https://github.com/bee-san/Rubi_for_vita/pull/324)'s run (0.9.7 with it) あおかな read with Small; `main`'s models have not run with it on a console |
-| ❓ | VOCR6, the Small, Normal and Large models on `main` | not run on a console yet ([details](docs/vita-vn-ocr.md#models)) |
+| ⚠️ | OCR in a game short of memory, with the 1 MiB reserve | [#277](https://github.com/bee-san/Rubi_for_vita/issues/277)'s test build (0.9.4 with it): the owner reports that it works, with no figures; in [#324](https://github.com/bee-san/Rubi_for_vita/pull/324)'s run (0.9.7 with it) あおかな read with Small; 0.10.0's models have not run with it on a console |
+| ❓ | VOCR6, the Small, Normal and Large models in 0.10.0 | not run on a console yet ([details](docs/vita-vn-ocr.md#models)) |
 | ✅ | Read text: Automatically | the mode of every 0.8.0 test run |
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
@@ -351,7 +351,7 @@ Vita too, grows as you read and is never deleted by itself; **Only when I press 
 ### How good is the OCR?
 
 Rubi reads text with VOCR, small recognizers that [vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr)
-trains for visual-novel dialogue boxes, and decodes each line with a language model. On `main`, all three sizes are
+trains for visual-novel dialogue boxes, and decodes each line with a language model. Since 0.10.0, all three sizes are
 VOCR6, retrained on the owner's hooked PS Vita and PSP games (better on those games; on others level, Small a little
 worse in point; measured on a computer). Its accuracy on
 a console is not measured yet; the host measurements are in [docs/vita-vn-ocr.md](docs/vita-vn-ocr.md).
