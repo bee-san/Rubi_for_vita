@@ -24,7 +24,8 @@ the debug build. So:
   batch adds or grows (`r_PROTOTYPE_NAMELINE`, with `PROTOTYPE` in it, `r_PCSG00472`, with `IFENGINE`,
   `r_AOZORA_RUBY`, `r_CARET_NEWLINE`, `r_PCSG01250`), 853 B [`arm-vita-eabi-nm -S`], are read-only data again
   (`core/hook_luna.c`, without `VJO_DATA_TABLE`), and
-- `core/hook_luna.c` is built for size in the worker, as `core/hook_re.c` is (`vita/CMakeLists.txt`): its filter ops and
+- `core/hook_luna.c` is built for size in the worker, as `core/hook_re.c` is (`vita/CMakeLists.txt`; the Rubi app's copy,
+  a source property, too: its `.text` 779,156 → 779,092 B, normal build, audit-rubi-merge-394 N4): its filter ops and
   Luna sites' reads are control code, run a few times per hit or job; its object's text goes from 5,612 to 4,168 B and
   its rodata from 13,595 to 13,347 B (the normal build's flags). Its speed is not measured on a console.
 

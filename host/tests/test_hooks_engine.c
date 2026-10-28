@@ -1775,12 +1775,16 @@ static const FarmSite *farm_entry(const char *title, const VjoPlaceVerified **en
     /* every byte the farm recorded (A-N1: 12 of the 16 passed); an entry that pins fewer, for a relocated address in
      * them, says why here: PCSG00505's 8 (#394), the farm's next 8 being a movw/movt of an address the loader writes
      * for where it loads the relocatable eboot (another address wherever segment 0 is not at 0x81000000), which the
-     * check below confirms in the farm's bytes */
+     * check below confirms in the farm's bytes: MOVW and MOVT T3 (11110i10_0100/_1100 imm4, then 0 imm3 Rd imm8: bit 15
+     * of the second halfword clear, which a BL's is not) of one register, neither SP nor PC (audit-rubi-merge-394 F1:
+     * a check of the first halfwords and the Rd nibbles alone took bl; bl for a pair) */
     unsigned want = fs->sig_len;
     if (!strcmp(title, "PCSG00505") && fs->sig_len == 16u) {
         const uint8_t *b = (const uint8_t *)fs->sig + 8;
         unsigned h1 = b[0] | b[1] << 8, h2 = b[2] | b[3] << 8, h3 = b[4] | b[5] << 8, h4 = b[6] | b[7] << 8;
-        TEST_CHECK_((h1 & 0xFBF0u) == 0xF240u && (h3 & 0xFBF0u) == 0xF2C0u && ((h2 >> 8) & 0xFu) == ((h4 >> 8) & 0xFu),
+        unsigned rd = (h2 >> 8) & 0xFu;
+        TEST_CHECK_((h1 & 0xFBF0u) == 0xF240u && (h3 & 0xFBF0u) == 0xF2C0u && !(h2 & 0x8000u) && !(h4 & 0x8000u) &&
+                        rd == ((h4 >> 8) & 0xFu) && rd != 13u && rd != 15u,
                     "%s: the farm's bytes after the entry's are a movw/movt pair of one register", title);
         want = 8u;
     }

@@ -331,6 +331,7 @@ if(VJO_WITH_VOCR)
   # core/hook_luna.c's filter ops and Luna sites' reads (run_ops, vjo_luna_capture: a few per hit or job): -Os
   # makes room for the hook farm's 20 entries of #394 in both builds' pages (its text 5,612 -> 4,168 B and rodata
   # 13,595 -> 13,347 B, the normal build's object; docs/memory-ledger.md, "The hook farm's 20 verified entries").
+  # (A source property: the Rubi app's copy, for its Games page's hook tag, is -Os too.)
   set_source_files_properties(${ROOT}/core/hook_re.c ${ROOT}/core/hook_luna.c PROPERTIES COMPILE_OPTIONS "-Os")
   # MAGES' SC3 text (core/hook_sc3.c): a hit's span and the job's decoder, for size too.
   set_source_files_properties(${ROOT}/core/hook_sc3.c PROPERTIES COMPILE_OPTIONS "-Os")
