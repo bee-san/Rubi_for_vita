@@ -32,6 +32,8 @@ include(${ROOT}/cmake/HookRevision.cmake)
 vjo_hook_revision(${ROOT})
 add_subdirectory(${ROOT}/compat/adrenaline_vsh ${CMAKE_CURRENT_BINARY_DIR}/adrenaline_compat)
 set(VJO_BUILD_VITA ON)
+# OFF leaves out only the game worker (VitaJPOverlay_OCR.suprx) and the vita-vn-ocr runtime it needs: the Shell and the
+# kernel are the same either way (tools/ci_container_build.sh builds the Rubi app alone with it OFF).
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
 # The release's version: the base zips' names and the Rubi app's version (beside its title). The
 # test builds use this version with a -test.N suffix; the final release sets it to its own

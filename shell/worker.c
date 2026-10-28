@@ -25,11 +25,9 @@
 #include "../core/utf.h"
 #include "../core/text_rows.h"
 #include "../core/history_lines.h"
-#ifdef VJO_WITH_VOCR
 #include "game_ocr_client.h"
 #include "history.h"
 #include "../include/vjo_vocr_sizes.h"
-#endif
 #include "shell.h"
 #include "touch_hold.h"
 
@@ -707,7 +705,6 @@ static const char OOM_SHELL_RESULTS[] VJO_DATA_TABLE(OOM_SHELL_RESULTS) = "Text 
 static const char MODEL_STORAGE[] VJO_DATA_TABLE(MODEL_STORAGE) = "The local OCR model storage is unavailable to this game. "
     "See log.txt for details.";
 
-#ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
  * beside the reserve; the region's job workspace; the model's weights; an
  * allocation after a passed check; or the check itself. A job asks by tiers
@@ -727,9 +724,7 @@ static const char *game_oom_detail(const VjoGameOcrResult *r)
     if (free_bytes < job) return OOM_GAME_REGION;
     return OOM_GAME_SMALLEST;
 }
-#endif
 
-#ifdef VJO_WITH_VOCR
 /* ---- the game worker's one job slot (API 23: shared with anki.c's screenshots) ----
  * The kernel holds one job and its one result: an exchange is submit to read, and
  * another thread's submission in between would replace the result this one waits
@@ -1454,14 +1449,6 @@ static int run_vocr(VjoOverlayData *out)
     out->err.detail = OOM_SHELL_RESULTS;
     return out->err.rc = VJO_E_OOM;
 }
-#else
-static int run_vocr(VjoOverlayData *out)
-{
-    out->err.detail = "This build has no vita-vn-ocr backend. Install a build made with VJO_WITH_VOCR.";
-    return out->err.rc = VJO_E_OCR_UNAVAILABLE;
-}
-static int shot_waiting(void) { return 0; } /* no game worker: no screenshot */
-#endif
 
 static int run_job(VjoArena *a, VjoOverlayData *out)
 {
@@ -1565,10 +1552,8 @@ static void net_job(void)
         return;
     }
     int idx = job_idx;
-#ifdef VJO_WITH_VOCR
     VjoHistoryRecord history;
     int save_history = 0;
-#endif
 #if VJO_DEBUG
     int64_t t0 = now_us();
     uint32_t appends0, appends1, log_us0 = vjo_log_io(&appends0), log_us1;
@@ -1578,7 +1563,6 @@ static void net_job(void)
 #endif
     job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
                              : run_job(&results[idx], &cache_data[idx]);
-#ifdef VJO_WITH_VOCR
     /* Snapshot mutable job/game facts before publishing job_done: the control
      * thread may immediately switch game or post another job after that. The
      * network thread owns vocr_result until its next recognition, so history
@@ -1604,7 +1588,6 @@ static void net_job(void)
             save_history = !job_cancelled && job_generation == game_generation;
         }
     }
-#endif
 #if VJO_DEBUG
     /* (in the data segment: the debug Shell's last text page is nearly full, docs/memory-ledger.md) */
     static const char done_format[] VJO_DATA_TABLE(job_done_format) =
@@ -1630,14 +1613,12 @@ static void net_job(void)
     vjo_log_batch_end(&net_held->b);
     net_held->b.buf = NULL;
 #endif
-#ifdef VJO_WITH_VOCR
     /* Display/input never wait on storage. Only this thread can overwrite the
      * OCR result, and it cannot execute the next job until append returns. */
     if (save_history) {
         int rc = vjo_history_append(&history);
         if (rc < 0) vjo_dlog("history: append failed 0x%08X", (unsigned)rc);
     }
-#endif
 }
 
 /* VjoNet's stack use, measured on the console: at its start the thread fills its
@@ -2218,7 +2199,6 @@ typedef char history_visit_fits[sizeof(HistoryVisit) + VJO_STRIP_MAX + 8 <= VJO_
 /* Resolve the visible game's actual PSP/Vita ID and the console's local calendar day.
  * UTC conversion for both midnights respects the console's timezone/DST rules. */
 
-#ifdef VJO_WITH_VOCR
 __attribute__((noinline)) int vjo_history_context(VjoReadingScope *scope)
 {
     char name[128], tid[12];
@@ -2237,7 +2217,6 @@ __attribute__((noinline)) int vjo_history_context(VjoReadingScope *scope)
     sceClibSnprintf(scope->uuid, sizeof(scope->uuid), "%s-%s", platform, tid);
     return 1;
 }
-#endif
 
 static int history_open(void)
 {
@@ -2252,9 +2231,7 @@ static int history_open(void)
     vjo_arena_init(&lines, v + 1, VJO_BUDGET_PAF_HISTORY - sizeof(*v));
     sceClibSnprintf(uuid, sizeof(uuid), "%s-%s\",", platform, tid[0] ? tid : title_id); /* the column and its end */
     v->h.line[0] = vjo_arena_strndup(&lines, local_text, sceClibStrnlen(local_text, sizeof(local_text) - 1));
-#ifdef VJO_WITH_VOCR
     rc = vjo_history_load(&v->h, &lines, uuid, cfg.non_japanese_filter, &scratch);
-#endif
 #if VJO_DEBUG
     uuid[sceClibStrnlen(uuid, sizeof(uuid)) - 2] = '\0'; /* the game's ID, without the quote and comma of the match */
 #endif
@@ -2540,9 +2517,7 @@ static void on_refresh_done(void)
                 size_t was = sceClibStrnlen(local_text, sizeof(local_text));
                 int grown = was && was < len && !sceClibMemcmp(local_text, text, was);
                 sceClibMemcpy(local_text, text, len + 1);
-#ifdef VJO_WITH_VOCR
                 line_debug_accept(&vocr_result, refresh_model);
-#endif
                 advance_generation(&local_text_generation);
                 local_page = 0;
                 if (!grown)
@@ -2675,12 +2650,10 @@ static void on_job_done(void)
     }
     screen_changed_streak = 0; /* this job read its screen */
     screen_retry_until = 0;
-#ifdef VJO_WITH_VOCR
     /* #358: the box this job on the whole screen suggests, for a game with no region of its own (the overlay offers it
      * once an activation): the newest screen's, none when its lines hold no dialogue (a box of an earlier screen is
      * never offered for this one); the network thread is done with the result */
     vjo_rsel_publish(&g_view.suggest, vocr_result.suggest_rows);
-#endif
     ocr_failed = d->failed_stage == VJO_STAGE_OCR;
     backoff_note(&ocr_backoff, ocr_failed);
     if (!ocr_failed) /* OCR works again: the refreshes need not wait for theirs either */
@@ -3064,9 +3037,7 @@ static void on_game_exit(void)
         mem_free();
     title_id[0] = '\0';
     vjo_anki_set_game("", "", 0);
-#ifdef VJO_WITH_VOCR
     vjo_history_total_keep(); /* the reading total's file, when lines were added to it */
-#endif
     vjo_ledger_shell_log("exit");
     net_stack_check();
     vjo_selftest_step("exit");
@@ -3340,10 +3311,8 @@ static void control_tick(uint32_t bits)
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
         mem_free();
-#ifdef VJO_WITH_VOCR
     if (vjo_history_total_step(&scratch)) /* the reading total's count, a window a wakeup: the next at once */
         vjoNotifyShell();
-#endif
 }
 
 static int ctl_main(SceSize args, void *argp)
@@ -3378,13 +3347,11 @@ int vjo_worker_start(void)
     view_lock = sceKernelCreateMutex("VjoView", 0, 0, NULL);
     cmd_lock = sceKernelCreateMutex("VjoCmd", 0, 0, NULL);
     net_evf = sceKernelCreateEventFlag("VjoNetEv", 0, 0, NULL);
-#ifdef VJO_WITH_VOCR
     game_lock = sceKernelCreateMutex("VjoGameJob", 0, 0, NULL); /* before Anki: its screenshots take it */
     if (game_lock < 0) {
         vjo_worker_stop();
         return -1;
     }
-#endif
     if (view_lock < 0 || cmd_lock < 0 || net_evf < 0) {
         vjo_worker_stop();
         return -1;
@@ -3396,9 +3363,7 @@ int vjo_worker_start(void)
     if (vjo_anki_start() < 0)
         vjo_log("anki: mailbox unavailable: no card can be saved");
     apply_config(); /* logging, triggers and Anki are set up before the first game */
-#ifdef VJO_WITH_VOCR
     vjo_reading_rule = (uint32_t)cfg.reading_time; /* once: a Shell's totals are all counted with one rule */
-#endif
     vjo_selftest_init(&cfg);
     if (vjo_selftest_armed())
         apply_config(); /* the self-test's forced settings */
@@ -3454,9 +3419,7 @@ int vjo_worker_stop(void)
     mem_free();
     if (history) /* the threads are gone: the visit's block goes with the text */
         retire_local_text(0);
-#ifdef VJO_WITH_VOCR
     vjo_history_total_stop(); /* and a count's file */
-#endif
     if (net_evf >= 0)
         sceKernelDeleteEventFlag(net_evf);
     if (cmd_lock >= 0)
@@ -3464,10 +3427,8 @@ int vjo_worker_stop(void)
     if (view_lock >= 0)
         sceKernelDeleteMutex(view_lock);
     net_evf = cmd_lock = view_lock = -1;
-#ifdef VJO_WITH_VOCR
     if (game_lock >= 0) /* (the Anki job, which takes it for a screenshot, was joined above) */
         sceKernelDeleteMutex(game_lock);
     game_lock = -1;
-#endif
     return 0;
 }

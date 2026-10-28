@@ -38,9 +38,7 @@
 #include "../core/utf.h"
 #include "anki_queue.h"
 #include "shell.h"
-#ifdef VJO_WITH_VOCR
 #include "game_ocr_client.h"
-#endif
 
 /* A card: the settings and note copies, the other dictionaries' entries and
  * the record (at most VJO_QUEUE_TEXT_MAX). The ledger's
@@ -317,7 +315,6 @@ static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
 #define SHOT_WAIT_US 4000000    /* for the slot: a refresh yields within a strip, a lookup's OCR runs on */
 #define SHOT_TIMEOUT_US VJO_GAME_OCR_SHOT_TIMEOUT_US /* includes the game's bounded file deadline */
 
-#ifdef VJO_WITH_VOCR
 typedef struct { VjoGameOcrResult *result; int frozen; unsigned seq; int64_t started; } ShotWait;
 static int shot_stopped(void *ud)
 {
@@ -389,9 +386,6 @@ static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
     vjo_arena_release(&arena, mark);
     return rc;
 }
-#else
-#define take_shot NULL /* no game worker in this build: cards without a screenshot */
-#endif
 
 /* A card from an earlier line (line history): the screen shows another line now, and Rubi keeps no
  * frame, so it has no screenshot. */
