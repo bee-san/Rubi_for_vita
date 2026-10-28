@@ -52,8 +52,9 @@ def page_round(size):
 
 def read(data, headers_only=False):
     """The SELF in data: its SCE header, control infos, ELF header, program headers and each segment's bytes, each
-    segment unencrypted, stored or zlib-compressed (vita-make-fself pads after the stream), inside the file and
-    p_filesz bytes long. headers_only: the SCE, ELF and program headers alone (no control info, no segment's bytes)."""
+    segment unencrypted, inside the file, and either stored in exactly p_filesz bytes or a whole zlib stream of
+    p_filesz bytes (vita-make-fself pads after the stream). headers_only: the SCE, ELF and program headers alone (no
+    control info, no segment's bytes)."""
     if data[:4] != MAGIC:
         raise Invalid("not a SELF (no SCE header)")
     elf_at, phdrs_at = unpack("<QQ", data, 0x40, "SCE header")
@@ -91,12 +92,15 @@ def read(data, headers_only=False):
                 raise Invalid(f"segment {index} runs past the SELF's end")
             blob = data[offset:offset + length]
             if compression == 2:
+                stream = zlib.decompressobj()
                 try:
-                    blob = zlib.decompressobj().decompress(blob)
+                    blob = stream.decompress(blob)
                 except zlib.error as error:
                     raise Invalid(f"segment {index}: {error}") from None
-            else:
-                blob = blob[:filesz]
+                if not stream.eof:  # cut short, its adler32 trailer too (vita-make-fself pads after a whole stream)
+                    raise Invalid(f"segment {index}: its zlib stream is incomplete")
+            elif length != filesz:
+                raise Invalid(f"segment {index}: {length} bytes stored, the program header says {filesz}")
             if len(blob) != filesz:
                 raise Invalid(f"segment {index}: {len(blob)} bytes, the program header says {filesz}")
         segments.append(Segment(kind, vaddr, filesz, memsz, flags, blob))
