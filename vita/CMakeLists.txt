@@ -406,7 +406,7 @@ include(${ROOT}/cmake/SettingsPNG.cmake)
 set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
-  ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
+  ${ROOT}/core/heap.c ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/word_key.c
   ${ROOT}/core/sentence_reading.c) # #311: readings over a card's sentence
 # The overlay's reading streak, seeded once from history.csv (settings/streak_seed.c: core/streak.c's rule, the seed's

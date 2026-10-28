@@ -9,6 +9,7 @@
 
 #include "../core/anki_queue.h"
 #include "../core/errors.h"
+#include "../core/heap.h"
 #include "../core/json.h"
 #include "../core/word_key.h"
 #include "../core/lapis.h"
@@ -297,35 +298,22 @@ static int word_less(const VjoWord *x, const VjoWord *y, int by_id)
     return x->time != y->time ? x->time < y->time : x->id < y->id;
 }
 
-static void word_down(VjoWord *w, int n, int i, int by_id)
+static int word_by_id(const void *x, const void *y, void *ctx)
 {
-    for (;;) {
-        int k = 2 * i + 1;
-        VjoWord t;
-        if (k >= n)
-            return;
-        if (k + 1 < n && word_less(&w[k], &w[k + 1], by_id))
-            k++;
-        if (!word_less(&w[i], &w[k], by_id))
-            return;
-        t = w[i];
-        w[i] = w[k];
-        w[k] = t;
-        i = k;
-    }
+    (void)ctx;
+    return word_less((const VjoWord *)x, (const VjoWord *)y, 1);
 }
 
-/* heapsort: in place, for any number of cards */
+static int word_by_key(const void *x, const void *y, void *ctx)
+{
+    (void)ctx;
+    return word_less((const VjoWord *)x, (const VjoWord *)y, 0);
+}
+
+/* heapsort (core/heap.h): in place, for any number of cards */
 static void word_sort(VjoWord *w, int n, int by_id)
 {
-    for (int i = n / 2 - 1; i >= 0; i--)
-        word_down(w, n, i, by_id);
-    for (int end = n - 1; end > 0; end--) {
-        VjoWord t = w[0];
-        w[0] = w[end];
-        w[end] = t;
-        word_down(w, end, 0, by_id);
-    }
+    vjo_heap_sort(w, n, sizeof(*w), by_id ? word_by_id : word_by_key, NULL);
 }
 
 /* n bytes of p to fd (settings/app_io.h): 0, or -1 (logged, under the words cache's temporary name). */
@@ -678,36 +666,17 @@ int vjo_known_line(const char *line, size_t n, uint64_t *key)
     return 1;
 }
 
-static void key_down(uint64_t *k, int n, int i)
+static int key_less(const void *x, const void *y, void *ctx)
 {
-    for (;;) {
-        int c = 2 * i + 1;
-        uint64_t t;
-        if (c >= n)
-            return;
-        if (c + 1 < n && k[c] < k[c + 1])
-            c++;
-        if (k[i] >= k[c])
-            return;
-        t = k[i];
-        k[i] = k[c];
-        k[c] = t;
-        i = c;
-    }
+    (void)ctx;
+    return *(const uint64_t *)x < *(const uint64_t *)y;
 }
 
-/* Sorts n keys and drops the repeats: the distinct ones' count. */
+/* Sorts n keys (core/heap.h) and drops the repeats: the distinct ones' count. */
 static int key_set(uint64_t *k, int n)
 {
     int m = 0;
-    for (int i = n / 2 - 1; i >= 0; i--)
-        key_down(k, n, i);
-    for (int end = n - 1; end > 0; end--) {
-        uint64_t t = k[0];
-        k[0] = k[end];
-        k[end] = t;
-        key_down(k, end, 0);
-    }
+    vjo_heap_sort(k, n, sizeof(*k), key_less, NULL);
     for (int i = 0; i < n; i++)
         if (!m || k[m - 1] != k[i])
             k[m++] = k[i];
@@ -1026,23 +995,11 @@ static int newer(const VjoApkgCard *x, const VjoApkgCard *y)
     return x->time != y->time ? x->time > y->time : memcmp(x->id, y->id, 16) > 0;
 }
 
-/* The list keeps the cap oldest cards: a heap with the newest on top once it is full. */
-static void heap_down(VjoApkgCard *c, int n, int i)
+/* The list keeps the cap oldest cards: a heap (core/heap.h) with the newest on top once it is full. */
+static int newest_on_top(const void *x, const void *y, void *ctx)
 {
-    for (;;) {
-        int k = 2 * i + 1;
-        VjoApkgCard t;
-        if (k >= n)
-            return;
-        if (k + 1 < n && newer(&c[k + 1], &c[k]))
-            k++;
-        if (!newer(&c[k], &c[i]))
-            return;
-        t = c[i];
-        c[i] = c[k];
-        c[k] = t;
-        i = k;
-    }
+    (void)ctx;
+    return newer((const VjoApkgCard *)y, (const VjoApkgCard *)x);
 }
 
 static int status_every(const VjoExportUi *ui, const char *what, int done, int total)
@@ -1112,13 +1069,12 @@ static int list_card(void *ud, const char *hex)
     if (l->n < l->cap) {
         l->cards[l->n++] = c;
         if (l->n == l->cap) /* full: from now on the newest goes */
-            for (int i = l->n / 2 - 1; i >= 0; i--)
-                heap_down(l->cards, l->n, i);
+            vjo_heap_make(l->cards, l->n, sizeof(*l->cards), newest_on_top, NULL);
     } else {
         l->left++;
         if (newer(&l->cards[0], &c)) {
             l->cards[0] = c;
-            heap_down(l->cards, l->n, 0);
+            vjo_heap_down(l->cards, l->n, 0, sizeof(*l->cards), newest_on_top, NULL);
         }
     }
     return 0;
