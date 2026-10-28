@@ -3,7 +3,7 @@
 The games Rubi can read text from with a native hook instead of OCR, from
 [LunaTranslator](https://github.com/HIllya51/LunaTranslator)'s PS Vita table (51884b6, v12.1.2.12,
 GPL-3.0, vendored in [third_party/LunaTranslator](../third_party/LunaTranslator/README.md)), and Rubi's
-own CLANNAD entry. Luna's entries are hooks for the Vita3K emulator: a guest address per title ID, the
+own verified entries ([listed below](#rubis-own-entries), from core/hook_place.c). Luna's entries are hooks for the Vita3K emulator: a guest address per title ID, the
 register that holds the text there, its encoding, and a hookfunc and a filter per site. These table sites
 remain unverified on a real Vita. CLANNAD's string-copy CALL source was verified on the owner's Vita with
 the combined debug test build on 2026-10-20; its register site remains unverified on a console. The normal
@@ -439,11 +439,68 @@ Luna recorded these before its `addr_offset` (f237a9f4, 2026-05-20), at Vita3K's
 | PCSG00272 | DIABOLIK LOVERS LIMITED V EDITION | 0x8105A176 | 0x5A176 | [#452](https://github.com/Vita3K/compatibility/issues/452), [#2517](https://github.com/Vita3K/compatibility/issues/2517): `eboot` at 0x81000000, 0x1F0554 bytes (1.00, 0.1 1825 and 0.2.0 3596; the log attached to [#2478](https://github.com/Vita3K/compatibility/issues/2478) is another game's, PCSG00476) |
 | PCSG00272 | DIABOLIK LOVERS LIMITED V EDITION | 0x8103416C | 0x3416C | the same |
 
-## Rubi's own entry
+## Rubi's own entries
 
-| Title ID | Region | Game | Site | Encoding | Status |
-| --- | --- | --- | --- | --- | --- |
-| PCSG00415 | JP | CLANNAD | the CALL source (SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports of the game executable); the register site segment 0 + 0x2CA70 (Luna's space 0x80030A70), r6, module NID 0xC5187D60, 8-byte signature | CP932 (AUTO for the CALL source) | Rubi's own, not in Luna's table: the current CALL source was verified on the owner's Vita with the combined debug test build (2026-10-20); the register site was proven in Vita3K only (note 22) and remains unverified on a console; the normal release build has no reported console run |
+core/hook_place.c's verified table (`vjo_place_verified`): 56 title IDs, 30 of them games of Luna's table, 18 at the address of one of Luna's sites there (Rubi's placement check refuses Luna's site; the entry's signature unlocks it, with Rubi's text clean-up). Each was proven in Vita3K, by the psandvita hook farm's pages (CLANNAD's by the PR #16 profile); Console: what a console run showed. Site: the offset in the module the NID names, with the signature's length; Version: the game version (param.sfo's APP_VER) the entry is tried in.
+
+| Title ID | Region | Game | Site | Encoding | Version | In Luna's table | Console |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| PCSG00415 | JP | CLANNAD | segment 0 + 0x2CA70 (Thumb), r6; module NID 0xC5187D60, 8-byte signature | CP932 | any | no | this site: not yet (Vita3K only, vita-vn-ocr notes 22); CLANNAD's string-copy CALL source, the SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports of the game executable (no entry of this table): the owner's Vita, the combined debug test build (2026-10-20) |
+| PCSG01198 | JP | アマツツミ | segment 0 + 0x745C8 (Thumb), r2; module NID 0x8AA413F2, 16-byte signature | CP932 | 01.00 | its site | PCH-2000, 3.65 (2026-10-23): hooked, its stream answered the jobs, the overlay showed the game's line |
+| PCSG00007 | JP | リトルバスターズ！ Converted Edition | segment 0 + 0x1D15C (Thumb), r4; module NID 0x8A335ECD, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00206 | JP | グリザイアの果実 -LE FRUIT DE LA GRISAIA- | segment 0 + 0x25FDE (Thumb), r4; module NID 0x4668F40F, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00620 | JP | グリザイアの果実スピンアウト！？ アイドル魔法少女ちるちる☆みちる | segment 0 + 0x31E90 (Thumb), r4; module NID 0x90E7EC14, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00183 | JP | 三国恋戦記 | segment 0 + 0x3AB34 (Thumb), sp; module NID 0x9F3B88EA, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00785 | JP | 三国恋戦記 ～思いでがえし～ | segment 0 + 0x31E0A (Thumb), r1; module NID 0xDCA94229, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00988 | JP | 果つることなき未来ヨリ | segment 0 + 0x6A260 (Thumb), r1; module NID 0x278EF7E2, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG01000 | JP | ISLAND | segment 0 + 0x6A6D8 (Thumb), r1; module NID 0x73D45EB1, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00448 | JP | MARGINAL#4 IDOL OF SUPERNOVA | segment 0 + 0x6D8F8 (Thumb), r0; module NID 0x84668EFE, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00469 | JP | CLOCK ZERO ～終焉の一秒～ ExTime | segment 0 + 0x27A9C (Thumb), r0; module NID 0x31270870, 16-byte signature | UTF-8 | 01.00 | its site | not yet |
+| PCSG00853 | JP | ピリオドキューブ～鳥籠のアマデウス～ | segment 0 + 0x7DF2 (Thumb), r5; module NID 0xA92335D4, 16-byte signature | UTF-8 | 01.00 | its site | not yet |
+| PCSG00272 | JP | DIABOLIK LOVERS LIMITED V EDITION | segment 0 + 0x5A188 (Thumb), r5; module NID 0x164953F9, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00382 | JP | RE:VICE[D] | segment 0 + 0x55260 (Thumb), r6; module NID 0x38591EB5, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00428 | JP | 戦場の円舞曲 | segment 0 + 0x271F0 (Thumb), r7; module NID 0x4282EF71, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00472 | JP | DIABOLIK LOVERS VANDEAD CARNIVAL | segment 0 + 0x6EF92 (Thumb), r5; module NID 0x92BEBE3F, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00476 | JP | DIABOLIK LOVERS MORE,BLOOD LIMITED V EDITION | segment 0 + 0x56E4E (Thumb), r5; module NID 0x1A549EA8, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00530 | JP | DIABOLIK LOVERS DARK FATE | segment 0 + 0x5DEE0 (Thumb), r5; module NID 0x846F514C, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00826 | JP | DIABOLIK LOVERS LUNATIC PARADE | segment 0 + 0x7EE36 (Thumb), r9; module NID 0x06F2DB50, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00468 | JP | 黒蝶のサイケデリカ | segment 0 + 0x3F538 (Thumb), r1; module NID 0x4DB3D205, 16-byte signature | UTF-8 | 01.00 | its site | not yet |
+| PCSG00696 | JP | アンジェリーク ルトゥール | segment 0 + 0x87D1A (Thumb), r1; module NID 0x519F46E7, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00745 | JP | スカーレッドライダーゼクス Rev. | segment 0 + 0x82D4 (Thumb), r5; module NID 0xC30CA4C1, 16-byte signature | UTF-8 | 01.00 | its site | not yet |
+| PCSG00808 | JP | 悠久のティアブレイド -Lost Chronicle- | segment 0 + 0x3142A (Thumb), r10; module NID 0x8C990BE1, 16-byte signature | UTF-8 | 01.00 | its site | not yet |
+| PCSG00852 | JP | マジきゅんっ！　ルネッサンス | segment 0 + 0x7F75A (Thumb), r1; module NID 0x8DFD228D, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00916 | JP | Starry☆Sky ～Summer Stories～ | segment 0 + 0x30114 (Thumb), r0; module NID 0x4813A011, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00935 | JP | BLACK WOLVES SAGA  -Weiβ und Schwarz- | segment 0 + 0x541A2 (Thumb), r0; module NID 0x8EA89B16, 16-byte signature | UTF-8 | 01.00 | its site | not yet |
+| PCSG01075 | JP | 悠久のティアブレイド -Fragments of Memory- | segment 0 + 0x31F44 (Thumb), r10; module NID 0x8ECBA36A, 16-byte signature | UTF-8 | 01.00 | its site | not yet |
+| PCSG01221 | JP | 紅色天井艶妖綺譚 二藍 | segment 0 + 0x3B554 (Thumb), r4; module NID 0x1A9CF884, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00505 | JP | 大図書館の羊飼い -Library Party- | segment 0 + 0x2DB24 (Thumb), r0; module NID 0x13ED670B, 8-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG01065 | JP | 学園CLUB ～ヒミツのナイトクラブ～ | segment 0 + 0x25854 (Thumb), r1; module NID 0x81440C76, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00020 | JP | 極限脱出ＡＤＶ 善人シボウデス | segment 0 + 0x1AC998 (Thumb), r1; module NID 0xF98BA0BA, 16-byte signature | UTF-8 | 01.00 | another site | not yet |
+| PCSG00883 | JP | ZERO ESCAPE ９時間９人９の扉 善人シボウデス ダブルパック | segment 0 + 0x1EBCB8 (Thumb), r1; module NID 0x158B09F2, 10-byte signature | UTF-8 | 01.00 | no | not yet |
+| PCSG00380 | JP | 真 流行り神 | segment 0 + 0x4DE9E (Thumb), pc; module NID 0x9A11E118, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00450 | JP | キャプテン・アース Mind Labyrinth | segment 0 + 0x6AB56 (Thumb), r1; module NID 0x28CB1B14, 16-byte signature | UTF-16LE | 01.00 | no | not yet |
+| PCSG00509 | JP | POSSESSION MAGENTA | segment 0 + 0x12C76 (Thumb), r0; module NID 0xA11A6741, 16-byte signature | CP932 | any | its site | not yet |
+| PCSG00540 | JP | 忠臣蔵46+1 V | segment 0 + 0x2B90A (Thumb), r1; module NID 0xC595CF25, 16-byte signature | CP932, its 0xA0 kept | any | no | not yet |
+| PCSG00553 | JP | 剣が君 for V | segment 0 + 0x11452B8 (ARM), r1; module NID 0xCF234754, 16-byte signature | UTF-16LE | any | no | not yet |
+| PCSG00628 | JP | ALIA's CARNIVAL! サクラメント | segment 0 + 0x3373C (Thumb), r5; module NID 0x1EE45F02, 16-byte signature | CP932, its 0xA0 kept | 01.00 | no | not yet |
+| PCSG00648 | JP | 月に寄りそう乙女の作法 | segment 0 + 0x26EFA (Thumb), r2; module NID 0xE5819F44, 16-byte signature | CP932 | any | its site | not yet |
+| PCSG00700 | JP | 蒼の彼方のフォーリズム | segment 0 + 0x74D48 (Thumb), r1; module NID 0x3BB91404, 16-byte signature | CP932 | 01.00 | no | PCH-2000, 3.65 (2026-10-26): 15 of its hook's 19 lines agreed with OCR (3 scored 0, not examined) |
+| PCSG00713 | JP | 百花百狼 ～戦国忍法帖～ | segment 0 + 0x112F46 (Thumb), r6; module NID 0x08B1647C, 16-byte signature | UTF-8 | 01.00 | no | not yet |
+| PCSG00787 | JP | 鏡界の白雪 | segment 0 + 0x21F1A (Thumb), r6; module NID 0xA88A2E95, 16-byte signature | UTF-8 | 01.00 | another site | not yet |
+| PCSG00807 | JP | Dance with Devils | segment 0 + 0xD68164 (ARM), r1; module NID 0x608A4999, 16-byte signature | UTF-16LE | 01.00 | no | not yet |
+| PCSG00817 | JP | EVE burst error R | segment 0 + 0x19132 (Thumb), r0; module NID 0x2DBAE009, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00876 | JP | 7'scarlet | segment 0 + 0x12B60 (Thumb), r6; module NID 0x16FEB862, 16-byte signature | UTF-8 | 01.00 | no | not yet |
+| PCSG01194 | JP | 参千世界遊戯 ～Re Multi Universe Myself～ | segment 0 + 0x56E24 (Thumb), r0; module NID 0xECD30306, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00602 | JP | 忍び、恋うつつ ― 雪月花恋絵巻 ― | segment 0 + 0xB242 (Thumb), r2; module NID 0x711785A4, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00629 | JP | 薄桜鬼 真改　風ノ章 | segment 0 + 0x19B2C (Thumb), r4; module NID 0xBE150EF7, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00755 | JP | BROTHERS CONFLICT　Precious Baby | segment 0 + 0xE62C (Thumb), r2; module NID 0xEBEDA5FC, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00638 | JP | あまつみそらに！ 雲のはたてに | segment 0 + 0x2E6F4 (Thumb), r6; module NID 0x653BEB37, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG00706 | JP | もし、この世界に神様がいるとするならば。 | segment 0 + 0xC1B060 (ARM), r1; module NID 0xE594FE46, 16-byte signature | UTF-16LE | 01.00 | another site | not yet |
+| PCSG00777 | JP | マブラヴ オルタネイティヴ | segment 0 + 0x1150C4 (Thumb), r5; module NID 0x5C0EBBC4, 16-byte signature | CP932 | 01.00 | no | not yet |
+| PCSG01250 | JP | スキとスキとでサンカク恋愛 | segment 0 + 0x14CA4 (Thumb), r8; module NID 0x23B5D748, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00146 | JP | STEINS;GATE 比翼恋理のだーりん | segment 0 + 0x2B018 (Thumb), r0; module NID 0x2BAC7A6D, 16-byte signature | SC3 (the game's charset) | 01.00 | no | not yet |
+| PCSG00352 | JP | ROBOTICS;NOTES ELITE | segment 0 + 0xF1D8 (Thumb), r0; module NID 0x5409CF98, 16-byte signature | SC3 (the game's charset) | 01.00 | no | not yet |
+| PCSG00555 | JP | CHAOS;CHILD | segment 0 + 0x2F9BC (Thumb), r0; module NID 0x5681A30D, 16-byte signature | SC3 (the game's charset) | 01.00 | no | not yet |
 
 ## Hookfuncs and filters
 

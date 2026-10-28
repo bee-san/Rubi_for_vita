@@ -519,9 +519,10 @@ foreach(_vjo_suite IN LISTS _vjo_tool_suites)
     -s ${CMAKE_SOURCE_DIR}/tools/tests -p ${_vjo_suite_module}.py -v)
   list(APPEND _vjo_tool_tests ${_vjo_test})
   # Label tools: a change to the hooks' verified-entry table alone leaves these out in CI (tools/ci_scope.py
-  # hooks_only), but for the two whose programs read that table, core/hook_place.c: tools/hook_request.py parses its
-  # entries, tools/hook_farm.py compiles it (#366's audit-b, N3).
-  if(NOT _vjo_suite_module MATCHES "^test_hook_(request|farm)$")
+  # hooks_only), but for the three whose programs read that table, core/hook_place.c: tools/hook_request.py parses its
+  # entries, tools/hook_farm.py compiles it (#366's audit-b, N3), and test_docs_hook_counts holds README.md's counts
+  # of its entries (#418).
+  if(NOT _vjo_suite_module MATCHES "^test_(hook_(request|farm)|docs_hook_counts)$")
     set_property(TEST ${_vjo_test} APPEND PROPERTY LABELS tools)
   endif()
   # A suite that never reads this build (its programs, VJO_CLI and the rest below, or build/host) gives
