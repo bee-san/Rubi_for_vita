@@ -623,7 +623,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_settle_max_ms")) {
         set_ms(c, key, val, &c->ocr_settle_max_ms, 100, 10000);
     } else if (vjo_ieq(key, "ocr_settle_press_ms")) {
-        int keep = c->ocr_settle_press_ms; /* 0, or 100..10000: under 25 ms the request's 50 ms field is 0, the 2 s default */
+        int keep = c->ocr_settle_press_ms; /* 0, or 100..10000, as before #413; no request carries it since */
         set_ms(c, key, val, &c->ocr_settle_press_ms, 0, 10000);
         if (c->ocr_settle_press_ms && c->ocr_settle_press_ms < 100) {
             c->ocr_settle_press_ms = keep;

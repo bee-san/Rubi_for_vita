@@ -66,12 +66,15 @@ Two checks, one in the kernel and one in the game worker, decide when text is re
 (`SCENE_STABLE_US`), cells cycling like a blinking "next" icon masked (at most 8), and it is **quiet**
 when for 400 ms (`SCENE_QUIET_US`) every change stayed in one spot of 3 × 3 cells that went back to a
 recent state (an icon not masked yet). Either event starts Automatically's background job. A press
-starts its job at once, whatever the tracker says; the tracker only decides whether that job waits
-before its first pass (the region not settled) or checks after it (settled).
+starts its job at once, whatever the tracker says, and since #413 that job neither waits nor checks:
+opening the overlay confirms that the text is ready. For a job that has the wait the tracker decides
+whether it waits before its first pass (the region not settled) or checks after it (settled).
 
-**The game worker's stable-text wait** (`core/vocr_ocr.c` `settle_wait`, `settle_verify`) runs in every
-job, of both modes. Nothing is recognized until every row of the region has read the same for
-`ocr_settle_ms` = 150 ms:
+**The game worker's stable-text wait** (`core/vocr_ocr.c` `settle_wait`, `settle_verify`) runs in
+Automatically's background jobs, the open overlay's refreshes and the subtitle strip's and self-test's
+jobs, and in a press's job only once a read's screen changed under every try, or when the press finds
+that count held over (#413's audit; [text stability](text-stability.md)). Nothing is recognized until
+every row of the region has read the same for `ocr_settle_ms` = 150 ms:
 
 - A row is the same when the checksum (FNV-1a) of its grey pixels is unchanged. A row that goes back to
   one of its recent states (16 a row for a dialogue box, 6 at the full screen) is an animated icon, not
@@ -213,7 +216,8 @@ background result. The log does not say what changed, or why there was no result
 
 These are test.3's figures, from a build before #413, whose press jobs waited 0.6-1.0 s for the rows to
 hold still (above). Since #413 a press's job reads at once, and in Automatically a press on a screen the
-kernel has not called stable cancels the background job still running and reads at once too: each press's
+kernel has not called stable cancels the background job still running and reads at once too (unless a read
+tore just before, #441's audit: then it keeps that job, which waits as its own read would): each press's
 figure would be shorter by about its wait, and it may show a line still typing as far as it had typed
 (est.; not run on a console). A press whose reads tear under every try waits on its retries
 ([text stability](text-stability.md)).

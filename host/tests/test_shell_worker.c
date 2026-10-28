@@ -6564,7 +6564,7 @@ static void test_the_refreshes_backoff_outlasts_a_close_with_no_job(void)
  * its replacement reads without waiting and keeps automatic hook selection. */
 static void test_opening_trusts_the_players_unsettled_screen(void)
 {
-    for (int mode = 0; mode < 2; mode++) for (int busy = 0; busy < 3; busy++) {
+    for (int mode = 0; mode < 2; mode++) for (int busy = 0; busy < 3; busy++) for (int quiet = 0; quiet < 2; quiet++) {
         cursor_setup();
         cfg.ocr_mode = loaded.ocr_mode = mode ? VJO_OCR_AUTO : VJO_OCR_ON_PRESS;
         if (busy) {
@@ -6575,7 +6575,7 @@ static void test_opening_trusts_the_players_unsettled_screen(void)
                 job_capture_seq = state.region_seq;
             }
         }
-        state.stable = state.quiet = 0;
+        state.stable = 0; state.quiet = quiet; /* a quiet screen is unsettled too (docs/text-stability.md) */
         on_trigger();
         TEST_ASSERT(job_running && g_view.open && input_blocked);
         if (busy) {
@@ -6587,7 +6587,7 @@ static void test_opening_trusts_the_players_unsettled_screen(void)
         TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST));
         TEST_CHECK(!(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT));
         TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
-        TEST_CHECK(!state.stable && !state.quiet); /* no global scene state is forged */
+        TEST_CHECK(!state.stable && state.quiet == quiet); /* no global scene state is forged */
         check_shown("猫犬鳥", "cat", 0);
         close_overlay(); mem_free();
     }
@@ -6707,6 +6707,33 @@ static void test_a_reopen_keeps_the_presss_own_read(void)
         TEST_CHECK(!job_running); /* no second read */
         TEST_CHECK(submits == 1);
         check_shown("猫犬鳥", "cat", 0);
+        close_overlay(); mem_free();
+    }
+}
+
+/* #441's audit: with the count held over (a background read tore, and the next one runs, as at 8 of test.4's 75
+ * openings that waited), a press on a screen not stable keeps that read: its own read would wait as that one does
+ * (#441: the count turns the wait back on), so cancelling it (#413) only threw that read's wait away. With the count
+ * at 0 the press still cancels it and reads at once (opening_trusts_the_players_unsettled_screen). */
+static void test_a_held_over_count_keeps_the_running_background_read(void)
+{
+    for (int quiet = 0; quiet < 2; quiet++) {
+        cursor_setup(); /* Automatically */
+        state.stable = 0; state.quiet = quiet;
+        fake_screen_changes = 1;
+        start_job("auto: screen quiet", 1);
+        finish_current_job(); /* torn: the count is 1 */
+        TEST_ASSERT(!job_running && screen_changed_streak == 1);
+        start_job("auto: screen settled", 1); /* the next background read, at once */
+        job_captured = 1; job_capture_scene = state.scene; job_capture_seq = state.region_seq;
+        on_trigger();
+        TEST_CHECK(job_running && !job_cancelled && ov == OV_OPEN_OLD_JOB);
+        finish_by_tick(); /* that read is the press's */
+        TEST_CHECK(!job_running); /* no second read */
+        TEST_CHECK(request_waits());
+        check_shown("猫犬鳥", "cat", 0);
+        TEST_CHECK(!screen_changed_streak);
+        TEST_MSG("quiet %d", quiet);
         close_overlay(); mem_free();
     }
 }
@@ -9155,6 +9182,8 @@ TEST_LIST = {
     {"a_torn_press_retries_with_the_wait", test_a_torn_press_retries_with_the_wait},
     {"a_press_after_a_torn_read_waits_from_its_first", test_a_press_after_a_torn_read_waits_from_its_first},
     {"a_reopen_keeps_the_presss_own_read", test_a_reopen_keeps_the_presss_own_read},
+    {"a_held_over_count_keeps_the_running_background_read",
+     test_a_held_over_count_keeps_the_running_background_read},
     {"an_opening_during_autos_job_on_a_changed_screen_gets_its_own",
      test_an_opening_during_autos_job_on_a_changed_screen_gets_its_own},
     {"a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_sentence (#182 a)",

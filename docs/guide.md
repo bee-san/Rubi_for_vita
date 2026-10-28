@@ -807,8 +807,10 @@ on the console it has read no dialogue line early ([text stability](text-stabili
 once: opening the overlay says the text is ready (#413), so a line still typing is read as far as it has
 typed (with **Automatically** the open overlay's refresh replaces it once the screen settles). The wait is
 also what tells an animated icon from text, so once a press's read changed under every try, its next tries
-wait as a background read does, and the press after a read reads at once again
-([text stability](text-stability.md)). `ocr_settle_press_ms`, a press's limit before #413, changes nothing.
+wait as a background read does, and the press after a read reads at once again. A press right after a torn
+read (a background read, a refresh, the subtitle strip's) waits from its first read, and keeps a background
+read still running then rather than start its own ([text stability](text-stability.md)).
+`ocr_settle_press_ms`, a press's limit before #413, changes nothing.
 When the text changed under
 every read of two jobs in a row (an animated icon in the region, or text still typing), the open overlay says so as
 it tries again, and what helps where it can: a region drawn around just the text, if that leaves the moving thing

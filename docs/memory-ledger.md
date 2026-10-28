@@ -5,6 +5,22 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## A press and the stable-text wait: #413's audit (#441) and #441's audit (no API change)
+
+Two conditions in the Shell's `shell/worker.c`, no block, thread, buffer or string: #441's (a press's retries wait
+once a read tore under every try, `start_job_kind`) and its audit's (a press keeps a running background read while
+that count is held over, `open_overlay`). Measured with `tools/check_memory_ledger.py`'s module rows, both builds:
+
+| Shell code | main `5fde142` (before #441) | #441 (`e17f42e`) | #441's audit |
+|---|---:|---:|---:|
+| normal | 85,996 B | 86,012 B (+16) | 86,012 B (+0) |
+| debug | 98,284 B | 98,284 B (+0) | 98,300 B (+16) |
+
+Both in 86,016 and 98,304 B of code pages, data unchanged (77,728 and 77,816 B): **4 B of code room left in each
+build**, 96 and 8 B of data room. The next Shell change has to move a string to the data segment (core/port.h
+`VJO_DATA_TABLE`; the debug Shell's 8 B take none) or save code elsewhere; no budget is raised. The kernel's and the
+game worker's rows are main's.
+
 ## The hook farm's 20 verified entries (no API change)
 
 Twenty more verified entries ([native-hooks.md](native-hooks.md#table-sites)) and their filters
