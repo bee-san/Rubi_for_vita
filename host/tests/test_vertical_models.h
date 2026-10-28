@@ -1,6 +1,6 @@
 /* core/vocr_ocr.c's model and LM tables for test_vocr_vertical.c only: a model of rows (today's
  * finder, #194's) and three of columns (vita-vn-ocr #99's column finder: P0 and P1 with the dark flags
- * left to the job, VOCR_COLUMNS_NO_DARK, as the product's VOCR5-V; and P1 with the finder's own; and P0 again
+ * left to the job, VOCR_COLUMNS_NO_DARK, as the product's vertical model; and P1 with the finder's own; and P0 again
  * with room for the text-presence gate's arena), a second model of rows (a cascade's), and one
  * LM, whose sizes, SHA-256 and arenas the test pins at run time (test_pin_model, test_pin_lm) for tiny
  * valid weights blobs and a tiny LM it builds itself, so vertical jobs run real vocr_run and

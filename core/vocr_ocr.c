@@ -40,14 +40,14 @@ typedef char vjo_vocr_spot_pins_fit[VJO_VOCR_SPOT_BYTES > 32u && VJO_VOCR_SPOT_B
 typedef char vjo_vocr_spot_frame_fits[VJO_OCR_MAX_WIDTH <= VOCR_TEXTSPOT_MAX_SIDE &&
                                       VJO_OCR_MAX_HEIGHT <= VOCR_TEXTSPOT_MAX_SIDE ? 1 : -1];
 /* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.4.1-vocr6.2 (VOCR6, the
- * three model tiers), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20), v0.3.2-vertical.1
- * (VOCR5-V) and v0.2.0 (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
+ * three model tiers), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20), v0.4.2-vertical6.1
+ * (VOCR6-V) and v0.2.0 (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
  * default 4-frame tiles and 16-frame head batches, any line width. */
 /* Every pinned size is within the weights block the game worker allows. */
 typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR_H15_BYTES <= VJO_VOCR_MAX_BYTES &&
                                VJO_VOCR_F20_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR6_S_BYTES <= VJO_VOCR_MAX_BYTES &&
                                VJO_VOCR6_N_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR6_L_BYTES <= VJO_VOCR_MAX_BYTES &&
-                               VJO_VOCR5_V_BYTES <= VJO_VOCR_MAX_BYTES
+                               VJO_VOCR6_V_BYTES <= VJO_VOCR_MAX_BYTES
                                ? 1 : -1];
 /* The line finder every pinned model uses: GRAD's rows, plus the textbox rows it
  * missed (vita-vn-ocr docs/native-textbox-recovery.md). GRAD alone drops a dialogue
@@ -128,12 +128,12 @@ static const VjoVocrModel models[] = {
      {0x27,0x45,0xe6,0x96,0x99,0xad,0x7b,0x2a,0xba,0x30,0x92,0xf8,0x3e,0x5d,0xdc,0x19,
       0x12,0xf4,0x05,0xf5,0x4b,0x9d,0xf8,0xa2,0xe5,0x5b,0xe8,0x2c,0x38,0x5b,0x71,0x6e},
      241056, VJO_VOCR_FINDER},
-    /* VOCR5-V (vita-vn-ocr #99, pre-release v0.3.2-vertical.1): vertical text in VOCR5-S's shape, reading
-     * columns turned 90 degrees anticlockwise (config.ini ocr_vertical). Last, so that no other model's
-     * index moves. */
-    {VJO_VOCR5_V_NAME, VJO_VOCR5_V_BYTES,
-     {0xcc,0xd2,0x0c,0x63,0xbb,0x26,0x20,0xf0,0x54,0x53,0x8b,0x45,0x69,0x04,0xbd,0xf1,
-      0x9b,0x74,0xd4,0x83,0xd3,0xda,0x8d,0xe8,0x65,0x00,0x9e,0x28,0x2b,0xb0,0x41,0x72},
+    /* VOCR6-V (vita-vn-ocr #159, pre-release v0.4.2-vertical6.1): vertical text in VOCR5-S's shape, reading
+     * columns turned 90 degrees anticlockwise (config.ini ocr_vertical); VOCR5-V (#99, v0.3.2-vertical.1)
+     * fine-tuned again, the same shape and arena. Last, so that no other model's index moves. */
+    {VJO_VOCR6_V_NAME, VJO_VOCR6_V_BYTES,
+     {0x40,0x48,0x5f,0xce,0xae,0xf4,0x6a,0x66,0x6b,0xce,0xc7,0x78,0x1e,0xca,0x88,0xbc,
+      0x00,0x5e,0x92,0x11,0x78,0x66,0x38,0xae,0x0d,0xdd,0xfa,0xc2,0xeb,0x4e,0xea,0x81},
      124832, VJO_VOCR_COLUMNS},
 };
 #endif /* VJO_VOCR_TEST_MODELS */

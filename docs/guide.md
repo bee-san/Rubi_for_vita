@@ -1158,8 +1158,8 @@ the recognizers `VOCR6.2_N_w8g2.vocr`, `VOCR6.2_S_w8.vocr` and
 `VOCR6.2_L_w8_2l.vocr` (VOCR6, release v0.4.1-vocr6.2); `VOCR3_H15_w8.vocr` and
 `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
-(VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5, release
-v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+(VOCR4, release v0.2.5-vocr4.1); `VOCR6_V_w8.vocr` (VOCR6, release
+v0.4.2-vertical6.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
 (release v0.3.7-lm6.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,

@@ -131,7 +131,7 @@ class FrozenPlaintext(unittest.TestCase):
         lms = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())
                for name in ("vocr_lm_o3_500k.vlm", "vocr_lm6_o3_4000k.vlm")}
         vocr4 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR4_ASSETS}
-        vocr5v = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5V_ASSETS}
+        vocr5v = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR6V_ASSETS}
         vocr6 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR6_ASSETS}
         spot = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR_SPOT_ASSETS}
         for name in (*pins, *vocr3, *lms, *vocr4, *vocr5v, *vocr6, *spot):
@@ -159,7 +159,7 @@ class FrozenPlaintext(unittest.TestCase):
              mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
              mock.patch.object(release, "VOCR_SPOT_ASSETS", spot), mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION_PIN", spot_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
-             mock.patch.object(release, "VOCR5V_ASSETS", vocr5v), \
+             mock.patch.object(release, "VOCR6V_ASSETS", vocr5v), \
              mock.patch.object(convert, "convert", side_effect=AssertionError("No packaging conversion")), \
              mock.patch.object(prepare.subprocess, "run", side_effect=AssertionError("No packaging fetch")), \
              contextlib.redirect_stdout(io.StringIO()):

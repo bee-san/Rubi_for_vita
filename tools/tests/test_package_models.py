@@ -39,9 +39,9 @@ class PackageModels(unittest.TestCase):
         self.vocr6 = b"tiny VOCR6 asset fixture, not OCR weights!!"
         vocr6_spec = ("https://fixture.invalid/VOCR6", len(self.vocr6), hashlib.sha256(self.vocr6).hexdigest())
         vocr6 = {name: vocr6_spec for name in prepare.VOCR6_ASSETS}
-        self.vertical = b"tiny VOCR5-V asset fixture, not OCR weights"
-        vocr5v = {name: ("https://fixture.invalid/VOCR5V", len(self.vertical), hashlib.sha256(self.vertical).hexdigest())
-                  for name in prepare.VOCR5V_ASSETS}
+        self.vertical = b"tiny VOCR6-V asset fixture, not OCR weights"
+        vocr5v = {name: ("https://fixture.invalid/VOCR6V", len(self.vertical), hashlib.sha256(self.vertical).hexdigest())
+                  for name in prepare.VOCR6V_ASSETS}
         self.attribution = b"CC BY-SA 4.0 fixture"
         att = {prepare.VOCR_LM_ATTRIBUTION: ("https://fixture.invalid/A", len(self.attribution),
                                              hashlib.sha256(self.attribution).hexdigest())}
@@ -76,7 +76,7 @@ class PackageModels(unittest.TestCase):
             self.enterContext(mock.patch.object(module, "VOCR_LM_ASSETS", lms))
             self.enterContext(mock.patch.object(module, "VOCR4_ASSETS", vocr4))
             self.enterContext(mock.patch.object(module, "VOCR6_ASSETS", vocr6))
-            self.enterContext(mock.patch.object(module, "VOCR5V_ASSETS", vocr5v))
+            self.enterContext(mock.patch.object(module, "VOCR6V_ASSETS", vocr5v))
         self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
                                           side_effect=AssertionError("No test network access")))
 
@@ -84,7 +84,7 @@ class PackageModels(unittest.TestCase):
         """The fixture bytes setUp pins a recognizer's release table to (its asset's own)."""
         if name in prepare.VOCR6_ASSETS:
             return self.vocr6
-        if name in prepare.VOCR5V_ASSETS:
+        if name in prepare.VOCR6V_ASSETS:
             return self.vertical
         if name in prepare.VOCR3_ASSETS or name in prepare.VOCR4_ASSETS:
             return self.vocr3
@@ -101,7 +101,7 @@ class PackageModels(unittest.TestCase):
             (self.models / name).write_bytes(self.vocr3)
         for name in prepare.VOCR6_ASSETS:  # the model sizes'
             (self.models / name).write_bytes(self.vocr6)
-        for name in prepare.VOCR5V_ASSETS:  # the vertical model (ocr_vertical)
+        for name in prepare.VOCR6V_ASSETS:  # the vertical model (ocr_vertical)
             (self.models / name).write_bytes(self.vertical)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution or self.attribution)
         (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(self.model_attribution)
@@ -205,7 +205,7 @@ class PackageModels(unittest.TestCase):
             # the vertical model (#99): no size's, its own release, its role
             vertical = manifest["models"][prepare.VOCR_VERTICAL_MODEL]
             self.assertEqual((vertical["release"], vertical["role"], "tier" in vertical),
-                             ("bee-san/vita-vn-ocr " + prepare.VOCR5V_TAG, "vertical text (ocr_vertical)", False))
+                             ("bee-san/vita-vn-ocr " + prepare.VOCR6V_TAG, "vertical text (ocr_vertical)", False))
             for name in ("FL10_w8.vocr", "H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_FL10_w8.vocr",
                          "VOCR4_H15_w8.vocr", "VOCR4_W20_w8.vocr"):
                 if name not in sizes:
@@ -394,7 +394,7 @@ class PackageModels(unittest.TestCase):
             manifest = json.loads(archive.read("package-manifest.json"))
         generation = {t["model"]: prepare.VOCR_GENERATION[prepare.release_assets(t["model"])[1]]
                       for t in prepare.model_tiers()["tiers"]}
-        vertical = {prepare.VOCR_VERTICAL_MODEL: prepare.VOCR_GENERATION[prepare.VOCR5V_TAG]}  # #99, no size's
+        vertical = {prepare.VOCR_VERTICAL_MODEL: prepare.VOCR_GENERATION[prepare.VOCR6V_TAG]}  # #99, no size's
         self.assertEqual({name: entry["generation"] for name, entry in manifest["models"].items() if "generation" in entry},
                          {**generation, **vertical})
         normal = prepare.model_tiers()["tiers"][1]["model"]

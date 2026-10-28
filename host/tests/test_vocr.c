@@ -860,8 +860,8 @@ static void test_vertical_model(void)
 #define PAGE(x) (((size_t)(x) + 4095u) & ~(size_t)4095u)
 #define A16(x) (((size_t)(x) + 15u) & ~(size_t)15u)
     static const unsigned sizes[][2] = {{960, 544}, {917, 125}, {480, 272}, {200, 300}, {64, 544}, {1, 1}};
-    /* VOCR5-S as v0.3.0 shipped it, without API 42's head gate: VOCR5-V's starting point, the same shape (VOCR3-FL10's
-     * arena, 124,832 B, which Small's plain VOCR6-S blob has too) */
+    /* VOCR5-S as v0.3.0 shipped it, without API 42's head gate: VOCR5-V's starting point and VOCR6-V's shape
+     * (VOCR3-FL10's arena, 124,832 B, which Small's plain VOCR6-S blob has too) */
     const VjoVocrModel *v = vjo_vocr_model(VJO_VOCR_VERTICAL_NAME), *s = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
     const VjoVocrModelInfo *vi = vjo_vocr_model_info(VJO_VOCR_VERTICAL_NAME);
     char label[24];
@@ -886,8 +886,8 @@ static void test_vertical_model(void)
     TEST_CHECK(VJO_VOCR_ROTATE_BYTES == VJO_VOCR_STRIP_BYTES);
     /* the metadata: v0.3.0's VOCR5-S estimate (no head gate: 631 ms), and the worker's check at 960x544 on the
      * console (3,760 B of structs) */
-    TEST_CHECK(vi->box_ms == 631u && vi->bytes == v->bytes && !strcmp(vi->generation, "VOCR5") &&
-               vjo_vocr_model_label(vi, label, sizeof(label)) == 7 && !strcmp(label, "VOCR5-V"));
+    TEST_CHECK(vi->box_ms == 631u && vi->bytes == v->bytes && !strcmp(vi->generation, "VOCR6") &&
+               vjo_vocr_model_label(vi, label, sizeof(label)) == 7 && !strcmp(label, "VOCR6-V"));
     size_t job = PAGE(v->bytes) + PAGE(A16(v->arena_bytes) + 3760u + A16(VJO_VOCR_ROTATE_BYTES)) +
                  PAGE(vjo_vocr_capture_bytes(960, 544));
     TEST_CHECK_(vi->job_bytes == job, "metadata %u B, the worker's check %zu B", vi->job_bytes, job);

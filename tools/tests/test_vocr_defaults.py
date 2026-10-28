@@ -149,7 +149,7 @@ def kernel_names(source=None):
 def python_pins():
     """name -> (url, bytes, sha256, release tag) of every release's asset table in tools/prepare_ocr.py:
     VOCR_ASSETS (VOCR_TAG), VOCR3_ASSETS (VOCR3_TAG) and any later VOCRn_ASSETS (VOCRn_TAG), the vertical
-    model's VOCR5V_ASSETS (VOCR5V_TAG) too, each name in one table only."""
+    model's VOCR6V_ASSETS (VOCR6V_TAG) too, each name in one table only."""
     out = {}
     for key, assets in sorted(vars(prepare_ocr).items()):
         release = re.fullmatch(r"(VOCR\d*V?)_ASSETS", key)
@@ -304,7 +304,7 @@ class VocrDefaults(unittest.TestCase):
             (src / prepare_ocr.VOCR_SPOT_MODEL).write_bytes(spot)
             (src / prepare_ocr.VOCR_SPOT_ATTRIBUTION).write_bytes(spot_att)
             with mock.patch.dict(prepare_ocr.VOCR6_ASSETS, pins6), \
-                 mock.patch.dict(prepare_ocr.VOCR5V_ASSETS, vpins), \
+                 mock.patch.dict(prepare_ocr.VOCR6V_ASSETS, vpins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
                  mock.patch.object(prepare_ocr, "VOCR6_ATTRIBUTION_PIN", att6_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_VERTICAL_ATTRIBUTION_PIN", vatt_pin), \
@@ -528,7 +528,7 @@ class VocrDefaults(unittest.TestCase):
                 self.assertTrue(re.match(re.escape(generation) + r"(\.\d+)?_", name), name)
             self.assertIn(shape, name, name)
         self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3",
-                                                       "v0.2.5-vocr4.1": "VOCR4", prepare_ocr.VOCR5V_TAG: "VOCR5",
+                                                       "v0.2.5-vocr4.1": "VOCR4", prepare_ocr.VOCR6V_TAG: "VOCR6",
                                                        "v0.4.1-vocr6.2": "VOCR6"})
         self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], TIER_PINS["normal"][5])
         tiers = prepare_ocr.model_tiers()["tiers"]
@@ -583,7 +583,7 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
                          {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL, prepare_ocr.VOCR_VERTICAL_MODEL,
                           *([prepare_ocr.VOCR_SPOT_MODEL] if prepare_ocr.VOCR_SPOT_PUBLISHED else [])})
-        # the LMs, the gate (API 26), VOCR5-V (API 47) and the text spotter (API 54, its pin published)
+        # the LMs, the gate (API 26), VOCR6-V (API 47) and the text spotter (API 54, its pin published)
 
 
 class RuntimePinEverywhere(unittest.TestCase):
@@ -615,7 +615,7 @@ class TestModels(unittest.TestCase):
 
     def test_the_set_is_every_pin_the_plugin_reads(self):
         """Every recognizer the plugin pins (shipped or not: the tests run FL10, H15, F20, VOCR3's and VOCR4-W20
-        as well as the sizes' and VOCR5-V), its four LMs and the gate's weights, each at the plugin's own size and
+        as well as the sizes' and VOCR6-V), its four LMs and the gate's weights, each at the plugin's own size and
         SHA-256, and the off-path check's references, VOCR6's plain Normal and Large under v0.4.1-vocr6.2/; no
         attribution and nothing else."""
         models = {name: assets[name][1:] for name, assets, _ in prepare_ocr.test_models()}

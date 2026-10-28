@@ -1,6 +1,6 @@
 /* vita-vn-ocr backend: bee-san/vita-vn-ocr's polarity-agnostic dialogue line
  * finder and tiny CTC recognizer (plain C99, no malloc), with the int8 weights
- * published in its v0.4.1-vocr6.2 (VOCR6, the three model tiers), v0.3.2-vertical.1 (VOCR5-V),
+ * published in its v0.4.1-vocr6.2 (VOCR6, the three model tiers), v0.4.2-vertical6.1 (VOCR6-V),
  * v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0 releases. Built with
  * -DVJO_WITH_VOCR=ON; see docs/vita-vn-ocr.md.
  *

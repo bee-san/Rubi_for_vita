@@ -349,7 +349,7 @@ class E2E:
         _, size, sha = release.VOCR_VERTICAL_ATTRIBUTION_PIN[release.VOCR_VERTICAL_ATTRIBUTION]
         path = ocr / release.VOCR_VERTICAL_ATTRIBUTION
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
-              f"{release.VOCR_VERTICAL_ATTRIBUTION} is the vertical model's pinned attribution ({release.VOCR5V_TAG})")
+              f"{release.VOCR_VERTICAL_ATTRIBUTION} is the vertical model's pinned attribution ({release.VOCR6V_TAG})")
         expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md", release.VOCR_MODEL_ATTRIBUTION,
                                                     release.VOCR6_ATTRIBUTION, release.VOCR_GATE_ATTRIBUTION,
                                                     release.VOCR_VERTICAL_ATTRIBUTION}

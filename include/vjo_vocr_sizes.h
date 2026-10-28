@@ -61,15 +61,16 @@
  * (core/vocr_ocr.c), so a runtime pin that changes the structs fails until this is updated; the host tests
  * reckon the console's job with it (host/tests/test_vocr.c), as a 64-bit host's structs are larger. */
 #define VJO_VOCR_VITA_STRUCTS 3920u
-/* VOCR5-V (bee-san/vita-vn-ocr #99): vertical text, VOCR5-S's shape (4,987 classes), trained on
- * columns turned 90 degrees anticlockwise. It is no model size: a job runs it, whatever the size,
- * where config.ini ocr_vertical has a job read columns (VjoGameOcrRequest.speed VJO_GAME_OCR_S_VERTICAL), and
- * opens it as VJO_GAME_OCR_OPEN_VERTICAL. Pinned where every model is (core/vocr_ocr.c,
- * core/vocr_models.c, kernel/game_ocr.c, tools/prepare_ocr.py). */
-#define VJO_VOCR5_V_NAME "VOCR5_V_w8.vocr"
-#define VJO_VOCR5_V_BYTES 819792u
-#define VJO_VOCR_VERTICAL_NAME VJO_VOCR5_V_NAME
-#define VJO_VOCR_VERTICAL_BYTES VJO_VOCR5_V_BYTES
+/* VOCR6-V (bee-san/vita-vn-ocr #159, pre-release v0.4.2-vertical6.1): vertical text, VOCR5-V's shape (VOCR5-S's:
+ * 4,987 classes), trained on columns turned 90 degrees anticlockwise; VOCR5-V (#99, v0.3.2-vertical.1) fine-tuned
+ * again on the owner's hooked vertical game (Yunohana SpRING!) and new synthetic columns. It is no model size: a job
+ * runs it, whatever the size, where config.ini ocr_vertical has a job read columns (VjoGameOcrRequest.speed
+ * VJO_GAME_OCR_S_VERTICAL), and opens it as VJO_GAME_OCR_OPEN_VERTICAL. Pinned where every model is
+ * (core/vocr_ocr.c, core/vocr_models.c, kernel/game_ocr.c, tools/prepare_ocr.py). */
+#define VJO_VOCR6_V_NAME "VOCR6_V_w8.vocr"
+#define VJO_VOCR6_V_BYTES 819792u
+#define VJO_VOCR_VERTICAL_NAME VJO_VOCR6_V_NAME
+#define VJO_VOCR_VERTICAL_BYTES VJO_VOCR6_V_BYTES
 /* API 21: the three model tiers the Rubi app offers (config.ini vocr_tier),
  * smallest first; tools/model_tiers.json is the same table (its "tiers", in
  * this order), and tools/tests/test_vocr_defaults.py checks the two agree. A

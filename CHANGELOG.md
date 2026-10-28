@@ -31,6 +31,22 @@ been reported.
   that keeps changing (#358, in 0.10.0) ends "Or turn on Pause the game to read in the Rubi app." With it OFF, every
   reading is the same as before, step for step. Not run on a console ([details](docs/game-pause.md)).
 
+### Changed
+
+- **Vertical text reads with VOCR6-V** (vita-vn-ocr #159, pre-release v0.4.2-vertical6.1; [details](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+  `VOCR6_V_w8.vocr` replaces `VOCR5_V_w8.vocr` as the vertical model (`ocr_vertical`, columns). It has the same shape,
+  size and arena: 819,792 B of int8 weights, 124,832 B of W8I arena. It is VOCR5-V fine-tuned again on the owner's
+  hooked vertical game, Yunohana SpRING!, and on new synthetic columns.
+  - **Measured on a computer through Rubi's own job** (`ocr_vertical = on`, a box drawn around the columns; three
+    seeds of the recipe, a pre-registered rule): on the game's held-out hooked pages, dialogue CER 7.92 % → 4.64 %
+    (−3.28 [−4.48, −2.14]); on vita-vn-ocr #103's development regions of other games, VN 17.58 % → 16.13 % and manga
+    4.18 % → 3.69 % (both resolved better).
+  - **#103's held-out test set, read once:** VN 7.26 % → 7.05 % (level) and manga 2.88 % → 2.74 %.
+  - **Unchanged:** the job, its memory and the estimated time per column. The package ships the new model with its
+    release's `ATTRIBUTION.md` as `ocr/VERTICAL-ATTRIBUTION.md`. An older `VOCR5_V_w8.vocr` left in
+    `ux0:data/VitaJPOverlay/ocr/` is no longer read and may be deleted.
+  - Host tests only; nothing of it has run on a console.
+
 ### Fixed
 
 - **The reading streak's seed and line** (#501's audit; [details](docs/ocr-history.md#streak)). When the overlay's

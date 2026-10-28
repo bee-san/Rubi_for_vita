@@ -130,7 +130,7 @@ class PayloadList(unittest.TestCase):
     def test_the_python_list_is_the_compiled_one(self):
         import package_release
         files = vpk.payload_files()
-        # the bundled PSP/Vita names are a separate payload file; API 47: VOCR5-V and VERTICAL-ATTRIBUTION.md;
+        # the bundled PSP/Vita names are a separate payload file; API 47: VOCR6-V and VERTICAL-ATTRIBUTION.md;
         # the SC3 hooks' three charsets (docs/native-hooks.md "SC3 text"); VOCR6 (every size since v0.4.1-vocr6.2):
         # VOCR6-ATTRIBUTION.md
         # API 54: the text spotter's two once published
