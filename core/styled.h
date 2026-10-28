@@ -54,6 +54,10 @@ int vjo_styled_init(VjoStyled *s, VjoArena *a, uint32_t cap_units, int cap_spans
 /* Appends UTF-8 text (n bytes) as one span. */
 void vjo_styled_add(VjoStyled *s, const char *utf8, size_t n, uint32_t rgb, int px);
 void vjo_styled_puts(VjoStyled *s, const char *utf8, uint32_t rgb, int px);
+/* The UTF-16 units vjo_styled_puts gives utf8, into text itself, without a span: at most cap units (it
+ * stops at a whole character) and their NUL, so text holds cap + 1 units; returns their count. The
+ * subtitle strip's text (shell/strip.cpp), which takes one size and color over all of it. */
+uint32_t vjo_styled_units(uint16_t *text, uint32_t cap, const char *utf8);
 /* Puts one UTF-16 unit before unit `at` (0 < at <= len), in the span of the
  * character before it (a break the overlay puts in: shell/wrap_fix.h).
  * 0 when the text has no room. */

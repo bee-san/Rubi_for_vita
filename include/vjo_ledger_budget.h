@@ -111,9 +111,13 @@
  * rewrite reordered: the file opened before the truncation, the truncation inside the count's odd window and only over
  * the file's own last record, the end read again after it; the debug build's hook source line in the result's log
  * batch) make it 98,244 -> 98,276 text on main 70deda7, the same data and pages (28 B left) [measured: the same rows, main
- * 70deda7 and this change]. */
+ * 70deda7 and this change].
+ * Lowered from 176,128 B by cleanup P1 (#418): the subtitle strip's text is converted into its own buffer
+ * (shell/strip.cpp, core/styled.c vjo_styled_units), without its 8,480 B styling arena (s_mem_buf): 98,108 + 77,760 ->
+ * 98,076 + 69,264 on main 8b18f99, two data pages fewer, 167,936 B (228 B of code room, 368 B of data room) [measured:
+ * the same rows, main 8b18f99 and this change]. */
 #if VJO_DEBUG
-#define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
+#define VJO_BUDGET_SHELL_MODULE_PAGES 167936u
 #else
 /* The normal build (docs/release-variants.md): the self-test (shell/selftest.c), the lines of the
  * game worker's step log, of the recognized text and of every job and lookup, and the timings and
@@ -166,8 +170,11 @@
  * image; the debug build 98,132 -> 98,108 + 77,760 -> 77,760, the same pages, 196 B and 64 B of room]. Without the
  * table the pause also fits on efbee95 (85,876 + 77,728 and 98,244 + 77,800 B, after #428 and #440 freed the Shell's
  * code); on eef0fc4 it took a page more in both builds (86,084 + 77,784 and 98,428 + 77,856 B). The draft's hint as a
- * second copy (214 B) takes a data page more in both builds on efbee95 too (85,860 + 77,888 and 98,212 + 77,992 B). */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
+ * second copy (214 B) takes a data page more in both builds on efbee95 too (85,860 + 77,888 and 98,212 + 77,992 B).
+ * Lowered from 163,840 B by cleanup P1 (#418, above: the strip's text into its own buffer, without the 8,480 B arena):
+ * 85,764 + 77,696 -> 85,732 + 69,200 on main 8b18f99, two data pages fewer, 155,648 B (284 B of text room, 432 B of
+ * data room) [measured: the same rows, main 8b18f99 and this change]. */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 155648u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,

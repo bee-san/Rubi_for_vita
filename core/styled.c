@@ -10,7 +10,10 @@ int vjo_font_px(int font_size)
     return (font_size * 3 + 1) / 2;
 }
 
-int vjo_styled_init(VjoStyled *s, VjoArena *a, uint32_t cap_units, int cap_spans)
+/* Not inlined: the overlay calls it twice (its header and its body). Once the strip no longer called it
+ * (vjo_styled_units), LTO put a copy in each call: 32 B (debug) and 48 B (normal) more of the Shell's code than
+ * one copy (measured, docs/memory-ledger.md "Cleanup P1"). */
+__attribute__((noinline)) int vjo_styled_init(VjoStyled *s, VjoArena *a, uint32_t cap_units, int cap_spans)
 {
     memset(s, 0, sizeof(*s));
     s->text = (uint16_t *)vjo_arena_alloc(a, sizeof(uint16_t) * (cap_units + 1));
@@ -61,6 +64,15 @@ void vjo_styled_add(VjoStyled *s, const char *utf8, size_t n, uint32_t rgb, int 
 void vjo_styled_puts(VjoStyled *s, const char *utf8, uint32_t rgb, int px)
 {
     vjo_styled_add(s, utf8, strlen(utf8), rgb, px);
+}
+
+uint32_t vjo_styled_units(uint16_t *text, uint32_t cap, const char *utf8)
+{
+    /* No room for a span: vjo_styled_add writes the text and its NUL, then finds none and stores no span
+     * (its truncated says so, and is not returned). */
+    VjoStyled s = {.text = text, .cap = cap};
+    vjo_styled_puts(&s, utf8, 0, 0);
+    return s.len;
 }
 
 int vjo_styled_insert(VjoStyled *s, uint32_t at, uint16_t unit)
