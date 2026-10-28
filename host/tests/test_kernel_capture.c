@@ -258,7 +258,7 @@ static void sig_first_pass(uint32_t fmt, uint32_t x0, uint32_t y0, uint32_t w, u
     TEST_CHECK(!memcmp(g.capture_sig.hash, ref.hash, sizeof(ref.hash)));
     TEST_MSG("fmt 0x%08X region %u,%u %ux%u strips of %u: %u grey mismatches, ystep %u", (unsigned)fmt,
              (unsigned)x0, (unsigned)y0, (unsigned)w, (unsigned)h, (unsigned)strip, bad_grey,
-             (unsigned)capture_acc.ystep);
+             (unsigned)region_acc.ystep);
 }
 
 static void sig_frames(void)
@@ -299,7 +299,136 @@ static void ocr_first_pass_signature_random_geometry(void)
 #undef SIG_RND
 }
 
+/* The display hook's one scratch row, converted in place (core/fbgrey.h vjo_fb_to_abgr_inplace, the grey
+ * conversions in place): every format's grey and colour rows from random pixels, at odd widths, at the frame's
+ * first and last rows and columns and across a whole 960-pixel row, into the worker's memory and a kernel strip,
+ * against the conversion apart (vjo_fb_to_abgr, then vjo_grey); each row's bytes after its width untouched. */
+static void rows_in_place_every_format_and_edge(void)
+{
+    static const uint32_t widths[] = {1, 2, 3, 31, 33, 451, 958, 959, 960};
+    static uint32_t want_abgr[SIG_FW];
+    static uint8_t out[8 * (SIG_FW * 4 + 4)], kout[8 * SIG_FW * 4];
+    unsigned bad = 0;
+    sig_frames();
+    for (unsigned f = 0; f < 3; f++) {
+        const uint32_t fmt = sig_formats[f];
+        const void *base = fmt == VJO_FB_A1B5G5R5 ? (const void *)sig_fb16 : (const void *)sig_fb32;
+        const unsigned bpp = vjo_fb_bpp(fmt);
+        for (unsigned wi = 0; wi < sizeof(widths) / sizeof(widths[0]); wi++)
+            for (unsigned place = 0; place < 4; place++) {
+                /* the region's corner: the frame's first or last column, first or last rows */
+                const uint32_t w = widths[wi], h = 8, x0 = place & 1 ? SIG_FW - w : 0, y0 = place & 2 ? SIG_FH - h : 0;
+                for (int rgba = 0; rgba < 2; rgba++) {
+                    const uint32_t px = rgba ? 4 : 1, stride = w * px + 4;
+                    OcrRowsJob job = {x0, y0, w, h, SIG_FW, SIG_FH, 0, h, stride, (uintptr_t)out, NULL, 0, rgba};
+                    OcrRowsJob kjob = {x0, y0, w, h, SIG_FW, SIG_FH, 0, h, w * px, 0, kout, 0, rgba};
+                    setup();
+                    memset(out, 0xEE, sizeof(out));
+                    if (capture_grey_rows((uintptr_t)base, SIG_FW, fmt, SIG_FW, SIG_FH, &job) != (int)h ||
+                        capture_grey_rows((uintptr_t)base, SIG_FW, fmt, SIG_FW, SIG_FH, &kjob) != (int)h ||
+                        game_copies != 2 * h) {
+                        bad++;
+                        continue;
+                    }
+                    for (uint32_t r = 0; r < h; r++) {
+                        const uint8_t *row = out + r * stride, *krow = kout + r * w * px;
+                        vjo_fb_to_abgr(want_abgr, (const uint8_t *)base + ((size_t)(y0 + r) * SIG_FW + x0) * bpp, w, fmt);
+                        for (uint32_t x = 0; x < w; x++) {
+                            uint32_t v = want_abgr[x], got, kgot;
+                            if (rgba) {
+                                memcpy(&got, row + x * 4, 4);
+                                memcpy(&kgot, krow + x * 4, 4);
+                                bad += got != v || kgot != v;
+                            } else {
+                                unsigned grey = vjo_grey(v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF);
+                                bad += row[x] != grey || krow[x] != grey;
+                            }
+                        }
+                        for (uint32_t k = 0; k < 4; k++) bad += row[w * px + k] != 0xEE; /* the width only */
+                    }
+                }
+            }
+    }
+    TEST_CHECK(bad == 0);
+    TEST_MSG("%u rows or bytes wrong", bad);
+}
+
+/* The signature of region rx..rh (normalized) of the frame, as its own accumulator builds it over the expanded rows
+ * (every row in order: scene.c uses only the sampled ones), and the crop it is of. */
+static void own_signature(SceneSig *out, uint32_t fmt, const VjoRect *region, uint32_t *cw, uint32_t *ch)
+{
+    static SceneAcc acc;
+    const void *base = fmt == VJO_FB_A1B5G5R5 ? (const void *)sig_fb16 : (const void *)sig_fb32;
+    uint32_t x, y;
+    capture_crop_of(region, SIG_FW, SIG_FH, &x, &y, cw, ch);
+    memset(&acc, 0, sizeof(acc));
+    scene_acc_begin(&acc, out, *cw, *ch);
+    for (uint32_t r = 0; r < *ch; r++) {
+        vjo_fb_to_abgr(sig_abgr_row, (const uint8_t *)base + ((size_t)(y + r) * SIG_FW + x) * vjo_fb_bpp(fmt), *cw, fmt);
+        scene_acc_row(&acc, r, sig_abgr_row);
+    }
+}
+
+static int same_sig(const SceneSig *a, const SceneSig *b)
+{
+    return a->w == b->w && a->h == b->h && a->cols == b->cols && !memcmp(a->hash, b->hash, sizeof(a->hash));
+}
+
+/* The region's signature (region_sig_hook, every 8th frame; scratch row in place) in every format is its own
+ * accumulator's for the region; and an OCR job's first pass (capture_sig_begin, capture_grey_rows with sig), whose
+ * rows sample the same grid (kernel/scene.h SceneRows), fed in strips with a region signature before each strip,
+ * of another size or the same (a full-frame job beside a text box, a box beside a full-frame region, the box
+ * itself, a region changed during the job), ends as its own accumulator's signature, and every region signature
+ * between its strips is the region's own too: the one grid is rebuilt for each size that needs it. */
+static void signatures_share_one_grid(void)
+{
+    static const VjoRect box = {2048, 43000, 61000, 18000}, other = {16384, 8192, 24000, 30000};
+    static const VjoRect full = {0, 0, 0, 0}, edge = {60700, 60536, 4300, 5000}; /* 889,502 63x42 */
+    static const struct { const VjoRect *job, *before, *after; uint32_t strip; } cases[] = {
+        {&full, &box, &box, 64},  /* a full-frame job (the self-test's) beside the text box's signatures */
+        {&box, &full, &full, 16}, /* the box's job, no region set */
+        {&box, &box, &box, 5},    /* the same size: no rebuild */
+        {&box, &box, &other, 7},  /* the region changed during the job (vjoSetRegion) */
+        {&edge, &other, &edge, 3}, /* an odd-sized box at the frame's last rows and columns */
+    };
+    unsigned bad_region = 0;
+    sig_frames();
+    for (unsigned f = 0; f < 3; f++) {
+        const uint32_t fmt = sig_formats[f];
+        const void *base = fmt == VJO_FB_A1B5G5R5 ? (const void *)sig_fb16 : (const void *)sig_fb32;
+        for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+            SceneSig want_job, want_before, want_after, got;
+            uint32_t jx, jy, jw, jh, w2, h2;
+            own_signature(&want_job, fmt, cases[c].job, &jw, &jh);
+            own_signature(&want_before, fmt, cases[c].before, &w2, &h2);
+            own_signature(&want_after, fmt, cases[c].after, &w2, &h2);
+            capture_crop_of(cases[c].job, SIG_FW, SIG_FH, &jx, &jy, &jw, &jh);
+            setup();
+            g.region = *cases[c].before;
+            TEST_ASSERT(region_sig_hook((uintptr_t)base, SIG_FW, fmt, SIG_FW, SIG_FH, &got) == 0);
+            bad_region += !same_sig(&got, &want_before);
+            memset(&g.capture_sig, 0x5A, sizeof(g.capture_sig));
+            capture_sig_begin(jw, jh);
+            for (uint32_t y = 0; y < jh; y += cases[c].strip) {
+                uint32_t n = jh - y < cases[c].strip ? jh - y : cases[c].strip;
+                OcrRowsJob job = {jx, jy, jw, jh, SIG_FW, SIG_FH, y, n, jw, (uintptr_t)sig_grey, NULL, 1, 0};
+                const int later = y >= jh / 2;
+                g.region = later ? *cases[c].after : *cases[c].before;
+                TEST_ASSERT(region_sig_hook((uintptr_t)base, SIG_FW, fmt, SIG_FW, SIG_FH, &got) == 0);
+                bad_region += !same_sig(&got, later ? &want_after : &want_before);
+                TEST_ASSERT(capture_grey_rows((uintptr_t)base, SIG_FW, fmt, SIG_FW, SIG_FH, &job) == (int)n);
+            }
+            TEST_CHECK_(same_sig(&g.capture_sig, &want_job), "format 0x%08X case %u: the job's signature",
+                        (unsigned)fmt, c);
+        }
+    }
+    TEST_CHECK(bad_region == 0);
+    TEST_MSG("%u region signatures wrong", bad_region);
+}
+
 TEST_LIST = {
+    {"rows converted in place: every format, odd widths, the frame's edges, 960 pixels", rows_in_place_every_format_and_edge},
+    {"the region's signature and a job's first pass share one grid, any sizes", signatures_share_one_grid},
     {"the job's crop of the region: a box, a small frame, the whole frame, the 32 px minimum", region_crops},
     {"OCR grey rows: every format, refusals, worker copy and kernel strip", ocr_grey_rows_every_format},
     {"a shot's colour rows: every format expanded, worker copy and kernel strip, refusals", ocr_rows_colour_every_format},

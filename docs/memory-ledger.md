@@ -5,6 +5,49 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## #418's cleanup P3: the kernel's rows in place, one signature grid (no API change)
+
+The display hook converts each row of the game's frame in one scratch row instead of two, the OCR job's first pass
+samples the region signature's grid instead of a grid of its own, and the kernel worker's copy of the hook's signature
+is on its stack. **No block, thread or allocation; the kernel takes one data page fewer in both builds**
+(`VJO_BUDGET_KERNEL_MODULE_PAGES` lowered to the packaged pages, both `#if VJO_DEBUG` branches); the Shell's and the
+game worker's SELFs are byte for byte main's.
+
+- **The rows** (`kernel/capture.c`, `core/fbgrey.h`): a 16- or 10-bit row is copied from the game into the one
+  3,840 B scratch row (`VJO_MAX_W` words) and converted there (`vjo_fb_to_abgr_inplace`: a 16-bit row from its last
+  pixel down, so that each word it writes lies over pixels it has read), and a row's grey bytes are written over the
+  words or pixels they come from (`vjo_abgr_to_grey`, `vjo_a1b5g5r5_to_grey`: byte i after pixel i). One copy from
+  the game per row, as before. 3,840 B less `.bss` (`scratch_tmp32`).
+- **One grid** (`kernel/scene.h` `SceneRows`): the job's first pass, fed over several frames, keeps its own size,
+  next row and grid row (20 B) and samples the region signature's `SceneAcc` grid. The grid is a function of the
+  region's size only; it is rebuilt for the size that needs it, in the row that needs it, when the two differ (a
+  full-frame job beside a text box; a region changed during a job, which `vjoSetRegion` does not stop), and only in
+  `on_frame`: the job's begin, in its syscall, writes no grid, which the display hook could be reading. 1,044 B less
+  `.bss` (`capture_acc`, 1,064 B, for `capture_rows`, 20 B).
+- **The signature's copy** (`kernel/main.c` `change_detection`): 524 B on VjoWorker's 16 KiB stack instead of `.bss`
+  (`sig.0`); `change_detection` is no longer inlined into the thread's loop, so the frame is live only in its call.
+  The thread's deepest path of the plugin's own frames: 600 → 1,000 B (normal) and 608 → 1,008 B (debug), the
+  firmware's calls counted as 0 B as before (`-fstack-usage -fcallgraph-info=su`, the gate's vitasdk image).
+- **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows),
+  main `b55c5f5` against this change:
+
+  | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+  |---|---:|---:|---:|
+  | Kernel | 43,508 + 77,780 → 43,572 + 72,372 B | 38,356 + 76,092 → 38,436 + 70,684 B | 122,880 → 118,784 / 118,784 → 114,688 B |
+  | Shell | 98,276 + 77,816 B, the same SELF | 85,988 + 77,728 B, the same SELF | 176,128 / 163,840 B, unchanged |
+  | Game worker | 180,208 + 36,720 B, the same SELF | 171,244 + 36,712 B, the same SELF | 217,088 / 208,896 B, unchanged |
+
+  Room left in the kernel's last pages: 1,484 B of code and 1,356 B of data (44 B before) in the debug build,
+  2,524 B and 3,044 B in the normal one. The kernel pool's worst case and limit (`VJO_WORST_KERNEL`) 241,664 →
+  237,568 B (debug) and 237,568 → 233,472 B (normal). The text grows 64 B (debug) and 80 B (normal): the second
+  signature's begin and row, the grid's rebuild check.
+- **Proof** (host): `capture_parity`, the recognizer's input against API 18's capture, on 162 regions now (two more:
+  odd widths at the frame's first and at its last rows); `kernel_capture`, every format's grey and colour rows from
+  random pixels at odd widths, the frame's first and last rows and columns and a whole 960-pixel row, and the
+  region's and a job's signatures over the one grid at any two sizes, each against its own accumulator's; `fbgrey`,
+  the conversions in place at every length to 961 pixels, 4,095 pixels and every 16-bit value. **Not run on a
+  console.**
+
 ## The pause for the frame (API 55)
 
 `ocr_pause` (#355, off by default; [game-pause.md](game-pause.md)). Measured with `tools/check_memory_ledger.py`'s
@@ -1672,12 +1715,12 @@ VjoNet figures read the painted area as used. The boot guard makes the boot afte
 
 | item | bytes | what | source |
 |---|---|---|---|
-| kernel module pages | 118,784 | `VitaJPOverlay_Kernel.skprx` (the debug build; the normal one's below): 40,960 text + 77,824 data/bss (the 32 KiB model staging buffer and the 4 KiB log ring are in it); API 22's frame-pacing step adds 272 B of text (36,608 B) and 48 B of data/bss, the same pages [main 8f1ec8f]; the worker loader (#138: the kernel loads the game worker into every game ON in `games.ini`) adds one text page: `kernel/loader.c` 2,354 B of text and 48 B of bss, `core/games.c` 1,251 B (the Shell's own policy code), the registration's one-thread check 150 B and 8 B, and five more `SceSysclibForDriver` stubs, 36,640 → 40,648 B of text; data/bss 77,768 → 77,824 B fills its pages (one more byte takes a page); API 23's screenshot (its colour rows and its JPEG's file broker, which uses the same staging buffer) within the same pages, paid for by the rest of the kernel's cold code built for size (the syscalls and the worker's loop, the boot guard, the kernel strip, the log) and the request's model directory 256 → 128 B: 40,648 → 40,040 B of text and 77,824 → 77,672 B of data/bss, the data pages no longer full (the normal build 36,444 → 35,900 and 76,136 → 75,984 B, the same 114,688 B) [the build log's module rows, main `dcb7b31` and this change, both builds]; audit-hooks F1 and F3 (`kernel/text_source.c`: the loader's table of the 4 processes it started the worker in as ON, 20 B of `.bss`, and the text source's word check) make it 40,660 → 40,804 B of text and 77,704 → 77,724 B of data/bss, the same pages (156 and 100 B free; the normal build 35,808 → 35,952 and 76,016 → 76,036 B, the same 114,688 B) [the build log's module rows, `feat/native-hooks` `c8cc539` and `hooks/fix-kernel` `3c39dbb`, both builds] | packaged SELF segments [measured: the build log's module rows, main 3aa08a6 and #138; the same on main c08db18] |
+| kernel module pages | 118,784 | `VitaJPOverlay_Kernel.skprx` (the debug build; the normal one's 114,688 B): 45,056 text + 73,728 data/bss since #418's cleanup P3 ([above](#418s-cleanup-p3-the-kernels-rows-in-place-one-signature-grid-no-api-change): one data page fewer, 122,880 B before it); earlier, 40,960 text + 77,824 data/bss (the 32 KiB model staging buffer and the 4 KiB log ring are in it); API 22's frame-pacing step adds 272 B of text (36,608 B) and 48 B of data/bss, the same pages [main 8f1ec8f]; the worker loader (#138: the kernel loads the game worker into every game ON in `games.ini`) adds one text page: `kernel/loader.c` 2,354 B of text and 48 B of bss, `core/games.c` 1,251 B (the Shell's own policy code), the registration's one-thread check 150 B and 8 B, and five more `SceSysclibForDriver` stubs, 36,640 → 40,648 B of text; data/bss 77,768 → 77,824 B fills its pages (one more byte takes a page); API 23's screenshot (its colour rows and its JPEG's file broker, which uses the same staging buffer) within the same pages, paid for by the rest of the kernel's cold code built for size (the syscalls and the worker's loop, the boot guard, the kernel strip, the log) and the request's model directory 256 → 128 B: 40,648 → 40,040 B of text and 77,824 → 77,672 B of data/bss, the data pages no longer full (the normal build 36,444 → 35,900 and 76,136 → 75,984 B, the same 114,688 B) [the build log's module rows, main `dcb7b31` and this change, both builds]; audit-hooks F1 and F3 (`kernel/text_source.c`: the loader's table of the 4 processes it started the worker in as ON, 20 B of `.bss`, and the text source's word check) make it 40,660 → 40,804 B of text and 77,704 → 77,724 B of data/bss, the same pages (156 and 100 B free; the normal build 35,808 → 35,952 and 76,016 → 76,036 B, the same 114,688 B) [the build log's module rows, `feat/native-hooks` `c8cc539` and `hooks/fix-kernel` `3c39dbb`, both builds] | packaged SELF segments [measured: the build log's module rows, main 3aa08a6 and #138; the same on main c08db18] |
 | VjoWorker stack | 16,384 | permanent | `kernel/main.c` |
 | VjoFile stack | 16,384 | permanent in a normal boot; absent in recovery. The file worker owns broker I/O, reserve preparation, boot-record writes and log flushing so storage cannot block the controller poll. This is the requested stack size from source, not a console headroom measurement. | `kernel/io_worker.c`, `VJO_STACK_KERNEL_IO` |
 | VjoOcrStrip | 65,536 at most | the capture ladder's last rung: one strip for one `vjoOcrCaptureRows` call, only when the display hook could not write the game's memory, freed before the call returns (a copy the call abandoned keeps it until the copy ends, when the kernel worker frees it); counted in the worst case since API 24 (before, it was never held with `VjoCapture`, the larger) | `kernel/buffers.c` |
 | VjoPolicy | 24,576 | #138: a starting game's `games.ini` read by the kernel worker, `KERNEL_RW`: the parsed table (8,200 B) and the file's text (at most 12,288 B), page-rounded; taken for a candidate game's start only and freed before that start goes on, not refused while a strip is held, so the worst case counts both. Refused: the game starts without the worker, and `kernel.txt` says so | `kernel/loader.c` `policy_alloc`; the fit is checked at compile time |
-| **limit** | **241,664** | today's worst case (the debug build's; the normal build's is 237,568 B), including the file worker's 16 KiB stack: a **ratchet**, not a cited safe size. It was 2,248,704 B with the full-frame capture until API 24 (2,220,032 B before #138's page and block). The pool's free space on a retail console is unmeasured; a 2,088,960 B capture failed there (#14, #74) and succeeded in other sessions. The self-test reads the partition kernel-side and replaces this number | [vita-memory.md 5.3](vita-memory.md) |
+| **limit** | **237,568** | today's worst case (the debug build's; the normal build's is 233,472 B), including the file worker's 16 KiB stack: a **ratchet**, not a cited safe size; 241,664 / 237,568 B before #418's cleanup P3's data page. It was 2,248,704 B with the full-frame capture until API 24 (2,220,032 B before #138's page and block). The pool's free space on a retail console is unmeasured; a 2,088,960 B capture failed there (#14, #74) and succeeded in other sessions. The self-test reads the partition kernel-side and replaces this number | [vita-memory.md 5.3](vita-memory.md) |
 
 **API 24** removed the kernel's full-frame capture: `vjoRequestCapture` and `vjoReadRaw`, the
 `VjoCapture` block (2,088,960 B at most, 458,752 B at 917 × 125), `kernel/capture_request.c`, the

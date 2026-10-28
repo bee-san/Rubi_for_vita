@@ -250,11 +250,14 @@ static void procedural_frames(void)
         rgb = scene(w, h);
         TEST_ASSERT(rgb != NULL);
         /* regions in pixels: the dialogue box, a tight textbox, the light box, the
-         * title, a tiny one (grown to 32x32), an odd x at the right edge, the frame */
+         * title, a tiny one (grown to 32x32), an odd x at the right edge, an odd width
+         * at the frame's last rows and one at its first rows and columns (#418: the
+         * kernel's rows converted in place), the frame */
         const unsigned regions[][4] = {
             {20 * k, 190 * k, w - 20 * k, h - 6 * k}, {28 * k, 196 * k, w - 36 * k, 250 * k},
             {300 * k, 20 * k, 460 * k, 70 * k},      {10 * k, 96 * k, 250 * k, 150 * k},
             {200 * k, 120 * k, 205 * k, 124 * k},    {w - 151, 191 * k, w, h - 1},
+            {w - 77, h - 40, w, h},                  {0, 0, 45, 37},
             {0, 0, 0, 0},
         };
         for (unsigned fi = 0; fi < N_FORMATS; fi++) {

@@ -633,14 +633,20 @@
  * [measured: tools/check_memory_ledger.py's module rows, both builds, main efbee95 (v0.10.0) and this change,
  * tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the copy runs in the game's own display call, as
  * a strip's does. */
+/* #418's cleanup P3, lowered by one data page in both builds: the display hook's rows converted in place in one
+ * scratch row (kernel/capture.c, core/fbgrey.h vjo_fb_to_abgr_inplace: 3,840 B), the OCR job's first pass sampling
+ * the region signature's grid (kernel/scene.h SceneRows: one SceneAcc, 1,044 B) and change_detection's copy of the
+ * hook's signature on VjoWorker's stack (kernel/main.c: 524 B): data/bss 77,780 -> 72,372 B (debug) and 76,092 ->
+ * 70,684 B (normal), text 43,508 -> 43,572 B and 38,356 -> 38,436 B, the same text pages [measured:
+ * tools/check_memory_ledger.py's module rows, both builds, main b55c5f5 and this change]. */
 #if VJO_DEBUG
-#define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
 #else
 /* The normal build: the self-test's memory routes (kernel/meminfo.c), the frame pacing, and the
  * per-screen, per-job and input traces compiled out: 36,444 + 76,136 against the debug build's
  * 40,648 + 77,824, one text page fewer; 32,332 + 76,080 before #138, which adds one text page
  * [measured: the build log's module rows, both builds, main 3aa08a6 and #138]. */
-#define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
 #endif
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
