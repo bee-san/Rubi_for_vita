@@ -298,6 +298,27 @@ been reported.
   modules keep their pages ([native-hooks.md](docs/native-hooks.md#sc3-text)). **Proven in the Vita3K emulator
   only, not run on a console** (the psandvita farm's 1,498, 606 and 395 approved pages); without the file the games
   read by OCR as before.
+- Native text hooks for 20 more Japanese visual novels, verified entries from the psandvita farm's hook farm, each with
+  its text clean-up: 三国恋戦記 (`PCSG00183`) and 三国恋戦記 ～思いでがえし～ (`PCSG00785`), 果つることなき未来ヨリ
+  (`PCSG00988`), ISLAND (`PCSG01000`), DIABOLIK LOVERS LIMITED V EDITION (`PCSG00272`), VANDEAD CARNIVAL (`PCSG00472`),
+  MORE,BLOOD LIMITED V EDITION (`PCSG00476`), DARK FATE (`PCSG00530`) and LUNATIC PARADE (`PCSG00826`), RE:VICE[D]
+  (`PCSG00382`), 戦場の円舞曲 (`PCSG00428`), 忍び、恋うつつ ― 雪月花恋絵巻 ― (`PCSG00602`), 薄桜鬼 真改　風ノ章
+  (`PCSG00629`), BROTHERS CONFLICT　Precious Baby (`PCSG00755`), 大図書館の羊飼い -Library Party- (`PCSG00505`),
+  あまつみそらに！ 雲のはたてに (`PCSG00638`), もし、この世界に神様がいるとするならば。 (`PCSG00706`), マブラヴ
+  オルタネイティヴ (`PCSG00777`), 学園CLUB ～ヒミツのナイトクラブ～ (`PCSG01065`) and スキとスキとでサンカク恋愛
+  (`PCSG01250`), all 1.00. Eight of them are not in LunaTranslator's table at all; for 大図書館の羊飼い and 学園CLUB the
+  entry lets Luna's own site past Rubi's placement check, and 学園CLUB's `^` now breaks the line as on the screen
+  (Luna's filter joined the lines). New clean-ups: the speaker on a line of its own in 果つることなき未来ヨリ and ISLAND,
+  DIABOLIK LOVERS' one-cell `!?` and `!!` (written ゞ and ゝ in the script), Aozora ruby (`｜神奈《かんな》`: the base),
+  スキとスキとでサンカク恋愛's `/ruby:base&reading/` and layout codes, and 三国恋戦記's speaker without an end code.
+  The entries are data in the game worker, which keeps its pages in both builds: some of Rubi's filters are read-only
+  data again and `core/hook_luna.c` is built for size, as `core/hook_re.c` is
+  ([memory ledger](docs/memory-ledger.md#the-hook-farms-20-verified-entries-no-api-change)).
+  In 忍び、恋うつつ, 薄桜鬼 真改 and BROTHERS CONFLICT the game sets a page one line at a time, so the popup shows the
+  page's last line. **Proven in the Vita3K emulator only, not run on a console**: 671 pages an AI reviewer approved
+  against the frames the games drew (8 to 100 a title); through Rubi's own path the hook's text is the farm's on 603 of
+  the 608 single-hit pages, the other 5 differ in how a one-cell `!?` is written
+  ([details](docs/native-hooks.md#farm-checks)).
 
 ### Fixed
 

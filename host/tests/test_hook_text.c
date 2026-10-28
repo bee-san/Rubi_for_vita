@@ -262,6 +262,9 @@ static void clean_controls(void)
         /* private-use code points stay, U+F8F0 too (#316's audit F2: no path but the filters that map it makes one) */
         {"猫\xef\xa3\xb0犬\xef\xa3\xb0", "猫\xef\xa3\xb0犬\xef\xa3\xb0"},
         {"猫\xef\xa3\xb1犬\xef\xa3", "猫\xef\xa3\xb1犬\xef\xa3"},
+        /* マブラヴ オルタネイティヴ PCSG00777, a verified entry with no filter: its message's \x03 (a reveal pause) and
+         * \x01 (the click wait that ends it) are controls (the psandvita farm's page 3, as its reviewer read it) */
+        {"【武】「…\x03…\x03オレの…\x03…\x03部屋、\x03か？」\x01", "【武】「……オレの……部屋、か？」"},
     };
     for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
         char text[256];

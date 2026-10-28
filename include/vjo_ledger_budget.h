@@ -452,6 +452,21 @@
  * the kernel's 43,508 -> 43,496 B and 38,356 -> 38,344 B; every module the same pages [measured:
  * tools/check_memory_ledger.py, main b55c5f5's Release run 40597389507 artifacts against this change's fast-gate builds,
  * tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
+/* The psandvita hook farm's 20 verified entries of 2026-10-27 and their filters (#394: core/hook_place.c; core/hook_luna.c
+ * PROTOTYPE_NAMELINE, PCSG00472, AOZORA_RUBY, CARET_NEWLINE, PCSG01250 and one more PROTOTYPE op): data, 1,288 B in
+ * the normal worker (.rodata +304 B, most of it the 20 titles' strings: Luna's ID table is a char[][10], which shares
+ * none; .data +976 B: the 20 rows' 800 B, the new ops, the filters' index 76 -> 96 B), against 788 + 152 = 940 B of
+ * room in the last pages of its code and data segments on main b55c5f5 (772 + 152 B on 665479d). As #394 wrote them
+ * (all in the data segment) the worker took one page more in the normal build and two in the debug build on b55c5f5
+ * (171,548 + 37,688 B, 212,992 B; 180,496 + 37,696 B, 225,280 B). So the filters' index, PCSG00628's ops and escapes (#316's audit) and the five arrays
+ * the batch adds or grows, 853 B [arm-vita-eabi-nm -S], are read-only data again, and core/hook_luna.c is built for
+ * size as core/hook_re.c is (vita/CMakeLists.txt: the filters' ops and Luna sites' reads, control code; its object's
+ * text 5,612 -> 4,168 B and rodata 13,595 -> 13,347 B, normal build): both builds keep their pages. Normal text
+ * 171,260 -> 170,796 B (1,236 B of room) and data/bss 36,712 -> 36,832 B (32 B); debug text 180,208 -> 179,760 B
+ * (464 B) and data/bss 36,720 -> 36,840 B (24 B) [measured: tools/check_memory_ledger.py's module rows and
+ * arm-vita-eabi-size -A, both builds, main 665479d and this change, tools/fast_gate.sh's vitasdk image; on b55c5f5
+ * 16 B less normal text and debug text 179,744 B]. The kernel's and the Shell's rows unchanged. No block, thread or
+ * allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else

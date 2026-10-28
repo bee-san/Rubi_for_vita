@@ -26,7 +26,7 @@ static void test_every_verified_entry(void)
 #if VJO_HOOK_LUNA
     unsigned only_rubi = 0;
 #endif
-    TEST_CHECK(n >= 34u);
+    TEST_CHECK(n >= 56u);
     for (unsigned i = 0; i < n; i++) {
         TEST_CHECK_(vjo_hook_title_listed(all[i].title) == VJO_HOOK_TITLE_RUBI, "%s", all[i].title);
 #if VJO_HOOK_LUNA
@@ -45,8 +45,17 @@ static void test_every_verified_entry(void)
     TEST_CHECK(vjo_hook_title_listed("PCSG00700") == VJO_HOOK_TITLE_RUBI); /* 蒼の彼方のフォーリズム */
     TEST_CHECK(vjo_hook_title_listed("PCSG00883") == VJO_HOOK_TITLE_RUBI); /* ZERO ESCAPE ダブルパック */
     TEST_CHECK(vjo_hook_title_listed("PCSG00146") == VJO_HOOK_TITLE_RUBI); /* STEINS;GATE 比翼恋理のだーりん (SC3) */
+    /* the hook farm's batch of 2026-10-27: four of the eight Luna's table lacks, and four of the twelve it has */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00183") == VJO_HOOK_TITLE_RUBI); /* 三国恋戦記 */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00638") == VJO_HOOK_TITLE_RUBI); /* あまつみそらに！ 雲のはたてに */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00777") == VJO_HOOK_TITLE_RUBI); /* マブラヴ オルタネイティヴ */
+    TEST_CHECK(vjo_hook_title_listed("PCSG01000") == VJO_HOOK_TITLE_RUBI); /* ISLAND */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00272") == VJO_HOOK_TITLE_RUBI); /* DIABOLIK LOVERS LIMITED V EDITION */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00505") == VJO_HOOK_TITLE_RUBI); /* 大図書館の羊飼い -Library Party- */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00706") == VJO_HOOK_TITLE_RUBI); /* もし、この世界に神様がいるとするならば。 */
+    TEST_CHECK(vjo_hook_title_listed("PCSG01250") == VJO_HOOK_TITLE_RUBI); /* スキとスキとでサンカク恋愛 */
 #if VJO_HOOK_LUNA
-    TEST_CHECK_(only_rubi == 18u, "%u verified titles are not in Luna's table (CLANNAD, 16 of the farm's, あおかな)",
+    TEST_CHECK_(only_rubi == 26u, "%u verified titles are not in Luna's table (CLANNAD, 24 of the farm's, あおかな)",
                 only_rubi);
     TEST_CHECK(vjo_luna_title_ported("PCSG01198") && vjo_luna_title_ported("PCSG00469"));
 #endif

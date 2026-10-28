@@ -327,8 +327,11 @@ if(VJO_WITH_VOCR)
   target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c ${ROOT}/core/hook_cache.c)
   set_source_files_properties(${ROOT}/core/hook_select.c ${ROOT}/core/hook_cache.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
-  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
-  set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size. So are
+  # core/hook_luna.c's filter ops and Luna sites' reads (run_ops, vjo_luna_capture: a few per hit or job): -Os
+  # makes room for the hook farm's 20 entries of #394 in both builds' pages (its text 5,612 -> 4,168 B and rodata
+  # 13,595 -> 13,347 B, the normal build's object; docs/memory-ledger.md, "The hook farm's 20 verified entries").
+  set_source_files_properties(${ROOT}/core/hook_re.c ${ROOT}/core/hook_luna.c PROPERTIES COMPILE_OPTIONS "-Os")
   # MAGES' SC3 text (core/hook_sc3.c): a hit's span and the job's decoder, for size too.
   set_source_files_properties(${ROOT}/core/hook_sc3.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
