@@ -31,6 +31,7 @@
 #include "lapis.h"
 #include "sqlw.h"
 #include "zipw.h"
+#include <bearssl_hash.h>
 #include "../../settings/app_queue.h"
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
@@ -484,16 +485,63 @@ static int count_dir(const char *dir, const char *suffix)
     return n;
 }
 
-/* Every file under the queue, with its bytes: a snapshot to compare. */
+/* Every file under the queue (its path below ux0:data/VitaJPOverlay, in byte order) with its bytes' SHA-256: a
+ * snapshot to compare. In-process (no shell), no link followed (test_tmpdir.h's rule). */
+static char snap_paths[512][256];
+static int snap_count;
+static void snap_walk(const char *dir)
+{
+    char path[PATH_MAX];
+    struct dirent *e;
+    struct stat st;
+    DIR *d = opendir(dir);
+    TEST_ASSERT(d != NULL);
+    while ((e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+            continue;
+        TEST_ASSERT(snprintf(path, sizeof(path), "%s/%s", dir, e->d_name) < (int)sizeof(path));
+        TEST_ASSERT(lstat(path, &st) == 0);
+        if (S_ISDIR(st.st_mode))
+            snap_walk(path);
+        else if (S_ISREG(st.st_mode)) {
+            TEST_ASSERT(snap_count < 512 && strlen(path) < sizeof(snap_paths[0]));
+            snprintf(snap_paths[snap_count++], sizeof(snap_paths[0]), "%s", path);
+        }
+    }
+    closedir(d);
+}
+static int snap_order(const void *a, const void *b) { return strcmp(a, b); }
 static char *snapshot(void)
 {
     static char buf[1 << 16];
-    FILE *p = popen("cd 'ux0:data/VitaJPOverlay' && find anki_queue -type f | sort | xargs -r sha256sum", "r");
-    size_t n;
-    TEST_ASSERT(p != NULL);
-    n = fread(buf, 1, sizeof(buf) - 1, p);
-    buf[n] = '\0';
-    pclose(p);
+    static uint8_t data[1 << 20];
+    size_t used = 0;
+    char cwd[PATH_MAX];
+    TEST_ASSERT(getcwd(cwd, sizeof(cwd)) != NULL && chdir("ux0:data/VitaJPOverlay") == 0);
+    snap_count = 0;
+    snap_walk("anki_queue");
+    qsort(snap_paths, (size_t)snap_count, sizeof(snap_paths[0]), snap_order);
+    buf[0] = '\0';
+    for (int i = 0; i < snap_count; i++) {
+        FILE *f = fopen(snap_paths[i], "rb");
+        unsigned char sha[32];
+        br_sha256_context h;
+        size_t n;
+        TEST_ASSERT(f != NULL);
+        n = fread(data, 1, sizeof(data), f);
+        TEST_ASSERT(n < sizeof(data) && !ferror(f));
+        fclose(f);
+        br_sha256_init(&h);
+        br_sha256_update(&h, data, n);
+        br_sha256_out(&h, sha);
+        for (int k = 0; k < 32 && used + 3 < sizeof(buf); k++)
+            used += (size_t)snprintf(buf + used, sizeof(buf) - used, "%02x", sha[k]);
+        if (used < sizeof(buf))
+            used += (size_t)snprintf(buf + used, sizeof(buf) - used, "  %s\n", snap_paths[i]);
+        if (used >= sizeof(buf))
+            used = sizeof(buf) - 1;
+    }
+    TEST_ASSERT(chdir(cwd) == 0);
     return buf;
 }
 

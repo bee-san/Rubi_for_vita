@@ -940,10 +940,11 @@ add_test(NAME tmp_leak_check COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/h
 set_tests_properties(tmp_leak_setup PROPERTIES FIXTURES_SETUP tmp_leak)
 set_tests_properties(tmp_leak_check PROPERTIES FIXTURES_CLEANUP tmp_leak)
 
-# variant_free, derived (host/tests/variant_free.py): a test whose programs (and every library linked into them)
-# preprocess to the same text with VJO_DEBUG 1 and 0 and with the model directories changed, and that no if() on
-# VJO_DEBUG or the models configures, gives the same result in every lane; the normal build's ctest and the models
-# lane (ctest -LE variant_free) leave it to the debug build's run. The tools' suites keep the label given above.
+# variant_free, derived (host/tests/variant_free.py): a test that the other two lanes' configurations define alike, with
+# its programs (and every library linked into them) linked and compiled alike, whose units preprocess to the same text
+# with VJO_DEBUG 1 and 0 and with the model directories changed, gives the same result in every lane; the normal
+# build's ctest and the models lane (ctest -LE variant_free) leave it to the debug build's run. The tools' suites keep
+# the label given above.
 # After every program is built, the script writes the labels into a file that ctest includes (TEST_INCLUDE_FILES, from
 # host/tests/variant_labels): without a build, or with VJO_VARIANT_LABELS_OFF in the environment, ctest sees CMake's
 # labels only.
@@ -976,10 +977,14 @@ endforeach()
 list(JOIN _vjo_graph ",\n" _vjo_graph)
 file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/vjo_targets.json CONTENT "{\n${_vjo_graph}\n}\n")
 set(_vjo_labels ${CMAKE_BINARY_DIR}/variant_labels.cmake)
+# (again when a program relinks, or when what CMake configures may have changed: its files, the tests it wrote)
+file(GLOB _vjo_cmake_files CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/*.cmake)
 add_custom_command(OUTPUT ${_vjo_labels}
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/variant_free.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
-    ${CMAKE_CTEST_COMMAND} ${_vjo_labels}
+    ${CMAKE_CTEST_COMMAND} ${_vjo_labels} --cmake ${CMAKE_COMMAND}
   DEPENDS ${CMAKE_SOURCE_DIR}/host/tests/variant_free.py ${CMAKE_BINARY_DIR}/vjo_targets.json ${_vjo_programs}
+    ${CMAKE_SOURCE_DIR}/CMakeLists.txt ${CMAKE_SOURCE_DIR}/host/tests/variant_labels/CMakeLists.txt ${_vjo_cmake_files}
+    ${CMAKE_BINARY_DIR}/CTestTestfile.cmake ${CMAKE_BINARY_DIR}/compile_commands.json
   COMMENT "variant_free: the host tests whose result is the same in every lane (host/tests/variant_free.py)"
   VERBATIM)
 add_custom_target(vjo_variant_labels ALL DEPENDS ${_vjo_labels})

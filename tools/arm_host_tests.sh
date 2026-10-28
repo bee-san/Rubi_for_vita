@@ -105,7 +105,8 @@ CMAKE_VOCR=(-DVJO_WITH_VOCR=OFF)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   # API 54: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT): VJO_VOCR_SPOT_SOURCE_DIR,
   # else the recognizer's checkout when it holds it
-  CMAKE_VOCR=(-DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" -DVJO_VOCR_SPOT_SOURCE_DIR="${VJO_VOCR_SPOT_SOURCE_DIR:-$VJO_VOCR_SOURCE_DIR}")
+  CMAKE_VOCR=(-DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" -DVJO_VOCR_SPOT_SOURCE_DIR="${VJO_VOCR_SPOT_SOURCE_DIR:-$VJO_VOCR_SOURCE_DIR}"
+              -DVJO_VOCR_GATE_DOWNLOAD=OFF) # (no gate test runs here: nothing to download)
   [ -z "${VJO_VOCR_MODEL_DIR:-}" ] || CMAKE_VOCR+=(-DVJO_VOCR_MODEL_DIR="$VJO_VOCR_MODEL_DIR")
   TESTS+=(capture_parity)
 fi

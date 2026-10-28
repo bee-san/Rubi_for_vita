@@ -17,7 +17,9 @@ check counts each test's directory after the run and fails on every entry in it,
 test, its files and, for a suite's directory (vjo-NAME-XXXXXX, host/tests/test_tmpdir.h), the
 suite's source; on anything else in DIR; and on a test's directory that is gone (a test that removed
 its TMPDIR, or a run without setup). It also fails when a test source (host/tests, tools/tests) names
-/tmp itself: such a test's files go around TMPDIR, where this check cannot count them. Then it
+/tmp itself: such a test's files go around TMPDIR, where this check cannot count them; and when a C or
+C++ test (host/tests) runs a shell or another program (system, popen, exec*: test_tmpdir.h's rule, no
+shell). Then it
 removes DIR, so a run leaves nothing either way. A directory a test left without permissions is made
 this user's to list and remove first (u+rwx, on this user's directories only, never through a link);
 whatever DIR still holds then is named, and fails the check, and the next setup refuses it.
@@ -34,6 +36,8 @@ SCANNED = [ROOT / "host" / "tests", ROOT / "tools" / "tests"]
 # test_tmpdir.h falls back to /tmp itself when TMPDIR is unset; this file names it in its scan
 SCAN_EXEMPT = {"test_tmpdir.h", "tmp_leak.py"}
 TMP_LITERAL = re.compile(r"""["'](?:/var)?/tmp(?:/|["'])|\bP_tmpdir\b""")
+# a C or C++ test that runs a shell or another program (test_tmpdir.h: no shell): its call, written as a call
+SHELL_CALL = re.compile(r"(?<![\w.>])(?:system|popen|execlp?e?|execvp?e?|posix_spawnp?)\(")
 TEST_NAME = re.compile(r"[A-Za-z0-9_.-]+")
 
 
@@ -183,6 +187,18 @@ def tmp_in_sources():
     return found
 
 
+def shells_in_sources():
+    """the C and C++ tests' calls that run a shell or another program (the Python drivers run programs: theirs is
+    subprocess's argument list, no shell)"""
+    found = []
+    for path in sorted((ROOT / "host" / "tests").rglob("*")):
+        if path.suffix in (".c", ".cpp", ".h") and "fixtures" not in path.relative_to(ROOT).parts:
+            for i, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+                if SHELL_CALL.search(line):
+                    found.append(f"  {path.relative_to(ROOT)}:{i}: {line.strip()}")
+    return found
+
+
 def check(d, tests):
     if not ours(d):
         print(f"{d} is not a directory of this user's: refused")
@@ -199,6 +215,11 @@ def check(d, tests):
     if found:
         print(f"{len(found)} lines of the tests name /tmp instead of TMPDIR (host/tests/test_tmpdir.h):")
         print("\n".join(found))
+    shells = shells_in_sources()
+    if shells:
+        print(f"{len(shells)} lines of the C tests run a shell or a program (host/tests/test_tmpdir.h: no shell):")
+        print("\n".join(shells))
+        found += shells
     if left:
         print("tests left these in their TMPDIR: a suite must remove what it makes (host/tests/test_tmpdir.h)")
     stuck = not remove(d)
