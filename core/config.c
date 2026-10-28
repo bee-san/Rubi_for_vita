@@ -523,10 +523,10 @@ const char *const vjo_finder_names[] VJO_DATA_TABLE(config_finders_1) = {finder_
 static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", NULL};
 /* #355's review H1: the off/on settings with no rule of their own (an unknown value keeps the field, with
  * set_choice's warning), one table and one loop in place of a branch each, and #358's and API 54's keys read-only
- * data again: the Shell's pages pay for API 55's ocr_pause with it (160 B of the normal Shell's code and 32 B of its
- * data, 176 B and 40 B of the debug one's [measured: tools/check_memory_ledger.py's module rows, #355's head with
- * and without this table, both builds]; docs/memory-ledger.md, "The pause for the frame"). The keys' order is their
- * branches' was; each key is matched whole (vjo_ieq), so none can take another's. */
+ * data again: SceShell's code room for API 55's ocr_pause (144 B of the normal Shell's code and 32 B of its data,
+ * 152 B and 40 B of the debug one's on main efbee95 [measured: tools/check_memory_ledger.py's module rows, #355's
+ * head with and without this table, both builds]; docs/memory-ledger.md, "The pause for the frame"). The keys' order
+ * is their branches' was; each key is matched whole (vjo_ieq), so none can take another's. */
 static const struct {
     const char *key;
     uint16_t offset;

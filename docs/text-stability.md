@@ -396,9 +396,10 @@ it says:
 - An earlier run of #359's (fix9, superseded by its audit) gave 2 runs and 3 of 1,724.
 
 **With #355 and #359.** #355 is on `main` since API 55, its clause a format of the one hint, as the third point below
-asks; it fits the Shell's pages in both builds because `core/config.c` now parses its off/on settings from one table
-(160 B of the normal Shell's code, 176 B of the debug one's) [measured: tools/check_memory_ledger.py's module rows,
-#355 with and without the table, both builds; [memory-ledger.md](memory-ledger.md#the-pause-for-the-frame-api-55)]. The rest of this
+asks; it fits the Shell's pages in both builds (as a second copy of the hint it took a data page more in both, on
+v0.10.0's `main` too), and `core/config.c` now parses its off/on settings from one table, which gives the Shell more
+code room than before [measured: tools/check_memory_ledger.py's module rows, both builds;
+[memory-ledger.md](memory-ledger.md#the-pause-for-the-frame-api-55)]. The rest of this
 section is the measurement made before, when neither fitted beside this change on `main` 8da24c8 as they were.
 - **The measurement:** `main` with this change, plus #355 at 9e44739 and #359 at f630b69's Shell change (its log
   line), each built in both variants (`tools/check_memory_ledger.py`'s module rows). Those heads predate #376 and
