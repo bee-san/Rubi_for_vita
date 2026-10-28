@@ -1280,11 +1280,7 @@ static void test_what_enter_saves_whatever_the_dictionaries(void)
             snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
             snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", list_names);
             cfg.local_dictionary_results = 8;
-#ifdef VJO_WITH_VOCR
             cfg.anki_screenshot = with;
-#else
-            if (with) continue;
-#endif
             reconfigure();
             vjo_arena_init(&a, mem, sizeof(mem));
             vjo_platform_vita(&p);
@@ -1803,15 +1799,11 @@ static int restart_step(int argc, char **argv)
         return 2;
     fixture();
     if (!strncmp(what, "save-shot", 9)) {
-#ifdef VJO_WITH_VOCR
         const char *real = getenv("VJO_TEST_SHOT_JPEG"); /* the actual game worker's JPEG (test_card_screenshot.py) */
         if (real && load_shot_jpeg(real) < 0)
             return 2;
         cfg.anki_screenshot = 1;
         what = what[9] ? "save-other" : "save";
-#else
-        return 2;
-#endif
     }
     vjo_anki_configure(&cfg);
     vjo_anki_set_game("PCSG00415", "CLANNAD", 0);

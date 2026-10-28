@@ -1682,17 +1682,11 @@ static void test_vocr_empty_region(void)
 {
     reset();
     int rc = run_vocr_job();
-#ifdef VJO_WITH_VOCR
     /* An empty region: no line, no model read, the workspace is released. */
     TEST_CHECK(rc == VJO_OK && cache_data[0].failed_stage == VJO_STAGE_NONE);
     TEST_CHECK(cache_data[0].ocr_text && !cache_data[0].ocr_text[0]);
     TEST_CHECK(job_captured && job_capture_scene == 2 && job_capture_seq == 4);
     TEST_CHECK(vocr_allocs == 1 && vocr_frees == 1 && vocr_paf_allocs == 0);
-#else
-    TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE && cache_data[0].failed_stage == VJO_STAGE_OCR);
-    TEST_CHECK(cache_data[0].err.detail && strstr(cache_data[0].err.detail, "OCR is not running in this game"));
-    TEST_CHECK(vocr_allocs == 0);
-#endif
     mem_free();
 }
 
@@ -1732,15 +1726,10 @@ static void test_removed_engine_choice_runs_the_local_engine(void)
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && background_wanted());
         TEST_CHECK_(logged("config warning") == NULL, "%s", ini[i]);
         int rc = run_vocr_job();
-#ifdef VJO_WITH_VOCR
         TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
         TEST_CHECK(!strcmp(fake_game_request.model, VJO_VOCR_TIER2_NAME));
         TEST_CHECK(fake_game_request.tiers == 3u && !fake_game_request.fallback[0]); /* Normal, then Small */
         TEST_CHECK(cache_data[0].failed_stage == VJO_STAGE_NONE);
-#else
-        TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
-        TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE);
-#endif
         mem_free();
     }
 }
