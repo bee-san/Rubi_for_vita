@@ -1,14 +1,161 @@
 """Run the installer's real config migration on configs saved by older releases."""
+import contextlib
+import difflib
+import importlib.util
+import io
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
+FIXTURES = ROOT / "host/tests/fixtures"
+TEMPLATE = ROOT / "docs/config.example.ini"
+
+
+def unescape(record):
+    """A record of host/tests/fixtures/config-lines.txt as bytes: its \\n, \\r, \\t, \\\\ and \\xHH unescaped, as
+    host/tests/config_golden.h reads it."""
+    out, i = bytearray(), 0
+    raw = record.encode("utf-8")
+    while i < len(raw):
+        ch = raw[i:i + 1]
+        if ch == b"\\" and i + 1 < len(raw):
+            x = raw[i + 1:i + 2]
+            if x == b"x" and i + 3 < len(raw):
+                out += bytes([int(raw[i + 2:i + 4], 16)])
+                i += 4
+                continue
+            out += {b"n": b"\n", b"r": b"\r", b"t": b"\t"}.get(x, x)
+            i += 2
+            continue
+        out += ch
+        i += 1
+    return bytes(out)
+
+
+def escape(data):
+    """Bytes as one printable line, as host/tests/config_golden.h golden_escape prints them (a final space too)."""
+    names = {0x0A: "\\n", 0x0D: "\\r", 0x09: "\\t", 0x5C: "\\\\"}
+    text = "".join(names.get(b) or (chr(b) if 0x20 <= b < 0x7F else "\\x%02X" % b) for b in data)
+    return text[:-1] + "\\x20" if text.endswith(" ") else text  # no trailing space in a golden file
+
+
+def fnv1a(data):
+    h = 0xcbf29ce484222325
+    for b in data:
+        h = ((h ^ b) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def escape_short(data):
+    """escape, but data longer than 240 bytes as its first 80, its length and its hash (golden_escape_short)."""
+    if len(data) <= 240:
+        return escape(data)
+    return "%s...[%d bytes, fnv1a %016x]" % (escape(data[:80]), len(data), fnv1a(data))
+
+
+def records():
+    """The records of host/tests/fixtures/config-lines.txt (empty lines and // comments are none)."""
+    for line in (FIXTURES / "config-lines.txt").read_text(encoding="utf-8").split("\n"):
+        if line and not line.startswith("//"):
+            yield unescape(line)
+
+
+def long_records():
+    """host/tests/config_golden.h golden_long_records' records."""
+    longer = (("jpdb_api_key = ", "S", 1500), ("font_size_ja = ", "9", 1500), ("frequency_filter = ", "x", 600),
+              ("anki_audio_url = https://", "x", 1500), ("dictionary = ", "x", 600), ("ocr_backend = ", "x", 600),
+              ("log_host = ", "x", 600), ("vocr_model = ", "x", 600), ("bogus = ", "x", 1500),
+              ("local_dictionaries = ", "a", 510), ("local_dictionaries = ", "a", 511),
+              ("local_dictionaries = ", "a", 512), ("local_dictionary_dir = ux0:", "d", 155),
+              ("local_dictionary_dir = ux0:", "d", 156), ("local_dictionary_dir = ux0:", "d", 157),
+              ("ocr_model_dir = ux0:", "d", 156), ("", "k", 63), ("", "k", 64), ("", "k", 70), ("", "k", 1100))
+    for head, fill, n in longer:
+        yield (head + fill * n + ("" if head else " = 1")).encode("ascii")
+
+
+def load_migrate():
+    spec = importlib.util.spec_from_file_location("migrate_config_golden", ROOT / "tools/migrate_config.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def migrate_in_process(module, folder, old_bytes, *sets):
+    """main() as the script runs it (exit 2 on any exception, as its __main__ does): (status, new text, report)."""
+    old, out = Path(folder) / "old.ini", Path(folder) / "new.ini"
+    for p in (old, out):
+        if p.exists():
+            p.unlink()
+    if old_bytes is not None:
+        old.write_bytes(old_bytes)
+    report = io.StringIO()
+    with mock.patch.object(sys, "argv", ["migrate_config.py", str(old), str(TEMPLATE), str(out), *sets]), \
+            contextlib.redirect_stdout(report), contextlib.redirect_stderr(io.StringIO()):
+        try:
+            status = module.main()
+        except Exception:  # pylint: disable=broad-except
+            status = 2
+    return status, out.read_bytes() if out.exists() else None, report.getvalue()
+
+
+def golden_migration(module, folder, old_bytes, lines, first=None):
+    """One migration in the golden file: its exit status, the template's lines it changed (- and +, no line numbers)
+    and its report, or (first: a first install's report lines) only the lines its report has that a first install's
+    has not (+) and the other way round (-): a first install reports every setting it writes. Returns the report's
+    lines."""
+    status, new, report = migrate_in_process(module, folder, old_bytes)
+    lines.append("  exit %d" % status)
+    if new is not None:
+        before = TEMPLATE.read_bytes().split(b"\n")
+        diff = list(difflib.diff_bytes(difflib.unified_diff, before, new.split(b"\n"), lineterm=b"", n=0))
+        for d in diff[2:]:  # after the two file headers
+            if not d.startswith(b"@@"):
+                lines.append(("  %s %s" % (d[:1].decode("ascii"), escape_short(d[1:]))).rstrip(" "))
+    said = report.splitlines()
+    if first is None:
+        lines.extend("  report: " + escape_short(line.encode("utf-8")) for line in said)
+    else:
+        lines.extend("  report+ " + escape_short(line.encode("utf-8")) for line in said if line not in first)
+        lines.extend("  report- " + escape_short(line.encode("utf-8")) for line in first if line not in said)
+    return said
 
 
 class MigrateConfig(unittest.TestCase):
+    def test_golden(self):
+        """#418 (cleanup package P2): every migration of the fixtures, a missing file and each record of
+        host/tests/fixtures/config-lines.txt, against host/tests/fixtures/config-migrate.golden: a change to the
+        migration shows as that file's diff (VJO_UPDATE_GOLDEN=1 rewrites it)."""
+        module = load_migrate()
+        lines = ["# tools/migrate_config.py on the config fixtures against docs/config.example.ini "
+                 "(tools/tests/test_migrate_config.py test_golden; VJO_UPDATE_GOLDEN=1 rewrites this file)"]
+        with tempfile.TemporaryDirectory() as folder:
+            lines.append("= no config.ini (a first install)")
+            first = golden_migration(module, folder, None, lines)
+            for name in ("host/tests/fixtures/config-old-app-test2.ini", "host/tests/fixtures/config-test3-owner.ini",
+                         "docs/config.example.ini"):
+                lines.append("= " + name)
+                golden_migration(module, folder, (ROOT / name).read_bytes(), lines, first)
+            count = 0
+            for record in list(records()) + list(long_records()):
+                lines.append("> " + escape_short(record))
+                golden_migration(module, folder, record, lines, first)
+                count += 1
+        self.assertGreater(count, 300)
+        text = "\n".join(lines) + "\n"
+        golden = FIXTURES / "config-migrate.golden"
+        if os.environ.get("VJO_UPDATE_GOLDEN"):
+            golden.write_text(text, encoding="utf-8")
+            return
+        want = golden.read_text(encoding="utf-8")
+        if want != text:
+            diff = list(difflib.unified_diff(want.splitlines(), text.splitlines(), "golden", "now", lineterm="", n=1))
+            self.fail("%s differs (VJO_UPDATE_GOLDEN=1 rewrites it):\n%s" % (golden, "\n".join(diff[:40])))
+
     def migrate(self, old_text, *sets):
         with tempfile.TemporaryDirectory() as folder:
             old = Path(folder) / "old.ini"

@@ -5,6 +5,7 @@
 #include "acutest.h"
 #include "client.h"
 #include "config.h"
+#include "config_golden.h" /* #418: the parse's golden file */
 #include "../include/vjo_game_ocr.h" /* VJO_GAME_OCR_VERTICAL_*: ocr_vertical's values (API 47) */
 #include "entries.h"
 #include "foreground.h"
@@ -1033,6 +1034,56 @@ static void test_config(void)
         TEST_CHECK(len == strlen(t) && !memcmp(doc, t, len));
         TEST_MSG("docs/config.example.ini differs from vjo_config_default_text()");
     }
+}
+
+static void golden_parse_record(const char *record, size_t n, void *arg)
+{
+    GoldenOut *o = (GoldenOut *)arg;
+    VjoConfig d, c;
+    vjo_config_defaults(&d);
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, record, n);
+    golden_puts(o, "> ");
+    golden_escape_short(o, record, n);
+    golden_puts(o, "\n");
+    golden_dump_config(o, &c, &d);
+}
+
+/* #418 (cleanup package P2): every VjoConfig field and warning the parser makes of the fixtures, the template and
+ * each record of host/tests/fixtures/config-lines.txt (alone, over the defaults), against
+ * host/tests/fixtures/config-parse.golden; a change to the parser shows as that file's diff (config_golden.h). */
+static void test_config_golden(void)
+{
+    static const struct { const char *path, *name; } files[] = {
+        {"/../tests/fixtures/config-old-app-test2.ini", "host/tests/fixtures/config-old-app-test2.ini"},
+        {"/../tests/fixtures/config-test3-owner.ini", "host/tests/fixtures/config-test3-owner.ini"},
+        {"/../../docs/config.example.ini", "docs/config.example.ini"}};
+    GoldenOut o = {0};
+    VjoConfig c;
+    char path[512], why[GOLDEN_WHY];
+    golden_puts(&o, "# The parse of the config fixtures (host/tests/test_core.c config_golden; VJO_UPDATE_GOLDEN=1 "
+                    "rewrites this file)\n");
+    vjo_config_defaults(&c);
+    golden_puts(&o, "= the defaults\n");
+    golden_dump_config(&o, &c, NULL);
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        size_t len;
+        snprintf(path, sizeof(path), "%s%s", VJO_FIXTURES, files[i].path);
+        char *text = golden_read(path, &len);
+        TEST_ASSERT_(text != NULL, "%s", path);
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, text, len);
+        golden_printf(&o, "= %s\n", files[i].name);
+        golden_dump_config(&o, &c, NULL);
+        free(text);
+    }
+    snprintf(path, sizeof(path), "%s/../tests/fixtures/config-lines.txt", VJO_FIXTURES);
+    TEST_CHECK(golden_records(path, golden_parse_record, &o) > 300);
+    golden_long_records(golden_parse_record, &o);
+    snprintf(path, sizeof(path), "%s/../tests/fixtures/config-parse.golden", VJO_FIXTURES);
+    int rc = golden_check(&o, path, why, sizeof(why));
+    TEST_CHECK_(rc >= 0, "%s", why);
+    free(o.p);
 }
 
 static void test_highlight_config(void)
@@ -2707,6 +2758,7 @@ TEST_LIST = {
     {"scene_many_frames", test_scene_many_frames},
     {"scene_hooked_line", test_scene_hooked_line},
     {"config", test_config},
+    {"config_golden", test_config_golden},
     {"highlight_config", test_highlight_config},
     {"frequency_badge_config", test_frequency_badge_config},
     {"regions", test_regions},

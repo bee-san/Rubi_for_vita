@@ -1,0 +1,409 @@
+// config.ini records for the golden files (host/tests/config_golden.h): one record a line, each read as a whole
+// config.ini (\n joins lines, \r \t \\ \xHH as in C). Every setting with each of its values, invalid ones, the removed
+// features' lines, and the parser's own rules (comments, BOMs, spaces, a missing '=', lengths, order).
+//
+// ---- the parser's rules
+; a comment
+# a comment
+   ; an indented comment
+\t# a tabbed comment
+bogus = 1
+bogus line
+Bogus_Setting = 1
+key with spaces = 1
+= value
+ = value
+==
+font_size_ja
+font_size_ja =
+font_size_ja = 20 ; inline comment
+font_size_ja = 20 # inline comment
+font_size_ja = 20;not a comment
+font_size_ja = 20 \t; tabbed comment
+font_size_ja=20
+  font_size_ja  =  20 \x20
+\tfont_size_ja\t=\t20\t
+FONT_SIZE_JA = 20
+font_size_ja = 20\r
+font_size_ja = 20\r\nfont_size_en = 12\r\n
+\xEF\xBB\xBFfont_size_ja = 20
+ \xEF\xBB\xBF font_size_ja = 20
+\xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20
+font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12
+\xEF\xBB\xBF
+anki_mining\r= off
+vocr_tier\r= large
+vocr_tier \r= large
+highlight_mode\r=character
+japanese_only_selection \r = on
+local_dictionary_results\r\t= 3
+vocr_model\r= FL10_w8.vocr
+font_size\r= 3
+jpdb_api_key\r= secret-17
+ocr_backend\r= lens
+font_size_ja = 20\nfont_size_ja = 30
+font_size_ja = 20\nfont_size_ja = 99
+bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5
+an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1
+https://example.invalid/path?a=b
+// ---- local_dictionary_dir, ocr_model_dir, local_dictionaries (string settings)
+local_dictionary_dir = ux0:data/mine
+local_dictionary_dir = ux0:data/mine ; not a comment here
+local_dictionary_dir =
+LOCAL_DICTIONARY_DIR = ux0:data/Mine
+ocr_model_dir = ux0:data/models
+ocr_model_dir = ux0:data/models # not a comment here
+ocr_model_dir =
+local_dictionaries = a.vjdict
+local_dictionaries = a.vjdict,b.vjdict
+local_dictionaries = a.vjdict, b.vjdict ; mine
+local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+local_dictionaries = ../a.vjdict
+local_dictionaries = a.txt
+local_dictionaries = /abs.vjdict
+local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict
+local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict
+local_dictionaries =
+local_dictionaries = ,
+// ---- lookups and the overlay
+local_dictionary_results = 1
+local_dictionary_results = 8
+local_dictionary_results = 0
+local_dictionary_results = 9
+local_dictionary_results = two
+local_dictionary_results =
+non_japanese_filter = lines
+non_japanese_filter = none
+non_japanese_filter = LINES
+non_japanese_filter = None ; mine
+non_japanese_filter = all
+non_japanese_filter =
+japanese_only_selection = on
+japanese_only_selection = off
+japanese_only_selection = ON
+japanese_only_selection = maybe
+japanese_only_selection = on\njapanese_only_selection = maybe
+highlight_mode = word
+highlight_mode = character
+HIGHLIGHT_MODE = CHARACTER
+highlight_mode = Word
+highlight_mode = sentence
+highlight_mode =
+frequency_badge = on
+frequency_badge = off
+frequency_badge = Off
+frequency_badge = 1
+names_first = off
+names_first = on
+names_first = auto
+names_first = AUTO
+names_first = first
+font_size_ja = 8
+font_size_ja = 40
+font_size_ja = 7
+font_size_ja = 41
+font_size_ja = -8
+font_size_ja = big
+font_size_en = 8
+font_size_en = 40
+font_size_en = 41
+font_size_en = 12px
+stick_lookup_ms = 0
+stick_lookup_ms = 1000
+stick_lookup_ms = 1001
+stick_lookup_ms = -5
+stick_lookup_ms = 20 ms
+// ---- the buttons
+toggle_button = select
+toggle_button = start
+toggle_button = l+r
+toggle_button = select+l
+toggle_button = select+r
+toggle_button = rear_double_tap
+toggle_button = Select+R
+toggle_button = L+R
+toggle_button = triangle
+toggle_button =
+subtitle_button = select
+subtitle_button = start
+subtitle_button = l+r
+subtitle_button = select+l
+subtitle_button = select+r
+subtitle_button = rear_double_tap
+subtitle_button = REAR_DOUBLE_TAP
+subtitle_button = circle
+toggle_button = select+r
+toggle_button = start\nsubtitle_button = start
+toggle_button = select+l\nsubtitle_button = select+l
+subtitle_button = l+r
+// ---- text sources and hooks
+text_source = ocr
+text_source = auto
+text_source = hooks
+text_source = HOOKS
+text_source = lens
+text_source = ocr\ntext_source = maybe
+text_source =
+hook_sites = on
+hook_sites = off
+Hook_Sites = OFF
+hook_sites = 0
+hook_sites = off\nhook_sites = maybe
+hook_trust = on
+hook_trust = off
+HOOK_TRUST = Off
+hook_trust = off\nhook_trust =
+hook_trusted = off
+// ---- the OCR
+ocr_mode = auto
+ocr_mode = on_press
+ocr_mode = ON_PRESS
+ocr_mode = On_Press ; mine
+ocr_mode = press
+ocr_mode =
+vocr_tier = small
+vocr_tier = normal
+vocr_tier = large
+vocr_tier = Large
+vocr_tier = huge
+vocr_tier =
+ocr_settle_ms = 0
+ocr_settle_ms = 150
+ocr_settle_ms = 1000
+ocr_settle_ms = 1001
+ocr_settle_ms = -5
+ocr_settle_ms = soon
+ocr_settle_max_ms = 100
+ocr_settle_max_ms = 10000
+ocr_settle_max_ms = 99
+ocr_settle_max_ms = 10001
+ocr_settle_press_ms = 0
+ocr_settle_press_ms = 100
+ocr_settle_press_ms = 1000
+ocr_settle_press_ms = 10000
+ocr_settle_press_ms = 1
+ocr_settle_press_ms = 24
+ocr_settle_press_ms = 99
+ocr_settle_press_ms = 10001
+ocr_settle_press_ms = -5
+ocr_settle_press_ms = soon
+ocr_settle_press_ms = 400\nocr_settle_press_ms = 99
+ocr_skip_blank_lines = on
+ocr_skip_blank_lines = off
+ocr_skip_blank_lines = maybe
+ocr_lm = off
+ocr_lm = 500k
+ocr_lm = 1000k
+ocr_lm = 2000k
+ocr_lm = 4000k
+ocr_lm = 1000K
+ocr_lm = 8000k
+ocr_lm = 1000
+ocr_cascade_ms = 0
+ocr_cascade_ms = 250
+ocr_cascade_ms = 3750
+ocr_cascade_ms = 3751
+ocr_cascade_ms = -1
+ocr_refine_lines = off
+ocr_refine_lines = on
+ocr_refine_lines = psp
+ocr_refine_lines = PSP
+ocr_refine_lines = sometimes
+ocr_text_gate = on
+ocr_text_gate = off
+OCR_TEXT_GATE = ON
+ocr_text_gate = maybe
+ocr_head_gate = on
+ocr_head_gate = off
+ocr_head_gate = gate
+ocr_head_gate = two_level
+ocr_head_gate = Two_Level
+ocr_head_gate = sometimes
+ocr_two_level = off
+ocr_line_fix = off
+ocr_line_fix = on
+ocr_line_fix = junk
+ocr_line_fix = all
+ocr_line_fix = ALL
+ocr_line_fix = valley
+ocr_line_fix = spotter
+ocr_finder = grad
+ocr_finder = spotter
+OCR_Finder = SPOTTER
+ocr_finder = textdet
+ocr_finder =
+ocr_spotter_refine = on
+ocr_spotter_refine = off
+ocr_spotter_refine = maybe
+ocr_threads = 1
+ocr_threads = 2
+ocr_threads = 3
+ocr_threads = 0
+ocr_threads = 4
+ocr_threads = x
+ocr_boost_clock = on
+ocr_boost_clock = off
+ocr_boost_clock = OFF
+ocr_boost_clock = maybe
+ocr_wait_hint = on
+ocr_wait_hint = off
+OCR_Wait_Hint = OFF
+ocr_wait_hint = maybe
+ocr_wait_hints = off
+ocr_wait = off
+ocr_vertical = off
+ocr_vertical = on
+ocr_vertical = auto
+ocr_vertical = Auto
+ocr_vertical = yes
+OCR_Vertical = 1
+reading_time = adaptive
+reading_time = 15s
+Reading_Time = 15S
+reading_time = 30s
+reading_time =
+// ---- the log and Anki
+log_file = on
+log_file = off
+log_file = OFF
+log_file = 1
+anki_mining = on
+anki_mining = off
+anki_mining = ON
+anki_mining = yes
+anki_screenshot = on
+anki_screenshot = off
+anki_screenshot = maybe
+anki_screenshot_trim_bars = on
+anki_screenshot_trim_bars = off
+Anki_Screenshot_Trim_Bars = OFF
+anki_screenshot_trim_bars = x
+anki_mining = on ; a comment
+// ---- the dictionary choice (jpdb.io, jiten.moe and the Hachidori relay removed)
+dictionary = local
+dictionary = LOCAL
+dictionary = local ; mine
+dictionary = jpdb
+dictionary = JITEN ; old
+Dictionary = Jpdb\r
+dictionary = jiten # x
+dictionary = hachidori
+DICTIONARY = Hachidori ; relay\r
+dictionary = hachidorix
+dictionary = jpdbx
+dictionary = relay
+dictionary =
+dictionary
+dictionaryx = jpdb
+dictionary = hachidori\nhachidori_host = 192.168.1.20:19633
+hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori
+// ---- the online dictionaries' API keys (secrets: never in a warning, a save or the log)
+jpdb_api_key = secret-1
+jiten_api_key = secret-2 ; mine
+api_key = secret-3
+JPDB_API_KEY=secret-4
+jiten_api_key secret-5
+jpdb_api_key: secret-6
+  Jiten_Api_Key\tsecret-7
+jpdb_api_key secret-8 ; x = y
+jpdb_api_keysecret-9
+api_keys = secret-10
+jpdb_api_key =
+jpdb_api_key
+jpdb_api_key_old = secret-11
+\xEF\xBB\xBFjpdb_api_key = secret-12
+jpdb_api_ke = secret-13
+lens_api_key = secret-14
+my_api_key = secret-15
+; jpdb_api_key = secret-16
+// ---- AnkiConnect's settings and the field mapping (removed)
+anki_host = 192.168.1.23
+ANKI_HOST=10.0.0.2
+anki_host = auto
+anki_host =
+anki_host
+anki_audio_url = https://a.invalid/?k=secret-20
+anki_audio_url https://a.invalid/?k=secret-21
+anki_audio_url
+anki_deck = Mining
+anki_deck = Mining #1 ; main
+anki_deck\r
+anki_note_type = Lapis
+anki_tags = a b
+ANKI_TAGS
+anki_field_word = Word
+Anki_Field_Word = Word
+anki_field_misc_info = X
+anki_field = x
+anki_fields = x
+anki_hosts = x
+anki_hosts
+anki_mining\n
+// ---- the engine choice (VOCR is the only engine)
+ocr_backend = vocr
+ocr_backend = VOCR
+ocr_backend = lens
+ocr_backend = Lens
+ocr_backend = vocr2
+ocr_backend = VOCR2
+ocr_backend = meiki
+OCR_BACKEND = meiki ; old
+ocr_backend = ncnn
+ocr_backend = NCNN
+ocr_backend = vocr3
+ocr_backend = google
+ocr_backend =
+ocr_backend
+ocr_backend lens
+ocr_backendx = lens
+// ---- the UDP log (removed)
+log_host = 192.168.1.5
+log_host =
+LOG_HOST=10.0.0.1 ; pc\r
+log_host
+log_host 10.0.0.1
+log_hosts = x
+log_host =\nLOG_HOST=
+// ---- older settings, ignored
+frequency_filter=500
+frequency_filter = 3
+FREQUENCY_FILTER = 5
+font_size = 20
+font_size = 3
+font_size
+font_size x = 1
+hw_jpeg = on
+hw_jpeg=1
+combo_delay_ms = 0
+combo_delay_ms = 10
+hachidori_host = 192.168.1.20
+hachidori_host = http://not a host
+hachidori_host =
+hachidori_host
+// ---- the model choice before vocr_tier (API 21)
+vocr_model = FL10_w8.vocr
+vocr_model = VOCR3_FL10_w8.vocr
+vocr_model = VOCR2_FL10_w8.vocr
+vocr_model = H15_w8.vocr
+vocr_model = VOCR3_H15_w8.vocr
+vocr_model = F20_w8.vocr
+vocr_model = VOCR4_W20_w8.vocr
+vocr_model = VOCR9_X_w8.vocr
+vocr_model = FL10
+vocr_model = FL10_w8.bin
+vocr_model = dir/FL10_w8.vocr
+vocr_model = .vocr
+vocr_model = meiki-stream-int8.mnn
+vocr_model =
+vocr_fallback_model = VOCR3_FL10_w8.vocr
+vocr_fallback_model = none
+vocr_fallback_model =
+vocr_fallback_model
+vocr_tier = large\nvocr_model = FL10_w8.vocr
+vocr_model = FL10_w8.vocr\nvocr_tier = large
+vocr_model = FL10_w8.vocr\nvocr_tier = huge
+vocr_tier = huge\nvocr_model = W20_w8.vocr
+vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr
+// ---- several removed and live settings in one file
+dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20
+ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99
