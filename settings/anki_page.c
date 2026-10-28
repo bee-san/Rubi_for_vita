@@ -362,7 +362,7 @@ static void count_text(char *out, size_t cap, int n, const char *what)
 }
 
 /* Row i at y (busy: an export runs; busy_text its progress; total every card). */
-static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *busy_text, int total)
+static void draw_row(const VjoPageUi *ui, int i, int y, int busy, const char *busy_text, int total)
 {
     static const char *const titles[ROW_DUPES] = {"Card mining", "Screenshots",       "Trim black bars",
                                                   "Card type",   "Game tag",          "Sentence readings"};
@@ -429,7 +429,7 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
     }
 }
 
-void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
+void vjo_anki_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
 {
     char busy_text[160], controls[96], last[480];
     int stick = stick_move, busy, err = 0, total;
@@ -501,8 +501,7 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     { /* where the view is in the column: a thin bar right of the rows */
         int room = VIEW_END - VIEW_Y, all_rows = row_offset(ROWS - 1) + row_height[ROWS - 1];
         int from = row_offset(top_row), shown = all_rows - from < room ? all_rows - from : room;
-        vita2d_draw_rectangle(SCROLL_X, VIEW_Y, SCROLL_W, room, ui->track);
-        vita2d_draw_rectangle(SCROLL_X, VIEW_Y + room * from / all_rows, SCROLL_W, room * shown / all_rows, ui->dim);
+        vjo_page_scroll_bar(ui, SCROLL_X, VIEW_Y, SCROLL_W, room, from, shown, all_rows);
     }
     /* The last result, else how to get the file to Anki */
     if (busy)

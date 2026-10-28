@@ -1,5 +1,5 @@
 /* The Rubi app's Look up page itself (settings/lookup_page.c, #313), on the host: its frames drawn through main.c's
- * helpers (VjoLookupUi), recorded here, over a temporary memory card with real files: config.ini (the app's own
+ * helpers (VjoPageUi), recorded here, over a temporary memory card with real files: config.ini (the app's own
  * loader), two small dictionaries (the bundled ones' names: a word, and the word as a character's name), history.csv
  * as the Shell writes it and the Anki queue. The keyboard is the SDK boundary of settings_stubs/search_dialog_stub.c.
  * Checked: Search (the keyboard, the entry and the stacked one, the cursor by word, by the stick and by a tap, the
@@ -186,8 +186,10 @@ static void d_footer(int y, int height, int text_y, int lines, const char *messa
 static void d_header(void) { drawn.headers++; }
 static void d_clip(int x0, int y0, int x1, int y1) { (void)y0; (void)y1; clipping = x1 > x0; }
 static VjoButtons buttons;
-static const VjoLookupUi ui = {d_text, stub_width, d_wrapped, d_rect, d_card, d_badge, d_footer, d_header, d_clip,
-                               WHITE, DIM, ACCENT, OFF, TRACK, SELECTED, &buttons};
+static const VjoPageUi ui = {.text = d_text, .text_width = stub_width, .wrapped = d_wrapped, .rect = d_rect,
+                             .card = d_card, .badge = d_badge, .footer = d_footer, .header = d_header, .clip = d_clip,
+                             .white = WHITE, .dim = DIM, .accent = ACCENT, .off = OFF, .track = TRACK,
+                             .selected = SELECTED, .buttons = &buttons};
 
 static const Text *shown(const char *s)
 {

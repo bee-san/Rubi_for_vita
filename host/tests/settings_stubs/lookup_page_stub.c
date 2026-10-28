@@ -18,7 +18,7 @@ uint32_t vjo_lookup_stub_pressed[16], vjo_lookup_stub_held[16]; /* its first fra
  * kanji of entries and earlier lines: main.c's glyph atlases (glyphs_for, measured_for, font_tick). */
 int vjo_lookup_stub_glyphs, vjo_lookup_stub_measures;
 void vjo_lookup_page_show(VjoArena *scratch) { (void)scratch; vjo_lookup_stub_shows++; }
-int vjo_lookup_page_frame(const VjoLookupUi *ui, const VjoLookupInput *in)
+int vjo_lookup_page_frame(const VjoPageUi *ui, const VjoLookupInput *in)
 {
     static uint32_t next_drawn = 0x4E00, next_measured = 0x3400;
     static char measured[4 * 2048 + 1];

@@ -1725,7 +1725,9 @@ static void d_badge(int x, int y, int w, int h, const char *l, int a)
 static void d_hints(const char *c) { if (drawn_count < 64) snprintf(drawn[drawn_count++], 300, "hints: %s", c); }
 static void d_header(void) {}
 static const VjoButtons glyphs = {SCE_CTRL_CROSS, SCE_CTRL_CIRCLE, "×", "○"};
-static const VjoInstallDraw draw = {d_text, d_measure, d_rect, d_card, d_badge, d_hints, d_header, 1, 2, 3, 4, 5, &glyphs};
+static const VjoPageUi draw = {.text = d_text, .text_width = d_measure, .rect = d_rect, .card = d_card,
+                               .badge = d_badge, .hints = d_hints, .header = d_header, .white = 1, .dim = 2,
+                               .accent = 3, .off = 4, .selected = 5, .buttons = &glyphs};
 static int shown(const char *needle)
 {
     for (int i = 0; i < drawn_count; i++)

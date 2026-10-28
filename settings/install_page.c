@@ -204,10 +204,10 @@ void vjo_install_page_quit(void)
 
 /* ---------------- input and drawing ---------------- */
 
-static int entry_rows(const VjoInstallDraw *ui, int i)
+static int entry_rows(const VjoPageUi *ui, int i)
 {
     if (!laid_out[i]) {
-        vjo_text_layout(lines[i], BOX_W, TEXT_PX, VJO_TEXT_ROWS, ui->measure, &layout[i]);
+        vjo_text_layout(lines[i], BOX_W, TEXT_PX, VJO_TEXT_ROWS, ui->text_width, &layout[i]);
         laid_out[i] = 1;
     }
     return layout[i].rows ? layout[i].rows : 1;
@@ -216,7 +216,7 @@ static int entry_rows(const VjoInstallDraw *ui, int i)
 #define TEXT_TOP (BOX_Y + 28)
 #define TEXT_BOTTOM (BOX_Y + BOX_H - 6)
 /* The box drawn from entry first: the index after the last entry it holds whole. */
-static int shown_from(const VjoInstallDraw *ui, int first)
+static int shown_from(const VjoPageUi *ui, int first)
 {
     int y = TEXT_TOP, i = first;
     for (; i < line_count; i++) {
@@ -229,7 +229,7 @@ static int shown_from(const VjoInstallDraw *ui, int first)
 
 /* L and R: a box up or down (code audit note 2: a long plan is read a box at a time). R starts the box at
  * the first entry not shown whole; L at the earliest one from which the box still reaches the top's. */
-static void page_scroll(const VjoInstallDraw *ui, int direction)
+static void page_scroll(const VjoPageUi *ui, int direction)
 {
     if (direction > 0) {
         int end = shown_from(ui, scroll);
@@ -243,7 +243,7 @@ static void page_scroll(const VjoInstallDraw *ui, int direction)
 
 /* The bar right of the text: where the view is in the whole, by entries (counting rows would lay out every
  * entry of a long plan at once: about four times the glyph measurements of main's first frame, host count). */
-static void draw_scrollbar(const VjoInstallDraw *ui, int end)
+static void draw_scrollbar(const VjoPageUi *ui, int end)
 {
     int total = line_count, seen = end - scroll;
     if (total <= 0 || seen >= total) return;
@@ -253,7 +253,7 @@ static void draw_scrollbar(const VjoInstallDraw *ui, int end)
     ui->rect(BOX_X + BOX_W + 4, y + (h - thumb) * scroll / (total - seen), 6, thumb, ui->dim);
 }
 
-static void draw_lines(const VjoInstallDraw *ui, int error)
+static void draw_lines(const VjoPageUi *ui, int error)
 {
     char row[512];
     int y = TEXT_TOP, end = shown_from(ui, scroll);
@@ -269,7 +269,7 @@ static void draw_lines(const VjoInstallDraw *ui, int error)
     draw_scrollbar(ui, end);
 }
 
-void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touch_x, int touch_y)
+void vjo_install_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int touch_y)
 {
     int stick = stick_move;
     stick_move = 0;
