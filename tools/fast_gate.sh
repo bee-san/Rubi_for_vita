@@ -93,8 +93,9 @@ REV=$(git rev-parse HEAD)
 DIRTY=$(git status --porcelain --untracked-files=normal | head -1)
 # The tree's release version: OUT's builds are reused, and a CMake cache keeps the VJO_VERSION of its first configure
 # (a CACHE STRING), so after a version bump the Vita lanes would build, package and check the old one. Each lane passes
-# this one (tools/tests/test_fast_gate.py).
-VERSION=$(sed -n 's/^set(VJO_VERSION "\([^"]*\)" CACHE STRING .*$/\1/p' vita/CMakeLists.txt)
+# this one, and the result checks what each built against the tree, read again (tools/tests/test_fast_gate.py).
+tree_version() { sed -n 's/^set(VJO_VERSION "\([^"]*\)" CACHE STRING .*$/\1/p' vita/CMakeLists.txt; }
+VERSION=$(tree_version)
 [ -n "$VERSION" ] || die "no set(VJO_VERSION \"...\" CACHE STRING ...) line in vita/CMakeLists.txt"
 
 # ---- the pinned private inputs
@@ -330,6 +331,7 @@ if [ "$E2E" = on ]; then
   vita_ok=1
   for p in "${VITA_PIDS[@]}"; do wait "$p" || vita_ok=0; done
   if [ $vita_ok = 1 ]; then
+    e2e_version=$(q "$(tree_version)")  # the tree read again, not $VERSION (what the Vita lanes were told)
     run_lane e2e host "
 t0=\$(date +%s); step() { echo \"e2e step: \$1 (\$(( \$(date +%s) - t0 ))s)\"; }
 exec 9> $(q "$CACHE/models.lock") && flock 9
@@ -340,6 +342,7 @@ step 'the pinned models'
 normal=\$(ls $(q "$OUT/vita-normal")/Rubi-*.zip | grep -v -- -debug.zip)
 debug=\$(ls $(q "$OUT/vita-debug")/Rubi-*-debug.zip)
 version=\$(basename \"\$normal\" .zip); version=\${version#Rubi-}
+[ \"\$version\" = $e2e_version ] || { echo \"FAIL the zips are Rubi \$version, and vita/CMakeLists.txt says \"$e2e_version; exit 1; }
 rm -rf $(q "$OUT/release")
 # an earlier run's logs (another version's packages, after a bump) are not this run's checks
 rm -f $(q "$OUT/e2e")-*.log
@@ -364,6 +367,21 @@ exit \$rc"
   fi
 fi
 wait
+
+# ---- the Vita lanes built the tree's version: each passing lane's CMakeCache.txt against vita/CMakeLists.txt, read
+# again here, not $VERSION (what the lanes were told). A lane that built another (a reused cache, a flag one lane
+# lost, VERSION changed on the way) fails (audit-rubi-cleanup-8-b F6).
+for v in debug normal; do
+  [ -f "$LOGS/vita-$v.rc" ] || continue
+  read -r rc secs < "$LOGS/vita-$v.rc"
+  [ "$rc" = 0 ] || continue
+  built=$(sed -n 's/^VJO_VERSION:STRING=//p' "$OUT/vita-$v/CMakeCache.txt" 2> /dev/null)
+  if [ "$built" != "$(tree_version)" ]; then
+    echo "error: this build is Rubi ${built:-of no version} (its CMakeCache.txt), vita/CMakeLists.txt says $(tree_version)" \
+      >> "$LOGS/vita-$v.log"
+    echo "1 $secs" > "$LOGS/vita-$v.rc"
+  fi
+done
 
 # ---- the result
 fail=0

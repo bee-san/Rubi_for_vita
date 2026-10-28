@@ -5,6 +5,8 @@ the tools (prepare_ocr.py, package_release.py, package_vpk.py, e2e_package.py) r
 pick changes one line per constant. The pin is vita-vn-ocr #149's pick (v0.3.10-textspot8.1)."""
 import hashlib
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -158,6 +160,107 @@ class Packaging(unittest.TestCase):
         # the release zip's copy of prepare_ocr.py reads the header beside it (vita/CMakeLists.txt)
         self.assertIn("${ROOT}/include/vjo_vocr_sizes.h ${STAGE}/tools/", (ROOT / "vita/CMakeLists.txt").read_text())
         self.assertEqual(prepare_ocr.VOCR_SPOT_HEADERS[1].name, "vjo_vocr_sizes.h")
+
+
+class ReusedBuildDirectory(unittest.TestCase):
+    """cmake/VocrOCR.cmake's VJO_VOCR_SPOT_NO_MS in a reused build directory (the fast gate's, a developer's): its
+    default comes from the pinned form, and a cache keeps an option's first value, so after the form went from "ms"
+    back to "trunk" the directory built the multi-scale code CI's new directories leave out (audit-rubi-cleanup-8-b
+    F1). The file's own block, run by CMake on a copy of include/vjo_vocr_sizes.h whose form each step sets."""
+
+    def setUp(self):
+        self.cmake = shutil.which("cmake")
+        if self.cmake is None:
+            self.skipTest("no cmake on PATH")
+        text = (ROOT / "cmake/VocrOCR.cmake").read_text(encoding="utf-8")
+        block = re.search(r'^file\(STRINGS "\$\{VJO_ROOT\}/include/vjo_vocr_sizes\.h" _spot_form .*?'
+                          r'^if\(VJO_VOCR_SPOT_NO_MS AND _spot_form STREQUAL "ms"\)\n.*?^endif\(\)$', text, re.M | re.S)
+        self.assertIsNotNone(block, "cmake/VocrOCR.cmake's VJO_VOCR_SPOT_FORM block")
+        self.tmp = Path(tempfile.mkdtemp(prefix="vjo-spotform-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        (self.tmp / "root/include").mkdir(parents=True)
+        (self.tmp / "src").mkdir()
+        (self.tmp / "src/CMakeLists.txt").write_text(
+            f'cmake_minimum_required(VERSION 3.16)\nproject(spot_form NONE)\nset(VJO_ROOT "{self.tmp / "root"}")\n'
+            f'{block.group(0)}\n', encoding="utf-8")
+        self.n = 0
+
+    def form(self, form):
+        text, n = re.subn(r'^#define VJO_VOCR_SPOT_FORM "[a-z]+"$', f'#define VJO_VOCR_SPOT_FORM "{form}"',
+                          SIZES.read_text(encoding="utf-8"), flags=re.M)
+        self.assertEqual(n, 1)
+        (self.tmp / "root/include/vjo_vocr_sizes.h").write_text(text, encoding="utf-8")
+
+    def directory(self):
+        self.n += 1
+        return self.tmp / f"build{self.n}"
+
+    def configure(self, build, *args, ok=True):
+        """The cache's VJO_VOCR_SPOT_NO_MS after a configure of BUILD (ARGS: -D...), and its output."""
+        run = subprocess.run([self.cmake, "-S", str(self.tmp / "src"), "-B", str(build), *args], capture_output=True,
+                             text=True, timeout=120)
+        self.assertEqual(run.returncode == 0, ok, run.stdout + run.stderr)
+        cache = (build / "CMakeCache.txt").read_text()
+        return re.search(r"^VJO_VOCR_SPOT_NO_MS:BOOL=(\w+)$", cache, re.M).group(1), run.stdout + run.stderr
+
+    def test_the_option_follows_the_pinned_form(self):
+        self.form("trunk")
+        self.assertEqual(self.configure(self.directory())[0], "ON")  # a new directory, as CI's
+        self.form("ms")
+        self.assertEqual(self.configure(self.directory())[0], "OFF")
+        reused = self.directory()
+        self.assertEqual(self.configure(reused)[0], "OFF")  # ms first
+        self.form("trunk")
+        value, said = self.configure(reused)  # the form back to trunk: as a new directory, ON (it stayed OFF)
+        self.assertEqual(value, "ON")
+        self.assertIn('VJO_VOCR_SPOT_NO_MS: ON, as the pinned spotter\'s form is now "trunk"', said)
+        self.assertEqual(self.configure(reused)[0], "ON")  # and stays
+        self.form("ms")
+        self.assertEqual(self.configure(reused)[0], "OFF")  # to ms again: OFF (it failed the configure)
+
+    def test_a_value_someone_gave_stays(self):
+        # given on the first configure, other than the form's default
+        self.form("trunk")
+        given = self.directory()
+        self.assertEqual(self.configure(given, "-DVJO_VOCR_SPOT_NO_MS=OFF")[0], "OFF")
+        self.assertEqual(self.configure(given)[0], "OFF")
+        self.form("ms")
+        self.assertEqual(self.configure(given)[0], "OFF")
+        self.form("trunk")
+        self.assertEqual(self.configure(given)[0], "OFF")
+        # given later, on a directory that had the default
+        changed = self.directory()
+        self.assertEqual(self.configure(changed)[0], "ON")
+        self.assertEqual(self.configure(changed, "-DVJO_VOCR_SPOT_NO_MS=OFF")[0], "OFF")
+        self.form("ms")
+        self.configure(changed)
+        self.form("trunk")
+        self.assertEqual(self.configure(changed)[0], "OFF")
+        # ON given for a multi-scale pin still fails the configure, loudly
+        self.form("ms")
+        value, said = self.configure(self.directory(), "-DVJO_VOCR_SPOT_NO_MS=ON", ok=False)
+        self.assertIn("VJO_VOCR_SPOT_NO_MS=ON, but the pinned spotter is a multi-scale network", said)
+
+    def test_a_directory_configured_before_this_rule(self):
+        """A cache from before the rule (no _VJO_VOCR_SPOT_NO_MS_AUTO): the default it holds follows the form from
+        now on, a value other than the default is taken as someone's and stays."""
+        self.form("trunk")
+        # (given, after the form went to ms, after it came back to trunk)
+        for value, at_ms, back in (("ON", "OFF", "ON"), ("OFF", "OFF", "OFF")):
+            build = self.directory()
+            self.configure(build, f"-DVJO_VOCR_SPOT_NO_MS={value}")
+            cache = build / "CMakeCache.txt"
+            # the entry and its help lines (//...) before it
+            text, n = re.subn(r"^(?://[^\n]*\n)*_VJO_VOCR_SPOT_NO_MS_AUTO:INTERNAL=\w+\n", "", cache.read_text(),
+                              flags=re.M)
+            self.assertEqual(n, 1)
+            cache.write_text(text)
+            self.form("trunk")
+            self.assertEqual(self.configure(build)[0], value)
+            self.form("ms")
+            self.assertEqual(self.configure(build)[0], at_ms)
+            self.form("trunk")
+            self.assertEqual(self.configure(build)[0], back)
 
 
 if __name__ == "__main__":

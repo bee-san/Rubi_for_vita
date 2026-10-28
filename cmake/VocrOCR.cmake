@@ -194,6 +194,32 @@ else()
 endif()
 option(VJO_VOCR_SPOT_NO_MS "Build the text spotter without its multi-scale networks (-DVOCR_TEXTSPOT6_NO_MS): a trunk blob only"
   ${_spot_no_ms_default})
+# A reused build directory (the fast gate's, a developer's) keeps an option's first value: after the pin's form went from
+# "ms" back to "trunk" it would build the multi-scale code that CI's new build directories leave out, silently
+# (audit-rubi-cleanup-8-b F1). So while the option holds the default this file gave it (kept beside it,
+# _VJO_VOCR_SPOT_NO_MS_AUTO), it follows the form. A value someone gave that is not the form's default, on the first
+# configure or later (-D, the GUI), is theirs and stays; a value given equal to the default is taken as the default.
+if(VJO_VOCR_SPOT_NO_MS)
+  set(_spot_no_ms ON)
+else()
+  set(_spot_no_ms OFF)
+endif()
+if(NOT DEFINED CACHE{_VJO_VOCR_SPOT_NO_MS_AUTO})
+  # this directory's first configure with this rule (a new one, or one configured before it)
+  if(_spot_no_ms STREQUAL _spot_no_ms_default)
+    set(_VJO_VOCR_SPOT_NO_MS_AUTO ${_spot_no_ms} CACHE INTERNAL "the VJO_VOCR_SPOT_NO_MS this file gave, or USER")
+  else()
+    set(_VJO_VOCR_SPOT_NO_MS_AUTO USER CACHE INTERNAL "the VJO_VOCR_SPOT_NO_MS this file gave, or USER")
+  endif()
+elseif(NOT _spot_no_ms STREQUAL _VJO_VOCR_SPOT_NO_MS_AUTO)
+  # changed since this file set it, or someone's already (USER, which no value equals): someone's from now on
+  set(_VJO_VOCR_SPOT_NO_MS_AUTO USER CACHE INTERNAL "the VJO_VOCR_SPOT_NO_MS this file gave, or USER")
+elseif(NOT _spot_no_ms STREQUAL _spot_no_ms_default)
+  message(STATUS "VJO_VOCR_SPOT_NO_MS: ${_spot_no_ms_default}, as the pinned spotter's form is now \"${_spot_form}\"")
+  set(VJO_VOCR_SPOT_NO_MS ${_spot_no_ms_default} CACHE BOOL
+    "Build the text spotter without its multi-scale networks (-DVOCR_TEXTSPOT6_NO_MS): a trunk blob only" FORCE)
+  set(_VJO_VOCR_SPOT_NO_MS_AUTO ${_spot_no_ms_default} CACHE INTERNAL "the VJO_VOCR_SPOT_NO_MS this file gave, or USER")
+endif()
 if(VJO_VOCR_SPOT_NO_MS AND _spot_form STREQUAL "ms")
   message(FATAL_ERROR "VJO_VOCR_SPOT_NO_MS=ON, but the pinned spotter is a multi-scale network (VJO_VOCR_SPOT_FORM \"ms\"): "
     "every job would refuse it and read with GRAD")
