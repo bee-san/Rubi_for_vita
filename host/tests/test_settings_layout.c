@@ -35,15 +35,14 @@
 #include "settings_png_fixture.h"
 #include "settings_wrap_reference.h"
 
-/* ---- the file calls, over real files (vjo_icon_read) ---- */
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+/* ---- the file calls, over real files (vjo_icon_read; fakes/sceio_posix.h) ---- */
+#define SCEIO_OWN SCEIO_READ
+#include "fakes/sceio_posix.h"
 static int short_reads; /* sceIoRead returns at most this many bytes when set */
-int sceIoOpen(const char *p, int flags, unsigned mode) { return native(open(p, flags, mode)); }
-int sceIoClose(int fd) { return native(close(fd)); }
 int sceIoRead(int fd, void *p, size_t len)
 {
     if (short_reads && len > (size_t)short_reads) len = (size_t)short_reads;
-    return native((int)read(fd, p, len));
+    return sceio_read(fd, p, len);
 }
 
 /* ---- measure rules ---- */

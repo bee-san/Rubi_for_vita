@@ -21,37 +21,34 @@ static int write_fd = -1, handles;
 static size_t written;
 static int whole_writes; /* #358: a write takes all its bytes, as the Shell's one-call vjo_file_write needs */
 static int expected_results = 2; /* the fixture's local_dictionary_results */
-static int native(int n) { return n < 0 ? (int)(0x80010000u | errno) : n; }
+/* the memory card's files (fakes/sceio_posix.h), with short reads and writes and failures */
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_READ | SCEIO_WRITE | SCEIO_RENAME | SCEIO_SYNC)
+#include "fakes/sceio_posix.h"
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     if (read_fail && flags == SCE_O_RDONLY) return (int)0x80010013u;
-    int fd = open(p, flags, mode);
+    int fd = sceio_open(p, flags, mode);
     if (fd >= 0) { handles++; if (flags & SCE_O_WRONLY) write_fd = fd; }
-    return native(fd);
+    return fd;
 }
 int sceIoClose(int fd)
 {
-    int n = close(fd); if (!n) handles--;
+    int n = sceio_close(fd); if (!n) handles--;
     int failed = close_fail && fd == write_fd;
     if (fd == write_fd) write_fd = -1;
-    return failed ? -1 : native(n);
+    return failed ? -1 : n;
 }
-int sceIoRead(int fd, void *p, size_t len) { return native(read(fd, p, len > 13 ? 13 : len)); }
+int sceIoRead(int fd, void *p, size_t len) { return sceio_read(fd, p, len > 13 ? 13 : len); }
 int sceIoWrite(int fd, const void *p, size_t len)
 {
     if (write_fail && written >= 21) return -1;
-    int n = (int)write(fd, p, len > 7 && !whole_writes ? 7 : len);
+    int n = sceio_write(fd, p, len > 7 && !whole_writes ? 7 : len);
     if (n > 0) written += n;
-    return native(n);
+    return n;
 }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-int sceIoGetstat(const char *p, SceIoStat *out)
-{ struct stat st; int rc = stat(p, &st); if (!rc) out->st_mode = st.st_mode; return native(rc); }
 int sceIoRename(const char *a, const char *b)
 { ++renames; if (renames == rename_fail || (rename_fail_after && renames >= rename_fail_after)) return -1;
-  return native(rename(a, b)); }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
+  return sceio_rename(a, b); }
 int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return ++syncs == sync_fail ? -1 : 0; }
 
 static const char original[] =

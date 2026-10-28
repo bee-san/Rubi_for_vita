@@ -36,13 +36,14 @@
 #include "../../settings/preferences.h"
 #include "../../core/utf.h"
 
-/* ---------------- the memory card ---------------- */
+/* ---------------- the memory card (fakes/sceio_posix.h) ---------------- */
 
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE)
+#include "fakes/sceio_posix.h"
 static int open_files;
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
-    int fd = native(open(p, flags, mode));
+    int fd = sceio_open(p, flags, mode);
     if (fd >= 0)
         open_files++;
     return fd;
@@ -50,32 +51,8 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
 int sceIoClose(int fd)
 {
     open_files--;
-    return native(close(fd));
+    return sceio_close(fd);
 }
-int sceIoRead(int fd, void *p, size_t n) { return native((int)read(fd, p, n)); }
-int sceIoWrite(int fd, const void *p, size_t n) { return native((int)write(fd, p, n)); }
-int sceIoPread(int fd, void *p, size_t n, SceOff off) { return native((int)pread(fd, p, n, off)); }
-int sceIoPwrite(int fd, const void *p, size_t n, SceOff off) { return native((int)pwrite(fd, p, n, off)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-int sceIoGetstat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    if (stat(p, &s))
-        return native(-1);
-    memset(st, 0, sizeof(*st));
-    st->st_mode = s.st_mode;
-    st->st_size = s.st_size;
-    return 0;
-}
-int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
-int sceIoSyncByFd(int fd, int flag) { (void)flag; return native(fsync(fd)); }
-int sceIoDopen(const char *p) { (void)p; return -1; }
-int sceIoDread(int fd, SceIoDirent *e) { (void)fd; (void)e; return 0; }
-int sceIoDclose(int fd) { (void)fd; return 0; }
-int sceIoChstat(const char *file, SceIoStat *st, int bits) { (void)file; (void)st; (void)bits; return -1; }
 
 /* The console's clock: 2026-10-27 15:04:05 UTC, nine hours ahead locally (Japan). */
 #define NOW_UNIX 1793113445ull

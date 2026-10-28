@@ -53,9 +53,10 @@
 
 static const VjoInstallBuild build = {VJO_API_VERSION, "0.8.0", VJO_VARIANT, VJO_TAI_WORKER_KERNEL};
 
-/* ---------------- the card ---------------- */
+/* ---------------- the card (fakes/sceio_posix.h: the SDK's file calls over its files) ---------------- */
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_WRITE | SCEIO_GETSTAT | SCEIO_RENAME | SCEIO_REMOVE | SCEIO_SYNCBYFD)
+#include "fakes/sceio_posix.h"
 static char card[PATH_MAX];
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
 
 /* faults: the nth matching call fails (0: none); the counters count matching calls */
 static struct {
@@ -105,11 +106,8 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
     if (refused_payload(p)) return (int)0x80010016u;
     if (writing && app_readonly && in_app(p)) return (int)0x80010013u;
     if (writing && matches(p) && hit(fault.open_write)) return (int)(0x80010000u | ENOSPC);
-    return native(open(p, flags, mode));
+    return sceio_open(p, flags, mode);
 }
-int sceIoClose(int fd) { return native(close(fd)); }
-int sceIoRead(int fd, void *b, size_t n) { return native((int)read(fd, b, n)); }
-static char fd_path[1024][64];
 int sceIoWrite(int fd, const void *b, size_t n)
 {
     char link[64], path[PATH_MAX]; /* the card is in TMPDIR: its files' paths are as long as it is */
@@ -119,20 +117,12 @@ int sceIoWrite(int fd, const void *b, size_t n)
         path[m] = '\0';
         if (fault.pattern && strstr(path, fault.pattern) && hit(fault.write)) return (int)(0x80010000u | ENOSPC);
     }
-    (void)fd_path;
-    return native((int)write(fd, b, n));
+    return sceio_write(fd, b, n);
 }
-int sceIoPread(int fd, void *d, size_t n, SceOff off) { return native((int)pread(fd, d, n, off)); }
-int sceIoPwrite(int fd, const void *d, size_t n, SceOff off) { return native((int)pwrite(fd, d, n, off)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
 int sceIoGetstat(const char *p, SceIoStat *out)
 {
-    struct stat st;
     if (refused_payload(p)) return (int)0x80010016u;
-    int rc = stat(p, &st);
-    if (!rc) { out->st_mode = st.st_mode; out->st_size = st.st_size; }
-    return native(rc);
+    return sceio_getstat(p, out);
 }
 int sceIoRename(const char *a, const char *b)
 {
@@ -140,47 +130,15 @@ int sceIoRename(const char *a, const char *b)
     if (app_readonly && (in_app(a) || in_app(b))) return (int)0x80010013u;
     if ((matches(a) || matches(b)) && hit(fault.rename)) return (int)(0x80010000u | EIO);
     if (!stat(b, &st)) return (int)0x80010011u; /* the Vita's rename refuses an existing destination */
-    return native(rename(a, b));
+    return sceio_rename(a, b);
 }
 int sceIoRemove(const char *p)
 {
     if (app_readonly && in_app(p)) return (int)0x80010013u;
     if (matches(p) && hit(fault.remove)) return (int)(0x80010000u | EIO);
-    return native(unlink(p));
+    return sceio_remove(p);
 }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
 int sceIoSyncByFd(int fd, int flag) { (void)fd; (void)flag; return 0; }
-int sceIoChstat(const char *p, SceIoStat *st, int bits) { (void)bits; return native(truncate(p, st->st_size)); }
-static DIR *dirs[8];
-static char dir_path[8][256];
-int sceIoDopen(const char *p)
-{
-    for (int i = 0; i < 8; i++)
-        if (!dirs[i]) {
-            if (!(dirs[i] = opendir(p))) return native(-1);
-            snprintf(dir_path[i], sizeof(dir_path[i]), "%s", p);
-            return 100 + i;
-        }
-    return (int)0x80010018u;
-}
-int sceIoDread(int d, SceIoDirent *e)
-{
-    DIR *dir = d >= 100 && d < 108 ? dirs[d - 100] : NULL;
-    struct dirent *de;
-    if (!dir) return (int)0x80010009u;
-    while ((de = readdir(dir)) && de->d_name[0] == '.') {}
-    if (!de) return 0;
-    memset(e, 0, sizeof(*e));
-    snprintf(e->d_name, sizeof(e->d_name), "%s", de->d_name);
-    return 1;
-}
-int sceIoDclose(int d)
-{
-    if (d < 100 || d >= 108 || !dirs[d - 100]) return (int)0x80010009u;
-    closedir(dirs[d - 100]);
-    dirs[d - 100] = NULL;
-    return 0;
-}
 int sceIoDevctl(const char *dev, unsigned int cmd, void *in, int inlen, void *out, int outlen)
 {
     (void)in; (void)inlen;

@@ -50,9 +50,10 @@
 #define SELECTED 6u
 enum { ROW_TODAY, ROW_GOAL, ROW_DAYS, ROW_YEAR, ROW_ALL, ROW_GAMES };
 
-/* ---------------- the memory card: real files under the suite's directory ---------------- */
+/* ---------------- the memory card: real files under the suite's directory (fakes/sceio_posix.h) ---------------- */
 
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_PREAD)
+#include "fakes/sceio_posix.h"
 static const char *fail_open; /* an open of a path containing this fails (EIO) */
 static int opens_of_cards, history_reads;
 int sceIoOpen(const char *p, int flags, unsigned mode)
@@ -61,62 +62,12 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
         return (int)0x80010005u;
     if (strstr(p, "anki_queue/") && strstr(p, ".json"))
         opens_of_cards++;
-    return native(open(p, flags, mode));
+    return sceio_open(p, flags, mode);
 }
-int sceIoClose(int fd) { return native(close(fd)); }
-int sceIoRead(int fd, void *p, size_t n) { return native((int)read(fd, p, n)); }
-int sceIoWrite(int fd, const void *p, size_t n) { return native((int)write(fd, p, n)); }
 int sceIoPread(int fd, void *p, size_t n, SceOff off)
 {
     history_reads++;
-    return native((int)pread(fd, p, n, off));
-}
-int sceIoPwrite(int fd, const void *p, size_t n, SceOff off) { return native((int)pwrite(fd, p, n, off)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-int sceIoGetstat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    if (stat(p, &s))
-        return native(-1);
-    memset(st, 0, sizeof(*st));
-    st->st_mode = s.st_mode;
-    st->st_size = s.st_size;
-    return 0;
-}
-int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
-int sceIoSyncByFd(int fd, int flag) { (void)flag; return native(fsync(fd)); }
-static DIR *dirs[4];
-static char dir_paths[4][256];
-int sceIoDopen(const char *p)
-{
-    for (int i = 0; i < 4; i++)
-        if (!dirs[i]) {
-            if (!(dirs[i] = opendir(p)))
-                return native(-1);
-            snprintf(dir_paths[i], sizeof(dir_paths[i]), "%s", p);
-            return 100 + i;
-        }
-    return -1;
-}
-int sceIoDread(int fd, SceIoDirent *ent)
-{
-    struct dirent *e = readdir(dirs[fd - 100]);
-    char path[600];
-    if (!e)
-        return 0;
-    snprintf(ent->d_name, sizeof(ent->d_name), "%s", e->d_name);
-    snprintf(path, sizeof(path), "%s/%s", dir_paths[fd - 100], e->d_name);
-    TEST_ASSERT(sceIoGetstat(path, &ent->d_stat) == 0);
-    return 1;
-}
-int sceIoDclose(int fd)
-{
-    int rc = closedir(dirs[fd - 100]);
-    dirs[fd - 100] = NULL;
-    return rc;
+    return sceio_pread(fd, p, n, off);
 }
 
 /* ---------------- the clock: now, and the Vita's time zone ---------------- */
