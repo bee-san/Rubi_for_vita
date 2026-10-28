@@ -880,7 +880,149 @@ static void trusted_source_fails_its_checks(void)
     TEST_CHECK(vjo_hook_select_trusted(&st, VJO_HOOK_PICK_AUTO, both, 2, &flags) == 2 && (flags & VJO_HOOK_R_SITE));
 }
 
+/* #413's audit F2 (PROBE4): since #413 a press reads at once, so OCR may read a line still typing out, the beginning
+ * of the locked stream's whole line. A scheduled check against that is no evidence: no miss, the check stays due,
+ * the stream keeps its trust and stays locked through a second such read; the whole line then agrees as before, the
+ * check counts. utf8_prefix: the first k characters of s (UTF-8). */
+static const char *utf8_prefix(char *out, size_t cap, const char *s, unsigned k)
+{
+    size_t i = 0;
+    while (s[i] && k) {
+        i++;
+        while (((unsigned char)s[i] & 0xC0) == 0x80) i++;
+        k--;
+    }
+    snprintf(out, cap, "%.*s", (int)i, s);
+    return out;
+}
+
+static void a_line_typing_out_is_no_disagreement(void)
+{
+    char part[160];
+    VjoHookCand c;
+    unsigned score;
+    uint32_t flags;
+    /* the comparison of the line so far against the whole line: under the agreement until most of it is typed */
+    for (unsigned k = 4; k <= 20; k += 2)
+        TEST_CHECK_(sim(utf8_prefix(part, sizeof(part), LINE1, k), LINE1) < VJO_HOOK_AGREE || k >= 16, "%u", k);
+    /* a source checked at the trusted interval and trusted (with hook_trust = off for the job: its check) */
+    VjoHookSelect st = learn();
+    st.interval = 32;
+    st.strong = 1;
+    st.unchecked = st.interval - 1u;
+    reading(&c, 3);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0); /* the check is due */
+    utf8_prefix(part, sizeof(part), c.text, 7); /* 会話の新しいペ of 会話の新しいページ番号3です */
+    TEST_CHECK(sim(part, c.text) < VJO_HOOK_AGREE);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, part, strlen(part), &c, 1, &score, &flags) == 0);
+    TEST_CHECK_(!st.misses && !st.confirm && st.strong && st.interval == 32 && st.locked == 9 && !flags,
+                "misses %u, confirm %u, strong %u, interval %u, flags 0x%x", st.misses, st.confirm, st.strong,
+                st.interval, flags);
+    TEST_CHECK(st.unchecked + 1u >= st.interval); /* still due: the next read is checked */
+    /* the next line read half typed too: still no disagreement, the source stays locked */
+    reading(&c, 4);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    utf8_prefix(part, sizeof(part), c.text, 9);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, part, strlen(part), &c, 1, &score, &flags) == 0);
+    TEST_CHECK(!st.misses && st.strong && st.interval == 32 && st.locked == 9 && !(flags & VJO_HOOK_R_UNLOCK));
+    /* the same line read whole: it agrees, and the check counts */
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(score == 1000 && !st.misses && st.strong && st.interval == 32 && st.unchecked == 0);
+    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED));
+    /* at the first check (interval 8, PROBE4's own sequence): a half line, then the whole one, doubles it */
+    st = learn();
+    st.unchecked = st.interval - 1u;
+    reading(&c, 3);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    utf8_prefix(part, sizeof(part), c.text, 7);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, part, strlen(part), &c, 1, &score, &flags) == 0);
+    TEST_CHECK(!st.misses && !st.confirm && st.interval == 8);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(!st.misses && st.interval == 16 && st.unchecked == 0);
+    /* a name read with the line so far ("健太" and its first characters) is the line typing out too */
+    st = learn();
+    st.unchecked = st.interval - 1u;
+    c = cand(9, 50, 0, "そろそろ帰らないと母さんに怒られるよ");
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "健太\nそろそろ帰", strlen("健太\nそろそろ帰"), &c, 1,
+                                     &score, &flags) == 0);
+    TEST_CHECK(!st.misses && st.interval == 8);
+    /* a pending disagreement stays pending (neither added nor cleared), and so does a confirmation */
+    st = learn();
+    st.misses = 1;
+    st.confirm = 1;
+    reading(&c, 5);
+    utf8_prefix(part, sizeof(part), c.text, 8);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, part, strlen(part), &c, 1, &score, &flags) == 0);
+    TEST_CHECK(st.misses == 1 && st.confirm && st.interval == 8 && st.locked == 9);
+}
+
+/* #413's audit F2: the rule above must not keep a wrong locked stream. Every text that is not the stream's line's
+ * beginning is still a disagreement: the line before (the backlog) or after (prepared ahead), a page that holds the
+ * line and more, the line with a long name before it, a page whose last line the stream holds, a stale stream's line
+ * against a new screen, a line of which OCR read a mere fragment. Two in a row unlock it, as before. */
+static void a_wrong_stream_still_disagrees(void)
+{
+    char page[256];
+    static const struct { const char *ocr, *hook; } cases[] = {
+        {LINE2, LINE1}, {LINE2, LINE3}, {LINE3, LINE4}, /* the backlog, the next line */
+        {"佐々木健太郎\nもう帰ろう", "もう帰ろうかな、今日はもう遅いし"}, /* a long name, the line's start: 454 */
+        {"全然関係のない画面の文字がここに表示されている", LINE1},
+    };
+    VjoHookCand c;
+    unsigned score;
+    uint32_t flags;
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        VjoHookSelect st = learn();
+        st.unchecked = st.interval - 1u;
+        c = cand(9, 100 + i, 0, cases[i].hook);
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, cases[i].ocr, strlen(cases[i].ocr), &c, 1, &score,
+                                         &flags) == 0);
+        TEST_CHECK_(st.misses == 1 && st.confirm, "case %u: misses %u", i, st.misses);
+    }
+    /* the page's last line (the stream holds the page), and the page (the stream holds its first line) */
+    snprintf(page, sizeof(page), "%s\n%s", LINE1, LINE2);
+    {
+        VjoHookSelect st = learn();
+        st.unchecked = st.interval - 1u;
+        c = cand(9, 200, 0, page);
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE2, strlen(LINE2), &c, 1, &score, &flags) == 0);
+        TEST_CHECK(st.misses == 1);
+    }
+    {
+        VjoHookSelect st = learn();
+        st.unchecked = st.interval - 1u;
+        c = cand(9, 201, 0, LINE1);
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, page, strlen(page), &c, 1, &score, &flags) == 0);
+        TEST_CHECK(st.misses == 1);
+    }
+    /* a stale stream: the screen moves on twice, the stream's line stays; the second unlocks it */
+    {
+        VjoHookSelect st = learn();
+        st.unchecked = st.interval - 1u;
+        c = cand(9, 300, 0, LINE1);
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE2, strlen(LINE2), &c, 1, &score, &flags) == 0);
+        TEST_CHECK(st.misses == 1);
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE3, strlen(LINE3), &c, 1, &score, &flags) == 0);
+        TEST_CHECK(flags == VJO_HOOK_R_UNLOCK && !st.interval && !st.locked);
+    }
+    /* a fragment of 3 characters is no evidence (VJO_HOOK_MIN_CHARS), as before; one of the line's middle is no
+     * beginning: a disagreement */
+    {
+        VjoHookSelect st = learn();
+        st.unchecked = st.interval - 1u;
+        c = cand(9, 400, 0, LINE1);
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "「明日の", strlen("「明日の"), &c, 1, &score,
+                                         &flags) == 0);
+        TEST_CHECK(!st.misses);
+        TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "駅前の公園でもう", strlen("駅前の公園でもう"), &c, 1,
+                                         &score, &flags) == 0);
+        TEST_CHECK(st.misses == 1);
+    }
+}
+
 TEST_LIST = {
+    {"a_line_typing_out_is_no_disagreement", a_line_typing_out_is_no_disagreement},
+    {"a_wrong_stream_still_disagrees", a_wrong_stream_still_disagrees},
     {"trusted_sites_answer_without_ocr", trusted_sites_answer_without_ocr},
     {"trusted_learned_source_after_four_agreements", trusted_learned_source_after_four_agreements},
     {"trusted_source_fails_its_checks", trusted_source_fails_its_checks},

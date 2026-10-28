@@ -115,8 +115,20 @@ the next read of the same text is then recorded again. Fingerprints reset
 on Shell restart. This is deliberately lightweight: an immediately repeated
 identical sentence with no observed change may be collapsed, and a long pause
 while text types out can still produce a partial sentence followed by its full
-version. The existing stable-text wait mitigates this; history adds no further
+version. The existing stable-text wait mitigates this for background reads; history adds no further
 text buffering or heuristics.
+
+**A press's partial line** (since #413). With **Automatically**, a press whose read starts while the line still types
+out reads it at once, without the stable-text wait ([text stability](text-stability.md)), and records the line as far
+as it had typed; the settled screen's read after it (Automatically's job after the overlay closes, or the open
+overlay's refresh, which waits 1.5 s after a lookup) records the whole line. That comes later than the 750 ms in which
+a grown line replaces its record (below), so **the file keeps both**: the line history (▲) shows the partial line as an
+earlier line, the reading total, each game's and `tools/reading_stats.py` count its characters twice, and
+GameSentenceMiner imports both lines [host: #413's audit's probe P5, `host/tests/test_shell_worker.c`'s writer spy;
+how often on a console is not measured]. Before #413 this needed a line still typing more than 1 s after the press.
+Only when I press L + R records nothing, so it has neither. A record of a read without the wait that a later
+extension replaces within a longer window would fix it; it does not fit the Shell's pages
+([memory-ledger.md](memory-ledger.md): measured in #413's audit's follow-up, its PR).
 
 Short writes are retried. Write/flush/close errors are best effort and do not
 change OCR or its UI; a failed append attempts to restore the previous file
@@ -342,7 +354,7 @@ to the totals.
 The totals count what was recorded: a line that types out slowly can be
 recorded twice, once part-way and once whole (see the duplicate text above), and
 then counts twice, so the totals and the characters per hour can come out a
-little high.
+little high; so can a line a press read while it still typed (since #413, above).
 
 Other trackers time reading differently, so the same reading gives them
 somewhat different hours. GameSentenceMiner credits each line with the time to

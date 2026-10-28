@@ -150,6 +150,18 @@ static unsigned score_of(const uint32_t *o, unsigned m, unsigned mf, const char 
     return d >= n ? 0u : (n - d) * 1000u / top;
 }
 
+/* #413's audit F2: OCR's text o (m characters kept, mf in all) against the beginning of h, h's first m characters, as
+ * score_of scores h (n <= m <= mf): a line still typing out (a press reads at once since #413) shows its beginning.
+ * For texts score_of compares (both of VJO_HOOK_MIN_CHARS or more); with h no longer than o it is score_of's. */
+static unsigned prefix_score(const uint32_t *o, unsigned m, unsigned mf, const char *h, size_t hn)
+{
+    uint32_t hc[CMP_MAX];
+    unsigned nf, n = cmp_form(h, hn, hc, &nf), d;
+    if (n > m) n = m;
+    d = within(o, m, hc, n);
+    return d >= n ? 0u : (n - d) * 1000u / mf;
+}
+
 unsigned vjo_hook_similarity(const char *o, size_t on, const char *h, size_t hn)
 {
     uint32_t oc[CMP_MAX];
@@ -417,6 +429,11 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
     if (st->interval && hh) {
         int fresh = hh != st->compare_hook_hash ||
                     (st->compare_ocr_hash && oh != st->compare_ocr_hash);
+        /* #413's audit F2: OCR's text agrees with the beginning of the locked stream's line, the line typing out (a
+         * press reads at once since #413), not a disagreement. No evidence either way: nothing changes, not the pair
+         * compared last (a disagreement read again stays a duplicate), a pending check or disagreement, or trust. */
+        if (fresh && lscore < VJO_HOOK_AGREE && prefix_score(oc, m, mf, locked->text, locked->n) >= VJO_HOOK_AGREE)
+            fresh = 0;
         if (fresh) {
             st->compare_hook_hash = hh;
             st->compare_ocr_hash = oh;
