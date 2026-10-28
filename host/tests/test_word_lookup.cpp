@@ -123,7 +123,6 @@ void load(void)
 void setup(VjoConfig *cfg, VjoPlatform *p, PosixPlatform *pp)
 {
     vjo_config_defaults(cfg); /* the release defaults: word highlight, Japanese characters only OFF, one result */
-    cfg->dictionary = VJO_DICT_LOCAL;
     snprintf(cfg->local_dictionary_dir, sizeof(cfg->local_dictionary_dir), "%s", dict_dir);
     snprintf(cfg->local_dictionaries, sizeof(cfg->local_dictionaries), "plaintext.vjdict");
     *pp = PosixPlatform();

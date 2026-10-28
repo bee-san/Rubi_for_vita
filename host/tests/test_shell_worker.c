@@ -1020,7 +1020,6 @@ static void reset(void)
     memset(&plat, 0, sizeof(plat));
     dict_close_pending = 0;
     vjo_config_defaults(&loaded);
-    loaded.dictionary = VJO_DICT_LOCAL;
     cfg = loaded;
     configure_log_file = cfg.log_file; /* the worker's start configured the logger, before any batch */
     memcpy(title_id, "PCSG00415", 10);
@@ -1159,7 +1158,7 @@ static void test_config_cache(void)
         VjoConfig c;
         vjo_config_defaults(&c);
         vjo_config_parse(&c, old, strlen(old));
-        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 0);
+        TEST_CHECK(c.n_warnings == 0);
         cache_ok = 1;
         loaded = c;
         apply_config();
@@ -1220,7 +1219,7 @@ static void test_removed_relay_opens_as_local(void)
         snprintf(ini, sizeof(ini), "dictionary = hachidori\nhachidori_host = %s\n", hosts[i]);
         vjo_config_defaults(&loaded);
         vjo_config_parse(&loaded, ini, strlen(ini));
-        TEST_CHECK(loaded.dictionary == VJO_DICT_LOCAL && loaded.n_warnings == 0); /* silent (#418) */
+        TEST_CHECK(loaded.n_warnings == 0); /* silent (#418) */
         cfg = loaded;
         open_overlay();
         TEST_CHECK_(g_view.open && !g_view.status_is_error && !strstr(g_view.status, "achidori"),
@@ -1260,7 +1259,7 @@ static void test_ocr_config_migration(void)
     vjo_config_parse(&c, old, sizeof(old)-1);
     /* API 31: hooks is a text source again, without a warning; the removed engine falls back to VOCR, without one
      * too (#418). */
-    TEST_CHECK(c.text_source == VJO_SOURCE_HOOKS && c.dictionary == VJO_DICT_LOCAL);
+    TEST_CHECK(c.text_source == VJO_SOURCE_HOOKS);
     TEST_CHECK(c.n_warnings == 0);
     /* the three values in any case, the kernel's numbers; anything else is automatic, with a warning */
     static const struct { const char *text; int source, warnings; } cases[] = {
@@ -1725,7 +1724,7 @@ static void test_removed_engine_choice_runs_the_local_engine(void)
         vjo_config_parse(&loaded, ini[i], strlen(ini[i]));
         apply_config();
         TEST_CHECK(cfg.n_warnings == 0);
-        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && background_wanted());
+        TEST_CHECK(background_wanted());
         TEST_CHECK_(logged("config warning") == NULL, "%s", ini[i]);
         int rc = run_vocr_job();
         TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
@@ -2428,18 +2427,16 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("%d ms / %d ms: flags 0x%08X", units[i].ms, units[i].max_ms, (unsigned)fake_game_request.flags);
         mem_free();
     }
-    /* A press confirms the screen is ready: neither stability wait is sent,
-     * regardless of the saved press limit. Background reads and refreshes keep
-     * their full wait, including on a screen the kernel has not called stable,
-     * and so does the open overlay's job once the last job's screen changed under
-     * every try (#413's audit F1: the wait is what learns an icon). */
-    static const struct { int press, max_ms, prepares, refresh, streak; unsigned max; } press[] = {
-        {1000, 2000, 0, 0, 0, 0}, {1000, 2000, 1, 0, 0, 40}, {1000, 2000, 0, 1, 0, 40}, {0, 2000, 0, 0, 0, 0},
-        {1000, 500, 0, 0, 0, 0}, {300, 2000, 0, 0, 0, 0}, {1000, 2000, 0, 0, 1, 40}, {300, 500, 0, 0, 2, 10}};
+    /* A press confirms the screen is ready: neither stability wait is sent (config.ini's ocr_settle_press_ms, the
+     * press's old limit, is read by nothing: #418). Background reads and refreshes keep their full wait, including on
+     * a screen the kernel has not called stable, and so does the open overlay's job once the last job's screen
+     * changed under every try (#413's audit F1: the wait is what learns an icon). */
+    static const struct { int max_ms, prepares, refresh, streak; unsigned max; } press[] = {
+        {2000, 0, 0, 0, 0}, {2000, 1, 0, 0, 40}, {2000, 0, 1, 0, 40}, {500, 0, 0, 0, 0}, {2000, 0, 0, 1, 40},
+        {500, 0, 0, 2, 10}};
     for (unsigned i = 0; i < sizeof(press) / sizeof(press[0]); i++) {
         reset();
         screen_changed_streak = press[i].streak;
-        cfg.ocr_settle_press_ms = press[i].press;
         cfg.ocr_settle_max_ms = press[i].max_ms;
         ov = press[i].prepares ? OV_CLOSED : OV_OPEN;
         state.stable = 0;
@@ -2451,8 +2448,8 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == press[i].max);
         TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == (press[i].max ? 15u : 0u));
         TEST_CHECK(!!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST) == !!press[i].max);
-        TEST_MSG("press %d ms, max %d ms, prepares %d, refresh %d, streak %d: flags 0x%08X", press[i].press,
-                 press[i].max_ms, press[i].prepares, press[i].refresh, press[i].streak, (unsigned)fake_game_request.flags);
+        TEST_MSG("max %d ms, prepares %d, refresh %d, streak %d: flags 0x%08X", press[i].max_ms, press[i].prepares,
+                 press[i].refresh, press[i].streak, (unsigned)fake_game_request.flags);
         job_refresh = 0;
         mem_free();
     }
@@ -2712,7 +2709,7 @@ static void test_subtitles_are_ocr_only(void)
         VjoConfig c;
         vjo_config_defaults(&c);
         vjo_config_parse(&c, olds[i], strlen(olds[i]));
-        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 0);
+        TEST_CHECK(c.n_warnings == 0);
         cfg = loaded = c;
         TEST_CHECK(!want_lookup());
     }
@@ -4548,7 +4545,6 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     mem_free();
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_USERRW_RESULTS) == 0);
 #endif
-    loaded.dictionary = VJO_DICT_LOCAL;
     cfg = loaded;
     vjo_ledger_shell_log("test");
     TEST_CHECK(!open_batch); /* the ledger table's batch is closed: no pointer into this stack frame */

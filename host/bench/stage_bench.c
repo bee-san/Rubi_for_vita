@@ -607,7 +607,6 @@ static int stage_postproc(const BenchIn *in, unsigned iters, BenchOut *out)
 static void local_config(const BenchIn *in, VjoConfig *cfg)
 {
     vjo_config_defaults(cfg);
-    cfg->dictionary = VJO_DICT_LOCAL;
     cfg->local_dictionary_results = 1;
     vjo_snprintf(cfg->local_dictionary_dir, sizeof(cfg->local_dictionary_dir), "%s", in->dict_dir);
     vjo_snprintf(cfg->local_dictionaries, sizeof(cfg->local_dictionaries), "plaintext.vjdict");

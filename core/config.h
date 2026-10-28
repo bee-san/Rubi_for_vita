@@ -21,13 +21,14 @@ enum { VJO_SOURCE_OCR = VJO_TEXT_SOURCE_OCR, VJO_SOURCE_AUTO = VJO_TEXT_SOURCE_A
 /* text_source's names by value (core/config.c; the Shell's hooks line names the worker's mode with them) */
 extern const char *const vjo_text_source_names[];
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
-/* dictionary: the local .vjdict files, the only dictionary (VJO_DICT_NAME in
- * messages and the log). The self-test reports the value (config
- * dictionary=); keep the ID unchanged. The removed ones' IDs stay unused: 0
- * and 1 jpdb.io and jiten.moe, the online dictionaries with an API key, 2 the
- * Hachidori relay on a computer. A config.ini naming one loads as local without
- * a warning (another value but local warns); the Rubi app's next save and the
- * installer write local (vjo_config_removed_line, tools/migrate_config.py). */
+/* The dictionary: the local .vjdict files, the only one (VJO_DICT_NAME in
+ * messages and the log). The debug self-test reports its ID (config
+ * dictionary=3, read by tools/analyse_selftest.py); keep it unchanged. The
+ * removed ones' IDs stay unused: 0 and 1 jpdb.io and jiten.moe, the online
+ * dictionaries with an API key, 2 the Hachidori relay on a computer. A
+ * config.ini naming one loads as local without a warning (another value but
+ * local warns); the Rubi app's next save and the installer write local
+ * (vjo_config_removed_line, tools/migrate_config.py). */
 enum { VJO_DICT_LOCAL = 3 };
 #define VJO_DICT_NAME "Local dictionaries"
 
@@ -37,7 +38,6 @@ enum { VJO_DICT_LOCAL = 3 };
 #define VJO_CONFIG_TEXT_MAX (24 * 1024 - 1)
 
 typedef struct {
-    int dictionary;           /* VJO_DICT_LOCAL, the only one */
     char local_dictionary_dir[160];
     char local_dictionaries[512]; /* comma-separated relative .vjdict filenames */
     int local_dictionary_results; /* 1..8: dictionaries paged with an L/R tap per selected word */
@@ -56,11 +56,10 @@ typedef struct {
      * default) or _LARGE of include/vjo_vocr_sizes.h; config.ini vocr_tier = small |
      * normal | large. Each is a pinned model (vjo_vocr_tier_model). A job runs it,
      * or the next smaller one the game's free memory has room for (the game worker
-     * decides per job). An older file's vocr_model sets it when vocr_tier is absent
-     * (the FL10 family small, H15 normal, F20/W20 large); vocr_fallback_model is
-     * no longer read. */
+     * decides per job). An older file's vocr_model sets it when no vocr_tier line
+     * does (the FL10 family small, H15 normal, F20/W20 large); vocr_fallback_model
+     * is no longer read. */
     int vocr_tier;
-    int vocr_tier_explicit;   /* 1: a vocr_tier line set it (an older vocr_model line no longer does) */
     /* Local OCR (vocr): the region's rows hold still this long before a job
      * reads its lines (0 = off), waiting at most ocr_settle_max_ms per job; and
      * found lines without text-like ink are skipped (core/vocr_ocr.h). */
@@ -87,10 +86,8 @@ typedef struct {
      * size). */
     int ocr_helpers;          /* 0..2 */
     int ocr_boost_clock;      /* 0/1 */
-    /* Local OCR (vocr): before #413, the most a job the open overlay waits for
-     * spent waiting for the rows to hold still. Still parsed (config.ini keeps
-     * it for older builds); no code reads it since #413 (docs/text-stability.md). */
-    int ocr_settle_press_ms;  /* 0 or 100..10000 */
+    /* (config.ini's ocr_settle_press_ms, a press's wait before #413, is still accepted, 0 or 100..10000, and read
+     * by nothing since: docs/text-stability.md.) */
     /* Anki (API 23): a card saved with anki_mining keeps a JPEG of the game's screen
      * (on by default; the game worker takes it, docs/anki.md). Last, as above. */
     int anki_screenshot;      /* 0/1 */

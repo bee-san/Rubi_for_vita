@@ -531,10 +531,10 @@ static void test_config(void)
                       "log_file = on\n"
                       "bogus = 1\n";
     vjo_config_defaults(&c);
-    TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.font_size_ja == 18 && c.font_size_en == 14 &&
+    TEST_CHECK(c.font_size_ja == 18 && c.font_size_en == 14 &&
                c.toggle_button == VJO_TRIGGER_L_R && c.japanese_only_selection == 0); /* OFF since 2026-10-20 */
     vjo_config_parse(&c, ini, strlen(ini));
-    TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && !strcmp(VJO_DICT_NAME, "Local dictionaries"));
+    TEST_CHECK(!strcmp(VJO_DICT_NAME, "Local dictionaries"));
     TEST_CHECK(c.non_japanese_filter == VJO_FILTER_NONE);
     TEST_CHECK(c.font_size_ja == 18); /* invalid -> default */
     TEST_CHECK(c.font_size_en == 10);
@@ -578,7 +578,7 @@ static void test_config(void)
         memcpy(keys + k + 1500, "\n", 2);
         vjo_config_defaults(&c);
         vjo_config_parse(&c, keys, strlen(keys));
-        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 0);
+        TEST_CHECK(c.n_warnings == 0);
         TEST_MSG("%d warnings, first: %s", c.n_warnings, c.n_warnings ? c.warnings[0] : "");
         /* nothing of them is kept anywhere: every byte is the defaults' (audit N6, M2) */
         {
@@ -599,7 +599,7 @@ static void test_config(void)
         for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
             vjo_config_defaults(&c);
             vjo_config_parse(&c, values[i], strlen(values[i]));
-            TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == (i ? 1 : 0));
+            TEST_CHECK(c.n_warnings == (i ? 1 : 0));
             TEST_CHECK(!i || strstr(c.warnings[0], "dictionary: invalid value") != NULL);
             TEST_MSG("%s", values[i]);
         }
@@ -730,21 +730,23 @@ static void test_config(void)
     settle = "ocr_settle_ms = 1000\nocr_settle_max_ms = 10000\n";
     vjo_config_parse(&c, settle, strlen(settle));
     TEST_CHECK(c.ocr_settle_ms == 1000 && c.ocr_settle_max_ms == 10000 && c.n_warnings == 0);
-    /* The press's limit (docs/first-ocr.md): 1 s by default; 0 (the job's own limit) or
-     * 100-10,000 ms: under 25 ms its 50 ms request field would be 0, the 2 s default. */
-    vjo_config_defaults(&c);
-    TEST_CHECK(c.ocr_settle_press_ms == 1000);
-    static const struct { const char *val; int want, warns; } press[] = {
-        {"0", 0, 0}, {"100", 100, 0}, {"10000", 10000, 0}, {"1", 1000, 1}, {"24", 1000, 1}, {"99", 1000, 1},
-        {"10001", 1000, 1}, {"-5", 1000, 1}, {"soon", 1000, 1}};
+    /* The press's old limit, ocr_settle_press_ms, is read by nothing since #413 (opening the overlay reads without the
+     * stability wait), and still checked as before: 0 or 100-10,000 ms, else warned; it changes nothing (#418). */
+    static const struct { const char *val; int warns; } press[] = {
+        {"0", 0}, {"100", 0}, {"10000", 0}, {"1", 1}, {"24", 1}, {"99", 1}, {"10001", 1}, {"-5", 1}, {"soon", 1}};
     for (unsigned i = 0; i < sizeof(press) / sizeof(press[0]); i++) {
         char line[64];
+        VjoConfig d;
         vjo_config_defaults(&c);
+        vjo_config_defaults(&d);
         snprintf(line, sizeof(line), "ocr_settle_press_ms = %s\n", press[i].val);
         vjo_config_parse(&c, line, strlen(line));
-        TEST_CHECK(c.ocr_settle_press_ms == press[i].want && c.n_warnings == press[i].warns);
-        TEST_MSG("ocr_settle_press_ms = %s: %d, %d warning(s)", press[i].val, c.ocr_settle_press_ms, c.n_warnings);
+        TEST_CHECK(c.n_warnings == press[i].warns);
+        TEST_MSG("ocr_settle_press_ms = %s: %d warning(s)", press[i].val, c.n_warnings);
         if (press[i].warns) TEST_CHECK(strstr(c.warnings[0], "ocr_settle_press_ms") != NULL);
+        c.n_warnings = 0;
+        memset(c.warnings, 0, sizeof(c.warnings));
+        TEST_CHECK(!memcmp(&c, &d, sizeof(c))); /* nothing else changed */
     }
     /* The left stick's lookup (#138, core/stick_cursor.h): once the cursor has rested
      * 200 ms by default; 0 (as soon as the stick stops) to 1,000 ms; else the default, warned. */
@@ -975,7 +977,7 @@ static void test_config(void)
         vjo_config_defaults(&d);
         vjo_config_parse(&d, t, strlen(t));
         TEST_CHECK(d.n_warnings == 0);
-        TEST_CHECK(d.dictionary == VJO_DICT_LOCAL && d.ocr_mode == VJO_OCR_AUTO &&
+        TEST_CHECK(d.ocr_mode == VJO_OCR_AUTO &&
                    d.font_size_ja == 18 && d.font_size_en == 14 &&
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
         TEST_CHECK(!d.anki_mining && strstr(t, "\nanki_mining = off\n") && !strstr(t, "anki_host"));
@@ -1021,7 +1023,7 @@ static void test_config(void)
         const char *old = "api_key = k1\nfont_size = 20\nhw_jpeg = on\nfrequency_filter = 3\ncombo_delay_ms = 0\n";
         vjo_config_defaults(&c);
         vjo_config_parse(&c, old, strlen(old));
-        TEST_CHECK(c.n_warnings == 0 && c.font_size_ja == 18 && c.dictionary == VJO_DICT_LOCAL);
+        TEST_CHECK(c.n_warnings == 0 && c.font_size_ja == 18);
     }
 
     /* docs/config.example.ini is the default file (the Rubi app's first save) */
