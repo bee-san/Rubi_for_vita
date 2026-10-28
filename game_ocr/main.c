@@ -3107,9 +3107,6 @@ static inline int outside_segments(const uintptr_t *base, const uint32_t *size, 
 #define pspemu_process vjo_test_pspemu_process /* host/tests/game_stubs/psp2/kernel/modulemgr.h */
 #define another_copy vjo_test_another_copy
 #define vjoGetTextSource vjo_test_get_text_source
-#ifndef VJO_HAVE_TEXT_SOURCE_IMPORT /* the host tests stub the kernel's answer (game_stubs psp2/kernel/modulemgr.h) */
-#define VJO_HAVE_TEXT_SOURCE_IMPORT 1
-#endif
 #else
 static int pspemu_process(void)
 {
@@ -3148,12 +3145,10 @@ static int another_copy(void)
 /* API 31's text source word (docs/native-hooks.md), as the Shell gave it to the kernel: a
  * VJO_TEXT_SOURCE_* in its low byte (VJO_TEXT_SOURCE_MODE_MASK), plus VJO_TEXT_SOURCE_NO_SITES
  * (hook_sites = off): which native hooks vjo_hooks_start installs in this game. OCR (no hooks) when the
- * kernel's import is not resolved (an older kernel), when its low byte is out of range or any other bit
- * is set, and in a build whose kernel stubs do not have vjoGetTextSource yet (vita/CMakeLists.txt sets
- * VJO_HAVE_TEXT_SOURCE_IMPORT from kernel/exports.yml). */
+ * kernel's import is not resolved (an older kernel), or when its low byte is out of range or any other bit
+ * is set. */
 static unsigned text_source(void)
 {
-#if VJO_HAVE_TEXT_SOURCE_IMPORT
     /* another API's kernel (whose jobs vjo_game_ocr_worker_start refuses too) is not asked (hooks/api) */
     if (IMPORT_READY(vjoGetTextSource) && IMPORT_READY(vjoGetVersion) && vjoGetVersion() == VJO_API_VERSION) {
         int word = vjoGetTextSource();
@@ -3161,7 +3156,6 @@ static unsigned text_source(void)
             !((unsigned)word & ~(VJO_TEXT_SOURCE_MODE_MASK | VJO_TEXT_SOURCE_NO_SITES)))
             return (unsigned)word; /* the whole word: vjo_hooks_start reads the flag */
     }
-#endif
     return VJO_TEXT_SOURCE_OCR;
 }
 

@@ -25,3 +25,9 @@ __attribute__((weak)) int loader_title(SceUID pid, char *title, SceSize len)
     (void)pid; (void)title; (void)len;
     return -1;
 }
+
+/* kernel/log.c's clock in ms (a shot's stage lines), which this harness does not link. */
+__attribute__((weak)) unsigned klog_ms(void)
+{
+    return (unsigned)(ksceKernelGetSystemTimeWide() / 1000);
+}

@@ -16,10 +16,12 @@
 /* loader.c: the kernel worker answered a starting process's games.ini question. */
 #define MEV_POLICY 0x10u
 void game_ocr_init(void);
-int game_ocr_capture_busy_locked(void);
 int game_ocr_shutdown_locked(void);
+#ifdef VJO_HOST /* the host tests' views of the transport (not in the module) */
+int game_ocr_capture_busy_locked(void);
 /* Threads still inside vjoOcrTake's or vjoOcrRead's wait. */
 int game_ocr_waiters_locked(void);
+#endif
 /* module_stop's part, without g.lock: game_ocr_shutdown_locked, then waits for the
  * woken takes and reads to leave (an undone stop if one does not). 0 or VJO_ERR_BUSY. */
 int game_ocr_stop(void);

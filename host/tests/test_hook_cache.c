@@ -156,7 +156,32 @@ static void trusted_bit(void)
     TEST_CHECK(!vjo_hook_cache_get(data, sizeof(data), &k, &out));
 }
 
+/* A key's title is the strict title ID (core/games.h vjo_title_id_strict) in its 12 bytes, zero-padded: anything
+ * else is an invalid key, never stored, never found. */
+static void key_titles(void)
+{
+    static const char *const bad[] = {"pcsg00146", "PCSG0014", "PCSG001466", "PCSG0014/", "PCSG\xC0" "0146", ""};
+    uint8_t data[VJO_HOOK_CACHE_BYTES] = {0};
+    VjoHookLearned v = learned(16), out;
+    VjoHookCacheKey k = key(146);
+    TEST_CHECK(vjo_hook_cache_put(data, 0, &k, &v) == 1 && vjo_hook_cache_get(data, sizeof(data), &k, &out) == 1);
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        VjoHookCacheKey b = key(146);
+        memset(b.title, 0, sizeof(b.title));
+        memcpy(b.title, bad[i], strlen(bad[i]) < sizeof(b.title) ? strlen(bad[i]) : sizeof(b.title));
+        TEST_CHECK_(vjo_hook_cache_put(data, sizeof(data), &b, &v) == -1, "%s", bad[i]);
+        TEST_CHECK_(vjo_hook_cache_get(data, sizeof(data), &b, &out) == 0, "%s", bad[i]);
+    }
+    for (unsigned at = 10; at < 12; at++) { /* the padding after the NUL */
+        VjoHookCacheKey b = key(146);
+        b.title[at] = 'X';
+        TEST_CHECK_(vjo_hook_cache_put(data, sizeof(data), &b, &v) == -1, "padding byte %u", at);
+    }
+    TEST_CHECK(vjo_hook_cache_get(data, sizeof(data), &k, &out) == 1); /* the good one is still there */
+}
+
 TEST_LIST = {
+    {"key_titles", key_titles},
     {"trusted_bit", trusted_bit},
     {"roundtrip_and_no_rewrite", roundtrip_and_no_rewrite},
     {"invalidation", invalidation},

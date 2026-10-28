@@ -29,6 +29,14 @@ typedef struct {
 #define VJO_LINE_FINDERS 5
 extern const char *const vjo_line_finder_names[];
 int vjo_game_id_valid(const char *id);
+/* A Vita title ID as the kernel reads a process's (kernel/game_ocr.c, an SC3 charset's open) and the hook cache keeps
+ * one (core/hook_cache.c): 9 capital letters or digits, then a NUL. */
+static inline int vjo_title_id_strict(const char *id)
+{
+    for (unsigned i = 0; i < 9; i++)
+        if (!((id[i] >= 'A' && id[i] <= 'Z') || (id[i] >= '0' && id[i] <= '9'))) return 0;
+    return !id[9];
+}
 /* Adrenaline is allowed: its PSP games share NPXS10028. */
 int vjo_game_is_candidate(const char *id);
 /* The PSP emulator's own title ID: the Shell's name for the emulator process

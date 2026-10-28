@@ -231,6 +231,22 @@ static void test_psp_titles(void)
     }
 }
 
+/* The strict title ID (core/games.h vjo_title_id_strict) the kernel's SC3 charset open and the hook cache share:
+ * 9 capital letters or digits and a NUL, nothing else (no lowercase, no path, no byte above 0x7F). */
+static void test_title_id_strict(void)
+{
+    static const struct { const char *id; int ok; } ids[] = {
+        {"PCSG00146", 1}, {"NPXS10028", 1}, {"ULJS00378", 1}, {"VJOSET001", 1}, {"123456789", 1}, {"ZZZZZZZZZ", 1},
+        {"pcsg00146", 0}, {"PCSg00146", 0}, {"PCSG0014", 0}, {"PCSG001466", 0}, {"PCSG0014/", 0}, {"../../tai", 0},
+        {"PCSG_0146", 0}, {"PCSG-0146", 0}, {"PCSG 0146", 0}, {"PCSG\xC0" "0146", 0}, {"@CSG00146", 0}, {"[CSG00146", 0},
+        {"PCSG0014:", 0}, {"", 0}};
+    for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); i++)
+        TEST_CHECK_(vjo_title_id_strict(ids[i].id) == ids[i].ok, "%s", ids[i].id);
+    char padded[12] = "PCSG00146"; /* a NUL inside the 9 characters fails at it */
+    padded[4] = 0;
+    TEST_CHECK(!vjo_title_id_strict(padded));
+}
+
 /* A PSP game with no rule of its own follows the shared PSP row (NPXS10028),
  * then the default; its own rule wins; a Vita game never looks there. */
 static void test_psp_shared_row(void)
@@ -481,6 +497,7 @@ TEST_LIST = {
     {"#333: ocr_line_fix.ini's rows: parse, lookup, set and format", test_line_fix_table},
     {"#333: ocr_line_fix.ini on the card: save, load, backup, never games.ini", test_line_fix_storage},
     {"PSP titles: NPXS10028, PSPEMU* bubbles, disc IDs", test_psp_titles},
+    {"the strict title ID: 9 capital letters or digits", test_title_id_strict},
     {"PSP games without a rule follow the shared PSP row", test_psp_shared_row},
     {"the app's reasons for skipping a folder match the candidate rule", test_reject_reasons},
     {"disable all: no game stays ON by a choice of its own", test_disable_all},
