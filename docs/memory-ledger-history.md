@@ -5,6 +5,30 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## psandvita #1's six verified entries (no API change)
+
+Six more verified entries ([native-hooks.md](native-hooks.md#table-sites)), four filters
+([Rubi's filters](native-hooks.md#rubis-filters)) and a second layout of the cell record's read (`VJO_PLACE_READ_CELLS_B`,
+`vjo_place_cells_layout`: `site_hit` reads the count and cells at either layout's offsets). The six rows (240 B) and the
+four filters' ops (156 B: `PCSG00769`'s ends in a call of `FOAF4`, `PCSG00380`'s array from its third op, no array of
+its own) are in the worker's data segment (`VJO_DATA_TABLE`), which has had room since #418 freed a page; the six title
+strings, the filters' index and the new patterns are read-only data. Measured with VitaSDK GCC 15.2.0 in
+`tools/fast_gate.sh`'s image (`tools/check_memory_ledger.py`'s module rows, `arm-vita-eabi-size -A` on both builds'
+`VitaJPOverlay_OCR`), main `140fb9c3` against this change (the rows are the same on `dc494f44` and `a06e6d44`):
+
+| Game worker | Debug: main → this change | Normal: main → this change |
+|---|---:|---:|
+| `.text` | 144,640 → 144,648 B | 140,440 → 140,448 B |
+| `.rodata` | 33,704 → 33,816 B | 29,144 → 29,256 B |
+| `.data` | 5,272 → 5,668 B | 5,264 → 5,660 B |
+| module rows, text + data/bss | 180,512 + 31,968 → 180,640 + 32,368 B | 171,596 + 31,952 → 171,708 + 32,352 B |
+| loaded pages | 217,088 B, unchanged | 204,800 B, unchanged |
+
+- Room left in the last pages: the normal worker 324 B of code and 416 B of data, the debug worker 3,680 B and 400 B.
+  With the four filters' ops in read-only data instead, the normal worker's code page would have 180 B left.
+- The kernel's and the Shell's rows are unchanged. No block, thread or allocation; no budget raised. None of it is
+  measured on a console.
+
 ## Cleanup P1: dead Shell state (#418; no API change)
 
 State the Shell wrote and nothing read. **No block, thread, stack or allocation; no module takes a page more.**

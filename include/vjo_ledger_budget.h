@@ -41,9 +41,10 @@
 /* VitaJPOverlay_OCR.suprx, in the game's partition, in every game that is ON (never SceShell's: AGENTS.md rules 1-2).
  * The normal build compiles out the self-test's capture probe and hooks.log's writer (game_ocr/hooks.c), and the
  * debug build has the read-only PSP probe (docs/native-hooks.md). Both builds' packaged segments, each rounded to
- * pages: debug 180,512 + 31,968 B -> 217,088 B (3,808 B of code room, 800 B of data room), normal 171,596 + 31,952 B
- * -> 204,800 B (436 B, 816 B) [measured: tools/check_memory_ledger.py's module rows, both builds, main 6b028b2b,
- * tools/fast_gate.sh's vitasdk image]. The normal build's check is exact (--exact): its budget must equal its pages.
+ * pages: debug 180,640 + 32,368 B -> 217,088 B (3,680 B of code room, 400 B of data room), normal 171,708 + 32,352 B
+ * -> 204,800 B (324 B, 416 B) [measured: tools/check_memory_ledger.py's module rows, both builds, psandvita #1's
+ * six verified entries on main 140fb9c3, tools/fast_gate.sh's vitasdk image]. The normal build's check is exact
+ * (--exact): its budget must equal its pages.
  * How each change moved them: its own section of docs/memory-ledger-history.md, and before #418 that file's "Budget history".
  * Each verified hook row takes 40 B of the data room (core/hook_place.c's verified[], VJO_DATA_TABLE): once it is
  * gone the next row takes a page in both builds, unless a table moves to read-only data first or the budget is raised

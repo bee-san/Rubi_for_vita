@@ -624,8 +624,8 @@ static const LunaOp *const vjo_luna_post[VJO_LH_COUNT] = {
  * are read-only data again, and this file is built for size in the worker (vita/CMakeLists.txt), so both builds keep
  * their pages (docs/memory-ledger.md, "The hook farm's 20 verified entries"). Their strings stay read-only. psandvita
  * #1's four arrays (PCSG00370, PCSG00766, PCSG01282, PCSG00769) are in the data segment again: since #418 freed a data
- * page it has the room, and the normal build's code segment has 180 B left (docs/memory-ledger.md, "psandvita #1's
- * six verified entries"). */
+ * page it has the room, and in the normal build's code segment they would leave 180 B of its last page, 324 B without
+ * them (docs/memory-ledger-history.md, "psandvita #1's six verified entries"). */
 _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one byte");
 #define RCALL(f) {OP_CALL, 0, VJO_RF_##f, NULL, NULL}
 
