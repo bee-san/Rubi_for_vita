@@ -522,11 +522,11 @@ const char *const vjo_finder_names[] VJO_DATA_TABLE(config_finders_1) = {finder_
  * pages keep room for the spotter's settings (docs/memory-ledger.md, "The spotter finder"). */
 static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", NULL};
 /* #355's review H1: the off/on settings with no rule of their own (an unknown value keeps the field, with
- * set_choice's warning), one table and one loop in place of a branch each: the Shell's code pages pay for API 55's
- * ocr_pause with it (136 B of the normal Shell's code, 104 B of the debug one's), and #358's and API 54's two keys
- * are read-only data again, out of the data segment that the debug Shell's VjoConfig copies outgrew by 8 B
- * (docs/memory-ledger.md, "The pause for the frame"). The keys' order is their branches' was; each key is matched
- * whole (vjo_ieq), so none can take another's. */
+ * set_choice's warning), one table and one loop in place of a branch each, and #358's and API 54's keys read-only
+ * data again: the Shell's pages pay for API 55's ocr_pause with it (160 B of the normal Shell's code and 32 B of its
+ * data, 176 B and 40 B of the debug one's [measured: tools/check_memory_ledger.py's module rows, #355's head with
+ * and without this table, both builds]; docs/memory-ledger.md, "The pause for the frame"). The keys' order is their
+ * branches' was; each key is matched whole (vjo_ieq), so none can take another's. */
 static const struct {
     const char *key;
     uint16_t offset;

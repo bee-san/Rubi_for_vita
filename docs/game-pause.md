@@ -235,9 +235,9 @@ line's (`VJO_BUDGET_GAME_LINE`, 516,096 B), never both, so the game's worst case
 twelve items stay twelve in every module). That is 8,192 B more: 11,022,336 B against the 11,214,848 B limit
 ([memory ledger](memory-ledger.md#the-pause-for-the-frame-api-55)).
 
-The modules, measured against `main` dc272d1 (both builds, `tools/check_memory_ledger.py`):
+The modules, measured against `main` eef0fc4 (both builds, `tools/check_memory_ledger.py`):
 - **The OCR worker** takes one page more, 4,096 B in each game that is ON, whether or not the setting is: the pause's
-  1,248 B of code did not fit the last code page (272 B of it left in the debug build, 1,028 B in the normal one). Its
+  1,248 B of code did not fit the last code page (336 B of it left in the debug build, 1,092 B in the normal one). Its
   data keeps its pages: the pinned model table (480 B) is read-only data again, in the new page.
 - **The Shell** (SceShell's pages may only shrink: [AGENTS.md](../AGENTS.md)) keeps its pages, with room to spare:
   the key's parse, the speed bit, the wait hint's clause (a format of the one hint, written in a 256 B buffer on

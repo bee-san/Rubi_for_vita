@@ -397,8 +397,8 @@ it says:
 
 **With #355 and #359.** #355 is on `main` since API 55, its clause a format of the one hint, as the third point below
 asks; it fits the Shell's pages in both builds because `core/config.c` now parses its off/on settings from one table
-(136 B of the normal Shell's code, 104 B of the debug one's) [measured: tools/check_memory_ledger.py's module rows, main
-dc272d1 and #355, both builds; [memory-ledger.md](memory-ledger.md#the-pause-for-the-frame-api-55)]. The rest of this
+(160 B of the normal Shell's code, 176 B of the debug one's) [measured: tools/check_memory_ledger.py's module rows,
+#355 with and without the table, both builds; [memory-ledger.md](memory-ledger.md#the-pause-for-the-frame-api-55)]. The rest of this
 section is the measurement made before, when neither fitted beside this change on `main` 8da24c8 as they were.
 - **The measurement:** `main` with this change, plus #355 at 9e44739 and #359 at f630b69's Shell change (its log
   line), each built in both variants (`tools/check_memory_ledger.py`'s module rows). Those heads predate #376 and

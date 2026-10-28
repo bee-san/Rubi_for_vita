@@ -158,12 +158,13 @@
  * 85,972 + 77,696 -> 85,988 + 77,728 on main 70deda7, the same pages, 28 B of text room [measured: the same rows, main 70deda7 and this change]: main's steps reordered, with the end's check and
  * its second read, which a file replaced since and an SCE_O_APPEND that places only the open need. Its check is exact
  * (--exact): this must equal its pages. API 55's ocr_pause (#355; docs/game-pause.md) in the Shell is its key's parse,
- * one speed bit and VjoConfig's 4 B, paid for by core/config.c's off/on switches in one table (one loop in place of a
- * branch each) and #358's and API 54's keys back in read-only data: 86,012 -> 85,908 + 77,728 -> 77,696 on main
- * dc272d1, the same pages, 108 B of text room and 128 B of data room [measured: tools/check_memory_ledger.py's module
- * rows, both builds, main dc272d1 and this change, tools/fast_gate.sh's vitasdk image; the debug build 98,300 ->
- * 98,228 + 77,816 -> 77,792, the same pages, 76 B and 32 B of room]. No second wait hint (WAIT_HINT_PAUSE, 214 B of
- * data): the debug Shell's data page had 8 B left. */
+ * one speed bit, VjoConfig's 4 B, the active game's STATIC_FB flag and the wait hint's clause (WAIT_HINT_PAUSE, a 54 B
+ * format of the one hint, in the data segment), paid for by core/config.c's off/on settings in one table and three
+ * strings back in read-only data (#358's and API 54's keys, #413's debug-only open format): 85,980 -> 85,924 +
+ * 77,728 -> 77,752 on main eef0fc4, the same pages, 92 B of text room and 72 B of data room [measured:
+ * tools/check_memory_ledger.py's module rows, both builds, main eef0fc4 and this change, tools/fast_gate.sh's vitasdk
+ * image; the debug build 98,268 -> 98,252 + 77,816 -> 77,816, the same pages, 52 B and 8 B of room; without the table
+ * both builds take a page more: 86,084 + 77,784 and 98,428 + 77,856]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
@@ -478,13 +479,13 @@
 /* API 55, the pause for the frame (#355; ocr_pause, off by default; docs/game-pause.md, docs/memory-ledger.md "The
  * pause for the frame": game_ocr/main.c pause_copy, the frame block's memory check, ladder, release and step, and
  * strip_source's frozen reads; core/vocr_ocr.c's frozen region): 1,248 B of code and 64 B of statics in both builds,
- * against 272 B (debug) and 1,028 B (normal) of the last code page and 24 B and 32 B of the last data page left on
- * main dc272d1. So this budget is raised by one page, 4,096 B, in both builds (217,088 -> 221,184 B debug, 208,896 ->
+ * against 336 B (debug) and 1,092 B (normal) of the last code page and 24 B and 32 B of the last data page left on
+ * main eef0fc4. So this budget is raised by one page, 4,096 B, in both builds (217,088 -> 221,184 B debug, 208,896 ->
  * 212,992 B normal): the code takes one page more, and the pinned model table (core/vocr_ocr.c models, 480 B) is
  * read-only data again, in that page, so the data segment keeps its pages with room for the statics and, at last, for
- * more verified hook rows (40 B each). Debug 179,952 -> 181,680 B of text (2,640 B of room) and 36,840 -> 36,424 B of
- * data/bss (440 B), normal 171,004 -> 172,732 B (3,396 B) and 36,832 -> 36,416 B (448 B) [measured:
- * tools/check_memory_ledger.py's module rows, both builds, main dc272d1 and this change, tools/fast_gate.sh's vitasdk
+ * more verified hook rows (40 B each). Debug 179,888 -> 181,616 B of text (2,704 B of room) and 36,840 -> 36,424 B of
+ * data/bss (440 B), normal 170,940 -> 172,668 B (3,460 B) and 36,832 -> 36,416 B (448 B) [measured:
+ * tools/check_memory_ledger.py's module rows, both builds, main eef0fc4 and this change, tools/fast_gate.sh's vitasdk
  * image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's (counted as the tall line's ledger item, which
  * it replaces); no thread. The page is in every game that is ON, whether or not ocr_pause is: one page of the game's
  * memory, 0.005 % of the 90,177,536 B free USER the least any job saw in CLANNAD [measured, #81's v0.8.0-test.1
@@ -627,7 +628,7 @@
 /* API 55, the pause for the frame (kernel/game_ocr.c: VJO_ROWS_FRAME's checks, the hook's chunked copy and its cap,
  * the watchdog in the rows tick with #355's review's count of the time the game is in front): debug 43,496 -> 44,152 B
  * of text and 77,780 -> 77,812 B of data/bss, normal 38,344 -> 38,928 and 76,092 -> 76,124 B, the same pages
- * [measured: tools/check_memory_ledger.py's module rows, both builds, main dc272d1 and this change, tools/fast_gate.sh's
+ * [measured: tools/check_memory_ledger.py's module rows, both builds, main eef0fc4 and this change, tools/fast_gate.sh's
  * vitasdk image]. No block, thread or allocation: the copy runs in the game's own display call, as a strip's does. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u

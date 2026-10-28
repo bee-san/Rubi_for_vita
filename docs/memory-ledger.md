@@ -8,32 +8,34 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 ## The pause for the frame (API 55)
 
 `ocr_pause` (#355, off by default; [game-pause.md](game-pause.md)). Measured with `tools/check_memory_ledger.py`'s
-module rows, both builds, main `dc272d1` and this change (text + data/bss):
+module rows, both builds, main `eef0fc4` and this change, tools/fast_gate.sh's vitasdk image (text + data/bss):
 
 | module | debug | normal | pages |
 |---|---|---|---|
 | Kernel | 43,496 + 77,780 → 44,152 + 77,812 B | 38,344 + 76,092 → 38,928 + 76,124 B | 122,880 / 118,784 B, unchanged |
-| Shell | 98,300 + 77,816 → 98,284 + 77,816 B | 86,012 + 77,728 → 85,956 + 77,752 B | 176,128 / 163,840 B, unchanged |
-| Game worker | 179,952 + 36,840 → 181,680 + 36,424 B | 171,004 + 36,832 → 172,732 + 36,416 B | 217,088 → **221,184** / 208,896 → **212,992** B |
+| Shell | 98,268 + 77,816 → 98,252 + 77,816 B | 85,980 + 77,728 → 85,924 + 77,752 B | 176,128 / 163,840 B, unchanged |
+| Game worker | 179,888 + 36,840 → 181,616 + 36,424 B | 170,940 + 36,832 → 172,668 + 36,416 B | 217,088 → **221,184** / 208,896 → **212,992** B |
 
 - **The game worker takes one page more in each game that is ON** (`VJO_BUDGET_WORKER_MODULE_PAGES` raised by
   4,096 B in both builds, deliberately): the pause's code (`game_ocr/main.c` pause_copy, the frame block's check,
   ladder, release and step; `strip_source`'s frozen reads; `core/vocr_ocr.c`'s frozen region) is 1,248 B in both
-  builds, against 272 B (debug) and 1,028 B (normal) left in the last code page. Its 64 B of statics needed the data
+  builds, against 336 B (debug) and 1,092 B (normal) left in the last code page. Its 64 B of statics needed the data
   segment's last page, which had 24 and 32 B: the pinned model table (`core/vocr_ocr.c` `models`, 480 B, in the data
-  segment since #379, `VJO_DATA_TABLE`) is read-only data again, in the new code page. That leaves 2,640 / 3,396 B of
+  segment since #379, `VJO_DATA_TABLE`) is read-only data again, in the new code page. That leaves 2,704 / 3,460 B of
   code room and 440 / 448 B of data room: room at last for the next verified hook rows (40 B each), which
   audit-rubi-merge-394 N5 found had none. The page is 0.005 % of the 90,177,536 B free USER the least any job saw in
   CLANNAD [measured, #81's v0.8.0-test.1 log], whether or not the setting is on.
-- **The Shell keeps its pages, with more room than before** (SceShell's pages may only shrink: AGENTS.md rule 1). Its
-  part is the key's parse, one speed bit (folded into the user jobs' vertical-text line), `VjoConfig`'s 4 B in each of
-  its three copies, `game_static_fb` and the wait hint's clause (`WAIT_HINT_PAUSE`, a 54 B format of the one hint,
+- **The Shell keeps its pages** (SceShell's pages may only shrink: AGENTS.md rule 1). Its part is the key's parse, one
+  speed bit (folded into the user jobs' vertical-text line), `VjoConfig`'s 4 B in each of its three copies,
+  `game_static_fb` and the wait hint's clause (`WAIT_HINT_PAUSE`, a 54 B format of the one hint,
   [above](#why-the-overlay-waits-358)'s design, written into a 256 B buffer in `start_job_kind`'s frame: 24 → 280 B,
   `arm-vita-eabi-gcc -fstack-usage` at -Os, both builds, on VjoControl's 16 KiB stack). `core/config.c` pays for it:
-  its twelve plain off/on settings are parsed from one table in place of a branch each (136 B of the normal Shell's
-  code, 104 B of the debug one's; the config golden files unchanged), and #358's and API 54's keys
-  (`ocr_wait_hint`, `ocr_spotter_refine`) and #413's debug-only `open: …` format are read-only data again. 60 B of
-  code room and 72 B of data room in the normal Shell (4 and 96 B on main), 20 B and 8 B in the debug one (4 and 8 B).
+  its twelve plain off/on settings are parsed from one table in place of a branch each, and #358's and API 54's keys
+  (`ocr_wait_hint`, `ocr_spotter_refine`) are read-only data again: 160 B of the normal Shell's code and 32 B of its
+  data, 176 B and 40 B of the debug one's [measured: this change with and without the table, both builds; without it
+  each Shell takes a page more: 86,084 + 77,784 and 98,428 + 77,856 B]. The config golden files are unchanged by it.
+  #413's debug-only `open: …` format is read-only data again too. Room left: 92 B of code and 72 B of data in the
+  normal Shell (36 and 96 B on main), 52 B and 8 B in the debug one (36 and 8 B).
 - **The kernel keeps its pages**: the frame copy's checks, the hook's chunked copy and cap, the watchdog's count.
 - **Memory at run time**: the frame block (`VjoGameVocrFrame`, at most 524,288 B, [below](#pool-game-scephymempartgame-256-mib-minus-the-games-own-use))
   is counted as the tall line's ledger item (`GL_LINE`), which it replaces: a job holds one of the two, never both, and
