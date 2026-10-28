@@ -50,13 +50,14 @@
  * gone the next row takes a page in both builds, unless a table moves to read-only data first or the budget is raised
  * (audit-rubi-merge-394 N5). */
 /* test/combined (the combined test build: main and every open draft, #318, #326 and #359, with the 512 KiB
- * reserve draft; never merged): the drafts' code takes the worker three pages more than main's in both builds, debug
- * 180,512 + 31,968 -> 195,552 + 32,336 B (217,088 -> 229,376 B of pages, 1,056 B of text room left) and normal
- * 171,596 + 31,952 -> 181,540 + 32,256 B (204,800 -> 217,088 B, 2,780 B left) [measured: tools/check_memory_ledger.py's
- * module rows, both builds, this branch and main dc494f4 with the 512 KiB draft built alike, tools/fast_gate.sh's
- * vitasdk image]: #359's line watch, #318's PSP text and #326's char places, as in v0.9.8-test.6 (20 KiB and 16 KiB
- * then, against main 5794be4, before #355's own page, which is main's now). The Shell's and the kernel's pages are
- * main's in both builds. This is the test build's budget; the drafts' own branches keep theirs. */
+ * reserve draft #515; never merged): the drafts' code takes the worker three pages more than main's in both builds,
+ * debug 180,640 + 32,368 -> 195,680 + 32,736 B (217,088 -> 229,376 B of pages, 928 B of text room and 32 B of data
+ * room left) and normal 171,708 + 32,352 -> 181,668 + 32,656 B (204,800 -> 217,088 B, 2,652 B and 112 B left)
+ * [measured: tools/check_memory_ledger.py's module rows, both builds, this branch and main 3f864a3 (#515's base) built
+ * alike, tools/fast_gate.sh's vitasdk image]: #359's line watch, #318's PSP text and #326's char places, as in
+ * v0.9.8-test.6 (20 KiB and 16 KiB then, against main 5794be4, before #355's own page, which is main's now). The
+ * Shell's and the kernel's pages are main's in both builds. This is the test build's budget; the drafts' own branches
+ * keep theirs. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 229376u
 #else
