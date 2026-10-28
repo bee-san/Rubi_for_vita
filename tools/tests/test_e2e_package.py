@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tools/tests"))
 import check_variant  # noqa: E402
 import e2e_package  # noqa: E402
-from test_release_variants import fake_self  # noqa: E402  (a Vita SELF as check_variant.segments reads one)
+from self_fixture import fself as fake_self  # noqa: E402  (a Vita SELF as check_variant.segments reads one)
 
 PLUGINS = {"kernel": "ur0/tai/VitaJPOverlay_Kernel.skprx", "shell": "ur0/tai/VitaJPOverlay_Shell.suprx",
            "worker": "ur0/tai/VitaJPOverlay_OCR.suprx"}
