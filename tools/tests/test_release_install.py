@@ -1,4 +1,5 @@
-"""Exercise the real package installer with a local filesystem FTP substitute."""
+"""Exercise the real package installer (install-vita.sh, tools/install_ftp.sh and the real curl) against
+tools/tests/ftp_mock.py, VitaShell's FTP server over a fake Vita's partitions, as tools/e2e_package.py does."""
 import hashlib
 import io
 import json
@@ -17,6 +18,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import app_stamp
+sys.path.insert(0, str(ROOT / "tools/tests"))
+from ftp_mock import FtpMock  # noqa: E402
 
 
 class ReleaseInstall(unittest.TestCase):
@@ -59,41 +62,12 @@ class ReleaseInstall(unittest.TestCase):
                                               "font_size_ja = 24\njpdb_api_key = test-key\n")
         (self.data / "games.ini").write_text("keep existing choices")
         (self.data / "region.ini").write_text("keep existing region")
-        binary = self.root / "bin"
-        binary.mkdir()
-        curl = binary / "curl"
-        curl.write_text("""#!/usr/bin/env python3
-import os, pathlib, shutil, sys
-from urllib.parse import urlparse
-a = sys.argv[1:]
-if os.environ.get('CURL_EXIT'): sys.exit(int(os.environ['CURL_EXIT']))  # 7: the Vita cannot be reached
-p = urlparse(a[-1]).path.lstrip('/').replace(':', '')
-remote = pathlib.Path(os.environ['FAKE_DEVICE']) / p
-quotes = [a[i + 1] for i, x in enumerate(a) if x == '-Q']
-if quotes:  # RNFR then RNTO: a rename, which the Vita's rename refuses onto an existing file
-    src = pathlib.Path(os.environ['FAKE_DEVICE']) / quotes[0].split(' ', 1)[1].lstrip('/').replace(':', '')
-    dst = pathlib.Path(os.environ['FAKE_DEVICE']) / quotes[1].split(' ', 1)[1].lstrip('/').replace(':', '')
-    if not src.is_file() or dst.exists(): sys.exit(21)  # curl's quote error
-    src.rename(dst)
-    sys.exit(0)
-if '-T' in a:
-    remote.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(a[a.index('-T') + 1], remote)
-elif '-o' in a:
-    if not remote.is_file(): sys.exit(78)  # curl's code for an FTP RETR answered 550 (not there)
-    out = a[a.index('-o') + 1]
-    if out != '/dev/null':
-        shutil.copyfile(remote, out)
-        if os.environ.get('CORRUPT_READBACK') == p:
-            pathlib.Path(out).write_bytes(b'corrupted transfer')
-""")
-        curl.chmod(0o755)
-        self.environment = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
-                                FAKE_DEVICE=str(self.device))
-        self.listener = socket.socket()
-        self.listener.bind(("127.0.0.1", 0))
-        self.listener.listen(10)
-        self.addCleanup(self.listener.close)
+        # VitaShell's FTP server over the device's partitions (tools/tests/ftp_mock.py, the e2e's): the installer's
+        # own curl talks to it
+        self.ftp = FtpMock(self.device)
+        self.ftp.__enter__()
+        self.addCleanup(self.ftp.__exit__, None, None, None)
+        self.environment = dict(os.environ)
 
     def write_manifest(self, worker=None):
         """package-manifest.json for the package's files; worker: where the OCR worker comes from
@@ -110,7 +84,7 @@ elif '-o' in a:
 
     def install(self, script="install-vita.sh", *options):
         return subprocess.run(["bash", str(self.package / script), *options,
-                               "127.0.0.1:" + str(self.listener.getsockname()[1])],
+                               "127.0.0.1:" + str(self.ftp.port)],
                               env=self.environment, capture_output=True, text=True, timeout=30)
 
     def tai(self, partition):
@@ -283,7 +257,7 @@ elif '-o' in a:
             if pid == 0:  # the child: the installer on the pty's both ends
                 env = dict(self.environment, **extra_env)
                 os.execvpe("bash", ["bash", str(self.package / "install-vita.sh"),
-                                    "127.0.0.1:" + str(self.listener.getsockname()[1])], env)
+                                    "127.0.0.1:" + str(self.ftp.port)], env)
             out, deadline = b"", time.monotonic() + 60
             while time.monotonic() < deadline:
                 ready, _, _ = select.select([fd], [], [], 0.5)
@@ -329,11 +303,16 @@ elif '-o' in a:
                     self.assertIn(text, " ".join(result.stdout.replace("|", " ").split()))
                     self.assertEqual(self.device_files(), before)
                     self.assertFalse((self.device / "ur0/tai/VitaJPOverlay_Kernel.skprx").exists())
-        # a Vita that cannot be reached (FTP stopped, rebooted) is not one without the app
+        # a Vita that cannot be reached (FTP stopped, rebooted) is not one without the app: the port answered the
+        # reachability probe, then curl could not connect (its exit 7)
+        unreachable = self.root / "unreachable"
+        unreachable.mkdir()
+        (unreachable / "curl").write_text("#!/bin/sh\nexit 7\n")
+        (unreachable / "curl").chmod(0o755)
         result = subprocess.run(["bash", str(self.package / "install-vita.sh"), "--check-app",
-                                 "127.0.0.1:" + str(self.listener.getsockname()[1])],
-                                env=dict(self.environment, CURL_EXIT="7"), capture_output=True, text=True, timeout=30,
-                                check=False)
+                                 "127.0.0.1:" + str(self.ftp.port)],
+                                env=dict(self.environment, PATH=str(unreachable) + os.pathsep + os.environ["PATH"]),
+                                capture_output=True, text=True, timeout=30, check=False)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("Cannot read ux0:app/VJOSET001/vjo_app.txt from 127.0.0.1", result.stdout)
         self.assertIn("(curl exit 7)", result.stdout)
@@ -575,7 +554,10 @@ elif '-o' in a:
         self.assertIn("ocr_backend = lens", (self.data / "config.ini").read_text())
 
     def test_bad_readback_stops_before_publishing_configuration(self):
-        self.environment["CORRUPT_READBACK"] = "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict"
+        # the dictionary's readback is not what was written: its first byte flipped (a corrupted transfer of the
+        # right length, which curl accepts and the installer's checksum must not)
+        self.ftp.server.alter = {"RETR": lambda path, data: bytes([data[0] ^ 0xFF]) + data[1:]
+                                 if path == "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict" else data}
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FTP readback checksum failed", result.stdout + result.stderr)
@@ -616,7 +598,7 @@ elif '-o' in a:
         # Options after the address work too, and change nothing more.
         before = [self.tai(p) for p in ("ur0", "ux0")]
         result = subprocess.run(["bash", str(self.package / "install-vita.sh"),
-                                 "127.0.0.1:" + str(self.listener.getsockname()[1]), "--title", "PCSE00120"],
+                                 "127.0.0.1:" + str(self.ftp.port), "--title", "PCSE00120"],
                                 env=self.environment, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual([self.tai(p) for p in ("ur0", "ux0")], before)
