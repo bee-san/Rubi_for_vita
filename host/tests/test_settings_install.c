@@ -672,8 +672,8 @@ static int ini_listed(const VjoInstallScan *s, const char *line)
 }
 
 /* A line that only goes is named by its setting: an API key's by the key's name alone, whatever follows it
- * (removed_secret drops a line that starts with the name), never by a value; a changed setting is listed
- * once, by its new line; a second copy of a setting is named as one. The scan's whole list, each on a card
+ * (core/config.c drops a line that starts with the name: VJO_REMOVED_SECRET), never by a value; a changed setting is
+ * listed once, by its new line; a second copy of a setting is named as one. The scan's whole list, each on a card
  * small enough that none is only counted; and no value on the page either (log.txt gets none of these lines: the
  * install logs only config.ini's size, settings/install.c). */
 static void a_line_that_goes_is_named_by_its_setting_never_its_value(void)
@@ -913,8 +913,8 @@ static void a_bom_files_changed_first_line_is_listed_without_its_bom(void)
 
 /* audit-pr177 N3 and N6: an API key's name in capitals glued to its value is named by the key alone; a setting in
  * capitals that the app's save writes in lower case is listed once, by its new line, never also as gone; a CRLF
- * line that stays makes its same-named copy "repeated"; a key line after a CR is named too (removed_secret skips
- * CR, core/config.c is_space). */
+ * line that stays makes its same-named copy "repeated"; a key line after a CR is named too (core/config.c
+ * vjo_config_line_start skips CR, core/config.c is_space). */
 static void a_line_that_goes_is_named_whatever_its_case_or_line_ends(void)
 {
     fresh_card(1);

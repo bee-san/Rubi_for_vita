@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../core/local_dict.h" /* VJO_LOCAL_MAX_DICTS: local_dictionary_results' range */
 #include "../core/regions.h"
 #define BACKUP VJO_PREFERENCES_PATH ".bak"
 #define MISSING ((int)0x80010002u)
@@ -161,22 +162,27 @@ done:
     return rc;
 }
 
-/* The key of an INI line (lowercase into key), or 0 for none. */
-static int line_key(const char *line, size_t n, char key[40])
+/* The key of an INI line (lowercase into key), or 0 for none: its name, after the spaces and BOMs the parser skips,
+ * up to '=', a space or a tab, then '=' after spaces or tabs. cr: a CR ends the name and is skipped before the '=',
+ * as the parser trims it (the four-preference save has always read a line so). */
+static int line_key(const char *line, size_t n, char key[40], int cr)
 {
     size_t b = vjo_config_line_start(line, n), e; /* as the parser reads a name: after spaces and BOMs */
     e = b;
-    while (e < n && line[e] != '=' && line[e] != ' ' && line[e] != '\t') e++;
+    while (e < n && line[e] != '=' && line[e] != ' ' && line[e] != '\t' && !(cr && line[e] == '\r')) e++;
     if (e == b || e - b >= 40 || line[b] == ';' || line[b] == '#') return 0;
     for (size_t i = b; i < e; i++) key[i - b] = (char)(line[i] >= 'A' && line[i] <= 'Z' ? line[i] + 32 : line[i]);
     key[e - b] = 0;
-    while (e < n && (line[e] == ' ' || line[e] == '\t')) e++;
+    while (e < n && (line[e] == ' ' || line[e] == '\t' || (cr && line[e] == '\r'))) e++;
     return e < n && line[e] == '=';
 }
 
-/* config_rules: config.ini's removed-feature lines go or are replaced (vjo_config_removed_line); app.ini has none. */
+/* rules: config.ini's (CONFIG_RULES: a removed feature's lines go or are replaced, vjo_config_removed_line) or none
+ * (app.ini); PREFERENCE_RULES also reads a key as the parser does and drops the model lines vocr_tier replaced. */
+#define CONFIG_RULES 1
+#define PREFERENCE_RULES 2
 static int patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values, int n,
-                      char *out, size_t cap, int config_rules)
+                      char *out, size_t cap, int rules)
 {
     size_t i = 0, used = 0;
     unsigned seen = 0;
@@ -194,15 +200,21 @@ static int patch_keys(const char *text, size_t len, const char *const *keys, con
         size_t begin = i;
         char key[40];
         const char *replacement;
-        int k = -1, removed;
+        int k = -1, removed, named;
         while (i < len && text[i] != '\n') i++;
         if (i < len) i++;
-        if (line_key(text + begin, i - begin, key))
+        named = line_key(text + begin, i - begin, key, rules == PREFERENCE_RULES);
+        if (named)
             for (int j = 0; j < n && k < 0; j++)
                 if (!strcmp(key, keys[j])) k = j;
         if (k >= 0 && (seen & (1u << k))) continue; /* a duplicate goes */
+        /* an older build's model choice, which vocr_tier replaces (core/config.h VJO_REMOVED_MODEL, _TIER) */
+        if (k < 0 && named && rules == PREFERENCE_RULES) {
+            const char *r = vjo_config_removed(key, strlen(key));
+            if (r && (VJO_REMOVED_KIND(r) == VJO_REMOVED_MODEL || VJO_REMOVED_KIND(r) == VJO_REMOVED_TIER)) continue;
+        }
         /* a removed feature's line (core/config.h vjo_config_removed_line) goes or is replaced */
-        removed = k < 0 && config_rules ? vjo_config_removed_line(text + begin, i - begin, &replacement) : VJO_LINE_KEEP;
+        removed = k < 0 && rules ? vjo_config_removed_line(text + begin, i - begin, &replacement) : VJO_LINE_KEEP;
         if (removed == VJO_LINE_DROP || removed == VJO_LINE_DROP_SETTING) continue;
         int w = k >= 0 ? snprintf(out + used, cap - used, "%s = %s\n", keys[k], values[k])
                 : removed == VJO_LINE_REPLACE ? snprintf(out + used, cap - used, "%s", replacement)
@@ -224,13 +236,32 @@ static int patch_keys(const char *text, size_t len, const char *const *keys, con
 int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values,
                           int n, char *out, size_t cap)
 {
-    return patch_keys(text, len, keys, values, n, out, cap, 1);
+    return patch_keys(text, len, keys, values, n, out, cap, CONFIG_RULES);
 }
 
 int vjo_ini_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values, int n,
                        char *out, size_t cap)
 {
     return patch_keys(text, len, keys, values, n, out, cap, 0);
+}
+
+int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier, int japanese_only, int highlight_mode,
+                                 int dictionary_results, char *out, size_t cap)
+{
+    static const char *const keys[] = {"japanese_only_selection", "highlight_mode", "local_dictionary_results",
+                                       "vocr_tier"};
+    const char *values[4];
+    char results[12];
+    if (!vjo_vocr_tier_id(vocr_tier) || (japanese_only != 0 && japanese_only != 1) ||
+        (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
+        dictionary_results < 1 || dictionary_results > VJO_LOCAL_MAX_DICTS)
+        return -1;
+    values[0] = japanese_only ? "on" : "off";
+    values[1] = highlight_mode == VJO_HIGHLIGHT_WORD ? "word" : "character";
+    snprintf(results, sizeof(results), "%d", dictionary_results);
+    values[2] = results;
+    values[3] = vjo_vocr_tier_id(vocr_tier);
+    return patch_keys(text, len, keys, values, 4, out, cap, PREFERENCE_RULES);
 }
 
 /* Saves `n` keys (vjo_config_patch_keys: each replaced where it is, appended

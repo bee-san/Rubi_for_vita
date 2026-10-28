@@ -280,43 +280,68 @@ static const char *removed_dictionary(const char *v)
          : vjo_ieq(v, "hachidori") ? "the Hachidori relay" : NULL;
 }
 
-/* The API keys of the removed online dictionaries (api_key: jpdb's older
- * name) open the n bytes at s, in any case: the key's line, or a typo of
- * it, whose text may hold the key (whatever follows the name: "=", ":", a
- * space, the key itself). No setting's name starts with one of them. Such a
- * line is ignored without a warning, so no secret is ever shown or logged;
- * the Rubi app's next save and the installer (tools/migrate_config.py
- * SECRETS) delete it. */
-static int removed_secret(const char *s, size_t n)
+/* config.ini's removed settings, the one list (core/config.h vjo_config_removed): each entry is its kind, then its
+ * name. tools/migrate_config.py keeps a copy (SECRETS, REMOVED, REMOVED_PREFIXES) that
+ * tools/tests/test_migrate_config.py checks against this list. */
+#define REMOVED(kind, name) kind name "\0"
+static const char removed_keys[] =
+    /* The API keys of the removed online dictionaries (jpdb.io, jiten.moe; api_key: jpdb's older name), each a
+     * prefix: the key's line or a typo of it, whose text may hold the key (whatever follows the name: "=", ":", a
+     * space, the key itself). No setting's name starts with one of them. Such a line is ignored without a warning, so
+     * no secret is ever shown or logged; the Rubi app's next save and the installer delete it. */
+    REMOVED("S", "jpdb_api_key") REMOVED("S", "jiten_api_key") REMOVED("S", "api_key")
+    /* The removed Anki settings, ignored without a warning whatever follows their name: the field mapping a fixed
+     * note type replaced (anki_deck, anki_note_type, anki_tags, anki_field_*), and AnkiConnect's address and the
+     * word audio source (anki_host, anki_audio_url, whose URL can hold a key), gone with AnkiConnect: the Rubi app
+     * exports the cards as an .apkg. The installer removes them and says so; the app's next save drops them. */
+    REMOVED("a", "anki_deck") REMOVED("a", "anki_note_type") REMOVED("a", "anki_tags") REMOVED("a", "anki_host")
+    REMOVED("a", "anki_audio_url") REMOVED("A", "anki_field_")
+    /* The engine choice (VOCR is the only engine) and the UDP log's computer (the log went with the network) */
+    REMOVED("e", "ocr_backend") REMOVED("e", "log_host")
+    /* Older settings, ignored without a warning (the relay's hachidori_host too); the install drops them */
+    REMOVED("o", "frequency_filter") REMOVED("o", "font_size") REMOVED("o", "hw_jpeg") REMOVED("o", "combo_delay_ms")
+    REMOVED("o", "hachidori_host")
+    /* The model and its fallback, which one model size replaced (vocr_tier, API 21) */
+    REMOVED("m", "vocr_fallback_model") REMOVED("t", "vocr_model")
+    /* The dictionary choice: the local dictionaries are the only ones */
+    REMOVED("d", "dictionary");
+#undef REMOVED
+
+const char *vjo_config_removed(const char *s, size_t n)
 {
-    static const char *const keys[] VJO_DATA_TABLE(config_keys_1) = {"jpdb_api_key", "jiten_api_key", "api_key"};
-    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-        if (n >= strlen(keys[i]) && vjo_ieq_prefix(s, keys[i]))
-            return 1;
-    return 0;
+    for (const char *k = removed_keys; *k; k += strlen(k) + 1) {
+        size_t len = strlen(k + 1);
+        if ((*k < 'a' ? n >= len : n == len) && vjo_ieq_prefix(s, k + 1))
+            return k;
+    }
+    return NULL;
 }
 
-static int removed_anki_name(const char *s, size_t n);
+/* The kind (VJO_REMOVED_*) of the n bytes at s, a line's first word, among the removed settings, or 0. */
+static int removed_kind(const char *s, size_t n)
+{
+    const char *r = vjo_config_removed(s, n);
+    return r ? VJO_REMOVED_KIND(r) : 0;
+}
 
 int vjo_config_removed_line(const char *line, size_t n, const char **replacement)
 {
     size_t b = vjo_config_line_start(line, n), e, v;
+    int kind;
     *replacement = NULL;
-    if (removed_secret(line + b, n - b))
-        return VJO_LINE_DROP;
     e = b;
     /* the first word ends at '=', a space or the line's end (a name alone on its line too) */
     while (e < n && line[e] != '=' && line[e] != '\n' && !is_space(line[e])) e++;
-    /* a removed Anki setting goes too (anki_audio_url's URL can hold a key) */
-    if (removed_anki_name(line + b, e - b))
+    kind = removed_kind(line + b, e - b);
+    /* an API key's line, or a removed Anki setting's (anki_audio_url's URL can hold a key) */
+    if (kind == VJO_REMOVED_SECRET || kind == VJO_REMOVED_ANKI)
         return VJO_LINE_DROP;
     v = e;
     while (v < n && is_space(line[v])) v++;
     /* the engine choice: VOCR is the only engine; the UDP log went with the network (core/config.h) */
-    if (((e - b == 11 && vjo_ieq_prefix(line + b, "ocr_backend")) ||
-         (e - b == 8 && vjo_ieq_prefix(line + b, "log_host"))) && v < n && line[v] == '=')
+    if (kind == VJO_REMOVED_SETTING && v < n && line[v] == '=')
         return VJO_LINE_DROP_SETTING;
-    if (e - b != 10 || !vjo_ieq_prefix(line + b, "dictionary") || v >= n || line[v] != '=')
+    if (kind != VJO_REMOVED_DICTIONARY || v >= n || line[v] != '=')
         return VJO_LINE_KEEP;
     for (v++; v < n && is_space(line[v]); v++) {}
     /* the value up to an inline comment, a space or the line's end */
@@ -432,28 +457,6 @@ static const StrSetting *find_str_setting(const char *key)
     return NULL;
 }
 
-/* Removed Anki settings (any case), ignored without a warning: the field
- * mapping a fixed note type replaced (anki_deck, anki_note_type, anki_tags,
- * anki_field_*), and AnkiConnect's address and the word audio source
- * (anki_host, anki_audio_url), gone with AnkiConnect: the Rubi app exports
- * the cards as an .apkg. The installer (tools/migrate_config.py) removes them
- * from config.ini and says so, and the Rubi app's next save drops their
- * lines (vjo_config_removed_line). The n bytes at s are the name: a line's
- * first word. */
-static int removed_anki_name(const char *s, size_t n)
-{
-    static const char *const names[] VJO_DATA_TABLE(config_names_1) = {"anki_deck", "anki_note_type", "anki_tags", "anki_host", "anki_audio_url"};
-    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
-        if (n == strlen(names[i]) && vjo_ieq_prefix(s, names[i]))
-            return 1;
-    return n >= 11 && vjo_ieq_prefix(s, "anki_field_");
-}
-
-int vjo_config_removed_anki_key(const char *key)
-{
-    return removed_anki_name(key, strlen(key));
-}
-
 static int keeps_comment_chars(const char *key)
 {
     const StrSetting *ss = find_str_setting(key);
@@ -537,6 +540,11 @@ static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", 
 static void set_kv(VjoConfig *c, const char *key, const char *val)
 {
     const StrSetting *ss;
+    int kind = removed_kind(key, strlen(key));
+    /* removed settings without a warning (the relay's hachidori_host too: dictionary = hachidori's warning is the
+     * relay's one line) */
+    if (kind == VJO_REMOVED_OLDER || kind == VJO_REMOVED_MODEL)
+        return;
     if (vjo_ieq(key, "dictionary")) {
         /* the local dictionaries are the only ones: c->dictionary stays VJO_DICT_LOCAL */
         const char *removed = removed_dictionary(val);
@@ -548,11 +556,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         /* the UDP log was removed with the network (core/config.h): said once when one was set */
         if (val[0])
             warn(c, "%s: the UDP log was removed (the overlay is offline); log.txt stays", key);
-    } else if (vjo_ieq(key, "frequency_filter") || vjo_ieq(key, "font_size") || vjo_ieq(key, "hw_jpeg") ||
-               vjo_ieq(key, "combo_delay_ms") || vjo_ieq(key, "hachidori_host") || vjo_config_removed_anki_key(key) ||
-               removed_secret(key, strlen(key))) {
-        /* removed settings (tools/migrate_config.py REMOVED): no warning (the relay's
-         * hachidori_host too: dictionary = hachidori's warning is the relay's one line) */
     } else if (vjo_ieq(key, "non_japanese_filter")) {
         if (vjo_ieq(val, "lines"))
             c->non_japanese_filter = VJO_FILTER_LINES;
@@ -616,8 +619,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             warn(c, "%s: not a model of this build; using vocr_tier", key);
         else if (!c->vocr_tier_explicit)
             c->vocr_tier = t;
-    } else if (vjo_ieq(key, "vocr_fallback_model")) {
-        /* removed: a job falls back to the next smaller tier (tools/migrate_config.py REMOVED) */
     } else if (vjo_ieq(key, "ocr_settle_ms")) {
         set_ms(c, key, val, &c->ocr_settle_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_settle_max_ms")) {
@@ -694,91 +695,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     }
 }
 
-#define DROPPED_PREFERENCE (-2) /* a line the app's save removes (preference_key) */
-
-static int preference_key(const char *line, size_t n)
-{
-    size_t begin = vjo_config_line_start(line, n), end;
-    char key[40];
-    end = begin;
-    while (end < n && line[end] != '=' && !is_space(line[end])) end++;
-    size_t key_len = end - begin;
-    if (!key_len || key_len >= sizeof(key)) return -1;
-    while (end < n && is_space(line[end])) end++;
-    if (end == n || line[end] != '=') return -1;
-    memcpy(key, line + begin, key_len);
-    key[key_len] = 0;
-    return vjo_ieq(key, "japanese_only_selection") ? 0 :
-           vjo_ieq(key, "highlight_mode") ? 1 :
-           vjo_ieq(key, "local_dictionary_results") ? 2 :
-           vjo_ieq(key, "vocr_tier") ? 3 :
-           /* an older build's model choice, which vocr_tier replaces: dropped */
-           vjo_ieq(key, "vocr_model") || vjo_ieq(key, "vocr_fallback_model") ? DROPPED_PREFERENCE : -1;
-}
-
-#define OWNED_PREFERENCES 4
-
-int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier,
-                                 int japanese_only, int highlight_mode,
-                                 int dictionary_results, char *out, size_t cap)
-{
-    const char *values[OWNED_PREFERENCES];
-    char results_line[40], tier_line[32];
-    size_t i = 0, used = 0;
-    unsigned seen = 0;
-    if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap || !vjo_vocr_tier_id(vocr_tier) ||
-        (japanese_only != 0 && japanese_only != 1) ||
-        (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
-        dictionary_results < 1 || dictionary_results > VJO_LOCAL_MAX_DICTS ||
-        (len && memchr(text, 0, len)))
-        return -1;
-    values[0] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";
-    values[1] = highlight_mode == VJO_HIGHLIGHT_WORD
-        ? "highlight_mode = word\n" : "highlight_mode = character\n";
-    vjo_snprintf(results_line, sizeof(results_line), "local_dictionary_results = %d\n", dictionary_results);
-    values[2] = results_line;
-    vjo_snprintf(tier_line, sizeof(tier_line), "vocr_tier = %s\n", vjo_vocr_tier_id(vocr_tier));
-    values[3] = tier_line;
-    /* Keep a BOM even when the first line is an owned preference. */
-    if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
-        if (cap <= 3) return -1;
-        memcpy(out, text, 3); used = i = 3;
-    }
-    while (i < len) {
-        size_t begin = i;
-        while (i < len && text[i] != '\n') i++;
-        int key = preference_key(text + begin, i - begin);
-        if (i < len) i++;
-        const char *line = text + begin, *replacement;
-        size_t bytes = i - begin;
-        if (key == DROPPED_PREFERENCE) continue;
-        if (key >= 0) {
-            if (seen & (1u << key)) continue;
-            seen |= 1u << key;
-            line = values[key]; bytes = strlen(line);
-        } else {
-            int removed = vjo_config_removed_line(line, bytes, &replacement);
-            if (removed == VJO_LINE_DROP || removed == VJO_LINE_DROP_SETTING) continue;
-            if (removed == VJO_LINE_REPLACE) { line = replacement; bytes = strlen(line); }
-        }
-        if (bytes >= cap - used) return -1;
-        memcpy(out + used, line, bytes); used += bytes;
-    }
-    for (int key = 0; key < OWNED_PREFERENCES; key++) {
-        if (seen & (1u << key)) continue;
-        if (used && out[used - 1] != '\n') {
-            if (used + 1 >= cap) return -1;
-            out[used++] = '\n';
-        }
-        size_t bytes = strlen(values[key]);
-        if (bytes >= cap - used) return -1;
-        memcpy(out + used, values[key], bytes); used += bytes;
-    }
-    if (used > VJO_CONFIG_TEXT_MAX) return -1;
-    out[used] = 0;
-    return (int)used;
-}
-
 void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
 {
     size_t i = 0;
@@ -802,21 +718,21 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         if (s == n || line[s] == ';' || line[s] == '#')
             continue;
         {
-            /* A removed Anki setting's line, whatever follows its name ('=', a space, a
-             * URL that can hold a key, a value too long), is ignored before anything of
-             * it could reach a warning. */
+            /* An API key's line or a removed Anki setting's, whatever follows its name ('=', a space, a URL that can
+             * hold a key, a value too long), is ignored before anything of it could reach a warning. */
             size_t w = s;
+            int kind;
             while (w < n && line[w] != '=' && !is_space(line[w]))
                 w++;
-            if (removed_anki_name(line + s, w - s))
+            kind = removed_kind(line + s, w - s);
+            if (kind == VJO_REMOVED_SECRET || kind == VJO_REMOVED_ANKI)
                 continue;
         }
         {
             char *p = strchr(line + s, '=');
             if (!p) {
-                /* named by its number, never quoted: its text may be a key (a removed API key's is silent) */
-                if (!removed_secret(line + s, n - s))
-                    warn(c, "ignored line %u (no '=')", line_no);
+                /* named by its number, never quoted: its text may be a key */
+                warn(c, "ignored line %u (no '=')", line_no);
                 continue;
             }
             eq = (size_t)(p - line);
@@ -847,10 +763,8 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         while (e > s && is_space(line[e - 1]))
             e--;
         if (cut || e - s >= sizeof(val)) {
-            if (!removed_secret(key, strlen(key))) { /* a removed setting stays silent */
-                char name[VJO_CONFIG_WARN_KEY + 1];
-                warn(c, "%s: value too long", warn_name(name, key));
-            }
+            char name[VJO_CONFIG_WARN_KEY + 1];
+            warn(c, "%s: value too long", warn_name(name, key));
             continue;
         }
         memcpy(val, line + s, e - s);
