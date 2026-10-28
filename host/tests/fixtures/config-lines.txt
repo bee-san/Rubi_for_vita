@@ -29,6 +29,9 @@ font_size_ja = 20\r\nfont_size_en = 12\r\n
 \xEF\xBB\xBFfont_size_ja = 20
  \xEF\xBB\xBF font_size_ja = 20
 \xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20
+\xEF\xBBfont_size_ja = 20
+\xEFfont_size_ja = 20
+\xEF\xBB\xBEfont_size_ja = 20
 font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12
 \xEF\xBB\xBF
 anki_mining\r= off
@@ -104,6 +107,9 @@ font_size_ja = 7
 font_size_ja = 41
 font_size_ja = -8
 font_size_ja = big
+font_size_ja = 100000001
+font_size_ja = 999999999999
+font_size_ja = 0020
 font_size_en = 8
 font_size_en = 40
 font_size_en = 41
@@ -279,6 +285,8 @@ anki_screenshot_trim_bars = off
 Anki_Screenshot_Trim_Bars = OFF
 anki_screenshot_trim_bars = x
 anki_mining = on ; a comment
+anki_mining = off\nanki_mining = on
+anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on
 // ---- the dictionary choice (jpdb.io, jiten.moe and the Hachidori relay removed)
 dictionary = local
 dictionary = LOCAL
@@ -295,6 +303,10 @@ dictionary = relay
 dictionary =
 dictionary
 dictionaryx = jpdb
+dictionary local = 1
+dictionary = jpdb;x
+dictionary = jiten#x
+dictionary = hachidori;relay
 dictionary = hachidori\nhachidori_host = 192.168.1.20:19633
 hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori
 // ---- the online dictionaries' API keys (secrets: never in a warning, a save or the log)
@@ -393,6 +405,11 @@ vocr_model = FL10
 vocr_model = FL10_w8.bin
 vocr_model = dir/FL10_w8.vocr
 vocr_model = .vocr
+vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
+vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
+vocr_model
+vocr_model FL10_w8.vocr
+vocr_model x = 1
 vocr_model = meiki-stream-int8.mnn
 vocr_model =
 vocr_fallback_model = VOCR3_FL10_w8.vocr

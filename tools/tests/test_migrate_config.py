@@ -103,18 +103,20 @@ def migrate_in_process(module, folder, old_bytes, *sets):
     return status, out.read_bytes() if out.exists() else None, report.getvalue()
 
 
-def golden_migration(module, folder, old_bytes, lines, first=None):
-    """One migration in the golden file: its exit status, the template's lines it changed (- and +, no line numbers)
-    and its report, or (first: a first install's report lines) only the lines its report has that a first install's
-    has not (+) and the other way round (-): a first install reports every setting it writes. Returns the report's
-    lines."""
-    status, new, report = migrate_in_process(module, folder, old_bytes)
+def golden_migration(module, folder, old_bytes, lines, first=None, sets=()):
+    """One migration in the golden file: its exit status, the template's lines it changed (- and +, each hunk's line
+    numbers on its @@ line) and its report, or (first: a first install's report lines) only the lines its report has
+    that a first install's has not (+) and the other way round (-): a first install reports every setting it writes.
+    sets: key=value overrides, as install_ftp.sh passes them. Returns the report's lines."""
+    status, new, report = migrate_in_process(module, folder, old_bytes, *sets)
     lines.append("  exit %d" % status)
     if new is not None:
         before = TEMPLATE.read_bytes().split(b"\n")
         diff = list(difflib.diff_bytes(difflib.unified_diff, before, new.split(b"\n"), lineterm=b"", n=0))
         for d in diff[2:]:  # after the two file headers
-            if not d.startswith(b"@@"):
+            if d.startswith(b"@@"):
+                lines.append("  " + d.decode("ascii"))
+            else:
                 lines.append(("  %s %s" % (d[:1].decode("ascii"), escape_short(d[1:]))).rstrip(" "))
     said = report.splitlines()
     if first is None:
@@ -145,6 +147,23 @@ class MigrateConfig(unittest.TestCase):
                 lines.append("> " + escape_short(record))
                 golden_migration(module, folder, record, lines, first)
                 count += 1
+            # key=value overrides (install_ftp.sh --set), over a first install and over a file (P2's audit F4)
+            for old, sets in ((None, ("log_file=on",)), (None, ("vocr_tier=large", "log_file=off")),
+                              (b"vocr_tier = small\n", ("vocr_tier=huge",)), (b"", ("vocr_model=FL10_w8.vocr",)),
+                              (b"vocr_tier = large\n", ("vocr_model=H15_w8.vocr", "vocr_fallback_model=none")),
+                              (b"", ("vocr_model=FL10_w8.vocr", "vocr_tier=large")), (b"", ("dictionary=jpdb",)),
+                              (b"", ("dictionary=Hachidori", "hachidori_host=10.0.0.1")),
+                              (b"", ("jpdb_api_key=secret-50", "API_KEY=secret-51", "jiten_api_keyx=secret-52")),
+                              (b"", ("anki_host=auto", "anki_audio_url=https://a.invalid/?k=secret-53",
+                                     "anki_field_word=Word")),
+                              (b"", ("ocr_backend=lens", "log_host=10.0.0.1", "frequency_filter=3", "font_size=20")),
+                              (b"", ("my_debug_switch=1",)), (b"my_debug_switch = 2\n", ()),
+                              (b"", ("Font_Size_JA=20", " log_file = off ")), (b"", ("local_dictionaries=mine.vjdict",)),
+                              (b"local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 1\n",
+                               ("local_dictionary_results=1",))):
+                lines.append("> %s --set %s" % ("(none)" if old is None else escape_short(old) or "(empty)",
+                                                 " ".join(escape(v.encode("utf-8")) for v in sets) or "(nothing)"))
+                golden_migration(module, folder, old, lines, first, sets)
         self.assertGreater(count, 300)
         text = "\n".join(lines) + "\n"
         golden = FIXTURES / "config-migrate.golden"
