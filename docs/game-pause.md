@@ -14,6 +14,8 @@ two frames at 60 fps: draw a text box first. For a frame in A2B10G10R10 it waits
 estimates, from the copy's instructions alone (no uncached CDRAM latency, no firmware copies: below), so the
 console's figure may be higher; it is unmeasured. The wait can never last longer than 100 ms. A copy that reaches it
 turns the pause off for that game until it next starts. The game is not paused while the text is recognized.
+The code takes the OCR worker one page more, 4,096 B of each game that is ON, whether or not the setting is
+([memory](#memory)). In a PSP game (Adrenaline) it does nothing: no copy, no block, no step.
 
 Not run on a console yet. Everything here is from the source, the host tests and the host bench.
 
@@ -54,7 +56,8 @@ strip, rc -120, 72 display calls and nothing shown. Paused, rc 0: one display ca
 ## How it works
 
 1. **The request.** The Shell sets `VJO_GAME_OCR_S_PAUSE` (bit 30) in each of the user's jobs when `ocr_pause = on`
-   (`shell/worker.c`). The self-test's stages never set it.
+   (`shell/worker.c`). The self-test's stages never set it. In the PSP emulator's process (`psp_title`: a PSP game
+   under Adrenaline) the worker ignores it: the job reads exactly as with the setting off.
 2. **The frame block.** The game worker counts a block of the region's size (width × height grey bytes, at most
    522,240 B) in the job's memory check. It takes the block only when it fits beside everything the check chose,
    with that check's reserve. It never steps down a model size, the LM or the cascade for it. In a game short of
@@ -89,8 +92,8 @@ strip, rc -120, 72 display calls and nothing shown. Paused, rc 0: one display ca
 5. **Read as before.** The job reads strip by strip, exactly as with the setting OFF, when:
    - the kernel refuses the copy or cannot finish it;
    - the block does not fit;
-   - the game's frames come from its pad calls (the PSP emulator under Adrenaline, `VJO_GAME_STATIC_FB`: refused with
-     `VJO_ERR_UNSUPPORTED`).
+   - the kernel's watchdog has turned pausing off (`VJO_ERR_UNSUPPORTED`). A game whose frames come from its pad calls
+     (`VJO_GAME_STATIC_FB`, the PSP emulator) is refused the same way, but the worker never asks there (step 1).
 
    In each case the block goes back to the game before the job reads on, so a job never holds the frame block and a
    tall line's block together.
@@ -119,15 +122,24 @@ that function returns. `host/tests/test_kernel_game_ocr.c` runs each path throug
 | no frame within 1.5 s | not called | strip by strip (`VJO_ERR_TIMEOUT`) |
 | the job cancelled before a frame came | not called | ends cancelled, the block freed |
 | the game exits right after the frame | returned already; the call tidies the state | ends |
-| a PSP game (`VJO_GAME_STATIC_FB`), or the watchdog's switch | not called | strip by strip (`VJO_ERR_UNSUPPORTED`) |
+| the watchdog's switch (or a `VJO_GAME_STATIC_FB` game, which the worker never asks: step 1) | not called | strip by strip (`VJO_ERR_UNSUPPORTED`) |
 | a copy that outlives its call (2 s) | still copying: nothing outside the game's thread may stop it | ends; the block is never freed, the worker takes no more jobs, as for a capture block |
 
-**The watchdog.** The kernel worker's tick runs every 16 ms (`kernel/game_ocr.c` `game_ocr_rows_tick`). If a frame
-copy has run for more than twice its cap (`PAUSE_WATCHDOG_US`, 200 ms), it turns pausing off until the next boot,
+**The watchdog.** The kernel worker's tick runs every 16 ms (`kernel/game_ocr.c` `game_ocr_rows_tick`). If it sees
+a frame copy running for more than twice its cap (`PAUSE_WATCHDOG_US`, 200 ms), it turns pausing off until the next boot,
 logged in kernel.txt (`ocr pause: ...`). Every later frame copy is then refused and jobs read strip by strip. The
-copy's own cap should never let this happen: only a row read that itself stalls would. A copy that is only slow (150
-ms, past the cap and a chunk), an ordinary strip's copy and an idle state never trip it (tested). The switch does not
-show in the Rubi app, which still says ON: only kernel.txt's line and the steps' rc (UNSUPPORTED) do.
+copy's own cap should never let this happen: only a row read that itself stalls would. It counts only the time the
+copy runs with its game in front, between looks no more than `PAUSE_WATCHDOG_GAP_US` (100 ms) apart (#355's review):
+a game suspended while its display thread is in a copy (the PS button) holds that thread, and the copy, as long as it
+is suspended, and a look after a longer gap (the kernel worker itself did not run: standby) counts nothing. A crash
+dump of the game that does not change the foreground first can still trip it (inferred: the pause is then off until
+the next boot, which only kernel.txt says). A copy that is only slow (150 ms, past the cap and a chunk), an ordinary
+strip's copy and an idle state never trip it (tested). The switch does not show in the Rubi app, which still says ON:
+only kernel.txt's line and the steps' rc (UNSUPPORTED) do.
+
+**The cap after a suspension.** The same suspension makes the copy's time, which the hook measures, include it: past
+the cap, the copy ends with `VJO_ERR_TIMEOUT` as the game resumes. The suspension cancels the job (the kernel's
+foreground change), and a cancelled job's cut copy does not turn the pause off for the game (`pause_capped`).
 
 ## What was studied
 
@@ -187,9 +199,13 @@ No kernel or system thread is ever paused. No game thread is suspended, and noth
   - Settled, a paused job reads its frame at once: a pause in the typing longer than the kernel's settled window
     (300 ms, `kernel/scene.h`) is read as typed so far, where strip by strip it needed 13 more frames at 60 fps (11
     at 30 fps): about 0.3 s against 0.52 s or 0.67 s in all (est.).
-  - A press on a screen the kernel calls settled reads the frame at once too, where strip by strip it waits
-    200-217 ms at 60 fps.
-  - Not settled, the job still waits on the live screen before its first pass, but not after the finder: its window
+  - **A press** (#413, on `main` since these figures): the open overlay's job waits for nothing, settled or not (not
+    after a torn read: #441), so with the pause it reads the frame at the press, at once. A line still typing out is
+    read as far as it has typed, where strip by strip the typing tears the read and the retry waits for it. With
+    **Read text: Automatically** the open overlay's refresh replaces it with the whole line once the screen settles;
+    with **Only when I press**, press again (`test_game_resident.c` `a_paused_press_reads_the_frame_at_the_press`).
+  - Not settled (a background job of **Automatically** on a quiet screen), the job still waits on the live screen
+    before its first pass, but not after the finder: its window
     shrinks from 22-23 to 15-16 frames at 60 fps, and from 16-17 to 9-10 at 30 fps. The other regions agree
     (400 × 100: 17/18 against 12/13; 760 × 160: 22/23 against 14/15; 960 × 544: never partial within 40 frames
     against 15/16).
@@ -200,14 +216,14 @@ No kernel or system thread is ever paused. No game thread is suspended, and noth
   These are host figures; a console's frame pacing differs ([text stability](text-stability.md#the-replay)).
 - **A spinner the kernel cannot mask.** The kernel's tracker masks a cell that cycles through its recent states
   ([text stability](text-stability.md#when-a-read-starts-and-what-counts-as-stable)). A spinner that never returns
-  to a state keeps the screen unsettled. Each job then waits out its budget on the live screen (above) before it
-  copies its frame: an estimated 2 s with **Read text: Automatically**, 1 s for a press. Skipping that wait for a
-  paused job would read a line still typing out, so this PR keeps it.
+  to a state keeps the screen unsettled. A background job of **Read text: Automatically** then waits out its budget on
+  the live screen (above) before it copies its frame, an estimated 2 s; skipping that wait would read a line still
+  typing out, so it is kept. A press waits for nothing (#413) and copies the frame at once.
 - **The screen is not frozen while it is recognized.** Only the copy is still. The game goes on during recognition,
   as it does with the setting OFF.
 - **A game that draws into the buffer it shows.** A single-buffered game could change its frame while its own
   display call copies it. That is a race of a few ms against the strips' 150 ms or more today (inferred).
-- **PSP games.** They read as before (above).
+- **PSP games.** They read exactly as with the setting off: the worker never asks for the pause there (above).
 - **The frame block.** It takes 4-512 KiB of the game's memory per job (below), only when it fits.
 
 ## Memory
@@ -215,9 +231,19 @@ No kernel or system thread is ever paused. No game thread is suspended, and noth
 `VjoGameVocrFrame` is width × height bytes, page-rounded: 118,784 B for an 852 × 135 box, 524,288 B at
 960 × 544. `VJO_BUDGET_GAME_FRAME`, 524,288 B, is in `include/vjo_ledger_budget.h`. A job holds this block or a tall
 line's (`VJO_BUDGET_GAME_LINE`, 516,096 B), never both, so the game's worst case counts the larger
-(`VJO_BUDGET_GAME_LINE_OR_FRAME`). That is 8,192 B more: 10,412,032 B against the 10,604,544 B limit
-([memory ledger](memory-ledger.md)). The kernel takes nothing more: no block, no thread, no stack. SceShell's copies of the parsed settings
-grow by 4 B each, and its request by a bit.
+(`VJO_BUDGET_GAME_LINE_OR_FRAME`), and the worker's ledger counts it as the tall line's item, which it replaces (its
+twelve items stay twelve in every module). That is 8,192 B more: 11,022,336 B against the 11,214,848 B limit
+([memory ledger](memory-ledger.md#the-pause-for-the-frame-api-55)).
+
+The modules, measured against `main` dc272d1 (both builds, `tools/check_memory_ledger.py`):
+- **The OCR worker** takes one page more, 4,096 B in each game that is ON, whether or not the setting is: the pause's
+  1,248 B of code did not fit the last code page (272 B of it left in the debug build, 1,028 B in the normal one). Its
+  data keeps its pages: the pinned model table (480 B) is read-only data again, in the new page.
+- **The Shell** (SceShell's pages may only shrink: [AGENTS.md](../AGENTS.md)) keeps its pages, with room to spare:
+  the key's parse, the speed bit, the wait hint's clause (a format of the one hint, written in a 256 B buffer on
+  VjoControl's 16 KiB stack: `start_job_kind`'s frame 24 → 280 B, measured with `-fstack-usage`) and `VjoConfig`'s
+  4 B are paid for by `core/config.c` parsing its off/on settings from one table.
+- **The kernel** keeps its pages. It takes no block, thread or stack.
 
 ## The game's wait per reading (estimates)
 
@@ -246,6 +272,7 @@ A console run measures it: the debug build's `gstep pause` step (its us) and ker
   - the cap stops the copy within one chunk, and the job then reads strip by strip;
   - every other end (copy error, another size, no frame, cancelled, process exit) returns the display call;
   - the watchdog's threshold (a 150 ms copy never trips it), its off switch, and a stalled copy given up and tidied;
+    the time a suspended game holds a copy, and a gap in the kernel worker's looks (standby), never count;
   - the real display hook (`kernel/display.c`): the game's call copies and goes on; another call during the copy goes
     on at once and reads nothing (`frame_busy`); other processes, indexes and no frame go on at once; only a
     static-framebuffer game is sampled from its pad calls;
@@ -262,7 +289,10 @@ A console run measures it: the debug build's `gstep pause` step (its us) and ker
   - no room, or a refused allocation, keeps the model;
   - a cancelled copy, and one that outlived its call;
   - weights refused after the check (#324): the smaller model's try takes its own block and copies its own frame;
-  - a copy that reaches the cap turns the pause off for the game (later jobs: no copy, no block, `capped`);
+  - a copy that reaches the cap turns the pause off for the game (later jobs: no copy, no block, `capped`), and a
+    cancelled job's cut copy (a game suspended in its copy) does not;
+  - in a PSP game the pause is a no-op: no block, no copy, no step, the same steps, strips and captures as off;
+  - a paused press (no wait, #413) reads the frame at the press;
   - another model's resident weights stay as without the pause, the frame block costing a helper instead.
 - **Auto** (`host/tests/test_game_vocr.c`): with the pause, each of auto's tries copies its own frame (three without
   the vertical model), and the step's us is their sum.
@@ -282,10 +312,12 @@ A console run measures it: the debug build's `gstep pause` step (its us) and ker
    `gstep job pause` us with the region and `fmt` (its `game vocr` line). Expect no `pause` step with
    `rc=0xBFFFFFFC` (the cap), and in kernel.txt no `ocr pause:` line and no `copy still running` line.
 3. **Stutter.** `gstep job pace` (frames during the job, the longest gap, gaps over 25 ms) ON against OFF in the
-   same game; listen for audio crackle at each reading; suspend (PS button) and quit the game while a reading runs.
-4. **Nothing else changes.** CLANNAD ON, with a press while the text types: no line read before it is whole. A PSP
-   game ON: `rc=0xBFFFFFF6` (UNSUPPORTED), reading as before. OFF, and a `config.ini` without the line: no `pause`
-   step and no `the frame's N rows` line in kernel.txt.
+   same game; listen for audio crackle at each reading; suspend (PS button) and quit the game while a reading runs:
+   after the suspension, the next readings still have `gstep job pause kind=1` (no `ocr pause:` line in kernel.txt).
+4. **Nothing else changes.** CLANNAD ON, with a press while the text types: the line as far as it has typed, then
+   (Read text: Automatically) the whole line once it settles. A PSP game ON: no `pause` step, reading as before. OFF,
+   and a `config.ini` without the line: no `pause` step and no `the frame's N rows` line in kernel.txt; the Rubi app's
+   card says OFF.
 
 Grep lines (the collect zip's `log.txt` and `kernel.txt`): `grep -E "gstep job (pause|tear|pace|settle)|game vocr rc="`
 and `grep -E "the frame's|ocr pause:|copy still running"`.

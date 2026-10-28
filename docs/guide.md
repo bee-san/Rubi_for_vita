@@ -816,7 +816,8 @@ no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-o
 frame at once, inside that frame's display call, which the game waits in for as long: an estimated 2.4-6.4 ms for a
 dialogue box at 333 MHz, and 10.8-29.0 ms for the whole screen, the region before a text box is drawn (draw one with
 □ first), at most 100 ms. The OCR reads that still copy, so a spinning icon in the box cannot stop the read
-([pause](game-pause.md); not run on a console). PSP games in Adrenaline read as before.
+([pause](game-pause.md); not run on a console). In a PSP game (Adrenaline) it does nothing; while it is off in a Vita
+game, the open overlay's hint for text that keeps changing names it.
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
 #100's text-presence gate in front of the finder: a region it says holds no text (the game hid its text box, a CG
 screen) returns no line, so nothing is recognized and no junk is read off the picture. It stays off because it also
@@ -1095,11 +1096,11 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 208,896 B of module pages (217,088 B in the debug build; API 31's native hooks and
+holds the worker's 212,992 B of module pages (221,184 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
 two-level head 8,192 B, API 47's vertical text 4,096 B, API 50's line finder fixes with vita-vn-ocr f8a1856's
-runtime 8,192 B and API 54's text spotter 16,384 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+runtime 8,192 B, API 54's text spotter 16,384 B and API 55's pause for the frame 4,096 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

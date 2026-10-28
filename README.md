@@ -188,7 +188,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns, but rows where the box plainly holds lines of text) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | | **Suggest a text box**: a game without a box of its own is offered the one Rubi finds around its dialogue, once each time it starts or resumes ([details](docs/first-box.md)) | ON |
-| | **Pause the game to read**: each reading copies the text box from one frame at once, the game waiting a moment (an estimated 2-6 ms for a drawn text box, 11-29 ms for the whole screen: draw a box with □ first), so a spinning icon in it can't stop the read ([details](docs/game-pause.md)) | OFF |
+| | **Pause the game to read**: each reading copies the text box from one frame at once, the game waiting a moment (an estimated 2-6 ms for a drawn text box, 11-29 ms for the whole screen: draw a box with □ first), so a spinning icon in it can't stop the read; nothing in a PSP game ([details](docs/game-pause.md)) | OFF |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -318,7 +318,7 @@ Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the e
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
 game has free, leaves the game a reserve of 1 MiB, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
-Rubi's OCR worker from its start: 240 KiB of its memory (204 KiB of module pages, 36 KiB of stack and
+Rubi's OCR worker from its start: 244 KiB of its memory (208 KiB of module pages, 36 KiB of stack and
 TLS: the normal build's figures; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).

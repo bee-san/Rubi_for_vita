@@ -339,9 +339,11 @@ it says:
 
   So the hint says the fix as a condition ("if a region around just the text leaves it out"), and names typing as a
   cause, which is what the slow-typing runs that show it first are (below).
-- **Pause the game to read** (#355, a draft) is the fix for the rest in a Vita game: a frozen frame cannot tear. The
-  hint names it once #355 is on `main`, only while the setting is off, and never in the PSP emulator, whose frames
-  the kernel never pauses. See "With #355 and #359" below for how its clause fits.
+- **Pause the game to read** (#355, API 55, [game-pause.md](game-pause.md)) is the fix for the rest in a Vita game: a
+  frozen frame cannot tear. While it is off (the default), in a Vita game, the hint ends "Or turn on Pause the game to
+  read in the Rubi app."; not with it on, and never in the PSP emulator, where it does nothing (`game_static_fb`). The
+  clause is a format of the one hint (`WAIT_HINT_PAUSE`, written into a 256 B buffer in `start_job_kind`'s frame on
+  VjoControl's stack), as below asked: see "With #355 and #359" for how it fits.
 - **Starting over.** A region saved or cleared (□) starts the count over, as a new game does: the old region's tears
   say nothing of the new one's, and its next press says "Recognizing…" until two of its own jobs tear.
 - **Held over, in Only when I press L + R.** Nothing reads the screen between presses there but the subtitle strip
@@ -393,7 +395,11 @@ it says:
   type slowly with nothing else moving (35 a character every 15 frames).
 - An earlier run of #359's (fix9, superseded by its audit) gave 2 runs and 3 of 1,724.
 
-**With #355 and #359.** Their Shell changes do not fit beside this one on today's `main` (8da24c8) as they are.
+**With #355 and #359.** #355 is on `main` since API 55, its clause a format of the one hint, as the third point below
+asks; it fits the Shell's pages in both builds because `core/config.c` now parses its off/on settings from one table
+(136 B of the normal Shell's code, 104 B of the debug one's) [measured: tools/check_memory_ledger.py's module rows, main
+dc272d1 and #355, both builds; [memory-ledger.md](memory-ledger.md#the-pause-for-the-frame-api-55)]. The rest of this
+section is the measurement made before, when neither fitted beside this change on `main` 8da24c8 as they were.
 - **The measurement:** `main` with this change, plus #355 at 9e44739 and #359 at f630b69's Shell change (its log
   line), each built in both variants (`tools/check_memory_ledger.py`'s module rows). Those heads predate #376 and
   #368, so the scratch merges were resolved for the build only.
