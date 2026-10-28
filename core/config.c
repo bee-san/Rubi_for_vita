@@ -10,8 +10,9 @@
 #include "textfilter.h"
 #include "utf.h"
 
-static const char *const trigger_names[VJO_TRIGGER_COUNT] VJO_DATA_TABLE(config_trigger_names_1) = {
-    "select", "start", "l+r", "select+l", "select+r", "rear_double_tap",
+/* enum VjoTrigger's names, NULL-ended for set_choice */
+static const char *const trigger_names[VJO_TRIGGER_COUNT + 1] VJO_DATA_TABLE(config_trigger_names_1) = {
+    "select", "start", "l+r", "select+l", "select+r", "rear_double_tap", NULL,
 };
 
 const char *vjo_trigger_name(int trigger)
@@ -466,7 +467,6 @@ static void set_font(VjoConfig *c, const char *key, const char *val, int *dst)
         warn(c, "%s: invalid value (8-40)", key);
 }
 
-/* A time in ms within [lo, hi]. */
 /* One of names (NULL-ended), stored as its index. */
 static void set_choice(VjoConfig *c, const char *key, const char *val, int *dst, const char *const *names)
 {
@@ -478,6 +478,7 @@ static void set_choice(VjoConfig *c, const char *key, const char *val, int *dst,
     warn(c, "%s: invalid value", key);
 }
 
+/* A time in ms within [lo, hi]. */
 static void set_ms(VjoConfig *c, const char *key, const char *val, int *dst, int lo, int hi)
 {
     int v;
@@ -485,17 +486,6 @@ static void set_ms(VjoConfig *c, const char *key, const char *val, int *dst, int
         *dst = v;
     else
         warn(c, "%s: invalid value (ms, out of range)", key);
-}
-
-static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst)
-{
-    for (int i = 0; i < VJO_TRIGGER_COUNT; i++) {
-        if (vjo_ieq(val, trigger_names[i])) {
-            *dst = i;
-            return;
-        }
-    }
-    warn(c, "%s: invalid value", key);
 }
 
 /* API 42: ocr_head_gate's name and its values' (core/config.h VJO_HEAD_*), in the data segment (core/port.h
@@ -522,61 +512,73 @@ const char *const vjo_text_source_names[] VJO_DATA_TABLE(config_sources_1) = {"o
  * settings that parsed off/on by hand read it through set_choice, the same values and warning: the Shell's code
  * pages keep room for the spotter's settings (docs/memory-ledger.md, "The spotter finder"). */
 static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", NULL};
+/* The other choices with no rule of their own, by value (VJO_FILTER_*, VJO_HIGHLIGHT_*, VJO_OCR_*, enum VjoTrigger),
+ * read through the same table (#418: they parsed by hand), the same values and warning. */
+static const char *const filters[] = {"none", "lines", NULL};
+static const char *const highlights[] = {"word", "character", NULL};
+static const char *const ocr_modes[] = {"auto", "on_press", NULL};
+typedef char vjo_config_choices_are_their_values[VJO_FILTER_NONE == 0 && VJO_FILTER_LINES == 1 &&
+                                                 VJO_HIGHLIGHT_WORD == 0 && VJO_HIGHLIGHT_CHARACTER == 1 &&
+                                                 VJO_OCR_AUTO == 0 && VJO_OCR_ON_PRESS == 1 ? 1 : -1];
+enum { CHOICE_OFF_ON, CHOICE_FILTER, CHOICE_HIGHLIGHT, CHOICE_OCR_MODE, CHOICE_TRIGGER };
+static const char *const *const choices[] = {off_on, filters, highlights, ocr_modes, trigger_names};
 /* #355's review H1: the off/on settings with no rule of their own (an unknown value keeps the field, with
  * set_choice's warning), one table and one loop in place of a branch each, and #358's and API 54's keys read-only
  * data again: SceShell's code room for API 55's ocr_pause (144 B of the normal Shell's code and 32 B of its data,
  * 152 B and 40 B of the debug one's on main efbee95 [measured: tools/check_memory_ledger.py's module rows, #355's
- * head with and without this table, both builds]; docs/memory-ledger.md, "The pause for the frame"). The keys' order
- * is their branches' was; each key is matched whole (vjo_ieq), so none can take another's. */
+ * head with and without this table, both builds]; docs/memory-ledger.md, "The pause for the frame"). #418 reads
+ * the other choices with no rule of their own through it too (non_japanese_filter, highlight_mode, ocr_mode and the
+ * two buttons, which parsed by hand: each entry names its names, choices[]). The keys' order is their branches' was;
+ * each key is matched whole (vjo_ieq), so none can take another's. */
 static const struct {
     const char *key;
     uint16_t offset;
+    uint8_t choice; /* its names: choices[] */
 } switches[] = {
-    {"japanese_only_selection", offsetof(VjoConfig, japanese_only_selection)},
-    {"frequency_badge", offsetof(VjoConfig, frequency_badge)},
-    {"ocr_text_gate", offsetof(VjoConfig, ocr_text_gate)},
-    {"ocr_spotter_refine", offsetof(VjoConfig, ocr_spotter_refine)}, /* API 54 */
-    {"ocr_pause", offsetof(VjoConfig, ocr_pause)},                  /* API 55, off by default */
-    {"ocr_skip_blank_lines", offsetof(VjoConfig, ocr_skip_blank_lines)},
-    {"ocr_boost_clock", offsetof(VjoConfig, ocr_boost_clock)},
-    {"ocr_wait_hint", offsetof(VjoConfig, ocr_wait_hint)},          /* #358 */
-    {"log_file", offsetof(VjoConfig, log_file)},
-    {"anki_mining", offsetof(VjoConfig, anki_mining)},
-    {"anki_screenshot", offsetof(VjoConfig, anki_screenshot)},
-    {"anki_screenshot_trim_bars", offsetof(VjoConfig, anki_screenshot_trim_bars)},
+    {"non_japanese_filter", offsetof(VjoConfig, non_japanese_filter), CHOICE_FILTER}, /* #418 */
+    {"japanese_only_selection", offsetof(VjoConfig, japanese_only_selection), CHOICE_OFF_ON},
+    {"highlight_mode", offsetof(VjoConfig, highlight_mode), CHOICE_HIGHLIGHT},        /* #418 */
+    {"frequency_badge", offsetof(VjoConfig, frequency_badge), CHOICE_OFF_ON},
+    {"toggle_button", offsetof(VjoConfig, toggle_button), CHOICE_TRIGGER},            /* #418 */
+    {"subtitle_button", offsetof(VjoConfig, subtitle_button), CHOICE_TRIGGER},        /* #418 */
+    {"ocr_text_gate", offsetof(VjoConfig, ocr_text_gate), CHOICE_OFF_ON},
+    {"ocr_spotter_refine", offsetof(VjoConfig, ocr_spotter_refine), CHOICE_OFF_ON}, /* API 54 */
+    {"ocr_pause", offsetof(VjoConfig, ocr_pause), CHOICE_OFF_ON},                  /* API 55, off by default */
+    {"ocr_skip_blank_lines", offsetof(VjoConfig, ocr_skip_blank_lines), CHOICE_OFF_ON},
+    {"ocr_boost_clock", offsetof(VjoConfig, ocr_boost_clock), CHOICE_OFF_ON},
+    {"ocr_wait_hint", offsetof(VjoConfig, ocr_wait_hint), CHOICE_OFF_ON},          /* #358 */
+    {"ocr_mode", offsetof(VjoConfig, ocr_mode), CHOICE_OCR_MODE},                   /* #418 */
+    {"log_file", offsetof(VjoConfig, log_file), CHOICE_OFF_ON},
+    {"anki_mining", offsetof(VjoConfig, anki_mining), CHOICE_OFF_ON},
+    {"anki_screenshot", offsetof(VjoConfig, anki_screenshot), CHOICE_OFF_ON},
+    {"anki_screenshot_trim_bars", offsetof(VjoConfig, anki_screenshot_trim_bars), CHOICE_OFF_ON},
 };
 
-static int *switch_field(VjoConfig *c, const char *key)
+/* The setting a switch's key names (its field, its names), or 0 when key is no switch's. */
+static int switch_field(VjoConfig *c, const char *key, int **field, const char *const **names)
 {
     for (size_t i = 0; i < sizeof(switches) / sizeof(switches[0]); i++)
-        if (vjo_ieq(key, switches[i].key))
-            return (int *)((char *)c + switches[i].offset);
-    return NULL;
+        if (vjo_ieq(key, switches[i].key)) {
+            *field = (int *)((char *)c + switches[i].offset);
+            *names = choices[switches[i].choice];
+            return 1;
+        }
+    return 0;
 }
 
 /* tier_set: a vocr_tier line set the size (an older vocr_model line then no longer does), the parse's own */
 static void set_kv(VjoConfig *c, const char *key, const char *val, int *tier_set)
 {
     const StrSetting *ss;
+    const char *const *names;
     int *sw;
     if (vjo_ieq(key, "dictionary")) {
         /* the local dictionaries are the only ones: a removed one's value (jpdb, jiten, hachidori) loads as local
          * without a warning (#418), any other value but local warns */
         if (!vjo_ieq(val, "local") && !removed_dictionary(val))
             warn(c, "%s: invalid value", key);
-    } else if (vjo_ieq(key, "non_japanese_filter")) {
-        if (vjo_ieq(val, "lines"))
-            c->non_japanese_filter = VJO_FILTER_LINES;
-        else if (vjo_ieq(val, "none"))
-            c->non_japanese_filter = VJO_FILTER_NONE;
-        else
-            warn(c, "%s: invalid value", key);
-    } else if ((sw = switch_field(c, key)) != NULL) {
-        set_choice(c, key, val, sw, off_on);
-    } else if (vjo_ieq(key, "highlight_mode")) {
-        if (vjo_ieq(val, "word")) c->highlight_mode = VJO_HIGHLIGHT_WORD;
-        else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
-        else warn(c, "%s: invalid value", key);
+    } else if (switch_field(c, key, &sw, &names)) {
+        set_choice(c, key, val, sw, names);
     } else if (vjo_ieq(key, "local_dictionary_results")) {
         int v;
         if (parse_int(val, &v) == 0 && v >= 1 && v <= VJO_LOCAL_MAX_DICTS)
@@ -587,10 +589,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val, int *tier_set
         set_font(c, key, val, &c->font_size_ja);
     } else if (vjo_ieq(key, "font_size_en")) {
         set_font(c, key, val, &c->font_size_en);
-    } else if (vjo_ieq(key, "toggle_button")) {
-        set_trigger(c, key, val, &c->toggle_button);
-    } else if (vjo_ieq(key, "subtitle_button")) {
-        set_trigger(c, key, val, &c->subtitle_button);
     } else if (vjo_ieq(key, "text_source")) {
         c->text_source = VJO_SOURCE_AUTO; /* an unknown value: auto, with the warning */
         set_choice(c, key, val, &c->text_source, vjo_text_source_names);
@@ -652,13 +650,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val, int *tier_set
         /* VJO_VERTICAL_* and (#321) VJO_NAMES_*, the same values: ocr_vertical or names_first by the first letter */
         static const char *const modes[] VJO_DATA_TABLE(config_vertical_1) = {"off", "on", "auto", NULL};
         set_choice(c, key, val, (key[0] | 0x20) == 'n' ? &c->names_first : &c->ocr_vertical, modes);
-    } else if (vjo_ieq(key, "ocr_mode")) {
-        if (vjo_ieq(val, "auto"))
-            c->ocr_mode = VJO_OCR_AUTO;
-        else if (vjo_ieq(val, "on_press"))
-            c->ocr_mode = VJO_OCR_ON_PRESS;
-        else
-            warn(c, "%s: invalid value", key);
     } else if ((ss = find_str_setting(key)) != NULL) {
         char *dst = (char *)c + ss->offset;
         if (!*val && ss->required)
