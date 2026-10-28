@@ -422,7 +422,7 @@ set(VJO_SETTINGS_LOOKUP_SRC
   ${ROOT}/settings/lookup_page.c ${ROOT}/settings/lookup.c ${ROOT}/settings/lookup_history.c ${ROOT}/settings/app_queue.c
   ${ROOT}/settings/app_platform.c ${ROOT}/core/client.c)
 set(VJO_SETTINGS_SRC
-  ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c ${ROOT}/settings/app_prefs.c
+  ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/model_size.c ${ROOT}/settings/app_prefs.c
   ${ROOT}/settings/icons.c ${ROOT}/settings/search.c ${ROOT}/settings/text_layout.c ${ROOT}/core/linebreak.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
   ${ROOT}/settings/applog.c ${ROOT}/settings/app_worker.c ${ROOT}/settings/vita2d_textures.c
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c

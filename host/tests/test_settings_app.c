@@ -2,7 +2,7 @@
  * actual input and draw loop (settings/main.c), on the host. The SDK boundary (vita2d, controller, touch
  * screen, display) is scripted and records what each frame draws; config.ini,
  * games.ini and the model files are real files in a temporary directory, read
- * and written by the app's own settings/preferences.c, settings/engine.c and
+ * and written by the app's own settings/preferences.c, settings/model_size.c and
  * vita/games_storage.c. Text widths come from stub metrics (Latin 10, other
  * characters 18 units per 18-unit em), not the firmware's PVF fonts.
  *
@@ -39,7 +39,7 @@
 #include "../../include/vjo_api.h"
 #include "../../settings/app_check.h"
 #include "../../settings/catalog.h"
-#include "../../settings/engine.h"
+#include "../../settings/model_size.h"
 #include "../../settings/preferences.h"
 
 int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harness */
@@ -1572,32 +1572,32 @@ static void test_suggest_a_text_box_saved_in_region_ini(void)
     }
 }
 
-/* engine.c on its own: the card of a parsed config.ini, its status line, the sizes' lines. */
-static void test_engine_card_and_size_lines(void)
+/* model_size.c on its own: the card of a parsed config.ini, its status line, the sizes' lines. */
+static void test_model_size_card_and_size_lines(void)
 {
     /* every config.ini engine value, Google Lens's too, shows the local engine's card */
     static const char *const values[] = {"vocr", "lens", "vocr2", "meiki", "ncnn", "other"};
     for (unsigned i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
         char ini[64], line[120];
         VjoConfig cfg;
-        VjoEngineCard c;
+        VjoModelSizeCard c;
         vjo_config_defaults(&cfg);
         snprintf(ini, sizeof(ini), "ocr_backend = %s\n", values[i]);
         vjo_config_parse(&cfg, ini, strlen(ini));
         card(NULL);
-        vjo_engine_card(&cfg, &c);
+        vjo_model_size_card(&cfg, &c);
         TEST_CHECK_(c.tier == VJO_VOCR_TIER_NORMAL && c.model && c.found[VJO_VOCR_TIER_NORMAL], "%s", values[i]);
-        TEST_CHECK_(vjo_engine_status(&c, line, sizeof(line)) == 0 && !strcmp(line, NORMAL_STATUS), "%s: %s",
+        TEST_CHECK_(vjo_model_size_status(&c, line, sizeof(line)) == 0 && !strcmp(line, NORMAL_STATUS), "%s: %s",
                     values[i], line);
     }
     /* each size's line from its model's metadata; none outside the three */
     char line[32];
     for (int t = 1; t <= 3; t++) {
-        TEST_CHECK(vjo_engine_tier_detail(t, line, sizeof(line)) > 0 && !strcmp(line, DETAILS[t - 1]));
+        TEST_CHECK(vjo_model_size_detail(t, line, sizeof(line)) > 0 && !strcmp(line, DETAILS[t - 1]));
         TEST_MSG("tier %d: %s", t, line);
     }
-    TEST_CHECK(vjo_engine_tier_detail(0, line, sizeof(line)) == 0 && !line[0]);
-    TEST_CHECK(vjo_engine_tier_detail(4, line, sizeof(line)) == 0 && !line[0]);
+    TEST_CHECK(vjo_model_size_detail(0, line, sizeof(line)) == 0 && !line[0]);
+    TEST_CHECK(vjo_model_size_detail(4, line, sizeof(line)) == 0 && !line[0]);
 }
 
 /* The app leaves by ending its process, never through vita2d_fini: as a system
@@ -2027,7 +2027,7 @@ TEST_LIST = {
     {"read_text_names_the_buttons_that_open_the_overlay", test_read_text_names_the_buttons_that_open_the_overlay},
     {"scrolled_highlight_and_dictionaries_cards_keep_their_touch_targets", test_scrolled_cards_keep_their_touch_targets},
     {"dictionaries_shown_by_its_buttons", test_dictionaries_shown_by_its_buttons},
-    {"engine_card_and_size_lines", test_engine_card_and_size_lines},
+    {"model_size_card_and_size_lines", test_model_size_card_and_size_lines},
     {"banner_text_says_which_side_is_older_and_what_to_do", test_banner_text_says_which_side_is_older},
     {"banner_is_drawn_over_the_title_on_every_page_or_not_at_all", test_banner_is_drawn_on_every_page},
     {"dictionaries_card_names_the_bundled_dictionary_by_its_title", test_dictionaries_card_names_the_bundled_dictionary},

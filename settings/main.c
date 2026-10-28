@@ -12,11 +12,11 @@
 #include "anki_page.h"
 #include "app_check.h"
 #include "catalog.h"
-#include "engine.h"
 #include "icons.h"
 #include "install_page.h"
 #include "letter.h"
 #include "lookup_page.h"
+#include "model_size.h"
 #include "preferences.h"
 #include "psp.h"
 #include "search.h"
@@ -44,10 +44,9 @@
 #define GAME_NAV_H 36
 #define OCR_Y 112
 #define OCR_H 94
-/* The OCR card: the local engine's Model size, three buttons (settings/engine.h),
- * the row's title at the left, the card's status line below them. VOCR is the
- * only engine since the overlay went offline (owner 2026-10-15): Google Lens and
- * its engine row are gone. Offsets from the card's top. */
+/* The OCR card: the Model size, three buttons (settings/model_size.h), the
+ * row's title at the left, the card's status line below them. Offsets from the
+ * card's top. */
 #define OCR_ROW_TITLE_X 42
 #define OCR_SIZE_X 232
 #define OCR_SIZE_DY 6
@@ -152,7 +151,7 @@ static VjoConfig preferences;
 /* #358: Suggest a text box, from region.ini (settings/preferences.h vjo_preferences_suggest): 1 on, 0 off, -1 not read */
 static int suggest_on = -1;
 static int page, preference_selected, preferences_writable;
-static VjoEngineCard engine; /* the OCR card: the chosen size, its model files */
+static VjoModelSizeCard model_card; /* the OCR card: the chosen size, its model files */
 static char preference_status[160];
 static int status_error, preference_error;
 
@@ -926,10 +925,10 @@ static void read_dictionary_title(void)
 
 static void check_models(void)
 {
-    /* The local engine's model sizes: which tiers' files are there (the card
+    /* The model sizes: which tiers' files are there (the card
      * names the chosen size's model, or reports it missing); the bundled
      * dictionary's name. */
-    vjo_engine_card(&preferences, &engine);
+    vjo_model_size_card(&preferences, &model_card);
     read_dictionary_title();
 }
 
@@ -1141,7 +1140,7 @@ static void size_button(int tier, int x, int y, int chosen)
     const VjoVocrTierInfo *t = vjo_vocr_tier_info((unsigned)tier);
     char detail[32];
     vita2d_draw_rectangle(x, y, OCR_SIZE_W, OCR_SIZE_H, chosen ? ACCENT : SELECTED);
-    vjo_engine_tier_detail(tier, detail, sizeof(detail));
+    vjo_model_size_detail(tier, detail, sizeof(detail));
     centered_text(x, y + 24, OCR_SIZE_W, chosen ? BG : WHITE, 24, t ? t->name : "?");
     centered_text(x, y + 47, OCR_SIZE_W, chosen ? BG : DIM, 22, detail);
 }
@@ -1159,7 +1158,7 @@ static void draw_size_card(int y)
     if (!preferences_writable) {
         snprintf(label, sizeof(label), "Cannot read config.ini. Repair it before changing settings.");
         color = OFF;
-    } else if (vjo_engine_status(&engine, label, sizeof(label))) {
+    } else if (vjo_model_size_status(&model_card, label, sizeof(label))) {
         color = OFF;
     }
     wrapped_text(42, y + OCR_STATUS_DY, 870, color, 24, 26, 1, label);

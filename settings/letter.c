@@ -2,7 +2,6 @@
 #include <string.h>
 #include "../core/utf.h"
 
-/* (settings/main.c's initial() before this file, unchanged.) */
 uint32_t vjo_title_letter(const char *title)
 {
     static const uint16_t row_start[] = {0x3041, 0x304B, 0x3055, 0x305F, 0x306A, 0x306F,
