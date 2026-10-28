@@ -15,9 +15,10 @@ import argparse
 import hashlib
 import json
 import re
-import struct
 import sys
 from pathlib import Path
+
+import vita_self  # tools/vita_self.py: the packaged modules' program headers
 
 ROOT = Path(__file__).resolve().parents[1]
 BUDGET = ROOT / "include/vjo_ledger_budget.h"
@@ -89,7 +90,6 @@ MODULE_BUDGETS = {
     "shell": ("VitaJPOverlay_Shell", "VJO_BUDGET_SHELL_MODULE_PAGES"),
     "worker": ("VitaJPOverlay_OCR", "VJO_BUDGET_WORKER_MODULE_PAGES"),
 }
-PAGE = 4096
 
 
 class CheckError(Exception):
@@ -213,20 +213,13 @@ def parse_budget(path, variant="debug"):
 def self_pages(path):
     """Loaded pages of a Vita SELF: each PT_LOAD segment's memsz rounded to 4 KiB."""
     data = path.read_bytes()
-    if data[:4] != b"SCE\0":
-        raise CheckError(f"{path}: not a SELF")
-    elf_offset, = struct.unpack_from("<Q", data, 0x40)
-    phdr_offset, = struct.unpack_from("<Q", data, 0x48)
-    phnum, = struct.unpack_from("<H", data, elf_offset + 0x2C)
-    phentsize, = struct.unpack_from("<H", data, elf_offset + 0x2A)
-    pages, segments = 0, []
-    for i in range(phnum):
-        p_type, _, _, _, _, memsz, flags, _ = struct.unpack_from("<8I", data, phdr_offset + i * phentsize)
-        if p_type == 1 and memsz:
-            rounded = (memsz + PAGE - 1) // PAGE * PAGE
-            segments.append((memsz, flags, rounded))
-            pages += rounded
-    return pages, segments, hashlib.sha256(data).hexdigest()
+    try:
+        sce = vita_self.read(data, headers_only=True)
+    except vita_self.Invalid as e:
+        raise CheckError(f"{path}: {e}") from None
+    segments = [(s.memsz, s.flags, vita_self.page_round(s.memsz)) for s in sce.segments
+                if s.kind == vita_self.PT_LOAD and s.memsz]
+    return sum(rounded for _, _, rounded in segments), segments, hashlib.sha256(data).hexdigest()
 
 
 def check_budget(values):

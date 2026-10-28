@@ -11,7 +11,8 @@ import json
 from pathlib import Path
 import struct
 import sys
-import zlib
+
+import vita_self  # tools/vita_self.py: the SELF's headers and segments
 
 
 LIBRARY_NID = 0xAE5E1E5E
@@ -66,39 +67,22 @@ class SelfFile:
         self.path = str(path)
         data = Path(path).read_bytes()
         self.sha256 = hashlib.sha256(data).hexdigest()
-        require(data[:4] == b"SCE\0", "Expected a Vita SELF file")
-        elf_offset, ph_offset = unpack("<QQ", data, 0x40)
-        seginfo_offset, = unpack("<Q", data, 0x58)
-        require(data[elf_offset:elf_offset + 6] == b"\x7fELF\x01\x01",
-                "Expected a little-endian ELF32 payload")
-        elf_type, machine = unpack("<HH", data, elf_offset + 16)
-        require(elf_type == 0xFE04 and machine == 40, "Expected a relocatable Vita ARM module")
-        entry, = unpack("<I", data, elf_offset + 24)
-        ph_size, ph_count = unpack("<HH", data, elf_offset + 42)
-        require(ph_size == 32 and 1 <= ph_count <= 16, "Invalid program headers")
+        try:
+            sce = vita_self.read(data)
+        except vita_self.Invalid as error:
+            raise InvalidABI(str(error)) from None
+        require(sce.elf_type == 0xFE04 and sce.machine == 40, "Expected a relocatable Vita ARM module")
         self.segments = []
         self.relocations = {}
-        for index in range(ph_count):
-            kind, _, address, _, filesz, memsz, flags, _ = unpack(
-                "<8I", data, ph_offset + index * ph_size)
-            offset, size, compression, encryption = unpack(
-                "<4Q", data, seginfo_offset + index * 32)
-            require(encryption == 2, "Encrypted SELF segments are unsupported")
-            require(compression in (1, 2), "Unknown SELF segment compression")
-            require(offset <= len(data) and size <= len(data) - offset,
-                    "Segment extends past the SELF file")
-            blob = data[offset:offset + size]
-            if compression == 2:
-                blob = zlib.decompress(blob)
-            require(len(blob) == filesz, "Segment size disagrees with ELF header")
-            self.segments.append((address, memsz, flags, blob))
-            if kind == 0x60000000:
-                self.read_relocations(blob)
+        for s in sce.segments:
+            self.segments.append((s.vaddr, s.memsz, s.flags, s.data))
+            if s.kind == vita_self.PT_SCE_RELA:
+                self.read_relocations(s.data)
             else:
-                require(kind == 1 and filesz <= memsz, "Unexpected SELF segment")
-        self.info_segment = entry >> 30
+                require(s.kind == vita_self.PT_LOAD and s.filesz <= s.memsz, "Unexpected SELF segment")
+        self.info_segment = sce.entry >> 30
         require(self.info_segment < len(self.segments), "Invalid module-info segment")
-        self.info_offset = entry & 0x3FFFFFFF
+        self.info_offset = sce.entry & 0x3FFFFFFF
         self.code = self.segments[self.info_segment][3]
         info = self.read(self.info_segment, self.info_offset, 92)
         require(info[31] == 6, "Expected a PRX module")
@@ -267,7 +251,7 @@ def main():
     try:
         report = audit(SelfFile(args.kernel), SelfFile(args.shell), args.require_hooks,
                        SelfFile(args.worker) if args.worker else None)
-    except (InvalidABI, OSError, UnicodeError, zlib.error) as error:
+    except (InvalidABI, OSError, UnicodeError) as error:
         parser.exit(1, f"Syscall ABI verification failed: {error}\n")
     json.dump(report, sys.stdout, indent=2)
     print()
