@@ -1,4 +1,5 @@
-<p align="center"><b>Beta:</b> tested on one PS Vita (PCH-1001, firmware 3.65) in CLANNAD.
+<p align="center"><b>Beta:</b> tested on the owner's PS Vita (PCH-1001, firmware 3.65) in CLANNAD, and in part on a
+  contributor's PS Vita Slim.
   <a href="#supported">What is tested</a></p>
 
 <p align="center">
@@ -245,7 +246,8 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | | What | On a console |
 | :-: | --- | --- |
 | ✅ | PS Vita (PCH-1000 series) | the owner's PCH-1001, in every test build |
-| ❓ | PS Vita Slim (PCH-2000), PS TV | untested |
+| ⚠️ | PS Vita Slim (PCH-2000) | a contributor's, on 3.65: the install and a boot (0.9.2's tree, [#257](https://github.com/bee-san/Rubi_for_vita/pull/257)), OCR in あおかな with Small ([#324](https://github.com/bee-san/Rubi_for_vita/pull/324)), and the hooks of アマツツミ ([#273](https://github.com/bee-san/Rubi_for_vita/pull/273)) and 蒼の彼方のフォーリズム (0.9.7) |
+| ❓ | PS TV | untested |
 | ✅ | Firmware 3.65 | the owner's, with taiHEN |
 | ❓ | Other firmware, 3.60–3.74 | untested |
 | ✅ | CLANNAD | OCR, lookups and Anki cards (OCR in every test build) |
@@ -281,7 +283,7 @@ What each build changed, and what its console run showed: the [changelog](CHANGE
 - Vertical text is read only in a text box drawn around it: on a whole screen Automatic reads rows, and ON reads columns
   on most screens, a horizontal game's too (84 % of the hooked ones measured), which gives no sensible text. Not run on
   a console yet ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
-- One console has tested Rubi ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
+- Two consoles have tested Rubi, one of them in part ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
   not measured on a console yet.
 - The game can stutter while Rubi reads ([FAQ](#will-it-slow-my-game-down)).
 - A big text box or model may not fit in a game's free memory: Rubi then uses a smaller model, or
