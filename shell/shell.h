@@ -108,6 +108,7 @@ typedef struct {
      * rows, its whole width), offered once an activation (vjo_rsel_take). One word, stored whole without the lock.
      * Last, so that no other field moves. */
     uint32_t suggest;
+    int full_scan_requested; /* one-shot UI handoff: dismiss an in-progress region selector */
 } VjoView;
 
 extern VjoView g_view;

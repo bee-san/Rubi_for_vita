@@ -32,6 +32,8 @@ int ksceKernelSetEventFlag(SceUID, unsigned);
 #define TRACE_LOGS(n) (VJO_DEBUG ? (n) : 0u)
 
 unsigned syscall_depth;
+static unsigned rear_events, rear_reads;
+static KTouchData rear_touch;
 static SceUID caller;
 static uint64_t now;
 static SceCtrlData physical;
@@ -69,7 +71,7 @@ void klog(const char *fmt, ...)
 SceUID ksceKernelGetProcessId(void) { return caller; }
 SceUID ksceKernelGetThreadId(void) { return 3; }
 uint64_t ksceKernelGetSystemTimeWide(void) { return now; }
-int ksceKernelSetEventFlag(SceUID uid, unsigned bits) { return 0; }
+int ksceKernelSetEventFlag(SceUID uid, unsigned bits) { rear_events |= bits; return 0; }
 void display_static_fb_sample(void) { frame_samples++; }
 int ksceCtrlGetSamplingMode(int *mode) { *mode = SCE_CTRL_MODE_ANALOG; return 0; }
 int ksceCtrlSetSamplingMode(int mode) { return 0; }
@@ -79,7 +81,13 @@ int ksceCtrlPeekBufferPositive(int port, SceCtrlData *out, int count)
     *out = physical;
     return 1;
 }
-int ksceTouchPeek(uint32_t port, KTouchData *data, uint32_t count) { return 0; }
+int ksceTouchPeek(uint32_t port, KTouchData *data, uint32_t count)
+{
+    TEST_CHECK(port == TOUCH_BACK && count == 1);
+    rear_reads++;
+    *data = rear_touch;
+    return 1;
+}
 int ksceTouchSetSamplingState(uint32_t port, int state) { return 0; }
 SceUID taiHookFunctionExportForKernel(SceUID pid, tai_hook_ref_t *ref,
                                     const char *module, uint32_t library, uint32_t nid, void *fn)
@@ -135,6 +143,9 @@ static void setup(void)
     hold_busy = rear_busy = rear_peek_thid = hold_gen = analog_on = 0;
     input_trace_reset();
     rear_down = rear_taps = 0;
+    rear_mode = -1;
+    rear_events = rear_reads = 0;
+    memset(&rear_touch, 0, sizeof(rear_touch));
     rear_sampled_us = rear_down_t = rear_up_t = 0;
     g.game_pid = caller = 7;
     g.shell_pid = 3;
@@ -534,7 +545,62 @@ static void test_containment_diagnostics_are_bounded(void)
     TEST_CHECK(log_calls == TRACE_LOGS(2) && longest_log <= 190);
 }
 
+static void rear_step(int down, int x)
+{
+    rear_touch.reportNum = down;
+    rear_touch.report[0].x = x;
+    rear_touch.report[0].y = 300;
+    now += 50000;
+    rear_sample();
+}
+
+static void test_rear_tap_routes_by_overlay_state(void)
+{
+    for (int trigger = -1; trigger < TRIG_COUNT; trigger++) {
+        setup();
+        if (trigger >= 0) g.trigger[trigger] = VJO_TRIGGER_REAR_DOUBLE_TAP;
+        g.input_block = 1;
+        rear_step(0, 200); /* arm after opening */
+        rear_step(1, 200); rear_step(0, 200);
+        caller = g.shell_pid; rear_sample(); caller = g.game_pid; /* unrelated polls keep the gesture */
+        rear_step(1, 200); rear_step(0, 200);
+        TEST_CHECK(rear_events == VJO_EV_FULL_SCREEN);
+        TEST_CHECK((VJO_EV_ALL & VJO_EV_FULL_SCREEN) != 0);
+        g.input_block = 0;
+        rear_events = 0;
+        rear_step(0, 200);
+        rear_step(1, 200); rear_step(0, 200);
+        rear_step(1, 200); rear_step(0, 200);
+        TEST_CHECK(rear_events == (trigger < 0 ? 0u : trig_events[trigger]));
+    }
+}
+
+static void test_rear_tap_rejects_holds_drags_and_partial_gestures(void)
+{
+    setup(); g.input_block = 1;
+    rear_step(1, 200); rear_step(0, 200); /* held before the opening: ignore */
+    rear_step(1, 200); now += TAP_MAX_US; rear_step(0, 200); /* a hold */
+    rear_step(1, 200); rear_step(1, 600); rear_step(0, 600); /* a drag */
+    TEST_CHECK(!rear_events);
+    rear_step(1, 200); rear_step(0, 200);
+    now += TAP_GAP_US;
+    rear_step(1, 200); rear_step(0, 200); /* too far apart */
+    TEST_CHECK(!rear_events);
+    g.input_block = 0;
+    rear_step(0, 200); /* disabled: drop the partial gesture */
+    unsigned reads = rear_reads;
+    rear_step(1, 200); TEST_CHECK(rear_reads == reads);
+    g.input_block = 1;
+    rear_step(0, 200);
+    rear_step(1, 200); rear_step(0, 200);
+    TEST_CHECK(!rear_events);
+    rear_step(1, 200); rear_step(0, 200);
+    TEST_CHECK(rear_events == VJO_EV_FULL_SCREEN);
+}
+
 TEST_LIST = {
+    { "rear double tap scans in the overlay and keeps closed-overlay trigger mappings", test_rear_tap_routes_by_overlay_state },
+    { "rear double tap ignores holds drags stale fingers and slow taps", test_rear_tap_rejects_holds_drags_and_partial_gestures },
     { "positive2 blocks cross without changing raw shell input", test_positive2_block_and_raw_poll },
     { "negative logic and all 64 queued samples", test_negative_and_full_batch },
     { "foreign processes and shell keep their input", test_foreign_and_shell_processes },

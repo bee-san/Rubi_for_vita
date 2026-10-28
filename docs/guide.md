@@ -268,6 +268,7 @@ app when it starts.
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
+| Double-tap the rear touchpad, with the overlay open | Read the whole game screen once with OCR, then look up its words; keep the saved dialogue box |
 | Left / Right | Move through the text in reading order, across its rows: skip matched words in Whole word mode, one character in Character mode (the left stick: one character in both); Right from a row's last word goes to the next row's first, Left from a row's first to the row above's last, and the text's first and last stop the cursor. A text on one row goes round its ends (Right from the last to the first, Left from the first to the last). Held, it repeats (after 0.35 s, 10 steps a second), stopping at the text's ends |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position (held: repeats). **Up on the text's top row shows this game's earlier line** (with **Read text: Automatically**), dimmed between its neighbours: more Up goes further back, up to 32 lines; Down on an earlier line's last row goes to the line after it, and past the newest back to the current text ([line history](line-history.md)) |
@@ -278,6 +279,17 @@ app when it starts.
 | Hold Square | Restore the full-screen region |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
 | Cancel | Close the overlay |
+
+**Read outside the dialogue box.** With the overlay open, double-tap the rear touchpad: Rubi reads the
+whole game screen with its text spotter, OCR and configured language-model decoder, then shows the words
+with the same navigation, dictionary lookup and card saving. This scan forces OCR even with trusted hooks.
+It uses the normal model sizes and memory fallback; if the spotter cannot load or fit, the existing line
+finder fallback still applies. The results stay until you scan again or close the overlay, even when the
+game's dialogue changes. Closing returns to the saved dialogue box; this scan never writes `region.ini`,
+adds menus to the dialogue history or offers a replacement dialogue box. Two short taps are needed:
+holds, drags and fingers already held when the overlay opens are ignored. If rear double-tap is your
+configured opening or subtitle trigger, it keeps that action while closed; while open it scans, so use
+Cancel to close. This binding is on `main`, not in 0.10.0, and has not been tested on a console.
 
 **Earlier lines.** With **Read text** on **Automatically**, the overlay can go back through this game's
 earlier dialogue, the lines `history.csv` keeps ([ocr-history.md](ocr-history.md)): Up on the text's
