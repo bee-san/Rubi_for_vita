@@ -61,9 +61,8 @@
   [PSP/Vita names dictionary](docs/vndb-attribution.txt) adds 12,151 VNDB characters from 1,202
   visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
-  sentence and a picture of the game's screen. Before you export, the app's Cards page shows each
-  card: delete one saved by mistake, fix an OCR mistake in its sentence, or drop its picture. The app
-  exports the cards as one `.apkg` file of [Lapis](https://github.com/donkuri/lapis) notes for Anki.
+  sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
+  [Lapis](https://github.com/donkuri/lapis) notes for Anki.
 - **Look up and mine later.** The Rubi app's **Look up** tab, beside the suspended game: type a word or a sentence
   with the Vita's keyboard, or open one of a game's last 200 lines, and look its words up with the overlay's
   dictionaries; Enter saves a word as a card, without a picture ([details](docs/guide.md#look-up)).
@@ -195,12 +194,9 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Game tag**: each card is tagged with its game, `Game::CLANNAD` | ON |
 | | **Sentence readings**: readings over the sentence's kanji on the card's back, where the dictionaries are sure of them ([how often they are wrong](docs/anki.md#sentence-readings)) | ON |
 | | **Duplicates**: a card of a word you mined before gets Anki's `duplicate` tag (Tag), stays in the queue (Skip) or is exported as before (Keep); the page counts them, "N queued, M already mined" ([details](docs/anki.md#duplicates)) | Tag |
-| | **Cards: N queued**: each card before it is exported, newest first, with its sentence and picture; delete it, fix its sentence or drop its picture ([details](docs/anki.md#the-cards-page)) | |
 | | **Known words**: Import reads `known_words.txt`, which `tools/known_words.py` writes from your Anki collection; their cards get the tag `known` ([details](docs/anki.md#known-words)) | none |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
 | Look up | No setting: type a word (Triangle), or open an earlier line of a game (L/R); Enter saves its word as a card, without a picture, with Card mining ON or OFF ([details](docs/guide.md#look-up)) | |
-| Stats | Your reading from `history.csv`: today, the last 14 days, the year's heatmap, the streak, all games and each game (characters, reading time, characters/hour, cards mined), counted as △ counts ([details](docs/guide.md#stats)) | |
-| | **Daily goal**: Off, 2,000 to 50,000 characters or 15 to 120 minutes a day; a day at the goal counts for the streak (with none, any day with reading). Kept in the app's own `app.ini` | Off |
 | Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
 
 Everything else, such as the button that opens the overlay (`toggle_button`), the OCR's timings and
@@ -270,14 +266,12 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | The app's Look up tab: typed search, a game's earlier lines, cards from them | not run on a console yet; measured on the host ([details](docs/guide.md#look-up)) |
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |
-| ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |
-| ❓ | The Rubi app's Stats tab: days, heatmap, streak, daily goal, each game | not run on a console yet; measured on the host ([details](docs/guide.md#stats)) |
+| ❓ | Characters read, characters/hour, active time and the streak (△ in the overlay) | not run on a console yet; the streak tested on the host ([details](docs/ocr-history.md#total-characters-read), [the streak](docs/ocr-history.md#streak)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ❓ | A game's own line finder (its page in the Rubi app) | not run on a console yet ([details](docs/guide.md#a-games-own-page)) |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
 | ❓ | Trim black bars on Anki screenshots | not run on a console yet ([details](docs/anki.md#black-bars)) |
-| ❓ | The Cards page (delete a card, fix its sentence, drop its picture) | not run on a console yet; tested on the host, with a stop at each step ([details](docs/anki.md#the-cards-page)) |
 | ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |
 
 What each build changed, and what its console run showed: the [changelog](CHANGELOG.md).
@@ -349,8 +343,8 @@ release's main download, logs no recognized or looked-up text; the `-debug` buil
 reports, logs both. With **Read text** on **Automatically**, both builds also keep the dialogue they
 read, with its game, time, number of characters and whether a native text hook or the OCR read it,
 in `ux0:data/VitaJPOverlay/history.csv`, for reading statistics (the CSV that GameSentenceMiner
-imports; the Rubi app's **Stats** tab shows them on the Vita, and on a computer
-`python3 tools/reading_stats.py history.csv` gives the characters read and per hour, by text source,
+imports; on the Vita the overlay's Triangle view (△) shows this game's, today and in all, and your reading streak,
+and on a computer `python3 tools/reading_stats.py history.csv` gives the characters read and per hour, by text source,
 per game and per day; [details](docs/ocr-history.md)). It stays on the
 Vita too, grows as you read and is never deleted by itself; **Only when I press L + R** saves none.
 

@@ -58,6 +58,8 @@ facts are copied on its existing stack. The writer has a fixed 192-byte output
 buffer and a 16-byte static fingerprint (source sizes, not a console memory
 measurement); an append adds no allocation, thread, growing queue, second OCR-text
 buffer or read of the file. A seek obtains the append offset even for a large file.
+After an append whose line has a character, the writer reads the streak's 16-byte
+record and, on a day's first such line, writes it ([Streak](#streak)).
 The character count is one more pass over the text, in the writer and on its
 frame: 76 B more of `vjo_history_append`'s code, paid for by moving the writer's
 own strings (93 B: its path and formats) into the data segment with its header,
@@ -304,8 +306,9 @@ native hooks) and `vocr` for OCR's (0.8.0 had no hooks, so all of its lines are 
 
 ## Reading statistics
 
-The Rubi app's **Stats** page shows them on the Vita: today, the last 14 days, the year, a streak and a daily goal,
-each game and all games ([guide](guide.md#stats)). On a computer,
+On the Vita, the overlay's Triangle view shows this game's characters, reading time and characters per hour, today
+and in all ([Total characters read](#total-characters-read)), and the reading streak of all games ([Streak](#streak)).
+On a computer,
 `tools/reading_stats.py` (Python 3, nothing to install; in the release zip's
 `tools/` folder and in the repository) reads one or more copies of
 `history.csv` and prints the records, characters, reading time and characters
@@ -408,7 +411,8 @@ build log's module rows, both builds]. The time a count takes on a console is un
 
 ## Total characters read
 
-With the overlay open, △ (Triangle) shows the selected line's source, followed by two reading blocks:
+With the overlay open, △ (Triangle) shows the selected line's source, followed by two reading blocks and the
+reading streak ([Streak](#streak)):
 
 > This line came in through: hooking
 >
@@ -419,6 +423,8 @@ With the overlay open, △ (Triangle) shows the selected line's source, followed
 > **THIS GAME · TOTAL**\
 > **142,680 characters**\
 > 16 h 25 min reading · 8,691 chars/hour
+>
+> Streak: current 3 days · longest 12
 
 The source is `hooking`, `ocr`, or `Unknown` for a line without provenance, including older history.
 The technical stream, flags, similarity, model and capture fields are no longer displayed here.
@@ -441,11 +447,7 @@ duration; untimed lines still count in total characters, but cannot inflate read
 interval, speed is `—` and time is `0 min`. Hook and OCR records follow the same rule.
 
 For an external report with the same numbers, run `python3 tools/reading_stats.py history.csv`
-(with `reading_time = 15s`: `--break-minutes 0.25`). On the Vita, the Rubi app's **Stats** page counts the same file
-with the same rule, per game and per local day, for every game together too
-([guide](guide.md#stats); `core/stats.c`, #312): each game's numbers there are this view's for that game. (This view
-tells a game by a 32-bit hash of its ID, so two IDs with the same hash count as one game here, not on the Stats page; no
-two of `PCSA00000`-`PCSH99999` share one.)
+(with `reading_time = 15s`: `--break-minutes 0.25`).
 
 The tool sorts by timestamp; the overlay follows append order so that backward clock changes break
 an interval. The tool also accepts some externally edited CSV formats; the overlay reads Rubi's native
@@ -454,7 +456,8 @@ characters in the overlay. The existing power-loss recovery rule for character c
 record with its line and time's first digit may count once, while a record glued to it without a newline
 is skipped. Invalid or incomplete timestamps never contribute time.
 
-**Counting and persistence.** A Triangle press does no file I/O. The control thread counts an unknown
+**Counting and persistence.** A Triangle press does no file I/O. The control thread reads the streak's
+16-byte record when the view asks for its statistics ([Streak](#streak)) and counts an unknown
 history in existing 24 KiB scratch, one window per wakeup, after other control work. The view says
 `Reading statistics: counting…` until ready, or `unavailable` on a failed read (the next press retries).
 While the totals are known, successful appends update them in constant space. The scan and writer use
@@ -479,6 +482,47 @@ rewritten. The old all-game `history_total.bin` is ignored by the menu (offline 
 still use unfiltered totals). Detected history replacement/truncation resets the cached counters.
 Histories of 4 GiB or more remain unsupported by on-device totals. Console latency, CPU3 usage
 and the appearance on a physical Vita remain unmeasured until a console run.
+
+## Streak
+
+The Triangle view's last line, under the two blocks, is the reading streak of all games together:
+`Streak: current 3 days · longest 12` ("1 day" for one). The Rubi app's Stats tab of the v0.9.8 test builds had a
+streak too; the owner removed the tab and moved the streak here (2026-10-28: "Keep streak, but put that into the
+Overlay. Just longest vs current streak kinda thing."). The rules are `core/streak.h`'s:
+
+- **A day counts** when `history.csv` gets a line with at least one character that day, in any game: a Japanese
+  letter, an ASCII letter or a digit, the `characters` column's rule ([Characters](#characters)). So only
+  **Read text: Automatically**'s lines count; **Only when I press L + R** keeps no history, and so no streak.
+- **A day** is the Vita's local calendar day: its clock and its time zone when the line is recorded.
+- **Current** is the days in a row that end today, or yesterday while today has no line yet (or tomorrow, after the
+  time zone moved west); else 0. **Longest** is the most days in a row ever.
+- **A clock or time zone that moves.** A line on the newest day counted, or on the day before it (a time zone moved
+  west, a clock set back by hours), changes nothing. The next day adds one (a time zone moved east lands there too).
+  A later day (a gap), or a day more than one before the newest (the clock set back by days, as when a clock that was
+  in the future is put right), starts the streak again at 1. The longest is kept.
+
+**The record** is a 16-byte file, `ux0:data/VitaJPOverlay/reading-streak.bin` (C `sizeof`), beside the games'
+reading caches: a magic number, the newest day counted, the current and the longest streak, and whether the Rubi app
+has seeded it. The overlay adds a line's day when it records the line and writes the file, through a temporary file
+and a rename, only when the record changes: at most once a day. It reads the file again when the Triangle view asks
+for its statistics. Nothing in the game scans `history.csv` for it. The overlay starts a missing or damaged record
+afresh, not seeded, so the app seeds it again at its next start: deleting the file loses nothing `history.csv` holds.
+
+**Seeding.** The first time the Rubi app opens after the update (while the record is missing or not seeded), a
+thread of the app reads `history.csv` once, 64 KiB at a time, and replays every line's day through the same rules,
+in the time zone the Vita has then, so a streak read before the update carries over. What the overlay counted
+meanwhile is kept: those lines are in `history.csv` too, and when the file lost them (moved away, cut) the record's
+newest days stand. The record is then written, seeded, and the app no longer reads `history.csv` for it. A seed the
+app's exit stopped, or one that could not read `history.csv` or write the record, writes nothing and runs again at
+the app's next start. The same seed removes the Stats tab's `stats_cache.bin`, which nothing reads now; with
+`log_file = on`, `log.txt` gets a `Rubi app: streak:` line with what it found.
+
+**Memory.** In SceShell the overlay keeps 4 bytes for it (the streak shown) and allocates nothing; the file is 16
+bytes. The seed's window and its thread's stack are the app's, in its own process
+([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)).
+
+Not run on a console yet; measured on the host only: host tests of a day's rollover, gaps, a time-zone change, first
+use and the seed, and a clock moved backwards.
 
 ## The format and older files
 
