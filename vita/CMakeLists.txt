@@ -660,7 +660,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx ${STAGE}/ur0/tai/
   ${VJO_WORKER_RELEASE_COPY}
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.rco ${STAGE}/ur0/data/VitaJPOverlay/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/LICENSE ${STAGE}/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/CHANGELOG.md ${ROOT}/LICENSE ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/compat
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/compat/adrenaline_vsh ${STAGE}/compat/adrenaline_vsh
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/adrenaline_compat/adrenaline_vsh.suprx ${STAGE}/compat/
@@ -684,12 +684,13 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/sc3-charsets/PCSG00146.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00352.sc3
     ${ROOT}/third_party/sc3-charsets/PCSG00555.sc3 ${STAGE}/ux0/data/VitaJPOverlay/hooks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${ROOT}/docs/ocr-history.md ${STAGE}/docs/
-  # Keep the guide's feature and recovery links usable in the downloaded ZIP: every document README.md and the guide
-  # link and every document those link, but the history (docs/history/, docs/memory-ledger-history.md), which stays
-  # on GitHub (tools/tests/test_zip_docs.py).
+  # Keep the guide's feature and recovery links usable in the downloaded ZIP: every document README.md, CHANGELOG.md
+  # and the guide link and every document those link, but the history (docs/history/,
+  # docs/memory-ledger-history.md) and the developers' records, which stay on GitHub (tools/tests/test_zip_docs.py).
   COMMAND ${CMAKE_COMMAND} -E copy
     ${ROOT}/docs/line-history.md ${ROOT}/docs/native-hooks.md ${ROOT}/docs/hook-titles.md
     ${ROOT}/docs/hook-requests.md ${ROOT}/docs/first-box.md ${ROOT}/docs/roadmap.md ${ROOT}/docs/reading-time.md
+    ${ROOT}/docs/conjugation-display.md
     ${ROOT}/docs/memory-ledger.md ${ROOT}/docs/boot-safety.md
     ${ROOT}/docs/worker-loading.md ${ROOT}/docs/ingame-capture.md ${ROOT}/docs/performance.md
     ${ROOT}/docs/auto-vs-press.md ${ROOT}/docs/first-ocr.md ${ROOT}/docs/ocr-speed.md
@@ -711,7 +712,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/LunaTranslator/LICENSE
     ${STAGE}/third_party/licenses/LunaTranslator-GPL-3.0.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/Rubi.vpk ${STAGE}/
-  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party compat Rubi.vpk
+  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md CHANGELOG.md LICENSE tools docs third_party compat Rubi.vpk
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant vjo_one_vpk
     vjo_offline_imports adrenaline_vsh_budget # a zip is never packaged from modules that import a network library
   COMMENT "Packaging Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip (the ${VJO_VARIANT} build)")

@@ -1,9 +1,10 @@
-"""The release zip's documents are the user's (#418, P9): what vita/CMakeLists.txt's `release` target copies from docs/,
-with what tools/prepare_plaintext.py and tools/prepare_vndb.py stage there (the dictionaries' pins and licences).
+"""The release zip's documents are the user's (#418, P9): what vita/CMakeLists.txt's `release` target copies from docs/
+and beside README.md, with what tools/prepare_plaintext.py and tools/prepare_vndb.py stage in docs/ (the dictionaries'
+pins and licences).
 
 - Every file README.md or docs/guide.md links (in docs/, outside the history) is in the zip, so the guide's
   feature and recovery links work in the downloaded zip, and so is every Markdown document that a document of the zip
-  links (its measurement records, docs/benchmarks/*.json and images, may stay on GitHub).
+  links, but those of GITHUB_ONLY (its measurement records, docs/benchmarks/*.json and images, may stay on GitHub).
 - No history record is: docs/history/ and docs/memory-ledger-history.md stay on GitHub (a zip document's link to one
   works there, not in the zip).
 - Every file the zip takes from docs/ exists, and is linked or named by README.md or by another document of the zip,
@@ -28,8 +29,31 @@ STAGED = {"docs/plaintext-dictionaries.json", "docs/plaintext-attribution.txt", 
           *("docs/" + name for name in prepare_vndb.DOCS)}  # tools/prepare_plaintext.py and prepare_vndb.py --stage
 
 
+# The zip's top-level documents (the release target's copy into ${STAGE}/), and the other Markdown files it carries.
+TOP = ("README.md", "CHANGELOG.md")
+CARRIED = ("third_party/README.md", "third_party/LunaTranslator/README.md", "compat/adrenaline_vsh/README.md")
+# What a zip document may link that the zip does not carry, a reader's GitHub copy: the history, the developers' rules,
+# reports and code-side records (#418's audit, F13).
+GITHUB_ONLY = ("docs/history/", "docs/memory-ledger-history.md", "AGENTS.md", "reports/", "host/", "settings/assets/")
+
+
 def history(path):
     return path.startswith("docs/history/") or path == "docs/memory-ledger-history.md"
+
+
+def top(cmake=None):
+    """The files the release target copies beside README.md (into ${STAGE}/ itself), and whether the zip's tar lists
+    each."""
+    text = cmake if cmake is not None else (ROOT / "vita/CMakeLists.txt").read_text(encoding="utf-8")
+    body = re.sub(r"#[^\n]*", "", text.split("add_custom_target(release", 1)[1].split("COMMENT", 1)[0])
+    out, tar = [], ""
+    for command in body.split("COMMAND")[1:]:
+        words = command.split()
+        if words[1:3] == ["-E", "copy"] and words[-1] == "${STAGE}/":
+            out += [w[len("${ROOT}/"):] for w in words[3:-1] if w.startswith("${ROOT}/")]
+        if "tar" in words and "--format=zip" in words:
+            tar = words[words.index("--format=zip") + 1:]
+    return {name: name in tar for name in out}
 
 
 def copied(cmake=None):
@@ -67,8 +91,11 @@ def targets(doc, root=ROOT):
 def problems(cmake=None, root=ROOT):
     """What is wrong with the zip's documents, one line each."""
     files = copied(cmake)
-    zipped = set(files) | STAGED
-    out = [f"{f}: copied twice" for f in sorted({f for f in files if files.count(f) > 1})]
+    tops = top(cmake)
+    out = [f"{f}: copied beside README.md, but not in the zip's tar list" for f, listed in tops.items() if not listed]
+    out += [f"{f}: the zip lacks it" for f in TOP if f not in tops]
+    zipped = set(files) | STAGED | set(tops) | set(CARRIED)
+    out += [f"{f}: copied twice" for f in sorted({f for f in files if files.count(f) > 1})]
     out += [f"{f}: copied, but no such file" for f in sorted(set(files)) if not (root / f).is_file()]
     out += [f"{f}: a history record in the zip" for f in sorted(set(files)) if history(f)]
     for doc in ENTRY:
@@ -78,10 +105,9 @@ def problems(cmake=None, root=ROOT):
     for doc in sorted(f for f in zipped if f.endswith(".md") and f not in ENTRY and (root / f).is_file()):
         linked, _ = targets(doc, root)
         out += [f"{f}: {doc} links it, but the zip lacks it" for f in sorted(linked)
-                if f.startswith("docs/") and f.endswith(".md") and not history(f) and (root / f).is_file()
-                and f not in zipped]
+                if f.endswith(".md") and not f.startswith(GITHUB_ONLY) and (root / f).is_file() and f not in zipped]
     reached = set()
-    for doc in ["README.md"] + sorted(f for f in zipped if f.endswith(".md") and (root / f).is_file()):
+    for doc in sorted(f for f in zipped if f.endswith(".md") and (root / f).is_file()):
         linked, named = targets(doc, root)
         reached |= linked | named
     out += [f"{f}: in the zip, but no document of it links or names it" for f in sorted(set(files))
@@ -105,6 +131,10 @@ class ZipDocs(unittest.TestCase):
         line = "${ROOT}/docs/anki.md "
         self.assertEqual(cmake.count(line), 1)
         self.assertIn("docs/anki.md: README.md links it, but the zip lacks it", problems(cmake.replace(line, "")))
+        tar = "README.md CHANGELOG.md LICENSE"
+        self.assertEqual(cmake.count(tar), 1)
+        self.assertIn("CHANGELOG.md: copied beside README.md, but not in the zip's tar list",
+                      problems(cmake.replace(tar, "README.md LICENSE")))
         for extra, why in (("docs/history/plugin-audit.md", "a history record in the zip"),
                            ("docs/no-such-file.md", "copied, but no such file"),
                            ("docs/benchmarks/kernel-startup-20261010.json",
