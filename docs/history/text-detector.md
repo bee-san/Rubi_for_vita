@@ -3,7 +3,7 @@
 **Decision (2026-10-18): Rubi does not take vita-vn-ocr's learned text detector, neither as its line
 finder nor as an opt-in setting.** The finders stay as they are: the textbox recovery finder and the
 short-line probe in every game ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)), and the
-finder refinement in PSP games only (`ocr_refine_lines = psp`, [vita-vn-ocr.md](vita-vn-ocr.md#finder-refinement-api-20)).
+finder refinement in PSP games only (`ocr_refine_lines = psp`, [vita-vn-ocr.md](../vita-vn-ocr.md#finder-refinement-api-20)).
 Nothing in the build changes. This page records why, with the numbers, and what would change it.
 
 The detector is [vita-vn-ocr #97](https://github.com/bee-san/vita-vn-ocr/pull/97) (issue #96, merged as
@@ -71,9 +71,9 @@ What the table says:
 - **On PSP text the one clear win, psp-test's, is at the PSP's own 480×272.** Rubi never sees that: a PSP game
   reaches its display hook at 2× through Adrenaline's bilinear filter, where the text is about Vita-sized. At that
   scale the refinement's box-fit gain measured at 480×272 was gone: mean IoU with the hand-marked lines 0.559 →
-  0.591 at 480×272, 0.608 → 0.604 at 2× ([refine-20261015.json](benchmarks/refine-20261015.json)). The detector
+  0.591 at 480×272, 0.608 → 0.604 at 2× ([refine-20261015.json](../benchmarks/refine-20261015.json)). The detector
   has not been scored at 2×. The development PSP frames, without v27449, read slightly worse with it (the
-  intervals include 0). And PSP OCR recognition is still unverified on a console ([README](../README.md#supported)).
+  intervals include 0). And PSP OCR recognition is still unverified on a console ([README](../../README.md#supported)).
 - **Most of the development gain over GRAD + refine is one VN, v27449**, a translucent box over a busy scene:
   GRAD and GRAD + refine read 40-47% of its characters wrong, det+refine 6-9%. That is the "GRAD visibly
   fails" case the detector is good at. No title Rubi has run is known to be one.

@@ -66,7 +66,7 @@ generation. v0.2.0's models are generation VOCR1.
 VOCR has completed actual CLANNAD OCR jobs on the physical Vita.
 Hardware accuracy/CER and broader game compatibility remain unmeasured; host crop results are separate.
 See [OCR measurements and limits](vita-vn-ocr.md) and
-[project lessons](project-lessons.md).
+[project lessons](history/project-lessons.md).
 
 <a id="install"></a>
 

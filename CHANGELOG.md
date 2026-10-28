@@ -1312,7 +1312,7 @@ Shell/Settings bytes and native Settings registration/launch are verified, and
 four actual Settings touch/controller actions saved both highlight modes while
 preserving VOCR and Japanese-only ON. In-game header taps and highlight geometry
 still require hardware checks. See the
-[installation checkpoint](docs/todo-20261011.md#v079-touchhighlight-installation-checkpoint)
+[installation checkpoint](docs/history/todo-20261011.md#v079-touchhighlight-installation-checkpoint)
 for the measured results and remaining hardware checks.
 
 ## [0.7.8] - 2026-10-11

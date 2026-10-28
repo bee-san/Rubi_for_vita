@@ -3,7 +3,7 @@
 Every byte our three plugins take from a Vita memory pool is accounted for in one place, checked
 in CI, and printed at build time and at run time. The pools themselves, their sizes and who else
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
-[issue #59's root cause](issue-59-root-cause.md).
+[issue #59's root cause](history/issue-59-root-cause.md).
 
 ## One allocator, one loader and one poll loop in the worker (#418, no API change)
 
@@ -1654,7 +1654,7 @@ DNS resolver and cancellation of `shell/platform_vita.c` (with its random number
 only TLS's), the UDP log (`log_host`, a removed setting now, and `tools/udp_log_listener.py`) and
 the worker's `VjoNetCancel`. No module imports a network library any more, which the Vita build
 checks (`tools/check_offline_imports.py`; the Rubi app's three newlib references to SceNet are
-defined in `settings/no_net.c`, docs/shell-slim.md). The Shell imports no SceNet or SceNetCtl: 17 function stubs
+defined in `settings/no_net.c`, docs/history/shell-slim.md). The Shell imports no SceNet or SceNetCtl: 17 function stubs
 fewer (72 → 55 `sce[A-Z]*` names by `arm-vita-eabi-nm`), three import libraries fewer (SceNet,
 SceNetCtl, SceLibRng's `sceKernelGetRandomNumber`) [measured: `nm` and `readelf -S` of the two
 builds]. The module keeps its pages: the text segment goes from 101,488 to 99,268 B (`.text` 62,640
