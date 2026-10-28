@@ -16,7 +16,7 @@
  * user's region again (the warm time). It shows nothing: the user's text and
  * its lookup are the earlier job's. Opening the overlay or a new screen stops
  * it, and the stages run again from the first after the next job that reads
- * text: the user's scans never wait for them (test.2's first scans did, 9-15 s:
+ * text: the user's scans never wait for them (0.8.0-test.2's first scans did, 9-15 s:
  * docs/first-ocr.md). A first stage that still finds no line waits
  * (vjo_selftest_stage_wait, at most VJO_SELFTEST_WAITS screens). Each stage
  * ends with its own record, passed or not, then the next one starts; after the
@@ -54,7 +54,7 @@ static int64_t t0;
 
 /* A record's lines (a stage's end, a memory sample) go out with one append per
  * file (the report, status.txt, log.txt), not one per line: an append costs the
- * console 12-46 ms (#81's self-test timestamps), and test.2's stage records,
+ * console 12-46 ms (#81's self-test timestamps), and 0.8.0-test.2's stage records,
  * each line appended to the three files in turn, took 0.4-2.4 s each, in the
  * job's thread (docs/first-ocr.md). A crash loses at most the record being
  * written. The group lives on its caller's stack. */

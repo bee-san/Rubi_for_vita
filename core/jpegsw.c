@@ -1,8 +1,8 @@
 /* Baseline JPEG encoder (YCbCr 4:2:0, the standard Huffman tables of the JPEG
  * standard's Annex K, an AAN float DCT): the Anki screenshot's, in the game worker
  * only (core/jpegsw.h). The tables, the DCT and the entropy coder are the Shell's
- * Google Lens encoder of 6020c0b (removed in #130); the picture now comes a band of
- * 16 rows at a time, and each 2 x 2 pixels' chroma is that of their mean colour
+ * encoder of 6020c0b (removed in #130); here the picture comes a band of 16 rows
+ * at a time, and each 2 x 2 pixels' chroma is that of their mean colour
  * (Cb and Cr are linear in R, G, B: the same values, one conversion instead of four). */
 #include "jpegsw.h"
 

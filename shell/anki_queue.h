@@ -5,7 +5,7 @@
  * holds its bytes. The Rubi app exports the queue as an .apkg and moves the
  * cards it holds, screenshots first, into anki_queue/exported/
  * (settings/anki_export.c); cards of earlier builds may also have
- * <id>.duplicate.json (a card AnkiConnect already had). All calls are made by
+ * <id>.duplicate.json (a card an earlier build found in Anki). All calls are made by
  * the Anki thread, one at a time. Nothing reads the whole queue into memory: a
  * count scans the directory, a save writes one card. */
 #ifndef VJO_SHELL_ANKI_QUEUE_H
@@ -16,7 +16,7 @@
 enum {
     VJO_QUEUE_SAVED = 0,
     VJO_QUEUE_EXISTS = 1,    /* the same card is queued already */
-    VJO_QUEUE_ARCHIVED = 2,  /* the same card was exported before (or AnkiConnect had it) */
+    VJO_QUEUE_ARCHIVED = 2,  /* the same card was exported before (or an earlier build found it in Anki) */
     VJO_QUEUE_FAILED = -1,   /* storage error (logged with its SCE code) */
     VJO_QUEUE_TOO_LARGE = -2 /* over VJO_QUEUE_TEXT_MAX of text */
 };

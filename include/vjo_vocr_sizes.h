@@ -8,8 +8,7 @@
  * the shapes of H15 and FL10, so the same sizes and arenas; the Normal and Small
  * tiers before VOCR5. They and v0.2.0's H15_w8.vocr and FL10_w8.vocr stay accepted
  * by name (host tools; no tier names them, no package ships them). Each model's
- * generation and shape: core/vocr_models.c. The VOCR2 trial (VOCR2_FL10_w8.vocr,
- * v0.7.12 to v0.8.0-test.1) was removed; ocr_backend = vocr2 loads as vocr. */
+ * generation and shape: core/vocr_models.c. */
 #define VJO_VOCR3_H15_NAME "VOCR3_H15_w8.vocr"
 #define VJO_VOCR3_FL10_NAME "VOCR3_FL10_w8.vocr"
 #define VJO_VOCR_MODEL_ROOT "ux0:data/VitaJPOverlay/ocr"
