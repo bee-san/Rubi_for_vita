@@ -110,23 +110,13 @@ def sha256(data):
 
 def self_imports(data):
     """(library name, [function NIDs]) of every import of a Vita SELF (fself, compressed or not)."""
-    if data[:4] != b"SCE\0":
-        raise ValueError("not a Vita SELF")
-    elf_offset, ph_offset = struct.unpack_from("<QQ", data, 0x40)
-    seginfo_offset, = struct.unpack_from("<Q", data, 0x58)
-    if data[elf_offset:elf_offset + 4] != b"\x7fELF":
-        raise ValueError("no ELF payload")
-    entry, = struct.unpack_from("<I", data, elf_offset + 24)
-    ph_size, ph_count = struct.unpack_from("<HH", data, elf_offset + 42)
-    segments = []
-    for i in range(ph_count):
-        kind, _, vaddr, _, filesz, _, _, _ = struct.unpack_from("<8I", data, ph_offset + i * ph_size)
-        offset, size, compression, _ = struct.unpack_from("<4Q", data, seginfo_offset + i * 32)
-        blob = data[offset:offset + size]
-        if compression == 2:
-            blob = zlib.decompress(blob)
-        segments.append((kind, vaddr, blob))
-    index, info_offset = entry >> 30, entry & 0x3FFFFFFF
+    sys.path.insert(0, str(ROOT / "tools"))
+    import vita_self  # noqa: PLC0415  (tools/vita_self.py; its Invalid is a ValueError)
+    sce = vita_self.read(data)
+    segments = [(s.kind, s.vaddr, s.data) for s in sce.segments]
+    index, info_offset = sce.entry >> 30, sce.entry & 0x3FFFFFFF
+    if index >= len(segments):
+        raise ValueError(f"e_entry names segment {index}, and the SELF has {len(segments)}")
     _, base, code = segments[index]
     import_top, import_end = struct.unpack_from("<II", code, info_offset + 36 + 8)
 

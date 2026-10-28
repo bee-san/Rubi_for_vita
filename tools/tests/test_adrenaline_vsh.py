@@ -28,5 +28,5 @@ class BridgeBudget(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "bridge.suprx"
             path.write_bytes(b"not a plugin")
-            with self.assertRaisesRegex(ValueError, "not a Vita SELF"):
+            with self.assertRaisesRegex(ValueError, "not a SELF"):
                 bridge.check(path)
