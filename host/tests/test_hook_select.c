@@ -882,8 +882,9 @@ static void trusted_source_fails_its_checks(void)
 
 /* #413's audit F2 (PROBE4): since #413 a press reads at once, without the stable-text wait (unsettled), so OCR may read
  * a line still typing out, the beginning of the locked stream's whole line. A scheduled check against that is no
- * evidence: no miss, the check stays due, the stream keeps its trust and stays locked through a second such read; the
- * whole line then agrees as before, and the check counts. utf8_prefix: the first k characters of s (UTF-8). */
+ * evidence: no miss, the check stays due, the stream keeps its trust; the whole line then agrees as before, and the
+ * check counts. Not twice in a row: the second such read is a disagreement (one miss: the stream stays locked, and
+ * its next agreement resumes it). utf8_prefix: the first k characters of s (UTF-8). */
 static const char *utf8_prefix(char *out, size_t cap, const char *s, unsigned k)
 {
     size_t i = 0;
@@ -926,16 +927,39 @@ static void a_line_typing_out_is_no_disagreement(void)
                 "misses %u, confirm %u, strong %u, interval %u, flags 0x%x", st.misses, st.confirm, st.strong,
                 st.interval, flags);
     TEST_CHECK(st.unchecked + 1u >= st.interval); /* still due: the next read is checked */
-    /* the next line read half typed too: still no disagreement, the source stays locked */
-    reading(&c, 4);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
-    utf8_prefix(part, sizeof(part), c.text, 9);
-    TEST_CHECK(after(&st, part, &c, &score, &flags, 1) == 0);
-    TEST_CHECK(!st.misses && st.strong && st.interval == 32 && st.locked == 9 && !(flags & VJO_HOOK_R_UNLOCK));
     /* the same line read whole: it agrees, and the check counts */
     TEST_CHECK(after(&st, c.text, &c, &score, &flags, 1) == 9);
-    TEST_CHECK(score == 1000 && !st.misses && st.strong && st.interval == 32 && st.unchecked == 0);
+    TEST_CHECK(score == 1000 && !st.misses && st.strong && st.interval == 32 && st.unchecked == 0 && !st.typing);
     TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED));
+    /* two half-typed reads in a row (#413's PROBE4 sequence): the first is no evidence, the second one miss; the
+     * stream stays locked (it took two misses to unlock it, PROBE4's), and the next whole line agrees */
+    st = due;
+    reading(&c, 3);
+    utf8_prefix(part, sizeof(part), c.text, 7);
+    TEST_CHECK(after(&st, part, &c, &score, &flags, 1) == 0 && !st.misses && st.typing);
+    reading(&c, 4);
+    utf8_prefix(part, sizeof(part), c.text, 9);
+    TEST_CHECK(after(&st, part, &c, &score, &flags, 1) == 0);
+    TEST_CHECK(st.misses == 1 && !st.strong && st.locked == 9 && st.interval == 32 && !(flags & VJO_HOOK_R_UNLOCK));
+    reading(&c, 5);
+    TEST_CHECK(after(&st, c.text, &c, &score, &flags, 1) == 9);
+    TEST_CHECK(!st.misses && st.interval == 8 && st.locked == 9); /* resumed at eight, as after any one miss */
+    /* a half-typed read, a whole one, a half-typed one: each half alone is no evidence */
+    st = due;
+    for (unsigned line = 10; line < 13; line++) {
+        reading(&c, line);
+        utf8_prefix(part, sizeof(part), c.text, 7);
+        TEST_CHECK(after(&st, part, &c, &score, &flags, 1) == 0 && !st.misses);
+        TEST_CHECK(after(&st, c.text, &c, &score, &flags, 1) == 9 && !st.misses && st.strong);
+    }
+    /* a press that read the whole line at a scheduled check agrees as before: the check counts (the rule takes only
+     * a text that does not agree with the whole line) */
+    st = learn();
+    st.unchecked = st.interval - 1u;
+    reading(&c, 30);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    TEST_CHECK(after(&st, c.text, &c, &score, &flags, 1) == 9);
+    TEST_CHECK(score == 1000 && st.interval == 16 && st.unchecked == 0 && !st.typing);
     /* a read with the wait (a background read) that saw only the line's start: a disagreement, as before */
     st = due;
     reading(&c, 3);
@@ -1008,14 +1032,24 @@ static void a_wrong_stream_still_disagrees(void)
         TEST_CHECK(after(&st, page, &c, &score, &flags, 1) == 0);
         TEST_CHECK(st.misses == 1);
     }
-    /* the stream a line ahead of a page that collects its lines: the screen shows the page's first line */
+    /* the stream a line ahead of a page that collects its lines: the screen shows the page's first line. For a press
+     * that is no evidence once, not twice: the stream that stays ahead is unlocked at its third read, as two
+     * disagreements unlock any (a read with the wait disagrees at once) */
     {
         VjoHookSelect st = learn(), waited;
+        static char pages[3][256];
+        static const char *const lines[4] = {LINE1, LINE2, LINE3, LINE4};
         st.unchecked = st.interval - 1u;
         waited = st;
-        c = cand(9, 202, 0, page);
-        TEST_CHECK(after(&st, LINE1, &c, &score, &flags, 1) == 0 && !st.misses); /* a press: no evidence */
+        for (unsigned i = 0; i < 3; i++) snprintf(pages[i], sizeof(pages[i]), "%s\n%s", lines[i], lines[i + 1]);
+        c = cand(9, 202, 0, pages[0]);
         TEST_CHECK(after(&waited, LINE1, &c, &score, &flags, 0) == 0 && waited.misses == 1); /* with the wait */
+        TEST_CHECK(after(&st, LINE1, &c, &score, &flags, 1) == 0 && !st.misses); /* a press: no evidence */
+        c = cand(9, 203, 0, pages[1]);
+        TEST_CHECK(after(&st, LINE2, &c, &score, &flags, 1) == 0 && st.misses == 1); /* the second: a miss */
+        c = cand(9, 204, 0, pages[2]);
+        TEST_CHECK(after(&st, LINE3, &c, &score, &flags, 1) == 0);
+        TEST_CHECK(flags == VJO_HOOK_R_UNLOCK && !st.interval && !st.locked);
     }
     /* a stale stream: the screen moves on twice, the stream's line stays; the second unlocks it */
     {

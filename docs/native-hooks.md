@@ -693,11 +693,11 @@ keep their pinned stream first, then the newest texts. Then, by the request's `h
   scheduled comparison grows the interval to 16, then 32, capped at 32. Failed jobs roll back their state.
 - **Recovery:** one comparable disagreement retains the source but shows the existing OCR fallback and
   checks the next fresh line. A match resumes at eight; two consecutive comparable disagreements discard
-  learning. Empty/short OCR is inconclusive and neither clears nor adds a pending disagreement. So is OCR's text
-  that agrees (700) only with the beginning of the locked stream's line, its first characters as many as OCR's
-  (`core/hook_select.c` `prefix_score`): the line still typing out, which a press reads at once since #413
-  ([a line typing out](#a-line-typing-out-413s-audit-f2)); the job shows OCR's text and nothing changes, a check
-  that was due stays due, a source's trust stays. A missing
+  learning. Empty/short OCR is inconclusive and neither clears nor adds a pending disagreement. So is, in a job read
+  without the stable-text wait (a press since #413), OCR's text that agrees (700) only with the beginning of the
+  locked stream's line, its first characters as many as OCR's (`core/hook_select.c` `prefix_score`): the line still
+  typing out ([a line typing out](#a-line-typing-out-413s-audit-f2)); the job shows OCR's text and nothing changes, a
+  check that was due stays due, a source's trust stays. A missing
   or short hook temporarily uses OCR and requires confirmation when it returns; menus and blank screens
   do not erase a reliable identity. Changed source kind, offset or encoding must earn fresh confidence.
 
@@ -776,10 +776,15 @@ Since #413 a press reads at once, without the stable-text wait, so its OCR may r
 part of the line a hook already holds whole. The whole-line similarity scores that as a disagreement (the stream's
 characters OCR has not seen yet count as unmatched: 8 of 21 characters read score 333, 16 score 777), and two in a
 row unlocked a correct stream, one took its trust (#413's audit, its probe P4). Now OCR's text that agrees with the
-locked stream's first characters, as many as OCR read, is no evidence either way: the job shows OCR's text, as for a
-text too short to compare, and nothing of the selection changes. Any other text is a disagreement as before: the line
-before or after (the backlog, a line prepared ahead), a page of which the stream holds one line, a stale stream, the
-middle of the line (`host/tests/test_hook_select.c` `a_wrong_stream_still_disagrees`).
+locked stream's first characters, as many as OCR read, is no evidence either way in a job read without the wait (the
+request has no settle time: `vjo_hook_select_after`'s `unsettled`): the job shows OCR's text, as for a text too short
+to compare, and nothing of the selection changes. Any other text is a disagreement as before: the line before or
+after (the backlog, a line prepared ahead), a page of which the stream holds one line, a stale stream, the middle of
+the line (`host/tests/test_hook_select.c` `a_wrong_stream_still_disagrees`). A read with the wait (a background read,
+a press's retry after a torn read) is compared as before: its text held still, so a stream that holds more than it
+(a page that collects its lines, the stream a line ahead) still disagrees there. The rule cannot tell such a stream
+from a line typing out, which is why a read without the wait is all it is used for, and why the job shows OCR's text,
+not the stream's whole line.
 
 On the hooked page pool's 29 Vita sessions (the [trusted-hook bench](#why-four-agreements-measured)'s, 300 pages each;
 OCR's reads of every page with main's models, the background job's policy, against the pages' verified hook lines)

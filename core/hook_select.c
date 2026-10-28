@@ -431,11 +431,14 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
                     (st->compare_ocr_hash && oh != st->compare_ocr_hash);
         /* #413's audit F2: read without the wait (a press since #413), OCR's text agrees with the beginning of the
          * locked stream's line: the line typing out, not a disagreement. No evidence either way: nothing changes, not
-         * the pair compared last, a pending check or disagreement, or trust. A read with the wait is compared as
-         * before: a stream that holds more than the still screen (a page that collects its lines) still disagrees. */
-        if (unsettled && fresh && lscore < VJO_HOOK_AGREE &&
-            prefix_score(oc, m, mf, locked->text, locked->n) >= VJO_HOOK_AGREE)
+         * the pair compared last, a pending check or disagreement, or trust. Once until the stream agrees again: a
+         * stream the screen keeps showing only the start of (a page that collects its lines, the stream a line ahead of
+         * it) disagrees at every later read, and two unlock it. A read with the wait is compared as before. */
+        if (unsettled && fresh && lscore < VJO_HOOK_AGREE && !st->typing &&
+            prefix_score(oc, m, mf, locked->text, locked->n) >= VJO_HOOK_AGREE) {
             fresh = 0;
+            st->typing = 1;
+        }
         if (fresh) {
             st->compare_hook_hash = hh;
             st->compare_ocr_hash = oh;
@@ -445,7 +448,7 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
                 if (st->misses) st->interval = VJO_HOOK_INTERVAL_MIN;
                 else if (scheduled && st->interval < VJO_HOOK_INTERVAL_MAX) st->interval *= 2u;
                 if (scheduled || st->confirm || st->misses) st->unchecked = 0;
-                st->confirm = st->misses = 0;
+                st->confirm = st->misses = st->typing = 0;
                 st->shown_hash = hh;
                 st->locked_seq = locked->seq;
                 /* API 43: trust needs an agreement this close at the trusted interval (vjo_hook_select_trusted) */

@@ -22,9 +22,10 @@ build**, 96 and 8 B of data room. The next Shell change has to move a string to 
 game worker's rows are main's.
 ## #413's audit: a line typing out, and a press's partial line (no API change)
 
-**F2** ([native-hooks.md](native-hooks.md#a-line-typing-out-413s-audit-f2)) is `core/hook_select.c`'s `prefix_score`
-and one condition, in the game worker only (built `-Os`): its code 170,796 → 170,908 B in the normal worker and
-179,760 → 179,872 B in the debug one, +112 B each, the same pages (1,124 and 352 B of code room left), data unchanged.
+**F2** ([native-hooks.md](native-hooks.md#a-line-typing-out-413s-audit-f2)) is `core/hook_select.c`'s `prefix_score`,
+one condition and its argument (the request's settle time, `game_ocr/main.c`), in the game worker only
+(`core/hook_select.c` built `-Os`): its code 170,796 → 170,956 B in the normal worker and 179,760 → 179,920 B in the
+debug one, +160 B each, the same pages (1,076 and 304 B of code room left), data unchanged.
 Its comparison's scratch is the similarity's own: one more call of the same frame size, never beside it, so the
 stack's peak is unchanged (a code point array and the edit distance's row, as `score_of`'s). The Shell's and the
 kernel's rows are main's [measured: `tools/check_memory_ledger.py`'s module rows, both builds, main `c010578` against

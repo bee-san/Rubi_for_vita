@@ -63,6 +63,10 @@ typedef struct {
     /* API 43: 1 once the locked source agreed at VJO_HOOK_TRUST_INTERVAL with at least VJO_HOOK_TRUST_SCORE (a
      * scheduled check, or a restored source's startup confirmation); 0 again at a disagreement. Never persisted. */
     uint32_t strong;
+    /* #413's audit F2: 1 once a comparison was taken for a line typing out (vjo_hook_select_after's unsettled), until
+     * the stream agrees again: so a stream the screen keeps showing only the start of (one held a line ahead of a page
+     * that collects its lines) disagrees from the second such read. Never persisted. */
+    uint32_t typing;
     uint64_t shown_hash, streak_hash, compare_hook_hash, compare_ocr_hash;
 } VjoHookSelect;
 
@@ -112,7 +116,8 @@ uint32_t vjo_hook_select_trusted(VjoHookSelect *st, uint32_t pick, const VjoHook
  * to8, two disagreements unlock. Inconclusive or duplicate comparisons neither add nor clear misses. unsettled: OCR's
  * text was read without the stable-text wait (a press since #413; the request had no settle time), so it may be a
  * line still typing out: then text that agrees with the beginning of the locked stream's line only is no evidence
- * either (#413's audit F2): it changes nothing, its job shows OCR's text. A read with the wait gets the rule above.
+ * either (#413's audit F2), once until the stream agrees again (VjoHookSelect.typing): it changes nothing else, its
+ * job shows OCR's text. A read with the wait gets the rule above.
  * Pinned/OCR-only calls never change AUTO state. Equal scores prefer the streak, a site, newest seq. */
 uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
                                const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags, int unsettled);
