@@ -779,10 +779,10 @@ blobs, before the follow-up set; nothing of it was measured again on v0.4.1-vocr
   score −0.036 (−0.093 to +0.011); on #109's counter set it keeps 3,288 crops against the old settings' 3,296 (CER
   −0.076 points, −0.119 to −0.028).
 - **What runs:** `core/vocr_ocr.c` `lm_retuned` holds the one change, keyed by the job's model and the LM
-  (`VJO_VOCR6_N_NAME`, v0.4.1-vocr6.2's `VOCR6.2_N_w8g2.vocr` now; `tools/lm_cer_eval.py` and `tools/lm_lines_eval.py`
-  `MODEL_SETTINGS` the same key); a Normal job that runs Small for memory decodes with Small's (the tier's) settings, a
-  Large job with Large's. The workspace is the same (the beam's size does not depend on these settings). Nothing of it
-  has run on a console.
+  (`VJO_VOCR6_N_NAME`, v0.4.1-vocr6.2's `VOCR6.2_N_w8g2.vocr` now; `tools/evallib.py` `LM_MODEL_SETTINGS`, the table
+  `tools/lm_cer_eval.py` and `tools/lm_lines_eval.py` decode with, the same key); a Normal job that runs Small for
+  memory decodes with Small's (the tier's) settings, a Large job with Large's. The workspace is the same (the beam's
+  size does not depend on these settings). Nothing of it has run on a console.
 
 ## Confidence cascade (API 20)
 
@@ -1710,8 +1710,8 @@ VOCR6-L) updated:
    `host/tests/test_vocr.c` `pinned_table_matches_release_files` checks it against the files). Where vita-vn-ocr's
    check of the decoder settings on the new blobs changes a model's settings for an LM, `lm_retuned` (VOCR6: one
    entry, [VOCR6's settings](#vocr6s-settings-vita-vn-ocr-151), keyed by `VJO_VOCR6_N_NAME`, so it moved to the
-   follow-up set's Normal with its name; `tools/lm_cer_eval.py` and `tools/lm_lines_eval.py` `MODEL_SETTINGS` key it
-   by the file name).
+   follow-up set's Normal with its name; `tools/evallib.py` `LM_MODEL_SETTINGS`, which `tools/lm_cer_eval.py` and
+   `tools/lm_lines_eval.py` decode with, keys it by the file name).
 3. `kernel/game_ocr.c` `model_size()`: the broker's names, each by its macro (a new generation's macros are an edit
    here, and the kernel plugin is rebuilt in any case). `python3 tools/docs_model_names.py` then rewrites the names'
    lists in this file and the guide from the kernel's (`tools/tests/test_docs_model_names.py`, in ctest, fails until
