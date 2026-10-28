@@ -2432,12 +2432,13 @@ retry_smaller:
     }
     /* #280's audit F1: the check passed, yet the last model's weights could not be had (no smaller model is left to
      * retry). With every size's reserve 1 MiB (#280), アマツツミ's measured 2 MiB (PCSG01198, 2026-10-23) passes Small's
-     * check at the full screen (2,068,480 B), and on a console that reports free memory in whole MiB (#324) its
-     * weights are then refused once the job's blocks are taken: no OCR can run in this game now, as when the check
-     * fails, so a Rubi verified site's newest text answers unconfirmed here too (with the 4 MiB reserve before #280
-     * the check failed there). This try's blocks and the resident ones go back to the game first, as on that path;
-     * its captures and finder time stay the job's, and its blocks' steps leave the log (steps_drop_blocks). Never while
-     * a block may still be written (a stuck helper, a capture the display hook may still own: blocked). */
+     * check at the full screen (2,068,480 B), and on a console that reports free memory in whole MiB (#324) its weights
+     * can then be refused once the job's blocks are taken (while less than 2 MiB and those blocks, 192 KiB at the full
+     * screen, is really free; or the game took memory meanwhile): no OCR can run in this game now, as when the check
+     * fails, so a Rubi verified site's newest text answers unconfirmed here too (with the 4 MiB reserve before #280 the
+     * check failed there). This try's blocks and the resident ones go back to the game first, as on that path; its
+     * captures and finder time stay the job's, and its blocks' steps leave the log (steps_drop_blocks). Never while a
+     * block may still be written (a stuck helper, a capture the display hook may still own: blocked). */
     if (rc == VJO_E_OOM && !stats.stuck && !blocked && hk.installed && !cancelled(NULL)) {
         uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
         if (id) {

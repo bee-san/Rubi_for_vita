@@ -760,8 +760,9 @@
  * VJO_VOCR_STRIP_BYTES, 56 KiB), freed with the job, beside this reserve, the same 1 MiB as OCR's since PR #280
  * (smaller than OCR's 4 MiB before it). A game with too little room for any OCR job, or whose last model's weights
  * are refused after its check passed (#280's audit F1: アマツツミ, PCSG01198, 2 MiB measured on a console, 2026-10-23,
- * passes Small's check at 1 MiB, and on a console that reports free memory in whole MiB its weights are then
- * refused), can still show its hook's text when this capture-only pass fits.
+ * passes Small's check at 1 MiB, and on a console that reports free memory in whole MiB its weights can then be
+ * refused, while less than 2 MiB and the job's blocks is really free), can still show its hook's text when this
+ * capture-only pass fits.
  * It adds nothing to
  * VJO_WORST_GAME_JOB: it is the capture block every job may hold. API 43: a trusted hook's answer
  * (VJO_GAME_OCR_S_TRUST, core/hook_select.h vjo_hook_select_trusted) takes the same one strip beside

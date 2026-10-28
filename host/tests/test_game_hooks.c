@@ -20,6 +20,8 @@
 static unsigned char job_memory[1024*1024] __attribute__((aligned(64)));
 static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static unsigned char capture_mem_block[64*1024] __attribute__((aligned(64)));
+static unsigned char lm_memory[VJO_VOCR_LM1_BYTES + 4096] __attribute__((aligned(64))); /* a resident LM's block */
+static int lm_live; static unsigned lm_block;
 static unsigned char pixels[W*H*4];
 static int capture_live, job_live, weights_live, shot_allocs, probe_allocs;
 static unsigned capture_block, capture_allocs, job_block, weights_block, live_bytes;
@@ -230,6 +232,11 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
         weights_live = 1; weights_block = size; live_bytes += size;
         return 10;
     }
+    if (!strcmp(name, "VjoGameVocrLM")) {
+        TEST_CHECK(!lm_live && size <= sizeof(lm_memory));
+        lm_live = 1; lm_block = size; live_bytes += size;
+        return 13;
+    }
     TEST_CHECK(!strcmp(name, "VjoGameVocr") && !job_live && size <= sizeof(job_memory));
     job_live = 1; job_block = size; live_bytes += size;
     return 9;
@@ -238,6 +245,7 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
 {
     if (uid == 11) { TEST_CHECK(capture_live); *base = capture_mem_block; return 0; }
     if (uid == 12) { TEST_CHECK(sc3_live); if (sc3_base_fail) return -1; *base = sc3_mem; return 0; }
+    if (uid == 13) { TEST_CHECK(lm_live); *base = lm_memory; return 0; }
     TEST_CHECK(uid == 10 ? weights_live : uid == 9 && job_live);
     *base = uid == 10 ? (void *)weights_memory : (void *)job_memory;
     return 0;
@@ -254,6 +262,7 @@ int sceKernelFreeMemBlock(SceUID uid)
         if (fail_weights_free) { fail_weights_free--; return -1; }
         weights_live = 0; live_bytes -= weights_block; return 0;
     }
+    if (uid == 13) { TEST_CHECK(lm_live); lm_live = 0; live_bytes -= lm_block; return 0; }
     if (uid == 12) {
         TEST_CHECK(sc3_live && !sc3_set_file); /* never while the engine holds it */
         if (sc3_free_fail) { sc3_free_fail--; return -1; }
@@ -353,9 +362,12 @@ int vjoOcrModelClose(uint32_t seq)
 
 /* ---- the runtime: spies ---- */
 static unsigned spy_lines = 1; /* the lines the spy finder finds (0: a region without text) */
+static int spy_reads_rows; /* 1: the spy reads every row of the region once, as a finder's pass does */
 int vocr_find_lines_rows(const VocrLinesRows *src, int mode, void *arena, size_t bytes, VocrLineSet *out)
 {
     finds++;
+    for (unsigned y = 0; spy_reads_rows && y < src->height; y++)
+        if (!src->row(src->user, y)) return VOCR_LINES_E_SOURCE;
     memset(out, 0, sizeof(*out));
     out->count = spy_lines;
     out->lines[0] = (VocrLine){10, 2, 180, 3, 0};
@@ -396,6 +408,9 @@ static VjoGameOcrRequest request(uint32_t pick)
 static void reset(void)
 {
     if (weights_live) TEST_CHECK(!drop_weights());
+    if (lm_live || lm_res.data) TEST_CHECK(!drop_lm());
+    lm_res.lm = NULL; lm_res.data = NULL; lm_res.capacity = 0; lm_res.size = lm_res.stamp = 0; lm_uid = -1;
+    spy_reads_rows = 0;
     if (sc3_uid >= 0 && sc3_live) { /* an SC3 charset a test left: given back as the worker's stop does */
         sc3_set_file = NULL;
         TEST_CHECK(!game_memblock_free(GL_SC3, VJO_GITEM_SC3, sc3_uid, sc3_bytes_held));
@@ -1293,6 +1308,42 @@ static void verified_site_answers_when_its_weights_are_refused(void)
             workspace += out.step[i].id == VJO_GSTEP_ALLOC && out.step[i].arg == VJO_GITEM_WORKSPACE;
         }
         TEST_CHECK_(passed == 1 && !workspace, "%u passed checks, %u workspace ALLOC steps", passed, workspace);
+        /* audit-b F1 and F2: an LM an earlier job left resident (verified, so cleanup() keeps it), which the check
+         * counts as held, and a try that reads the region before its weights are refused (as a console's finder
+         * does). The answer comes as above, and the LM goes back to the game first, its FREE step kept (the try did
+         * not take it); the try's capture is the job's (one PASS step, its strips counted beside the pass's). */
+        reset();
+        free_mib = 1;
+        fake_verified = 1u;
+        stream(1, VJO_HOOK_KIND_SITE, 8, LINE2);
+        spy_reads_rows = 1;
+        {
+            const VjoVocrLm *lm1 = vjo_vocr_lm_tier(1);
+            TEST_ASSERT(lm1 != NULL);
+            lm_res.data = lm_alloc(NULL, lm1->bytes); /* the earlier job's verified LM */
+            TEST_ASSERT(lm_res.data != NULL && lm_live);
+            lm_res.lm = lm1; lm_res.capacity = lm_res.size = lm1->bytes; lm_res.stamp = 1;
+            available = 2 * 1024 * 1024 + (int64_t)lm_block; /* the check sees 2 MiB beside the LM */
+        }
+        VjoGameOcrRequest q = request(VJO_HOOK_PICK_AUTO);
+        q.flags = 1u << VJO_GAME_OCR_LM_SHIFT; /* the LM's first tier allowed: the resident one */
+        vjo_game_ocr_cache_clear();
+        rows_calls = 0;
+        TEST_ASSERT(vjo_game_ocr_run_request(&q, &out) == 0);
+        TEST_CHECK_(!strcmp(out.text, LINE2) && out.hook_flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE),
+                    "%s, flags 0x%x", out.text, (unsigned)out.hook_flags);
+        TEST_CHECK_(!lm_live && !lm_res.lm && !weights_live && !job_live && !capture_live,
+                    "lm %d weights %d job %d capture %d live after the answer", lm_live, weights_live, job_live,
+                    capture_live);
+        unsigned lm_frees = 0, passes = 0;
+        for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+            lm_frees += out.step[i].id == VJO_GSTEP_FREE && out.step[i].arg == VJO_GITEM_LM;
+            passes += out.step[i].id == VJO_GSTEP_PASS;
+        }
+        const unsigned strips = (H + vjo_vocr_strip_rows(W, H) - 1u) / vjo_vocr_strip_rows(W, H);
+        TEST_CHECK_(lm_frees == 1 && passes == 1 && out.captures >= 2u * strips && out.capture_us > 0,
+                    "%u LM FREE steps, %u PASS steps, %u captures (a pass is %u strips), %u us", lm_frees, passes,
+                    (unsigned)out.captures, strips, (unsigned)out.capture_us);
         /* a CALL caller alone: the refusal, as before */
         reset();
         free_mib = 1;

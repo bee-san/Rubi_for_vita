@@ -122,12 +122,12 @@ uint32_t vjo_hook_select_trusted(VjoHookSelect *st, uint32_t pick, const VjoHook
 uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
                                const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags, int unsettled);
 
-/* After OCR was refused for memory, so no stream can ever agree with it (a game that leaves less than
- * the smallest model's reserve free): with the automatic pick, the newest candidate from a Rubi verified
- * table site (c->verified) with at least VJO_HOOK_MIN_CHARS characters answers unconfirmed (flags:
- * VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE). Luna's sites and CALL callers never do:
- * only a site whose bytes Rubi checked. A pinned or OCR-only pick, or no such candidate: 0. Never changes
- * the automatic pick's state (nothing is learned without OCR). */
+/* After OCR was refused for memory, so no stream can ever agree with it (no OCR job fits beside its reserve,
+ * or the last model's weights were refused after its check passed): with the automatic pick, the newest
+ * candidate from a Rubi verified table site (c->verified) with at least VJO_HOOK_MIN_CHARS characters answers
+ * unconfirmed (flags: VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE). Luna's sites and CALL
+ * callers never do: only a site whose bytes Rubi checked. A pinned or OCR-only pick, or no such candidate: 0.
+ * Never changes the automatic pick's state (nothing is learned without OCR). */
 uint32_t vjo_hook_select_no_memory(uint32_t pick, const VjoHookCand *c, unsigned n, uint32_t *flags);
 
 #endif
