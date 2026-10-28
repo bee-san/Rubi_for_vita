@@ -55,7 +55,8 @@
 static const VjoInstallBuild build = {VJO_API_VERSION, "0.8.0", VJO_VARIANT, VJO_TAI_WORKER_KERNEL};
 
 /* ---------------- the card (fakes/sceio_posix.h: the SDK's file calls over its files) ---------------- */
-#define SCEIO_OWN (SCEIO_OPEN | SCEIO_WRITE | SCEIO_GETSTAT | SCEIO_RENAME | SCEIO_REMOVE | SCEIO_SYNCBYFD)
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_WRITE | SCEIO_GETSTAT | SCEIO_RENAME | SCEIO_REMOVE | SCEIO_SYNCBYFD | \
+                   SCEIO_DREAD)
 #include "fakes/sceio_posix.h"
 static char card[PATH_MAX];
 
@@ -140,6 +141,18 @@ int sceIoRemove(const char *p)
     return sceio_remove(p);
 }
 int sceIoSyncByFd(int fd, int flag) { (void)fd; (void)flag; return 0; }
+/* The suite's own listing, as it always had it: no name that starts with '.', each entry its name alone. */
+int sceIoDread(int d, SceIoDirent *e)
+{
+    DIR *dir = sceio_dir(d);
+    struct dirent *de;
+    if (!dir) return (int)0x80010009u;
+    while ((de = readdir(dir)) && de->d_name[0] == '.') {}
+    if (!de) return 0;
+    memset(e, 0, sizeof(*e));
+    snprintf(e->d_name, sizeof(e->d_name), "%s", de->d_name);
+    return 1;
+}
 int sceIoDevctl(const char *dev, unsigned int cmd, void *in, int inlen, void *out, int outlen)
 {
     (void)in; (void)inlen;
