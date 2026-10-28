@@ -364,7 +364,7 @@ static void setup(VjoArena *a, VjoPlatform *p, VjoConfig *cfg)
     fixture_dict_title = NULL;
     vjo_arena_init(a, arena_mem, sizeof(arena_mem));
     memset(p, 0, sizeof(*p)); p->file_open = open_file;
-    vjo_config_defaults(cfg); cfg->dictionary = VJO_DICT_LOCAL;
+    vjo_config_defaults(cfg);
     strcpy(cfg->local_dictionary_dir, "fixture"); strcpy(cfg->local_dictionaries, "main.vjdict");
 }
 static int lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
@@ -1580,7 +1580,7 @@ static int shown(const char *name, const char *text, size_t cursor, char *out, s
     int before = reads;
     vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
     memset(&p, 0, sizeof(p)); p.file_open = open_file;
-    vjo_config_defaults(&cfg); cfg.dictionary = VJO_DICT_LOCAL;
+    vjo_config_defaults(&cfg);
     strcpy(cfg.local_dictionary_dir, "fixture"); strcpy(cfg.local_dictionaries, name);
     payload_reads = 0;
     if (lookup(&a, &p, &cfg, text, cursor, &r, &e)) snprintf(out, cap, "rc %d", e.rc);

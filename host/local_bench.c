@@ -97,7 +97,7 @@ int main(int argc, char **argv)
         if (parse_count(argv[6], VJO_LOCAL_MAX_DICTS, &value) || !value) return 2;
         results = (int)value;
     }
-    vjo_config_defaults(&cfg); cfg.dictionary = VJO_DICT_LOCAL;
+    vjo_config_defaults(&cfg);
     if (results) cfg.local_dictionary_results = results;
     if (strlen(argv[1]) >= sizeof(cfg.local_dictionary_dir) || strlen(argv[2]) >= sizeof(cfg.local_dictionaries)) return 2;
     strcpy(cfg.local_dictionary_dir, argv[1]); strcpy(cfg.local_dictionaries, argv[2]);

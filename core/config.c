@@ -24,7 +24,6 @@ const char *vjo_trigger_name(int trigger)
 void vjo_config_defaults(VjoConfig *c)
 {
     memset(c, 0, sizeof(*c));
-    c->dictionary = VJO_DICT_LOCAL;
     vjo_snprintf(c->local_dictionary_dir, sizeof(c->local_dictionary_dir), "ux0:data/VitaJPOverlay/dictionaries");
     vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "plaintext.vjdict,vndb-names.vjdict");
     c->local_dictionary_results = 2; /* a word's entry, then the same word as a name (vndb-names) */
@@ -49,7 +48,6 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_refine_lines = 2;
     c->ocr_helpers = 2; /* ocr_threads = 3 */
     c->ocr_boost_clock = 1; /* 444 MHz while a job recognizes; never lowers a clock (game_ocr/main.c) */
-    c->ocr_settle_press_ms = 1000; /* a press's wait before #413; read by nothing since (docs/text-stability.md) */
     c->stick_lookup_ms = 200; /* core/stick_cursor.h VJO_STICK_CURSOR_REST_MS */
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
@@ -556,7 +554,8 @@ static int *switch_field(VjoConfig *c, const char *key)
     return NULL;
 }
 
-static void set_kv(VjoConfig *c, const char *key, const char *val)
+/* tier_set: a vocr_tier line set the size (an older vocr_model line then no longer does), the parse's own */
+static void set_kv(VjoConfig *c, const char *key, const char *val, int *tier_set)
 {
     const StrSetting *ss;
     int *sw;
@@ -608,26 +607,24 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         int t = vjo_vocr_tier_parse(val);
         if (t) {
             c->vocr_tier = t;
-            c->vocr_tier_explicit = 1;
+            *tier_set = 1;
         } else
             warn(c, "%s: invalid value (small, normal or large)", key);
     } else if (vjo_ieq(key, "vocr_model")) {
         /* An older build's model choice (removed, core/config.c's list): its tier, unless a vocr_tier line says
          * otherwise; any other value is ignored without a warning, as every removed setting is. */
         int t = valid_vocr_model(val) ? vjo_vocr_tier_of_model(val) : 0;
-        if (t && !c->vocr_tier_explicit)
+        if (t && !*tier_set)
             c->vocr_tier = t;
     } else if (vjo_ieq(key, "ocr_settle_ms")) {
         set_ms(c, key, val, &c->ocr_settle_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_settle_max_ms")) {
         set_ms(c, key, val, &c->ocr_settle_max_ms, 100, 10000);
     } else if (vjo_ieq(key, "ocr_settle_press_ms")) {
-        int keep = c->ocr_settle_press_ms; /* 0, or 100..10000, as before #413; no request carries it since */
-        set_ms(c, key, val, &c->ocr_settle_press_ms, 0, 10000);
-        if (c->ocr_settle_press_ms && c->ocr_settle_press_ms < 100) {
-            c->ocr_settle_press_ms = keep;
+        /* read by nothing since #413 (opening the overlay reads without the wait), still checked: 0 or 100..10000 */
+        int v;
+        if (parse_int(val, &v) || (v && (v < 100 || v > 10000)))
             warn(c, "%s: invalid value (ms, out of range)", key);
-        }
     } else if (vjo_ieq(key, "ocr_cascade_ms")) {
         set_ms(c, key, val, &c->ocr_cascade_ms, 0, 3750);
     } else if (vjo_ieq(key, "stick_lookup_ms")) {
@@ -682,6 +679,7 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
 {
     size_t i = 0;
     unsigned line_no = 0; /* a line without '=' is named by its number: its text could be a key */
+    int tier_set = 0;
     while (i < len) {
         char line[1024], key[64], val[sizeof(((VjoConfig *)0)->local_dictionaries)]; /* the longest value */
         size_t n = 0, s, e, eq;
@@ -754,7 +752,7 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         }
         memcpy(val, line + s, e - s);
         val[e - s] = '\0';
-        set_kv(c, key, val);
+        set_kv(c, key, val, &tier_set);
     }
     /* The toggle keeps its button (it was there first). */
     if (c->toggle_button == c->subtitle_button) {

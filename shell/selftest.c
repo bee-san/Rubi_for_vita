@@ -193,7 +193,7 @@ void vjo_selftest_init(const VjoConfig *cfg)
     report(&g, "config backend=%d model=%s fallback=%s tier=%s dictionary=%d anki=%d", 2,
            vjo_vocr_tier_model(cfg->vocr_tier) ? vjo_vocr_tier_model(cfg->vocr_tier) : "-",
            cfg->vocr_tier > (int)VJO_VOCR_TIER_SMALL ? vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL) : "-",
-           vjo_vocr_tier_id(cfg->vocr_tier) ? vjo_vocr_tier_id(cfg->vocr_tier) : "-", cfg->dictionary,
+           vjo_vocr_tier_id(cfg->vocr_tier) ? vjo_vocr_tier_id(cfg->vocr_tier) : "-", VJO_DICT_LOCAL,
            cfg->anki_mining);
     report(&g, "step boot t=%lld", (long long)ms_since_start());
     sample(&g, "boot");
