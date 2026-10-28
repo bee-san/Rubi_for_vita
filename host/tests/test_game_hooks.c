@@ -359,8 +359,8 @@ int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
     TEST_CHECK(seq == 12 && !file_open_now && which == VJO_GAME_OCR_OPEN_MODEL);
     opens++;
     file_open_now = 1;
-    *info = (VjoGameOcrModelInfo){sizeof(*info), TEST_FL10_BYTES, 0, 0, 0x12345678};
-    return (int)TEST_FL10_BYTES;
+    *info = (VjoGameOcrModelInfo){sizeof(*info), TEST_HOOK_FL10_BYTES, 0, 0, 0x12345678};
+    return (int)TEST_HOOK_FL10_BYTES;
 }
 int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t n, void *dst)
 {
@@ -1418,6 +1418,59 @@ static void verified_site_after_refused_weights_logs_the_pause(void)
                 ps ? ps->arg : 0u, ps ? (int)ps->rc : 0, ps ? ps->bytes : 0u, ps ? ps->us : 0u, ps ? ps->sum : 0u);
 }
 
+/* The 512 KiB test draft (owner, 2026-10-28): OCR keeps 512 KiB free beside its blocks, #280's 1 MiB on main, and the
+ * hook-only pass keeps its own 1 MiB (VJO_GAME_RESERVE_HOOK_ONLY, #273's), unchanged. With this harness's job (a
+ * VOCR6-S-sized model at 200x150, test_hook_models.h): in a game with 1.5 MiB free a Rubi verified site
+ * (hook_trust = off) is now checked by OCR and agrees, where beside 1 MiB OCR was refused and the site answered
+ * unconfirmed; with 1 MiB and 64 KiB (room for the pass, none for OCR) it still answers unconfirmed; with
+ * hook_trust = on it answers before any check, with no block, at either. In whole MiB a 1.5 MiB game reads 1 MiB:
+ * OCR is refused and the pass (1 MiB beside 1 MiB) has no room for its strip, so the job fails for memory. */
+static void reserve_512k_verified_site_and_the_hook_only_pass(void)
+{
+    VjoGameOcrResult out;
+    const uint32_t mib = 1024u * 1024u;
+    TEST_ASSERT(VJO_GAME_RESERVE == 512u * 1024u && VJO_GAME_RESERVE_HOOK_ONLY == mib);
+    /* 1.5 MiB, exact: OCR fits beside 512 KiB (its job and weights) and agrees with the site */
+    reset();
+    available = 3 * mib / 2u;
+    fake_verified = 1u;
+    stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
+    spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, LINE1) && out.text_from == 1);
+    TEST_CHECK_(runs == 1 && out.hook_flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_SITE) && out.reserve_bytes == VJO_GAME_RESERVE,
+                "flags 0x%x, %u runs, reserve %u", (unsigned)out.hook_flags, runs, (unsigned)out.reserve_bytes);
+    TEST_CHECK_(out.need_workspace + out.need_weights + VJO_GAME_RESERVE <= 3u * mib / 2u &&
+                    out.need_workspace + out.need_weights + mib > 3u * mib / 2u,
+                "needs %u B beside the reserve: fits beside 512 KiB, not beside 1 MiB",
+                (unsigned)(out.need_workspace + out.need_weights));
+    /* 1 MiB and 64 KiB: no room for OCR, room for the pass beside the hook-only 1 MiB: unconfirmed, as before */
+    reset();
+    available = mib + 64u * 1024u;
+    fake_verified = 1u;
+    stream(1, VJO_HOOK_KIND_SITE, 6, LINE2);
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, LINE2));
+    TEST_CHECK(!runs && out.hook_flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+    TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY && capture_allocs == 1);
+    /* hook_trust = on: the trusted site answers before any check, with no block, at both */
+    for (unsigned roomy = 0; roomy < 2; roomy++) {
+        reset();
+        available = roomy ? 3 * mib / 2u : mib + 64u * 1024u;
+        fake_verified = 1u;
+        stream(1, VJO_HOOK_KIND_SITE, 7, LINE3);
+        TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && !strcmp(out.text, LINE3));
+        TEST_CHECK(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR) && !capture_allocs &&
+                   !runs);
+    }
+    /* 1.5 MiB reported in whole MiB (1 MiB): OCR refused by its check, and the pass has no room either */
+    reset();
+    free_mib = 1;
+    available = 3 * mib / 2u;
+    fake_verified = 1u;
+    stream(1, VJO_HOOK_KIND_SITE, 8, LINE1);
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.text[0] && !runs && !capture_allocs);
+    free_mib = 0;
+}
+
 /* ---- API 43: trusted hooks (VJO_GAME_OCR_S_TRUST) through the worker's job path ---- */
 
 /* A Rubi verified site answers from its first line without OCR: no model opened, no line found or recognized,
@@ -2049,6 +2102,8 @@ TEST_LIST = {
     {"API 49: the learned source is reported flagged once trusted, restored ones by identity", trusted_watch_learned_source},
     {"API 50: the line finder's fixes follow the request", line_fix_follows_the_request},
     {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
+    {"512 KiB test draft: a verified site at 1.5 MiB is checked by OCR; the hook-only pass keeps 1 MiB",
+     reserve_512k_verified_site_and_the_hook_only_pass},
     {"#280's audit F1: a verified site answers when the weights are refused after the check (アマツツミ's 2 MiB, "
      "whole MiB)", verified_site_answers_when_its_weights_are_refused},
     {"API 55, #355's audit N7: that path with the pause logs the pause step", verified_site_after_refused_weights_logs_the_pause},
