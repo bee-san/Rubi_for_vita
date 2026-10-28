@@ -160,10 +160,10 @@
  * (--exact): this must equal its pages. API 55's ocr_pause (#355; docs/game-pause.md) in the Shell is its key's parse,
  * one speed bit, VjoConfig's 4 B, the active game's STATIC_FB flag and the wait hint's clause (WAIT_HINT_PAUSE, a 54 B
  * format of the one hint, in the data segment), with core/config.c's off/on settings in one table and three strings
- * back in read-only data (#358's and API 54's keys, #413's debug-only open format): 85,796 -> 85,732 + 77,672 ->
- * 77,696 on main efbee95 (v0.10.0), the same pages, 284 B of text room and 128 B of data room [measured:
- * tools/check_memory_ledger.py's module rows, both builds, main efbee95 and this change, tools/fast_gate.sh's vitasdk
- * image; the debug build 98,116 -> 98,092 + 77,760 -> 77,760, the same pages, 212 B and 64 B of room]. Without the
+ * back in read-only data (#358's and API 54's keys, #413's debug-only open format): 85,828 -> 85,764 + 77,672 ->
+ * 77,696 on main f32c5e3, the same pages, 252 B of text room and 128 B of data room [measured:
+ * tools/check_memory_ledger.py's module rows, both builds, main f32c5e3 and this change, tools/fast_gate.sh's vitasdk
+ * image; the debug build 98,132 -> 98,108 + 77,760 -> 77,760, the same pages, 196 B and 64 B of room]. Without the
  * table the pause also fits on efbee95 (85,876 + 77,728 and 98,244 + 77,800 B, after #428 and #440 freed the Shell's
  * code); on eef0fc4 it took a page more in both builds (86,084 + 77,784 and 98,428 + 77,856 B). The draft's hint as a
  * second copy (214 B) takes a data page more in both builds on efbee95 too (85,860 + 77,888 and 98,212 + 77,992 B). */

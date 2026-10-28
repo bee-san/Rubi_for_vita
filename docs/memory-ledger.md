@@ -8,13 +8,13 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 ## The pause for the frame (API 55)
 
 `ocr_pause` (#355, off by default; [game-pause.md](game-pause.md)). Measured with `tools/check_memory_ledger.py`'s
-module rows, both builds, main `efbee95` (v0.10.0) and this change, tools/fast_gate.sh's vitasdk image (text +
-data/bss):
+module rows, both builds, main `f32c5e3` (v0.10.0 and #503's streak fix: the kernel's and worker's rows are
+v0.10.0's) and this change, tools/fast_gate.sh's vitasdk image (text + data/bss):
 
 | module | debug | normal | pages |
 |---|---|---|---|
 | Kernel | 43,496 + 77,780 → 44,152 + 77,812 B | 38,344 + 76,092 → 38,928 + 76,124 B | 122,880 / 118,784 B, unchanged |
-| Shell | 98,116 + 77,760 → 98,092 + 77,760 B | 85,796 + 77,672 → 85,732 + 77,696 B | 176,128 / 163,840 B, unchanged |
+| Shell | 98,132 + 77,760 → 98,108 + 77,760 B | 85,828 + 77,672 → 85,764 + 77,696 B | 176,128 / 163,840 B, unchanged |
 | Game worker | 180,176 + 36,840 → 181,936 + 36,424 B | 171,260 + 36,832 → 172,972 + 36,416 B | 217,088 → **221,184** / 208,896 → **212,992** B |
 
 - **The game worker takes one page more in each game that is ON** (`VJO_BUDGET_WORKER_MODULE_PAGES` raised by
@@ -34,8 +34,8 @@ data/bss):
   its twelve plain off/on settings from one table in place of a branch each, and #358's and API 54's keys
   (`ocr_wait_hint`, `ocr_spotter_refine`) and #413's debug-only `open: …` format are read-only data again: 144 B of the
   normal Shell's code and 32 B of its data, 152 B and 40 B of the debug one's [measured: this change with and without
-  the table, both builds]; the config golden files are unchanged by it. Room left: 284 B of code and 128 B of data in
-  the normal Shell (220 and 152 B on main), 212 B and 64 B in the debug one (188 and 64 B).
+  the table, both builds, on `efbee95`]; the config golden files are unchanged by it. Room left: 252 B of code and
+  128 B of data in the normal Shell (188 and 152 B on main), 196 B and 64 B in the debug one (172 and 64 B).
   - **What the table is for.** On `efbee95` (after #428 and #440 freed Shell code) the pause fits without it too
     (85,876 + 77,728 and 98,244 + 77,800 B); on `eef0fc4` it did not (86,084 + 77,784 and 98,428 + 77,856 B, a page
     more in both builds). The draft's own Shell part, with the hint as a second copy (214 B) and its branch in the
