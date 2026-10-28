@@ -20,6 +20,9 @@ else()
 endif()
 
 set(CMAKE_C_STANDARD 99)
+# Every unit's compile line (compile_commands.json): host/tests/variant_free.py derives the variant_free label from
+# them (the end of this file). Set before the first target: each target's EXPORT_COMPILE_COMMANDS starts from it.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
@@ -568,8 +571,15 @@ if(_vjo_plaintext_dir) # the Shell's word lookup with the bundled dictionary too
     ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir}")
 endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-# The memory ledger's CI check: allocation sites and worst cases (docs/memory-ledger.md).
-add_test(NAME memory_ledger COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_memory_ledger.py)
+# The memory ledger's CI check: allocation sites and worst cases (docs/memory-ledger.md), against this build's
+# variant's budgets (include/vjo_ledger_budget.h's #if VJO_DEBUG lines).
+if(VJO_DEBUG)
+  set(_vjo_ledger_variant debug)
+else()
+  set(_vjo_ledger_variant normal)
+endif()
+add_test(NAME memory_ledger COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_memory_ledger.py
+  --variant ${_vjo_ledger_variant})
 # Each step is a fresh process: the overlay's saves and the Rubi app's exports, stopped at each
 # storage boundary, never lose a card.
 add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py
@@ -1216,6 +1226,9 @@ if(VJO_WITH_VOCR)
   endif()
 endif()
 
+# The variant_free label's derivation (host/tests/variant_free.py, the end of this file) on small builds of its own.
+add_test(NAME variant_free_rules COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_variant_free.py)
+
 # Every test runs with a TMPDIR of its own, which must be empty again when the run ends
 # (host/tests/test_tmpdir.h, host/tests/tmp_leak.py): <this build's directory>/TEST, the build's
 # directory in the system's temporary directory (outside the source tree, as /tmp is).
@@ -1240,3 +1253,51 @@ add_test(NAME tmp_leak_check COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/h
   check ${VJO_TEST_TMPDIR} ${_vjo_tests})
 set_tests_properties(tmp_leak_setup PROPERTIES FIXTURES_SETUP tmp_leak)
 set_tests_properties(tmp_leak_check PROPERTIES FIXTURES_CLEANUP tmp_leak)
+
+# variant_free, derived (host/tests/variant_free.py): a test whose programs (and every library linked into them)
+# preprocess to the same text with VJO_DEBUG 1 and 0 and with the model directories changed, and that no if() on
+# VJO_DEBUG or the models configures, gives the same result in every lane; the normal build's ctest and the models
+# lane (ctest -LE variant_free) leave it to the debug build's run. The tools' suites keep the label given above.
+# After every program is built, the script writes the labels into a file that ctest includes (TEST_INCLUDE_FILES, from
+# host/tests/variant_labels): without a build, or with VJO_VARIANT_LABELS_OFF in the environment, ctest sees CMake's
+# labels only.
+get_property(_vjo_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+set(_vjo_graph)
+set(_vjo_programs)
+foreach(_vjo_t IN LISTS _vjo_targets)
+  get_target_property(_vjo_type ${_vjo_t} TYPE)
+  if(NOT _vjo_type MATCHES "^(EXECUTABLE|STATIC_LIBRARY|OBJECT_LIBRARY)$")
+    continue()
+  endif()
+  set(_vjo_deps)
+  get_target_property(_vjo_links ${_vjo_t} LINK_LIBRARIES)
+  get_target_property(_vjo_srcs ${_vjo_t} SOURCES)
+  string(REGEX MATCHALL "\\$<TARGET_OBJECTS:[^>]+>" _vjo_objs "${_vjo_srcs}")
+  string(REGEX REPLACE "\\$<TARGET_OBJECTS:([^>]+)>" "\\1" _vjo_objs "${_vjo_objs}")
+  foreach(_vjo_d IN LISTS _vjo_links _vjo_objs)
+    if(_vjo_d AND TARGET ${_vjo_d})
+      list(APPEND _vjo_deps "\"${_vjo_d}\"")
+    endif()
+  endforeach()
+  list(JOIN _vjo_deps ", " _vjo_deps)
+  set(_vjo_file "")
+  if(_vjo_type STREQUAL EXECUTABLE)
+    set(_vjo_file "$<TARGET_FILE:${_vjo_t}>")
+    list(APPEND _vjo_programs ${_vjo_t})
+  endif()
+  list(APPEND _vjo_graph "  \"${_vjo_t}\": {\"type\": \"${_vjo_type}\", \"file\": \"${_vjo_file}\", \"deps\": [${_vjo_deps}]}")
+endforeach()
+list(JOIN _vjo_graph ",\n" _vjo_graph)
+file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/vjo_targets.json CONTENT "{\n${_vjo_graph}\n}\n")
+set(_vjo_labels ${CMAKE_BINARY_DIR}/variant_labels.cmake)
+add_custom_command(OUTPUT ${_vjo_labels}
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/variant_free.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CTEST_COMMAND} ${_vjo_labels}
+  DEPENDS ${CMAKE_SOURCE_DIR}/host/tests/variant_free.py ${CMAKE_BINARY_DIR}/vjo_targets.json ${_vjo_programs}
+  COMMENT "variant_free: the host tests whose result is the same in every lane (host/tests/variant_free.py)"
+  VERBATIM)
+add_custom_target(vjo_variant_labels ALL DEPENDS ${_vjo_labels})
+set(VJO_VARIANT_LABELS_INCLUDE ${CMAKE_BINARY_DIR}/variant_labels_include.cmake)
+file(WRITE ${VJO_VARIANT_LABELS_INCLUDE}
+  "if(EXISTS \"${_vjo_labels}\" AND NOT DEFINED ENV{VJO_VARIANT_LABELS_OFF})\n  include(\"${_vjo_labels}\")\nendif()\n")
+add_subdirectory(host/tests/variant_labels)
