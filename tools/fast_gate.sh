@@ -342,7 +342,8 @@ step 'the pinned models'
 normal=\$(ls $(q "$OUT/vita-normal")/Rubi-*.zip | grep -v -- -debug.zip)
 debug=\$(ls $(q "$OUT/vita-debug")/Rubi-*-debug.zip)
 version=\$(basename \"\$normal\" .zip); version=\${version#Rubi-}
-[ \"\$version\" = $e2e_version ] || { echo \"FAIL the zips are Rubi \$version, and vita/CMakeLists.txt says \"$e2e_version; exit 1; }
+[ \"\$version\" = $e2e_version ] ||
+  { echo \"FAIL the zips are Rubi \$version, and vita/CMakeLists.txt says \"$e2e_version; exit 1; }
 rm -rf $(q "$OUT/release")
 # an earlier run's logs (another version's packages, after a bump) are not this run's checks
 rm -f $(q "$OUT/e2e")-*.log
@@ -377,8 +378,8 @@ for v in debug normal; do
   [ "$rc" = 0 ] || continue
   built=$(sed -n 's/^VJO_VERSION:STRING=//p' "$OUT/vita-$v/CMakeCache.txt" 2> /dev/null)
   if [ "$built" != "$(tree_version)" ]; then
-    echo "error: this build is Rubi ${built:-of no version} (its CMakeCache.txt), vita/CMakeLists.txt says $(tree_version)" \
-      >> "$LOGS/vita-$v.log"
+    echo "error: this build is Rubi ${built:-of no version} (its CMakeCache.txt)," \
+      "vita/CMakeLists.txt says $(tree_version)" >> "$LOGS/vita-$v.log"
     echo "1 $secs" > "$LOGS/vita-$v.rc"
   fi
 done

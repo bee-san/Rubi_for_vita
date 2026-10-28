@@ -58,8 +58,8 @@ def lanes_check(cmakelists, caches, rcs=None, before=""):
             (out / f"logs/vita-{v}.log").write_text("memory ledger: pass\n")
         script = f'{TREE_VERSION.search(GATE).group(0)}\nOUT={out}\nLOGS={out}/logs\n{before}\n{check}'
         subprocess.run(["bash", "-c", script], cwd=tree, check=True, capture_output=True, text=True, timeout=60)
-        return {v: ((out / f"logs/vita-{v}.rc").read_text().strip(),
-                    [line for line in (out / f"logs/vita-{v}.log").read_text().splitlines() if line.startswith("error:")])
+        logs = {v: (out / f"logs/vita-{v}.log").read_text().splitlines() for v in caches}
+        return {v: ((out / f"logs/vita-{v}.rc").read_text().strip(), [l for l in logs[v] if l.startswith("error:")])
                 for v in caches}
 
 
@@ -123,7 +123,7 @@ class GateVersion(unittest.TestCase):
         lane = GATE[GATE.index("run_lane e2e host"):GATE.index('echo "not run: a Vita build failed"')]
         made = GATE[GATE.index('if [ $vita_ok = 1 ]; then'):GATE.index("run_lane e2e host")]
         self.assertIn('e2e_version=$(q "$(tree_version)")', made)
-        check = lane.index('[ \\"\\$version\\" = $e2e_version ] || { echo \\"FAIL the zips are Rubi')
+        check = lane.index('[ \\"\\$version\\" = $e2e_version ] ||\n  { echo \\"FAIL the zips are Rubi')
         self.assertLess(lane.index('version=\\$(basename'), check)
         self.assertLess(check, lane.index("python3 tools/package_variants.py"))
 
