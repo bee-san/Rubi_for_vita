@@ -307,12 +307,15 @@ yet. Like 0.9.8, this release is the normal build only: `Rubi-0.10.0.vpk` (the m
   hook's capture-only pass and the SC3 charset kept 1 MiB already. The `Game RAM (KiB)` message and `log.txt`'s `tier …
   did not fit` and `game vocr memory:` lines show the 1 MiB (`1024 reserve`, `reserve 1048576`).
   - **#280's audit:** with `hook_trust = off`, a game at アマツツミ's measured 2 MiB (`PCSG01198`) passes Small's check
-    beside the 1 MiB, and where the console reports its free memory in whole MiB (#324) Small's weights are then
-    refused once the job's blocks are taken, so the job failed for memory, where under the 4 MiB reserve its check had
+    beside the 1 MiB, and where the console reports its free memory in whole MiB (#324) Small's weights can then be
+    refused once the job's blocks are taken (while less than 2 MiB and those blocks, 192 KiB at the full screen, is
+    really free), so the job failed for memory, where under the 4 MiB reserve its check had
     failed and a Rubi verified site's text answered unconfirmed. That answer now also comes when the last model's
     weights are refused after the check (`game_ocr/main.c`; a host test at 2 MiB in whole MiB, which fails without it).
-    `hook_trust = on`, the default, answers from a trusted site before any check, as before. Other games' jobs are
-    unchanged.
+    `hook_trust = on`, the default, answers from a trusted site before any check, as before. Jobs OCR can run, and
+    games without a Rubi verified site, are unchanged. Its own audit's follow-up: a test that the resident LM goes back
+    to the game first and that the try's capture counts; a comment in `core/hook_select.h` renews the hook
+    definitions' revision, as this release's other hook changes already do.
   - **On the console:** #277's debug test build (0.9.4 with #280) carried it, and the owner reports that it works
     (2026-10-28; no figures of that run were reported). #324's measurements in あおかな on a PCH-2000 (0.9.7's debug
     build with #280) ran with it too. Today's `main` with it (VOCR6, the spotter, trusted hooks, #324's retry) has not

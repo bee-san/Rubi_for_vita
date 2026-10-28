@@ -932,10 +932,12 @@ The three rows with 3 MiB free were measured with the 4 MiB OCR reserve of then.
 3 MiB leaves room for a Luna site's pass and for an OCR job (Normal's or Small's), and those rows no longer stand for a
 game short of memory; they were not measured again. Where each holds now, by the code (`host/tests/test_game_hooks.c`
 covers each edge, not the bench): the Luna site's row (`hook_trust = off`) where less than 1 MiB and a strip is free,
-its pass's room; the verified site's row where no OCR job fits beside the 1 MiB reserve, or (#280's audit F1) its check
-passed and its last model's weights were refused, but the pass fits: from 1 MiB and a strip up to the smallest size's
-need at the region (2,068,480 B at the full screen), and below 1 MiB and a strip every one of its jobs is refused, not
-603; the string copy's row wherever no OCR job fits, up to that same need.
+its pass's room; the verified site's row where no OCR job fits beside the 1 MiB reserve but the pass does: from 1 MiB
+and a strip up to the smallest size's need at the region (2,068,480 B at the full screen), and below 1 MiB and a strip
+every one of its jobs is refused, not 603; the string copy's row wherever no OCR job fits, up to that same need. The
+verified site also answers so (#280's audit F1) when its check passed and its last model's weights were refused once
+the job's blocks were taken: on a console that reports free memory in whole MiB, a game just above that need, or one
+that took memory between the check and the weights.
 
 In no session did trust add an OCR job. The two string-copy sessions never trusted (PCSG00805, PCSG00854) are those
 whose source kept disagreeing with OCR, so 0.9.7's recovery kept resetting it: they run as in 0.9.7. Which sessions
