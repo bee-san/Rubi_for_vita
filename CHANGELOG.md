@@ -375,7 +375,7 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   as before ([details](docs/vita-vn-ocr.md#head-gate-and-two-level-head-api-42)). Memory: the game worker takes
   two pages (8,192 B) more in each game that is ON, in both builds; Normal's and Large's weights blocks are a page
   larger, the largest job's workspace two; the Shell's pages are unchanged
-  ([measured](docs/memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
+  ([measured](docs/memory-ledger-history.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
   An update leaves 0.9.7's `VOCR5_S_w8.vocr`, `VOCR5_N_w8.vocr` and `VOCR5_L_w8.vocr` (4,479,120 B) in
   `ux0:data/VitaJPOverlay/ocr/`: nothing reads them any more, so they may be deleted. The plugins of this
   release must all be installed together (API 50, below).
@@ -761,7 +761,7 @@ the normal build only.
   source (test.7's △ source picker stays out). The Shell's pages are unchanged in both builds: the
   header's 2,048 B of ranges moved from its permanent data into the overlay's existing 20,480 B text
   block, which now needs 20,064 B of it, and cold strings into the data space freed
-  ([measured](docs/memory-ledger.md#hidden-triangle-line-diagnostics)).
+  ([measured](docs/memory-ledger-history.md#hidden-triangle-line-diagnostics)).
 
 ### Fixed
 
@@ -799,7 +799,7 @@ the normal build only.
 - The plugins use API 36 ([#247]): an OCR job's request carries that choice (`VJO_GAME_OCR_S_DROP_BORDERS`, bit 16
   of its `speed` word), and the debug build's `gstep job norm` step counts the lines dropped as its `kind`
   (`tools/analyse_selftest.py` says so). The game worker does the work; no module's pages change
-  ([measured](docs/memory-ledger.md#border-lines-dropped-api-36)).
+  ([measured](docs/memory-ledger-history.md#border-lines-dropped-api-36)).
 
 ### On the console
 
@@ -951,7 +951,7 @@ The normal build omits the debug traces and on-device self-test; the overlay kee
 - The combined build retains the native-hook worker's 167,936 B debug / 159,744 B normal module
   pages. Compact highlight ranges and fixed tables in existing data-page space keep the Shell at
   176,128 B debug / 163,840 B normal, with the existing PAF reserve unchanged
-  ([binary measurements](docs/memory-ledger.md#combined-enhancement-test-build-local-api-33)).
+  ([binary measurements](docs/memory-ledger-history.md#combined-enhancement-test-build-local-api-33)).
 - The popup shows dialogue without hook numbers or source-status controls. Source diagnostics stay
   in the logs, and ordinary text reads select their source automatically.
 - The README shows the promo film ([#206]) and says what the console runs showed ([#204]); its build

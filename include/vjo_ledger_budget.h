@@ -32,7 +32,7 @@
  * 167,936 B (684 B of code room, 440 B of data room), normal 85,388 + 69,128 B -> 155,648 B (628 B, 504 B) [measured:
  * tools/check_memory_ledger.py's module rows, both builds, main 6b028b2b, tools/fast_gate.sh's vitasdk image]. The
  * normal build's check is exact (--exact): its budget must equal its pages. How each change moved them: its own
- * section of docs/memory-ledger.md, and before #418 that file's "Budget history". */
+ * section of docs/memory-ledger-history.md, and before #418 that file's "Budget history". */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 167936u
 #else
@@ -44,7 +44,7 @@
  * pages: debug 180,512 + 31,968 B -> 217,088 B (3,808 B of code room, 800 B of data room), normal 171,596 + 31,952 B
  * -> 204,800 B (436 B, 816 B) [measured: tools/check_memory_ledger.py's module rows, both builds, main 6b028b2b,
  * tools/fast_gate.sh's vitasdk image]. The normal build's check is exact (--exact): its budget must equal its pages.
- * How each change moved them: its own section of docs/memory-ledger.md, and before #418 that file's "Budget history".
+ * How each change moved them: its own section of docs/memory-ledger-history.md, and before #418 that file's "Budget history".
  * Each verified hook row takes 40 B of the data room (core/hook_place.c's verified[], VJO_DATA_TABLE): once it is
  * gone the next row takes a page in both builds, unless a table moves to read-only data first or the budget is raised
  * (audit-rubi-merge-394 N5). */
@@ -68,7 +68,7 @@
  * net_main 2,144 (the 2 KiB log buffer that holds a job's lines until its result is taken, shell/worker.c net_main),
  * then a lookup down to the dictionary's page cache [measured the same way, on main eece6c6 with t3-log-path]. The
  * thread paints its unused stack and logs, at each game exit, the most it has used (shell/worker.c net_stack_check),
- * so a console run measures it. The name is from when the thread also made network requests (docs/memory-ledger.md,
+ * so a console run measures it. The name is from when the thread also made network requests (docs/memory-ledger-history.md,
  * "Budget history"); the logs' "VjoNet stack" and tools/analyse_selftest.py read it. */
 #define VJO_STACK_SHELL_NET 16384u
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */
@@ -139,7 +139,7 @@
  * debug 43,752 + 72,404 B -> 118,784 B (1,304 B of code room, 1,324 B of data room), normal 38,560 + 70,716 B ->
  * 114,688 B (2,400 B, 3,012 B) [measured: tools/check_memory_ledger.py's module rows, both builds, main 6b028b2b,
  * tools/fast_gate.sh's vitasdk image]. The normal build's check is exact (--exact): its budget must equal its pages.
- * How each change moved them: its own section of docs/memory-ledger.md, and before #418 that file's "Budget
+ * How each change moved them: its own section of docs/memory-ledger-history.md, and before #418 that file's "Budget
  * history". */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u

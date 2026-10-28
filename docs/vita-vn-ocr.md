@@ -1014,7 +1014,7 @@ weights may still be read ahead by the session's warm-up, as after any job that 
   plugin reads, not part of its code. The kernel's broker opens the file only for a request with the gate's bit
   (`VJO_GAME_OCR_OPEN_GATE`), at its pinned size. The worker reads it once, checks its SHA-256 and keeps it in a
   block of its own (`VjoGameVocrGate`, 4,096 B of the game's `USER_RW` memory, while its jobs ask for the gate: a
-  1,540 B static one before #418, [memory-ledger.md](memory-ledger.md#the-workers-data-page-the-gates-weights-and-the-line-caches-greedy-texts-418-no-api-change)); each later job with the gate opens the file to check that it is
+  1,540 B static one before #418, [memory-ledger.md](memory-ledger-history.md#the-workers-data-page-the-gates-weights-and-the-line-caches-greedy-texts-418-no-api-change)); each later job with the gate opens the file to check that it is
   unchanged (its size and time, as for the models) and reads it again only when it changed; `vocr_textgate_load`
   checks its CRC-32 in every job. Without the file (an `ocr` folder from an older package) the gate does not decide:
   the job reads as without it, and the gate's step says why.
@@ -1434,7 +1434,7 @@ noise: `off` / main 1.0026 [0.9983, 1.0069] and `auto` / main 1.0039 [0.9998, 1.
 intervals). On the console the rule is a few hundred instructions a job (an estimate): nothing next to the job.
 
 **Memory.** The worker's code, in every game that is ON whatever the setting: 4,096 B more module pages in each build
-(184,320 B normal, 192,512 B debug: [memory-ledger.md](memory-ledger.md#vertical-text-api-47)). SceShell's and the
+(184,320 B normal, 192,512 B debug: [memory-ledger.md](memory-ledger-history.md#vertical-text-api-47)). SceShell's and the
 kernel's pages are as before. A job of columns takes the vertical model's weights (823,296 B in pages, a Small job's)
 and a workspace of VOCR5-S's shape plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,920
 (the console's runtime structs, `VJO_VOCR_VITA_STRUCTS`, at vita-vn-ocr f8a1856 since API 50; 3,872 B before) +
@@ -1691,7 +1691,7 @@ above.
   which the release publishes beside the blobs with their sections (`VOCR6.2_N_w8.vocr`, `VOCR6.2_L_w8.vocr`), so
   VOCR6's `off` is its plain blobs' output in the same way; Small's pinned blob is the plain one, held plain (no
   section: every `ocr_head_gate` reads it alike).
-- **Memory** (measured: both Vita builds, [memory-ledger.md](memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
+- **Memory** (measured: both Vita builds, [memory-ledger.md](memory-ledger-history.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
   The game worker takes two text pages more in each game that is ON (180,224 / 188,416 B in the normal / debug
   build, 8,192 B more each): the runtime's two paths (`vocr.o` +5,037 B) and the job's re-read. The Shell's pages
   are unchanged (the key's name and values live in its data segment). Normal's and Large's blobs are 3,776 B larger
@@ -1956,7 +1956,7 @@ guard and hval pages, as the rule says, and were read once on the test sets:
   (see [Build](#build)). It is built into the game worker only, at the runtime's `-O2`; the Shell links no OCR
   runtime.
 
-**Memory** (exact bytes; [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-54)):
+**Memory** (exact bytes; [memory-ledger.md](memory-ledger-history.md#the-spotter-finder-api-54)):
 
 | item | bytes |
 |---|---|
@@ -1977,7 +1977,7 @@ the default clock. Rubi's finding (GRAD with the textbox recovery) took about 10
 
 **Code**: in the game worker, with its use, 16,384 B more of text pages in each build (208,896 B of
 pages, 217,088 B in the debug build), carried by every game that is ON whichever finder it uses [measured: the
-module rows in [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-54)].
+module rows in [memory-ledger.md](memory-ledger-history.md#the-spotter-finder-api-54)].
 
 **Logs.** `gstep job spot`, once per job (its last try) whose request asks for the spotter:
 - kind: 1 when it found the lines, 0 when GRAD did;
