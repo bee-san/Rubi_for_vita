@@ -1,8 +1,9 @@
 /* The one-VPK install's payload (docs/one-vpk-install.md, "Inside the VPK"): the files the Rubi
  * app installs from its own folder, compiled in. The app accepts a payload manifest only when its
  * file set is exactly this list (core/payload.c), so a damaged or edited manifest cannot name any
- * other file (games.ini, boot.txt, config.txt, another plugin). tools/package_release.py writes the
- * manifest from the same list (PAYLOAD_FILES); tools/tests/test_one_vpk.py checks the two agree.
+ * other file (games.ini, boot.txt, config.txt, another plugin). tools/package_vpk.py writes the
+ * manifest from this list (payload_files() reads it as the compiler does); tools/tests/test_one_vpk.py
+ * checks the two agree.
  *
  * In the VPK each file sits under payload/<device>/<path>, as in the release zip
  * (payload/ur0/tai/VitaJPOverlay_Kernel.skprx); installed as ux0:app/VJOSET001/payload/... */

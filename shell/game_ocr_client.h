@@ -12,7 +12,7 @@ typedef struct {
 } VjoGameOcrClient;
 
 /* The Shell's (shell/worker.c): the kernel's syscalls, the clock and the delay, for the
- * network thread's OCR jobs and the Anki job's screenshot (shell/anki.c). */
+ * job thread's (VjoNet) OCR jobs and the Anki job's screenshot (shell/anki.c). */
 extern const VjoGameOcrClient vjo_game_client;
 
 /* On abort, Cancel only signals the worker. Another job cannot replace a

@@ -1,5 +1,5 @@
 /* Rubi SceShell plugin: state shared between the control thread
- * (worker.c), the network thread and the ScePaf overlay (overlay.cpp). */
+ * (worker.c), the job thread (VjoNet) and the ScePaf overlay (overlay.cpp). */
 #ifndef VJO_SHELL_H
 #define VJO_SHELL_H
 
@@ -142,7 +142,7 @@ int vjo_post_page(int page, uint32_t text_generation);
 int vjo_worker_start(void);
 int vjo_worker_stop(void);
 /* The game worker's one job slot for another thread's exchange (anki.c's
- * screenshot, API 23): the network thread's OCR jobs wait meanwhile, and a quiet
+ * screenshot, API 23): the job thread's OCR jobs wait meanwhile, and a quiet
  * refresh in progress yields. Waits at most wait_us, while stop(NULL) says no:
  * 0 once it holds the slot (vjo_game_job_end gives it back), -1 otherwise. */
 int vjo_game_job_begin(int (*stop)(void *), int64_t wait_us);
@@ -162,7 +162,7 @@ int vjo_selftest_armed(void);                 /* the marker was found and the st
 void vjo_selftest_step(const char *step);     /* "ok" (boot guard), "exit" */
 /* The first game: its title, policy, mode and the user's saved region (w == 0: none). */
 void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *region);
-/* The stages one job runs in turn (network thread): how many (0 when not
+/* The stages one job runs in turn (job thread): how many (0 when not
  * armed), each one's name and request flags, its records. */
 unsigned vjo_selftest_stages(void);
 const char *vjo_selftest_stage_name(unsigned i);
@@ -247,10 +247,10 @@ int vjo_anki_configure(const VjoConfig *cfg);
 /* The running game's title ID and name for its cards ("" = none; control
  * thread), and whether it is a PSP game (the card's platform). */
 void vjo_anki_set_game(const char *tid, const char *name, int psp);
-/* Snapshot the existing game facts for offline OCR history (network thread).
+/* Snapshot the existing game facts for offline OCR history (job thread).
  * Caller owns these fixed-size copies; no mailbox pointer survives the lock. */
 const char *vjo_anki_get_game(char name[128], char tid[12]);
-/* The OCR model of the last recognition, recorded on its cards (network thread). */
+/* The OCR model of the last recognition, recorded on its cards (job thread). */
 void vjo_anki_set_ocr_model(const char *model);
 /* Saves entry `entry` of list list_seq to the queue (overlay, enter
  * pressed). Ignored while anki_mining is off. */
@@ -316,7 +316,7 @@ void vjo_status_close(void);
  * meanwhile writes them out first). For a burst of lines formatted from data
  * at hand only, never across a wait, I/O or a call that may log at length: a
  * crash loses the batch's unwritten lines. begin and end in one function.
- * The exceptions are the network thread's: the normal build's keeps its batch
+ * The exceptions are the job thread's: the normal build's keeps its batch
  * open across its jobs' waits, exchanges and reads, so that none of their
  * lines is written before their results are taken (shell/worker.c net_main);
  * the debug build's holds a job's lines across its lookup's reads (never an

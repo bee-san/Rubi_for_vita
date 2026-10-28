@@ -4,7 +4,7 @@
  * except within a batch (vjo_log_batch_begin): the lines one thread logs in one
  * burst, from data it already holds, are written with one open/write/close per
  * file, byte for byte what line-by-line writes give, in the same order. The
- * normal build's network thread keeps its batch open across its jobs, until its
+ * normal build's job thread (VjoNet) keeps its batch open across its jobs, until its
  * results are taken (shell/worker.c net_main), and the debug build's holds a job's
  * lines until the job has published its result (net_job; both files are written
  * then, status.txt first, as for any batch): a crash loses at most that batch. */
@@ -60,7 +60,7 @@ void vjo_log_configure(const VjoConfig *cfg)
     batch_flush_locked(); /* lines logged before the change go out as they were */
 #else
     /* Lines logged before a change of log_file go out as they were. With it kept, an open batch keeps
-     * its lines: they go to the same files later. The normal build's network thread holds a job's lines
+     * its lines: they go to the same files later. The normal build's job thread holds a job's lines
      * until the control thread has taken its result (shell/worker.c net_main), and the overlay's open
      * re-reads config.ini before it shows a result: it writes none of them. */
     if (file_on != cfg->log_file)
@@ -117,7 +117,7 @@ static void file_append_lines(const char *p, const uint16_t *len, int n)
 }
 
 /* status.txt: always on, rewritten at every boot and capped at 64 KB, so the
- * plugin's state can be checked even when networking or config is broken. */
+ * plugin's state can be checked even when config is broken. */
 static SceUID status_mutex = -1;
 static int status_size = -1;
 

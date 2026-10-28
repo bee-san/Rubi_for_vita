@@ -92,7 +92,7 @@ int vjo_game_identify(SceUID pid, VjoGameId *g)
 /* The game's name for MiscInfo: its title (app parameter 9, else 10);
  * "PSP" for the PSP emulator, which every Adrenaline game shares; "" when
  * neither is readable. The debug build logged both until a console run
- * showed which one is the title: in the owner's test.1-test.4 logs (55 game
+ * showed which one is the title: in the owner's 0.8.0-test.1 to test.4 logs (55 game
  * starts, four Vita titles; 115 lines, as each collect's log repeats the one
  * before) parameter 9 was refused (0x80801000) and empty every time, and
  * parameter 10 held the title. #333 took the log line's bytes, and the second
