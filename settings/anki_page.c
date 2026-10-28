@@ -13,13 +13,13 @@
 #include "app_prefs.h"
 #include "app_worker.h"
 #include "preferences.h"
+#include "anki_features.h"
 #include "../core/lapis.h"
 #include "../core/stick_scroll.h"
 /* As in main.c: no vita2d_fini in the system application. */
 #pragma GCC poison vita2d_fini
 
-/* Ten rows (API 23 added Screenshots, API 32 their black bars, #311 Card type, Game tag and Sentence readings,
- * #314 Duplicates and Known words), then the 3-line status box,
+/* Progressive card options and a separate Actions page, then the 3-line status box,
  * which ends above the controls line main.c draws at y 535: the export rows' help is one line.
  * The rows are more than the room above the box: they scroll a row at a time, the selected one
  * always whole, as the OCR page's cards do (a row cut at the room's bottom shows there is more,
@@ -36,9 +36,9 @@
 /* (the rows before ROW_CARD_TYPE are config.ini's switches; from it to ROW_DUPES app.ini's settings, #311 and #314;
  * then the actions) */
 enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_CARD_TYPE, ROW_GAME_TAG, ROW_READINGS, ROW_DUPES, ROW_KNOWN, ROW_EXPORT,
-       ROW_ALL, ROWS };
+       ROW_ALL, ROW_ACTIONS, ROWS };
 static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H,   CARD_H,   CARD_H,
-                                     CARD_H, CARD_H, ACTION_H, ACTION_H, ACTION_H};
+                                     CARD_H, CARD_H, ACTION_H, ACTION_H, ACTION_H, CARD_H};
 /* The worker's jobs (`all`): the queue's export, every card's, and (#314 stage C) known_words.txt's import */
 enum { JOB_QUEUED, JOB_ALL, JOB_KNOWN };
 static int top_row; /* the first row in view */
@@ -51,12 +51,10 @@ static const char *const dupes_name[3] = {"Tag", "Skip", "Keep"}; /* VJO_DUPLICA
 static const char *const dupes_help[3] = {"A word you mined before gets Anki's duplicate tag.",
                                           "A word you mined before stays queued, not exported.",
                                           "Every card is exported, with no duplicate check."};
-/* #311 Card type: a choice row of four, its badges from x 376, 136 px apart, 128 px wide (the last ends where
- * Duplicates' does, x 912). Its values: core/lapis.h VJO_CARD_*'s order, app.ini's anki_card_type. */
-#define TYPE_X 376
-#define TYPE_PITCH 136
-#define TYPE_W 128
-static const char *const type_name[VJO_CARD_TYPES] = {"Word", "Sentence", "Both", "Click"};
+/* Card types follow core/lapis.h VJO_CARD_* order. The long reveal label has a wider badge. */
+static const int type_x[VJO_CARD_TYPES] = {340, 444, 580, 684};
+static const int type_width[VJO_CARD_TYPES] = {96, 128, 96, 236};
+static const char *const type_name[VJO_CARD_TYPES] = {"Word", "Sentence", "Both", "Reveal sentence"};
 static const char *const type_help[VJO_CARD_TYPES] = {"The card's front shows the word.",
                                                      "The card's front shows the word's sentence.",
                                                      "The card's front shows the word and its sentence.",
@@ -69,6 +67,7 @@ static const char *const type_help[VJO_CARD_TYPES] = {"The card's front shows th
 static VjoConfig cfg;           /* the settings shown (main thread) */
 static VjoAppPrefs app;         /* the app's own (app.ini, settings/app_prefs.h), shown (main thread) */
 static int writable, app_writable, selected;
+static int actions_view, row_ids[ROWS], row_count;
 static int stick_move;          /* the left stick's move for the next frame (vjo_anki_page_stick) */
 static VjoExportCounts counts = {-1, -1};
 static int mined = -1;          /* #314: queued cards whose word an earlier card has (-1: not known) */
@@ -92,6 +91,39 @@ static unsigned char export_mem[VJO_EXPORT_MEM] __attribute__((aligned(16)));
 /* ---------------- the worker ---------------- */
 
 static void count_mined(void);
+
+/* Visible positions are separate from the retained row implementations. Old trimming choices are never exposed;
+ * app-managed mining uses automatic trimming. Known-word import stays disabled until #521 is implemented. */
+static void build_rows(void)
+{
+    row_count = 0;
+    if (actions_view) {
+        if (VJO_KNOWN_WORDS_ENABLED) row_ids[row_count++] = ROW_KNOWN;
+        row_ids[row_count++] = ROW_ALL;
+    } else {
+        row_ids[row_count++] = ROW_MINING;
+        if (cfg.anki_mining) {
+            row_ids[row_count++] = ROW_SHOT;
+            row_ids[row_count++] = ROW_CARD_TYPE;
+            row_ids[row_count++] = ROW_GAME_TAG;
+            row_ids[row_count++] = ROW_READINGS;
+            row_ids[row_count++] = ROW_DUPES;
+        }
+        row_ids[row_count++] = ROW_EXPORT;
+        row_ids[row_count++] = ROW_ACTIONS;
+    }
+    if (selected >= row_count) selected = row_count - 1;
+    if (top_row > selected) top_row = selected;
+}
+
+const char *vjo_anki_page_title(void) { return actions_view ? "Anki / Actions" : "Anki"; }
+int vjo_anki_page_back(void)
+{
+    if (!actions_view || worker.running) return 0;
+    actions_view = selected = top_row = 0;
+    build_rows();
+    return 1;
+}
 
 static void set_progress(void *ud, const char *msg)
 {
@@ -166,7 +198,7 @@ static int worker_main(SceSize args, void *argp)
 static int launch(int job, const char *first)
 {
     int rc;
-    if (worker.running)
+    if (worker.running || (job == JOB_KNOWN && !VJO_KNOWN_WORDS_ENABLED))
         return -1;
     if ((rc = vjo_app_worker_prepare(&worker)) < 0)
         return rc;
@@ -199,7 +231,7 @@ static void reap(void)
     if (!vjo_app_worker_reap(&worker))
         return;
     vjo_export_count(&counts);
-    known_n = vjo_known_count();
+    known_n = VJO_KNOWN_WORDS_ENABLED ? vjo_known_count() : -1;
     count_mined(); /* (Skip leaves the duplicates queued) */
 }
 
@@ -238,6 +270,7 @@ static void save(int mining, int screenshot, int trim, VjoArena *scratch)
 
 void vjo_anki_page_show(VjoArena *scratch)
 {
+    actions_view = selected = top_row = 0;
     /* (the log switch is the worker's too: it changes only while no export runs) */
     if (!worker.running)
         vjo_log_enable(0);
@@ -246,9 +279,10 @@ void vjo_anki_page_show(VjoArena *scratch)
     if (!worker.running) {
         vjo_log_enable(cfg.log_file);
         vjo_export_count(&counts);
-        known_n = vjo_known_count();
+        known_n = VJO_KNOWN_WORDS_ENABLED ? vjo_known_count() : -1;
         count_mined();
     }
+    build_rows();
 }
 
 /* An app.ini setting (#314 Duplicates, #311 Card type, Game tag and Sentence readings; the overlay never reads the
@@ -296,7 +330,7 @@ int vjo_anki_page_busy(void)
 
 int vjo_anki_page_holds_cancel(void)
 {
-    return worker.running;
+    return worker.running || actions_view;
 }
 
 /* A settings row's switch: the first three rows', as config.ini has it; Game tag's and Sentence readings', as
@@ -314,10 +348,16 @@ static void activate(int row, VjoArena *scratch)
 {
     if (worker.running)
         return;
-    if (row < ROW_CARD_TYPE)
+    if (row == ROW_ACTIONS) {
+        actions_view = 1;
+        selected = top_row = 0;
+        build_rows();
+    } else if (row == ROW_TRIM || (row == ROW_KNOWN && !VJO_KNOWN_WORDS_ENABLED))
+        return;
+    else if (row < ROW_CARD_TYPE)
         save(row == ROW_MINING ? !cfg.anki_mining : cfg.anki_mining,
              row == ROW_SHOT ? !cfg.anki_screenshot : cfg.anki_screenshot,
-             row == ROW_TRIM ? !cfg.anki_screenshot_trim_bars : cfg.anki_screenshot_trim_bars, scratch);
+             1, scratch);
     else if (row == ROW_CARD_TYPE) /* Enter: the next choice, round */
         set_card_type((app.anki_card_type + 1) % VJO_CARD_TYPES, scratch);
     else if (row == ROW_GAME_TAG || row == ROW_READINGS)
@@ -333,18 +373,18 @@ static int row_offset(int i)
 {
     int y = 0;
     for (int k = 0; k < i; k++)
-        y += row_height[k] + ROW_GAP;
+        y += row_height[row_ids[k]] + ROW_GAP;
     return y;
 }
 static int row_y(int i) { return VIEW_Y + row_offset(i) - row_offset(top_row); }
 /* Row i is all in view. */
-static int row_whole(int i) { return i >= top_row && row_y(i) + row_height[i] <= VIEW_END; }
+static int row_whole(int i) { return i >= top_row && row_y(i) + row_height[row_ids[i]] <= VIEW_END; }
 /* Scrolls by the fewest rows that bring row i all into view. */
 static void row_show(int i)
 {
     if (i < top_row)
         top_row = i;
-    while (top_row < i && row_y(i) + row_height[i] > VIEW_END)
+    while (top_row < i && row_y(i) + row_height[row_ids[i]] > VIEW_END)
         top_row++;
 }
 
@@ -367,12 +407,12 @@ static void draw_row(const VjoPageUi *ui, int i, int y, int busy, const char *bu
     static const char *const titles[ROW_DUPES] = {"Card mining", "Screenshots",       "Trim black bars",
                                                   "Card type",   "Game tag",          "Sentence readings"};
     char line[260];
-    ui->card(y, row_height[i], selected == i);
+    ui->card(y, row_height[i], row_ids[selected] == i);
     if (i == ROW_CARD_TYPE) { /* #311: each choice shown, the chosen one lit */
         int type = app.anki_card_type >= 0 && app.anki_card_type < VJO_CARD_TYPES ? app.anki_card_type : 0;
         ui->text(42, y + 30, ui->white, 28, titles[i]);
         for (int k = 0; k < VJO_CARD_TYPES; k++)
-            ui->badge(TYPE_X + k * TYPE_PITCH, y + 6, TYPE_W, 34, type_name[k], app_writable && type == k);
+            ui->badge(type_x[k], y + 6, type_width[k], 34, type_name[k], app_writable && type == k);
         ui->text(42, y + 60, ui->dim, 24, app_writable ? type_help[type] : "Cannot read app.ini.");
     } else if (i == ROW_GAME_TAG || i == ROW_READINGS) { /* #311: app.ini's switches */
         ui->text(42, y + 30, ui->white, 28, titles[i]);
@@ -390,10 +430,10 @@ static void draw_row(const VjoPageUi *ui, int i, int y, int busy, const char *bu
         ui->text(42, y + 30, ui->white, 28, titles[i]);
         ui->badge(812, y + 6, 108, 34, !writable ? "--" : row_on(i) ? "ON" : "OFF", writable && row_on(i));
         if (i == ROW_MINING)
-            snprintf(line, sizeof(line), "%s in the overlay saves the word to a queue on the memory card.",
+            snprintf(line, sizeof(line), "%s in the overlay queues the selected word for Anki.",
                      ui->buttons->enter_glyph);
         else /* the card's screenshot (anki_screenshot, API 23) and its black bars (anki_screenshot_trim_bars, API 32) */
-            snprintf(line, sizeof(line), "%s", i == ROW_SHOT ? "Each card keeps a picture of the game screen (about 60 KB)."
+            snprintf(line, sizeof(line), "%s", i == ROW_SHOT ? "Game screenshots are cropped automatically."
                                                              : "Cuts black borders from the picture (a PSP game shown small).");
         ui->text(42, y + 60, ui->dim, 24, line);
     } else if (i == ROW_KNOWN) { /* #314 stage C: known_words.txt into the app's index */
@@ -419,6 +459,10 @@ static void draw_row(const VjoPageUi *ui, int i, int y, int busy, const char *bu
         ui->badge(760, y + 6, 160, 34, busy && all == JOB_QUEUED ? "Exporting…" : "Export", busy && all == JOB_QUEUED);
         ui->wrapped(42, y + 62, 870, ui->dim, 22, 24, 1,
                     busy && all == JOB_QUEUED ? busy_text : "Writes a new .apkg; the queue clears once it is checked.");
+    } else if (i == ROW_ACTIONS) {
+        ui->text(42, y + 30, ui->white, 28, "Anki actions");
+        ui->text(42, y + 60, ui->dim, 24, "Export every saved card again.");
+        ui->text(896, y + 30, ui->dim, 28, ">");
     } else { /* every card */
         ui->text(42, y + 30, ui->white, 28, "Export all cards");
         count_text(line, sizeof(line), total, "in all");
@@ -435,45 +479,46 @@ void vjo_anki_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int
     int stick = stick_move, busy, err = 0, total;
     stick_move = 0;
     reap();
-    busy = worker.running; /* an export or the import runs */
-    if (pressed & SCE_CTRL_UP)
-        selected = (selected + ROWS - 1) % ROWS;
-    if (pressed & SCE_CTRL_DOWN)
-        selected = (selected + 1) % ROWS;
-    /* The d-pad first; the stick stops at the first and last row. */
-    if (!(pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN)))
-        selected = vjo_stick_step(selected, ROWS, stick);
-    if (pressed & ui->buttons->enter)
-        activate(selected, scratch);
-    /* Left/Right: OFF/ON on the switches' rows; the choice to the left or right on Card type and Duplicates */
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < ROW_DUPES && selected != ROW_CARD_TYPE && !busy &&
-        !!(pressed & SCE_CTRL_RIGHT) != row_on(selected))
-        activate(selected, scratch);
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == ROW_CARD_TYPE && !busy)
-        set_card_type(app.anki_card_type + (pressed & SCE_CTRL_RIGHT ? 1 : -1), scratch);
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == ROW_DUPES && !busy)
-        set_duplicates(app.anki_duplicates + (pressed & SCE_CTRL_RIGHT ? 1 : -1), scratch);
-    if ((pressed & ui->buttons->cancel) && busy)
-        vjo_app_worker_cancel(&worker);
-    /* A touch on a row in view chooses it and acts as Enter does; on a row cut at the room's bottom it only
-     * chooses it (which scrolls it into view). */
+    busy = worker.running;
+    build_rows();
+    if ((pressed & ui->buttons->cancel) && !busy && vjo_anki_page_back()) {
+        pressed = 0; stick = 0; touch_x = touch_y = -1;
+    }
+    if (pressed & SCE_CTRL_UP) selected = (selected + row_count - 1) % row_count;
+    if (pressed & SCE_CTRL_DOWN) selected = (selected + 1) % row_count;
+    if (!(pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN))) selected = vjo_stick_step(selected, row_count, stick);
+    int id = row_ids[selected], was_actions = actions_view;
+    if (pressed & ui->buttons->enter) activate(id, scratch);
+    if (actions_view != was_actions) { pressed = 0; touch_x = touch_y = -1; }
+    build_rows();
+    id = row_ids[selected];
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && !busy) {
+        if ((id == ROW_MINING || id == ROW_SHOT || id == ROW_GAME_TAG || id == ROW_READINGS) &&
+            !!(pressed & SCE_CTRL_RIGHT) != row_on(id)) activate(id, scratch);
+        else if (id == ROW_CARD_TYPE) set_card_type(app.anki_card_type + (pressed & SCE_CTRL_RIGHT ? 1 : -1), scratch);
+        else if (id == ROW_DUPES) set_duplicates(app.anki_duplicates + (pressed & SCE_CTRL_RIGHT ? 1 : -1), scratch);
+    }
+    if ((pressed & ui->buttons->cancel) && busy) vjo_app_worker_cancel(&worker);
+    build_rows();
     if (touch_y >= VIEW_Y && touch_y < VIEW_END && touch_x >= 24 && touch_x < 936)
-        for (int r = top_row; r < ROWS && row_y(r) < VIEW_END; r++)
-            if (touch_y >= row_y(r) && touch_y < row_y(r) + row_height[r]) {
+        for (int r = top_row; r < row_count && row_y(r) < VIEW_END; r++)
+            if (touch_y >= row_y(r) && touch_y < row_y(r) + row_height[row_ids[r]]) {
                 int dy = touch_y - row_y(r), k = (touch_x - CHOICE_X) / CHOICE_PITCH;
-                int t = (touch_x - TYPE_X) / TYPE_PITCH;
+                id = row_ids[r];
                 selected = r;
-                /* Duplicates and Card type: a touch on a choice takes it; the rest of the row only selects it */
-                if (r == ROW_DUPES && row_whole(r) && !busy && dy >= 6 && dy < 40 && touch_x >= CHOICE_X &&
-                    (touch_x - CHOICE_X) % CHOICE_PITCH < CHOICE_W && k < 3)
-                    set_duplicates(k, scratch);
-                else if (r == ROW_CARD_TYPE && row_whole(r) && !busy && dy >= 6 && dy < 40 && touch_x >= TYPE_X &&
-                         (touch_x - TYPE_X) % TYPE_PITCH < TYPE_W && t < VJO_CARD_TYPES)
-                    set_card_type(t, scratch);
-                else if (r != ROW_DUPES && r != ROW_CARD_TYPE && row_whole(r))
-                    activate(r, scratch);
+                if (row_whole(r) && !busy) {
+                    if (id == ROW_DUPES) {
+                        if (dy >= 6 && dy < 40 && touch_x >= CHOICE_X &&
+                            (touch_x - CHOICE_X) % CHOICE_PITCH < CHOICE_W && k < 3) set_duplicates(k, scratch);
+                    } else if (id == ROW_CARD_TYPE) {
+                        for (int t = 0; t < VJO_CARD_TYPES; t++)
+                            if (dy >= 6 && dy < 40 && touch_x >= type_x[t] && touch_x < type_x[t] + type_width[t])
+                                set_card_type(t, scratch);
+                    } else activate(id, scratch);
+                }
                 break;
             }
+    build_rows();
     busy_text[0] = last[0] = '\0';
     if (worker.lock >= 0) {
         vjo_app_worker_lock(&worker);
@@ -483,41 +528,29 @@ void vjo_anki_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int
         vjo_app_worker_unlock(&worker);
     }
     total = counts.queued >= 0 && counts.exported >= 0 ? counts.queued + counts.exported : -1;
-
     vita2d_start_drawing();
     vita2d_clear_screen();
     ui->header();
-    row_show(selected); /* the selected row all in view */
-    for (int i = top_row; i < ROWS && row_y(i) < VIEW_END; i++) {
-        int y = row_y(i), whole = row_whole(i);
-        if (!whole) { /* cut at the bottom of the room: its card and its text */
-            vita2d_enable_clipping();
-            vita2d_set_clip_rectangle(24, y, 936, VIEW_END);
-        }
-        draw_row(ui, i, y, busy, busy_text, total);
-        if (!whole)
-            vita2d_disable_clipping();
+    row_show(selected);
+    for (int r = top_row; r < row_count && row_y(r) < VIEW_END; r++) {
+        int y = row_y(r), whole = row_whole(r);
+        if (!whole) { vita2d_enable_clipping(); vita2d_set_clip_rectangle(24, y, 936, VIEW_END); }
+        draw_row(ui, row_ids[r], y, busy, busy_text, total);
+        if (!whole) vita2d_disable_clipping();
     }
-    { /* where the view is in the column: a thin bar right of the rows */
-        int room = VIEW_END - VIEW_Y, all_rows = row_offset(ROWS - 1) + row_height[ROWS - 1];
+    {
+        int room = VIEW_END - VIEW_Y, all_rows = row_offset(row_count - 1) + row_height[row_ids[row_count - 1]];
         int from = row_offset(top_row), shown = all_rows - from < room ? all_rows - from : room;
-        vjo_page_scroll_bar(ui, SCROLL_X, VIEW_Y, SCROLL_W, room, from, shown, all_rows);
+        if (all_rows > room) vjo_page_scroll_bar(ui, SCROLL_X, VIEW_Y, SCROLL_W, room, from, shown, all_rows);
     }
-    /* The last result, else how to get the file to Anki */
-    if (busy)
-        snprintf(controls, sizeof(controls), "%s: stop   Select: look up", ui->buttons->cancel_glyph);
-    else
-        snprintf(controls, sizeof(controls), "Up/Down: choose   %s: select   Select: look up   %s: back",
-                 ui->buttons->enter_glyph, ui->buttons->cancel_glyph);
-    if (note[0])
-        ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3, note, note_error, controls);
-    else if (last[0] && !busy)
-        ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3, last, err, controls);
-    else
-        ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3,
+    if (busy) snprintf(controls, sizeof(controls), "%s: stop   Select: look up", ui->buttons->cancel_glyph);
+    else snprintf(controls, sizeof(controls), "Up/Down: choose   %s: select   Select: look up   %s: back",
+                  ui->buttons->enter_glyph, ui->buttons->cancel_glyph);
+    if (note[0]) ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3, note, note_error, controls);
+    else if (last[0] && !busy) ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3, last, err, controls);
+    else ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3,
                    "Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in "
-                   "VitaShell), or with an SD2Vita as ux0: its card in a reader, then open it in Anki.",
-                   0, controls);
+                   "VitaShell), or with an SD2Vita as ux0: its card in a reader, then open it in Anki.", 0, controls);
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }

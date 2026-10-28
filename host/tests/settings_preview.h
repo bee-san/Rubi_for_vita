@@ -10,6 +10,7 @@
 #include "../../settings/text_layout.h"
 #include "../../settings/themes.h"
 #include "../../settings/chrome.h"
+#include "../../settings/readability.h"
 
 typedef struct { int x, y, w, h, clip, top, bottom, left, right; unsigned colour; } PreviewRect;
 typedef struct { int x, y, clip, top, bottom, left, right; unsigned colour; float pixels; char text[512]; } PreviewText;
@@ -43,7 +44,7 @@ static inline void vp_text(int x, int y, unsigned colour, float pixels, const ch
 {
     if (!vp.active || vp.texts >= 160) return;
     PreviewText *t = &vp.text[vp.texts++];
-    *t = (PreviewText){x, y, vp.clip, vp.top, vp.bottom, vp.left, vp.right, colour, pixels, ""};
+    *t = (PreviewText){x, y, vp.clip, vp.top, vp.bottom, vp.left, vp.right, colour, vjo_app_text_pixels(pixels), ""};
     snprintf(t->text, sizeof(t->text), "%s", s);
 }
 static inline int vp_measure(float pixels, const char *s)
@@ -52,7 +53,7 @@ static inline int vp_measure(float pixels, const char *s)
     for (const unsigned char *p = (const unsigned char *)s; *p; p++)
         if (*p < 128) units += 10;
         else if ((*p & 0xC0) != 0x80) units += 18;
-    return (int)(units * pixels / 18.0f + 0.5f);
+    return (int)(units * vjo_app_text_pixels(pixels) / 18.0f + 0.5f);
 }
 static inline void vp_wrapped(int x, int y, int w, unsigned colour, float px, int line_height, int lines, const char *s)
 {
@@ -68,15 +69,15 @@ static inline void vp_wrapped(int x, int y, int w, unsigned colour, float px, in
 /* Small symbolic colours let the same recorder serve the existing unit harnesses' PageUi tables. */
 static inline unsigned vp_colour(unsigned c)
 {
-    const VjoAppTheme *t = vjo_app_theme(VJO_THEME_MINT);
+    const VjoAppTheme *t = vjo_app_theme(VJO_THEME_DEFAULT);
     const unsigned roles[] = {t->bg, t->text, t->dim, t->accent, t->off, t->card, t->selected};
     return c < sizeof(roles) / sizeof(roles[0]) ? roles[c] : c;
 }
 static inline void vp_card(int y, int h, int focus)
-{ vjo_chrome_panel(vp_rect, 24, y, 912, h, vjo_app_theme(VJO_THEME_MINT), focus, 0); }
+{ vjo_chrome_panel(vp_rect, 24, y, 912, h, vjo_app_theme(VJO_THEME_DEFAULT), focus, 0); }
 static inline void vp_badge(int x, int y, int w, int h, const char *label, int active)
 {
-    vjo_chrome_button(vp_rect, x, y, w, h, vjo_app_theme(VJO_THEME_MINT), active);
+    vjo_chrome_button(vp_rect, x, y, w, h, vjo_app_theme(VJO_THEME_DEFAULT), active);
     if ((!strcmp(label, "ON") || !strcmp(label, "OFF")) && (w == 108 || w == 128))
         vjo_chrome_check(vp_rect, x + 9, y + (h - 18) / 2, vp_colour(active ? 0 : 1), active);
     vp_text(x + (w - vp_measure(26, label)) / 2, y + h / 2 + 9, active ? 0 : 1, 26, label);
@@ -116,7 +117,7 @@ static inline void vp_finish(const char *name)
     TEST_ASSERT(snprintf(path, sizeof(path), "%s/%s.json", getenv("VJO_THEME_PREVIEW_DIR"), name) < (int)sizeof(path));
     FILE *f = fopen(path, "wb");
     TEST_ASSERT(f != NULL);
-    fprintf(f, "{\"clear\":%u,", vjo_app_theme(VJO_THEME_MINT)->bg);
+    fprintf(f, "{\"clear\":%u,", vjo_app_theme(VJO_THEME_DEFAULT)->bg);
     if (vp.page) { fprintf(f, "\"page\":"); vp_json_string(f, vp.page); fputc(',', f); }
     fprintf(f, "\"rects\":[");
     for (int k = 0; k < vp.rects; k++) {

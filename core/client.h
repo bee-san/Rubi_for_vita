@@ -28,8 +28,8 @@ typedef struct {
     VjoEntryList list;      /* header + entries */
     int failed_stage;
     VjoErr err;
-    /* Local cursor lookups with local_dictionary_results > 1: the page
-     * locators, allocated first in the lookup's arena (NULL otherwise), and
+    /* Local cursor lookups: the enabled dictionaries' best-entry locators,
+     * allocated first in the lookup's arena, and
      * the page whose entry `list` holds. */
     VjoLocalPages *pages;
     int page;
@@ -54,8 +54,8 @@ int vjo_overlay_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, 
  * sentence. Preserves OCR text/header and returns at most one entry, with
  * highlight bytes relative to sentence (including its remaining newlines).
  * The caller releases the preceding lookup's arena before another cursor.
- * With cfg->local_dictionary_results > 1, out->pages also locates the other
- * dictionaries' entries; the shown entry is page 0. */
+ * out->pages locates every enabled dictionary's best entry; list.more holds
+ * their entries and the other stored readings/senses of each spelling. */
 int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                           size_t cursor_byte, VjoOverlayData *out);
 /* Replaces the entry of a successful vjo_overlay_lookup_at in the same arena

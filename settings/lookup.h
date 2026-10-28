@@ -3,7 +3,7 @@
  * of the entry shown, saved to the Anki queue.
  *
  * The lookup is the overlay's, unchanged: core/client.c vjo_overlay_lookup_at, with the overlay's dictionaries in
- * their order (config.ini local_dictionaries, local_dictionary_results: the other dictionaries' entries for the
+ * their order (config.ini local_dictionaries, the other dictionaries' entries for the
  * word stacked below it), its ranking and deinflection, over the same memory as the Shell's (shell/worker.c): one
  * 64 KiB block, the dictionary session (its open files and caches) at its start and the lookup's arena after it,
  * here a static block of the app's (vjo_lookup_block_bytes). The text is the overlay's sentence: a line as the

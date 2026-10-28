@@ -53,8 +53,8 @@ int main(int argc, char **argv)
         return 2;
     strcpy(cfg.local_dictionary_dir, argv[1]);
     strcpy(cfg.local_dictionaries, argv[2]);
-    if (argc == 4) cfg.local_dictionary_results = atoi(argv[3]);
-    if (cfg.local_dictionary_results < 1 || cfg.local_dictionary_results > VJO_LOCAL_MAX_DICTS) return 2;
+
+    if (vjo_local_names_count(cfg.local_dictionaries) < 1 || vjo_local_names_count(cfg.local_dictionaries) > VJO_LOCAL_MAX_DICTS) return 2;
     posix_platform_init(&pp, &p);
     if (vjo_local_session_size() > RESULT_BLOCK / 2) return 2;
     memset(block, 0, vjo_local_session_size());

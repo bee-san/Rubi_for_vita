@@ -5,7 +5,7 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
-## Rear double-tap full-screen OCR (API 56)
+## Rear double-tap full-screen OCR (API 57)
 
 The open overlay's rear double tap submits the existing `VJO_GAME_OCR_F_FULL` job through the game's
 spotter, recognizer and configured LM decoder. The saved region is untouched. No block, thread or
@@ -2175,3 +2175,22 @@ until then: no Shell code had requested it since Google Lens's JPEG and the Shel
 screenshot were removed (#130, #125), and local OCR (API 19) and the Anki screenshot (API 23)
 read the screen in the game. On the owner's 3.65 that 2,088,960 B request failed with
 0x80024302 at every attempt (#74).
+
+## Current-game hook profiles (API 57)
+
+The worker's full Luna/verified tables and per-game filter/postprocessor programs move to an indexed
+disk archive. Only the current title is read at startup. Its bounded file buffer and decoded records
+are static in the worker; the kernel reuses its model staging buffer and file worker. No new block,
+thread, Shell allocation or kernel data buffer.
+
+Measured from the packaged SELF segments with the pinned VitaSDK image (2026.08),
+`tools/check_memory_ledger.py`, both builds:
+
+| Worker | Before: loaded pages | After: text + data/bss | After: loaded pages | Saved |
+|---|---:|---:|---:|---:|
+| Debug | 217,088 B | 168,264 + 28,840 B | 204,800 B | 12,288 B |
+| Normal | 204,800 B | 159,156 + 28,824 B | 192,512 B | 12,288 B |
+
+`VJO_BUDGET_WORKER_MODULE_PAGES` is lowered to those page counts. Kernel and Shell page budgets
+are unchanged; the debug kernel remains 118,784 B (44,712 + 72,404 B), Shell 167,936 B
+(97,620 + 69,192 B). These are binary measurements, not console headroom measurements.

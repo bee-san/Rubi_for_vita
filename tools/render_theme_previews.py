@@ -96,9 +96,9 @@ def main():
             if "page" in record:
                 # Bodies are drawn by the real Anki/Install page. Compose main.c's real shared header,
                 # including its gradient and Back control; only the category title changes.
-                header = captures["mint-picker"]
+                header = captures["default-picker"]
                 rects = [copy.deepcopy(r) for r in header["rects"]
-                         if r[1] < 100 or (r[0] == 0 and r[2] == 960) or (r[0] < 112 and r[1] >= 508)]
+                         if r[1] < 100 or (r[0] == 0 and r[2] == 960) or (r[0] < 112 and r[1] >= 504)]
                 texts = [copy.deepcopy(t) for t in header["texts"]
                          if t[1] < 100 or (t[0] < 112 and t[1] >= 508)]
                 for t in texts:

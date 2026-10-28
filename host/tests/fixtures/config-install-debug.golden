@@ -2,20 +2,20 @@
 = an empty config.ini: config_ini=1
     +1 japanese_only_selection = off\n
     +2 highlight_mode = word\n
-    +3 local_dictionary_results = 2\n
-    +4 vocr_tier = normal\n
-    +5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-    +6 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
-    +7 log_file = on\n
+    +3 vocr_tier = normal\n
+    +4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+    +5 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
+    +6 log_file = on\n
 = host/tests/fixtures/config-old-app-test2.ini
   config_ini=1
     -1 japanese_only_selection = off\n
     -2 highlight_mode = word\n
     +1 local_dictionaries = plaintext.vjdict, vndb-names.vjdict\n
-    -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-    -6 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
-    -7 log_file = on\n
-    +4 hachidori_host: a removed setting, goes\n
+    -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+    -5 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
+    -6 log_file = on\n
+    +3 hachidori_host: a removed setting, goes\n
+    +4 local_dictionary_results: a removed setting, goes\n
     +5 jpdb_api_key: a removed setting, goes\n
     +6 jiten_api_key: a removed setting, goes\n
     +7 ocr_backend: a removed setting, goes\n
@@ -28,37 +28,37 @@
   config_ini=1
     -1 japanese_only_selection = off\n
     -2 highlight_mode = word\n
+    -3 vocr_tier = normal\n
+    -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+    -5 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
+    -6 log_file = on\n
     +1 local_dictionaries = plaintext.vjdict, vndb-names.vjdict\n
-    -4 vocr_tier = normal\n
-    -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-    -6 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
-    -7 log_file = on\n
+    +2 local_dictionary_results: a removed setting, goes\n
     +3 ocr_backend: a removed setting, goes\n
     +4 log_host: a removed setting, goes\n
 = docs/config.example.ini
   config_ini=0
     -1 japanese_only_selection = off\n
     -2 highlight_mode = word\n
-    -3 local_dictionary_results = 2\n
-    -4 vocr_tier = normal\n
-    -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-    -6 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
-    -7 log_file = on\n
-> vocr_tier\r= large => +1 vocr_tier = large\n -4 vocr_tier = normal\n
-> vocr_tier \r= large => +1 vocr_tier = large\n -4 vocr_tier = normal\n
+    -3 vocr_tier = normal\n
+    -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+    -5 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
+    -6 log_file = on\n
+> vocr_tier\r= large => +1 vocr_tier = large\n -3 vocr_tier = normal\n
+> vocr_tier \r= large => +1 vocr_tier = large\n -3 vocr_tier = normal\n
 > highlight_mode\r=character => +1 highlight_mode = character\n -2 highlight_mode = word\n
 > japanese_only_selection \r = on => -1 japanese_only_selection = off\n +1 japanese_only_selection = on\n
-> local_dictionary_results\r\t= 3 => +1 local_dictionary_results = 3\n -3 local_dictionary_results = 2\n
-> vocr_model\r= FL10_w8.vocr => -4 vocr_tier = normal\n +4 vocr_tier = small\n +8 vocr_model: a removed setting, goes\n
-> jpdb_api_key\r= secret-17 => +8 jpdb_api_key: a removed setting, goes\n
-> ocr_backend\r= lens => +8 ocr_backend: a removed setting, goes\n
-> local_dictionary_dir = ux0:data/mine => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-> local_dictionary_dir = ux0:data/mine ; not a comment here => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-> local_dictionary_dir = => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-> LOCAL_DICTIONARY_DIR = ux0:data/Mine => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-> ocr_model_dir = ux0:data/models => +1 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n -6 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
-> ocr_model_dir = ux0:data/models # not a comment here => +1 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n -6 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
-> ocr_model_dir = => +1 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n -6 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
+> local_dictionary_results\r\t= 3 => +7 local_dictionary_results: a removed setting, goes\n
+> vocr_model\r= FL10_w8.vocr => -3 vocr_tier = normal\n +3 vocr_tier = small\n +7 vocr_model: a removed setting, goes\n
+> jpdb_api_key\r= secret-17 => +7 jpdb_api_key: a removed setting, goes\n
+> ocr_backend\r= lens => +7 ocr_backend: a removed setting, goes\n
+> local_dictionary_dir = ux0:data/mine => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+> local_dictionary_dir = ux0:data/mine ; not a comment here => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+> local_dictionary_dir = => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+> LOCAL_DICTIONARY_DIR = ux0:data/Mine => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+> ocr_model_dir = ux0:data/models => +1 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n -5 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
+> ocr_model_dir = ux0:data/models # not a comment here => +1 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n -5 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
+> ocr_model_dir = => +1 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n -5 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
 > local_dictionaries = a.vjdict => +1 local_dictionaries = plaintext.vjdict, a.vjdict, vndb-names.vjdict\n
 > local_dictionaries = a.vjdict,b.vjdict => +1 local_dictionaries = plaintext.vjdict, a.vjdict, b.vjdict, vndb-names.vjdict\n
 > local_dictionaries = a.vjdict, b.vjdict ; mine => +1 local_dictionaries = plaintext.vjdict, a.vjdict, b.vjdict, vndb-names.vjdict\n
@@ -69,32 +69,32 @@
 > local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict => +1 local_dictionaries = plaintext.vjdict, vndb-names.vjdict\n
 > local_dictionaries = => +1 local_dictionaries = plaintext.vjdict, vndb-names.vjdict\n
 > local_dictionaries = , => +1 local_dictionaries = plaintext.vjdict, vndb-names.vjdict\n
-> local_dictionary_results = 1 => -3 local_dictionary_results = 2\n
-> local_dictionary_results = 8 => -3 local_dictionary_results = 2\n
-> local_dictionary_results = 0 => +1 local_dictionary_results = 2\n -3 local_dictionary_results = 2\n
-> local_dictionary_results = 9 => +1 local_dictionary_results = 2\n -3 local_dictionary_results = 2\n
-> local_dictionary_results = two => +1 local_dictionary_results = 2\n -3 local_dictionary_results = 2\n
-> local_dictionary_results = => +1 local_dictionary_results = 2\n -3 local_dictionary_results = 2\n
+> local_dictionary_results = 1 => +7 local_dictionary_results: a removed setting, goes\n
+> local_dictionary_results = 8 => +7 local_dictionary_results: a removed setting, goes\n
+> local_dictionary_results = 0 => +7 local_dictionary_results: a removed setting, goes\n
+> local_dictionary_results = 9 => +7 local_dictionary_results: a removed setting, goes\n
+> local_dictionary_results = two => +7 local_dictionary_results: a removed setting, goes\n
+> local_dictionary_results = => +7 local_dictionary_results: a removed setting, goes\n
 > japanese_only_selection = on => -1 japanese_only_selection = off\n
 > japanese_only_selection = off => -1 japanese_only_selection = off\n
 > japanese_only_selection = ON => -1 japanese_only_selection = off\n +1 japanese_only_selection = on\n
-> japanese_only_selection = on\njapanese_only_selection = maybe => -1 japanese_only_selection = off\n +7 japanese_only_selection: a repeated line goes\n
+> japanese_only_selection = on\njapanese_only_selection = maybe => -1 japanese_only_selection = off\n +6 japanese_only_selection: a repeated line goes\n
 > highlight_mode = word => -2 highlight_mode = word\n
 > highlight_mode = character => -2 highlight_mode = word\n
 > HIGHLIGHT_MODE = CHARACTER => +1 highlight_mode = character\n -2 highlight_mode = word\n
 > highlight_mode = Word => +1 highlight_mode = word\n -2 highlight_mode = word\n
 > highlight_mode = sentence => +1 highlight_mode = word\n -2 highlight_mode = word\n
 > highlight_mode = => +1 highlight_mode = word\n -2 highlight_mode = word\n
-> vocr_tier = small => -4 vocr_tier = normal\n
-> vocr_tier = normal => -4 vocr_tier = normal\n
-> vocr_tier = large => -4 vocr_tier = normal\n
-> vocr_tier = Large => +1 vocr_tier = large\n -4 vocr_tier = normal\n
-> vocr_tier = huge => +1 vocr_tier = normal\n -4 vocr_tier = normal\n
-> vocr_tier = => +1 vocr_tier = normal\n -4 vocr_tier = normal\n
-> log_file = on => -7 log_file = on\n
-> log_file = off => +1 log_file = on\n -7 log_file = on\n
-> log_file = OFF => +1 log_file = on\n -7 log_file = on\n
-> log_file = 1 => +1 log_file = on\n -7 log_file = on\n
+> vocr_tier = small => -3 vocr_tier = normal\n
+> vocr_tier = normal => -3 vocr_tier = normal\n
+> vocr_tier = large => -3 vocr_tier = normal\n
+> vocr_tier = Large => +1 vocr_tier = large\n -3 vocr_tier = normal\n
+> vocr_tier = huge => +1 vocr_tier = normal\n -3 vocr_tier = normal\n
+> vocr_tier = => +1 vocr_tier = normal\n -3 vocr_tier = normal\n
+> log_file = on => -6 log_file = on\n
+> log_file = off => +1 log_file = on\n -6 log_file = on\n
+> log_file = OFF => +1 log_file = on\n -6 log_file = on\n
+> log_file = 1 => +1 log_file = on\n -6 log_file = on\n
 > dictionary = jpdb => +1 dictionary = local\n
 > dictionary = JITEN ; old => +1 dictionary = local\n
 > Dictionary = Jpdb\r => +1 dictionary = local\n
@@ -104,104 +104,104 @@
 > dictionary = jpdb;x => +1 dictionary = local\n
 > dictionary = jiten#x => +1 dictionary = local\n
 > dictionary = hachidori;relay => +1 dictionary = local\n
-> dictionary = hachidori\nhachidori_host = 192.168.1.20:19633 => +1 dictionary = local\n +9 hachidori_host: a removed setting, goes\n
-> hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori => +1 dictionary = local\n +9 hachidori_host: a removed setting, goes\n
-> jpdb_api_key = secret-1 => +8 jpdb_api_key: a removed setting, goes\n
-> jiten_api_key = secret-2 ; mine => +8 jiten_api_key: a removed setting, goes\n
-> api_key = secret-3 => +8 api_key: a removed setting, goes\n
-> JPDB_API_KEY=secret-4 => +8 jpdb_api_key: a removed setting, goes\n
-> jiten_api_key secret-5 => +8 jiten_api_key: a removed setting, goes\n
-> jpdb_api_key: secret-6 => +8 jpdb_api_key: a removed setting, goes\n
->   Jiten_Api_Key\tsecret-7 => +8 jiten_api_key: a removed setting, goes\n
-> jpdb_api_key secret-8 ; x = y => +8 jpdb_api_key: a removed setting, goes\n
-> jpdb_api_keysecret-9 => +8 jpdb_api_key: a removed setting, goes\n
-> api_keys = secret-10 => +8 api_key: a removed setting, goes\n
-> jpdb_api_key = => +8 jpdb_api_key: a removed setting, goes\n
-> jpdb_api_key => +8 jpdb_api_key: a removed setting, goes\n
-> jpdb_api_key_old = secret-11 => +8 jpdb_api_key: a removed setting, goes\n
-> \xEF\xBB\xBFjpdb_api_key = secret-12 => +8 jpdb_api_key: a removed setting, goes\n
-> anki_host = 192.168.1.23 => +8 anki_host: a removed setting, goes\n
-> ANKI_HOST=10.0.0.2 => +8 ANKI_HOST: a removed setting, goes\n
-> anki_host = auto => +8 anki_host: a removed setting, goes\n
-> anki_host = => +8 anki_host: a removed setting, goes\n
-> anki_host => +8 anki_host: a removed setting, goes\n
-> anki_audio_url = https://a.invalid/?k=secret-20 => +8 anki_audio_url: a removed setting, goes\n
-> anki_audio_url https://a.invalid/?k=secret-21 => +8 anki_audio_url: a removed setting, goes\n
-> anki_audio_url => +8 anki_audio_url: a removed setting, goes\n
-> anki_deck = Mining => +8 anki_deck: a removed setting, goes\n
-> anki_deck = Mining #1 ; main => +8 anki_deck: a removed setting, goes\n
-> anki_deck\r => +8 anki_deck: a removed setting, goes\n
-> anki_note_type = Lapis => +8 anki_note_type: a removed setting, goes\n
-> anki_tags = a b => +8 anki_tags: a removed setting, goes\n
-> ANKI_TAGS => +8 ANKI_TAGS: a removed setting, goes\n
-> anki_field_word = Word => +8 anki_field_word: a removed setting, goes\n
-> Anki_Field_Word = Word => +8 Anki_Field_Word: a removed setting, goes\n
-> anki_field_misc_info = X => +8 anki_field_misc_info: a removed setting, goes\n
-> ocr_backend = vocr => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = VOCR => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = lens => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = Lens => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = vocr2 => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = VOCR2 => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = meiki => +8 ocr_backend: a removed setting, goes\n
-> OCR_BACKEND = meiki ; old => +8 OCR_BACKEND: a removed setting, goes\n
-> ocr_backend = ncnn => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = NCNN => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = vocr3 => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = google => +8 ocr_backend: a removed setting, goes\n
-> ocr_backend = => +8 ocr_backend: a removed setting, goes\n
-> log_host = 192.168.1.5 => +8 log_host: a removed setting, goes\n
-> log_host = => +8 log_host: a removed setting, goes\n
-> LOG_HOST=10.0.0.1 ; pc\r => +8 LOG_HOST: a removed setting, goes\n
-> log_host =\nLOG_HOST= => +8 log_host: a removed setting, goes\n +9 LOG_HOST: a removed setting, goes\n
-> frequency_filter=500 => +8 frequency_filter: a removed setting, goes\n
-> frequency_filter = 3 => +8 frequency_filter: a removed setting, goes\n
-> FREQUENCY_FILTER = 5 => +8 FREQUENCY_FILTER: a removed setting, goes\n
-> font_size = 20 => +8 font_size: a removed setting, goes\n
-> font_size = 3 => +8 font_size: a removed setting, goes\n
-> hw_jpeg = on => +8 hw_jpeg: a removed setting, goes\n
-> hw_jpeg=1 => +8 hw_jpeg: a removed setting, goes\n
-> combo_delay_ms = 0 => +8 combo_delay_ms: a removed setting, goes\n
-> combo_delay_ms = 10 => +8 combo_delay_ms: a removed setting, goes\n
-> hachidori_host = 192.168.1.20 => +8 hachidori_host: a removed setting, goes\n
-> hachidori_host = http://not a host => +8 hachidori_host: a removed setting, goes\n
-> hachidori_host = => +8 hachidori_host: a removed setting, goes\n
-> vocr_model = FL10_w8.vocr => -4 vocr_tier = normal\n +4 vocr_tier = small\n +8 vocr_model: a removed setting, goes\n
-> vocr_model = VOCR3_FL10_w8.vocr => -4 vocr_tier = normal\n +4 vocr_tier = small\n +8 vocr_model: a removed setting, goes\n
-> vocr_model = VOCR2_FL10_w8.vocr => -4 vocr_tier = normal\n +4 vocr_tier = small\n +8 vocr_model: a removed setting, goes\n
-> vocr_model = H15_w8.vocr => +8 vocr_model: a removed setting, goes\n
-> vocr_model = VOCR3_H15_w8.vocr => +8 vocr_model: a removed setting, goes\n
-> vocr_model = F20_w8.vocr => -4 vocr_tier = normal\n +4 vocr_tier = large\n +8 vocr_model: a removed setting, goes\n
-> vocr_model = VOCR4_W20_w8.vocr => -4 vocr_tier = normal\n +4 vocr_tier = large\n +8 vocr_model: a removed setting, goes\n
-> vocr_model = VOCR9_X_w8.vocr => +8 vocr_model: a removed setting, goes\n
-> vocr_model = FL10 => +8 vocr_model: a removed setting, goes\n
-> vocr_model = FL10_w8.bin => +8 vocr_model: a removed setting, goes\n
-> vocr_model = dir/FL10_w8.vocr => +8 vocr_model: a removed setting, goes\n
-> vocr_model = .vocr => +8 vocr_model: a removed setting, goes\n
-> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => +8 vocr_model: a removed setting, goes\n
-> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => +8 vocr_model: a removed setting, goes\n
-> vocr_model = meiki-stream-int8.mnn => +8 vocr_model: a removed setting, goes\n
-> vocr_model = => +8 vocr_model: a removed setting, goes\n
-> vocr_fallback_model = VOCR3_FL10_w8.vocr => +8 vocr_fallback_model: a removed setting, goes\n
-> vocr_fallback_model = none => +8 vocr_fallback_model: a removed setting, goes\n
-> vocr_fallback_model = => +8 vocr_fallback_model: a removed setting, goes\n
-> vocr_tier = large\nvocr_model = FL10_w8.vocr => -4 vocr_tier = normal\n +7 vocr_model: a removed setting, goes\n
-> vocr_model = FL10_w8.vocr\nvocr_tier = large => -4 vocr_tier = normal\n +7 vocr_model: a removed setting, goes\n
-> vocr_model = FL10_w8.vocr\nvocr_tier = huge => +1 vocr_tier = small\n -4 vocr_tier = normal\n +8 vocr_model: a removed setting, goes\n
-> vocr_tier = huge\nvocr_model = W20_w8.vocr => +1 vocr_tier = large\n -4 vocr_tier = normal\n +8 vocr_model: a removed setting, goes\n
-> vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr => -4 vocr_tier = normal\n +4 vocr_tier = large\n +8 vocr_model: a removed setting, goes\n +9 vocr_model: a removed setting, goes\n
-> dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20 => +1 dictionary = local\n -4 vocr_tier = normal\n +5 vocr_tier = large\n +9 jpdb_api_key: a removed setting, goes\n +10 ocr_backend: a removed setting, goes\n +11 log_host: a removed setting, goes\n +12 vocr_model: a removed setting, goes\n more=1
-> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99 => +1 dictionary = local\n +9 ocr_backend: a removed setting, goes\n +10 log_host: a removed setting, goes\n +11 ocr_backend: a removed setting, goes\n
-> jpdb_api_key = SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS...[1515 bytes, fnv1a 239b4405b1ac6eb7] => +8 jpdb_api_key: a removed setting, goes\n
-> frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[619 bytes, fnv1a 780be23635715869] => +8 frequency_filter: a removed setting, goes\n
-> anki_audio_url = https://xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1525 bytes, fnv1a 662f1ed7e297a041] => +8 anki_audio_url: a removed setting, goes\n
-> ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[614 bytes, fnv1a 083e677aa20fd2fd] => +8 ocr_backend: a removed setting, goes\n
-> log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[611 bytes, fnv1a ffa99aab22b09349] => +8 log_host: a removed setting, goes\n
-> vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 1b017f76d9ce7d7e] => +8 vocr_model: a removed setting, goes\n
+> dictionary = hachidori\nhachidori_host = 192.168.1.20:19633 => +1 dictionary = local\n +8 hachidori_host: a removed setting, goes\n
+> hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori => +1 dictionary = local\n +8 hachidori_host: a removed setting, goes\n
+> jpdb_api_key = secret-1 => +7 jpdb_api_key: a removed setting, goes\n
+> jiten_api_key = secret-2 ; mine => +7 jiten_api_key: a removed setting, goes\n
+> api_key = secret-3 => +7 api_key: a removed setting, goes\n
+> JPDB_API_KEY=secret-4 => +7 jpdb_api_key: a removed setting, goes\n
+> jiten_api_key secret-5 => +7 jiten_api_key: a removed setting, goes\n
+> jpdb_api_key: secret-6 => +7 jpdb_api_key: a removed setting, goes\n
+>   Jiten_Api_Key\tsecret-7 => +7 jiten_api_key: a removed setting, goes\n
+> jpdb_api_key secret-8 ; x = y => +7 jpdb_api_key: a removed setting, goes\n
+> jpdb_api_keysecret-9 => +7 jpdb_api_key: a removed setting, goes\n
+> api_keys = secret-10 => +7 api_key: a removed setting, goes\n
+> jpdb_api_key = => +7 jpdb_api_key: a removed setting, goes\n
+> jpdb_api_key => +7 jpdb_api_key: a removed setting, goes\n
+> jpdb_api_key_old = secret-11 => +7 jpdb_api_key: a removed setting, goes\n
+> \xEF\xBB\xBFjpdb_api_key = secret-12 => +7 jpdb_api_key: a removed setting, goes\n
+> anki_host = 192.168.1.23 => +7 anki_host: a removed setting, goes\n
+> ANKI_HOST=10.0.0.2 => +7 ANKI_HOST: a removed setting, goes\n
+> anki_host = auto => +7 anki_host: a removed setting, goes\n
+> anki_host = => +7 anki_host: a removed setting, goes\n
+> anki_host => +7 anki_host: a removed setting, goes\n
+> anki_audio_url = https://a.invalid/?k=secret-20 => +7 anki_audio_url: a removed setting, goes\n
+> anki_audio_url https://a.invalid/?k=secret-21 => +7 anki_audio_url: a removed setting, goes\n
+> anki_audio_url => +7 anki_audio_url: a removed setting, goes\n
+> anki_deck = Mining => +7 anki_deck: a removed setting, goes\n
+> anki_deck = Mining #1 ; main => +7 anki_deck: a removed setting, goes\n
+> anki_deck\r => +7 anki_deck: a removed setting, goes\n
+> anki_note_type = Lapis => +7 anki_note_type: a removed setting, goes\n
+> anki_tags = a b => +7 anki_tags: a removed setting, goes\n
+> ANKI_TAGS => +7 ANKI_TAGS: a removed setting, goes\n
+> anki_field_word = Word => +7 anki_field_word: a removed setting, goes\n
+> Anki_Field_Word = Word => +7 Anki_Field_Word: a removed setting, goes\n
+> anki_field_misc_info = X => +7 anki_field_misc_info: a removed setting, goes\n
+> ocr_backend = vocr => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = VOCR => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = lens => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = Lens => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = vocr2 => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = VOCR2 => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = meiki => +7 ocr_backend: a removed setting, goes\n
+> OCR_BACKEND = meiki ; old => +7 OCR_BACKEND: a removed setting, goes\n
+> ocr_backend = ncnn => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = NCNN => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = vocr3 => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = google => +7 ocr_backend: a removed setting, goes\n
+> ocr_backend = => +7 ocr_backend: a removed setting, goes\n
+> log_host = 192.168.1.5 => +7 log_host: a removed setting, goes\n
+> log_host = => +7 log_host: a removed setting, goes\n
+> LOG_HOST=10.0.0.1 ; pc\r => +7 LOG_HOST: a removed setting, goes\n
+> log_host =\nLOG_HOST= => +7 log_host: a removed setting, goes\n +8 LOG_HOST: a removed setting, goes\n
+> frequency_filter=500 => +7 frequency_filter: a removed setting, goes\n
+> frequency_filter = 3 => +7 frequency_filter: a removed setting, goes\n
+> FREQUENCY_FILTER = 5 => +7 FREQUENCY_FILTER: a removed setting, goes\n
+> font_size = 20 => +7 font_size: a removed setting, goes\n
+> font_size = 3 => +7 font_size: a removed setting, goes\n
+> hw_jpeg = on => +7 hw_jpeg: a removed setting, goes\n
+> hw_jpeg=1 => +7 hw_jpeg: a removed setting, goes\n
+> combo_delay_ms = 0 => +7 combo_delay_ms: a removed setting, goes\n
+> combo_delay_ms = 10 => +7 combo_delay_ms: a removed setting, goes\n
+> hachidori_host = 192.168.1.20 => +7 hachidori_host: a removed setting, goes\n
+> hachidori_host = http://not a host => +7 hachidori_host: a removed setting, goes\n
+> hachidori_host = => +7 hachidori_host: a removed setting, goes\n
+> vocr_model = FL10_w8.vocr => -3 vocr_tier = normal\n +3 vocr_tier = small\n +7 vocr_model: a removed setting, goes\n
+> vocr_model = VOCR3_FL10_w8.vocr => -3 vocr_tier = normal\n +3 vocr_tier = small\n +7 vocr_model: a removed setting, goes\n
+> vocr_model = VOCR2_FL10_w8.vocr => -3 vocr_tier = normal\n +3 vocr_tier = small\n +7 vocr_model: a removed setting, goes\n
+> vocr_model = H15_w8.vocr => +7 vocr_model: a removed setting, goes\n
+> vocr_model = VOCR3_H15_w8.vocr => +7 vocr_model: a removed setting, goes\n
+> vocr_model = F20_w8.vocr => -3 vocr_tier = normal\n +3 vocr_tier = large\n +7 vocr_model: a removed setting, goes\n
+> vocr_model = VOCR4_W20_w8.vocr => -3 vocr_tier = normal\n +3 vocr_tier = large\n +7 vocr_model: a removed setting, goes\n
+> vocr_model = VOCR9_X_w8.vocr => +7 vocr_model: a removed setting, goes\n
+> vocr_model = FL10 => +7 vocr_model: a removed setting, goes\n
+> vocr_model = FL10_w8.bin => +7 vocr_model: a removed setting, goes\n
+> vocr_model = dir/FL10_w8.vocr => +7 vocr_model: a removed setting, goes\n
+> vocr_model = .vocr => +7 vocr_model: a removed setting, goes\n
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => +7 vocr_model: a removed setting, goes\n
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => +7 vocr_model: a removed setting, goes\n
+> vocr_model = meiki-stream-int8.mnn => +7 vocr_model: a removed setting, goes\n
+> vocr_model = => +7 vocr_model: a removed setting, goes\n
+> vocr_fallback_model = VOCR3_FL10_w8.vocr => +7 vocr_fallback_model: a removed setting, goes\n
+> vocr_fallback_model = none => +7 vocr_fallback_model: a removed setting, goes\n
+> vocr_fallback_model = => +7 vocr_fallback_model: a removed setting, goes\n
+> vocr_tier = large\nvocr_model = FL10_w8.vocr => -3 vocr_tier = normal\n +6 vocr_model: a removed setting, goes\n
+> vocr_model = FL10_w8.vocr\nvocr_tier = large => -3 vocr_tier = normal\n +6 vocr_model: a removed setting, goes\n
+> vocr_model = FL10_w8.vocr\nvocr_tier = huge => +1 vocr_tier = small\n -3 vocr_tier = normal\n +7 vocr_model: a removed setting, goes\n
+> vocr_tier = huge\nvocr_model = W20_w8.vocr => +1 vocr_tier = large\n -3 vocr_tier = normal\n +7 vocr_model: a removed setting, goes\n
+> vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr => -3 vocr_tier = normal\n +3 vocr_tier = large\n +7 vocr_model: a removed setting, goes\n +8 vocr_model: a removed setting, goes\n
+> dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20 => +1 dictionary = local\n -3 vocr_tier = normal\n +4 vocr_tier = large\n +8 jpdb_api_key: a removed setting, goes\n +9 ocr_backend: a removed setting, goes\n +10 log_host: a removed setting, goes\n +11 vocr_model: a removed setting, goes\n +12 anki_host: a removed setting, goes\n
+> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99 => +1 dictionary = local\n +8 ocr_backend: a removed setting, goes\n +9 log_host: a removed setting, goes\n +10 ocr_backend: a removed setting, goes\n
+> jpdb_api_key = SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS...[1515 bytes, fnv1a 239b4405b1ac6eb7] => +7 jpdb_api_key: a removed setting, goes\n
+> frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[619 bytes, fnv1a 780be23635715869] => +7 frequency_filter: a removed setting, goes\n
+> anki_audio_url = https://xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1525 bytes, fnv1a 662f1ed7e297a041] => +7 anki_audio_url: a removed setting, goes\n
+> ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[614 bytes, fnv1a 083e677aa20fd2fd] => +7 ocr_backend: a removed setting, goes\n
+> log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[611 bytes, fnv1a ffa99aab22b09349] => +7 log_host: a removed setting, goes\n
+> vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 1b017f76d9ce7d7e] => +7 vocr_model: a removed setting, goes\n
 > local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[531 bytes, fnv1a ba2526befd514680] => +1 local_dictionaries = plaintext.vjdict, vndb-names.vjdict\n
 > local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[532 bytes, fnv1a 9e67b788711b7053] => +1 local_dictionaries = plaintext.vjdict, vndb-names.vjdict\n
-> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-> local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -5 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
-> ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => +1 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n -6 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
+> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+> local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => +1 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n -4 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n
+> ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => +1 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n -5 ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n
 = 267 records plan as the empty file

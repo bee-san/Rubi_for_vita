@@ -256,8 +256,8 @@ int main(int argc, char **argv)
         return 2;
     strcpy(cfg.local_dictionary_dir, argv[1]);
     strcpy(cfg.local_dictionaries, argv[2]);
-    cfg.local_dictionary_results = atoi(argv[3]);
-    if (cfg.local_dictionary_results < 1 || cfg.local_dictionary_results > VJO_LOCAL_MAX_DICTS) return 2;
+
+    if (vjo_local_names_count(cfg.local_dictionaries) < 1 || vjo_local_names_count(cfg.local_dictionaries) > VJO_LOCAL_MAX_DICTS) return 2;
     posix_platform_init(&pp, &p);
     inner_open = p.file_open;
     p.file_open = tracked_open;
@@ -397,7 +397,7 @@ int main(int argc, char **argv)
     }
     printf("{\"summary\":{\"lines\":%d,\"taps\":%zu,\"mode\":\"%s\",\"results\":%d,\"dictionaries\":\"%s\",\"rounds\":%d,"
            "\"block_bytes\":%u,\"session_bytes\":%zu}}\n",
-           n_lines, n_queries, argv[4], cfg.local_dictionary_results, argv[2], rounds, (unsigned)RESULT_BLOCK,
+           n_lines, n_queries, argv[4], vjo_local_names_count(cfg.local_dictionaries), argv[2], rounds, (unsigned)RESULT_BLOCK,
            vjo_local_session_size());
     for (size_t k = 0; k < n_queries; k++) free(queries[k].us);
     free(queries);

@@ -1,6 +1,7 @@
 # The Rubi app's saves of the config fixtures (host/tests/test_preferences.c config_saves_golden; VJO_UPDATE_GOLDEN=1 rewrites this file)
 = host/tests/fixtures/config-old-app-test2.ini
-  preferences: 4408 bytes, fnv1a b4b67828d90f9e73
+  preferences: 4379 bytes, fnv1a a3007786c2b87f40
+    -20 local_dictionary_results = 1\n
     -23 jpdb_api_key =\n
     -26 jiten_api_key =\n
     -61 ocr_backend = vocr2\n
@@ -9,17 +10,19 @@
     -87 log_host =\n
     -98 anki_host =\n
     -100 anki_audio_url =\n
-    +93 vocr_tier = normal\n
-  anki_keys: 4514 bytes, fnv1a f5848322d422106e
+    +92 vocr_tier = normal\n
+  anki_keys: 4485 bytes, fnv1a 38b2bb66316943d9
+    -20 local_dictionary_results = 1\n
     -23 jpdb_api_key =\n
     -26 jiten_api_key =\n
     -61 ocr_backend = vocr2\n
     -87 log_host =\n
     -98 anki_host =\n
     -100 anki_audio_url =\n
-    +95 anki_screenshot = off\n
-    +96 anki_screenshot_trim_bars = on\n
-  clean: 4461 bytes, fnv1a 47587792d8b74838
+    +94 anki_screenshot = off\n
+    +95 anki_screenshot_trim_bars = on\n
+  clean: 4432 bytes, fnv1a 966c46c60406eead
+    -20 local_dictionary_results = 1\n
     -23 jpdb_api_key =\n
     -26 jiten_api_key =\n
     -61 ocr_backend = vocr2\n
@@ -30,48 +33,51 @@
     +101 anki_screenshot = off\n
     +102 anki_screenshot_trim_bars = on\n
 = host/tests/fixtures/config-test3-owner.ini
-  preferences: 3860 bytes, fnv1a 771c60d65e0212d5
+  preferences: 3831 bytes, fnv1a a2ff70560c982406
+    -16 local_dictionary_results = 1\n
     -50 ocr_backend = vocr\n
     -78 log_host =\n
-  anki_keys: 3913 bytes, fnv1a 4c02da3444b2e7e1
+  anki_keys: 3884 bytes, fnv1a d2e47e6976c3e0e4
+    -16 local_dictionary_results = 1\n
     -50 ocr_backend = vocr\n
     -78 log_host =\n
-    +86 anki_screenshot = off\n
-    +87 anki_screenshot_trim_bars = on\n
-  clean: 3860 bytes, fnv1a 771c60d65e0212d5
+    +85 anki_screenshot = off\n
+    +86 anki_screenshot_trim_bars = on\n
+  clean: 3831 bytes, fnv1a a2ff70560c982406
+    -16 local_dictionary_results = 1\n
     -50 ocr_backend = vocr\n
     -78 log_host =\n
   app_ini: 3943 bytes, fnv1a 2359cf9439a1788b
     +88 anki_screenshot = off\n
     +89 anki_screenshot_trim_bars = on\n
 = docs/config.example.ini
-  preferences: 6798 bytes, fnv1a fba5102d2cd46590
-  anki_keys: 6798 bytes, fnv1a df8693d40a48c560
-    -136 anki_mining = off\n
-    +136 anki_mining = on\n
-    -138 anki_screenshot = on\n
-    +138 anki_screenshot = off\n
-  clean: 6798 bytes, fnv1a fba5102d2cd46590
-  app_ini: 6798 bytes, fnv1a df8693d40a48c560
-    -136 anki_mining = off\n
-    +136 anki_mining = on\n
-    -138 anki_screenshot = on\n
-    +138 anki_screenshot = off\n
+  preferences: 6602 bytes, fnv1a 99c280c6a944dfc9
+  anki_keys: 6602 bytes, fnv1a 43847b887f311db9
+    -133 anki_mining = off\n
+    +133 anki_mining = on\n
+    -135 anki_screenshot = on\n
+    +135 anki_screenshot = off\n
+  clean: 6602 bytes, fnv1a 99c280c6a944dfc9
+  app_ini: 6602 bytes, fnv1a 43847b887f311db9
+    -133 anki_mining = off\n
+    +133 anki_mining = on\n
+    -135 anki_screenshot = on\n
+    +135 anki_screenshot = off\n
 = each record's saves where they differ from keeping its lines and appending the save's own (the four preferences with its values, the Anki keys; nothing for the clean copy)
-> vocr_tier\r= large | preferences: -1 vocr_tier\r= large\n +1 vocr_tier = large\n -5 vocr_tier = large\n
-> vocr_tier \r= large | preferences: -1 vocr_tier \r= large\n +1 vocr_tier = large\n -5 vocr_tier = large\n
+> vocr_tier\r= large | preferences: -1 vocr_tier\r= large\n +1 vocr_tier = large\n -4 vocr_tier = large\n
+> vocr_tier \r= large | preferences: -1 vocr_tier \r= large\n +1 vocr_tier = large\n -4 vocr_tier = large\n
 > highlight_mode\r=character | preferences: -1 highlight_mode\r=character\n +1 highlight_mode = character\n -3 highlight_mode = character\n
 > japanese_only_selection \r = on | preferences: -1 japanese_only_selection \r = on\n
-> local_dictionary_results\r\t= 3 | preferences: -1 local_dictionary_results\r\t= 3\n +1 local_dictionary_results = 3\n -4 local_dictionary_results = 3\n
+> local_dictionary_results\r\t= 3 | removed_line: S | preferences: -1 local_dictionary_results\r\t= 3\n | anki_keys: -1 local_dictionary_results\r\t= 3\n | clean: -1 local_dictionary_results\r\t= 3
 > vocr_model\r= FL10_w8.vocr | preferences: -1 vocr_model\r= FL10_w8.vocr\n
 > jpdb_api_key\r= secret-17 | removed_line: D | preferences: -1 jpdb_api_key\r= secret-17\n | anki_keys: -1 jpdb_api_key\r= secret-17\n | clean: -1 jpdb_api_key\r= secret-17
 > ocr_backend\r= lens | removed_line: S | preferences: -1 ocr_backend\r= lens\n | anki_keys: -1 ocr_backend\r= lens\n | clean: -1 ocr_backend\r= lens
-> local_dictionary_results = 1 | preferences: -4 local_dictionary_results = 1\n
-> local_dictionary_results = 8 | preferences: -4 local_dictionary_results = 8\n
-> local_dictionary_results = 0 | preferences: -1 local_dictionary_results = 0\n +1 local_dictionary_results = 2\n -4 local_dictionary_results = 2\n
-> local_dictionary_results = 9 | preferences: -1 local_dictionary_results = 9\n +1 local_dictionary_results = 2\n -4 local_dictionary_results = 2\n
-> local_dictionary_results = two | preferences: -1 local_dictionary_results = two\n +1 local_dictionary_results = 2\n -4 local_dictionary_results = 2\n
-> local_dictionary_results = | preferences: -1 local_dictionary_results =\n +1 local_dictionary_results = 2\n -4 local_dictionary_results = 2\n
+> local_dictionary_results = 1 | removed_line: S | preferences: -1 local_dictionary_results = 1\n | anki_keys: -1 local_dictionary_results = 1\n | clean: -1 local_dictionary_results = 1
+> local_dictionary_results = 8 | removed_line: S | preferences: -1 local_dictionary_results = 8\n | anki_keys: -1 local_dictionary_results = 8\n | clean: -1 local_dictionary_results = 8
+> local_dictionary_results = 0 | removed_line: S | preferences: -1 local_dictionary_results = 0\n | anki_keys: -1 local_dictionary_results = 0\n | clean: -1 local_dictionary_results = 0
+> local_dictionary_results = 9 | removed_line: S | preferences: -1 local_dictionary_results = 9\n | anki_keys: -1 local_dictionary_results = 9\n | clean: -1 local_dictionary_results = 9
+> local_dictionary_results = two | removed_line: S | preferences: -1 local_dictionary_results = two\n | anki_keys: -1 local_dictionary_results = two\n | clean: -1 local_dictionary_results = two
+> local_dictionary_results = | removed_line: S | preferences: -1 local_dictionary_results =\n | anki_keys: -1 local_dictionary_results =\n | clean: -1 local_dictionary_results =
 > japanese_only_selection = on | preferences: -2 japanese_only_selection = on\n
 > japanese_only_selection = off | preferences: -2 japanese_only_selection = off\n
 > japanese_only_selection = ON | preferences: -1 japanese_only_selection = ON\n
@@ -83,12 +89,12 @@
 > highlight_mode = Word | preferences: -1 highlight_mode = Word\n +1 highlight_mode = word\n -3 highlight_mode = word\n
 > highlight_mode = sentence | preferences: -1 highlight_mode = sentence\n +1 highlight_mode = word\n -3 highlight_mode = word\n
 > highlight_mode = | preferences: -1 highlight_mode =\n +1 highlight_mode = word\n -3 highlight_mode = word\n
-> vocr_tier = small | preferences: -5 vocr_tier = small\n
-> vocr_tier = normal | preferences: -5 vocr_tier = normal\n
-> vocr_tier = large | preferences: -5 vocr_tier = large\n
-> vocr_tier = Large | preferences: -1 vocr_tier = Large\n +1 vocr_tier = large\n -5 vocr_tier = large\n
-> vocr_tier = huge | preferences: -1 vocr_tier = huge\n +1 vocr_tier = normal\n -5 vocr_tier = normal\n
-> vocr_tier = | preferences: -1 vocr_tier =\n +1 vocr_tier = normal\n -5 vocr_tier = normal\n
+> vocr_tier = small | preferences: -4 vocr_tier = small\n
+> vocr_tier = normal | preferences: -4 vocr_tier = normal\n
+> vocr_tier = large | preferences: -4 vocr_tier = large\n
+> vocr_tier = Large | preferences: -1 vocr_tier = Large\n +1 vocr_tier = large\n -4 vocr_tier = large\n
+> vocr_tier = huge | preferences: -1 vocr_tier = huge\n +1 vocr_tier = normal\n -4 vocr_tier = normal\n
+> vocr_tier = | preferences: -1 vocr_tier =\n +1 vocr_tier = normal\n -4 vocr_tier = normal\n
 > anki_mining = on | anki_keys: -2 anki_mining = on\n | app_ini: -2 anki_mining = on\n
 > anki_mining = off | anki_keys: -1 anki_mining = off\n | app_ini: -1 anki_mining = off\n
 > anki_mining = ON | anki_keys: -1 anki_mining = ON\n | app_ini: -1 anki_mining = ON\n
@@ -181,10 +187,10 @@
 > vocr_fallback_model = VOCR3_FL10_w8.vocr | preferences: -1 vocr_fallback_model = VOCR3_FL10_w8.vocr\n
 > vocr_fallback_model = none | preferences: -1 vocr_fallback_model = none\n
 > vocr_fallback_model = | preferences: -1 vocr_fallback_model =\n
-> vocr_tier = large\nvocr_model = FL10_w8.vocr | preferences: -2 vocr_model = FL10_w8.vocr\n -6 vocr_tier = large\n
-> vocr_model = FL10_w8.vocr\nvocr_tier = large | preferences: -1 vocr_model = FL10_w8.vocr\n -6 vocr_tier = large\n
-> vocr_model = FL10_w8.vocr\nvocr_tier = huge | preferences: -1 vocr_model = FL10_w8.vocr\n -2 vocr_tier = huge\n +1 vocr_tier = small\n -6 vocr_tier = small\n
-> vocr_tier = huge\nvocr_model = W20_w8.vocr | preferences: -1 vocr_tier = huge\n -2 vocr_model = W20_w8.vocr\n +1 vocr_tier = large\n -6 vocr_tier = large\n
+> vocr_tier = large\nvocr_model = FL10_w8.vocr | preferences: -2 vocr_model = FL10_w8.vocr\n -5 vocr_tier = large\n
+> vocr_model = FL10_w8.vocr\nvocr_tier = large | preferences: -1 vocr_model = FL10_w8.vocr\n -5 vocr_tier = large\n
+> vocr_model = FL10_w8.vocr\nvocr_tier = huge | preferences: -1 vocr_model = FL10_w8.vocr\n -2 vocr_tier = huge\n +1 vocr_tier = small\n -5 vocr_tier = small\n
+> vocr_tier = huge\nvocr_model = W20_w8.vocr | preferences: -1 vocr_tier = huge\n -2 vocr_model = W20_w8.vocr\n +1 vocr_tier = large\n -5 vocr_tier = large\n
 > vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr | preferences: -1 vocr_model = FL10_w8.vocr\n -2 vocr_model = F20_w8.vocr\n
 > dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20 | removed_line: R(dictionary = local\n) D S S K D K | preferences: -1 dictionary = jpdb\n -2 jpdb_api_key = secret-30\n -3 ocr_backend = lens\n -4 log_host = 10.0.0.1\n -5 vocr_model = F20_w8.vocr\n -6 anki_host = auto\n +1 dictionary = local\n | anki_keys: -1 dictionary = jpdb\n -2 jpdb_api_key = secret-30\n -3 ocr_backend = lens\n -4 log_host = 10.0.0.1\n +1 dictionary = local\n -6 anki_host = auto\n | clean: -1 dictionary = jpdb\n -2 jpdb_api_key = secret-30\n -3 ocr_backend = lens\n -4 log_host = 10.0.0.1\n +1 dictionary = local\n -6 anki_host = auto\n
 > ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99 | removed_line: S S R(dictionary = local\n) S K K | preferences: -1 ocr_backend = vocr2\n -2 log_host = x\n -3 dictionary = jiten\n -4 ocr_backend = meiki\n +1 dictionary = local\n | anki_keys: -1 ocr_backend = vocr2\n -2 log_host = x\n -3 dictionary = jiten\n -4 ocr_backend = meiki\n +1 dictionary = local\n | clean: -1 ocr_backend = vocr2\n -2 log_host = x\n -3 dictionary = jiten\n -4 ocr_backend = meiki\n +1 dictionary = local\n
@@ -196,37 +202,37 @@
 = 292 records keep every line in all four saves
 = the saves' refusals and limits
 > (empty)
-  preferences choices: 100 -1 -1 -1 -1 -1 -1 -1 103
+  preferences choices: 71 -1 -1 -1 -1 -1 71 71 74
   keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 44
-  preferences room (103): 104:103 103:-1 105:103 3:-1 4:-1 0:-1
+  preferences room (74): 75:74 74:-1 76:74 3:-1 4:-1 0:-1
   keys room (39): 40:39 39:-1 41:39 3:-1 4:-1 0:-1
   clean room (0): 1:0 0:-1 2:0 3:0 4:0 0:-1
   app_ini room (39): 40:39 39:-1 41:39 3:-1 4:-1 0:-1
 > \xEF\xBB\xBF
-  preferences choices: 104 -1 -1 -1 -1 -1 -1 -1 107
+  preferences choices: 75 -1 -1 -1 -1 -1 75 75 78
   keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 48
-  preferences room (107): 108:107 107:-1 109:107 3:-1 4:-1 0:-1
+  preferences room (78): 79:78 78:-1 80:78 3:-1 4:-1 0:-1
   keys room (43): 44:43 43:-1 45:43 3:-1 4:-1 0:-1
   clean room (3): 4:3 3:-1 5:3 3:-1 4:3 0:-1
   app_ini room (43): 44:43 43:-1 45:43 3:-1 4:-1 0:-1
 > \xEF\xBB\xBFvocr_tier = large\n
-  preferences choices: 103 -1 -1 -1 -1 -1 -1 -1 106
+  preferences choices: 74 -1 -1 -1 -1 -1 74 74 77
   keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 65
-  preferences room (106): 107:106 106:-1 108:106 3:-1 4:-1 0:-1
+  preferences room (77): 78:77 77:-1 79:77 3:-1 4:-1 0:-1
   keys room (60): 61:60 60:-1 62:60 3:-1 4:-1 0:-1
   clean room (21): 22:21 21:-1 23:21 3:-1 4:-1 0:-1
   app_ini room (60): 61:60 60:-1 62:60 3:-1 4:-1 0:-1
 > anki_mining = on\nfont_size_ja = 20
-  preferences choices: 135 -1 -1 -1 -1 -1 -1 -1 138
+  preferences choices: 106 -1 -1 -1 -1 -1 106 106 109
   keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 79
-  preferences room (138): 139:138 138:-1 140:138 3:-1 4:-1 0:-1
+  preferences room (109): 110:109 109:-1 111:109 3:-1 4:-1 0:-1
   keys room (57): 58:57 57:-1 59:57 3:-1 4:-1 0:-1
   clean room (34): 35:34 34:-1 36:34 3:-1 4:-1 0:-1
   app_ini room (57): 58:57 57:-1 59:57 3:-1 4:-1 0:-1
 > dictionary = jpdb\nlog_host = x\n
-  preferences choices: 119 -1 -1 -1 -1 -1 -1 -1 122
+  preferences choices: 90 -1 -1 -1 -1 -1 90 90 93
   keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 63
-  preferences room (122): 123:122 122:-1 124:122 3:-1 4:-1 0:-1
+  preferences room (93): 94:93 93:-1 95:93 3:-1 4:-1 0:-1
   keys room (58): 59:58 58:-1 60:58 3:-1 4:-1 0:-1
   clean room (19): 20:19 19:-1 21:19 3:-1 4:-1 0:-1
   app_ini room (70): 71:70 70:-1 72:70 3:-1 4:-1 0:-1

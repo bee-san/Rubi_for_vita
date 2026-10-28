@@ -53,7 +53,7 @@ set(CORE_SRC
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c core/heap.c core/word_key.c core/sentence_reading.c
   core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c)
-add_library(vjo_core STATIC ${CORE_SRC})
+add_library(vjo_core STATIC ${CORE_SRC} core/hook_profile_file.c)
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
 target_compile_definitions(vjo_core PUBLIC VJO_HOST=1)
@@ -208,6 +208,18 @@ vjo_suite(hooks_engine SOURCES host/tests/test_hooks_engine.c core/hook_place.c 
   core/hook_re.c core/hook_text.c core/hook_sc3.c core/sfo.c
   INCLUDES host/tests host/tests/hooks_stubs host/tests/game_stubs
   DEFINES VJO_HOST=1 VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" UNUSED LIBS bearssl)
+# Exercise the engine as shipped: current-title disk profiles, through actual farm excerpts.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(VJO_PROFILE_ARCHIVE ${CMAKE_BINARY_DIR}/profiles.vjhp)
+add_custom_target(vjo_hook_profile_archive
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/hook_profiles.py --output ${VJO_PROFILE_ARCHIVE}
+  BYPRODUCTS ${VJO_PROFILE_ARCHIVE})
+vjo_suite(hooks_engine_external SOURCES host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c
+  core/hook_luna.c core/hook_re.c core/hook_text.c core/hook_sc3.c core/sfo.c core/hook_profile.c core/hook_profile_file.c
+  INCLUDES host/tests host/tests/hooks_stubs host/tests/game_stubs
+  DEFINES VJO_HOST=1 VJO_EXTERNAL_HOOK_PROFILES=1 VJO_PROFILE_ARCHIVE_PATH="${VJO_PROFILE_ARCHIVE}"
+    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" UNUSED LIBS bearssl)
+add_dependencies(vjo-hooks-engine-external-tests vjo_hook_profile_archive)
 # MAGES/5pb. SC3 script text (core/hook_sc3.c, docs/native-hooks.md "SC3 text"): the span and the decoder on the
 # farm's pages, the committed charsets (third_party/sc3-charsets) against their pins and Rubi's entries (the pins
 # against the files: hook_sc3_pins, below).
@@ -352,7 +364,7 @@ vjo_suite(app_queue SOURCES host/tests/test_app_queue.c settings/app_queue.c INC
   LIBS vjo_host)
 # (#311: its sentence readings' files)
 vjo_suite(apkg SOURCES host/tests/test_apkg.c settings/app_queue.c settings/app_platform.c
-  INCLUDES host/tests/vita_stubs UNUSED LIBS vjo_host)
+  INCLUDES host/tests/vita_stubs DEFINES VJO_KNOWN_WORDS_ENABLED=1 UNUSED LIBS vjo_host)
 # Real shell control policy, with host-only substitutes for Vita SDK I/O.
 # shell/log_vita.c on an in-memory file system: a batch of lines (vjo_log_batch_begin/end)
 # writes the same bytes in the same order as line by line, with one append per file.
@@ -760,7 +772,7 @@ vjo_suite(game_input SOURCES host/tests/test_game_input.c kernel/triggers.c INCL
   LIBS vjo_host)
 
 # Real role-restricted job transport; no simulated inference/accuracy claims.
-vjo_suite(kernel_game_ocr SOURCES host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
+vjo_suite(kernel_game_ocr SOURCES host/tests/test_kernel_game_ocr.c core/hook_profile_file.c kernel/scene.c kernel/ledger.c core/ledger.c
   INCLUDES host/tests/vita_stubs DEFINES VJO_HOST=1 UNUSED)
 vjo_suite(game_ocr_client SOURCES host/tests/test_game_ocr_client.c NO_WARNINGS LIBS vjo_host)
 
@@ -844,7 +856,7 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-gate-eval PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_link_libraries(vjo-gate-eval vjo_vocr vjo_host)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c host/tests/hooks_none.c
-    host/tests/kernel_model_broker_boundary.c kernel/buffers.c kernel/capture.c
+    host/tests/kernel_model_broker_boundary.c core/hook_profile_file.c kernel/buffers.c kernel/capture.c
     kernel/scene.c kernel/ledger.c core/ledger.c)
   target_include_directories(vjo-game-model-broker-tests PRIVATE third_party/acutest/include
     host/tests/game_stubs host/tests/vita_stubs)
@@ -854,13 +866,13 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-game-model-broker-tests vjo_vocr)
   # #74 preflight: the real worker and kernel under the console's measured pool limits.
   vjo_suite(alloc_sim SOURCES host/tests/test_alloc_sim.c host/tests/hooks_none.c
-    host/tests/kernel_model_broker_boundary.c kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c
+    host/tests/kernel_model_broker_boundary.c core/hook_profile_file.c kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c
     core/ledger.c INCLUDES host/tests/game_stubs host/tests/vita_stubs
     DEFINES VJO_HOST=1 VJO_TEST_MODEL_BROKER=1 VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}" UNUSED LIBS vjo_vocr)
   add_test(NAME game_model_broker COMMAND vjo-game-model-broker-tests)
   # API 23: the Anki screenshot through the actual worker and kernel transport, real files, its
   # JPEGs decoded by Pillow (host/tests/test_game_shot.py).
-  add_executable(vjo-game-shot-tests host/tests/test_game_shot.c host/tests/hooks_none.c host/tests/kernel_model_broker_boundary.c
+  add_executable(vjo-game-shot-tests host/tests/test_game_shot.c host/tests/hooks_none.c host/tests/kernel_model_broker_boundary.c core/hook_profile_file.c
     kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
   target_include_directories(vjo-game-shot-tests PRIVATE third_party/acutest/include host/tests/game_stubs
     host/tests/vita_stubs)

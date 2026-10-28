@@ -27,7 +27,10 @@ static int waiters;
 
 enum { MODEL_IDLE, MODEL_QUEUED, MODEL_RUNNING, MODEL_DONE };
 /* SHOT_WRITE, SHOT_SAVE (API 23): a shot's JPEG, the other way through the same broker. */
-enum { MODEL_OPEN = 1, MODEL_READ, MODEL_CLOSE, SHOT_WRITE, SHOT_SAVE, HOOK_CACHE_LOAD, HOOK_CACHE_SAVE };
+enum { MODEL_OPEN = 1, MODEL_READ, MODEL_CLOSE, SHOT_WRITE, SHOT_SAVE, HOOK_CACHE_LOAD, HOOK_CACHE_SAVE, PROFILE_LOAD };
+#include "../core/hook_profile_file.h"
+int vjoGetTextSource(void);
+#define PROFILE_WHICH 0xFFFFFFFEu
 #define HOOK_CACHE_WHICH 0xFFFFFFFFu
 #define HOOK_CACHE_PATH "ux0:data/VitaJPOverlay/hooks.cache"
 #define HOOK_CACHE_TEMP HOOK_CACHE_PATH ".tmp"
@@ -50,6 +53,7 @@ static struct {
 /* One kernel staging buffer; weights and inference remain in game USER_RW. A
  * shot's JPEG crosses it too, a chunk at a time (API 23). */
 static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
+typedef char vjo_profile_stage_check[VJO_PROFILE_BYTES <= sizeof(model_stage) ? 1 : -1];
 typedef char vjo_hook_cache_stage_check[VJO_GAME_OCR_HOOK_CACHE_BYTES <= sizeof(model_stage) ? 1 : -1];
 typedef char vjo_sc3_stage_check[VJO_GAME_OCR_SC3_BYTES <= sizeof(model_stage) ? 1 : -1]; /* a charset: one read */
 typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage) ? 1 : -1];
@@ -180,7 +184,8 @@ static void invalidate_locked(void)
     cancelled = 1;
     completed = 0;
     pending = 0;
-    model_invalidate_locked();
+    if (model_io.pid == request_pid && model_io.seq == request.seq && model_io.which != PROFILE_WHICH)
+        model_invalidate_locked();
     /* A taken job can still be executing after suspend, timeout or Shell
      * restart. Only its drained completion or actual process exit unpins it. */
 }
@@ -1044,20 +1049,84 @@ typedef int (*ModelStep)(SceUID pid, uint32_t seq, uint32_t a, uint32_t b, void 
 /* The six model syscalls (vjoOcrModelOpen/Read/Close, vjoOcrHookCache, vjoOcrShotWrite/Save): the caller's step
  * under g.lock, again each time the kernel worker finishes an operation while the step answers BUSY, for at most
  * MODEL_SYSCALL_WAIT_US (model_wait, without the lock); then BUSY, and the game yields and repeats the call. */
-static int model_syscall(ModelStep step, uint32_t seq, uint32_t a, uint32_t b, void *p)
+static int model_syscall_budget(ModelStep step, uint32_t seq, uint32_t a, uint32_t b, void *p, uint32_t budget)
 {
     uint32_t state;
     SceUID pid = ksceKernelGetProcessId();
     uint64_t deadline;
     int rc;
     ENTER_SYSCALL(state);
-    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
+    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + budget;
     do {
         VJO_LOCK();
         rc = step(pid, seq, a, b, p);
         VJO_UNLOCK();
     } while (rc == VJO_ERR_BUSY && model_wait(deadline));
     EXIT_SYSCALL(state);
+    return rc;
+}
+
+static int model_syscall(ModelStep step, uint32_t seq, uint32_t a, uint32_t b, void *p)
+{
+    return model_syscall_budget(step, seq, a, b, p, MODEL_SYSCALL_WAIT_US);
+}
+
+/* Startup has no claimed OCR job. Authorize it separately using the loader's
+ * ON table and safe-boot gate; ordinary model APIs keep their claimed-job checks. */
+static int profile_allowed(void)
+{
+    unsigned word = (unsigned)vjoGetTextSource();
+    return word == VJO_TEXT_SOURCE_AUTO || word == VJO_TEXT_SOURCE_HOOKS;
+}
+static int profile_locked(SceUID pid, uint32_t seq, uint32_t cap, uint32_t unused, void *dst)
+{
+    char title[32] = {0};
+    int rc;
+    (void)seq; (void)unused;
+    if (model_io.seq && model_io.which == PROFILE_WHICH && model_io.pid == pid) {
+        if (model_io.closing || model_io.orphan) return VJO_ERR_CANCELLED;
+        if (!profile_allowed() || stopping) {
+            model_io.orphan = 1; model_invalidate_locked();
+            return VJO_ERR_CANCELLED;
+        }
+        if (model_io.phase != MODEL_DONE) return VJO_ERR_BUSY;
+        rc = model_io.rc;
+        if (model_io.fd >= 0) { /* a failed close: no usable profile until drained */
+            model_io.orphan = 1; model_invalidate_locked();
+            return rc < 0 ? rc : VJO_ERR_BUSY;
+        }
+        if (!dst || cap != VJO_PROFILE_BYTES) rc = VJO_ERR_ARG;
+        else if (rc > 0 && ksceKernelMemcpyKernelToUser(dst, model_stage, (SceSize)rc) < 0) rc = VJO_ERR_COPY;
+        model_reset_locked();
+        return rc;
+    }
+    if (!profile_allowed() || pid <= 0 || stopping) return VJO_ERR_PERM;
+    if (!dst || cap != VJO_PROFILE_BYTES) return VJO_ERR_ARG;
+    sync_locked();
+    if (model_io.seq || pending || claimed || rows.state != ROWS_IDLE || shot_spare_preparing) return VJO_ERR_BUSY;
+    if (loader_title(pid, title, sizeof(title)) < 0 || !vjo_title_id_strict(title)) return VJO_ERR_ARG;
+    model_io.seq = 1; /* reserves the transport; never a claimed-job operation */
+    model_io.pid = pid; model_io.which = PROFILE_WHICH; model_io.operation = PROFILE_LOAD;
+    model_io.phase = MODEL_QUEUED; model_io.size = VJO_PROFILE_BYTES;
+    memcpy(model_io.path, title, 10); /* title only; the file worker fixes the path */
+    model_wake_locked();
+    return VJO_ERR_BUSY;
+}
+int vjoOcrHookProfile(void *dst, uint32_t cap)
+{
+    int rc = model_syscall_budget(profile_locked, 0, cap, 0, dst, 2000000u);
+    if (rc == VJO_ERR_BUSY) {
+        /* At the deadline, abandon only this caller's startup operation. A
+         * later file completion retains no pointer and cannot copy to dst. */
+        uint32_t state;
+        ENTER_SYSCALL(state);
+        VJO_LOCK();
+        if (model_io.seq && model_io.which == PROFILE_WHICH && model_io.pid == ksceKernelGetProcessId()) {
+            model_io.orphan = 1; model_invalidate_locked();
+        }
+        VJO_UNLOCK(); EXIT_SYSCALL(state);
+        return VJO_ERR_TIMEOUT;
+    }
     return rc;
 }
 
@@ -1535,6 +1604,12 @@ static void shot_spare_prepare(void)
              (uint32_t)(ksceKernelGetSystemTimeWide() - started) / 1000, (unsigned)(rc < 0 ? rc : 0));
 }
 
+static int profile_pread(void *ud, void *dst, unsigned bytes, uint32_t offset)
+{
+    SceUID fd = *(SceUID *)ud;
+    return ksceIoPread(fd, dst, bytes, (SceOff)offset);
+}
+
 void game_ocr_model_tick(void)
 {
     int operation, rc, stat_rc = 0, shot, saved, hook_cache, sc3;
@@ -1587,7 +1662,20 @@ void game_ocr_model_tick(void)
 
     /* Only the persistent kernel worker executes these calls. Calling them
      * directly in a game's syscall would retain its unavailable ux0 namespace. */
-    if (operation == HOOK_CACHE_LOAD || operation == HOOK_CACHE_SAVE) {
+    if (operation == PROFILE_LOAD) {
+        fd = ksceIoOpen(VJO_PROFILE_DB_PATH, SCE_O_RDONLY, 0);
+        rc = fd;
+        if (fd >= 0) {
+            SceOff length = ksceIoLseek(fd, 0, SCE_SEEK_END);
+            rc = length > 0 && (uint64_t)length <= UINT32_MAX
+                     ? vjo_hook_profile_read(profile_pread, &fd, (uint32_t)length, path, model_stage, VJO_PROFILE_BYTES)
+                     : VJO_ERR_FORMAT;
+            if (rc == -1) rc = VJO_ERR_FORMAT;
+            int closed = ksceIoClose(fd);
+            if (closed >= 0) fd = -1;
+            else rc = closed;
+        }
+    } else if (operation == HOOK_CACHE_LOAD || operation == HOOK_CACHE_SAVE) {
         rc = hook_cache_file(operation, &fd);
     } else if (operation == MODEL_OPEN) {
         fd = ksceIoOpen(path, SCE_O_RDONLY, 0);

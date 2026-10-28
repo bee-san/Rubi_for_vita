@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SMOKE_DIR = "tools/vita3k_smoke"
 # the worker's sources the app leaves out, and why
 NOT_IN_THE_APP = {
+    "core/hook_profile.c": "startup profiles use the real kernel file broker; the smoke app has no native game",
     "shell/libc_shim.c": "the plugins' libc (they link no newlib); the app links newlib",
     "game_ocr/psp_probe.c": "the debug worker's PSP probe; under VJO_GAME_OCR_NO_MODULE_ENTRY its call is nothing "
                             "(game_ocr/psp_probe.h)",

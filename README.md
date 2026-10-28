@@ -60,7 +60,8 @@
   definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
   English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. The bundled
   [PSP/Vita names dictionary](docs/vndb-attribution.txt) adds 12,151 VNDB characters from 1,202
-  visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too.
+  visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too. All enabled dictionaries are shown automatically,
+  with the other stored readings and senses below the best match; scroll with the right stick.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
   sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
   [Lapis](https://github.com/donkuri/lapis) notes for Anki.
@@ -181,7 +182,7 @@ directly. Cancel or the **Back** button returns to the menu. **Look up** is the 
 Select switches between it and Settings. Installation problems still open Install & repair automatically.
 
 Reading & dictionaries keeps the usual controls together, with **Advanced reading** for text sources, OCR tuning
-and text-box options. Appearance offers **Mint**, **Sakura** and **Paper**, applied immediately and remembered.
+and text-box options. Appearance offers **Default** (yellow), **Mint** and **Paper**, applied immediately and remembered.
 Other choices save at once and apply when the overlay next opens; a game's ON or OFF applies when it next starts
 or resumes.
 
@@ -189,13 +190,12 @@ or resumes.
 | --- | --- | --- |
 | Games | Each game ON or OFF, and **Default** ON or OFF ([details](docs/guide.md#per-game-settings)) | ON |
 | | **Line finder** for one game (hold Enter on it): what cuts its text box into lines, the spotter or Rubi's finder with its fixes (`config.ini`'s `ocr_finder` and `ocr_line_fix` for that game alone), for a game the spotter reads worse ([details](docs/guide.md#a-games-own-page)) | Default (`config.ini`'s, the spotter) |
-| Reading & dictionaries | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
-| | **Read text**: Automatically (when it changes), or Only when I press L + R | Automatically |
-| | **Speed boost while reading (444 MHz)** | ON |
+| Reading & dictionaries | **Read text**: Automatically (when it changes), or Only when I press L + R | Automatically |
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
-| | **Highlight**: Whole word or Character | Whole word |
-| | **Dictionaries shown**: how many dictionaries' entries for the same word are shown, the best match first and the others below it (the right stick scrolls to them), 1–8 (2: a word and the same word as a character's name; which comes first: `names_first`, [details](docs/local-dictionaries.md#names-and-words)) | 2 |
-| Reading → Advanced | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
+| | **Selection mode**: Whole word or Character | Whole word |
+| Reading → Advanced | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
+| | **Speed boost while reading (444 MHz)** | ON |
+| | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
 | | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready within a poll (16 ms) and the first word's lookup of the game writing it (measured on a computer; not run on a console yet; [details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns, but rows where the box plainly holds lines of text) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
@@ -203,15 +203,18 @@ or resumes.
 | | **Pause the game to read**: each reading copies the text box from one frame at once, the game waiting a moment (an estimated 2-6 ms for a drawn text box, 11-29 ms for the whole screen: draw a box with □ first), so a spinning icon in it can't stop the read; nothing in a PSP game (on `main`, not in 0.10.0; [details](docs/game-pause.md)) | OFF |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
-| | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
-| | **Card type**: what the card's front shows: the word, its sentence, both, or the word with the sentence a tap away ([card types](docs/anki.md#card-type)) | Word |
+| | **Card type**: Word, Sentence, Both or Reveal sentence; what the card's front shows: the word, its sentence, both, or the word with the sentence a tap away ([card types](docs/anki.md#card-type)) | Word |
 | | **Game tag**: each card is tagged with its game, `Game::CLANNAD` | ON |
 | | **Sentence readings**: readings over the sentence's kanji on the card's back, where the dictionaries are sure of them ([how often they are wrong](docs/anki.md#sentence-readings)) | ON |
 | | **Duplicates**: a card of a word you mined before gets Anki's `duplicate` tag (Tag), stays in the queue (Skip) or is exported as before (Keep); the page counts them, "N queued, M already mined" ([details](docs/anki.md#duplicates)) | Tag |
-| | **Known words**: Import reads `known_words.txt`, which `tools/known_words.py` writes from your Anki collection; their cards get the tag `known` ([details](docs/anki.md#known-words)) | none |
-| | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
+| | **Export cards**: write the queue into one `.apkg` file | |
+| Anki → Anki actions | **Export all cards**: include previously exported cards | |
 | Look up | No setting: type a word (Triangle), or open an earlier line of a game (L/R); Enter saves its word as a card, without a picture, with Card mining ON or OFF ([details](docs/guide.md#look-up)) | |
 | Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
+
+Anki card options appear when **Card mining** is ON. Screenshots use automatic black-bar trimming. Known-word
+import is disabled while [#521](https://github.com/bee-san/Rubi_for_vita/issues/521) tracks duplicate detection using its retained code.
+Small app text is 2 px larger. [#522](https://github.com/bee-san/Rubi_for_vita/issues/522) tracks explaining per-game OFF choices; all games remain ON by default.
 
 Everything else, such as the button that opens the overlay (`toggle_button`), the OCR's timings and
 logging, is in `ux0:data/VitaJPOverlay/config.ini`
@@ -220,7 +223,7 @@ logging, is in `ux0:data/VitaJPOverlay/config.ini`
 ## Native text hooks
 
 A text hook reads dialogue directly from the game instead of recognizing letters in a screenshot.
-With **OCR & lookup → Text source → Automatic** (the default), Rubi identifies the game's title ID,
+With **Settings → Reading & dictionaries → Advanced → Text source → Automatic** (the default), Rubi identifies the game's title ID,
 tries its available hooks and selects the text automatically. **You do not choose a hook or enter
 codes.** Keep the game ON on the Games page; after changing Text source, close and restart the game.
 Older installs may have kept **OCR only**, so choose Automatic once if needed.
@@ -230,8 +233,8 @@ Older installs may have kept **OCR only**, so choose Automatic once if needed.
 | **CLANNAD**, Japanese Vita release (`PCSG00415`) | Automatic; string-copy hooks and Rubi's own game profile | String-copy extraction confirmed in the combined debug test build, including readings without OCR. The separate game profile's hook site remains unverified on a real Vita. |
 | **175 Vita title IDs from LunaTranslator's table** | Automatic attempts using 294 ported hook sites, plus string-copy hooks | Experimental: these game-specific hook sites have not been verified on a real Vita. Examples include **TIME TRAVELERS** (`PCSG00062`), **Code:Realize ～創世の姫君～** (`PCSG00402`) and **DRAMAtical Murder** (`PCSG00420`). |
 | **61 more Vita title IDs with Rubi's own verified entries** (**アマツツミ** (`PCSG01198`) in 0.9.4, 26 in 0.9.7, **ALIA's CARNIVAL! サクラメント** (`PCSG00628`) and **真 流行り神** (`PCSG00380`) in 0.9.8, **極限脱出ＡＤＶ 善人シボウデス** (`PCSG00020`, Zero Escape: Virtue's Last Reward), **蒼の彼方のフォーリズム** (`PCSG00700`), the **ZERO ESCAPE ダブルパック**'s 善人シボウデス (`PCSG00883`) and the SC3 games **STEINS;GATE 比翼恋理のだーりん** (`PCSG00146`), **ROBOTICS;NOTES ELITE** (`PCSG00352`) and **CHAOS;CHILD** (`PCSG00555`), and 20 from the owner's hook farm such as **マブラヴ オルタネイティヴ** (`PCSG00777`), **大図書館の羊飼い -Library Party-** (`PCSG00505`), **DIABOLIK LOVERS** (`PCSG00272` and four more) and **ISLAND** (`PCSG01000`) in 0.10.0, and six more from it, among them **フォトカノ Kiss** (`PCSG00139`), **デュラララ!! 3way standoff -alley- V** (`PCSG00370`) and **死神と少女** (`PCSG01282`)), such as **リトルバスターズ！ Converted Edition** (`PCSG00007`), **グリザイアの果実** (`PCSG00206`) and **CLOCK ZERO ～終焉の一秒～ ExTime** (`PCSG00469`) | Automatic: a site checked against the game's exact code bytes, with Rubi's own text clean-up. 36 are games of Luna's table: for 20 of them the entry is at Luna's own site, which Rubi's placement check refused for 18 (the entry unlocks it) and accepts for 2 (the entry gives its text Rubi's clean-up) | Experimental: proven in the Vita3K emulator only (a screenshot farm), not on a real Vita; アマツツミ and 蒼の彼方のフォーリズム also on a PS Vita (アマツツミ's hook answered its jobs, [#273](https://github.com/bee-san/Rubi_for_vita/pull/273); 15 of 蒼の彼方のフォーリズム's 19 hook lines agreed with OCR, 3 scored 0, not examined). For ALIA's CARNIVAL! サクラメント and 真 流行り神 (the farm had no copy of their code) and 逢魔が刻～かくりよの縁～ (the farm's check of its site never ran) a jump from elsewhere in the game's code into the hook's patched bytes is unchecked: one would crash the game. |
-| Other native Vita games | Automatic tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. OCR is used until a matching source is found. **Every game** makes the same attempts. |
-| PSP games in Adrenaline | OCR only | Native PSP text hooks are not implemented, including in Every game mode. |
+| Other native Vita games | Automatic tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. OCR is used until a matching source is found. |
+| PSP games in Adrenaline | OCR only | Native PSP text hooks are not implemented, in either mode. |
 
 That is **201 Vita title IDs with game-specific hook entries**, including CLANNAD; Automatic also
 tries generic string-copy hooks in other enabled native Vita games.

@@ -536,7 +536,7 @@ static int katakana(uint32_t c)
 typedef struct {
     VjoArena *keep, *scratch;
     const VjoPlatform *p;
-    VjoConfig *cfg; /* the caller's, local_dictionary_results 1 */
+    VjoConfig *cfg; /* the caller's, the single-result lookup */
     const VjoReadingRules *rules;
     VjoReadingStats *st;
 } Parse;
@@ -1241,7 +1241,7 @@ int vjo_sentence_rubies(VjoArena *keep, VjoArena *scratch, const VjoPlatform *p,
         return VJO_E_OOM;
     }
     memcpy(ps.cfg, cfg, sizeof(*ps.cfg));
-    ps.cfg->local_dictionary_results = 1;
+
     rc = parse(&ps, copy, from, to, first_char(text, to, strlen(text)), out, cap, &n, 0);
     vjo_arena_release(scratch, base);
     if (rc < 0) {

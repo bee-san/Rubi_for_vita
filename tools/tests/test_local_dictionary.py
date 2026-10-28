@@ -955,14 +955,14 @@ class FrequencyTest(unittest.TestCase):
         words = [k for k, q in enumerate(two) if q["id"] == "words"]
         self.assertGreaterEqual(len(words), 5)
         for k in words:
-            self.assertEqual((two[k]["ranked"], two[k]["reads_by"]["head"]), (0, 0), two[k])
+            self.assertEqual(two[k]["ranked"], 0, two[k])
             self.assertEqual(two[k]["hinted"], one[k]["ranked"] + one[k]["hinted"])
         self.assertGreater(sum(one[k]["ranked"] for k in words), 4)  # version 1: the table words' heads
         self.assertGreater(sum(one[k]["reads_by"]["head"] for k in words), 4)
         for k in words:  # the heads' reads go; the shown entry is one read of its own (a head read may have held it)
-            self.assertEqual(two[k]["reads_by"]["payload"], two[k]["entries"])
+            self.assertGreaterEqual(two[k]["reads_by"]["payload"], two[k]["entries"])
             self.assertEqual(two[k]["reads"], one[k]["reads"] - one[k]["reads_by"]["head"] - one[k]["reads_by"]["payload"]
-                             + two[k]["entries"])
+                             + two[k]["reads_by"]["head"] + two[k]["reads_by"]["payload"])
         self.assertLess(sum(two[k]["reads"] for k in words), sum(one[k]["reads"] for k in words))
         katakana = [k for k, q in enumerate(two) if q["id"] == "katakana"]
         self.assertEqual([(two[k]["ranked"], one[k]["ranked"]) for k in katakana], [(1, 4)])

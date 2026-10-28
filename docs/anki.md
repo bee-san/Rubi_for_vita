@@ -26,17 +26,12 @@ directory.
    `ux0:data/VitaJPOverlay/config.ini`; the overlay reads it when it next opens.
    **Screenshots**, below it, is ON by default (`anki_screenshot`): each card
    keeps a picture of the game's screen, about 60 KB. Turn it OFF for
-   text-only cards. **Trim black bars**, below that, is ON by default too
-   (`anki_screenshot_trim_bars`): the picture leaves out the black borders
-   around the game's picture, as a PSP game shown smaller than the screen has
-   them ([black bars](#black-bars)). Then three choices for the exported cards
-   ([below](#card-type-game-tag-and-sentence-readings)): **Card type** (Word, the default; Sentence, Both or
-   Click: what the card's front shows), **Game tag** (ON: each note gets its game's tag) and **Sentence
-   readings** (ON: readings over the sentence's kanji). **Duplicates**, below them, says what an export does
-   with a card of a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)). These four
-   settings are the app's own, in `ux0:data/VitaJPOverlay/app.ini`, which the overlay never reads; the next
-   export follows them. **Known words** imports the words you know from Anki ([below](#known-words)). The
-   page's ten rows scroll a row at a time.
+   text-only cards. Black-bar trimming is automatic (`anki_screenshot_trim_bars` is ON by default;
+   [black bars](#black-bars)). Card options appear when mining is ON: **Card type** (Word, Sentence, Both or
+   Reveal sentence), **Game tag**, **Sentence readings**, and **Duplicates** (Tag, Skip or Keep).
+   The last four settings are the app's own, in `ux0:data/VitaJPOverlay/app.ini`; the next export uses them
+   ([card options](#card-type-game-tag-and-sentence-readings), [duplicates](#duplicates)). The list scrolls above
+   the fixed status panel. Known-word import is disabled pending [#521](https://github.com/bee-san/Rubi_for_vita/issues/521).
 2. In a game, open the overlay, select a word and press Enter. The status line
    shows `Saving card…`, then `Saved for Anki`. Enter again on the same
    entry says `Already queued`. In a local character lookup, Enter saves
@@ -60,7 +55,7 @@ directory.
    deck by its name, so a new name would put new cards in a second deck beside the old one); move them
    to your mining deck in Anki's browser (Change Deck) if you like.
 
-**Export all cards** writes every card again, the ones exported before as
+**Settings → Anki → Anki actions → Export all cards** writes every card again, the ones exported before as
 well: for a new device, or a package that was lost. Anki adds only the notes
 it does not have ([below](#exporting-again-guids)), so importing it into a
 collection that has the earlier ones adds nothing twice.
@@ -129,7 +124,7 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 | `Sentence` | The recognized text, the word in `<b>`, its lines joined where the game wrapped the sentence (a speaker's name line and a new sentence keep their `<br>`; [words split over two lines](touch-lookup.md#words-split-over-two-lines)). The queue keeps the text as recognized, so this happens at export, also for cards queued before |
 | `SentenceFurigana` | With **Sentence readings** ON (the default), the sentence (joined as `Sentence` is) with the readings of its words in Anki's furigana syntax, `今日は<b>学校[がっこう]</b>へ 行[い]って`, the mined word in `<b>` with the card's own reading, so that Lapis's back shows them over the kanji ([below](#sentence-readings)); a word the dictionaries cannot read for certain has none. Empty when the sentence gets no reading or the setting is OFF, as Lapis's README asks (Lapis then shows `{{furigana:Sentence}}`); a card queued with the removed online dictionaries, which gave readings per word, keeps its own |
 | `Picture` | `<img src="vitajp_….jpg">`: the card's screenshot, when it has one ([below](#the-screenshot)) |
-| `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more (Dictionaries shown above 1); Lapis hides the ones `MainDefinition` has |
+| `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more; Lapis hides the ones `MainDefinition` has |
 | `PitchPosition`, `PitchCategories` | Pitch accents, when the dictionary has them (Yomitan's `[2]` markup and `heiban,kifuku`) |
 | `Frequency` | `<ul><li>SOURCE: 1234</li></ul>`, when the entry has a frequency rank (`<li>Jiten: 1536</li>` with the bundled dictionary) |
 | `FreqSort` | The rank; `9999999` without one, as Yomitan's `{frequency-harmonic-rank}`, so sorting by it puts such cards last |
@@ -139,7 +134,7 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 type, none for a Word card ([below](#card-type)). The other fields (`ExpressionAudio`, `SelectionText`,
 `DefinitionPicture`, `SentenceAudio`, `Hint` and `IsAudioCard`) stay empty. Every note has the tag
 `vita-jp-overlay`, with **Game tag** ON its game's tag, `Game::CLANNAD` ([below](#game-tag)), one whose word an
-earlier card has also `duplicate` ([below](#duplicates)), and one of a word you know `known`
+earlier card has also `duplicate` ([below](#duplicates)). Known-word tagging is disabled
 ([below](#known-words)). The bundled dictionary, Bee's Ultimate Dictionary,
 gives every entry its Jiten global frequency rank
 ([frequency ranks](local-dictionaries.md#frequency-ranks)): a ranked entry
@@ -182,7 +177,7 @@ What the card's front shows, as Lapis's own switches choose it (Lapis 1.7.0's fr
 | **Word** (the default, as before) | The word | none |
 | **Sentence** | The sentence, the word in bold | `IsSentenceCard` |
 | **Both** | The word, the sentence under it | `IsWordAndSentenceCard` |
-| **Click** | The word; a tap (or C) shows the sentence | `IsClickCard` |
+| **Reveal sentence** | The word; a tap (or C) shows the sentence | `IsClickCard` |
 
 The back is the same for all four.
 
@@ -261,7 +256,7 @@ and kept, suspended or deleted there.
 ### Duplicates
 
 Mining a word again, from another line, is the most common waste of a mining session. The Rubi
-app's **Duplicates** (the Anki page, below **Trim black bars**) says what an export does with a
+app's **Duplicates** (the Anki page, visible with mining ON) says what an export does with a
 card **whose word an earlier card has**:
 
 | Choice | The card |
@@ -307,31 +302,20 @@ of this has run on a console yet; the host suites check it (`test_apkg.c`, `test
 
 ### Known words
 
-The words you already know are in Anki, not on the Vita. `tools/known_words.py` writes them into a file
-the Rubi app reads, and the export tags their cards `known`, so they can be found (`tag:known`) and
-suspended or deleted in Anki:
+**Disabled in the shipping app.** The Known words import row is hidden, and exports ignore an existing
+`anki_known.bin`. Existing text and index files are left intact. The importer, UTF-8 parser, spelling/reading keys,
+index format, `tools/known_words.py`, and their tests remain in the code, behind `VJO_KNOWN_WORDS_ENABLED = 0`.
+The retained import/export tests explicitly opt in; production builds do not.
 
-1. On a computer, close Anki (or copy the collection), then
-   `python3 tools/known_words.py ~/.local/share/Anki2/"User 1"/collection.anki2`. It reads every note whose
-   note type has an `Expression` field, and its `ExpressionReading` (Lapis's, and many mining note types'):
-   `--word-field` and `--reading-field` choose others, `--deck` and `--note-type` keep some notes, and
-   `--reviewed` only those with a card that is not new. It also reads a `.colpkg` or `.apkg`, and Anki's
-   **Notes in Plain Text** export (`--word-column`, `--reading-column`; `--deck` and `--note-type` need its
-   **Include deck name** and **Include notetype name** columns, and say so). Fields are read as Anki shows
-   them: no HTML or ruby readings in a word, a reading in furigana form (`漢字[かんじ]`) as its kana. A word
-   starting with `#` is left out (the app reads such a line as a comment) and counted. It writes
-   `known_words.txt`.
-2. Copy it to `ux0:data/VitaJPOverlay/known_words.txt`, then on the Anki page choose **Known words**:
-   **Import**. The page says how many words it read; it keeps them in `anki_known.bin` (8 B a word), and a
-   later export tags every card of them `known` (whatever **Duplicates** says). Import again after a new
-   file; with no file, Import clears them.
+[#521](https://github.com/bee-san/Rubi_for_vita/issues/521) tracks using this work for duplicate detection during
+mining. It must distinguish words already queued, mined in Rubi, or known from Anki, permit intentional repeat
+mining, and fit the existing process and memory budgets before import is exposed again. The current **Duplicates**
+Tag/Skip/Keep export setting still works for words previously mined in Rubi.
 
-`known_words.txt` is one word a line, then, optionally, a TAB and its reading (UTF-8; a BOM, CRLF, blank
-lines and `#` comments allowed; spaces around a field are ignored). A line with a reading is that word
-([its key](#duplicates)); a line without one is every card of that spelling, whatever its reading. At most
-65,536 words are kept; a line that is not a word (an empty word, a control character) is skipped, and the
-page says how many were. Anki 26.09.3's own collection and its plain-text export give the same file
-(`test_apkg.py`).
+The retained format is `known_words.txt`: one UTF-8 spelling per line, optionally a TAB and its reading. A spelling
+without a reading matches every reading. BOM, CRLF, blank lines and `#` comments are supported. The old importer
+keeps at most 65,536 words and publishes an index of 8-byte keys. `tools/known_words.py` can still prepare this
+text from a collection, `.colpkg`, `.apkg`, or Anki plain-text export; importing it is unavailable in the app.
 
 ### Not in the popup
 
@@ -350,7 +334,7 @@ normal Shell and 824 B to the debug one:
 
 That design does not fit: moving cold strings to the data segment, as #303, #307 and #385 did, cannot pay
 for it (the data segments had 336 B and 160 B of room), and every cold Shell file is already built `-Os`. So,
-as #314 planned, it does not merge, and the duplicate and known tags at export (above) stand alone
+as #314 planned, it does not merge, and duplicate tags at export (above) remain available; known-word tags are currently disabled
 ([memory ledger](memory-ledger-history.md#duplicate-aware-mining-314-the-rubi-app-only)).
 
 A smaller split is possible and is neither built nor measured: the Rubi app keeps the markers, named by the
@@ -472,7 +456,7 @@ card can be made into a note later, by any version that reads the record:
 | `version` | 4 |
 | `spelling`, `reading`, `furigana` | The word's dictionary form, its reading, and the dictionary's ruby of it (`来[く]る`; `null` when the dictionary has none, as every one now: only the removed online dictionaries gave one) |
 | `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name: its file's title (`Bee's Ultimate Dictionary`, page 0 of the file), else its definition's first line (`[JMdict Plain]`, as the converter writes one), or `null` with neither; older records may name a dictionary that has been removed since |
-| `more` | The other dictionaries' entries for the word (Dictionaries shown above 1): each `{"dictionary", "spelling", "reading", "meanings"}`, at most 7, in the order of `local_dictionaries`, kept while the record stays within 32 KiB |
+| `more` | The other dictionaries' entries for the word: each `{"dictionary", "spelling", "reading", "meanings"}`, at most 7, in the order of `local_dictionaries`, kept while the record stays within 32 KiB |
 | `rank`, `source`, `pitch`, `pos` | Frequency rank (1 = most frequent, 0 = none) and its source (the frequency list's name, `Jiten` for the bundled dictionary; `null` when there is none), pitch-accent downsteps, parts of speech |
 | `sentence`, `hl_start`, `hl_end` | The whole recognized text (every line of the textbox, as recognized) and the word's UTF-8 byte offsets in it; a word across a line break the text joins has the break inside them |
 | `sentence_furigana`, `sf_hl_start`, `sf_hl_end` | The text with readings and the word's offsets in it, or `null` |
@@ -531,7 +515,7 @@ AnkiConnect with each note; this is its return, made where heavy work belongs
 
 It is the game's whole frame when Enter is pressed, 960 × 544 (a PSP game as
 Adrenaline shows it, at 2× or smaller in black), without the overlay, which is SceShell's layer
-and not in the game's frame, or with **Trim black bars** ON the part of it between
+and not in the game's frame, or with automatic black-bar trimming enabled the part of it between
 the frame's black bars ([below](#black-bars)). With the overlay open the game has no input, so
 this is normally the screen the text was read from; a game that changes its
 screen by itself (a scene that goes on alone, a video) is pictured as it is
@@ -631,7 +615,7 @@ between retries it does not prevent OCR jobs from running.
 
 ### Black bars
 
-With **Trim black bars** ON (`anki_screenshot_trim_bars = on`, the default; API 32's
+Screenshot black-bar trimming is automatic in the app (`anki_screenshot_trim_bars = on`, the default; API 32's
 `VJO_GAME_OCR_S_TRIM`), the JPEG leaves out the black bars around the game's picture: a
 letterbox (bars above and below) and a pillarbox (bars left and right), as Adrenaline shows
 a PSP game's 480 × 272 picture smaller than the Vita's screen (its screen sizes below 2.0×: 1.75×,
@@ -739,7 +723,7 @@ saves little (the JPEG's size goes with its detail, not its pixels alone).
 
 On the memory card a card takes its JPEG and its record (at most 32 KiB;
 under 1 KB for a short entry, more with long definitions and, with
-Dictionaries shown above 1, the other dictionaries' entries), each rounded up
+additional enabled dictionaries, their entries), each rounded up
 to the file system's clusters (not measured here). A thousand Vita cards'
 screenshots are about 54 MiB.
 
@@ -831,7 +815,7 @@ In SceShell (the overlay, `shell/anki.c`):
   directory, on the thread's stack, with no heap allocation. Nothing
   Anki-related stays allocated between jobs, and the queue is never read into
   memory whole.
-- With Dictionaries shown above 1, Enter reads each other dictionary's entry for
+- Enter reads each enabled dictionary's entry for
   the word from its file into that arena, one at a time (at most 8,448 B each,
   `VJO_LOCAL_SELECTED_BUDGET`, then compacted to the entry's own strings),
   after copying the 208-byte page locators under the view lock. An entry is

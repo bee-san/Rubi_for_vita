@@ -27,6 +27,13 @@
 #include <string.h>
 
 #include "hook_re.h"
+#include "hook_profile.h"
+
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+typedef unsigned LunaProgram;
+#else
+typedef const LunaOp *LunaProgram;
+#endif
 
 #include "hook_luna_table.inc"
 
@@ -34,6 +41,7 @@
 
 /* ---------------- the table ---------------- */
 
+#ifndef VJO_EXTERNAL_HOOK_PROFILES
 /* the caller's ID against the table's (9 characters): stops at the first difference */
 static int id_cmp(const char *a, const char *b)
 {
@@ -94,6 +102,28 @@ const char *vjo_luna_title(unsigned index)
 {
     return index < VJO_LUNA_TITLES ? vjo_luna_ids[index] : NULL;
 }
+
+#else
+unsigned vjo_luna_sites(const char *title_id, const VjoLunaSite **sites)
+{
+    const VjoHookProfile *p = vjo_hook_profile_current();
+    int match = p && title_id && !strcmp(title_id, (const char *)p->raw + 8);
+    if (sites) *sites = match && p->nl ? p->luna : NULL;
+    return match ? p->nl : 0;
+}
+int vjo_luna_title_known(const char *title) { const VjoLunaSite *s; return vjo_luna_sites(title, &s) > 0; }
+int vjo_luna_title_ported(const char *title)
+{
+    const VjoLunaSite *s; unsigned n = vjo_luna_sites(title, &s);
+    for (unsigned i = 0; i < n; i++) if (s[i].ported) return 1;
+    return 0;
+}
+const char *vjo_luna_title(unsigned index)
+{
+    const VjoHookProfile *p = vjo_hook_profile_current();
+    return !index && p ? (const char *)p->raw + 8 : NULL;
+}
+#endif
 
 int vjo_luna_version_ok(const VjoLunaSite *all, unsigned n, const VjoLunaSite *s, uint16_t app_ver)
 {
@@ -367,37 +397,12 @@ unsigned vjo_luna_capture(const VjoLunaSite *s, const uint32_t regs[16], VjoHook
 
 /* ---------------- job time: the filters ---------------- */
 
-enum {
-    OP_END,
-    OP_DEL,     /* a removed wherever it is (StringFilter, CharFilter, strReplace(s, a)) */
-    OP_REP,     /* a replaced by b wherever it is (strReplace, StringCharReplacer) */
-    OP_SUB,     /* re::sub(s, a, b) on a byte string: bytes on a UTF-8 site, characters on a CP932 one */
-    OP_SUBW,    /* re::sub on a wide string: characters */
-    OP_CALL,    /* another filter (arg) */
-    OP_IFEQ,    /* a text equal to a: dropped */
-    OP_PREFIX,  /* a text that does not start with a: dropped */
-    OP_UPTO,    /* the text up to the end of its first a (none: dropped) */
-    OP_AFTER,   /* the text after its first a (none: unchanged) */
-    OP_CUT,     /* substr(from, size - from - drop) in CP932 bytes: arg = from | drop << 4 */
-    OP_ENDDROP, /* a text that ends with a loses its last byte */
-    OP_P00449,  /* PCSG00449's ending */
-    OP_WRAP,    /* PCSG00272: a name before #n# into 【】 */
-    OP_NAMEPOS, /* PCSG00935: the name after #n#Pos[..] (pattern a) to the front, in 【】 */
-    OP_TRIM,    /* Trim(): iswspace at both ends */
-    OP_KANA,    /* remapkatakana */
-    OP_ASCII,   /* all_ascii: a text of ASCII only is dropped */
-    OP_BETWEEN  /* StringFilterBetween(a, b) */
-};
+#include "hook_ops.h"
 
-/* VjoLunaOp.enc: the site encodings an op runs for (0: all) */
+/* Encoding masks on build-time programs. */
 #define E_U8 (1u << VJO_HOOK_ENC_UTF8)
 #define E_U16 (1u << VJO_HOOK_ENC_UTF16LE)
 #define E_SJ (1u << VJO_HOOK_ENC_CP932)
-
-typedef struct {
-    uint8_t op, enc, arg;
-    const char *a, *b;
-} LunaOp;
 
 #define END {OP_END, 0, 0, NULL, NULL}
 #define DEL(x) {OP_DEL, 0, 0, x, ""}
@@ -422,6 +427,7 @@ typedef struct {
  * escapes in comments where a character stands for them). A duplicate check
  * (`static std::string last` and the like) is left out: Rubi reads the latest
  * text when a job asks for it. */
+#ifndef VJO_EXTERNAL_HOOK_PROFILES
 static const LunaOp f_NEWLINE[] = {DEL("\n"), END}; /* NewLineCharFilterA/W, PCSG01034 */
 static const LunaOp f_IDENTITY[] = {END};           /* PCSG00543, PCSG00689, PCSG01284, PCSG00535_2 */
 static const LunaOp f_ALL_ASCII[] = {SPECIAL(OP_ASCII), END};
@@ -845,12 +851,22 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* rea
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */
-static const LunaOp *filter_ops(unsigned f)
+static LunaProgram filter_ops(unsigned f)
 {
     if (f > VJO_LF_NONE && f < VJO_LF_COUNT) return vjo_luna_filters[f];
     if (f >= VJO_RF_BASE && f < VJO_RF_END) return vjo_rubi_filters[f - VJO_RF_BASE];
     return NULL;
 }
+
+static LunaProgram post_ops(unsigned func) { return func < VJO_LH_COUNT ? vjo_luna_post[func] : NULL; }
+const LunaOp *vjo_hook_profile_export_ops(unsigned id)
+{
+    return id >= VJO_PROFILE_POST ? post_ops(id - VJO_PROFILE_POST) : filter_ops(id);
+}
+#else
+static LunaProgram filter_ops(unsigned id) { return vjo_hook_profile_filter(id); }
+static LunaProgram post_ops(unsigned func) { return vjo_hook_profile_filter(VJO_PROFILE_POST + func); }
+#endif
 
 /* ---------------- job time: the text and its ops ---------------- */
 
@@ -1094,9 +1110,18 @@ static void op_between(Txt *t, const char *a, const char *b)
     }
 }
 
-static void run_ops(Txt *t, const LunaOp *op, unsigned depth)
+static void run_ops(Txt *t, LunaProgram program, unsigned depth)
 {
-    for (; op && op->op != OP_END && !t->bad && t->len; op++) {
+    while (program && !t->bad && t->len) {
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+        LunaOp decoded;
+        if (!vjo_hook_profile_op(program, &decoded)) { t->bad = 1; break; }
+        const LunaOp *op = &decoded;
+        program += 8;
+#else
+        const LunaOp *op = program++;
+#endif
+        if (op->op == OP_END) break;
         long at;
         /* (CP932 with its 0xA0 kept is CP932 for an op gated by encoding: audit-rubi-audit-fix-hooks A-N5) */
         if (op->enc && !(op->enc & (1u << (t->enc & ~VJO_HOOK_DECODE_A0)))) continue;
@@ -1172,13 +1197,13 @@ static void run_ops(Txt *t, const LunaOp *op, unsigned depth)
 
 int vjo_luna_filter_known(unsigned filter)
 {
-    return filter == VJO_LF_NONE || filter_ops(filter) != NULL;
+    return filter == VJO_LF_NONE || filter_ops(filter) != 0;
 }
 
 int vjo_luna_ported(const VjoLunaSite *s)
 {
     return s && s->ported && s->func < VJO_LH_COUNT && s->filter < VJO_LF_COUNT &&
-           (s->filter == VJO_LF_NONE || vjo_luna_filters[s->filter]);
+           (s->filter == VJO_LF_NONE || filter_ops(s->filter));
 }
 
 /* The decoded text, s's hookfunc clean-up (s may be NULL), commonfilter, then filter's ops. CP932's 0xA0 is decoded
@@ -1196,7 +1221,7 @@ static size_t text_with(const VjoLunaSite *s, unsigned filter, unsigned site_enc
     t.budget = LUNA_TEXT_BUDGET;
     t.bad = 0;
     t.len = vjo_hook_decode(encoding, raw, n, out, t.cap, NULL);
-    if (s) run_ops(&t, vjo_luna_post[s->func], 0);
+    if (s) run_ops(&t, post_ops(s->func), 0);
     /* commonfilter: a CP932 hit that is the one character ▽ or ▼ (2 bytes) */
     if ((t.enc | VJO_HOOK_DECODE_A0) == VJO_HOOK_ENC_CP932_A0 && t.len == 3 &&
         (!memcmp(t.cur, "▽", 3) || !memcmp(t.cur, "▼", 3))) t.len = 0;

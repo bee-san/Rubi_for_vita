@@ -12,6 +12,7 @@
  * as on the console. */
 #define _GNU_SOURCE /* memmem */
 #define main acutest_main
+#include "../../settings/lookup.h"
 #include "acutest.h"
 #undef main
 #include "test_tmpdir.h"
@@ -430,7 +431,7 @@ static void search_by_the_keyboard(void)
     for (int i = 0; i < drawn.texts; i++)
         if (!strcmp(drawn.text[i].s, "猫") && drawn.text[i].color == WHITE) kanji = &drawn.text[i];
     const Text *meanings = shown("=cat, feline"), *name = shown("Neko, a character"), *names = shown("[VNDB names]");
-    TEST_CHECK(kanji && meanings && meanings->y == kanji->y && meanings->x == 42 + stub_width(26, "猫") &&
+    TEST_CHECK(kanji && meanings && meanings->y == kanji->y && meanings->x == 42 + stub_width(28, "猫") &&
                meanings->color == DEFINITION && name && names);
     TEST_CHECK(!shown("1. cat")); /* scrolled out */
     /* never past the last rows: more Down changes nothing */
@@ -844,8 +845,44 @@ static void dictionary_text_uses_the_app_palette(void)
     ui = original;
 }
 
+static void a_card_keeps_an_alternate_reading(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    uint8_t bytes[16384];
+    const char *word = "経緯";
+    size_t size = vjdict2_one(bytes, sizeof(bytes), word, word, "けいい", "sequence of events", "Bee");
+    size_t posting = 8192 + strlen(word), payload = posting + 16;
+    size_t first_size = size - payload;
+    memmove(bytes + payload + 16, bytes + payload, first_size);
+    vjdict_put64(bytes + posting, payload + 16);
+    size += 16;
+    size_t second = size;
+    const char *parts[] = {word, "いきさつ", "circumstances"};
+    for (int i = 0; i < 3; i++) {
+        size_t n = strlen(parts[i]) + 1;
+        memcpy(bytes + size, parts[i], n); size += n;
+    }
+    vjdict_put64(bytes + posting + 16, second);
+    vjdict_put32(bytes + posting + 24, (uint32_t)(size - second));
+    vjdict_put32(bytes + posting + 28, 0);
+    vjdict_put32(bytes + 16, 2);
+    vjdict_put32(bytes + 4128, 2);
+    vjdict_put64(bytes + 40, size);
+    FILE *f = fopen(DICT_DIR "/plaintext.vjdict", "wb");
+    TEST_ASSERT(f && fwrite(bytes, 1, size, f) == size && !fclose(f));
+    show(); keyboard_types(word); frame(SCE_CTRL_TRIANGLE);
+    TEST_ASSERT(vjo_lookup_result()->list.n_more == 1);
+    frame(SCE_CTRL_CROSS);
+    VjoAnkiNote note;
+    TEST_ASSERT(queued(&note, "") == 1);
+    TEST_CHECK(!strcmp(note.reading, "けいい") && note.n_more == 1);
+    TEST_CHECK(!strcmp(note.more[0].reading, "いきさつ"));
+    TEST_CHECK(!strcmp(note.more[0].meanings[0], "circumstances"));
+}
+
 TEST_LIST = {
     {"dictionary_text_uses_the_app_palette", dictionary_text_uses_the_app_palette},
+    {"a card keeps an alternate reading", a_card_keeps_an_alternate_reading},
     {"a zero width is measured again", a_zero_width_is_measured_again},
     {"each mode keeps its text and cursor", each_mode_keeps_its_cursor},
     {"an opened line is filtered as the overlay shows it", an_opened_line_is_filtered_as_the_overlay_shows_it},

@@ -69,8 +69,8 @@ extern void (*vjo_local_trace)(int dict, int cand, int depth, const char *key, i
 
 /* A dictionary's own name, in page 0 of a version 2 or 3 file at bytes
  * 192..255 (bee-san/plaintext-dicts writes "Bee's Ultimate Dictionary"): the
- * entries' dictionary on Anki cards and in the log, and the Rubi app's
- * Dictionaries shown card. vjo_local_title copies it from page0 (its first n
+ * entries' dictionary on Anki cards and in the log. vjo_local_title copies
+ * it from page0 (its first n
  * bytes) into out: 1 when there is one, 0 (out "") when the bytes are no
  * version 2/3 header, the field is empty or it is malformed. */
 #define VJO_LOCAL_TITLE_SIZE 64
@@ -138,6 +138,13 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
 int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                         const VjoLocalPages *pages, int page,
                         VjoDictResult *res, VjoErr *err);
+
+/* Other stored readings/senses of each selected spelling, in dictionary/source
+ * order. The caller owns cap locators; no definitions or session cache grow.
+ * Returns the number located, or a negative VJO_E_*; *full says more exist.
+ * A locator can be read as page 0 of a one-page VjoLocalPages. */
+int vjo_local_alternates(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                          const VjoLocalPages *pages, VjoLocalPage *out, int cap, int *full);
 
 #ifdef VJO_HOST
 /* Host tests: the built-in common-reading table and the ranked files' usual

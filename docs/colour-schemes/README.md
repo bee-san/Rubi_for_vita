@@ -1,15 +1,16 @@
 # Settings and colour schemes
 
-**[Open the complete settings walkthrough →](WALKTHROUGH.md)** — 15 large screenshots, menu paths,
+**[Open the complete settings walkthrough →](WALKTHROUGH.md)** — 17 large screenshots, menu paths,
 scroll positions, and a table of every setting in the app.
 
 Rubi opens on **Settings**, with Games, Reading & dictionaries, Anki, Appearance, and Install & repair.
 The top bar has only **Look up** and **Settings**. Cancel or the lower-left **Back** button goes up one level;
-Select switches destinations. Technical reading options are under **Advanced reading**.
+Select switches destinations. Technical reading options are under **Advanced reading**. Small app text is 2 px larger; the reading
+headword is 28 px. Card options appear after Anki mining is enabled; **Anki actions** holds Export all.
 
 **Settings → Appearance** offers exactly three schemes. Tap a preview card, use Left/Right, or press Enter to cycle.
 Every app page changes immediately; `colour_scheme` in `app.ini` keeps the choice after closing the app.
-Mint is the default for existing installations and unknown values. The in-game overlay keeps its existing colours.
+Default preserves Rubi's yellow accent and is used for missing or unknown values. The in-game overlay keeps its existing colours.
 
 ## Sony Reader-inspired appearance
 
@@ -21,7 +22,7 @@ the two named destinations keep settings easy to find.
 
 Sony's public [Wi-Fi Settings](https://manuals.playstation.net/document/en/psvita/settings/wifi.html) and
 [screen controls](https://manuals.playstation.net/document/en/psvita/basic/screens.html) guide the checkbox-style
-switches and navigation. Mint is charcoal with mint accents, Sakura adds plum and pink, and Paper is the light variant.
+switches and navigation. Default pairs charcoal with Rubi's yellow accent, Mint uses mint accents, and Paper is the light variant.
 
 The chrome is drawn from original rectangle primitives in `settings/chrome.h`, shared by the app and preview
 harness. No Reader executable, artwork, book content, or fonts are bundled. This is a Reader-inspired libvita2d interface; it does not add a
@@ -29,11 +30,11 @@ firmware UI framework, textures, animation, or allocation sites.
 
 ## Three colour schemes
 
-| Mint · charcoal and mint | Sakura · plum and pink | Paper · warm light and green |
+| Default · charcoal and yellow | Mint · charcoal and mint | Paper · warm light and green |
 | --- | --- | --- |
-| ![Mint Settings menu](mint-home.png) | ![Sakura Settings menu](sakura-home.png) | ![Paper Settings menu](paper-home.png) |
-| ![Mint reading settings](mint.png) | ![Sakura reading settings](sakura.png) | ![Paper reading settings](paper.png) |
-| ![Mint appearance picker](mint-picker.png) | ![Sakura appearance picker](sakura-picker.png) | ![Paper appearance picker](paper-picker.png) |
+| ![Default Settings menu](default-home.png) | ![Mint Settings menu](mint-home.png) | ![Paper Settings menu](paper-home.png) |
+| ![Default reading settings](default.png) | ![Mint reading settings](mint.png) | ![Paper reading settings](paper.png) |
+| ![Default appearance picker](default-picker.png) | ![Mint appearance picker](mint-picker.png) | ![Paper appearance picker](paper-picker.png) |
 
 ## Screenshot provenance
 

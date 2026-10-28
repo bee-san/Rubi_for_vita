@@ -20,11 +20,12 @@ typedef struct {
     VjoEntry *entries;
     int n_entries;
     const char *source;     /* VjoDictResult.source, NULL without a lookup */
-    /* A local cursor lookup with local_dictionary_results > 1: the other enabled dictionaries' entries
-     * for the same word (a character's name below the word), in local_dictionaries order, shown below
-     * the entry (vjo_styled_entry); NULL / 0 otherwise. */
+    /* Additional readings/senses of the selected spelling and the other enabled
+     * dictionaries' entries, grouped by dictionary, shown below the best entry
+     * (vjo_styled_entry); NULL / 0 otherwise. */
     const VjoVocab **more;
     int n_more;
+    int more_omitted;       /* fixed arena/result limits: ask for a specific reading */
 } VjoEntryList;
 
 /* `filtered` is the non-Japanese-filtered OCR text (before newline removal);

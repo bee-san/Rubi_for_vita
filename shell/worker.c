@@ -94,7 +94,7 @@ static uint32_t prepared_seq, prepare_cursor;
 static int prepare_left;
 static size_t prepared_end;
 static uint32_t job_cursor_byte, job_cursor_seq, job_text_generation;
-/* Dictionary paging at the cursor (local_dictionary_results > 1): the
+/* Dictionary paging at the cursor (all enabled dictionaries): the
  * requested page shares the cursor sequence. Page locators live at the start
  * of the single result arena (cache_data[0].pages); they are reused only for
  * the text generation and result limit that built them (job thread). */
@@ -1486,7 +1486,7 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
 static void note_pages(int rc, const VjoOverlayData *out)
 {
     pages_generation = !rc && out->pages ? job_text_generation : 0;
-    pages_limit = job_cfg.local_dictionary_results;
+    pages_limit = vjo_local_names_count(job_cfg.local_dictionaries);
 }
 
 /* No capture, model, inference or sentence tokenization for cursor moves.
@@ -1500,7 +1500,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     int rc;
     vjo_dict_reads = vjo_dict_read_bytes = 0;
     if (pages && has_result_memory() && pages_generation == job_text_generation &&
-        pages_limit == job_cfg.local_dictionary_results &&
+        pages_limit == vjo_local_names_count(job_cfg.local_dictionaries) &&
         pages->cursor_byte == job_cursor_byte && job_page < pages->count) {
         /* post_local_lookup already published the static header, so the
          * shown entry can be released without the view lock. */
@@ -1941,7 +1941,7 @@ static void apply_config(void)
         retire_local_text(1);
         if (job_running && !same_pipeline(&job_cfg, &cfg))
             job_cancelled = 1;
-    } else if (previous.local_dictionary_results != cfg.local_dictionary_results) {
+    } else if (vjo_local_names_count(previous.local_dictionaries) != vjo_local_names_count(cfg.local_dictionaries)) {
         prepared_seq = 0;
         /* A presentation of the same recognized text: look the word up again
          * (from its best match) without recapturing or rerunning OCR. */
@@ -2417,7 +2417,7 @@ static void on_cursor_done(void)
     if (ov != OV_OPEN_OLD_JOB || !restart_old_job(valid)) {
         sceKernelLockMutex(cmd_lock, 1, NULL);
         int newer = valid && (job_cursor_seq != local_cursor_seq ||
-                              job_cfg.local_dictionary_results != cfg.local_dictionary_results);
+                              vjo_local_names_count(job_cfg.local_dictionaries) != vjo_local_names_count(cfg.local_dictionaries));
         if (valid && !newer) {
             active = 0;
             cache_ok = cache_data[0].err.rc == VJO_OK;
@@ -2678,7 +2678,7 @@ static void on_job_done(void)
         backoff_note(&dict_backoff, d->err.rc != VJO_OK);
     /* Character moves received while initial lookup was working supersede
      * that definition; the saved OCR sentence is already immutable. So does
-     * a local_dictionary_results change loaded by the overlay's opening.
+     * a dictionary-list change loaded by the overlay's opening.
      * Only a job that read the shown text has a lookup to supersede: an OCR
      * job retired it as it started (start_job_kind), so with no text valid now
      * it read none (the game refused it, say), and job_cursor_seq is still an
@@ -2687,7 +2687,7 @@ static void on_job_done(void)
      * 3b: before, the lookup found no text, and "Recognizing…" stayed). */
     if (local_text_valid && ov != OV_CLOSED &&
         (cursor_waiting || (job_lookup && (job_cursor_seq != local_cursor_seq ||
-                                           job_cfg.local_dictionary_results != cfg.local_dictionary_results)))) {
+                                           vjo_local_names_count(job_cfg.local_dictionaries) != vjo_local_names_count(cfg.local_dictionaries))))) {
         start_cursor_job();
         return;
     }
@@ -2707,7 +2707,7 @@ static void on_job_done(void)
     active = idx;
     /* The overlay needs the lookup, made with the current page count. */
     cache_ok = d->err.rc == VJO_OK && job_lookup &&
-               job_cfg.local_dictionary_results == cfg.local_dictionary_results;
+               vjo_local_names_count(job_cfg.local_dictionaries) == vjo_local_names_count(cfg.local_dictionaries);
     cache_scene = job_capture_scene;
     cache_seq = job_capture_seq;
     vjo_view_unlock();

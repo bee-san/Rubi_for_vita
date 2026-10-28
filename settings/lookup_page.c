@@ -51,7 +51,7 @@
 #define BODY_W 872
 #define SCROLL_X 922
 #define SCROLL_W 6
-#define JA_PX 26          /* headwords, readings, kanji: the overlay's font_size_ja 18, at the app's scale */
+#define JA_PX 28          /* app headwords/readings; a modest increase from 26 */
 #define EN_PX 22          /* definitions */
 #define ROW_BYTES 508     /* a drawn row's bytes at most (settings/text_layout.h VJO_TEXT_ROW_BYTES) */
 

@@ -40,6 +40,7 @@
 #include "../../include/vjo_vocr_sizes.h"
 #include "../../settings/install.h"
 #include "../../settings/install_page.h"
+#include "../../core/local_dict.h"
 #include "settings_preview.h"
 #include "config_golden.h" /* #418: the install plan's golden file */
 
@@ -558,7 +559,7 @@ static void bundled_dictionary_lists_preserve_custom_priority(void)
         char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
         vjo_config_parse(&cfg, ini, strlen(ini));
         TEST_CHECK_(!strcmp(cfg.local_dictionaries, cases[i].after), "%s", cfg.local_dictionaries);
-        TEST_CHECK(cfg.local_dictionary_results == 3 && !cfg.n_warnings);
+        TEST_CHECK(vjo_local_names_count(cfg.local_dictionaries) >= 1 && !cfg.n_warnings);
         TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
     }
 }
@@ -643,7 +644,7 @@ static void the_plan_names_each_config_ini_line_that_goes(void)
     /* The missing bundled names file and, with it newly enabled, its count of 1 (the old default) as 2, then
      * the two removed settings, in order. */
     TEST_CHECK_(!strcmp(plan[at + 1], "   local_dictionaries = plaintext.vjdict, vndb-names.vjdict"), "[%s]", plan[at + 1]);
-    TEST_CHECK_(!strcmp(plan[at + 2], "   local_dictionary_results = 2"), "[%s]", plan[at + 2]);
+    TEST_CHECK_(!strcmp(plan[at + 2], "   local_dictionary_results: a removed setting, goes"), "[%s]", plan[at + 2]);
     TEST_CHECK_(!strcmp(plan[at + 3], "   ocr_backend: a removed setting, goes"), "[%s]", plan[at + 3]);
     TEST_CHECK_(!strcmp(plan[at + 4], "   log_host: a removed setting, goes"), "[%s]", plan[at + 4]);
     TEST_CHECK_(strncmp(plan[at + 5], "   ", 3) != 0, "[%s]", plan[at + 5]);
@@ -654,7 +655,7 @@ static void the_plan_names_each_config_ini_line_that_goes(void)
     TEST_ASSERT(ini != NULL);
     TEST_CHECK(strstr(ini, "vocr_tier = large\n") && !strstr(ini, "\nocr_backend") && !strstr(ini, "\nlog_host"));
     TEST_CHECK(strstr(ini, "anki_mining = on\n") && strstr(ini, "log_file = on\n"));
-    TEST_CHECK(strstr(ini, "\nlocal_dictionary_results = 2\n") && !strstr(ini, "local_dictionary_results = 1"));
+    TEST_CHECK(!strstr(ini, "local_dictionary_results"));
     /* its japanese_only_selection = on, the template's line from 0.7.6 until 2026-10-20, stays: the default (OFF
      * since then) is only for a file without the line */
     TEST_CHECK(strstr(owner, "\njapanese_only_selection = on\n") && strstr(ini, "\njapanese_only_selection = on\n"));
@@ -765,7 +766,7 @@ static void a_later_lines_bom_stays_part_of_it(void)
 }
 
 /* The engine's own eight lines as it writes them: a card with them all adds no line of its own. */
-#define COMPLETE "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\nvocr_tier = normal\n" \
+#define COMPLETE "japanese_only_selection = on\nhighlight_mode = word\nvocr_tier = normal\n" \
     "local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\nocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"      \
     "text_source = ocr\nlog_file = on\n"
 
@@ -981,7 +982,7 @@ static void a_crafted_config_ini_is_scanned_in_bounded_time(void)
 static void a_rewrite_that_changes_no_setting_says_so(void)
 {
     fresh_card(1);
-    put_text(VJO_PREFERENCES_PATH_TEST, "japanese_only_selection = on\r\nhighlight_mode = word\r\nlocal_dictionary_results = 1\r\n"
+    put_text(VJO_PREFERENCES_PATH_TEST, "japanese_only_selection = on\r\nhighlight_mode = word\r\n"
              "vocr_tier = normal\r\nlocal_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\r\n"
              "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\r\ntext_source = ocr\r\nlog_file = on\r\n");
     VjoInstallScan s = scan_now();
@@ -2714,7 +2715,7 @@ static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
         size_t n = payload_bytes(i, 0, bytes, sizeof(bytes));
         put(vjo_payload_dest(i), bytes, n);
     }
-    TEST_CHECK(hooks == 3 && !there("ux0:data/VitaJPOverlay/hooks"));
+    TEST_CHECK(hooks == 4 && !there("ux0:data/VitaJPOverlay/hooks"));
     put_text(VJO_APP_STAMP_PACKAGE, "vjoapp1 api=" VJO_STR(VJO_API_VERSION) " build=fedcba9876543210\n");
     VjoInstallScan s = scan_now();
     TEST_CHECK_(s.state == VJO_INSTALL_UPDATE, "state %d %s", s.state, s.title);
@@ -2728,6 +2729,7 @@ static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
     TEST_CHECK(installed_files(1));
     for (unsigned k = 0; k < 3; k++) TEST_CHECK_(there(sc3[k]), "%s", sc3[k]);
+    TEST_CHECK(there(VJO_PAYLOAD_HOOKS "profiles.vjhp"));
     TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
     /* one data file deleted by hand: a Check and repair, whose plan names the file's folder */
     for (unsigned k = 0; k < sizeof(one) / sizeof(one[0]); k++) {

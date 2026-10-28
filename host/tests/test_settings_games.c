@@ -89,7 +89,7 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define LF_BADGE_Y (GP_LF_Y + 42)
 #define LF_HELP_Y (GP_LF_Y + 104)
 #define SELECTED RGBA8(43, 47, 49, 255)
-#define ACCENT RGBA8(91, 220, 207, 255)
+#define ACCENT RGBA8(255, 210, 74, 255)
 #define CDRAM_BLOCK (256 * 1024)
 
 /* ---- what a frame showed and cost ---- */
@@ -831,7 +831,7 @@ static int check_cards(int frames, int *placeholders_out)
             if (!s->id[r][0]) continue;
             const Game *g = game_of(s->id[r]);
             if (!g) { if (bad++ < 5) TEST_MSG("frame %d card %d: unknown ID %s", f, r, s->id[r]); continue; }
-            ref_wrapped_text(90, GAMES_Y + r * GAME_PITCH + 21, 650, 22, 24, 1, g->title);
+            ref_wrapped_text(90, GAMES_Y + r * GAME_PITCH + 21, 650, 24, 24, 1, g->title);
             for (int k = 0; k < 2; k++) {
                 const char *want = k < ref_rows ? ref_row[k].text : "";
                 if (strcmp(s->title[r][k], want) && bad++ < 5)
@@ -1408,11 +1408,10 @@ static void list_keys_only_on_the_games_page(void)
  * first. The d-pad still wraps round there. */
 /* The OCR & lookup page's focused card in frame f: its place among the page's
  * cards (settings/main.c PREF_*), by its title, or -1. */
-#define OCR_CARDS 7
+#define OCR_CARDS 4
 static int ocr_card(const Frame *f)
 {
-    static const char *const titles[OCR_CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
-        "Japanese characters only", "Highlight", "Dictionaries shown", "Advanced reading"};
+    static const char *const titles[OCR_CARDS] = {"Read text", "Japanese characters only", "Selection mode", "Advanced reading"};
     for (int i = 0; i < OCR_CARDS; i++)
         if (!strcmp(f->bar_title, titles[i])) return i;
     return -1;
@@ -1580,8 +1579,8 @@ static void hints_leave_room_for_the_counter(void)
         int frames = run(at);
         TEST_CHECK(frames == at);
         const Frame *last = &session->shown[frames - 1];
-        float px = 24.0f / 18.0f; /* text_scale(24): the em is 18 units, full-width */
-        int hints_w = (int)(stub_units(last->hints, &(int){0}) * (20.0f / 18.0f) + 0.5f);
+        float px = 26.0f / 18.0f; /* text_scale(24): the em is 18 units, full-width */
+        int hints_w = (int)(stub_units(last->hints, &(int){0}) * (22.0f / 18.0f) + 0.5f);
         int counter_w = (int)(stub_units(last->counter, &(int){0}) * px + 0.5f);
         TEST_CHECK_(!strcmp(last->counter, "512/512") && last->counter_x + counter_w == 936,
                     "wide %d: counter '%s' at %d, %d px", wide, last->counter, last->counter_x, counter_w);
@@ -1779,7 +1778,7 @@ static void rescan_only_on_start(void)
             const Frame *sh = &session->shown[f];
             const Game *g = sh->id[r][0] ? game_of(sh->id[r]) : NULL;
             if (!g) continue;
-            ref_wrapped_text(90, 0, 650, 22, 24, 1, g->title);
+            ref_wrapped_text(90, 0, 650, 24, 24, 1, g->title);
             if (strcmp(sh->title[r][0], ref_rows > 0 ? ref_row[0].text : "") ||
                 strcmp(sh->title[r][1], ref_rows > 1 ? ref_row[1].text : "")) bad++;
             int loadable = g->icon == ICON_OK || g->icon == ICON_RGBA || g->icon == ICON_SMALL;

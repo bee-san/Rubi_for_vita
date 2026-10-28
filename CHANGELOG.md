@@ -11,22 +11,46 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- Native Vita hooks load only the current game's profile from an indexed disk archive, including its
+  filters and version/signature checks. The worker uses 12 KiB fewer loaded pages in both builds
+  (measured from the packaged binaries); CALL discovery and OCR remain available if a profile is missing
+  or invalid. Full updates include the archive. API 57; console startup timing is unmeasured.
+
+- Settings cleanup: everyday Reading controls fit on one screen; model size, 444 MHz boost, trusted hooks and
+  text-source tuning live under Advanced. Automatic and OCR only are the two source choices. Pause remains OFF.
+  Small app text grows by 2 px. Highlight is named **Selection mode** and Click is **Reveal sentence**.
+- Anki card options appear only with mining ON. Screenshot cropping is automatic; Export all moves to
+  **Anki actions**. Known-word import and use of its index are disabled, with the implementation and tests retained
+  for [duplicate detection #521](https://github.com/bee-san/Rubi_for_vita/issues/521). All games remain ON by default;
+  [#522](https://github.com/bee-san/Rubi_for_vita/issues/522) tracks explaining per-game OFF choices.
+
 ### Added
 
 - **A consolidated Settings menu.** The two top-level destinations are Look up and Settings; Settings opens first
   and groups Games, Reading & dictionaries, Anki, Appearance, and Install & repair. Cancel/Back returns to the
   category menu. Technical reading options are under Advanced reading, and installation problems still open their
   repair screen automatically.
-- **Three app colour schemes** in **Settings → Appearance**: Mint (charcoal and mint), Sakura (plum and pink), and
+- **Three app colour schemes** in **Settings → Appearance**: Default (Rubi's yellow accent), Mint (charcoal and mint), and
   Paper (warm light with green). Touch a preview card or use Left/Right and Enter; every app page changes immediately,
   including dictionary text, and the choice is kept in `app.ini` across launches.
 - **Sony Reader-inspired app styling:** a soft charcoal vignette, silver glossy toolbars, divided lists with
   category icons, centered page titles, checkbox-style switches, and a round lower-left Back button.
-  A [15-picture settings walkthrough](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/WALKTHROUGH.md)
+  A [17-picture settings walkthrough](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/WALKTHROUGH.md)
   shows every category, the options further down each page, and the state-dependent installer actions; the pictures
   are host-rendered previews with sample data and substitute fonts.
 
-- **Read the whole screen from the open overlay** (API 56): double-tap the rear touchpad for one scan
+- **Alternate word readings and senses**: the popup and Look up tab show the other stored
+  entries for the selected spelling below each dictionary's best match. The existing dictionary
+  already contains 経緯 as けいい and いきさつ; no format change or rebuild is needed. Every
+  enabled dictionary is included automatically. The **Dictionaries shown** card and
+  `local_dictionary_results` setting are removed; old lines are ignored and removed on save or
+  update. Anki keeps additional entries within its existing bounds. Results use the existing
+  fixed memory and text capacities; an omission notice asks for a specific reading when those
+  are exceeded. Host-tested only; console timing and module page sizes are not yet checked.
+
+- **Read the whole screen from the open overlay** (API 57): double-tap the rear touchpad for one scan
   through the text spotter, OCR and configured language-model decoder, forcing OCR even with trusted hooks.
   Navigate, look up and save its words as usual. The results stay until close or rescan; closing returns
   to the saved dialogue box. No region is saved, and the scan does not add menus to dialogue history.

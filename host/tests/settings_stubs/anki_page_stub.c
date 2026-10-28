@@ -20,5 +20,7 @@ void vjo_anki_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int
 int vjo_anki_stub_rows; /* the stick's moves, summed */
 void vjo_anki_page_stick(int move) { vjo_anki_stub_rows += move; }
 int vjo_anki_page_busy(void) { return 0; }
+int vjo_anki_page_back(void) { return 0; }
+const char *vjo_anki_page_title(void) { return "Anki"; }
 int vjo_anki_page_holds_cancel(void) { return vjo_anki_stub_frames < vjo_anki_stub_hold_cancel_to; }
 void vjo_anki_page_quit(void) {}

@@ -25,7 +25,7 @@ HOOKS = {
 }
 GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrCaptureRows",
                   "vjoOcrComplete", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel",
-                  "vjoOcrModelOpen", "vjoOcrModelRead", "vjoOcrModelClose",
+                  "vjoOcrModelOpen", "vjoOcrModelRead", "vjoOcrModelClose", "vjoOcrHookProfile",
                   # API 23: the Anki screenshot's JPEG, written through the kernel's worker
                   "vjoOcrShotWrite", "vjoOcrShotSave", "vjoOcrHookCache",
                   # API 41: the hook watch's new line (the worker's thread, between jobs)

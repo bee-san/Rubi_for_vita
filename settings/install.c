@@ -709,8 +709,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
          * gone (vjo_preferences_publish_text keeps no key in either file) */
         vjo_config_defaults(&base);
         vjo_config_parse(&base, old, bytes);
-        int n = vjo_config_patch_preferences(old, bytes, base.vocr_tier, base.japanese_only_selection, base.highlight_mode,
-                                             base.local_dictionary_results, ini_new, sizeof(ini_new));
+        int n = vjo_config_patch_preferences(old, bytes, base.vocr_tier, base.japanese_only_selection, base.highlight_mode, ini_new, sizeof(ini_new));
         if (n < 0) return 0; /* too large for the app's save as well: the app's load still reads the backup */
         ini_new_len = n;
         INI_CHANGE(s, "written again from config.ini.bak");
@@ -738,12 +737,11 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         INI_CHANGE(s, "written from the package's template");
         return 2;
     }
-    /* the app's own save first (the four owned lines; an older build's vocr_model becomes its size; a
+    /* the app's own save first (the three owned lines; an older build's vocr_model becomes its size; a
      * removed feature's lines and the API keys go), then the install's own keys */
     vjo_config_defaults(&base);
     vjo_config_parse(&base, old, bytes);
-    int n = vjo_config_patch_preferences(old, bytes, base.vocr_tier, base.japanese_only_selection, base.highlight_mode,
-                                         base.local_dictionary_results, ini_new, sizeof(ini_new));
+    int n = vjo_config_patch_preferences(old, bytes, base.vocr_tier, base.japanese_only_selection, base.highlight_mode, ini_new, sizeof(ini_new));
     if (n < 0) {
         snprintf(s->reason, sizeof(s->reason), "config.ini is too large to update: shorten it in VitaShell first.");
         return -1;
@@ -787,8 +785,6 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     int d = dictionaries(base.local_dictionaries, value, sizeof(value));
     if (d > 0) {
         keys[k] = "local_dictionaries"; values[k++] = value;
-        /* the names newly enabled: a count of 1, the default before them, becomes 2 (a word's name is a page) */
-        if (base.local_dictionary_results == 1) { keys[k] = "local_dictionary_results"; values[k++] = "2"; }
     }
     else if (d < 0)
         INI_CHANGE(s, "local_dictionaries has no room for both bundled dictionaries: choose which to enable yourself");

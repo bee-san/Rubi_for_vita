@@ -33,7 +33,7 @@ typedef struct {
     int anki_card_type;  /* VJO_CARD_* (core/lapis.h): word, the default */
     int anki_game_tag;   /* 1 (the default): each note has its game's tag, Game::<title> */
     int anki_sentence_readings; /* 1 (the default, reports/sentence-readings.md): readings over the sentence */
-    int colour_scheme; /* VJO_THEME_*: Mint (the default), Sakura or Paper, app pages only */
+    int colour_scheme; /* VJO_THEME_*: Default (yellow), Mint or Paper, app pages only */
 } VjoAppPrefs;
 
 /* Every setting at its default (here, so that code which only follows the settings, as the export does, needs no

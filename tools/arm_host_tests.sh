@@ -99,7 +99,7 @@ TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle ker
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo) # the self-test's memory routes: the debug build's only
 TESTS+=(touch_hold text_rows text_join linebreak history_lines history_read streak hook_select hook_cache stick_cursor
         cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
-TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe hooks_engine)
+TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe hooks_engine hooks_engine_external)
 TESTS+=(kernel_text_source hook_titles) # API 31's plumbing (hooks/api)
 CMAKE_VOCR=(-DVJO_WITH_VOCR=OFF)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
@@ -116,6 +116,7 @@ CONFIG=$OUT/host-config
 cmake -S . -B "$CONFIG" -G "Unix Makefiles" -DVJO_DEBUG="$([ "$VJO_DEBUG" = 0 ] && echo OFF || echo ON)" "${CMAKE_VOCR[@]}" \
   -DCMAKE_LINK_DEPENDS_USE_LINKER=ON \
   > "$OUT/host-config.log" 2>&1 || { cat "$OUT/host-config.log"; echo "arm: the host build's configuration FAILED"; exit 1; }
+python3 tools/hook_profiles.py --output "$CONFIG/profiles.vjhp"
 bg build-suites python3 host/tests/arm_build.py "$CONFIG" "$OUT" --cc "$ARM_CC" --jobs "$ARM_JOBS" "${TESTS[@]}"
 steps_done build || exit 1
 # then this machine's copies of what the A9's must equal: the Rubi app's .apkg export from the same lines (HOST_CC),

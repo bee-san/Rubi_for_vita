@@ -1,6 +1,5 @@
 /* The Rubi app's Anki page itself (settings/anki_page.c; #163 c3), on the host. The page draws
- * through main.c's helpers (VjoPageUi), recorded here; its ten rows (API 32 added Trim black bars, #311 Card
- * type, Game tag and Sentence readings, #314 Duplicates and Known words), which
+ * through main.c's helpers (VjoPageUi), recorded here; its progressive card options and Anki actions, which
  * scroll a row at a time, are checked for their layout and clipping, Up/Down and the left stick,
  * Left/Right, Enter and touch on each, each settings row's save into a
  * real config.ini (settings/preferences.c, read back by the app and by the Shell's own loader,
@@ -37,28 +36,13 @@
 #include "../../settings/app_prefs.h"
 #include "../../settings/preferences.h"
 #include "settings_preview.h"
+#include "../../settings/anki_features.h"
 
 void vjo_config_load(VjoConfig *cfg, VjoArena *scratch); /* shell/files.c: what the overlay reads */
 
-/* settings/anki_page.c's layout: ten rows (#311 added Card type, Game tag and Sentence readings, #314 Duplicates and
- * Known words) in a column that scrolls a row at a time in the room from y 112 to 412, then the 3-line status box
- * above main.c's controls line. With the first row in view, rows 0-3 are whole and row 4 is cut at the room's bottom;
- * a row selected below them brings it in by the fewest rows (row 4: rows 1-4, row 5 cut; row 5: rows 2-5; row 6:
- * rows 3-6; row 7: rows 4-7; row 8: rows 5-8; row 9, the last: rows 7-9). */
-#define ROWS 10
-#define TYPE 3     /* Card type (#311): four badges, Word, Sentence, Both and Click, from x 376, 136 apart, 128 wide */
-#define TAG 4      /* Game tag (#311): ON/OFF, app.ini's */
-#define READINGS 5 /* Sentence readings (#311): ON/OFF, app.ini's */
-#define DUPES 6    /* Duplicates (#314): three badges, Tag, Skip and Keep, from x 440, 160 apart, 152 wide */
-#define KNOWN 7    /* Known words (#314 stage C): Import */
-#define EXPORT 8   /* Export cards */
-#define ALL 9      /* Export all cards */
-static const int row_offset[ROWS] = {0, 72, 144, 216, 288, 360, 432, 504, 584, 664},
-                 row_height[ROWS] = {68, 68, 68, 68, 68, 68, 68, 76, 76, 76};
+/* Dynamic visible rows share the app's scrolling viewport and fixed status box. */
 #define VIEW_Y 112
 #define VIEW_END 412
-/* Row r's top on screen with row `top` first in view. */
-static int row_top_at(int r, int top) { return VIEW_Y + row_offset[r] - row_offset[top]; }
 #define FOOTER_Y 416
 #define FOOTER_H 92
 #define TABS_END 100       /* main.c: TAB_Y 52 + TAB_H 48 */
@@ -220,14 +204,14 @@ void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int colo
 static void d_text(int x, int y, unsigned color, float px, const char *s)
 {
     if (drawn.texts < 96)
-        drawn.text[drawn.texts++] = (Text){x, y, 0, color, px, 1, clip_now(), ""},
+        drawn.text[drawn.texts++] = (Text){x, y, 0, color, vjo_app_text_pixels(px), 1, clip_now(), ""},
         snprintf(drawn.text[drawn.texts - 1].s, 480, "%s", s);
 }
 static void d_wrapped(int x, int y, int width, unsigned color, float px, int line_height, int lines, const char *s)
 {
     (void)line_height;
     if (drawn.texts < 96)
-        drawn.text[drawn.texts++] = (Text){x, y, width, color, px, lines, clip_now(), ""},
+        drawn.text[drawn.texts++] = (Text){x, y, width, color, vjo_app_text_pixels(px), lines, clip_now(), ""},
         snprintf(drawn.text[drawn.texts - 1].s, 480, "%s", s);
 }
 static void d_card(int y, int height, int focus)
@@ -290,56 +274,6 @@ static void show(void)
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     vjo_anki_page_show(&scratch);
 }
-/* config.ini as another save of the app left it. */
-static int save_now(int mining, int screenshot)
-{
-    vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
-    return vjo_preferences_save_anki(mining, screenshot, 1, &scratch);
-}
-
-/* The first row the frame drew: the one whose title is at the room's top (y 112 + 30). */
-static int first_row(void)
-{
-    static const char *const titles[ROWS] = {"Card mining", "Screenshots",       "Trim black bars", "Card type",
-                                             "Game tag",    "Sentence readings", "Duplicates",      "Known words",
-                                             "Export cards (", "Export all cards"};
-    for (int i = 0; i < drawn.texts; i++)
-        if (drawn.text[i].x == 42 && drawn.text[i].y == VIEW_Y + 30)
-            for (int r = 0; r < ROWS; r++)
-                if (!strncmp(drawn.text[i].s, titles[r], strlen(titles[r])))
-                    return r;
-    return -1;
-}
-/* The rows a frame draws with row `top` first: those that start inside the room. */
-static int rows_drawn(int top)
-{
-    int n = 0;
-    for (int r = top; r < ROWS && row_top_at(r, top) < VIEW_END; r++)
-        n++;
-    return n;
-}
-static int badges_of(int r) { return r == DUPES ? 3 : r == TYPE ? 4 : 1; }
-/* The row drawn focused (-1: none, -2: more than one). */
-static int focused(void)
-{
-    int f = -1;
-    for (int i = 0; i < drawn.cards; i++)
-        if (drawn.card[i].focus)
-            f = f == -1 ? first_row() + i : -2;
-    return f;
-}
-/* Row r's badge k (each row drawn has badges_of(r), in row order); an empty one when it was not drawn. */
-static const Badge *badge_k(int r, int k)
-{
-    static const Badge none = {0, 0, 0, 0, 0, 0, "(none)"};
-    int i = k, top = first_row();
-    if (top < 0 || r < top || k >= badges_of(r))
-        return &none;
-    for (int q = top; q < r; q++)
-        i += badges_of(q);
-    return i < drawn.badges ? &drawn.badge[i] : &none;
-}
-static const Badge *badge(int r) { return badge_k(r, 0); }
 static const Text *text_starting(const char *prefix)
 {
     for (int i = 0; i < drawn.texts; i++)
@@ -478,1138 +412,212 @@ static void check_saved3(int mining, int screenshot, int trim)
                 cfg.anki_mining, cfg.anki_screenshot, cfg.anki_screenshot_trim_bars, cfg.n_warnings);
 }
 static void check_saved(int mining, int screenshot) { check_saved3(mining, screenshot, 1); }
-/* The settings rows' badges show the saved states, and the page's note says it was saved. */
-static void check_shown3(int mining, int screenshot, int trim)
+/* Find the focused row by its drawn title, so tests do not depend on hidden rows' numeric IDs. */
+static const char *focused_title(void)
 {
-    frame(0);
-    TEST_CHECK_(!strcmp(badge(0)->label, mining ? "ON" : "OFF") && badge(0)->active == mining,
-                "Card mining shows %s", badge(0)->label);
-    TEST_CHECK_(!strcmp(badge(1)->label, screenshot ? "ON" : "OFF") && badge(1)->active == screenshot,
-                "Screenshots shows %s", badge(1)->label);
-    TEST_CHECK_(!strcmp(badge(2)->label, trim ? "ON" : "OFF") && badge(2)->active == trim,
-                "Trim black bars shows %s", badge(2)->label);
-    TEST_CHECK_(!strcmp(drawn.footer, "Saved. The overlay uses it when it next opens.") && !drawn.footer_error,
-                "the note: %s", drawn.footer);
+    for (int c = 0; c < drawn.cards; c++) if (drawn.card[c].focus)
+        for (int t = 0; t < drawn.texts; t++)
+            if (drawn.text[t].x == 42 && drawn.text[t].y == drawn.card[c].y + 30) return drawn.text[t].s;
+    return "";
 }
-static void check_shown(int mining, int screenshot) { check_shown3(mining, screenshot, 1); }
-
-/* ---------------- tests ---------------- */
-
-/* The rows drawn with row `top` first in view: each where the column puts it, none over another, its
- * badges and texts inside it; a row cut at the room's bottom drawn clipped there, its card, texts and
- * badges; the others and the footer not clipped; a bar right of the rows where the view is in the
- * column (812 px of rows in a 300 px room). */
-static void check_layout(int top)
+static void focus_title(const char *prefix)
 {
-    int badges = 0;
-    for (int r = top; r < top + rows_drawn(top); r++)
-        badges += badges_of(r);
-    TEST_ASSERT(drawn.cards == rows_drawn(top) && drawn.badges == badges && drawn.headers == 1 && drawn.footers == 1);
-    TEST_ASSERT(first_row() == top);
-    for (int i = 0; i < drawn.cards; i++) {
-        int r = top + i, y = row_top_at(r, top), whole = y + row_height[r] <= VIEW_END;
-        const Card *c = &drawn.card[i];
-        TEST_CHECK_(c->y == y && c->height == row_height[r], "row %d at %d+%d", r, c->y, c->height);
-        TEST_CHECK_(i ? c->y >= drawn.card[i - 1].y + drawn.card[i - 1].height : c->y >= TABS_END,
-                    "row %d at %d overlaps what is above it", r, c->y);
-        TEST_CHECK_(c->y < VIEW_END && c->clip == (whole ? 0 : VIEW_END), "row %d (first %d): whole %d, clip %d", r,
-                    top, whole, c->clip);
-        /* its badges inside it, right of its title, none over another */
-        for (int k = 0; k < badges_of(r); k++) {
-            const Badge *b = badge_k(r, k);
-            TEST_CHECK_(b->y >= c->y && b->y + b->height <= c->y + c->height && b->x >= CARD_X + 4 &&
-                            b->x + b->width <= CARD_END - 4 && b->clip == c->clip, "row %d's badge %d outside its card",
-                        r, k);
-            TEST_CHECK_(!k || b->x >= badge_k(r, k - 1)->x + badge_k(r, k - 1)->width, "row %d's badges overlap", r);
-        }
-    }
-    /* every text inside exactly one row, from its cap height to its descent, clipped as its row is */
-    for (int i = 0; i < drawn.texts; i++) {
-        const Text *t = &drawn.text[i];
-        int t_top = t->y - (int)(t->px * 0.8f), bottom = t->y + (int)(t->px * 0.25f), in = 0, clip = -1;
-        for (int k = 0; k < drawn.cards; k++)
-            if (t_top >= drawn.card[k].y && bottom <= drawn.card[k].y + drawn.card[k].height)
-                in++, clip = drawn.card[k].clip;
-        TEST_CHECK_(in == 1 && t->clip == clip && t->x >= CARD_X + 4 &&
-                        (t->width ? t->x + t->width : t->x + width_of(t->s, t->px)) <= CARD_END - 4,
-                    "'%s' at %d,%d is not inside one row (clip %d)", t->s, t->x, t->y, t->clip);
-        TEST_CHECK_(bottom <= VIEW_END || t->clip == VIEW_END, "'%s' at %d,%d below the room, not clipped", t->s, t->x, t->y);
-        /* nothing runs into a badge or a text on its line: a title or count ends before it (stub metrics) */
-        for (int k = 0; k < drawn.badges; k++) {
-            const Badge *b = &drawn.badge[k];
-            if (!t->width && t_top < b->y + b->height && bottom > b->y && t->x < b->x)
-                TEST_CHECK_(t->x + width_of(t->s, t->px) <= b->x, "'%s' runs into the badge '%s'", t->s, b->label);
-        }
-        for (int k = 0; k < drawn.texts; k++) {
-            const Text *u = &drawn.text[k];
-            int u_top = u->y - (int)(u->px * 0.8f), u_bottom = u->y + (int)(u->px * 0.25f);
-            if (k != i && !t->width && t_top < u_bottom && bottom > u_top && t->x < u->x)
-                TEST_CHECK_(t->x + width_of(t->s, t->px) <= u->x, "'%s' runs into '%s'", t->s, u->s);
-        }
-    }
-    /* the bar: its track the room's height, its thumb where the view is */
-    int all_rows = row_offset[ROWS - 1] + row_height[ROWS - 1], room = VIEW_END - VIEW_Y, from = row_offset[top];
-    int shown = all_rows - from < room ? all_rows - from : room;
-    TEST_ASSERT(drawn.rects == 2);
-    TEST_CHECK(drawn.rect[0].x == 942 && drawn.rect[0].y == VIEW_Y && drawn.rect[0].width == 6 &&
-               drawn.rect[0].height == room && drawn.rect[0].color == CARD);
-    TEST_CHECK_(drawn.rect[1].x == 942 && drawn.rect[1].y == VIEW_Y + room * from / all_rows && drawn.rect[1].width == 6 &&
-                    drawn.rect[1].height == room * shown / all_rows && drawn.rect[1].color == DIM,
-                "thumb at %d+%d", drawn.rect[1].y, drawn.rect[1].height);
-    TEST_CHECK(drawn.rect[1].y >= VIEW_Y && drawn.rect[1].y + drawn.rect[1].height <= VIEW_END);
-    /* the footer: below the room, three 28 px lines inside it, above the controls line; not clipped */
-    TEST_CHECK(drawn.footer_y == FOOTER_Y && drawn.footer_h == FOOTER_H && drawn.footer_lines == 3 && !drawn.footer_clip);
-    TEST_CHECK(drawn.footer_y >= VIEW_END && drawn.footer_y + drawn.footer_h <= CONTROLS_TOP);
-    TEST_CHECK(drawn.footer_text_y - 24 >= drawn.footer_y + 2 &&
-               drawn.footer_text_y + (drawn.footer_lines - 1) * 28 + 6 <= drawn.footer_y + drawn.footer_h);
-}
-
-/* Ten rows below the tabs (API 32 added Trim black bars, #311 Card type, Game tag and Sentence readings, #314
- * Duplicates and Known words), more than their room: with the first row selected rows 0-3 are whole and row 4 is cut
- * at the room's bottom; with the last, rows 7-9 (check_layout); the footer below them and above main.c's controls
- * line; one row focused; the hints name the console's buttons. */
-static void the_rows_and_the_footer_do_not_overlap(void)
-{
-    static const char *const names[4] = {"Word", "Sentence", "Both", "Click"};
-    static const int tops[ROWS] = {0, 0, 0, 0, 1, 2, 3, 4, 5, 7}; /* the view with each row selected from above */
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_card("猫", 1);
-    show();
-    TEST_CHECK(log_enabled == 1); /* config.ini's log_file (on by default), set when the page is shown */
-    frame(0);
-    TEST_CHECK(frames_begun == 1 && frames_shown == 1);
-    check_layout(0);
-    TEST_CHECK(focused() == 0 && !clipping);
-    TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ×: select   Select: look up   ○: back"));
-    TEST_CHECK(strstr(drawn.footer, "ux0:data/VitaJPOverlay/anki/") && !drawn.footer_error);
-    /* the rows' texts and states: mining off, screenshots on and their bars trimmed by default; #311: word cards,
-     * with their game's tag (its row cut at the room's bottom) */
-    TEST_CHECK(text_starting("Card mining") && text_starting("Screenshots") && text_starting("Trim black bars") &&
-               text_starting("Card type") && text_starting("Game tag"));
-    TEST_CHECK(text_starting("× in the overlay saves the word") && text_starting("Cuts black borders from the picture") &&
-               text_starting("The card's front shows the word.") && text_starting("Each card gets its game's tag"));
-    TEST_CHECK(!strcmp(badge(0)->label, "OFF") && !strcmp(badge(1)->label, "ON") && !strcmp(badge(2)->label, "ON") &&
-               badge(2)->active && !strcmp(badge(TAG)->label, "ON") && badge(TAG)->active);
-    /* #311: Card type, its four choices, Word (the default) lit; each name fits its badge (main.c's 26 px labels) */
-    for (int k = 0; k < 4; k++) {
-        const Badge *b = badge_k(TYPE, k);
-        TEST_CHECK_(!strcmp(b->label, names[k]) && b->active == !k && b->x == 376 + 136 * k && b->width == 128,
-                    "choice %d: '%s' at %d+%d, lit %d", k, b->label, b->x, b->width, b->active);
-        TEST_CHECK_(width_of(names[k], 26) <= 128 - 8, "'%s' does not fit its badge", names[k]);
-    }
-    TEST_CHECK(42 + width_of("Card type", 28) <= 376);
-    /* the widest counts still fit before their badges (both at x 760; "already mined" up to 4 digits) */
-    for (int k = 0; k < 3; k++) {
-        const char *s = k == 2 ? "20000 cards in all" : k ? "Export cards (9999 queued, 9999 already mined)"
-                                                          : "Export cards (20000 queued)";
-        int x = k == 2 ? 500 : 42, px = k == 2 ? 24 : 28;
-        TEST_CHECK_(x + width_of(s, (float)px) <= 760, "'%s' runs into its badge", s);
-    }
-    /* the last row selected: the view seven rows down, every row it shows whole */
-    frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == ALL);
-    check_layout(7);
-    TEST_CHECK(text_starting("Export all cards") && text_starting("1 card in all") &&
-               !strcmp(badge(ALL)->label, "Export all") && !strcmp(badge(KNOWN)->label, "Import") &&
-               text_starting("Imports known_words.txt (tools/known_words.py makes it).") &&
-               text_starting("Export cards (1 queued)") && !strcmp(badge(EXPORT)->label, "Export"));
-    frame(SCE_CTRL_UP); /* rows 8 and 7: the same view */
-    TEST_CHECK(focused() == EXPORT);
-    check_layout(7);
-    frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == KNOWN);
-    check_layout(7);
-    /* row 6, Duplicates, one row up (row 9 cut): its three choices, Tag (the default) lit */
-    frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == DUPES);
-    check_layout(6);
-    TEST_CHECK(text_starting("Duplicates") && text_starting("A word you mined before gets Anki's duplicate tag."));
-    TEST_CHECK(!strcmp(badge_k(DUPES, 0)->label, "Tag") && badge_k(DUPES, 0)->active &&
-               !strcmp(badge_k(DUPES, 1)->label, "Skip") && !badge_k(DUPES, 1)->active &&
-               !strcmp(badge_k(DUPES, 2)->label, "Keep") && !badge_k(DUPES, 2)->active);
-    for (int k = 0; k < 3; k++)
-        TEST_CHECK(badge_k(DUPES, k)->x == 440 + 160 * k && badge_k(DUPES, k)->width == 152);
-    TEST_CHECK(42 + width_of("Duplicates", 28) <= 440);
-    /* row 5, Sentence readings (#311), ON by default: rows 5-8 whole */
-    frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == READINGS);
-    check_layout(5);
-    TEST_CHECK(text_starting("Sentence readings") && text_starting("Readings over the sentence's kanji") &&
-               !strcmp(badge(READINGS)->label, "ON") && badge(READINGS)->active);
-    for (int i = 0; i < 5; i++) /* rows 6-8 keep the view, row 9 brings rows 7-9 in; then round to row 0 */
+    for (int n = 0; n < 20; n++) {
+        if (!strncmp(focused_title(), prefix, strlen(prefix))) return;
         frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == 0);
-    check_layout(0);
-    /* from above: each row past row 3 brings the view down by the fewest rows */
-    for (int r = 1; r < ROWS; r++) {
-        frame(SCE_CTRL_DOWN);
-        TEST_CHECK_(focused() == r, "row %d", r);
-        check_layout(tops[r]);
     }
-    frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == 0);
-    /* the Japanese button assignment: ○ enters */
-    reset(VJO_BUTTON_ASSIGN_CIRCLE);
-    show();
-    frame(0);
-    TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ○: select   Select: look up   ×: back"));
-    TEST_CHECK(text_starting("○ in the overlay saves the word"));
+    TEST_ASSERT_(0, "row not available: %s", prefix);
 }
-
-/* Up/Down go round the ten rows; the left stick moves one row a step and stops at the first and
- * the last; in a frame with both, the d-pad's press wins. The view follows the selection by the fewest
- * rows (row 4 brings rows 1-4 in, row 5 rows 2-5, row 6 rows 3-6, row 7 rows 4-7, row 8 rows 5-8, row 9 rows 7-9;
- * from below, row 6 rows 6-9, row 5 rows 5-8, row 0 rows 0-3). Moving saves nothing and opens nothing. */
-static void up_down_and_the_stick_choose_a_row(void)
+static const Badge *choice(const char *prefix, int k)
 {
-    static const struct { uint32_t pressed; int stick, row, top; } steps[] = {
-        {SCE_CTRL_DOWN, 0, 1, 0}, {SCE_CTRL_DOWN, 0, 2, 0}, {SCE_CTRL_DOWN, 0, 3, 0}, {SCE_CTRL_DOWN, 0, 4, 1},
-        {SCE_CTRL_DOWN, 0, 5, 2}, {SCE_CTRL_DOWN, 0, 6, 3}, {SCE_CTRL_DOWN, 0, 7, 4}, {SCE_CTRL_DOWN, 0, 8, 5},
-        {SCE_CTRL_DOWN, 0, 9, 7}, {SCE_CTRL_DOWN, 0, 0, 0}, {SCE_CTRL_UP, 0, 9, 7},   {SCE_CTRL_UP, 0, 8, 7},
-        {SCE_CTRL_UP, 0, 7, 7},   {0, 1, 8, 7},             {0, 1, 9, 7},             {0, 1, 9, 7},
-        {0, -1, 8, 7},            {SCE_CTRL_UP, 0, 7, 7},   {0, -1, 6, 6},            {0, -1, 5, 5},
-        {0, -4, 1, 1},            {0, -1, 0, 0},            {0, -1, 0, 0},
-        {SCE_CTRL_DOWN, 1, 1, 0}, {SCE_CTRL_UP, 2, 0, 0},   {0, 2, 2, 0},             {SCE_CTRL_UP, -1, 1, 0},
-        {0, 0, 1, 0},             {0, 20, 9, 7},            {0, -2, 7, 7},            {0, -20, 0, 0},
-    };
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    show();
-    frame(0);
-    TEST_CHECK(focused() == 0);
-    for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
-        vjo_anki_page_stick(steps[i].stick);
-        frame(steps[i].pressed);
-        TEST_CHECK_(focused() == steps[i].row && first_row() == steps[i].top, "step %u: row %d focused (first %d), want %d (%d)",
-                    i, focused(), first_row(), steps[i].row, steps[i].top);
-    }
-    TEST_CHECK(!there(VJO_PREFERENCES_PATH) && !there(VJO_APP_PREFS_PATH) && writes_opened == 0 && threads_created == 0);
+    const Text *title = text_starting(prefix);
+    if (!title) return NULL;
+    for (int b = 0; b < drawn.badges; b++)
+        if (drawn.badge[b].y == title->y - 24 && !k--) return &drawn.badge[b];
+    return NULL;
 }
-
-/* settings/anki_page.c's help line under Card type, for each type (core/lapis.h VJO_CARD_*'s order) */
-static const char *const type_help[4] = {"The card's front shows the word.", "The card's front shows the word's sentence.",
-                                         "The card's front shows the word and its sentence.",
-                                         "The card's front shows the word; a tap, its sentence."};
-
-/* app.ini's #311 lines as written (keys saved so far), and as the app loads them back; config.ini never holds
- * them (the overlay would warn of a setting it does not know). */
-static void check_app_saved(int type, int tag, int readings)
+static void enable_mining(void)
 {
-    static const char *const types[4] = {"word", "sentence", "word_sentence", "click"};
-    char text[4096], want[64];
+    focus_title("Card mining");
+    const Badge *b = choice("Card mining", 0); TEST_ASSERT(b);
+    if (!b->active) frame(SCE_CTRL_RIGHT);
+    frame(0);
+}
+static VjoAppPrefs saved_app(void)
+{
     VjoAppPrefs p;
-    TEST_ASSERT(read_file(VJO_APP_PREFS_PATH, text, sizeof(text)) > 0);
-    snprintf(want, sizeof(want), "anki_card_type = %s\n", types[type]);
-    TEST_CHECK_(!strstr(text, "anki_card_type") || (count_lines(text, "anki_card_type") == 1 && strstr(text, want)),
-                "app.ini: want %s in\n%s", want, text);
-    snprintf(want, sizeof(want), "anki_game_tag = %s\n", tag ? "on" : "off");
-    TEST_CHECK_(!strstr(text, "anki_game_tag") || (count_lines(text, "anki_game_tag") == 1 && strstr(text, want)),
-                "app.ini: want %s in\n%s", want, text);
-    snprintf(want, sizeof(want), "anki_sentence_readings = %s\n", readings ? "on" : "off");
-    TEST_CHECK_(!strstr(text, "anki_sentence_readings") ||
-                    (count_lines(text, "anki_sentence_readings") == 1 && strstr(text, want)),
-                "app.ini: want %s in\n%s", want, text);
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
-    TEST_ASSERT(vjo_app_prefs_load(&p, &scratch) == 0);
-    TEST_CHECK_(p.anki_card_type == type && p.anki_game_tag == tag && p.anki_sentence_readings == readings,
-                "app.ini loads type %d tag %d readings %d", p.anki_card_type, p.anki_game_tag,
-                p.anki_sentence_readings);
-    if (read_file(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0)
-        TEST_CHECK(!strstr(text, "anki_card_type") && !strstr(text, "anki_game_tag") &&
-                   !strstr(text, "anki_sentence_readings"));
+    TEST_ASSERT(vjo_app_prefs_load(&p, &scratch) >= 0);
+    return p;
 }
-
-/* Enter on a settings row turns it the other way; Left/Right turn it OFF/ON, and do nothing when
- * it is that already; on Card type (#311) Enter takes the next type, round, and Left/Right the one to the left or
- * right, nothing at the ends; on the action rows they do nothing. Each save writes that row's key, and the other
- * rows' as they were, where the app and the Shell read them (config.ini) or the app alone (app.ini). */
-static void enter_and_left_right_save_each_row_s_key(void)
+static void mining_controls_are_progressive(void)
 {
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    show(); /* no config.ini yet: mining off, screenshots on (the defaults) */
-    frame(0);
-    TEST_CHECK(!strcmp(badge(0)->label, "OFF") && !strcmp(badge(1)->label, "ON"));
-    frame(SCE_CTRL_CROSS); /* row 0 */
-    check_saved(1, 1);
-    check_shown(1, 1);
-    frame(SCE_CTRL_CROSS);
-    check_saved(0, 1);
-    check_shown(0, 1);
-    frame(SCE_CTRL_RIGHT);
-    check_saved(1, 1);
-    renames = 0;
-    frame(SCE_CTRL_RIGHT); /* ON already: nothing written */
-    TEST_CHECK(renames == 0);
-    frame(SCE_CTRL_LEFT);
-    check_saved(0, 1);
-    renames = 0;
-    frame(SCE_CTRL_LEFT);
-    TEST_CHECK(renames == 0);
-    frame(SCE_CTRL_DOWN); /* row 1 */
-    frame(SCE_CTRL_CROSS);
-    check_saved(0, 0);
-    check_shown(0, 0);
-    frame(SCE_CTRL_RIGHT);
-    check_saved(0, 1);
-    renames = 0;
-    frame(SCE_CTRL_RIGHT);
-    TEST_CHECK(renames == 0);
-    frame(SCE_CTRL_LEFT);
-    check_saved(0, 0);
-    frame(SCE_CTRL_UP); /* row 0 again: its own key only */
-    frame(SCE_CTRL_RIGHT);
-    check_saved(1, 0);
-    check_shown(1, 0);
-    /* API 32: row 2, the screenshots' black bars: trimmed by default, kept, trimmed again */
-    frame(SCE_CTRL_DOWN);
-    frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == 2);
-    frame(SCE_CTRL_CROSS);
-    check_saved3(1, 0, 0);
-    check_shown3(1, 0, 0);
-    frame(SCE_CTRL_RIGHT);
-    check_saved3(1, 0, 1);
-    check_shown3(1, 0, 1);
-    renames = 0;
-    frame(SCE_CTRL_RIGHT);
-    TEST_CHECK(renames == 0);
-    frame(SCE_CTRL_LEFT);
-    check_saved3(1, 0, 0);
-    renames = 0;
-    frame(SCE_CTRL_LEFT);
-    TEST_CHECK(renames == 0);
-    frame(SCE_CTRL_UP); /* row 1 keeps row 2's choice */
-    frame(SCE_CTRL_RIGHT);
-    check_saved3(1, 1, 0);
-    frame(SCE_CTRL_LEFT);
-    check_saved3(1, 0, 0);
-    frame(SCE_CTRL_DOWN);
-    frame(SCE_CTRL_CROSS);
-    check_saved3(1, 0, 1);
-    TEST_CHECK(!there(VJO_APP_PREFS_PATH)); /* config.ini's rows write nothing else */
-    /* #311, row 3: Card type, Word by default */
-    frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == TYPE && badge_k(TYPE, 0)->active);
-    {
-        static const struct { uint32_t pressed; int type, saved; } turns[] = {
-            {SCE_CTRL_CROSS, 1, 1}, {SCE_CTRL_RIGHT, 2, 1}, {SCE_CTRL_CROSS, 3, 1}, {SCE_CTRL_RIGHT, 3, 0},
-            {SCE_CTRL_CROSS, 0, 1}, {SCE_CTRL_LEFT, 0, 0},  {SCE_CTRL_RIGHT, 1, 1}, {SCE_CTRL_LEFT, 0, 1},
-            {SCE_CTRL_RIGHT, 1, 1}, {SCE_CTRL_RIGHT, 2, 1},
-        };
-        for (unsigned i = 0; i < sizeof(turns) / sizeof(turns[0]); i++) {
-            renames = 0;
-            frame(turns[i].pressed);
-            TEST_CHECK_((renames > 0) == turns[i].saved, "turn %u: %d renames", i, renames);
-            check_app_saved(turns[i].type, 1, 1);
-            frame(0);
-            for (int k = 0; k < 4; k++)
-                TEST_CHECK_(badge_k(TYPE, k)->active == (k == turns[i].type), "turn %u: choice %d lit %d", i, k,
-                            badge_k(TYPE, k)->active);
-            TEST_CHECK_(text_starting(type_help[turns[i].type]) != NULL, "turn %u: not its help", i);
-            TEST_CHECK_(!strcmp(drawn.footer, "Saved. The next export uses it.") && !drawn.footer_error,
-                        "the note: %s", drawn.footer);
-        }
-    }
-    check_saved3(1, 0, 1); /* config.ini as it was */
-    /* rows 4 and 5: Game tag and Sentence readings, ON by default, as the switches above */
-    for (int r = TAG; r <= READINGS; r++) {
-        frame(SCE_CTRL_DOWN);
-        TEST_CHECK(focused() == r && !strcmp(badge(r)->label, "ON"));
-        frame(SCE_CTRL_CROSS);
-        check_app_saved(2, r != TAG, r != READINGS);
-        frame(0);
-        TEST_CHECK(!strcmp(badge(r)->label, "OFF") && !badge(r)->active);
-        renames = 0;
-        frame(SCE_CTRL_LEFT); /* OFF already: nothing written */
-        TEST_CHECK(renames == 0);
-        frame(SCE_CTRL_RIGHT);
-        check_app_saved(2, 1, 1);
-        frame(0);
-        TEST_CHECK(!strcmp(badge(r)->label, "ON") && badge(r)->active);
-    }
-    frame(SCE_CTRL_UP); /* Game tag OFF again: each row its own key */
-    frame(SCE_CTRL_LEFT);
-    check_app_saved(2, 0, 1);
-    frame(SCE_CTRL_DOWN);
-    check_saved3(1, 0, 1);
-    /* the action rows (past Duplicates, #314): Left/Right start and save nothing */
-    frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == DUPES);
-    for (int r = KNOWN; r <= ALL; r++) {
-        frame(SCE_CTRL_DOWN);
-        TEST_CHECK(focused() == r);
-        renames = 0;
-        frame(SCE_CTRL_LEFT);
-        frame(SCE_CTRL_RIGHT);
-        TEST_CHECK(renames == 0 && threads_created == 0 && !vjo_anki_page_busy());
-    }
-    check_saved(1, 0);
-    /* with ○ as enter (a Japanese console), × is no Enter */
-    reset(VJO_BUTTON_ASSIGN_CIRCLE);
-    show();
-    frame(SCE_CTRL_DOWN); /* from row 9 round to row 0 */
-    TEST_CHECK(focused() == 0);
-    frame(SCE_CTRL_CROSS);
+    reset(VJO_BUTTON_ASSIGN_CROSS); show(); frame(0);
+    TEST_CHECK(text_starting("Card mining") && text_starting("Export cards") && text_starting("Anki actions"));
+    TEST_CHECK(!text_starting("Screenshots") && !text_starting("Card type"));
     TEST_CHECK(!there(VJO_PREFERENCES_PATH));
-    frame(SCE_CTRL_CIRCLE);
-    check_saved(1, 1);
+    enable_mining(); check_saved(1, 1);
+    TEST_CHECK(text_starting("Screenshots") && text_starting("Card type") && !text_starting("Trim black bars"));
+    focus_title("Screenshots"); frame(SCE_CTRL_LEFT); check_saved(1, 0);
+    focus_title("Card mining"); frame(SCE_CTRL_LEFT); check_saved(0, 0);
+    TEST_CHECK(!text_starting("Screenshots") && !text_starting("Card type"));
+    TEST_CHECK(text_starting("Export cards") && text_starting("Anki actions"));
 }
-
-/* A touch inside a row in view chooses it and acts as Enter does, from its top edge to the line above
- * its bottom; on the row cut at the room's bottom it only chooses it (the view then brings it in);
- * between the rows, outside the cards' width, above them, below the room and on the footer, nothing. */
-static void touch_chooses_and_acts_on_each_row(void)
+static void visible_rows_and_choices_fit(void)
 {
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_card("猫", 1);
-    show();
-    frame(0);
-    /* the settings rows: each touch turns the row the other way */
-    touch(0, 480, row_top_at(0, 0));
-    TEST_CHECK(focused() == 0);
-    check_saved(1, 1);
-    touch(0, 935, row_top_at(0, 0) + row_height[0] - 1);
-    check_saved(0, 1);
-    touch(0, 24, row_top_at(1, 0));
-    TEST_CHECK(focused() == 1);
-    check_saved(0, 0);
-    touch(0, 480, row_top_at(1, 0) + row_height[1] - 1);
-    check_saved(0, 1);
-    touch(0, 480, row_top_at(2, 0)); /* API 32: the black bars */
-    TEST_CHECK(focused() == 2);
-    check_saved3(0, 1, 0);
-    touch(0, 935, row_top_at(2, 0) + row_height[2] - 1);
-    check_saved3(0, 1, 1);
-    /* nothing: the gaps, the sides, above, below the room, the footer */
-    static const int miss[][2] = {{480, 180}, {480, 183}, {480, 252}, {480, 255}, {480, 324}, {480, 327},
-                                  {480, 396}, {480, 399}, {480, 412}, {480, 450}, {480, 111}, {480, 60},
-                                  {23, 140}, {936, 140}, {23, 300}, {936, 360}};
-    renames = 0;
-    for (unsigned i = 0; i < sizeof(miss) / sizeof(miss[0]); i++) {
-        touch(0, miss[i][0], miss[i][1]);
-        TEST_CHECK_(focused() == 2 && first_row() == 0 && renames == 0 && threads_created == 0, "a touch at %d,%d acted",
-                    miss[i][0], miss[i][1]);
-    }
-    /* #311, row 3: Card type, a choice row as Duplicates is: a touch on a choice takes it, from its edges; between
-     * them, on the title or the help it only selects the row */
-    {
-        const int y = row_top_at(TYPE, 0);
-        static const int type_miss[][2] = {{376 + 128, 20}, {376 + 136 + 135, 20}, {375, 20}, {376 + 4 * 136, 20},
-                                           {100, 20},       {600, 5},              {600, 40}, {600, 60}};
-        touch(0, 376 + 136, y + 6);
-        TEST_CHECK(focused() == TYPE);
-        check_app_saved(1, 1, 1);
-        touch(0, 376 + 3 * 136 + 127, y + 39);
-        check_app_saved(3, 1, 1);
-        touch(0, 376 + 2 * 136 + 64, y + 20);
-        check_app_saved(2, 1, 1);
-        renames = 0;
-        for (unsigned i = 0; i < sizeof(type_miss) / sizeof(type_miss[0]); i++) {
-            touch(0, type_miss[i][0], y + type_miss[i][1]);
-            TEST_CHECK_(focused() == TYPE && renames == 0, "a touch at %d,+%d saved", type_miss[i][0], type_miss[i][1]);
+    reset(VJO_BUTTON_ASSIGN_CROSS); show(); frame(0); enable_mining();
+    static const char *const rows[] = {"Card mining", "Screenshots", "Card type", "Game tag", "Sentence readings",
+                                      "Duplicates", "Export cards", "Anki actions"};
+    for (unsigned r = 0; r < sizeof(rows) / sizeof(rows[0]); r++) {
+        focus_title(rows[r]);
+        TEST_CHECK(!strncmp(focused_title(), rows[r], strlen(rows[r])));
+        for (int c = 0; c < drawn.cards; c++) {
+            const Card *card = &drawn.card[c];
+            TEST_CHECK(card->y >= VIEW_Y && (card->clip || card->y + card->height <= VIEW_END));
         }
-        check_app_saved(2, 1, 1);
-    }
-    /* row 4 (Game tag), cut at the room's bottom (its 12 px from y 400): chosen, nothing saved; the view brings it
-     * in, and a touch then turns it OFF; row 5 (Sentence readings), cut below it, the same */
-    renames = 0;
-    touch(0, 480, row_top_at(TAG, 0) + 1);
-    TEST_CHECK(focused() == TAG && first_row() == 1 && renames == 0);
-    touch(0, 480, row_top_at(TAG, 1) + 10);
-    check_app_saved(2, 0, 1);
-    renames = 0;
-    touch(0, 480, row_top_at(READINGS, 1) + 1);
-    TEST_CHECK(focused() == READINGS && first_row() == 2 && renames == 0);
-    touch(0, 935, row_top_at(READINGS, 2) + row_height[READINGS] - 1);
-    check_app_saved(2, 0, 0);
-    /* rows 6-8 (Duplicates, Known words, Export cards), each cut at the room's bottom in turn (12 px, Export cards
-     * 4 px): chosen, nothing saved or started; the view brings each in */
-    renames = 0;
-    for (int r = DUPES; r <= EXPORT; r++) {
-        touch(0, 480, row_top_at(r, r - 4) + 1);
-        TEST_CHECK_(focused() == r && first_row() == r - 3 && renames == 0 && threads_created == 0 &&
-                        !vjo_anki_page_busy(),
-                    "row %d: focused %d, first %d", r, focused(), first_row());
-    }
-    /* the export rows, row 8 with rows 5-8 in view, then (Down to row 9) rows 7-9: a touch at each one's top and
-     * bottom edges starts that export */
-    for (int k = 0; k < 4; k++) {
-        static const char *const result[4] = {"to 2026-10-12_093005-1card.apkg.", "No cards queued",
-                                              "to 2026-10-12_093005-all-1card.apkg.",
-                                              "to 2026-10-12_093005-all-1card-2.apkg."};
-        int r = k < 2 ? EXPORT : ALL, top = k < 2 ? 5 : 7;
-        int y = k % 2 ? row_top_at(r, top) + row_height[r] - 1 : row_top_at(r, top);
-        if (k == 2) { /* row 9, below the view: Down brings it in */
-            frame(SCE_CTRL_DOWN);
-            TEST_CHECK(focused() == ALL && first_row() == 7 && threads_created == 2 && !vjo_anki_page_busy());
+        for (int b = 0; b < drawn.badges; b++) {
+            const Badge *badge = &drawn.badge[b];
+            TEST_CHECK(badge->x >= 24 && badge->x + badge->width <= 936);
+            TEST_CHECK_(width_of(badge->label, 26) <= badge->width - 8, "choice '%s' fits %d", badge->label, badge->width);
         }
-        touch(0, k % 2 ? 935 : 480, y);
-        TEST_CHECK_(focused() == r && vjo_anki_page_busy() && threads_created == k + 1,
-                    "a touch at y %d did not start row %d's export", y, r);
-        run_worker();
-        frame(0);
-        TEST_CHECK_(!vjo_anki_page_busy() && strstr(drawn.footer, result[k]), "row %d at y %d: %s", r, y, drawn.footer);
+        TEST_CHECK(drawn.footer_y == 416 && drawn.footer_y + drawn.footer_h == 508 && !drawn.footer_clip);
     }
-    TEST_CHECK(threads_deleted == 4);
+    frame(SCE_CTRL_DOWN); TEST_CHECK(!strcmp(focused_title(), "Card mining"));
+    vjo_anki_page_stick(-1); frame(0); TEST_CHECK(!strcmp(focused_title(), "Card mining"));
+    frame(SCE_CTRL_UP); TEST_CHECK(!strcmp(focused_title(), "Anki actions"));
+    vjo_anki_page_stick(1); frame(0); TEST_CHECK(!strcmp(focused_title(), "Anki actions"));
 }
-
-/* #311: the export follows app.ini as the page has it when the export starts: the cards' type (its Lapis switch
- * "x") and their game's tag. */
-static void the_export_follows_the_app_settings(void)
+static void choices_save_by_controller_and_touch(void)
 {
-    static unsigned char file[128 * 1024];
-    FILE *f;
-    size_t n;
-    int switches = 0, tags = 0;
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_card("猫", 0);
-    show();
-    frame(0);
-    for (int i = 0; i < TYPE; i++)
-        frame(SCE_CTRL_DOWN);
-    frame(SCE_CTRL_RIGHT); /* Sentence */
-    frame(SCE_CTRL_DOWN);
-    frame(SCE_CTRL_LEFT); /* Game tag OFF */
-    check_app_saved(1, 0, 1);
-    for (int i = TAG; i < EXPORT; i++)
-        frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == EXPORT);
-    frame(SCE_CTRL_CROSS);
-    TEST_ASSERT(vjo_anki_page_busy());
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") != NULL);
-    TEST_MSG("%s", drawn.footer);
-    TEST_ASSERT((f = fopen(VJO_EXPORT_DIR "/2026-10-12_093005-1card.apkg", "rb")) != NULL);
-    n = fread(file, 1, sizeof(file), f);
-    fclose(f);
-    for (size_t i = 0; i + 6 <= n; i++) { /* (the package is stored: a field's text is in it as written) */
-        switches += !memcmp(file + i, "\x1fx\x1f", 3);
-        tags += !memcmp(file + i, "Game::", 6);
-    }
-    TEST_CHECK_(switches == 1 && tags == 0, "%d switches, %d game tags", switches, tags);
+    reset(VJO_BUTTON_ASSIGN_CIRCLE); show(); frame(0); enable_mining();
+    focus_title("Card type");
+    const Badge *b = choice("Card type", 3); TEST_ASSERT(b && !strcmp(b->label, "Reveal sentence"));
+    touch(0, b->x + b->width / 2, b->y + 16); TEST_CHECK(saved_app().anki_card_type == 3);
+    frame(SCE_CTRL_LEFT); TEST_CHECK(saved_app().anki_card_type == 2);
+    frame(SCE_CTRL_RIGHT); TEST_CHECK(saved_app().anki_card_type == 3);
+    frame(buttons.enter); TEST_CHECK(saved_app().anki_card_type == 0);
+    focus_title("Game tag"); frame(SCE_CTRL_LEFT); TEST_CHECK(saved_app().anki_game_tag == 0);
+    frame(SCE_CTRL_RIGHT); TEST_CHECK(saved_app().anki_game_tag == 1);
+    focus_title("Sentence readings"); frame(SCE_CTRL_LEFT); TEST_CHECK(saved_app().anki_sentence_readings == 0);
+    frame(SCE_CTRL_RIGHT); TEST_CHECK(saved_app().anki_sentence_readings == 1);
+    focus_title("Duplicates"); frame(SCE_CTRL_RIGHT); TEST_CHECK(saved_app().anki_duplicates == VJO_DUPLICATES_SKIP);
+    b = choice("Duplicates", 2); TEST_ASSERT(b); touch(0, b->x + 20, b->y + 15);
+    TEST_CHECK(saved_app().anki_duplicates == VJO_DUPLICATES_KEEP);
+    frame(buttons.enter); TEST_CHECK(saved_app().anki_duplicates == VJO_DUPLICATES_TAG);
 }
-
-/* Enter on an export row runs the export on the page's worker thread (64 KiB, the system core):
- * meanwhile the page says so, its rows act on nothing, and Cancel stops it; once it ends the page
- * shows the result and counts the cards again. */
-static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
+static void actions_go_back_and_export_all_without_mining(void)
 {
-    char before[VJO_CONFIG_TEXT_MAX + 1], after[VJO_CONFIG_TEXT_MAX + 1];
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_card("猫", 1);
-    queue_card("犬", 0);
-    show();
-    frame(0);
-    for (int i = 0; i < EXPORT; i++)
-        frame(SCE_CTRL_DOWN); /* row 9 */
-    TEST_CHECK(text_starting("Export cards (2 queued)"));
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(vjo_anki_page_busy() && threads_created == 1 && thread_stack == 64 * 1024 &&
-               thread_affinity == SCE_KERNEL_CPU_MASK_SYSTEM && thread_priority == 0x10000100);
-    frame(0);
-    TEST_CHECK(!strcmp(badge(EXPORT)->label, "Exporting…") && badge(EXPORT)->active &&
-               !strcmp(badge(KNOWN)->label, "Import") && !badge(KNOWN)->active);
-    TEST_CHECK(text_starting("Reading the cards…") && text_starting("Imports known_words.txt") &&
-               !strcmp(drawn.controls, "○: stop   Select: look up"));
-    /* busy: no save, no second export, from Enter, Left/Right or a touch */
-    TEST_ASSERT(save_now(0, 1) == 0);
-    TEST_ASSERT(read_file(VJO_PREFERENCES_PATH, before, sizeof(before)) > 0);
-    for (int i = 0; i < EXPORT; i++)
-        frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == 0); /* (the selection still moves) */
-    frame(SCE_CTRL_CROSS);
-    frame(SCE_CTRL_RIGHT);
-    touch(0, 480, row_top_at(1, 0) + 10);
-    touch(0, 480, row_top_at(2, 0) + 10);
-    touch(0, 480, row_top_at(3, 0) + 10); /* (#311: Card type's first choice) */
-    TEST_CHECK(!there(VJO_APP_PREFS_PATH));
-    TEST_ASSERT(read_file(VJO_PREFERENCES_PATH, after, sizeof(after)) > 0);
-    TEST_CHECK(!strcmp(before, after) && threads_created == 1 && vjo_anki_page_busy());
-    TEST_CHECK(vjo_anki_page_holds_cancel());
-    /* the export ends: the page joins it and counts again */
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && threads_deleted == 1);
-    TEST_CHECK(strstr(drawn.footer, "Exported 2 cards (") && strstr(drawn.footer, "to 2026-10-12_093005-2cards.apkg.") &&
-               strstr(drawn.footer, "Copy it from ux0:data/VitaJPOverlay/anki/ by VitaShell's FTP or USB") &&
-               !drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(there(VJO_EXPORT_DIR "/2026-10-12_093005-2cards.apkg") && files_in(VJO_QUEUE_DIR, ".json") == 0 &&
-               files_in(VJO_QUEUE_EXPORTED_DIR, ".json") == 2 && files_in(VJO_QUEUE_EXPORTED_DIR, ".jpg") == 1);
-    TEST_CHECK(strstr(logs, "anki: export (queued) rc=0: 2 cards, 2 moved, 0 kept, 0 unreadable, 0 too large, 0 left, "
-                            "0 stopped, 0 swept, ") != NULL);
-    TEST_MSG("%s", logs);
-    /* Export all cards: the two again (the last row, by the stick) */
-    vjo_anki_page_stick(ROWS);
-    frame(0);
-    TEST_CHECK(focused() == ALL && first_row() == 7 && text_starting("2 cards in all"));
-    TEST_CHECK(text_starting("Export cards (0 queued)") && !strcmp(badge(EXPORT)->label, "Export") &&
-               !badge(EXPORT)->active);
-    frame(SCE_CTRL_CROSS);
-    frame(0);
-    TEST_CHECK(!strcmp(badge(ALL)->label, "Exporting…") && badge(ALL)->active && !strcmp(badge(EXPORT)->label, "Export") &&
-               !badge(EXPORT)->active);
-    /* the progress on its own row only; the last export's result is not the footer while this one runs */
-    TEST_CHECK(text_starting("Reading the cards…") && text_starting("Writes a new .apkg"));
-    TEST_CHECK_(!strstr(drawn.footer, "Exported") && strstr(drawn.footer, "Copy the .apkg from"), "busy: %s", drawn.footer);
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "Exported 2 cards (") && strstr(drawn.footer, "to 2026-10-12_093005-all-2cards.apkg."));
-    TEST_MSG("%s", drawn.footer);
-    /* Cancel: stopped, nothing changed */
-    queue_card("鳥", 0);
-    show();
-    frame(SCE_CTRL_UP);
-    frame(SCE_CTRL_CROSS); /* Export cards */
-    TEST_CHECK(focused() == EXPORT && vjo_anki_page_busy());
-    frame(SCE_CTRL_CIRCLE);
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && !strcmp(drawn.footer, "Stopped. Nothing was changed.") && drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(files_in(VJO_QUEUE_DIR, ".json") == 1 && files_in(VJO_EXPORT_DIR, ".apkg") == 2);
-    /* Cancel with nothing running does nothing */
-    frame(SCE_CTRL_CIRCLE);
-    TEST_CHECK(!vjo_anki_page_busy() && threads_created == 3);
-    /* leaving the app joins a running export, cancelled: the queue as it was */
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(vjo_anki_page_busy() && threads_created == 4);
-    vjo_anki_page_quit();
-    TEST_CHECK(!vjo_anki_page_busy() && !pending && threads_deleted == 4);
-    TEST_CHECK(files_in(VJO_QUEUE_DIR, ".json") == 1 && files_in(VJO_EXPORT_DIR, ".apkg") == 2);
-    /* with ○ as enter, ○ during an export does not stop it, and × does */
-    buttons = vjo_buttons(VJO_BUTTON_ASSIGN_CIRCLE);
-    frame(SCE_CTRL_CIRCLE);
-    TEST_CHECK(focused() == EXPORT && vjo_anki_page_busy() && threads_created == 5);
-    frame(0);
-    TEST_CHECK(!strcmp(drawn.controls, "×: stop   Select: look up"));
-    frame(SCE_CTRL_CIRCLE);
-    run_worker();
-    frame(0);
+    reset(VJO_BUTTON_ASSIGN_CROSS); queue_card("猫", 0); show(); frame(0);
+    focus_title("Anki actions"); frame(buttons.enter); frame(0);
+    TEST_CHECK(!strcmp(vjo_anki_page_title(), "Anki / Actions") && vjo_anki_page_holds_cancel());
+    TEST_CHECK(text_starting("Export all cards") && !text_starting("Known words"));
+    frame(buttons.cancel); TEST_CHECK(!strcmp(vjo_anki_page_title(), "Anki") && !vjo_anki_page_holds_cancel());
+    focus_title("Anki actions"); frame(buttons.enter); frame(0);
+    TEST_CHECK(vjo_anki_page_back()); frame(0); TEST_CHECK(!strcmp(vjo_anki_page_title(), "Anki"));
+    focus_title("Anki actions"); frame(buttons.enter); frame(0); frame(buttons.enter);
+    TEST_ASSERT(vjo_anki_page_busy()); run_worker(); frame(0);
     TEST_CHECK(!vjo_anki_page_busy() && strstr(drawn.footer, "Exported 1 card (") && !drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(files_in(VJO_QUEUE_DIR, ".json") == 0 && files_in(VJO_EXPORT_DIR, ".apkg") == 3);
-    queue_card("魚", 0);
-    show();
-    frame(SCE_CTRL_CIRCLE);
-    TEST_CHECK(vjo_anki_page_busy() && threads_created == 6);
-    frame(SCE_CTRL_CROSS);
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && !strcmp(drawn.footer, "Stopped. Nothing was changed.") && drawn.footer_error);
-    TEST_CHECK(files_in(VJO_QUEUE_DIR, ".json") == 1 && files_in(VJO_EXPORT_DIR, ".apkg") == 3);
+    TEST_CHECK(files_in(VJO_EXPORT_DIR, ".apkg") == 1);
 }
-
-/* ---------------- #314: Duplicates ---------------- */
-
-static const char *const dupes_names[3] = {"tag", "skip", "keep"};
-static const char *const dupes_help[3] = {"A word you mined before gets Anki's duplicate tag.",
-                                          "A word you mined before stays queued, not exported.",
-                                          "Every card is exported, with no duplicate check."};
-
-/* app.ini holds Duplicates = value, once, as the app loads it back; the row shows it lit, with its help. */
-static void check_dupes(int value)
+static void export_follows_the_card_settings(void)
 {
-    char text[4096], want[48];
-    VjoAppPrefs prefs;
-    snprintf(want, sizeof(want), "anki_duplicates = %s\n", dupes_names[value]);
-    TEST_ASSERT(read_file(VJO_APP_PREFS_PATH, text, sizeof(text)) > 0);
-    TEST_CHECK_(strstr(text, want) && count_lines(text, "anki_duplicates") == 1, "app.ini: %s, want %s", text, want);
-    vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
-    TEST_CHECK(vjo_app_prefs_load(&prefs, &scratch) == 0 && prefs.anki_duplicates == value);
-    frame(0);
-    for (int k = 0; k < 3; k++)
-        TEST_CHECK_(badge_k(DUPES, k)->active == (k == value), "choice %d lit %d, want %d", k, badge_k(DUPES, k)->active,
-                    value);
-    TEST_CHECK(text_starting(dupes_help[value]) != NULL);
+    reset(VJO_BUTTON_ASSIGN_CROSS); queue_card("猫", 0); show(); frame(0); enable_mining();
+    focus_title("Card type"); frame(SCE_CTRL_RIGHT);
+    focus_title("Game tag"); frame(SCE_CTRL_LEFT);
+    TEST_CHECK(saved_app().anki_card_type == 1 && saved_app().anki_game_tag == 0);
+    focus_title("Export cards"); frame(buttons.enter); TEST_ASSERT(vjo_anki_page_busy());
+    run_worker(); frame(0); TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") && !drawn.footer_error);
+    static unsigned char bytes[128 * 1024];
+    FILE *f = fopen(VJO_EXPORT_DIR "/2026-10-12_093005-1card.apkg", "rb"); TEST_ASSERT(f);
+    size_t n = fread(bytes, 1, sizeof(bytes), f); fclose(f);
+    int switches = 0, tags = 0;
+    for (size_t k = 0; k + 6 <= n; k++) {
+        switches += !memcmp(bytes + k, "\x1fx\x1f", 3); tags += !memcmp(bytes + k, "Game::", 6);
+    }
+    TEST_CHECK(switches == 1 && tags == 0);
 }
-
-/* The Duplicates row (#314): Enter takes the next choice, round; Left/Right the one to the left or right, and nothing
- * at the ends; a touch on a choice takes it, elsewhere on the row only selects it. Each choice is saved in app.ini,
- * which the overlay never reads, at once. */
-static void the_duplicates_row_saves_app_ini(void)
+static void busy_choices_are_blocked_and_cancel_keeps_the_queue(void)
 {
-    const int y = row_top_at(DUPES, 3); /* (row 6 selected: rows 3-6 in view) */
+    reset(VJO_BUTTON_ASSIGN_CROSS); queue_card("猫", 0); show(); frame(0); enable_mining();
+    char before[VJO_CONFIG_TEXT_MAX + 1], after[VJO_CONFIG_TEXT_MAX + 1];
+    TEST_ASSERT(read_file(VJO_PREFERENCES_PATH, before, sizeof(before)) > 0);
+    focus_title("Export cards"); frame(buttons.enter); TEST_ASSERT(vjo_anki_page_busy());
+    TEST_CHECK(thread_stack == 64 * 1024 && thread_affinity == 0x80000);
+    focus_title("Screenshots"); frame(SCE_CTRL_LEFT); frame(buttons.enter);
+    const Badge *b = choice("Screenshots", 0); TEST_ASSERT(b); touch(0, b->x + 10, b->y + 15);
+    TEST_ASSERT(read_file(VJO_PREFERENCES_PATH, after, sizeof(after)) > 0); TEST_CHECK(!strcmp(before, after));
+    TEST_CHECK(vjo_anki_page_holds_cancel()); frame(buttons.cancel); run_worker(); frame(0);
+    TEST_CHECK(!vjo_anki_page_busy() && files_in(VJO_QUEUE_DIR, ".json") == 1 && files_in(VJO_EXPORT_DIR, ".apkg") == 0);
+}
+static void known_import_is_disabled_but_retained(void)
+{
+    TEST_CHECK(VJO_KNOWN_WORDS_ENABLED == 0);
     reset(VJO_BUTTON_ASSIGN_CROSS);
-    show();
-    for (int i = 0; i < DUPES; i++)
-        frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == DUPES && first_row() == 3 && badge_k(DUPES, 0)->active && !there(VJO_APP_PREFS_PATH));
-    frame(SCE_CTRL_CROSS);
-    check_dupes(VJO_DUPLICATES_SKIP);
-    TEST_CHECK(!strcmp(drawn.footer, "Saved. The next export uses it.") && !drawn.footer_error);
-    frame(SCE_CTRL_CROSS);
-    check_dupes(VJO_DUPLICATES_KEEP);
-    frame(SCE_CTRL_CROSS);
-    check_dupes(VJO_DUPLICATES_TAG);
-    renames = 0;
-    frame(SCE_CTRL_LEFT); /* Tag is the first: nothing */
-    TEST_CHECK(renames == 0);
-    frame(SCE_CTRL_RIGHT);
-    check_dupes(VJO_DUPLICATES_SKIP);
-    frame(SCE_CTRL_RIGHT);
-    check_dupes(VJO_DUPLICATES_KEEP);
-    renames = 0;
-    frame(SCE_CTRL_RIGHT); /* Keep is the last */
-    TEST_CHECK(renames == 0);
-    frame(SCE_CTRL_LEFT);
-    check_dupes(VJO_DUPLICATES_SKIP);
-    /* touches: each choice, from its edges; between them, on the title or the help: only the selection */
-    frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == READINGS && first_row() == 3);
-    touch(0, 440, y + 6);
-    TEST_CHECK(focused() == DUPES);
-    check_dupes(VJO_DUPLICATES_TAG);
-    touch(0, 440 + 2 * 160 + 151, y + 39);
-    check_dupes(VJO_DUPLICATES_KEEP);
-    touch(0, 440 + 160 + 75, y + 20);
-    check_dupes(VJO_DUPLICATES_SKIP);
-    renames = 0;
-    static const int miss[][2] = {{440 + 152, 20}, {440 + 160 + 159, 20}, {439, 20}, {440 + 3 * 160, 20},
-                                  {100, 20}, {600, 5}, {600, 40}, {600, 60}};
-    for (unsigned i = 0; i < sizeof(miss) / sizeof(miss[0]); i++) {
-        frame(SCE_CTRL_UP);
-        touch(0, miss[i][0], y + miss[i][1]);
-        TEST_CHECK_(focused() == DUPES && renames == 0, "a touch at %d,+%d saved", miss[i][0], miss[i][1]);
-    }
-    check_dupes(VJO_DUPLICATES_SKIP);
-    TEST_CHECK(threads_created == 0);
-    /* what else app.ini holds stays as it is */
-    {
-        FILE *f = fopen(VJO_APP_PREFS_PATH, "ab");
-        TEST_ASSERT(f && fputs("; mine\nfuture_key = 1\n", f) >= 0);
-        fclose(f);
-    }
-    frame(SCE_CTRL_LEFT);
-    check_dupes(VJO_DUPLICATES_TAG);
-    {
-        char text[4096];
-        TEST_ASSERT(read_file(VJO_APP_PREFS_PATH, text, sizeof(text)) > 0);
-        TEST_CHECK(strstr(text, "; mine\nfuture_key = 1\n") != NULL);
-    }
-    TEST_CHECK(!there(VJO_PREFERENCES_PATH)); /* config.ini, the overlay's, never */
+    FILE *f = fopen(VJO_EXPORT_DATA_DIR "/known_words.txt", "wb"); TEST_ASSERT(f); fputs("猫\tよみ\n", f); fclose(f);
+    /* An old imported index is retained, but neither consulted nor exposed by the shipping UI. */
+    static unsigned char memory[VJO_EXPORT_MEM]; VjoArena a; VjoKnownResult known; char message[512];
+    const VjoExportUi callbacks = {0}; vjo_arena_init(&a, memory, sizeof(memory));
+    TEST_ASSERT(vjo_known_import(&a, &callbacks, &known, message, sizeof(message)) == 0);
+    TEST_CHECK(vjo_known_count() == 1);
+    char before[256], after[256]; int size = read_file(VJO_EXPORT_DATA_DIR "/anki_known.bin", before, sizeof(before));
+    TEST_ASSERT(size > 0); queue_card("猫", 0); show(); frame(0);
+    focus_title("Anki actions"); frame(buttons.enter); frame(0);
+    TEST_CHECK(!text_starting("Known words") && !text_starting("Import"));
+    frame(buttons.enter); run_worker(); frame(0);
+    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") && !strstr(drawn.footer, "tagged known"));
+    TEST_CHECK(!strstr(logs, "known not checked"));
+    TEST_CHECK(read_file(VJO_EXPORT_DATA_DIR "/anki_known.bin", after, sizeof(after)) == size && !memcmp(before, after, (size_t)size));
 }
-
-/* An unreadable app.ini: no choice lit, the row says why, and nothing is written; a save that does not complete says
- * so and shows the file's choice; the overlay's own rows still save. */
-static void an_unreadable_app_ini_is_never_written(void)
+static void unreadable_files_and_failed_saves_stay_intact(void)
 {
-    char before[4096], after[4096];
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    show();
-    for (int i = 0; i < DUPES; i++)
-        frame(SCE_CTRL_DOWN);
-    frame(SCE_CTRL_RIGHT);
-    check_dupes(VJO_DUPLICATES_SKIP);
-    TEST_ASSERT(read_file(VJO_APP_PREFS_PATH, before, sizeof(before)) > 0);
-    fail_open = "app.ini";
-    show();
-    frame(0);
-    for (int k = 0; k < 3; k++)
-        TEST_CHECK(!badge_k(DUPES, k)->active);
-    TEST_CHECK(text_starting("Cannot read app.ini.") != NULL);
-    writes_opened = renames = 0;
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(!strcmp(drawn.footer, "Cannot read app.ini. The choice has not been changed.") && drawn.footer_error);
-    frame(SCE_CTRL_LEFT);
-    frame(SCE_CTRL_RIGHT);
-    touch(0, 450, row_top_at(DUPES, 3) + 10);
-    TEST_CHECK(writes_opened == 0 && renames == 0);
-    fail_open = NULL;
-    TEST_ASSERT(read_file(VJO_APP_PREFS_PATH, after, sizeof(after)) > 0);
-    TEST_CHECK(!strcmp(before, after));
-    /* #311's rows the same: Sentence readings and Game tag "--", no card type lit, and nothing written */
-    writes_opened = renames = 0;
-    for (int r = READINGS; r >= TAG; r--) {
-        frame(SCE_CTRL_UP);
-        TEST_CHECK(focused() == r && !strcmp(badge(r)->label, "--") && !badge(r)->active);
-        frame(SCE_CTRL_CROSS);
-        TEST_CHECK(!strcmp(drawn.footer, "Cannot read app.ini. The choice has not been changed.") && drawn.footer_error);
-        frame(SCE_CTRL_LEFT);
-        frame(SCE_CTRL_RIGHT);
-    }
-    frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == TYPE && first_row() == 3);
-    for (int k = 0; k < 4; k++)
-        TEST_CHECK(!badge_k(TYPE, k)->active);
-    frame(SCE_CTRL_CROSS);
-    frame(SCE_CTRL_LEFT);
-    frame(SCE_CTRL_RIGHT);
-    touch(0, 376 + 136 + 10, row_top_at(TYPE, 3) + 10);
-    TEST_CHECK(writes_opened == 0 && renames == 0 && drawn.footer_error &&
-               !strcmp(drawn.footer, "Cannot read app.ini. The choice has not been changed."));
-    TEST_ASSERT(read_file(VJO_APP_PREFS_PATH, after, sizeof(after)) > 0);
-    TEST_CHECK(!strcmp(before, after));
-    /* (config.ini's rows are not app.ini's) */
-    frame(SCE_CTRL_UP);
-    frame(SCE_CTRL_CROSS);
-    check_saved3(0, 1, 0);
-    /* a save that does not complete: said, and the choice shown is the file's */
-    show();
-    for (int i = 2; i < DUPES; i++)
-        frame(SCE_CTRL_DOWN);
-    fail_rename = 1;
-    frame(SCE_CTRL_RIGHT);
+    reset(VJO_BUTTON_ASSIGN_CROSS); show(); frame(0); enable_mining();
+    focus_title("Card type"); fail_rename = 1; frame(SCE_CTRL_RIGHT);
+    TEST_CHECK(strstr(drawn.footer, "Save not confirmed") && saved_app().anki_card_type == 0);
     fail_rename = 0;
-    TEST_CHECK(!strcmp(drawn.footer, "Save not confirmed. Check the choice shown, then retry.") && drawn.footer_error);
-    check_dupes(VJO_DUPLICATES_SKIP);
+    TEST_ASSERT(mkdir(VJO_APP_PREFS_PATH, 0777) == 0); show(); frame(0);
+    focus_title("Card type"); writes_opened = renames = 0; frame(SCE_CTRL_RIGHT); frame(buttons.enter);
+    TEST_CHECK(writes_opened == 0 && renames == 0 && strstr(drawn.footer, "Cannot read app.ini"));
 }
-
-/* The export row counts the queue's words mined before (an earlier card has them, queued or exported): "N queued, M
- * already mined"; the export follows Duplicates (Tag tags them, Skip leaves them queued), and the count follows the
- * export. The page reads at most 64 cards' words when it is shown: past them it shows the count only once it has
- * read the rest (an export reads every one). */
-static void the_export_row_counts_words_mined_before(void)
+static void worker_start_failures_leave_cards_queued(void)
 {
-    char name[32];
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_line("猫", "猫が好き", 0, 0);
-    queue_line("猫", "猫を見た", 1, 0);
-    queue_line("犬", "犬だ", 2, 0);
-    show();
-    for (int i = 0; i < EXPORT; i++)
-        frame(SCE_CTRL_DOWN);
-    TEST_CHECK(text_starting("Export cards (3 queued, 1 already mined)") != NULL);
-    frame(SCE_CTRL_CROSS); /* Tag: the second 猫 tagged */
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "Exported 3 cards (") && strstr(drawn.footer, " 1 tagged duplicate (mined before)."));
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(text_starting("Export cards (0 queued)") != NULL);
-    /* a word of an exported card: Skip leaves it queued, and counted */
-    queue_line("猫", "猫だ", 3, 0);
-    queue_line("鳥", "鳥だ", 4, 0);
-    show();
-    frame(0);
-    TEST_CHECK(text_starting("Export cards (2 queued, 1 already mined)") != NULL);
-    frame(SCE_CTRL_UP);
-    frame(SCE_CTRL_UP);
-    frame(SCE_CTRL_RIGHT); /* Duplicates: Skip */
-    check_dupes(VJO_DUPLICATES_SKIP);
-    frame(SCE_CTRL_DOWN);
-    frame(SCE_CTRL_DOWN);
-    frame(0);
-    TEST_CHECK(focused() == EXPORT && first_row() == 5);
-    frame(SCE_CTRL_CROSS);
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") && strstr(drawn.footer, " 1 already mined stays queued (Duplicates: Skip)."));
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(text_starting("Export cards (1 queued, 1 already mined)") && files_in(VJO_QUEUE_DIR, ".json") == 1);
-    frame(SCE_CTRL_CROSS);
-    run_worker();
-    frame(0);
-    TEST_CHECK(!strcmp(drawn.footer, "No new cards: the 1 queued is a word already mined, and stays queued "
-                                     "(Duplicates: Skip).") && !drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(text_starting("Export cards (1 queued, 1 already mined)") != NULL);
-    TEST_CHECK(strstr(logs, "1 duplicates (skip)") != NULL);
-    TEST_MSG("%s", logs);
-    /* 65 new cards beside the 猫: the page reads 64 when shown, so no count until it has read the rest */
-    for (int i = 0; i < 65; i++) {
-        snprintf(name, sizeof(name), "語%d", i);
-        queue_line(name, name, 10 + i, 0);
-    }
-    show();
-    frame(0);
-    TEST_CHECK(text_starting("Export cards (66 queued)") && !text_starting("Export cards (66 queued,"));
-    show();
-    frame(0);
-    TEST_CHECK(text_starting("Export cards (66 queued, 1 already mined)") != NULL);
-    TEST_CHECK(threads_created == 3);
+    reset(VJO_BUTTON_ASSIGN_CROSS); queue_card("猫", 0); show(); frame(0); focus_title("Export cards");
+    fail_mutex = 1; frame(buttons.enter); TEST_CHECK(!vjo_anki_page_busy() && threads_created == 0);
+    fail_mutex = 0; fail_create = 1; frame(buttons.enter); TEST_CHECK(!vjo_anki_page_busy() && threads_created == 0);
+    fail_create = 0; fail_start = 1; frame(buttons.enter); TEST_CHECK(!vjo_anki_page_busy());
+    TEST_CHECK(files_in(VJO_QUEUE_DIR, ".json") == 1 && files_in(VJO_EXPORT_DIR, ".apkg") == 0);
 }
-
-/* audit-rubi-rm4 P1, P2, P10: while an export runs, the Duplicates row saves nothing, by Enter, Left/Right or a touch on
- * any of its choices, and the export row shows no "already mined" count (the job is changing the queue). */
-static void a_busy_page_changes_no_choice(void)
-{
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_line("猫", "猫が好き", 0, 0);
-    queue_line("猫", "猫を見た", 1, 0);
-    queue_line("犬", "犬だ", 2, 0);
-    show();
-    for (int i = 0; i < EXPORT; i++)
-        frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == EXPORT && text_starting("Export cards (3 queued, 1 already mined)"));
-    frame(SCE_CTRL_CROSS);
-    TEST_ASSERT(vjo_anki_page_busy());
-    frame(0);
-    TEST_CHECK(text_starting("Export cards (3 queued)") && !text_starting("Export cards (3 queued, 1"));
-    for (int i = 0; i < EXPORT - DUPES; i++)
-        frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == DUPES);
-    writes_opened = renames = 0;
-    frame(SCE_CTRL_RIGHT);
-    frame(SCE_CTRL_LEFT);
-    frame(SCE_CTRL_CROSS);
-    frame(0);
-    for (int k = 1; k < 3; k++)
-        touch(0, 440 + k * 160 + 20, row_top_at(DUPES, first_row()) + 20);
-    TEST_CHECK(writes_opened == 0 && renames == 0 && !there(VJO_APP_PREFS_PATH));
-    TEST_CHECK(badge_k(DUPES, 0)->active && !badge_k(DUPES, 1)->active && !badge_k(DUPES, 2)->active);
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && strstr(drawn.footer, " 1 tagged duplicate (mined before)."));
-    /* idle again: the same touch takes Skip */
-    touch(0, 440 + 160 + 20, row_top_at(DUPES, first_row()) + 20);
-    check_dupes(VJO_DUPLICATES_SKIP);
-}
-
-/* audit-rubi-rm4 P7, P9, N9: an export that could not check its duplicates (too many words for memory: here a cache
- * whose count does not fit) or its known words (a damaged index) is shown as an error, as the app's other incomplete
- * results are; the Known words row says a damaged index cannot be read, rather than its count. */
-static void unchecked_exports_are_errors(void)
-{
-    FILE *f;
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_line("猫", "猫が好き", 0, 0);
-    /* a cache of 100,000 words (2,400,000 B of them: more than the export's 2 MiB) */
-    TEST_ASSERT((f = fopen(VJO_EXPORT_DATA_DIR "/anki_words.bin", "wb")) != NULL);
-    {
-        static const unsigned char head[16] = {'R', 'u', 'b', 'i', 'W', 'd', '1', '\n', 0x00, 0x01, 0x86, 0xA0};
-        TEST_ASSERT(fwrite(head, 1, 16, f) == 16 && ftruncate(fileno(f), 16 + 100000 * 20) == 0);
-    }
-    fclose(f);
-    show();
-    for (int i = 0; i < EXPORT; i++)
-        frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == EXPORT);
-    frame(SCE_CTRL_CROSS);
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") &&
-               strstr(drawn.footer, " Not checked for duplicates: too many cards for memory.") && drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    TEST_ASSERT(unlink(VJO_EXPORT_DATA_DIR "/anki_words.bin") == 0);
-    /* a damaged index of known words */
-    TEST_ASSERT((f = fopen(VJO_EXPORT_DATA_DIR "/anki_known.bin", "wb")) != NULL);
-    fputs("RubiKn1\n\0\0\0\1\0\0\0\0abcdefgh", f); /* one key, its checksum wrong */
-    fclose(f);
-    queue_line("犬", "犬だ", 1, 0);
-    show();
-    frame(0);
-    TEST_CHECK(focused() == EXPORT && text_starting("The known words cannot be read: Import again.") != NULL);
-    frame(SCE_CTRL_CROSS);
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") && strstr(drawn.footer, " Not checked for known words") &&
-               drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-}
-
-/* #314 stage C, the Known words row: Enter (or a touch) imports known_words.txt on the page's worker, the row says
- * so meanwhile, then the result and the count; Left/Right do nothing there; the next export tags the known words'
- * cards known. */
-static void the_known_words_row_imports_the_file(void)
-{
-    FILE *f;
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    show();
-    for (int i = 0; i < KNOWN; i++)
-        frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == KNOWN && !strcmp(badge(KNOWN)->label, "Import") && !badge(KNOWN)->active &&
-               text_starting("Imports known_words.txt (tools/known_words.py makes it)."));
-    frame(SCE_CTRL_LEFT);
-    frame(SCE_CTRL_RIGHT);
-    TEST_CHECK(threads_created == 0 && !vjo_anki_page_busy());
-    /* no file: said, nothing else */
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(vjo_anki_page_busy() && threads_created == 1);
-    frame(0);
-    TEST_CHECK(!strcmp(badge(KNOWN)->label, "Importing…") && badge(KNOWN)->active &&
-               text_starting("Reading known_words.txt…") && !strcmp(badge(EXPORT)->label, "Export"));
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && strstr(drawn.footer, "No known_words.txt in ux0:data/VitaJPOverlay/") &&
-               !drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    /* a file: imported, counted, its card tagged by the next export */
-    TEST_ASSERT((f = fopen(VJO_EXPORT_DATA_DIR "/known_words.txt", "wb")) != NULL);
-    fputs("\xEF\xBB\xBF# from Anki\r\n猫\tよみ\r\n犬\r\n\tのみ\r\n", f);
-    fclose(f);
-    touch(0, 480, row_top_at(KNOWN, 4) + 10);
-    TEST_CHECK(vjo_anki_page_busy() && threads_created == 2);
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "Imported 2 known words from known_words.txt: their cards get the tag known. 1 line "
-                                    "is not a word (see log.txt).") && drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(text_starting("2 known words: their cards get the tag known.") != NULL);
-    TEST_CHECK(strstr(logs, "anki: known words import rc=0: 2 words, 2 keys, 1 not words, 0 over") != NULL);
-    TEST_MSG("%s", logs);
-    queue_line("猫", "猫が好き", 0, 0);
-    queue_line("鳥", "鳥だ", 1, 0);
-    show();
-    frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == EXPORT);
-    frame(SCE_CTRL_CROSS);
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "Exported 2 cards (") && strstr(drawn.footer, " 1 tagged known (known_words.txt)."));
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(strstr(logs, "0 duplicates (tag), 1 known, ") != NULL);
-    /* the file removed: Import clears them */
-    TEST_ASSERT(unlink(VJO_EXPORT_DATA_DIR "/known_words.txt") == 0);
-    frame(SCE_CTRL_UP);
-    frame(SCE_CTRL_CROSS);
-    run_worker();
-    frame(0);
-    TEST_CHECK(strstr(drawn.footer, "No known_words.txt") && text_starting("Imports known_words.txt"));
-}
-
-/* An unreadable config.ini is never written: its rows show "--" and say why; a save that does not
- * complete says so; a queue that cannot be read is shown as such; a thread that cannot start says so. */
-static void a_missing_screenshot_is_reported_after_export(void)
-{
-    char path[256];
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", queue_card("猫", 1));
-    TEST_ASSERT(unlink(path) == 0);
-    show();
-    for (int i = 0; i < EXPORT; i++)
-        frame(SCE_CTRL_DOWN);
-    touch(0, 480, row_top_at(EXPORT, 5) + 10);
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && text_starting("Export cards (0 queued)"));
-    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") &&
-               strstr(drawn.footer, "1 exported without a screenshot") && drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(strstr(logs, "1 without screenshots") != NULL);
-}
-
-static void failures_are_shown_and_change_nothing(void)
-{
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    TEST_ASSERT(save_now(1, 1) == 0);
-    fail_open = "config.ini";
-    show();
-    frame(0);
-    TEST_CHECK(!strcmp(badge(0)->label, "--") && !badge(0)->active && !strcmp(badge(1)->label, "--") &&
-               !badge(1)->active && !strcmp(badge(2)->label, "--") && !badge(2)->active);
-    TEST_CHECK(badge_k(TYPE, 0)->active && !strcmp(badge(TAG)->label, "ON")); /* (#311's: app.ini, readable) */
-    writes_opened = renames = 0;
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(!strcmp(drawn.footer, "Cannot read config.ini. Choices have not been changed.") && drawn.footer_error);
-    frame(SCE_CTRL_DOWN);
-    frame(SCE_CTRL_RIGHT);
-    frame(SCE_CTRL_LEFT);
-    frame(SCE_CTRL_DOWN); /* API 32: the black bars' row too */
-    frame(SCE_CTRL_CROSS);
-    frame(SCE_CTRL_LEFT);
-    TEST_CHECK(writes_opened == 0 && renames == 0);
-    fail_open = NULL;
-    check_saved(1, 1);
-    /* a save that does not complete: said, and the choice shown is the file's */
-    show();
-    frame(SCE_CTRL_UP);
-    frame(SCE_CTRL_UP);
-    fail_rename = 1;
-    frame(SCE_CTRL_CROSS);
-    fail_rename = 0;
-    TEST_CHECK(!strcmp(drawn.footer, "Save not confirmed. Check the choices shown, then retry.") && drawn.footer_error);
-    frame(0);
-    TEST_CHECK(!strcmp(badge(0)->label, "ON"));
-    check_saved(1, 1);
-    /* the queue unreadable */
-    queue_card("猫", 0);
-    fail_dopen = VJO_QUEUE_DIR;
-    show();
-    frame(0);
-    vjo_anki_page_stick(ROWS); /* to row 9: both export rows in view */
-    frame(0);
-    TEST_CHECK(focused() == ALL);
-    const Text *t = text_starting("Export cards (queue unreadable)");
-    TEST_CHECK(t && t->color == OFF && text_starting("Unreadable"));
-    fail_dopen = NULL;
-    /* the worker cannot start */
-    fail_create = 1;
-    frame(SCE_CTRL_UP);
-    TEST_CHECK(focused() == EXPORT);
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(!vjo_anki_page_busy() && !strcmp(drawn.footer, "Could not start the export (0x80020001).") &&
-               drawn.footer_error);
-    TEST_MSG("%s", drawn.footer);
-    fail_create = 0;
-    /* #418 (P10): its thread made but not started (settings/app_worker.c deletes it again) */
-    fail_start = 1;
-    int deleted = threads_deleted;
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(!vjo_anki_page_busy() && !strcmp(drawn.footer, "Could not start the export (0x80020003).") &&
-               drawn.footer_error && threads_deleted == deleted + 1);
-    TEST_MSG("%s; %d threads deleted", drawn.footer, threads_deleted - deleted);
-    fail_start = 0;
-    TEST_CHECK(files_in(VJO_QUEUE_DIR, ".json") == 1);
-}
-
-/* #418 (P10): the worker's lock cannot be made (settings/app_worker.c vjo_app_worker_prepare: the page's first job,
- * in this test's own process): nothing starts, the page says so, and the next press makes the lock and exports. */
-static void a_lock_that_cannot_be_made_starts_nothing(void)
-{
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_card("猫", 0);
-    show();
-    frame(0);
-    vjo_anki_page_stick(ROWS); /* to the last row, then up to Export cards */
-    frame(0);
-    frame(SCE_CTRL_UP);
-    TEST_ASSERT(focused() == EXPORT);
-    fail_mutex = 1;
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(!vjo_anki_page_busy() && !strcmp(drawn.footer, "Could not start the export (0x80020002).") &&
-               drawn.footer_error && threads_created == 0);
-    TEST_MSG("%s", drawn.footer);
-    fail_mutex = 0;
-    frame(SCE_CTRL_CROSS);
-    TEST_CHECK(vjo_anki_page_busy() && threads_created == 1);
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && files_in(VJO_QUEUE_DIR, ".json") == 0);
-}
-
-/* Screenshot-only fixture: drive all ten real Anki rows without exporting or importing anything. */
 static void settings_walkthrough(void)
 {
     if (!vp_available()) return;
-    reset(VJO_BUTTON_ASSIGN_CROSS);
-    queue_card("猫", 1);
-    show();
+    reset(VJO_BUTTON_ASSIGN_CROSS); queue_card("猫", 1); show(); frame(0);
     VjoPageUi preview = vp_ui(&buttons);
-    for (int row = 0; row < ROWS; row++) {
-        vp_begin("Anki");
-        vjo_anki_page_frame(&preview, row ? SCE_CTRL_DOWN : 0, -1, -1, &scratch);
-        if (row == 0) vp_finish("walk-anki-1-mining");
-        if (row == 6) vp_finish("walk-anki-2-card-options");
-        if (row == 9) vp_finish("walk-anki-3-import-export");
-    }
+    vp_begin(vjo_anki_page_title()); vjo_anki_page_frame(&preview, 0, -1, -1, &scratch); vp_finish("walk-anki-1-mining");
+    enable_mining(); focus_title("Card type");
+    vp_begin(vjo_anki_page_title()); vjo_anki_page_frame(&preview, 0, -1, -1, &scratch); vp_finish("walk-anki-2-card-options");
+    focus_title("Duplicates");
+    vp_begin(vjo_anki_page_title()); vjo_anki_page_frame(&preview, 0, -1, -1, &scratch); vp_finish("walk-anki-3-details");
+    focus_title("Anki actions");
+    vp_begin(vjo_anki_page_title()); vjo_anki_page_frame(&preview, 0, -1, -1, &scratch); vp_finish("walk-anki-4-export");
+    frame(buttons.enter); frame(0);
+    vp_begin(vjo_anki_page_title()); vjo_anki_page_frame(&preview, 0, -1, -1, &scratch); vp_finish("walk-anki-5-actions");
     vp.active = 0;
 }
-
 TEST_LIST = {
     {"settings_walkthrough", settings_walkthrough},
-    {"the_rows_and_the_footer_do_not_overlap", the_rows_and_the_footer_do_not_overlap},
-    {"up_down_and_the_stick_choose_a_row", up_down_and_the_stick_choose_a_row},
-    {"enter_and_left_right_save_each_row_s_key", enter_and_left_right_save_each_row_s_key},
-    {"a_lock_that_cannot_be_made_starts_nothing", a_lock_that_cannot_be_made_starts_nothing},
-    {"touch_chooses_and_acts_on_each_row", touch_chooses_and_acts_on_each_row},
-    {"the_export_follows_the_app_settings", the_export_follows_the_app_settings},
-    {"an_export_runs_on_the_worker_and_the_page_follows_it", an_export_runs_on_the_worker_and_the_page_follows_it},
-    {"a_missing_screenshot_is_reported_after_export", a_missing_screenshot_is_reported_after_export},
-    {"failures_are_shown_and_change_nothing", failures_are_shown_and_change_nothing},
-    {"the_duplicates_row_saves_app_ini", the_duplicates_row_saves_app_ini},
-    {"an_unreadable_app_ini_is_never_written", an_unreadable_app_ini_is_never_written},
-    {"the_export_row_counts_words_mined_before", the_export_row_counts_words_mined_before},
-    {"the_known_words_row_imports_the_file", the_known_words_row_imports_the_file},
-    {"a_busy_page_changes_no_choice", a_busy_page_changes_no_choice},
-    {"unchecked_exports_are_errors", unchecked_exports_are_errors},
-    {NULL, NULL},
+    {"mining_controls_are_progressive", mining_controls_are_progressive},
+    {"visible_rows_and_choices_fit", visible_rows_and_choices_fit},
+    {"choices_save_by_controller_and_touch", choices_save_by_controller_and_touch},
+    {"actions_go_back_and_export_all_without_mining", actions_go_back_and_export_all_without_mining},
+    {"export_follows_the_card_settings", export_follows_the_card_settings},
+    {"busy_choices_are_blocked_and_cancel_keeps_the_queue", busy_choices_are_blocked_and_cancel_keeps_the_queue},
+    {"known_import_is_disabled_but_retained", known_import_is_disabled_but_retained},
+    {"unreadable_files_and_failed_saves_stay_intact", unreadable_files_and_failed_saves_stay_intact},
+    {"worker_start_failures_leave_cards_queued", worker_start_failures_leave_cards_queued},
+    {NULL, NULL}
 };
-
 int main(int argc, char **argv)
 {
-    /* the memory card, removed when the suite ends (acutest runs each test in a child: test_tmpdir.h) */
     const char *dir = vjo_test_tmpdir("settings-anki");
-    if (!dir || chdir(dir) < 0)
-        return 2;
+    if (!dir || chdir(dir) < 0) return 2;
     return acutest_main(argc, argv);
 }

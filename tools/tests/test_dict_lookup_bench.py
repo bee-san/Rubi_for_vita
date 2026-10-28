@@ -31,6 +31,7 @@ FILLER = [term(f"詰め物{i}", gloss=["x" * 3500]) for i in range(6)]
 @unittest.skipUnless(BENCH, "VJO_DICT_BENCH (vjo-dict-bench) is set by CTest")
 class DictLookupBench(unittest.TestCase):
     def setUp(self):
+        self.maxDiff = None
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
@@ -61,10 +62,11 @@ class DictLookupBench(unittest.TestCase):
         self.assertEqual(words["lookups"], 11)
         self.assertGreater(letters["lookups"], words["lookups"])
         for summary in (first, words, letters):
-            self.assertAlmostEqual(sum(summary["reads_by"].values()), summary["reads"]["mean"], places=2)
+            self.assertAlmostEqual(sum(summary["reads_by"].values()), summary["reads"]["mean"], delta=0.01)
             self.assertGreaterEqual(summary["candidates"]["mean"], summary["probes"]["mean"] - 1e-9)
             self.assertGreaterEqual(summary["probes"]["mean"], summary["found"]["mean"])
-            self.assertEqual(summary["reads_by"]["header"], 1.0)  # one open of one file per lookup
+            self.assertGreaterEqual(summary["reads_by"]["header"], 1.0)
+            self.assertLessEqual(summary["reads_by"]["header"], 2.0)  # selection and alternate collection
             self.assertLessEqual(summary["arena_peak_max"], 64 * 1024)
             self.assertGreater(summary["console_ms"]["mean"], bench.CONSOLE["fixed_ms"])
         self.assertEqual(words["per_screen"]["screens"], 2)
@@ -90,19 +92,19 @@ class DictLookupBench(unittest.TestCase):
         one, two = rows
         for q, spans in ((one, 8), (two, 13)):
             self.assertEqual(q["spans"], spans)
-            self.assertEqual((q["opens"], q["entries"], q["found"], q["ranked"]), (1, 1, 1, 1))
-            self.assertEqual(q["reads_by"], {"header": 1, "index": 1, "group": 1, "head": 1, "payload": 0,
+            self.assertEqual((q["opens"], q["entries"], q["found"], q["ranked"]), (2, 1, 2, 1))
+            self.assertEqual(q["reads_by"], {"header": 2, "index": 2, "group": 2, "head": 2, "payload": 0,
                                              "filter": 0})
-            self.assertEqual(q["reads"], 4)
+            self.assertEqual(q["reads"], 8)
             # Every probe but the one found is absent; the first absent one reads the
             # bucket page (one bucket), the others find it cached.
             self.assertEqual(q["absent_reads"], 1)
             self.assertEqual(q["filtered"], 0)
-        self.assertEqual((one["candidates"], one["probes"], one["hash_present"], one["miss_cached"]), (13, 13, 1, 1))
-        self.assertEqual((two["candidates"], two["probes"], two["hash_present"], two["miss_cached"]), (37, 37, 1, 8))
+        self.assertEqual((one["candidates"], one["probes"], one["hash_present"], one["miss_cached"]), (14, 14, 2, 1))
+        self.assertEqual((two["candidates"], two["probes"], two["hash_present"], two["miss_cached"]), (38, 38, 2, 8))
         summary = sets["sets"][str(self.lines)]["first"]["after"]
-        self.assertEqual(summary["found"]["mean"], 1)
-        self.assertEqual(summary["reads_by"]["head"], 1)
+        self.assertEqual(summary["found"]["mean"], 2)
+        self.assertEqual(summary["reads_by"]["head"], 2)
 
     def test_a_hash_collision_is_present_but_not_found(self):
         """Two keys of one length forced to one hash: looking up 猫 meets 犬's slot first
@@ -113,7 +115,7 @@ class DictLookupBench(unittest.TestCase):
             self.build([term("犬", gloss=["dog"]), term("猫", gloss=["cat"])])
         bench.write_tsv([("cat", "猫")], self.lines, "fixture")
         (q,) = bench.run(BENCH, self.dir, "main.vjdict", self.lines, "first", 1)
-        self.assertEqual((q["probes"], q["hash_present"], q["found"], q["entries"]), (1, 1, 1, 1))
+        self.assertEqual((q["probes"], q["hash_present"], q["found"], q["entries"]), (2, 2, 2, 1))
         # Both keys' groups share one page: 犬's key read brings 猫's into the page cache.
         self.assertEqual((q["absent_reads"], q["reads_by"]["group"]), (0, 1))
         bench.write_tsv([("bird", "鳥")], self.lines, "fixture")
@@ -194,14 +196,14 @@ class DictLookupBench(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         rows = [q for line in run.stdout.splitlines() if "summary" not in (q := json.loads(line))]
         kinds = lambda **n: {"header": 0, "index": 0, "group": 0, "head": 0, "payload": 0, "filter": 2, **n}
-        found = kinds(index=2, group=1, head=1)
+        found = kinds(index=3, group=2, head=2)
         self.assertEqual([(q["line"], q["cursor"], q["reads_by"]) for q in rows], [
-            (0, 0, kinds(header=2, index=1, group=1, head=1, filter=3)),  # 今日, the files opened
+            (0, 0, kinds(header=2, index=2, group=2, head=2, filter=4)),  # 今日, the files opened
             (0, 6, kinds()), (0, 9, found), (0, 12, kinds()),  # は, 猫, を
-            (0, 15, kinds(index=1, group=1, head=1, filter=3)),  # 見ました
-            (1, 0, kinds(header=2, index=2, group=1, head=1)), (1, 3, kinds()),  # 猫 (opened), が
-            (1, 6, kinds(index=1, group=1, head=1, filter=3))])  # 見ている
-        self.assertEqual([q["reads"] for q in rows], [8, 2, 6, 2, 6, 8, 2, 6])
+            (0, 15, kinds(index=2, group=2, head=2, filter=4)),  # 見ました
+            (1, 0, kinds(header=2, index=3, group=2, head=2)), (1, 3, kinds()),  # 猫 (opened), が
+            (1, 6, kinds(index=2, group=2, head=2, filter=4))])  # 見ている
+        self.assertEqual([q["reads"] for q in rows], [12, 2, 9, 2, 10, 11, 2, 10])
         # Every one-character probe: answered by its file's loaded block (2, filtered), or found (4) in the
         # index; the names' 猫, its block dropped, from the index (0, absent).
         probes = [line.split("\t") for line in trace.read_text().splitlines()]

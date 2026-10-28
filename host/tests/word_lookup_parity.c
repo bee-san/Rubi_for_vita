@@ -52,7 +52,7 @@ int main(int argc, char **argv)
     }
     memset(&cfg, 0, sizeof(cfg));
     memset(&p, 0, sizeof(p));
-    cfg.local_dictionary_results = 1;
+
     snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "%s", argv[1]);
     snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "plaintext.vjdict");
     p.file_open = file_open;

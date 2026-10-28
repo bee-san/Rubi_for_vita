@@ -40,3 +40,4 @@ VitaJPOverlay_Kernel:
         - vjoMemInfo
         - vjoSetTextSource
         - vjoGetTextSource
+        - vjoOcrHookProfile

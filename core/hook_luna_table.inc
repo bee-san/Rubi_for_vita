@@ -122,6 +122,7 @@ enum {
 #define VJO_LUNA_TITLES 182u
 #define VJO_LUNA_SITES 306u
 
+#ifndef VJO_EXTERNAL_HOOK_PROFILES
 static const char vjo_luna_ids[VJO_LUNA_TITLES][10] VJO_DATA_TABLE(luna_title_ids) = {
     "PCSB00985", "PCSG00020", "PCSG00062", "PCSG00139", "PCSG00172", "PCSG00216",
     "PCSG00271", "PCSG00272", "PCSG00291", "PCSG00299", "PCSG00367", "PCSG00370",
@@ -465,6 +466,7 @@ static const VjoLunaSite vjo_luna_table[VJO_LUNA_SITES] = {
     {.addr = 0x801B8F9Au, .padding = 0, .title = 181, .reg = 5, .encoding = VJO_HOOK_ENC_UTF8, .flags = 0, .func = VJO_LH_NONE, .filter = VJO_LF_PCSG01325, .ported = 1, .version = 0x0000}, /* PCSG01325:1395 */
 };
 
+#endif /* built-in catalogue: host tools and Rubi app only */
 /* Luna's katakanaMap (stringfilters.cpp, its remapkatakana): what U+FF61-U+FF9F become */
 static const uint16_t vjo_luna_kana[63] = {
     0x3002, 0x300C, 0x300D, 0x3001, 0x2026, 0x3092, 0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3083,

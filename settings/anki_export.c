@@ -19,6 +19,7 @@
 #include "app_io.h"
 #include "app_platform.h"
 #include "applog.h"
+#include "anki_features.h"
 
 #define JPEG_MAGIC "\xFF\xD8\xFF"
 
@@ -1559,7 +1560,7 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
     }
     l.skip = prefs->anki_duplicates == VJO_DUPLICATES_SKIP;
     /* #314 stage C: the known words, whatever Duplicates says (above the words, released with them) */
-    {
+    if (VJO_KNOWN_WORDS_ENABLED) {
         uint64_t *known;
         int n = known_load(a, &known);
         if (n < 0)
