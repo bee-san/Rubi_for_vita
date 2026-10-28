@@ -251,15 +251,18 @@ static void procedural_frames(void)
         TEST_ASSERT(rgb != NULL);
         /* regions in pixels: the dialogue box, a tight textbox, the light box, the
          * title, a tiny one (grown to 32x32), an odd x at the right edge, an odd width
-         * at the frame's last rows and one at its first rows and columns (#418: the
-         * kernel's rows converted in place), the frame */
+         * (77 px) over the light box's first line from the frame's first row and one over
+         * the dialogue box's last line to the frame's last row (#418: the kernel's rows
+         * converted in place; norm() rounds down, so that crop reaches the last row only
+         * with the row past it asked for), the frame */
         const unsigned regions[][4] = {
             {20 * k, 190 * k, w - 20 * k, h - 6 * k}, {28 * k, 196 * k, w - 36 * k, 250 * k},
             {300 * k, 20 * k, 460 * k, 70 * k},      {10 * k, 96 * k, 250 * k, 150 * k},
             {200 * k, 120 * k, 205 * k, 124 * k},    {w - 151, 191 * k, w, h - 1},
-            {w - 77, h - 40, w, h},                  {0, 0, 45, 37},
+            {300 * k, 0, 300 * k + 77, 42 * k},      {40 * k, 230 * k, 40 * k + 77, h + 1},
             {0, 0, 0, 0},
         };
+        const unsigned first_rows = 6, last_rows = 7; /* the two odd-width regions above */
         for (unsigned fi = 0; fi < N_FORMATS; fi++) {
             void *fb = encode(rgb, w, h, sizes[s][2], formats[fi]);
             TEST_ASSERT(fb != NULL);
@@ -273,7 +276,19 @@ static void procedural_frames(void)
                     }
                     snprintf(what, sizeof(what), "%ux%u pitch %u %s region %u %s", w, h, sizes[s][2],
                              format_names[fi], r, models[m]);
+                    unsigned lines0 = t.lines;
+                    unsigned long long bytes0 = t.bytes;
                     compare(&f, models[m], what, &t);
+                    if (r == first_rows || r == last_rows) {
+                        /* each crop is of an odd width, from the frame's first row or to its last, and gives the
+                         * recognizer lines to compare (#418 P3's audit F2) */
+                        uint32_t cx, cy, cw, ch;
+                        parity_crop_of(f.rx, f.ry, f.rw, f.rh, w, h, &cx, &cy, &cw, &ch);
+                        TEST_CHECK_((cw & 1) && (r == first_rows ? cy == 0 : cy + ch == h) && t.lines > lines0 &&
+                                        t.bytes > bytes0,
+                                    "%s: crop %u,%u %ux%u, %u lines, %llu B", what, (unsigned)cx, (unsigned)cy,
+                                    (unsigned)cw, (unsigned)ch, t.lines - lines0, t.bytes - bytes0);
+                    }
                 }
             free(fb);
         }

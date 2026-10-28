@@ -28,3 +28,8 @@ int parity_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_w
                       j->dst_kernel, j->sig, j->rgba, j->frame};
     return capture_grey_rows(base, pitch, fmt, fb_w, fb_h, &job);
 }
+
+void parity_sig_begin(uint32_t w, uint32_t h)
+{
+    capture_sig_begin(w, h);
+}
