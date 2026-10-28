@@ -11,112 +11,20 @@ been reported.
 
 ## [Unreleased]
 
-### Changed
+## [0.10.0] - 2026-10-28
 
-- **A removed feature's setting is ignored without a warning** (#418, cleanup package P2). A `config.ini` line of a
-  setting that an earlier build removed (`ocr_backend`: Google Lens, the VOCR2 and Meiki trials, ncnn; `log_host`, the
-  UDP log's computer; `dictionary = jpdb`, `jiten` or `hachidori`; an older `vocr_model` whose name gives no size)
-  gave one warning line in the open overlay and `log.txt`, naming what was removed; now it is ignored silently, as
-  the removed API keys, AnkiConnect's settings and `frequency_filter`, `font_size`, `hw_jpeg`, `combo_delay_ms` and
-  `hachidori_host` already were. Only a file from before 0.8.0 holds such a line, and the Rubi app's next save and
-  the installer remove or rewrite it, as before. Every other setting reads as before, with the same warnings; a
-  `vocr_model` that names a size still sets it, and a `dictionary` line with any other value than `local` or a removed
-  dictionary's still warns, as does a `dictionary` or `vocr_model` line without `=`. The Shell's code is smaller by it
-  (measured: in the PR).
-- **All three model sizes are VOCR6** (vita-vn-ocr #125 and #157, pre-release v0.4.1-vocr6.2): VOCR6-S replaces
-  VOCR5-S as Small, and VOCR6-N and VOCR6-L replace v0.4.0-vocr6.1's as Normal (the default) and Large
-  (`VOCR6.2_S_w8.vocr`, 819,792 B; `VOCR6.2_N_w8g2.vocr`, 1,189,408 B; `VOCR6.2_L_w8_2l.vocr`, 2,475,680 B). Each is
-  VOCR5's shape fine-tuned again on the owner's hooked PS Vita and PSP games: Normal and Large three times as long,
-  Small at half the learning rate. Measured on a computer (dialogue CER through the GRAD finder's path of Rubi 892cfb9,
-  as vita-vn-ocr's final reads model it, with the 1 MB LM and the cascade; VOCR5 → VOCR6, 95 % intervals):
-  - the hooked games' held-out pages: Small 1.177 → 1.049 % (−0.128 points, −0.189 to −0.074), Normal 1.008 → 0.936 %
-    (−0.072, −0.111 to −0.038), Large 0.990 → 0.917 % (−0.073, −0.118 to −0.036), three held-out seeds each, read with
-    the 1 MB LM's screening build. Small's are its shipped recipe's; Normal's and Large's are v0.4.0-vocr6.1's
-    15,000-step recipe's, as the shipped 45,000-step blobs (one seed) have no held-out read. The shipped blobs then
-    trained on those pages too;
-  - other games: VOCR5's development score 1.674 → 1.549 (Small), 1.482 → 1.389 (Normal), 1.439 → 1.396 (Large),
-    none resolved. Small in the set as it ships reads it +0.041 (−0.016 to +0.099) against VOCR5-S: worse in point,
-    and its recipe was the second tried in its stage (the third at Small);
-  - read once, after every choice: CLANNAD's lines 0.73 → 0.47 %, 0.66 → 0.33 % and 0.60 → 0.31 % (each resolved);
-    vita-test + psp-test's fixed lines 0.68 → 0.58 %, 0.49 → 0.36 % and 0.47 → 0.40 %, whole dialogue 3.04 → 3.02 %,
-    2.83 → 2.70 % and 2.72 → 2.68 % (none resolved; PSP alone not better);
-  - against v0.4.0-vocr6.1, the set before this one: CLANNAD's lines better (Small −0.21 and Normal −0.10, resolved;
-    Large −0.05, not), CLANNAD's pages through the GRAD finder worse at Normal and Large (+0.33 and +0.27 points,
-    resolved; still better than VOCR5 or level) and better at Small (−0.41); vita-test + psp-test's fixed lines Small
-    better (−0.23, resolved), Normal and Large level;
-  - seen data: every VOCR6 model has seen CLANNAD's glyph raster (two hooked games, Grisaia Spinout and Little
-    Busters!), so CLANNAD's gain is not an unseen-game result; Little Busters! and planetarian (Key's box with
-    CLANNAD) and Collar x Malice (vita-test's Collar x Malice -Unlimited-) were trained on, and the 1 MB and 4 MB LMs
-    hold their text; 38 of the 49 hooked games were in VOCR5's pools already; the LMs' Jiten list holds CLANNAD's
-    script.
-
-  Rubi's default finder is now the text spotter, which this set has not been read through. Under `ocr_head_gate = on`
-  each blob runs what it carries: Small nothing (its blob is plain, so the setting changes nothing for Small), Normal
-  its head gate (ε = 1e-4) and two-level head, Large its two-level head. Estimated box times, one core at 333 / 444 MHz:
-  Small 0.63 / 0.50 s (about 0.11 s more than VOCR5-S with its gate), Normal 0.77 / 0.61 s, Large 1.88 / 1.47 s (the
-  app shows 0.6, 0.8 and 1.9 s). A Normal job with the 2 MB LM keeps VOCR6-N's own settings for it (vita-vn-ocr #151),
-  measured on v0.4.0-vocr6.1's VOCR6-N and not again on this one; every other size and LM tier keeps its tier's,
-  Small's included. Normal's weights block is a page larger again (1,191,936 B), Small's and Large's keep theirs, and
-  no budget changes: the module rows move by 16 B or less in both Vita builds, in the same pages (measured).
-  `ocr/VOCR6-ATTRIBUTION.md` is the new release's (non-commercial use only; trained on copyrighted game data, which is
-  not redistributed). An update leaves the sizes' old files in `ux0:data/VitaJPOverlay/ocr/`: 0.9.8's
-  `VOCR5_S_w8g.vocr`, `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (4,488,464 B), and the test builds
-  v0.9.8-test.4's and test.5's `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (3,663,296 B). Nothing reads them, so they may be deleted. Nothing of
-  VOCR6 has run on a console ([details](docs/vita-vn-ocr.md#models)).
-- Opening the overlay confirms that the text is ready: its OCR read skips the stability wait. On an unsettled
-  screen, a running background read yields to a new read without the wait. Background reads and quiet refreshes
-  keep their stability checks; completed results still reopen from the cache.
-  - **#413's audit: a press's retry after a read torn by an animated icon waits for it again.** The wait is also what
-    tells an icon that cycles from text (`core/vocr_ocr.c`), so with an icon in the region quicker than a read every
-    try of a press tore, for ever (#353's case; on the host bench's box with the quickest icon, 0 of 12 presses at 60
-    frames a second). Now, once a read's screen changed under every try, the open overlay's next tries wait as a
-    background read does (150 ms of still rows, within `ocr_settle_max_ms`), and the press after a read reads at once
-    again: 12 of 12 there, a median 6.0 s after the press (7.1 s before #413, when every try waited); with slower icons
-    0.9-1.7 s, #413's 0.9-1.3 s (estimates of the bench, its 12 presses spread over the icon's cycle since #441's audit,
-    [details](docs/vita-vn-ocr.md#a-press-and-the-stable-text-wait-413)). The one difference from #413: a press that
-    finds that count held over from a torn job (Automatically's, a refresh's, the subtitle strip's, or a press closed
-    while it still tore) waits from its first read. With **Only when I press** every read is a press, so it never waits but
-    for those retries. `ocr_settle_press_ms`, a press's limit before #413, changes nothing, and the guide, the
-    `config.ini` template and the docs no longer say otherwise. The bench's `--press wait|nowait|retry[:MS]` replaces
-    `--settle-ms`. Tests: the press's retry waits, a held-over count, and a reopen keeps the press's own read (#413's
-    audit F3); each fails without its condition. Not run on a console.
-  - **#441's audit: a press after a torn read keeps the background read still running.** #413 cancelled a background
-    read still running on a screen not settled yet, so that the press read at once; with the count of torn reads held
-    over (#441) the press's own read waits too, so the cancel threw away a read further along for one that started its
-    wait again. 8 of test.4's 75 openings that waited for a recognition had the count held over, 4 of them on such a
-    screen [measured: the console's logs, the Shell's count replayed on the host]. Now that read is kept and its text
-    shown. The bench's 12 presses are spread over the icon's cycle (`--cluster` keeps the old spacing, all 12 within
-    87 ms of one moment of it, for the older tables), and its press figures are measured again: a sampling of one
-    moment had given "5.9 s against 1.7 s before #413", where the cycle gives 6.0 s against 7.1 s. The docs name every
-    source of the count, and the auto-vs-press page no longer says a press's job waits. Tests: the held-over count keeps
-    the read (it fails without the condition), and a press on a quiet screen cancels as on any other unsettled one.
-    The debug Shell takes 16 B more code, the normal one none: 4 B of code room left in each. Not run on a console.
-  - **#413's audit: a line typing out no longer counts against a native text hook.** A press's read of a line still
-    typing out compared its first part with the hook's whole line: a disagreement, so one such read at a check sent a
-    learned hook back to a check every eighth line, its trust further off, and two in a row unlocked it (it had to be
-    learned again); a trusted hook was never compared, as its jobs run no OCR. Now, in a read without the wait, OCR's
-    text that agrees only with the beginning of the locked hook's line is no evidence either way: the press shows OCR's
-    text and the hook keeps its state; any other text still disagrees, and a background read is compared as before
-    ([details](docs/native-hooks.md#a-line-typing-out-413s-audit-f2)). On the
-    hooked page pool's 29 Vita sessions (host: the selection over OCR's real reads, half of the presses on a line typing
-    out) a correct hook is unlocked 47 times instead of 105, and gives 5,149 trusted lines instead of 3,510, as it
-    reaches trust sooner; it is taken for a line typing out once until it agrees again, so a hook a page ahead of a page
-    that collects its lines is still unlocked, never trusted (in the actual worker with every job a press, 146 wrong
-    lines against 103 in two sessions, PCSG00648's and one more). With the default `ocr_settle_ms`, background reads are
-    compared exactly as before; with `ocr_settle_ms = 0` no read waits, so every read gets the rule. As every change to
-    the hook code does, it renews the hook definitions' revision, so a string-copy source Rubi had learned or trusted
-    for a game is learned again after the update. The game worker takes 208 B more code (192 B in the debug build), the
-    same pages. A press's partial line in
-    Automatically and the settled line after it are two `history.csv` records, so the reading totals count the start
-    twice: documented ([details](docs/ocr-history.md)); its fix does not fit the Shell's pages
-    ([measured](docs/memory-ledger.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)). Not run on
-    a console.
-  - **#491's audit:** tests pin the worker's half of the rule (a press's request has no settle time: a case fails with
-    it wired to 0, to 1 or to another field) and two guards of the once state (a duplicate read takes no exemption; an
-    unlock forgets it). `prefix_score` is no longer inlined: the comparison's deepest stack chain is 2,736 B, where #491
-    made it 3,760 B (2,772 B before; measured, `-fstack-usage`), for 32 B of the worker's code, the same pages. Repeated
-    presses on one line still typing out can still unlock its hook (documented, the owner's call); the console check is
-    [step 19](docs/native-hooks.md#to-test-on-a-console). Not run on a console.
+VOCR6 for all three model sizes, and a text spotter that finds the lines (vita-vn-ocr #125; v0.4.1-vocr6.2 and
+textspot8): measured on a computer through Rubi's path, on held-out pages of the owner's hooked games dialogue error
+goes from 1.177 / 1.008 / 0.990 % to 1.049 / 0.936 / 0.917 % (Small / Normal / Large; other pages of the trained
+games, which the shipped models then trained on too), other games are level (none of it resolved; Small in point
+worse), and the spotter takes other games' screenshots from Rubi's finder's 2.38 % to 1.03 %. VOCR6 was read through
+the old finder, not the spotter, and has seen CLANNAD's glyph raster. OCR keeps a fixed 1 MiB of a game's free memory
+for every size (#280, which the owner's console run of a 0.9.4 test build confirmed). Also: the Rubi app's Look up
+tab and a game's own page with its line finder, richer Anki cards with duplicates and known words, the reading streak
+in the overlay's △ view (the test builds' Stats tab and Cards page are gone), a suggested text box on first use,
+faster dictionary lookups, verified native hooks for 26 more games (Vita3K-proven; one also on a console), Vertical
+text ON fixed on a horizontal box, and a press that reads at once (#413). Nothing else new here has run on a console
+yet. Like 0.9.8, this release is the normal build only: `Rubi-0.10.0.vpk` (the main download) and `Rubi-0.10.0.zip`.
 
 ### Added
 
@@ -370,6 +278,8 @@ been reported.
 
 ### Fixed
 
+- Packaging: the release zip has `tools/known_words.py`, which the README and docs/anki.md tell you to run for the
+  Rubi app's **Known words** import (#314); the zip's tools list never named it (audit-rubi-cleanup-8 F4).
 - **OCR keeps a fixed 1 MiB of the game's free memory, for every model size** (#280, the owner's choice of
   2026-10-23), where it kept 4, 8 or 16 MiB for Small, Normal and Large (by the largest size a job holds, its
   cascade's included: vita-vn-ocr's untuned proposal). あおかな (`PCSG00700`) reported 3,072 KiB free, and Small was
@@ -659,6 +569,110 @@ been reported.
 
 ### Changed
 
+- **A removed feature's setting is ignored without a warning** (#418, cleanup package P2). A `config.ini` line of a
+  setting that an earlier build removed (`ocr_backend`: Google Lens, the VOCR2 and Meiki trials, ncnn; `log_host`, the
+  UDP log's computer; `dictionary = jpdb`, `jiten` or `hachidori`; an older `vocr_model` whose name gives no size)
+  gave one warning line in the open overlay and `log.txt`, naming what was removed; now it is ignored silently, as
+  the removed API keys, AnkiConnect's settings and `frequency_filter`, `font_size`, `hw_jpeg`, `combo_delay_ms` and
+  `hachidori_host` already were. Only a file from before 0.8.0 holds such a line, and the Rubi app's next save and
+  the installer remove or rewrite it, as before. Every other setting reads as before, with the same warnings; a
+  `vocr_model` that names a size still sets it, and a `dictionary` line with any other value than `local` or a removed
+  dictionary's still warns, as does a `dictionary` or `vocr_model` line without `=`. The Shell's code is smaller by it
+  (measured: in the PR).
+- **All three model sizes are VOCR6** (vita-vn-ocr #125 and #157, pre-release v0.4.1-vocr6.2): VOCR6-S replaces
+  VOCR5-S as Small, and VOCR6-N and VOCR6-L replace v0.4.0-vocr6.1's as Normal (the default) and Large
+  (`VOCR6.2_S_w8.vocr`, 819,792 B; `VOCR6.2_N_w8g2.vocr`, 1,189,408 B; `VOCR6.2_L_w8_2l.vocr`, 2,475,680 B). Each is
+  VOCR5's shape fine-tuned again on the owner's hooked PS Vita and PSP games: Normal and Large three times as long,
+  Small at half the learning rate. Measured on a computer (dialogue CER through the GRAD finder's path of Rubi 892cfb9,
+  as vita-vn-ocr's final reads model it, with the 1 MB LM and the cascade; VOCR5 → VOCR6, 95 % intervals):
+  - the hooked games' held-out pages: Small 1.177 → 1.049 % (−0.128 points, −0.189 to −0.074), Normal 1.008 → 0.936 %
+    (−0.072, −0.111 to −0.038), Large 0.990 → 0.917 % (−0.073, −0.118 to −0.036), three held-out seeds each, read with
+    the 1 MB LM's screening build. Small's are its shipped recipe's; Normal's and Large's are v0.4.0-vocr6.1's
+    15,000-step recipe's, as the shipped 45,000-step blobs (one seed) have no held-out read. The shipped blobs then
+    trained on those pages too;
+  - other games: VOCR5's development score 1.674 → 1.549 (Small), 1.482 → 1.389 (Normal), 1.439 → 1.396 (Large),
+    none resolved. Small in the set as it ships reads it +0.041 (−0.016 to +0.099) against VOCR5-S: worse in point,
+    and its recipe was the second tried in its stage (the third at Small);
+  - read once, after every choice: CLANNAD's lines 0.73 → 0.47 %, 0.66 → 0.33 % and 0.60 → 0.31 % (each resolved);
+    vita-test + psp-test's fixed lines 0.68 → 0.58 %, 0.49 → 0.36 % and 0.47 → 0.40 %, whole dialogue 3.04 → 3.02 %,
+    2.83 → 2.70 % and 2.72 → 2.68 % (none resolved; PSP alone not better);
+  - against v0.4.0-vocr6.1, the set before this one: CLANNAD's lines better (Small −0.21 and Normal −0.10, resolved;
+    Large −0.05, not), CLANNAD's pages through the GRAD finder worse at Normal and Large (+0.33 and +0.27 points,
+    resolved; still better than VOCR5 or level) and better at Small (−0.41); vita-test + psp-test's fixed lines Small
+    better (−0.23, resolved), Normal and Large level;
+  - seen data: every VOCR6 model has seen CLANNAD's glyph raster (two hooked games, Grisaia Spinout and Little
+    Busters!), so CLANNAD's gain is not an unseen-game result; Little Busters! and planetarian (Key's box with
+    CLANNAD) and Collar x Malice (vita-test's Collar x Malice -Unlimited-) were trained on, and the 1 MB and 4 MB LMs
+    hold their text; 38 of the 49 hooked games were in VOCR5's pools already; the LMs' Jiten list holds CLANNAD's
+    script.
+
+  Rubi's default finder is now the text spotter, which this set has not been read through. Under `ocr_head_gate = on`
+  each blob runs what it carries: Small nothing (its blob is plain, so the setting changes nothing for Small), Normal
+  its head gate (ε = 1e-4) and two-level head, Large its two-level head. Estimated box times, one core at 333 / 444 MHz:
+  Small 0.63 / 0.50 s (about 0.11 s more than VOCR5-S with its gate), Normal 0.77 / 0.61 s, Large 1.88 / 1.47 s (the
+  app shows 0.6, 0.8 and 1.9 s). A Normal job with the 2 MB LM keeps VOCR6-N's own settings for it (vita-vn-ocr #151),
+  measured on v0.4.0-vocr6.1's VOCR6-N and not again on this one; every other size and LM tier keeps its tier's,
+  Small's included. Normal's weights block is a page larger again (1,191,936 B), Small's and Large's keep theirs, and
+  no budget changes: the module rows move by 16 B or less in both Vita builds, in the same pages (measured).
+  `ocr/VOCR6-ATTRIBUTION.md` is the new release's (non-commercial use only; trained on copyrighted game data, which is
+  not redistributed). An update leaves the sizes' old files in `ux0:data/VitaJPOverlay/ocr/`: 0.9.8's
+  `VOCR5_S_w8g.vocr`, `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (4,488,464 B), and the test builds
+  v0.9.8-test.4's and test.5's `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (3,663,296 B). Nothing reads them, so they may be deleted. Nothing of
+  VOCR6 has run on a console ([details](docs/vita-vn-ocr.md#models)).
+- Opening the overlay confirms that the text is ready: its OCR read skips the stability wait. On an unsettled
+  screen, a running background read yields to a new read without the wait. Background reads and quiet refreshes
+  keep their stability checks; completed results still reopen from the cache.
+  - **#413's audit: a press's retry after a read torn by an animated icon waits for it again.** The wait is also what
+    tells an icon that cycles from text (`core/vocr_ocr.c`), so with an icon in the region quicker than a read every
+    try of a press tore, for ever (#353's case; on the host bench's box with the quickest icon, 0 of 12 presses at 60
+    frames a second). Now, once a read's screen changed under every try, the open overlay's next tries wait as a
+    background read does (150 ms of still rows, within `ocr_settle_max_ms`), and the press after a read reads at once
+    again: 12 of 12 there, a median 6.0 s after the press (7.1 s before #413, when every try waited); with slower icons
+    0.9-1.7 s, #413's 0.9-1.3 s (estimates of the bench, its 12 presses spread over the icon's cycle since #441's audit,
+    [details](docs/vita-vn-ocr.md#a-press-and-the-stable-text-wait-413)). The one difference from #413: a press that
+    finds that count held over from a torn job (Automatically's, a refresh's, the subtitle strip's, or a press closed
+    while it still tore) waits from its first read. With **Only when I press** every read is a press, so it never waits but
+    for those retries. `ocr_settle_press_ms`, a press's limit before #413, changes nothing, and the guide, the
+    `config.ini` template and the docs no longer say otherwise. The bench's `--press wait|nowait|retry[:MS]` replaces
+    `--settle-ms`. Tests: the press's retry waits, a held-over count, and a reopen keeps the press's own read (#413's
+    audit F3); each fails without its condition. Not run on a console.
+  - **#441's audit: a press after a torn read keeps the background read still running.** #413 cancelled a background
+    read still running on a screen not settled yet, so that the press read at once; with the count of torn reads held
+    over (#441) the press's own read waits too, so the cancel threw away a read further along for one that started its
+    wait again. 8 of test.4's 75 openings that waited for a recognition had the count held over, 4 of them on such a
+    screen [measured: the console's logs, the Shell's count replayed on the host]. Now that read is kept and its text
+    shown. The bench's 12 presses are spread over the icon's cycle (`--cluster` keeps the old spacing, all 12 within
+    87 ms of one moment of it, for the older tables), and its press figures are measured again: a sampling of one
+    moment had given "5.9 s against 1.7 s before #413", where the cycle gives 6.0 s against 7.1 s. The docs name every
+    source of the count, and the auto-vs-press page no longer says a press's job waits. Tests: the held-over count keeps
+    the read (it fails without the condition), and a press on a quiet screen cancels as on any other unsettled one.
+    The debug Shell takes 16 B more code, the normal one none: 4 B of code room left in each. Not run on a console.
+  - **#413's audit: a line typing out no longer counts against a native text hook.** A press's read of a line still
+    typing out compared its first part with the hook's whole line: a disagreement, so one such read at a check sent a
+    learned hook back to a check every eighth line, its trust further off, and two in a row unlocked it (it had to be
+    learned again); a trusted hook was never compared, as its jobs run no OCR. Now, in a read without the wait, OCR's
+    text that agrees only with the beginning of the locked hook's line is no evidence either way: the press shows OCR's
+    text and the hook keeps its state; any other text still disagrees, and a background read is compared as before
+    ([details](docs/native-hooks.md#a-line-typing-out-413s-audit-f2)). On the
+    hooked page pool's 29 Vita sessions (host: the selection over OCR's real reads, half of the presses on a line typing
+    out) a correct hook is unlocked 47 times instead of 105, and gives 5,149 trusted lines instead of 3,510, as it
+    reaches trust sooner; it is taken for a line typing out once until it agrees again, so a hook a page ahead of a page
+    that collects its lines is still unlocked, never trusted (in the actual worker with every job a press, 146 wrong
+    lines against 103 in two sessions, PCSG00648's and one more). With the default `ocr_settle_ms`, background reads are
+    compared exactly as before; with `ocr_settle_ms = 0` no read waits, so every read gets the rule. As every change to
+    the hook code does, it renews the hook definitions' revision, so a string-copy source Rubi had learned or trusted
+    for a game is learned again after the update. The game worker takes 208 B more code (192 B in the debug build), the
+    same pages. A press's partial line in
+    Automatically and the settled line after it are two `history.csv` records, so the reading totals count the start
+    twice: documented ([details](docs/ocr-history.md)); its fix does not fit the Shell's pages
+    ([measured](docs/memory-ledger.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)). Not run on
+    a console.
+  - **#491's audit:** tests pin the worker's half of the rule (a press's request has no settle time: a case fails with
+    it wired to 0, to 1 or to another field) and two guards of the once state (a duplicate read takes no exemption; an
+    unlock forgets it). `prefix_score` is no longer inlined: the comparison's deepest stack chain is 2,736 B, where #491
+    made it 3,760 B (2,772 B before; measured, `-fstack-usage`), for 32 B of the worker's code, the same pages. Repeated
+    presses on one line still typing out can still unlock its hook (documented, the owner's call); the console check is
+    [step 19](docs/native-hooks.md#to-test-on-a-console). Not run on a console.
 - **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1; replaced before a release by the
   follow-up set, all three sizes VOCR6, above): VOCR5-N's and VOCR5-L's shapes,
   fine-tuned again on the owner's hooked PS Vita and PSP games, replace VOCR5-N and VOCR5-L as the Normal (the default)
@@ -1822,7 +1836,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.8...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.0
 [0.9.8]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.8
 [0.9.7]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.7
 [0.9.6]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.6
