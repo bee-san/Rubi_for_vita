@@ -745,8 +745,8 @@ The code audit (MERGE_OK on #158) left six suggestions, all taken here:
    above says what is done with an empty file.
 6. Over this build a `config.ini` missing beside its `config.ini.bak` is written again from the backup.
 
-Host tests only (`host/tests/test_settings_install.c`); no console run has reported the page's paging (a plan of
-more than 40 lines).
+Host tests only (`host/tests/test_settings_install.c`); no console run has reported the page's paging (a plan
+longer than its box, about ten lines).
 
 ## Unmeasured until a console run
 
