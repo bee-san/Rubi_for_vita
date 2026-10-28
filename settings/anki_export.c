@@ -316,11 +316,11 @@ static void word_sort(VjoWord *w, int n, int by_id)
     vjo_heap_sort(w, n, sizeof(*w), by_id ? word_by_id : word_by_key, NULL);
 }
 
-/* n bytes of p to fd (settings/app_io.h): 0, or -1 (logged, under the words cache's temporary name). */
-static int write_all(SceUID fd, const void *p, size_t n)
+/* n bytes of p to fd, the file path (settings/app_io.h): 0, or -1 (logged under path). */
+static int write_all(SceUID fd, const void *p, size_t n, const char *path)
 {
     int k = 0;
-    return vjo_app_write_all(fd, p, n, &k) < 0 ? io_fail("write", WORDS_TEMP, k) : 0;
+    return vjo_app_write_all(fd, p, n, &k) < 0 ? io_fail("write", path, k) : 0;
 }
 
 /* Entries [at, at + m) of w in the file's form, into buf. */
@@ -415,11 +415,11 @@ static void words_save(const VjoWord *w, int n)
         io_fail("open", WORDS_TEMP, fd);
         return;
     }
-    rc = write_all(fd, head, WORDS_HEAD);
+    rc = write_all(fd, head, WORDS_HEAD, WORDS_TEMP);
     for (int done = 0; !rc && done < n; done += WORDS_CHUNK) {
         int m = n - done < WORDS_CHUNK ? n - done : WORDS_CHUNK;
         words_encode(w, done, m, buf);
-        rc = write_all(fd, buf, (size_t)m * WORDS_ENTRY);
+        rc = write_all(fd, buf, (size_t)m * WORDS_ENTRY, WORDS_TEMP);
     }
     if ((k = sceIoClose(fd)) < 0 && !rc)
         rc = io_fail("close", WORDS_TEMP, k);
@@ -702,12 +702,12 @@ static int known_save(const uint64_t *k, int n)
     be_put(head + 12, crc, 4);
     if ((fd = sceIoOpen(KNOWN_TEMP, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0)
         return io_fail("open", KNOWN_TEMP, fd);
-    rc = write_all(fd, head, sizeof(head));
+    rc = write_all(fd, head, sizeof(head), KNOWN_TEMP);
     for (int i = 0; !rc && i < n; i += (int)(sizeof(buf) / 8)) {
         int m = n - i < (int)(sizeof(buf) / 8) ? n - i : (int)(sizeof(buf) / 8);
         for (int j = 0; j < m; j++)
             be_put(buf + 8 * j, k[i + j], 8);
-        rc = write_all(fd, buf, (size_t)m * 8);
+        rc = write_all(fd, buf, (size_t)m * 8, KNOWN_TEMP);
     }
     if ((c = sceIoClose(fd)) < 0 && !rc)
         rc = io_fail("close", KNOWN_TEMP, c);

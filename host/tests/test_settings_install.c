@@ -185,12 +185,14 @@ uint64_t sceKernelGetProcessTimeWide(void) { return clock_us += 1000; }
 uint64_t sceKernelGetSystemTimeWide(void) { return uptime_us; }
 /* the page's thread: run at once */
 static int (*thread_entry)(SceSize, void *);
+static int fail_create; /* #418 (P10): the page's thread cannot be made */
 SceUID sceKernelCreateMutex(const char *n, unsigned int a, int c, void *o) { (void)n; (void)a; (void)c; (void)o; return 1; }
 int sceKernelLockMutex(SceUID u, int c, void *t) { (void)u; (void)c; (void)t; return 0; }
 int sceKernelUnlockMutex(SceUID u, int c) { (void)u; (void)c; return 0; }
 SceUID sceKernelCreateThread(const char *n, int (*e)(SceSize, void *), int p, unsigned int s, unsigned int a, int af, void *o)
 {
     (void)n; (void)p; (void)s; (void)a; (void)af; (void)o;
+    if (fail_create) return (int)0x80020001u;
     thread_entry = e;
     return 2;
 }
@@ -1765,6 +1767,27 @@ static void the_page_shows_the_plan_and_runs_it(void)
     TEST_CHECK(installed_files(1));
 }
 
+/* #418 (P10): the page's worker cannot be made (settings/app_worker.c's failed start): the page says so and that nothing
+ * was changed, is not busy, and the same action runs once the thread can be made. */
+static void a_run_whose_thread_cannot_start_changes_nothing(void)
+{
+    fresh_card(1);
+    TEST_CHECK(vjo_install_page_start() == 1);
+    frame(0);
+    TEST_CHECK(shown("[Install*]"));
+    fail_create = 1;
+    frame(SCE_CTRL_CROSS);
+    fail_create = 0;
+    frame(0);
+    for (int i = 0; i < drawn_count; i++) TEST_MSG("%s", drawn[i]);
+    TEST_CHECK(!vjo_install_page_busy() && shown("Could not start (0x80020001): nothing was changed."));
+    TEST_CHECK(!installed_files(1));
+    frame(SCE_CTRL_CROSS); /* back to the plan */
+    frame(SCE_CTRL_CROSS); /* Install again: the stubs run the thread at once */
+    frame(0);
+    TEST_CHECK(!vjo_install_page_busy() && shown("Installed the overlay v0.8.0") && installed_files(1));
+}
+
 /* A stop while swap_config wrote config.txt.vjo-new (after its open, before or during the write; a power
  * cut, so nothing removed the partial file): config.txt is as it was and there is no .vjo-old, so the swap
  * never started. Only Keep is offered, first; its .vjo-new (empty, or a prefix) is never put in place.
@@ -2895,6 +2918,7 @@ TEST_LIST = {
     {"the_manifest_is_exactly_the_builds", the_manifest_is_exactly_the_builds},
     {"package_settings_are_applied", package_settings_are_applied},
     {"the_page_shows_the_plan_and_runs_it", the_page_shows_the_plan_and_runs_it},
+    {"a_run_whose_thread_cannot_start_changes_nothing", a_run_whose_thread_cannot_start_changes_nothing},
     {"an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them", an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them},
     {NULL, NULL}};
 

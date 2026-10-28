@@ -45,7 +45,7 @@ uint64_t sceKernelGetProcessTimeWide(void) { return 0; } /* settings/app_platfor
 /* a failure is ENOENT's 0x80010002 for a missing file, else -1 */
 #define SCEIO_ERROR(e) ((e) == ENOENT ? (int)0x80010002u : -1)
 #define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_PWRITE | SCEIO_PREAD | SCEIO_GETSTAT | SCEIO_RENAME | \
-                   SCEIO_REMOVE | SCEIO_SYNCBYFD | SCEIO_SYNC | SCEIO_DOPEN)
+                   SCEIO_REMOVE | SCEIO_SYNCBYFD | SCEIO_SYNC | SCEIO_DOPEN | SCEIO_WRITE | SCEIO_READ)
 #include "fakes/sceio_posix.h"
 
 static char logs[16384];
@@ -87,6 +87,9 @@ static struct {
     time_t package_time;     /* nonzero: every .apkg's st_mtime (the calendar cases; 32-bit on the ARM lane) */
     int fd;                  /* the package's (the last one opened for writing) */
     int fail_dopen_at, dopens; /* the Nth directory opened fails (EIO) */
+    /* #418 (P10): every sceIoWrite (sceIoRead) of a file whose path contains this fails: ENOSPC (EIO) */
+    const char *fail_write, *fail_read;
+    int fail_write_fd, fail_read_fd;
     int syncs;
     /* #311's sentence readings: the dictionaries' files (a path with .vjdict) opened (or tried), the ones open now,
      * and their reads */
@@ -114,6 +117,10 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
     fd = sceio_open(p, flags, mode);
     if (fd >= 0 && (flags & O_CREAT) && strstr(p, ".apkg"))
         io.fd = fd;
+    if (fd >= 0 && io.fail_write && (flags & O_WRONLY) && strstr(p, io.fail_write))
+        io.fail_write_fd = fd;
+    if (fd >= 0 && io.fail_read && flags == SCE_O_RDONLY && strstr(p, io.fail_read))
+        io.fail_read_fd = fd;
     if (strstr(p, ".vjdict")) {
         io.dict_tries++;
         if (fd >= 0 && io.dict_open < 16)
@@ -131,6 +138,14 @@ int sceIoClose(int fd)
         return -1;
     }
     return rc;
+}
+int sceIoWrite(int fd, const void *p, size_t n)
+{
+    return io.fail_write && fd == io.fail_write_fd ? (int)0x8001001Cu : sceio_write(fd, p, n);
+}
+int sceIoRead(int fd, void *p, size_t n)
+{
+    return io.fail_read && fd == io.fail_read_fd ? (int)0x80010005u : sceio_read(fd, p, n);
 }
 int sceIoPwrite(int fd, const void *p, size_t n, SceOff off)
 {
@@ -278,7 +293,7 @@ static void reset(void)
 {
     memset(&io, 0, sizeof(io));
     io.write_after = -1;
-    io.fd = -1;
+    io.fd = io.fail_write_fd = io.fail_read_fd = -1;
     logs[0] = status_line[0] = status_all[0] = '\0';
     stop_at_status = stop_after_dict_reads = -1;
     statuses = 0;
@@ -2773,6 +2788,47 @@ static int write_packages(const char *dir)
     return 0;
 }
 
+/* ---------------- #418 (P10): settings/app_io.c's failures, as the export sees them ---------------- */
+
+/* The known words' index cannot be written (a full card): the import says so, the index stays as it was, no temporary
+ * file is left, and log.txt names that file (anki_known.bin.tmp, not the words cache's: audit-rubi-cleanup-10 F2). */
+static void test_a_known_index_that_cannot_be_written(void)
+{
+    VjoKnownResult k;
+    char msg[300];
+    reset();
+    put_known("猫\tねこ\n");
+    TEST_ASSERT(import_known(&k, msg) == VJO_OK && vjo_known_count() == 1);
+    put_known("猫\tねこ\n犬\n");
+    io.fail_write = "anki_known.bin.tmp";
+    logs[0] = '\0';
+    TEST_CHECK(import_known(&k, msg) != VJO_OK);
+    TEST_MSG("%s", msg);
+    TEST_CHECK_(strstr(logs, "anki export: write " VJO_KNOWN_INDEX ".tmp failed 0x8001001C") != NULL, "log: %s", logs);
+    TEST_CHECK(!strstr(logs, "anki_words.bin"));
+    io.fail_write = NULL;
+    TEST_CHECK(vjo_known_count() == 1 && present(VJO_KNOWN_INDEX ".tmp") == 0);
+}
+
+/* The words' cache cannot be read (settings/app_io.c vjo_app_read_exact fails): it is ignored, and the words come
+ * from the records, as with no cache. */
+static void test_a_words_cache_that_cannot_be_read(void)
+{
+    VjoWords w;
+    reset();
+    queue_word("猫", "ねこ", "猫が好き", 0);
+    queue_word("猫", "ねこ", "猫を見た", 120);
+    queue_word("犬", "いぬ", "犬だ", 240);
+    TEST_ASSERT(words(&w, 0) == 0 && w.read == 3 && present(VJO_EXPORT_DATA_DIR "/anki_words.bin") == 1);
+    io.fail_read = "anki_words.bin";
+    logs[0] = '\0';
+    TEST_ASSERT(words(&w, 0) == 0);
+    TEST_CHECK_(w.read == 3 && w.n == 3 && w.duplicates == 1, "%d read, %d words, %d duplicates", w.read, w.n,
+                w.duplicates);
+    TEST_CHECK_(strstr(logs, "anki_words.bin ignored (not a cache of this build's)") != NULL, "log: %s", logs);
+    io.fail_read = NULL;
+}
+
 /* ---------------- #418 (P10): core/heap.h is the old heaps, step for step ---------------- */
 
 /* The four heaps as they were before core/heap.h (settings/anki_export.c word_down/word_sort, key_down/key_set and
@@ -3076,6 +3132,8 @@ TEST_LIST = {
     {"the_age_bound_is_exact_across_dates", test_the_age_bound_is_exact_across_dates},
     {"large_queue", test_large_queue},
     {"heap_order_is_the_old_heaps", test_heap_order_is_the_old_heaps},
+    {"a_known_index_that_cannot_be_written", test_a_known_index_that_cannot_be_written},
+    {"a_words_cache_that_cannot_be_read", test_a_words_cache_that_cannot_be_read},
     {NULL, NULL},
 };
 
