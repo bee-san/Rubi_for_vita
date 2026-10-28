@@ -40,45 +40,83 @@ static void pick_grid(uint32_t w, uint32_t h, uint32_t *cols, uint32_t *rows)
     }
 }
 
-void scene_acc_begin(SceneAcc *a, SceneSig *out, uint32_t w, uint32_t h)
+/* a's grid for a w x h region, unless it has it already */
+static void grid_for(SceneAcc *a, uint32_t w, uint32_t h)
 {
-    if (a->w != w || a->h != h || !a->cols) {
-        uint32_t rows;
-        pick_grid(w, h, &a->cols, &rows);
-        for (uint32_t c = 0; c <= a->cols; c++)
-            a->x0[c] = c * w / a->cols;
-        for (uint32_t r = 0; r <= rows; r++)
-            a->y0[r] = r * h / rows;
-        a->ystep = step_for(h, rows, MAX_YSTEP);
-        a->xstep = step_for(w, a->cols, MAX_XSTEP);
-        a->w = w;
-        a->h = h;
-    }
-    a->next_y = 0;
-    a->cell_row = 0;
-    a->out = out;
+    uint32_t rows;
+    if (a->w == w && a->h == h && a->cols)
+        return;
+    pick_grid(w, h, &a->cols, &rows);
+    for (uint32_t c = 0; c <= a->cols; c++)
+        a->x0[c] = c * w / a->cols;
+    for (uint32_t r = 0; r <= rows; r++)
+        a->y0[r] = r * h / rows;
+    a->ystep = step_for(h, rows, MAX_YSTEP);
+    a->xstep = step_for(w, a->cols, MAX_XSTEP);
+    a->w = w;
+    a->h = h;
+}
+
+static void sig_begin(SceneSig *out, uint32_t w, uint32_t h)
+{
     out->w = w;
     out->h = h;
-    out->cols = a->cols;
     for (int i = 0; i < SCENE_CELLS; i++)
         out->hash[i] = FNV_OFFSET;
 }
 
-void scene_acc_row(SceneAcc *a, uint32_t y, const uint32_t *abgr)
+void scene_acc_begin(SceneAcc *a, SceneSig *out, uint32_t w, uint32_t h)
 {
-    uint32_t *hash;
-    if (y != a->next_y || y >= a->h)
-        return;
-    a->next_y += a->ystep;
-    while (y >= a->y0[a->cell_row + 1])
-        a->cell_row++;
-    hash = &a->out->hash[a->cell_row * a->cols];
+    grid_for(a, w, h);
+    a->next_y = 0;
+    a->cell_row = 0;
+    a->out = out;
+    sig_begin(out, w, h);
+    out->cols = a->cols;
+}
+
+/* Row y (the signature's next sampled row) into out over a's grid; next_y and cell_row are the signature's. */
+static void add_row(const SceneAcc *a, uint32_t *next_y, uint32_t *cell_row, SceneSig *out, uint32_t y,
+                    const uint32_t *abgr)
+{
+    uint32_t *hash, row = *cell_row;
+    *next_y += a->ystep;
+    while (y >= a->y0[row + 1])
+        row++;
+    *cell_row = row;
+    hash = &out->hash[row * a->cols];
     for (uint32_t c = 0; c < a->cols; c++) {
         uint32_t h = hash[c];
         for (uint32_t x = a->x0[c]; x < a->x0[c + 1]; x += a->xstep)
             h = (h ^ (abgr[x] & 0x00FFFFFFu)) * FNV_PRIME; /* alpha ignored */
         hash[c] = h;
     }
+}
+
+void scene_acc_row(SceneAcc *a, uint32_t y, const uint32_t *abgr)
+{
+    if (y != a->next_y || y >= a->h)
+        return;
+    add_row(a, &a->next_y, &a->cell_row, a->out, y, abgr);
+}
+
+void scene_rows_begin(SceneRows *r, SceneSig *out, uint32_t w, uint32_t h)
+{
+    r->w = w;
+    r->h = h;
+    r->next_y = 0;
+    r->cell_row = 0;
+    r->out = out;
+    sig_begin(out, w, h);
+}
+
+void scene_rows_add(SceneRows *r, SceneAcc *grid, uint32_t y, const uint32_t *abgr)
+{
+    if (y != r->next_y || y >= r->h)
+        return;
+    grid_for(grid, r->w, r->h);
+    r->out->cols = grid->cols;
+    add_row(grid, &r->next_y, &r->cell_row, r->out, y, abgr);
 }
 
 static int same_grid(const SceneSig *a, const SceneSig *b)

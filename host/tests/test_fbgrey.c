@@ -146,7 +146,64 @@ static void rows_match_the_two_pass_conversion(void)
     TEST_CHECK(!memcmp(got, want, ROW));
 }
 
+/* The kernel's one scratch row (kernel/capture.c): vjo_fb_to_abgr_inplace gives vjo_fb_to_abgr's words (and the
+ * reference's) in the source's own buffer, for each format at every length to a 960-pixel row (VJO_MAX_W), odd ones
+ * included, and a 4,095-pixel one, and writes nothing past the row's words; the grey rows in place
+ * (vjo_abgr_to_grey from those words, vjo_a1b5g5r5_to_grey from the 16-bit pixels) give the bytes they give
+ * apart. */
+#define GUARD 0x5AA5C33Cu
+static uint32_t inplace[ROW + 4];
+
+static int inplace_matches(uint32_t fmt, unsigned n)
+{
+    const void *src = fmt == VJO_FB_A1B5G5R5 ? (const void *)halves : (const void *)words;
+    unsigned bytes = n * vjo_fb_bpp(fmt), bad = 0;
+    static unsigned char grey[ROW];
+    ref_fb_to_abgr(abgr, src, n, fmt);
+    for (unsigned i = 0; i < ROW + 4; i++) inplace[i] = GUARD;
+    memcpy(inplace, src, bytes);
+    vjo_fb_to_abgr_inplace(inplace, n, fmt);
+    bad += memcmp(inplace, abgr, (size_t)n * 4) != 0;
+    for (unsigned i = n; i < ROW + 4; i++) bad += inplace[i] != GUARD; /* nothing past the row */
+    /* the grey row in place, from the words just made: the bytes vjo_abgr_to_grey gives apart */
+    vjo_abgr_to_grey(grey, abgr, n);
+    vjo_abgr_to_grey((unsigned char *)inplace, inplace, n);
+    bad += memcmp(inplace, grey, n) != 0;
+    if (fmt == VJO_FB_A1B5G5R5) { /* the one-pass 16-bit grey row in place */
+        vjo_a1b5g5r5_to_grey(grey, halves, n);
+        memcpy(inplace, halves, (size_t)n * 2);
+        vjo_a1b5g5r5_to_grey((unsigned char *)inplace, (const uint16_t *)inplace, n);
+        bad += memcmp(inplace, grey, n) != 0;
+    }
+    return bad == 0;
+}
+
+static void rows_convert_in_place(void)
+{
+    static const uint32_t formats[] = {VJO_FB_A8B8G8R8, VJO_FB_A2B10G10R10, VJO_FB_A1B5G5R5};
+    uint32_t x = 0x9E3779B9u;
+    for (unsigned i = 0; i < ROW; i++) {
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        words[i] = x;
+        halves[i] = (uint16_t)(x >> 11);
+    }
+    for (unsigned f = 0; f < 3; f++) {
+        for (unsigned n = 0; n <= 961; n++)
+            if (!inplace_matches(formats[f], n)) {
+                TEST_CHECK_(0, "format 0x%08X, %u pixels", (unsigned)formats[f], n);
+                break;
+            }
+        TEST_CHECK_(inplace_matches(formats[f], ROW - 1), "format 0x%08X, %u pixels", (unsigned)formats[f], ROW - 1);
+    }
+    /* every 16-bit value in place, 16 rows of 4,096: pixel 0 shares its word's bytes with pixel 1 */
+    for (uint32_t c = 0; c < 16u; c++) {
+        for (uint32_t i = 0; i < ROW; i++) halves[i] = (uint16_t)(c * ROW + i);
+        TEST_CHECK_(inplace_matches(VJO_FB_A1B5G5R5, ROW), "16-bit values %u..%u", c * ROW, c * ROW + ROW - 1);
+    }
+}
+
 TEST_LIST = {
+    {"rows_convert_in_place", rows_convert_in_place},
     {"every_rgb_in_a8b8g8r8", every_rgb_in_a8b8g8r8},
     {"every_value_in_a1b5g5r5", every_value_in_a1b5g5r5},
     {"every_channel_in_a2b10g10r10", every_channel_in_a2b10g10r10},

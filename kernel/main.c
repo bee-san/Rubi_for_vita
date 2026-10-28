@@ -34,7 +34,7 @@ static void reset_change_detection(void)
 
 static void change_detection(void)
 {
-    static SceneSig sig;
+    SceneSig sig; /* 524 B of VjoWorker's 16 KiB stack: the hook's signature, copied under the lock */
     uint32_t seq, id = 0;
     SceneEvent ev = SCENE_NONE;
     int animated = 0;

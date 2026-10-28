@@ -118,6 +118,29 @@ static inline uint32_t scene_acc_next_row(const SceneAcc *a)
     return a->next_y; /* >= h: the signature is complete */
 }
 
+/* A second signature built over a SceneAcc's grid, so that two signatures keep one grid between them
+ * (kernel/capture.c: the OCR job's first pass, fed over several frames, beside the region's signature, built
+ * within one call every 8th frame). Its own region size, next row and grid row: the grid is rebuilt for its size
+ * in the row that needs it when it was last built for another (a full-frame job beside a text box, a region
+ * changed during a job), and the SceneAcc's own signature rebuilds it back at its next scene_acc_begin. So the
+ * grid is written only where rows are added, and a SceneAcc whose own signature is in progress must not be
+ * given: kernel/capture.c adds both kinds of row from the display hook, one frame at a time. The signature is
+ * the one a SceneAcc of its own would build, byte for byte; its cols is set with its first row (row 0). */
+typedef struct {
+    uint32_t w, h, next_y, cell_row;
+    SceneSig *out;
+} SceneRows;
+
+/* Starts a signature of a w x h region (w, h >= 1) into out; touches no grid. */
+void scene_rows_begin(SceneRows *r, SceneSig *out, uint32_t w, uint32_t h);
+/* Adds row y over grid's grid (rebuilt for r's size if it is another's); ignored unless y == scene_rows_next(). */
+void scene_rows_add(SceneRows *r, SceneAcc *grid, uint32_t y, const uint32_t *abgr);
+
+static inline uint32_t scene_rows_next(const SceneRows *r)
+{
+    return r->next_y; /* >= h: the signature is complete */
+}
+
 #define SCENE_MASK_ICON 1 /* animated */
 #define SCENE_MASK_EDGE 2 /* next to an animated cell */
 

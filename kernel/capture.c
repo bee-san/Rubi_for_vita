@@ -8,16 +8,16 @@
 #include "../core/fbgrey.h"
 #include "vjo_kernel.h"
 
-/* Two rows of scratch for every copy below. They are only used from on_frame,
- * which runs for one caller at a time (display.c frame_busy): a region
- * signature and a worker's rows run one after the other, never at once, so
- * they share these instead of holding two pairs in .bss. */
-static uint32_t scratch_row32[VJO_MAX_W], scratch_tmp32[VJO_MAX_W]; /* word-aligned rows */
-#define scratch_row ((uint8_t *)scratch_row32)
-#define scratch_tmp ((uint8_t *)scratch_tmp32)
-/* The capture's signature accumulator: the OCR job's first pass (one job at a
- * time, kernel/game_ocr.c). */
-static SceneAcc capture_acc;
+/* One row of scratch for every copy below, each row converted in place (core/fbgrey.h: a 16- or 10-bit
+ * row grows or turns into its A8B8G8R8 words, the words shrink into grey bytes). It is only used from
+ * on_frame, which runs for one caller at a time (display.c frame_busy): a region signature and a worker's
+ * rows run one after the other, never at once, so they share it instead of holding one each in .bss. */
+static uint32_t scratch[VJO_MAX_W]; /* word-aligned */
+#define scratch_grey ((uint8_t *)scratch) /* the row's grey bytes, in place of its words */
+/* The region's signature every 8th frame (region_sig_hook), whose grid the OCR job's first pass samples too
+ * (capture_rows: one job at a time, kernel/game_ocr.c): scene.h SceneRows, both fed from on_frame only. */
+static SceneAcc region_acc;
+static SceneRows capture_rows;
 
 void capture_compute_crop(uint32_t fb_w, uint32_t fb_h, uint32_t *x, uint32_t *y, uint32_t *w,
                           uint32_t *h)
@@ -74,15 +74,15 @@ static int copy_from_game(void *dst, uintptr_t src, uint32_t len)
     return ksceKernelMemcpyUserToKernel(dst, (const void *)src, len);
 }
 
-/* Reads n pixels at src as A8B8G8R8 into dst; tmp holds a converted
- * format's source row. */
-static int read_row(uint8_t *dst, uint8_t *tmp, uintptr_t src, uint32_t n, uint32_t fmt)
+/* Reads n pixels at src into the scratch row as A8B8G8R8 words: a converted
+ * format's source row is copied there and converted in place. */
+static int read_row(uintptr_t src, uint32_t n, uint32_t fmt)
 {
     if (fmt == VJO_FB_A8B8G8R8)
-        return copy_from_game(dst, src, n * 4);
-    if (copy_from_game(tmp, src, n * vjo_fb_bpp(fmt)) < 0)
+        return copy_from_game(scratch, src, n * 4);
+    if (copy_from_game(scratch, src, n * vjo_fb_bpp(fmt)) < 0)
         return -1;
-    vjo_fb_to_abgr((uint32_t *)dst, tmp, n, fmt);
+    vjo_fb_to_abgr_inplace(scratch, n, fmt);
     return 0;
 }
 
@@ -92,7 +92,6 @@ static int read_row(uint8_t *dst, uint8_t *tmp, uintptr_t src, uint32_t n, uint3
  * framebuffer from the worker crashed the console. */
 int region_sig_hook(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, uint32_t h, SceneSig *out)
 {
-    static SceneAcc acc;
     uint32_t x, y, cw, ch, bpp;
 
     if (!base)
@@ -103,18 +102,20 @@ int region_sig_hook(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, ui
     capture_compute_crop(w, h, &x, &y, &cw, &ch);
     if (!cw || !ch)
         return VJO_ERR_FORMAT;
-    scene_acc_begin(&acc, out, cw, ch);
-    for (uint32_t r = 0; r < ch; r = scene_acc_next_row(&acc)) {
-        if (read_row(scratch_row, scratch_tmp, base + ((y + r) * pitch + x) * bpp, cw, fmt) < 0)
+    scene_acc_begin(&region_acc, out, cw, ch);
+    for (uint32_t r = 0; r < ch; r = scene_acc_next_row(&region_acc)) {
+        if (read_row(base + ((y + r) * pitch + x) * bpp, cw, fmt) < 0)
             return VJO_ERR_COPY;
-        scene_acc_row(&acc, r, (const uint32_t *)scratch_row);
+        scene_acc_row(&region_acc, r, scratch);
     }
     return 0;
 }
 
+/* The syscall's (kernel/game_ocr.c, under g.lock, no rows armed): writes g.capture_sig and capture_rows,
+ * never region_acc's grid, which only the rows below (in on_frame) rebuild for the job's size. */
 void capture_sig_begin(uint32_t w, uint32_t h)
 {
-    scene_acc_begin(&capture_acc, &g.capture_sig, w, h);
+    scene_rows_begin(&capture_rows, &g.capture_sig, w, h);
 }
 
 /* Game context (display or pad hook, display.c): rows [y, y + n) of the OCR
@@ -141,31 +142,31 @@ int capture_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_
         uintptr_t src = base + ((job->y0 + row) * pitch + job->x0) * bpp;
         if (job->rgba) {
             /* API 23, a shot: the row in colour (A8B8G8R8, read_row's expansion), 4 bytes a pixel */
-            if (read_row(scratch_row, scratch_tmp, src, job->w, fmt) < 0)
+            if (read_row(src, job->w, fmt) < 0)
                 return VJO_ERR_COPY;
             if (job->dst_kernel)
-                memcpy(job->dst_kernel + r * job->stride, scratch_row, job->w * 4);
-            else if (ksceKernelMemcpyKernelToUser((void *)(job->dst_user + r * job->stride), scratch_row,
+                memcpy(job->dst_kernel + r * job->stride, scratch, job->w * 4);
+            else if (ksceKernelMemcpyKernelToUser((void *)(job->dst_user + r * job->stride), scratch,
                                                   job->w * 4) < 0)
                 return VJO_ERR_COPY;
             continue;
         }
-        if (fmt == VJO_FB_A1B5G5R5 && !(job->sig && row == scene_acc_next_row(&capture_acc))) {
-            /* The PSP emulator's 16-bit rows straight to grey, one pass (core/fbgrey.h);
+        if (fmt == VJO_FB_A1B5G5R5 && !(job->sig && row == scene_rows_next(&capture_rows))) {
+            /* The PSP emulator's 16-bit rows straight to grey, one pass (core/fbgrey.h), in place;
              * a row the capture's signature samples hashes A8B8G8R8 words below. */
-            if (copy_from_game(scratch_row, src, job->w * 2) < 0)
+            if (copy_from_game(scratch, src, job->w * 2) < 0)
                 return VJO_ERR_COPY;
-            vjo_a1b5g5r5_to_grey(scratch_tmp, (const uint16_t *)scratch_row, job->w);
+            vjo_a1b5g5r5_to_grey(scratch_grey, (const uint16_t *)scratch, job->w);
         } else {
-            if (read_row(scratch_row, scratch_tmp, src, job->w, fmt) < 0)
+            if (read_row(src, job->w, fmt) < 0)
                 return VJO_ERR_COPY;
             if (job->sig)
-                scene_acc_row(&capture_acc, row, (const uint32_t *)scratch_row);
-            vjo_abgr_to_grey(scratch_tmp, (const uint32_t *)scratch_row, job->w);
+                scene_rows_add(&capture_rows, &region_acc, row, scratch);
+            vjo_abgr_to_grey(scratch_grey, scratch, job->w); /* in place */
         }
         if (job->dst_kernel)
-            memcpy(job->dst_kernel + r * job->stride, scratch_tmp, job->w);
-        else if (ksceKernelMemcpyKernelToUser((void *)(job->dst_user + r * job->stride), scratch_tmp, job->w) < 0)
+            memcpy(job->dst_kernel + r * job->stride, scratch_grey, job->w);
+        else if (ksceKernelMemcpyKernelToUser((void *)(job->dst_user + r * job->stride), scratch_grey, job->w) < 0)
             return VJO_ERR_COPY;
     }
     return (int)job->n;

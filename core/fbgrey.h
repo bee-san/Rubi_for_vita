@@ -85,7 +85,33 @@ static inline void vjo_fb_to_abgr(uint32_t *dst, const void *src, unsigned n, ui
     }
 }
 
-/* n A8B8G8R8 pixels as grey bytes. */
+/* vjo_fb_to_abgr in place (the kernel's one scratch row, kernel/capture.c): buf holds n pixels of fmt from its
+ * first byte (n * vjo_fb_bpp(fmt) bytes) and ends as the n A8B8G8R8 words vjo_fb_to_abgr gives. A 16-bit row
+ * grows (2 bytes a pixel to 4), so it runs from its last pixel down: pixel i's word, bytes 4i to 4i + 3, lies
+ * over 16-bit pixels 2i and 2i + 1, read already (2i >= i). Its 16-bit loads may alias the words it stores
+ * (vjo_fb_u16): they must not be moved past a store. A8B8G8R8 is left as it is. */
+typedef uint16_t vjo_fb_u16 __attribute__((may_alias));
+static inline void vjo_fb_to_abgr_inplace(uint32_t *buf, unsigned n, uint32_t fmt)
+{
+    unsigned i;
+    if (fmt == VJO_FB_A2B10G10R10) {
+        for (i = 0; i < n; i++) {
+            uint32_t v = buf[i];
+            uint32_t r = (v >> 2) & 0xFFu, g = (v >> 12) & 0xFFu, b = (v >> 22) & 0xFFu;
+            buf[i] = 0xFF000000u | (b << 16) | (g << 8) | r;
+        }
+    } else if (fmt == VJO_FB_A1B5G5R5) {
+        const vjo_fb_u16 *s = (const vjo_fb_u16 *)buf;
+        for (i = n; i-- > 0;) {
+            uint32_t v = s[i];
+            uint32_t r = (v & 0x1Fu) << 3, g = ((v >> 5) & 0x1Fu) << 3, b = ((v >> 10) & 0x1Fu) << 3;
+            buf[i] = 0xFF000000u | (b << 16) | (g << 8) | r;
+        }
+    }
+}
+
+/* n A8B8G8R8 pixels as grey bytes. dst may be src's first byte (in place, as the kernel's rows are): byte i is
+ * written after word i is read, and lies in word i / 4, read already. */
 static inline void vjo_abgr_to_grey(unsigned char *dst, const uint32_t *src, unsigned n)
 {
     unsigned i;
@@ -94,7 +120,8 @@ static inline void vjo_abgr_to_grey(unsigned char *dst, const uint32_t *src, uns
 }
 
 /* n A1B5G5R5 pixels as grey bytes: the same bytes as vjo_fb_to_abgr then
- * vjo_abgr_to_grey, in one pass. */
+ * vjo_abgr_to_grey, in one pass. dst may be src's first byte (in place: byte i
+ * lies in pixel i / 2, read already). */
 static inline void vjo_a1b5g5r5_to_grey(unsigned char *dst, const uint16_t *src, unsigned n)
 {
     unsigned i;
