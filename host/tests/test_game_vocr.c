@@ -2077,6 +2077,17 @@ static uint32_t tier_lm_need(const VjoGameOcrRequest *r, unsigned t, const VjoVo
                  lm, NULL, t);
     return o.need_workspace + o.need_weights + o.reserve_bytes;
 }
+/* The same with LM lm and extra job bytes (the PSP refinement's) beside the model. */
+static uint32_t tier_lm_extra_need(const VjoGameOcrRequest *r, unsigned t, const VjoVocrLm *lm, size_t extra)
+{
+    VjoGameOcrResult o;
+    const VjoVocrModel *m = vjo_vocr_model(tier_names[t - 1u]);
+    memset(&o, 0, sizeof(o));
+    o.free_user = INT32_MAX;
+    check_memory(&o, m, vjo_vocr_job_bytes(m->name, r->width, r->height) + extra,
+                 vjo_vocr_capture_bytes(r->width, r->height), lm, NULL, t);
+    return o.need_workspace + o.need_weights + o.reserve_bytes;
+}
 static unsigned count_steps(const VjoGameOcrResult *out, unsigned id)
 {
     unsigned n = 0;
@@ -3454,11 +3465,6 @@ static void forced_fallback_by_tiers_runs_the_smallest(void)
     }
 }
 
-/* With the release weights: a job opens its tier's model and the cascade's (the
- * next size up) by their tiers; each block is resident until a job needs another;
- * a model file that cannot be opened ends the job with VJO_E_OCR_MODEL and says
- * which tier failed (out.fallback), for the Shell to leave it out. And a job that
- * went down three checks keeps its LM, refinement and normalisation steps. */
 /* Helpers share the fixed 1 MiB guard and never make a job step down a tier:
  * with room for Large alone it runs serially; with room for both helpers beside
  * the reserve it takes them without changing the model. */
@@ -3508,6 +3514,12 @@ static void helpers_keep_the_tier_reserve(void)
     r.speed = 0;
 }
 
+/* With the release weights: a job opens its tier's model and the cascade's (the
+ * next size up) by their tiers; each block is resident until a job needs another;
+ * a model file that cannot be opened ends the job with VJO_E_OCR_MODEL and says
+ * which tier failed (out.fallback), for the Shell to leave it out. And a job that
+ * went down three checks keeps its refinement and normalisation steps, and (#280's
+ * audit F5, through #324's retry) its LM step too. */
 static void tier_jobs_open_their_models_by_tier(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -3628,6 +3640,57 @@ static void tier_jobs_open_their_models_by_tier(void)
     TEST_CHECK(!lm_res.lm && resident.model == vjo_vocr_model(VJO_VOCR_TIER1_NAME));
     TEST_MSG("%u steps: %u checks, lm %u, refine %u, norm %u, frees %u; text '%s'", out.n_steps, checks, lm, refine,
              norm, frees, out.text);
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !lm_live);
+    /* #280's audit F5: with one reserve for every size, "Small and its LM fit, Normal alone does not" is no check's
+     * outcome (Normal needs less than an LM more than Small), so the three checks with an LM come only through #324's
+     * retry. In whole MiB, as a console reports it: the check sees 3 MiB, Large does not fit, Normal with the 0.5 MB
+     * LM does; the game takes 8 KiB at Normal's workspace, so with its blocks taken the weights' sample reads 2 MiB (1
+     * MiB beside the reserve, short of Normal's weights); Small's check, made again, reads 3 MiB, and its weights and
+     * LM fit. Three checks, and the 20-step log still holds the LM, the refinement, the normalisation and the job's two
+     * FREE steps (the refused try's blocks leave it). */
+    r = setup();
+    line();
+    psp_title = 1;
+    r.tiers = 7u;
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
+    r.flags = 1u << VJO_GAME_OCR_LM_SHIFT | VJO_GAME_OCR_REFINE_PSP << VJO_GAME_OCR_REFINE_SHIFT |
+              15u << VJO_GAME_OCR_SETTLE_SHIFT;
+    {
+        const uint32_t mib = 1024u * 1024u, refine_b = (uint32_t)vjo_vocr_refine_bytes(r.width, r.height);
+        const VjoVocrLm *lm1 = vjo_vocr_lm_tier(1);
+        TEST_ASSERT(lm1 != NULL);
+        const uint32_t lm_b = (uint32_t)PAGE_ROUND(lm1->bytes);
+        const uint32_t w_n = (uint32_t)PAGE_ROUND(vjo_vocr_model(VJO_VOCR_TIER2_NAME)->bytes);
+        const uint32_t w_s = (uint32_t)PAGE_ROUND(vjo_vocr_model(VJO_VOCR_TIER1_NAME)->bytes);
+        const uint32_t need_l = tier_need(&r, 3, refine_b), need_n = tier_lm_extra_need(&r, 2, lm1, refine_b);
+        const uint32_t need_s = tier_lm_extra_need(&r, 1, lm1, refine_b);
+        const uint32_t blocks_n = need_n - w_n - lm_b - VJO_GAME_RESERVE_NORMAL;
+        const uint32_t blocks_s = need_s - w_s - lm_b - VJO_GAME_RESERVE_SMALL;
+        const uint32_t after = 3u * mib + blocks_n - 4096u; /* the game's free memory once it took the 8 KiB */
+        TEST_ASSERT(need_l > 3u * mib && need_n <= 3u * mib && blocks_n + 4096u < mib && blocks_s <= blocks_n);
+        TEST_ASSERT((after - blocks_n) / mib * mib < VJO_GAME_RESERVE_NORMAL + w_n);                /* refused */
+        TEST_ASSERT(after / mib * mib >= need_s);                                                   /* Small's check */
+        TEST_ASSERT((after - blocks_s) / mib * mib >= VJO_GAME_RESERVE_SMALL + w_s);                /* its weights */
+        TEST_ASSERT((after - blocks_s - w_s) / mib * mib >= VJO_GAME_RESERVE_SMALL + lm_b);         /* its LM */
+        free_mib = 1;
+        available = (int)(3u * mib + blocks_n + 4096u); /* the first sample: 3 MiB */
+        drop_once = 8192;
+        drop_at_allocation = 1; /* at Normal's workspace */
+        TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+        free_mib = 0;
+    }
+    checks = lm = refine = norm = frees = 0;
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        unsigned id = out.step[i].id;
+        checks += id == VJO_GSTEP_CHECK; lm += id == VJO_GSTEP_LM; refine += id == VJO_GSTEP_REFINE;
+        norm += id == VJO_GSTEP_NORM; frees += id == VJO_GSTEP_FREE;
+    }
+    TEST_CHECK_(out.fallback == 2u && checks == 3 && lm == 1 && refine == 1 && frees == 2 &&
+                    (norm == 1 || !out.text[0]) && out.n_steps <= VJO_GAME_OCR_STEPS,
+                "fallback %u, %u steps: %u checks, lm %u, refine %u, norm %u, frees %u; text '%s'",
+                (unsigned)out.fallback, (unsigned)out.n_steps, checks, lm, refine, norm, frees, out.text);
+    TEST_CHECK(lm_res.lm == vjo_vocr_lm_tier(1) && resident.model == vjo_vocr_model(VJO_VOCR_TIER1_NAME));
+    TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_SMALL && allocations == 2u && !memory_live && !capture_live);
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !lm_live);
     psp_title = 0;
 }

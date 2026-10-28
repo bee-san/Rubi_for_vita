@@ -260,7 +260,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | A first install, on a Vita without Rubi | not run on a console yet |
 | ✅ | Model sizes Normal and Large | Large fitted in CLANNAD's free memory |
 | ❓ | Model size Small | 0.8.0's Small model has not run on a console |
-| ⚠️ | OCR in a game short of memory (2–3 MiB free), with the 1 MiB reserve | a test build of 0.9.4 with it: the owner reports that it works; `main`'s models have not run with it on a console |
+| ⚠️ | OCR in a game short of memory, with the 1 MiB reserve | [#277](https://github.com/bee-san/Rubi_for_vita/issues/277)'s test build (0.9.4 with it): the owner reports that it works, with no figures; in [#324](https://github.com/bee-san/Rubi_for_vita/pull/324)'s run (0.9.7 with it) あおかな read with Small; `main`'s models have not run with it on a console |
 | ❓ | VOCR6, the Small, Normal and Large models on `main` | not run on a console yet ([details](docs/vita-vn-ocr.md#models)) |
 | ✅ | Read text: Automatically | the mode of every 0.8.0 test run |
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |

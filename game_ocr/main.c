@@ -1939,6 +1939,24 @@ static void hooks_result(VjoGameOcrResult *out, int rc)
     out->hook_refused = hk.refused;
 }
 
+/* No OCR can run in this game now: its memory check failed, or (#280's audit F1) the check passed and the last model's
+ * weights were refused once the job's blocks were taken. A Rubi verified site's newest text answers, unconfirmed
+ * (core/hook_select.h vjo_hook_select_no_memory: id and its flags), with its capture pass beside the smaller
+ * VJO_GAME_RESERVE_HOOK_ONLY. 1 when it answered; a pass that fails keeps the job's refusal. */
+static __attribute__((noinline)) int no_memory_answer(const VjoGameOcrRequest *r, VjoGameOcrResult *out, Capture *c,
+                                                      VjoVocrStats *st, uint32_t id, uint32_t flags)
+{
+    job_reserve = VJO_GAME_RESERVE_HOOK_ONLY;
+    int pass = run_hook_pass(r, out, c, st);
+    if (c->failed)
+        step_add(VJO_GSTEP_PASS, c->mode, c->pass_strips, c->failed, c->pass_bytes, c->last.fb_format, c->pass_us, 0);
+    if (pass) return 0;
+    hook_show(out, hook_cand(id), 0, norm_flags(r));
+    hk.from = id;
+    hk.flags = flags;
+    return 1;
+}
+
 int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     if (!r || !out) return VJO_E_SOURCE;
@@ -2255,19 +2273,7 @@ retry_smaller:
          * same VJO_GAME_RESERVE_HOOK_ONLY. A pass that fails keeps the refusal. */
         if (rc == VJO_E_OOM && hk.installed) {
             uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
-            if (id) {
-                job_reserve = VJO_GAME_RESERVE_HOOK_ONLY;
-                int pass = run_hook_pass(r, out, &capture, &stats);
-                if (capture.failed)
-                    step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
-                             capture.last.fb_format, capture.pass_us, 0);
-                if (!pass) {
-                    hook_show(out, hook_cand(id), 0, norm_flags(r));
-                    hk.from = id;
-                    hk.flags = no_mem_flags;
-                    rc = VJO_OK;
-                }
-            }
+            if (id && no_memory_answer(r, out, &capture, &stats, id, no_mem_flags)) rc = VJO_OK;
         }
         goto done;
     }
@@ -2423,6 +2429,29 @@ retry_smaller:
         steps_drop_blocks(try_steps, vertical); /* a try of rows that hands over to the columns: its checks too */
         if (smaller) goto retry_smaller;
         goto again;
+    }
+    /* #280's audit F1: the check passed, yet the last model's weights could not be had (no smaller model is left to
+     * retry). With every size's reserve 1 MiB (#280), アマツツミ's measured 2 MiB (PCSG01198, 2026-10-23) passes Small's
+     * check at the full screen (2,068,480 B), and on a console that reports free memory in whole MiB (#324) its
+     * weights are then refused once the job's blocks are taken: no OCR can run in this game now, as when the check
+     * fails, so a Rubi verified site's newest text answers unconfirmed here too (with the 4 MiB reserve before #280
+     * the check failed there). This try's blocks and the resident ones go back to the game first, as on that path;
+     * its captures and finder time stay the job's, and its blocks' steps leave the log (steps_drop_blocks). Never while
+     * a block may still be written (a stuck helper, a capture the display hook may still own: blocked). */
+    if (rc == VJO_E_OOM && !stats.stuck && !blocked && hk.installed && !cancelled(NULL)) {
+        uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
+        if (id) {
+            const size_t workspace = stats.workspace;
+            tried_strips += stats.strips;
+            tried_us += stats.capture_us;
+            tried_find_us += stats.find_us;
+            sceClibMemset(&stats, 0, sizeof(stats));
+            stats.workspace = workspace;
+            if (cleanup() || drop_resident()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+            steps_drop_blocks(try_steps, 0);
+            if (no_memory_answer(r, out, &capture, &stats, id, no_mem_flags)) rc = VJO_OK;
+            goto done;
+        }
     }
     /* ocr-first: a job that read no line (or only blank ones) reads what the
      * session's first job with text would otherwise read while the user waits

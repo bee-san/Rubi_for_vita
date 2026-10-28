@@ -391,12 +391,20 @@ been reported.
   refused there: its 804 KiB model and 192 KiB workspace came beside the 4 MiB. A first job at the full screen now
   needs 2,068,480 B free with Small, 2,494,464 B with Normal and 3,862,528 B with Large, the 1 MiB included (5,214,208,
   9,834,496 and 19,591,168 B before; `tools/model_tiers.json`, estimates from the source); a tighter region needs less.
-  Everything else stays: the full page-rounded check before any block, the blocks taken after it (the weights, the
-  LM, the cascade's model, the spotter's, the tall line) keeping the same reserve, the LM, the cascade and the helpers
-  only when they also fit, the next smaller size when one does not, #324's retry when its weights are refused after
-  the check, and a clean refusal. An Anki screenshot's own check keeps 1 MiB too (4 MiB before); a native hook's
-  capture-only pass and the SC3 charset kept 1 MiB already. The `Game RAM (KiB)` message and `log.txt`'s `tier … did
-  not fit` and `game vocr memory:` lines show the 1 MiB (`1024 reserve`, `reserve 1048576`).
+  Everything else stays: the full page-rounded check before any block, the spotter's block keeping the same reserve
+  when it loads and the blocks taken after the check (the weights, the LM, the cascade's model, a tall line over one
+  column's bound) too, the LM, the cascade and the helpers only when they also fit, the next smaller size when one
+  does not, #324's retry when its weights are refused after the check, and a clean refusal. A job of vertical columns
+  (one model, by name) keeps 1 MiB as well. An Anki screenshot's own check keeps 1 MiB too (4 MiB before); a native
+  hook's capture-only pass and the SC3 charset kept 1 MiB already. The `Game RAM (KiB)` message and `log.txt`'s `tier …
+  did not fit` and `game vocr memory:` lines show the 1 MiB (`1024 reserve`, `reserve 1048576`).
+  - **#280's audit:** with `hook_trust = off`, a game at アマツツミ's measured 2 MiB (`PCSG01198`) passes Small's check
+    beside the 1 MiB, and where the console reports its free memory in whole MiB (#324) Small's weights are then
+    refused once the job's blocks are taken, so the job failed for memory, where under the 4 MiB reserve its check had
+    failed and a Rubi verified site's text answered unconfirmed. That answer now also comes when the last model's
+    weights are refused after the check (`game_ocr/main.c`; a host test at 2 MiB in whole MiB, which fails without it).
+    `hook_trust = on`, the default, answers from a trusted site before any check, as before. Other games' jobs are
+    unchanged.
   - **On the console:** #277's debug test build (0.9.4 with #280) carried it, and the owner reports that it works
     (2026-10-28; no figures of that run were reported). #324's measurements in あおかな on a PCH-2000 (0.9.7's debug
     build with #280) ran with it too. Today's `main` with it (VOCR6, the spotter, trusted hooks, #324's retry) has not
