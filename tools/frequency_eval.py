@@ -34,6 +34,9 @@ import subprocess
 import sys
 import zipfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from evallib import utf16_len  # noqa: E402
+
 csv.field_size_limit(1 << 24)
 
 
@@ -86,10 +89,6 @@ def shown(tool, dictionary, words):
             spelling, reading, rank, len16 = line.split("\t")
             out[word] = (spelling, reading, int(rank), int(len16))
     return out
-
-
-def utf16_len(text):
-    return sum(2 if ord(c) > 0xFFFF else 1 for c in text)
 
 
 def kana_form_ranks(path):
