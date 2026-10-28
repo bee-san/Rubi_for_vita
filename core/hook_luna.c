@@ -622,7 +622,10 @@ static const LunaOp *const vjo_luna_post[VJO_LH_COUNT] = {
  * page, the filters' index, PCSG00628's ops and escapes (#316's audit) and the five arrays that batch added or grew
  * (PROTOTYPE_NAMELINE with PROTOTYPE in it, PCSG00472 with IFENGINE, AOZORA_RUBY, CARET_NEWLINE, PCSG01250), 853 B,
  * are read-only data again, and this file is built for size in the worker (vita/CMakeLists.txt), so both builds keep
- * their pages (docs/memory-ledger.md, "The hook farm's 20 verified entries"). Their strings stay read-only. */
+ * their pages (docs/memory-ledger.md, "The hook farm's 20 verified entries"). Their strings stay read-only. psandvita
+ * #1's four arrays (PCSG00370, PCSG00766, PCSG01282, PCSG00769) are in the data segment again: since #418 freed a data
+ * page it has the room, and the normal build's code segment has 180 B left (docs/memory-ledger.md, "psandvita #1's
+ * six verified entries"). */
 _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one byte");
 #define RCALL(f) {OP_CALL, 0, VJO_RF_##f, NULL, NULL}
 
@@ -748,7 +751,7 @@ static const LunaOp r_PCSG00380[] VJO_DATA_TABLE(rubi_PCSG00380) = {
     REP("㌫", "北條"), REP("㍊", "紗希"), /* PCSG00380's own ops; FOAF4 from here: */
     REP("㊤", "―"), REP("㊥", "―"), REP("㊦", "―"), SPECIAL(OP_TRIM), END};
 #define r_FOAF4 (r_PCSG00380 + 2)
-static const LunaOp r_PCSG00769[] = {REP("㌫", "榊"), REP("㍊", "水緒"), RCALL(FOAF4), END};
+static const LunaOp r_PCSG00769[] VJO_DATA_TABLE(rubi_PCSG00769) = {REP("㌫", "榊"), REP("㍊", "水緒"), RCALL(FOAF4), END};
 
 /* PCSG00415 CLANNAD (RealLive's script, Prototype's port): the line at 0x2CA70 r6 holds the protagonist's name variables
  * where the game draws his names: ＊Ａ the family name, ＊Ｂ the given name (full-width, CP932 81 96 82 60 / 82 61).
@@ -795,7 +798,7 @@ static const LunaOp r_PCSG01250[] = {
  * Luna's 0x80053BD0): every page ends with ▼ (CP932 0x81A5), a click wait that is not drawn; its line breaks, the
  * 　 that indents a continued line and the ＞ that opens a monologue are drawn (farm page 1: ＞引っ越しの荷物も…\n
  * 　ようやく慣れてきた……。▼, two lines). Luna's filter for the title, PCSG00370, drops all four. */
-static const LunaOp r_PCSG00370[] = {DEL("▼"), END};
+static const LunaOp r_PCSG00370[] VJO_DATA_TABLE(rubi_PCSG00370) = {DEL("▼"), END};
 
 /* ニル・アドミラリの天秤 帝都幻惑綺譚 PCSG00766 (IF:Lib GAME-ENGINE 3.00, the message-tag parser's page after the #Name
  * expander, 0x8106f862 r0, Luna's site): a spoken page starts with its speaker, glued before the tags, which the game
@@ -804,14 +807,16 @@ static const LunaOp r_PCSG00370[] = {DEL("▼"), END};
  * IFENGINE: #n is a line break, a trailing #n ends the page, #Ruby[base,reading] its base (4 of the 31 farm pages).
  * Luna's filter at the site, PCSG00766, drops every #n and leaves the name glued to the line: 3 of the farm's 31 pages
  * as drawn. */
-static const LunaOp r_PCSG00766[] = {SUB("^([^#\n]+)#Pos", "$1\n#Pos"), RCALL(IFENGINE), END};
+static const LunaOp r_PCSG00766[] VJO_DATA_TABLE(rubi_PCSG00766) = {
+    SUB("^([^#\n]+)#Pos", "$1\n#Pos"), RCALL(IFENGINE), END};
 
 /* 死神と少女 PCSG01282 (Takuyo's SCR engine, the message layout function's text, 0x8100b00e r1, Luna's "dialogue main"
  * site): a literal \n (backslash, n) is a line break and \d a click wait, not drawn (farm page 6: \n陽が沈み、…色。\d);
  * an NVL page adds one hit a click, each led by its line breaks. Luna's FPCSG01282 at the site turns runs of line feeds
  * into a space and drops a trailing digit (regexes for a line feed and \d, not these two-character codes), so with it
  * the popup kept each \d: 12 of the farm's 16 single-hit pages as drawn, none of its 14 NVL pages. */
-static const LunaOp r_PCSG01282[] = {REP("\\d", ""), REP("\\n", "\n"), SPECIAL(OP_TRIM), END};
+static const LunaOp r_PCSG01282[] VJO_DATA_TABLE(rubi_PCSG01282) = {
+    REP("\\d", ""), REP("\\n", "\n"), SPECIAL(OP_TRIM), END};
 
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* read-only data (above) */
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
