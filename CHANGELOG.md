@@ -375,6 +375,28 @@ been reported.
 
 ### Fixed
 
+- **OCR keeps a fixed 1 MiB of the game's free memory, for every model size** (#280, the owner's choice of
+  2026-10-23), where it kept 4, 8 or 16 MiB for Small, Normal and Large (by the largest size a job holds, its
+  cascade's included: vita-vn-ocr's untuned proposal). あおかな (`PCSG00700`) reported 3,072 KiB free, and Small was
+  refused there: its 804 KiB model and 192 KiB workspace came beside the 4 MiB. A first job at the full screen now
+  needs 2,068,480 B free with Small, 2,494,464 B with Normal and 3,862,528 B with Large, the 1 MiB included (5,214,208,
+  9,834,496 and 19,591,168 B before; `tools/model_tiers.json`, estimates from the source); a tighter region needs less.
+  Everything else stays: the full page-rounded check before any block, the blocks taken after it (the weights, the
+  LM, the cascade's model, the spotter's, the tall line) keeping the same reserve, the LM, the cascade and the helpers
+  only when they also fit, the next smaller size when one does not, #324's retry when its weights are refused after
+  the check, and a clean refusal. An Anki screenshot's own check keeps 1 MiB too (4 MiB before); a native hook's
+  capture-only pass and the SC3 charset kept 1 MiB already. The `Game RAM (KiB)` message and `log.txt`'s `tier … did
+  not fit` and `game vocr memory:` lines show the 1 MiB (`1024 reserve`, `reserve 1048576`).
+  - **On the console:** #277's debug test build (0.9.4 with #280) carried it, and the owner reports that it works
+    (2026-10-28; no figures of that run were reported). #324's measurements in あおかな on a PCH-2000 (0.9.7's debug
+    build with #280) ran with it too. Today's `main` with it (VOCR6, the spotter, trusted hooks, #324's retry) has not
+    run on a console: 1 MiB stays an estimate.
+  - **Tests** (host): a game with 3 MiB free runs Normal or Small, and Large falls back by itself; every size and each
+    request by name keeps 1 MiB, at the boundary and with the cascade; the weights refused after the check go to the
+    next smaller size at 1 MiB; a verified hook still answers when even Small does not fit; and VOCR6's three sizes
+    need their table's bytes.
+  - **Memory:** no budget changes, as a reserve is memory left to the game, never taken.
+
 - The hook farm's entries, #394's audit (no change to the game worker or any module): the engine test's check of
   PCSG00505's 8-byte entry, that the farm's next 8 bytes are a `movw`/`movt` pair of one register, also refuses two `bl`s
   and a pair of SP or PC (it took `bl; bl` for a pair); the filters' test vectors say which are the farm's approved hits;
@@ -445,8 +467,8 @@ been reported.
   memory check with less than 1 MiB to spare saw a whole MiB less once it had taken its own blocks: its model's
   weights were refused and the job failed for memory, with no smaller model tried. Now it gives its blocks back and
   checks the next smaller model, each at most once. On that console, with a debug test build of 0.9.7 and 1 MiB
-  reserves (#280, not merged), 7 jobs that passed Normal's check read with Small, where 15 had failed before; with
-  `main`'s reserves it has not run on a console. #324's audit: that retry is the same job. It waits no longer than the
+  reserves (#280, `main`'s reserve since, above), 7 jobs that passed Normal's check read with Small, where 15 had
+  failed before; `main` itself has not run on a console. #324's audit: that retry is the same job. It waits no longer than the
   job's stable-text wait (`ocr_settle_max_ms`): it waited again from the start (by the code, up to the whole limit
   again for each smaller model); on the host, with text typing out for 1.9 s at 60 Hz, the job took 2.27 s against
   Small alone's 2.05 s, and now 2.12 s. Its captures and finder time count every try, and the debug build's step log

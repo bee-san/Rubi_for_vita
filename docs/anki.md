@@ -620,10 +620,10 @@ seam between two bands of rows.
    of the worker's one job slot, which `shell/worker.c` shares with the OCR jobs.
    A quiet refresh of the open overlay yields to it; a running OCR job is waited
    for, at most 4 s.
-2. The game worker checks the game's free memory (its block beside the 4 MiB
-   every job leaves to the game: a screenshot holds no model, and the larger
-   reserves, 8 and 16 MiB, follow the largest model a job holds, so it keeps
-   the base one even beside Large's resident weights), takes one block of
+2. The game worker checks the game's free memory (its block beside the 1 MiB
+   every job leaves to the game, `VJO_GAME_RESERVE`, the same for every model
+   size since #280; before it a screenshot kept the base 4 MiB, as the larger
+   reserves, 8 and 16 MiB, followed the largest model a job held), takes one block of
    450,560 B (`USER_RW`, else
    CDRAM, else phycont) and reads the frame in colour, 64 rows a frame, through
    the OCR capture's own path: the display hook copies the rows as A8B8G8R8

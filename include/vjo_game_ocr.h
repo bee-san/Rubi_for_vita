@@ -302,7 +302,8 @@ enum {
                             checked << 4 (VJO_GCHECK_TIER) | 0x40 (forced by the self-test); arg 0 for the
                             largest requested tier, 1 for a smaller one; sum = the worker's own resident
                             bytes the check counted as free (released first); the reserve is the tier's
-                            (VJO_GAME_RESERVE_*: of the cascade's tier with the cascade). A check that passed
+                            (VJO_GAME_RESERVE_*: 1 MiB for every tier since PR #280; the cascade's tier's
+                            with the cascade before). A check that passed
                             followed by the next model's (not forced): the first one's weights were refused
                             once the job's blocks were taken (#324), and its try's blocks left the log */
     VJO_GSTEP_ALLOC,     /* kind VJO_GAME_OCR_MEM_*, arg VJO_GITEM_*; rc the block uid or the error */

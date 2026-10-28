@@ -133,7 +133,8 @@ A card's screenshot ([docs/anki.md](anki.md#the-screenshot)) is a job of the sam
   the block, the rows come through the kernel strip, 16 rows a call (61,440 B, inside its 64 KiB).
 - **Its own block.** One block of 450,560 B (`VjoGameShot`: the encoder's state, the strip and the
   JPEG, page-rounded) on the same ladder (`USER_RW`, CDRAM, phycont), after a check that the game
-  keeps its 4 MiB beside it; freed when the job ends, the resident weights untouched.
+  keeps its 1 MiB beside it (`VJO_GAME_RESERVE`, every job's since #280; 4 MiB before); freed when the job ends,
+  the resident weights untouched.
 
 Then the JPEG goes to the memory card through the kernel's worker thread, as the models come from
 it (`vjoOcrShotWrite`, `vjoOcrShotSave`; the game itself has no `ux0:`). `host/tests/test_game_shot.c`

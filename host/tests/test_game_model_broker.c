@@ -356,7 +356,7 @@ static void real_models_cross_namespace(void)
         /* The real runtime's frames for the one line, and the memory check. */
         TEST_CHECK(out.recognized == 1 && out.frames == out.line[0].frames && out.frames > 0);
         TEST_CHECK(out.line[0].width > 0 && out.line[0].height > 0 && out.frames <= out.line[0].width);
-        TEST_CHECK(out.free_user == 16*1024*1024 && out.reserve_bytes == 4u*1024u*1024u && out.need_weights);
+        TEST_CHECK(out.free_user == 16*1024*1024 && out.reserve_bytes == VJO_GAME_RESERVE && out.need_weights);
         /* The capture: the region in strips through the display hook, into a
          * capture block under 64 KiB; the first pass published the capture. */
         TEST_CHECK(out.source == VJO_GAME_OCR_SRC_HOOK && out.capture_memory == VJO_GAME_OCR_MEM_USER);
@@ -424,14 +424,14 @@ static void real_fallback_runs_fl10_when_h15_does_not_fit(void)
     const uint32_t h15 = PAGE_ROUND(vjo_vocr_job_bytes("H15_w8.vocr", 200, 60)) + PAGE_ROUND(VJO_VOCR_H15_BYTES);
     submit_fallback = "FL10_w8.vocr";
     request = setup("H15_w8.vocr"); g.mevf = 5; kernel_waits = 1;
-    game_free = 4u*1024u*1024u + h15 - 1;
+    game_free = VJO_GAME_RESERVE + h15 - 1;
     TEST_CHECK(!vjo_game_ocr_run_request(&request, &out) && out.fallback == 1 && out.lines == 1);
     TEST_CHECK(!strcmp(out.text, direct.text) && out.frames == direct.frames);
     TEST_CHECK(received == VJO_VOCR_FL10_BYTES && kernel_opens == 1 && out.resident_bytes == PAGE_ROUND(VJO_VOCR_FL10_BYTES));
     TEST_CHECK(out.model_need_weights == PAGE_ROUND(VJO_VOCR_H15_BYTES) && out.need_weights == PAGE_ROUND(VJO_VOCR_FL10_BYTES));
-    TEST_CHECK(peak_bytes <= 4u*1024u*1024u + h15); /* never more than the H15 job would have used */
+    TEST_CHECK(peak_bytes <= VJO_GAME_RESERVE + h15); /* never more than the H15 job would have used */
     printf("  H15 needs %u B with its job, %lld free above the reserve: ran FL10 (%u B peak)\n",
-           h15, (long long)game_free - 4*1024*1024, peak_bytes);
+           h15, (long long)game_free - VJO_GAME_RESERVE, peak_bytes);
     finish(&out);
     /* Enough memory again: H15 runs, FL10's block released first. */
     request = setup_job("H15_w8.vocr", 1); g.mevf = 5; kernel_waits = 1;

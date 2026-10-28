@@ -295,7 +295,7 @@ assumptions the console still has to confirm (none of these is measured yet):
     any other is refused (format error) and logged with its value. SceDisplay documents no
     RGB565 value, so none is handled.
   - The game's free USER memory: 91,226,112 B was measured in CLANNAD in an earlier session
-    (docs/vita-memory.md); a job is refused below its need plus its size's reserve (4, 8 or 16 MiB), and the
+    (docs/vita-memory.md); a job is refused below its need plus the fixed 1 MiB reserve, and the
     memory ladder (USER -> CDRAM -> PHYCONT) logs each refusal.
   - The three memory-query routes (block, PSVshell's address-space block, faps-coredump's
     process route) are untested on 3.65; each reports its own result and step. They are
@@ -318,7 +318,7 @@ cat <<'EOF'
     headroom at that step is an estimate, and a refused thread or arena is survived (host
     tests), the card is then not saved and the overlay says so.
   - An Anki card's screenshot (API 23, anki_screenshot = on by default) runs in the game: a
-    450,560 B block beside the game's 4 MiB reserve, 9 frames of colour strips through the
+    450,560 B block beside the game's 1 MiB reserve, 9 frames of colour strips through the
     display hook (or the kernel strip; with anki_screenshot_trim_bars, API 32, up to 19 when a
     frame is read again: docs/anki.md "Black bars"), the JPEG encoded at the lowest priority (60.0 M A9
     instructions, 69-149 ms at 444 MHz, an estimate), then the kernel worker's file writes and
