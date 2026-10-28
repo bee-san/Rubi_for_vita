@@ -680,7 +680,8 @@ def analyse(text):
         raise ValueError("not a self-test report (first line must start with 'selftest')")
     if records[0]["words"][:1] == ["v1"]:
         raise ValueError("a v1 self-test report (API 18): this analyser reads v2 reports (API 19 and later); "
-                         "the analyser in the zip of the build that wrote it reads this one")
+                         "the repository's up to b55c5f5 reads this one (git show b55c5f5:tools/analyse_selftest.py), "
+                         "as does the zip's of an API 18 build from f83ce3f (2026-10-13) on")
     return analyse_v2(records)
 
 

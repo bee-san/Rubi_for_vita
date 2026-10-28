@@ -60,10 +60,11 @@ class Common(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
 
     def test_a_v1_report_is_not_read(self):
-        """API 18's `selftest v1` (#74's): the analyser of the build that wrote it reads it, not this one."""
+        """API 18's `selftest v1` (#74's): main's analyser up to b55c5f5 reads it, not this one."""
         r = run("selftest v1 api=18\nboot seq=7 mode=0 prev=0/4/0/0 failures=0 write=0x00000000\nstep boot t=12\n")
         self.assertEqual(r.returncode, 2)
         self.assertIn("a v1 self-test report (API 18): this analyser reads v2 reports", r.stderr)
+        self.assertIn("git show b55c5f5:tools/analyse_selftest.py", r.stderr)
 
     def test_parser_keeps_pairs_and_hex(self):
         recs = a.parse("kernel ocr kd_total=37748736 kd_rc=0x80024302 ledger=1/2\n")
