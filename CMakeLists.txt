@@ -643,7 +643,7 @@ vjo_suite(app_prefs SOURCES host/tests/test_app_prefs.c settings/app_prefs.c set
 # page's suite and its bench below): object libraries, each unit compiled once. What the harnesses define besides
 # reaches only their own units: VJO_VOCR_MODEL_INFO_TEST core/vocr_models.c and test_settings_app.c, VJO_SETTINGS_BENCH
 # test_settings_games.c, VJO_TEST_ZLIB settings/psp.c and the Games page's suite (vjo_settings_catalog, below).
-add_library(vjo_settings_app OBJECT settings/model_size.c settings/preferences.c settings/icons.c settings/text_layout.c
+add_library(vjo_settings_app OBJECT settings/app_prefs.c settings/model_size.c settings/preferences.c settings/icons.c settings/text_layout.c
   settings/letter.c settings/app_check.c settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
   vita/games_storage.c vita/buttons_vita.c host/tests/settings_stubs/streak_seed_stub.c
   host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c

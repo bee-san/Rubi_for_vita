@@ -55,10 +55,11 @@
 #define EN_PX 22          /* definitions */
 #define ROW_BYTES 508     /* a drawn row's bytes at most (settings/text_layout.h VJO_TEXT_ROW_BYTES) */
 
-#define HIGHLIGHT RGBA8(0xFF, 0xD2, 0x4A, 255) /* core/styled.h VJO_RGB_HIGHLIGHT: the word, the headword */
-#define READING RGBA8(0x9F, 0xD0, 0xFF, 255)   /* VJO_RGB_READING: the reading, the conjugation */
-#define RANK RGBA8(0x8A, 0x94, 0xA6, 255)      /* VJO_RGB_RANK */
-#define DEFINITION RGBA8(0xB8, 0xC0, 0xCC, 255) /* VJO_RGB_DIM */
+/* All text, including styled dictionary rows, follows the current app palette. */
+#define HIGHLIGHT (s_ui->highlight)
+#define READING (s_ui->reading)
+#define RANK (s_ui->rank)
+#define DEFINITION (s_ui->definition)
 
 enum { MODE_SEARCH, MODE_LINES };
 

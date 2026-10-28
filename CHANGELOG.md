@@ -13,6 +13,10 @@ been reported.
 
 ### Added
 
+- **Three app colour schemes** on the new **Appearance** tab: Mint (the original), Sakura (plum and pink), and
+  Paper (warm light with green). Touch a preview card or use Left/Right and Enter; every app page changes immediately,
+  including dictionary text, and the choice is kept in `app.ini` across launches.
+
 - **Native text hooks for six more games, from the psandvita hook farm** (psandvita #1; proven in the Vita3K
   emulator only, not on a console): **フォトカノ Kiss** (`PCSG00139`), **デュラララ!! 3way standoff -alley- V**
   (`PCSG00370`), **ニル・アドミラリの天秤 帝都幻惑綺譚** (`PCSG00766`), **逢魔が刻～かくりよの縁～** (`PCSG00769`),

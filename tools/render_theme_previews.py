@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Render mock screenshots from the real app's host draw records (not Vita captures).
+
+Build vjo-settings-app-tests, then run with --font pointing at a Japanese OpenType
+font, e.g. NotoSansCJKjp-Regular.otf (SIL OFL). Pillow is the only dependency.
+The test harness supplies positions, colours, clipping and substitute font widths;
+this renderer fits the supplied font to those widths. Firmware PVF may differ.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+from PIL import Image, ImageDraw, ImageFont
+
+
+def rgba(packed):
+    return tuple((packed >> shift) & 255 for shift in (0, 8, 16, 24))
+
+
+def render(record, font_path, target):
+    scale = 2  # supersample for readable small labels
+    screen = Image.new("RGBA", (960 * scale, 544 * scale), rgba(record["clear"]))
+    draw = ImageDraw.Draw(screen)
+    for x, y, w, h, color, clipped, top, bottom in record["rects"]:
+        if clipped:
+            end = min(y + h, bottom)
+            y = max(y, top)
+            h = end - y
+        if w > 0 and h > 0:
+            draw.rectangle((x * scale, y * scale, (x + w) * scale - 1, (y + h) * scale - 1), fill=rgba(color))
+    for x, y, color, size, clipped, top, bottom, text in record["texts"]:
+        if not text:
+            continue
+        font = ImageFont.truetype(str(font_path), max(1, round(18 * size * scale)))
+        # Use a baseline anchor, then fit to the exact width used by the harness.
+        left, ascent, right, descent = font.getbbox(text, anchor="ls")
+        ink = Image.new("RGBA", (max(1, right - left), max(1, descent - ascent)))
+        ImageDraw.Draw(ink).text((-left, -ascent), text, font=font, anchor="ls", fill=rgba(color))
+        units = sum(10 if ord(c) < 128 else 18 for c in text)
+        width = max(1, int(units * size + 0.5) * scale)
+        ink = ink.resize((width, ink.height), Image.Resampling.LANCZOS)
+        py = y * scale + ascent
+        if clipped:
+            a = max(0, top * scale - py)
+            b = min(ink.height, bottom * scale - py)
+            if b <= a:
+                continue
+            ink = ink.crop((0, a, ink.width, b))
+            py += a
+        screen.alpha_composite(ink, (x * scale, py))
+    screen = screen.resize((960, 544), Image.Resampling.LANCZOS)
+    labelled = Image.new("RGB", (960, 588), "#e8e8e8")
+    labelled.paste(screen.convert("RGB"), (0, 0))
+    label_font = ImageFont.truetype(str(font_path), 17)
+    ImageDraw.Draw(labelled).text((16, 553), "Host-rendered preview · substitute fonts · not a Vita capture",
+                                  font=label_font, fill="#303030")
+    labelled.save(target, optimize=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--test-bin", type=Path, default=Path("build/host/vjo-settings-app-tests"))
+    parser.add_argument("--font", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=Path("docs/colour-schemes"))
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="rubi-theme-previews-") as records:
+        env = dict(os.environ, VJO_THEME_PREVIEW_DIR=records)
+        subprocess.run([str(args.test_bin.resolve()), "app_colour_schemes"], env=env, check=True)
+        for source in sorted(Path(records).glob("*.json")):
+            target = args.output / (source.stem + ".png")
+            render(json.loads(source.read_text()), args.font, target)
+            print(target)
+
+
+if __name__ == "__main__":
+    main()

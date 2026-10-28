@@ -38,6 +38,7 @@
 #include "../../core/app_stamp.h"
 #include "../../include/vjo_api.h"
 #include "../../settings/app_check.h"
+#include "../../settings/app_prefs.h"
 #include "../../settings/catalog.h"
 #include "../../settings/model_size.h"
 #include "../../settings/preferences.h"
@@ -78,10 +79,11 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define MODEL_DIR "ux0:data/VitaJPOverlay/ocr"
 
 /* ---- storage: the SDK's file calls over real files (fakes/sceio_posix.h) ---- */
-#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE)
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_RENAME)
 #include "fakes/sceio_posix.h"
 static const char *close_fails; /* a file whose sceIoClose reports an error */
 static int close_fails_fd = -1;
+static int app_rename_fails;
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     int fd = sceio_open(p, flags, mode);
@@ -95,6 +97,11 @@ int sceIoClose(int fd)
     if (fd != close_fails_fd) return rc;
     close_fails_fd = -1;
     return (int)0x80010005u; /* EIO */
+}
+int sceIoRename(const char *from, const char *to)
+{
+    if (app_rename_fails && !strcmp(from, VJO_APP_PREFS_PATH ".tmp")) return -1;
+    return sceio_rename(from, to);
 }
 SceUID sceKernelGetThreadId(void) { return 0x40010003; } /* settings/applog.c's batch owner */
 
@@ -113,6 +120,7 @@ typedef struct { unsigned buttons; int touch, x, y; } Input; /* x, y in screen p
 typedef struct { int x, y; unsigned color; float scale; char text[128]; int clipped, clip_top, clip_bottom; } Text;
 typedef struct { int x, y, w, h; unsigned color; int clipped, clip_top, clip_bottom; } Rect;
 typedef struct {
+    unsigned clear;
     Text text[160]; int texts;
     Rect rect[96]; int rects;
     char backend[16]; /* config.ini's ocr_backend value after this frame ("" without the line) */
@@ -244,7 +252,8 @@ int sceDisplayWaitVblankStart(void)
 
 int vita2d_init(void) { return 0; }
 int vita2d_fini(void) { finis++; return 0; }
-void vita2d_set_clear_color(unsigned int color) { (void)color; }
+static unsigned clear_colour;
+void vita2d_set_clear_color(unsigned int color) { clear_colour = color; }
 /* The fonts: each load a font of its own, alive until freed; a font that drew is freed only between frames, after a
  * wait for the GPU (settings/main.c font_tick: one that only measured, whose atlas the GPU never reads, at any time),
  * and none is drawn or measured with once freed; the most alive at once (their atlases: 256 KiB each). */
@@ -279,7 +288,7 @@ static void font_holds(vita2d_pvf *font, const char *text, int drawn)
     }
 }
 void vita2d_swap_buffers(void) {}
-void vita2d_clear_screen(void) {}
+void vita2d_clear_screen(void) { drawing.clear = clear_colour; }
 void vita2d_wait_rendering_done(void) { waited = 1; }
 /* libvita2d keeps the last clip rectangle and applies it while clipping is on. */
 static int clipping, clip_top, clip_bottom;
@@ -394,6 +403,10 @@ static void card(const char *config)
     unlink(VJO_PREFERENCES_REGION_PATH); /* #358: no region.ini (Suggest a text box ON) */
     unlink(VJO_PREFERENCES_REGION_PATH ".tmp");
     unlink(VJO_PREFERENCES_REGION_PATH ".bak");
+    unlink(VJO_APP_PREFS_PATH);
+    unlink(VJO_APP_PREFS_PATH ".bak");
+    unlink(VJO_APP_PREFS_PATH ".tmp");
+    app_rename_fails = 0;
     unsigned n;
     const VjoVocrModelInfo *info = vjo_vocr_model_infos(&n);
     for (unsigned i = 0; i < n; i++) put_model(info[i].name, (long)info[i].bytes);
@@ -1826,14 +1839,14 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
     TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
 }
 
-/* The tab bar, laid out from its labels since the fifth tab (#313's Look up; #312's Stats came and went): five tabs
+/* The tab bar, laid out from its labels since the fifth tab (#313's Look up; #312's Stats came and went): six tabs
  * from x 24 to at most 936, in order, TAB_GAP apart, each at least its label's width with 10 px each side (the stub's
  * labels do not fit an equal share), each label centred in its tab on the old baseline and never cut, the page's own
  * filled. A touch on a tab shows its page; one in the gap between two tabs does nothing. */
 #define TAB_Y 52
 #define TAB_H 48
-#define TABS 5
-static const char *const TAB_LABELS[TABS] = {"Games", "OCR & lookup", "Anki", "Look up", "Install"};
+#define TABS 6
+static const char *const TAB_LABELS[TABS] = {"Games", "OCR & lookup", "Anki", "Look up", "Install", "Appearance"};
 typedef struct { int n, x[TABS], w[TABS]; } Tabs;
 static Tabs tabs_of(int f, int active)
 {
@@ -2003,7 +2016,131 @@ static void test_the_look_up_page_s_wiring(void)
     }
 }
 
+/* Host preview records: real app rectangles, text positions, colours and clipping, with the harness's substitute
+ * font metrics. tools/render_theme_previews.py turns these into explicitly labelled mock screenshots. */
+static void json_string(FILE *f, const char *s)
+{
+    fputc('"', f);
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') fputc('\\', f);
+        if (c < 32) fprintf(f, "\\u%04x", c);
+        else fputc(c, f);
+    }
+    fputc('"', f);
+}
+static void preview_record(int frame, const char *name)
+{
+    const char *out = getenv("VJO_THEME_PREVIEW_DIR");
+    if (!out || !*out) return;
+    char path[PATH_MAX];
+    TEST_ASSERT(snprintf(path, sizeof(path), "%s/%s.json", out, name) < (int)sizeof(path));
+    FILE *f = fopen(path, "wb");
+    TEST_ASSERT(f != NULL);
+    const Frame *v = &shown[frame];
+    fprintf(f, "{\"clear\":%u,\"rects\":[", v->clear);
+    for (int k = 0; k < v->rects; k++) {
+        const Rect *r = &v->rect[k];
+        fprintf(f, "%s[%d,%d,%d,%d,%u,%d,%d,%d]", k ? "," : "", r->x, r->y, r->w, r->h, r->color,
+                r->clipped, r->clip_top, r->clip_bottom);
+    }
+    fprintf(f, "],\"texts\":[");
+    for (int k = 0; k < v->texts; k++) {
+        const Text *t = &v->text[k];
+        fprintf(f, "%s[%d,%d,%u,%.6f,%d,%d,%d,", k ? "," : "", t->x, t->y, t->color, t->scale,
+                t->clipped, t->clip_top, t->clip_bottom);
+        json_string(f, t->text);
+        fputc(']', f);
+    }
+    TEST_ASSERT(fprintf(f, "]}\n") > 0 && fclose(f) == 0);
+}
+
+static VjoAppPrefs app_choices(void)
+{
+    VjoAppPrefs p;
+    unsigned char mem[64 * 1024];
+    VjoArena a;
+    vjo_arena_init(&a, mem, sizeof(mem));
+    TEST_ASSERT(vjo_app_prefs_load(&p, &a) >= 0);
+    return p;
+}
+#define APPEARANCE_PAGE PRESS(SCE_CTRL_SELECT), PRESS(SCE_CTRL_SELECT), PRESS(SCE_CTRL_SELECT), \
+                        PRESS(SCE_CTRL_SELECT), PRESS(SCE_CTRL_SELECT)
+static void test_app_colour_schemes(void)
+{
+    static const Input keys[] = {APPEARANCE_PAGE, PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_RIGHT),
+        PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CROSS)};
+    card(NULL);
+    put_file(VJO_APP_PREFS_PATH, "; keep this\nanki_card_type = sentence\nfuture_key = yes\n");
+    TEST_ASSERT(run(keys, sizeof(keys) / sizeof(keys[0])) == sizeof(keys) / sizeof(keys[0]));
+    static const int frames[] = {9, 11, 13, 15, 17, 19, 21};
+    static const int choices[] = {VJO_THEME_MINT, VJO_THEME_MINT, VJO_THEME_SAKURA, VJO_THEME_PAPER,
+                                 VJO_THEME_PAPER, VJO_THEME_MINT, VJO_THEME_SAKURA};
+    for (int i = 0; i < 7; i++) {
+        int f = frames[i];
+        const VjoAppTheme *t = vjo_app_theme(choices[i]);
+        TEST_CHECK(shown[f].clear == t->bg && shows(f, "Selected") && shows(f, "App colour scheme"));
+        const Text *selected_label = text_at(f, 112 + 245, 24 + choices[i] * 312, 24 + choices[i] * 312 + 288);
+        TEST_CHECK(selected_label && !strcmp(selected_label->text, "Selected") && selected_label->color == t->bg);
+        TEST_CHECK(shown[f].rect[0].color == t->accent); /* the shared header */
+    }
+    preview_record(9, "mint-picker"); preview_record(13, "sakura-picker"); preview_record(15, "paper-picker");
+    VjoAppPrefs p = app_choices();
+    TEST_CHECK(p.colour_scheme == VJO_THEME_SAKURA && p.anki_card_type == 1);
+    char bytes[512];
+    FILE *f = fopen(VJO_APP_PREFS_PATH, "rb");
+    TEST_ASSERT(f != NULL);
+    size_t n = fread(bytes, 1, sizeof(bytes) - 1, f); bytes[n] = 0; fclose(f);
+    TEST_CHECK(strstr(bytes, "; keep this\n") && strstr(bytes, "future_key = yes\n"));
+    /* A fresh process starts in the saved palette, on the Games page. */
+    static const Input idle[] = {{0, 0, 0, 0}};
+    run(idle, 1);
+    TEST_CHECK(shown[0].clear == vjo_app_theme(VJO_THEME_SAKURA)->bg);
+    TEST_CHECK(shown[0].rect[0].color == vjo_app_theme(VJO_THEME_SAKURA)->accent);
+    /* Touch a palette card; touch gaps and outside the cards do nothing. */
+    static const Input taps[] = {APPEARANCE_PAGE, TAP(24 + 2 * 312 + 120, 112 + 100),
+        TAP(24 + 288 + 5, 112 + 100), TAP(959, 112 + 100), TAP(80, 420)};
+    run(taps, sizeof(taps) / sizeof(taps[0]));
+    TEST_CHECK(app_choices().colour_scheme == VJO_THEME_PAPER);
+    for (int i = 10; i < 18; i++) TEST_CHECK(shown[i].clear == vjo_app_theme(VJO_THEME_PAPER)->bg);
+    /* The same settings screen in each palette, after a fresh launch. */
+    for (int i = 0; i < VJO_THEMES; i++) {
+        char ini[64];
+        snprintf(ini, sizeof(ini), "colour_scheme = %s\n", vjo_app_prefs_value("colour_scheme", i));
+        put_file(VJO_APP_PREFS_PATH, ini);
+        static const Input settings[] = {OCR_PAGE};
+        run(settings, sizeof(settings) / sizeof(settings[0]));
+        TEST_CHECK(shown[1].clear == vjo_app_theme(i)->bg);
+        preview_record(1, vjo_app_prefs_value("colour_scheme", i));
+    }
+    /* The app's palette works even if config.ini is unreadable. */
+    card(NULL);
+    TEST_ASSERT(mkdir(VJO_PREFERENCES_PATH, 0777) == 0);
+    static const Input choose[] = {APPEARANCE_PAGE, PRESS(SCE_CTRL_RIGHT)};
+    run(choose, sizeof(choose) / sizeof(choose[0]));
+    TEST_CHECK(app_choices().colour_scheme == VJO_THEME_SAKURA);
+    TEST_ASSERT(rmdir(VJO_PREFERENCES_PATH) == 0);
+    /* A failed publication shows an error and keeps the saved palette. */
+    card(NULL);
+    put_file(VJO_APP_PREFS_PATH, "colour_scheme = sakura\n");
+    app_rename_fails = 1;
+    run(choose, sizeof(choose) / sizeof(choose[0]));
+    TEST_CHECK(shown[11].clear == vjo_app_theme(VJO_THEME_SAKURA)->bg);
+    TEST_CHECK(shows(11, "Save not confirmed"));
+    TEST_CHECK(app_choices().colour_scheme == VJO_THEME_SAKURA);
+    /* An unreadable app.ini is never overwritten, and Start can retry once it is repaired. */
+    card(NULL);
+    TEST_ASSERT(mkdir(VJO_APP_PREFS_PATH, 0777) == 0);
+    run(choose, sizeof(choose) / sizeof(choose[0]));
+    TEST_CHECK(shows(11, "Cannot read app.ini") && shows(11, "Unavailable"));
+    TEST_ASSERT(rmdir(VJO_APP_PREFS_PATH) == 0);
+    put_file(VJO_APP_PREFS_PATH ".bak", "colour_scheme = paper\n");
+    run(idle, 1);
+    TEST_CHECK(shown[0].clear == vjo_app_theme(VJO_THEME_PAPER)->bg);
+}
+
 TEST_LIST = {
+    {"app_colour_schemes", test_app_colour_schemes},
     {"the_tab_bar_six_tabs_fit_their_labels_and_their_touches", test_the_tab_bar},
     {"the_look_up_page_s_wiring_show_leave_cancel_and_the_keyboard", test_the_look_up_page_s_wiring},
     {"full_glyph_atlases_get_empty_ones", test_full_glyph_atlases_get_empty_ones},

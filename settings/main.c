@@ -11,6 +11,7 @@
 #include <string.h>
 #include "anki_page.h"
 #include "app_check.h"
+#include "app_prefs.h"
 #include "catalog.h"
 #include "icons.h"
 #include "install_page.h"
@@ -103,13 +104,16 @@
 /* The OCR page's one-line status sits below the cards. */
 #define PREFERENCE_FOOTER_Y (PREF_VIEW_END + 4)
 #define PREFERENCE_FOOTER_H 30
-#define BG RGBA8(9, 15, 23, 255)
-#define CARD RGBA8(21, 31, 44, 255)
-#define SELECTED RGBA8(35, 56, 70, 255)
-#define WHITE RGBA8(238, 244, 255, 255)
-#define DIM RGBA8(193, 207, 222, 255)
-#define ACCENT RGBA8(91, 220, 207, 255)
-#define OFF RGBA8(244, 160, 167, 255)
+static const VjoAppTheme *theme = &vjo_app_themes[VJO_THEME_MINT];
+static int theme_writable, appearance_error;
+static char appearance_status[160];
+#define BG (theme->bg)
+#define CARD (theme->card)
+#define SELECTED (theme->selected)
+#define WHITE (theme->text)
+#define DIM (theme->dim)
+#define ACCENT (theme->accent)
+#define OFF (theme->off)
 static VjoInstalledGame library[VJO_GAMES_MAX];
 static VjoGames policy, saved;
 /* #333: ocr_line_fix.ini's table (each game's own line finder, core/games.h vjo_line_fix_parse), as last read or
@@ -339,8 +343,8 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 
 /* The page tabs, left to right; Select goes to the next (docs/one-vpk-install.md has the Install page, #313 the
  * Look up page). A new page is an entry here and a label in tab_label: the tab bar lays itself out (tab_layout). */
-enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_LOOKUP, PAGE_INSTALL, PAGES };
-static const char *const tab_label[PAGES] = {"Games", "OCR & lookup", "Anki", "Look up", "Install"};
+enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_LOOKUP, PAGE_INSTALL, PAGE_APPEARANCE, PAGES };
+static const char *const tab_label[PAGES] = {"Games", "OCR & lookup", "Anki", "Look up", "Install", "Appearance"};
 /* The tab bar, from x 24 to 936 under the title row: tabs TAB_GAP apart, at the most TAB_PX pixels of label.
  * While every label fits an equal share (912 / PAGES, less the gap), the tabs are equal (four were 220 px at a
  * pitch of 228). Else each tab is its label's width with TAB_PAD each side, the room left shared out equally; and
@@ -489,8 +493,107 @@ static void clip(int x0, int y0, int x1, int y1)
     vita2d_set_clip_rectangle(x0, y0, x1, y1);
 }
 /* The other pages (Anki, Look up and Install: settings/page_ui.h) draw with these helpers. */
-static const VjoPageUi page_ui = {text, text_width, wrapped_text, rect, focus_card, badge, footer_at, hints_row, header,
-                                  clip, WHITE, DIM, ACCENT, OFF, CARD, SELECTED, &buttons};
+static VjoPageUi page_ui = {.text = text, .text_width = text_width, .wrapped = wrapped_text, .rect = rect,
+                            .card = focus_card, .badge = badge, .footer = footer_at, .hints = hints_row,
+                            .header = header, .clip = clip, .buttons = &buttons};
+
+/* Called after vita2d_init, and after each save. Every page shares these roles; Look up also uses the palette for
+ * its styled entries, so Paper has dark readings and meanings rather than the dark theme's pale colours. */
+static void apply_theme(const VjoAppPrefs *p)
+{
+    theme = vjo_app_theme(p->colour_scheme);
+    page_ui.white = WHITE;
+    page_ui.dim = DIM;
+    page_ui.accent = ACCENT;
+    page_ui.off = OFF;
+    page_ui.track = CARD;
+    page_ui.selected = SELECTED;
+    page_ui.highlight = theme->highlight;
+    page_ui.reading = theme->reading;
+    page_ui.rank = theme->rank;
+    page_ui.definition = theme->definition;
+    vita2d_set_clear_color(BG);
+}
+
+/* Independent of config.ini: an unreadable overlay configuration must not lock the app's own appearance. Reload
+ * after any attempted save, including a failed final sync, so the displayed choice is the one actually on disk. */
+static void set_theme(int index)
+{
+    VjoAppPrefs p;
+    const char *keys[] = {"colour_scheme"};
+    int rc, read_rc;
+    if (index < 0 || index >= VJO_THEMES || !theme_writable || theme == vjo_app_theme(index)) return;
+    rc = vjo_app_prefs_save(keys, &index, 1, &scratch);
+    read_rc = vjo_app_prefs_load(&p, &scratch);
+    theme_writable = read_rc >= 0;
+    /* An unreadable file keeps the currently visible palette, and locks further saves. */
+    if (theme_writable) apply_theme(&p);
+    appearance_error = rc < 0 || read_rc < 0;
+    snprintf(appearance_status, sizeof(appearance_status), "%s", appearance_error
+        ? "Save not confirmed. Check the displayed choice, then retry."
+        : "Saved. The app's colours change immediately.");
+}
+
+static void load_theme(void)
+{
+    VjoAppPrefs p;
+    int rc = vjo_app_prefs_load(&p, &scratch);
+    theme_writable = rc >= 0;
+    appearance_error = rc < 0;
+    apply_theme(&p);
+    snprintf(appearance_status, sizeof(appearance_status), "%s", rc < 0
+        ? "Cannot read app.ini. Press Start to retry."
+        : rc > 0 ? "Backup recovered. Changes save automatically."
+                 : "Choose a colour scheme. Changes save automatically.");
+}
+
+static void choose_theme(int dir)
+{
+    int current = (int)(theme - vjo_app_themes);
+    set_theme(dir ? current + dir : (current + 1) % VJO_THEMES);
+}
+
+/* Each choice is a small preview in its own palette. The surrounding page changes immediately; the selected
+ * choice is labelled as well as outlined, so selection does not depend on distinguishing colours. */
+#define THEME_Y 112
+#define THEME_X 24
+#define THEME_W 288
+#define THEME_PITCH 312
+#define THEME_H 278
+static void draw_appearance(void)
+{
+    static const char *const descriptions[VJO_THEMES] = {"Cool navy + mint", "Plum + blossom", "Paper + forest"};
+    vita2d_start_drawing();
+    vita2d_clear_screen();
+    header();
+    for (int k = 0; k < VJO_THEMES; k++) {
+        const VjoAppTheme *t = vjo_app_theme(k);
+        int x = THEME_X + k * THEME_PITCH, chosen = theme_writable && theme == t;
+        rect(x, THEME_Y, THEME_W, THEME_H, t->bg);
+        rect(x + 4, THEME_Y + 4, THEME_W - 8, THEME_H - 8, t->card);
+        rect(x + 4, THEME_Y + 4, THEME_W - 8, 4, t->accent);
+        text(x + 20, THEME_Y + 43, t->text, 28, t->name);
+        text(x + 20, THEME_Y + 76, t->dim, 22, descriptions[k]);
+        text(x + 20, THEME_Y + 126, t->highlight, 32, "読む");
+        text(x + 20, THEME_Y + 157, t->reading, 24, "よむ");
+        text(x + 20, THEME_Y + 188, t->definition, 24, "to read");
+        rect(x + 20, THEME_Y + 216, THEME_W - 40, 42, chosen ? t->accent : t->selected);
+        centered_text(x + 20, THEME_Y + 245, THEME_W - 40, chosen ? t->bg : t->text, 24,
+                      !theme_writable ? "Unavailable" : chosen ? "Selected" : "Choose");
+        if (chosen) {
+            rect(x, THEME_Y, THEME_W, 2, ACCENT);
+            rect(x, THEME_Y + THEME_H - 2, THEME_W, 2, ACCENT);
+            rect(x, THEME_Y, 2, THEME_H, ACCENT);
+            rect(x + THEME_W - 2, THEME_Y, 2, THEME_H, ACCENT);
+        }
+    }
+    text(24, 424, DIM, 24, "App colour scheme: applies to every page in Rubi.");
+    char controls[96];
+    snprintf(controls, sizeof(controls), "Left/Right or %s: choose   %s: exit", buttons.enter_glyph, buttons.cancel_glyph);
+    footer_at(438, 72, 466, 2, appearance_status, appearance_error, controls);
+    vita2d_end_drawing();
+    vita2d_swap_buffers();
+}
 
 static void release_icon(void *texture) { vita2d_free_texture(texture); }
 
@@ -1731,7 +1834,7 @@ int main(void)
     }
     if (em_width > 0) font_em = (float)em_width;
     tab_layout(); /* by the labels' widths: the tab bar's drawing and its touches */
-    vita2d_set_clear_color(BG);
+    load_theme();
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG); /* the left stick scrolls, as in VitaShell */
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     scan();
@@ -1791,6 +1894,11 @@ int main(void)
         }
         if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_INSTALL) {
             /* anki_page.c, lookup_page.c and install_page.c read their own buttons and touches */
+        } else if (page == PAGE_APPEARANCE) {
+            if (pressed & buttons.enter) choose_theme(0);
+            if (pressed & SCE_CTRL_LEFT) choose_theme(-1);
+            if (pressed & SCE_CTRL_RIGHT) choose_theme(1);
+            if (pressed & SCE_CTRL_START) load_theme();
         } else if (page == PAGE_OCR) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
@@ -1853,6 +1961,10 @@ int main(void)
             else if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_INSTALL) {
                 touch_x = x;
                 touch_y = y;
+            }
+            else if (page == PAGE_APPEARANCE && y >= THEME_Y && y < THEME_Y + THEME_H) {
+                int k = (x - THEME_X) / THEME_PITCH;
+                if (x >= THEME_X && k < VJO_THEMES && (x - THEME_X) % THEME_PITCH < THEME_W) set_theme(k);
             }
             else if (page == PAGE_OCR && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
                 touch_preference(x, y); /* the OCR & lookup page's cards */
@@ -1920,6 +2032,7 @@ int main(void)
             }
         }
         else if (page == PAGE_OCR) draw_preferences();
+        else if (page == PAGE_APPEARANCE) draw_appearance();
         else if (game_view >= 0) draw_game_page(); /* #333 */
         else draw();
         sceDisplayWaitVblankStart();

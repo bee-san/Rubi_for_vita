@@ -105,6 +105,8 @@ void vjo_log_enable(int on) { (void)on; }
 
 /* ---------------- what a frame draws ---------------- */
 
+#include "../../settings/themes.h"
+
 #define WHITE 1u
 #define DIM 2u
 #define ACCENT 3u
@@ -186,10 +188,11 @@ static void d_footer(int y, int height, int text_y, int lines, const char *messa
 static void d_header(void) { drawn.headers++; }
 static void d_clip(int x0, int y0, int x1, int y1) { (void)y0; (void)y1; clipping = x1 > x0; }
 static VjoButtons buttons;
-static const VjoPageUi ui = {.text = d_text, .text_width = stub_width, .wrapped = d_wrapped, .rect = d_rect,
+static VjoPageUi ui = {.text = d_text, .text_width = stub_width, .wrapped = d_wrapped, .rect = d_rect,
                              .card = d_card, .badge = d_badge, .footer = d_footer, .header = d_header, .clip = d_clip,
                              .white = WHITE, .dim = DIM, .accent = ACCENT, .off = OFF, .track = TRACK,
-                             .selected = SELECTED, .buttons = &buttons};
+                             .selected = SELECTED, .buttons = &buttons, .highlight = HIGHLIGHT, .reading = READING,
+                             .rank = RGBA8(0x8A, 0x94, 0xA6, 255), .definition = DEFINITION};
 
 static const Text *shown(const char *s)
 {
@@ -816,7 +819,33 @@ static void a_zero_width_is_measured_again(void)
                 42 + stub_width(26, "猫が好"));
 }
 
+/* Readable dictionary styling for every palette, especially Paper, whose text must be dark. These are actual
+ * lookup rows and their cached pieces, rebuilt on leaving/returning to the page after an appearance change. */
+static void dictionary_text_uses_the_app_palette(void)
+{
+    VjoPageUi original = ui;
+    for (int i = 0; i < VJO_THEMES; i++) {
+        const VjoAppTheme *t = vjo_app_theme(i);
+        reset(VJO_BUTTON_ASSIGN_CROSS);
+        ui.white = t->text; ui.dim = t->dim; ui.accent = t->accent; ui.off = t->off;
+        ui.track = t->card; ui.selected = t->selected;
+        ui.highlight = t->highlight; ui.reading = t->reading; ui.rank = t->rank; ui.definition = t->definition;
+        show();
+        frame(0);
+        keyboard_types("猫が好き");
+        frame(SCE_CTRL_TRIANGLE);
+        frame(0);
+        const Text *word = shown("猫"), *reading = shown(" (ねこ)"), *sense = shown("1. cat");
+        TEST_CHECK_(word && word->color == t->highlight, "%s: highlighted word", t->name);
+        TEST_CHECK_(reading && reading->color == t->reading, "%s: reading", t->name);
+        TEST_CHECK_(sense && sense->color == t->definition, "%s: meaning", t->name);
+        vjo_lookup_page_leave();
+    }
+    ui = original;
+}
+
 TEST_LIST = {
+    {"dictionary_text_uses_the_app_palette", dictionary_text_uses_the_app_palette},
     {"a zero width is measured again", a_zero_width_is_measured_again},
     {"each mode keeps its text and cursor", each_mode_keeps_its_cursor},
     {"an opened line is filtered as the overlay shows it", an_opened_line_is_filtered_as_the_overlay_shows_it},

@@ -1399,6 +1399,7 @@ static void list_keys_only_on_the_games_page(void)
     tap(DOWN, 8);
     tap(SCE_CTRL_RTRIGGER, 8);
     hold(0, 8);
+    tap(SCE_CTRL_SELECT, 8); /* Appearance */
     tap(SCE_CTRL_SELECT, 8); /* Games again */
     int after = at - 1, frames = run(at);
     TEST_CHECK(frames == at);
@@ -1504,6 +1505,8 @@ static void a_page_change_latches_the_stick(void)
     with_stick(SCE_CTRL_SELECT, -128); /* Look up (#313), the stick up */
     with_stick(0, -128);
     with_stick(SCE_CTRL_SELECT, -128); /* Install, the stick up */
+    with_stick(0, -128);
+    with_stick(SCE_CTRL_SELECT, -128); /* Appearance, the stick still up */
     with_stick(0, -128);
     with_stick(SCE_CTRL_SELECT, -128); /* Games again, the stick still up */
     hold_stick(-128, 30);

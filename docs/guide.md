@@ -690,6 +690,8 @@ yet.
 
 ## Settings and dictionaries
 
+
+
 `ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens. A line
 the plugins do not know or cannot use is listed in red in the open overlay and
 logged in `log.txt` once, and again only when the set of such lines changes
@@ -966,6 +968,18 @@ the page on screen is held in memory. A character's name spelled as the text
 The subtitle strip (Select + R) shows the recognized text, without readings,
 and adds no lookups for it. Recognition and dictionary lookup make no network
 request and have no cloud fallback: the local dictionaries are the only ones.
+
+### App colour schemes
+
+Open Rubi's **Appearance** tab (tap its tab, or press Select to cycle pages). Choose **Mint** (the original
+navy and mint), **Sakura** (plum and pink), or **Paper** (warm light with forest green). Tap a preview card,
+press Left/Right, or press Enter to cycle through the three. The labelled **Selected** card is the saved choice.
+Colours change immediately on every app page, including Look up's dictionary text, and stay after closing the app.
+The in-game overlay keeps its existing colours.
+
+The choice is `colour_scheme = mint | sakura | paper` in `ux0:data/VitaJPOverlay/app.ini`. A missing or unknown
+value uses Mint. An unreadable file is kept, the choices say **Unavailable**, and Start retries after the file is
+repaired. [Preview screenshots and how to recreate them](colour-schemes/README.md).
 
 ### Removed features
 
