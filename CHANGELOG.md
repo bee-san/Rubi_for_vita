@@ -1796,11 +1796,28 @@ JP Overlay Settings chooses the engine directly: VOCR, Meiki or Google Lens. The
 Whole word navigation: Right skips the matched word, Left retraces up to 16 selections, and
 automatic OCR looks the first word up before the popup opens.
 
+From the guide's notes of the time: the v0.7.10 release prepares the first local match during automatic OCR and
+reuses completed results when reopening unchanged dialogue. In Whole word
+mode, Right skips the matched source word and Left retraces recent selections.
+The header also explicitly refreshes its highlight, with bounded layout retries.
+Host tests cover these paths; the physical Vita result remains unverified.
+This release does not include
+the experimental local-dictionary memory reservation from
+[issue #42](https://github.com/bee-san/Rubi_for_vita/issues/42).
+
 ## [0.7.9] - 2026-10-11
 
 Whole-word or character highlighting, and a tap on the recognized sentence looks that word up. On
 the console: the settings app's taps and buttons saved both highlight modes; taps in a game were not
 checked.
+
+From the guide's notes of the time: all six published v0.7.9 assets match the audited bundle. That version's installed
+Shell/Settings bytes and native Settings registration/launch are verified, and
+four actual Settings touch/controller actions saved both highlight modes while
+preserving VOCR and Japanese-only ON. In-game header taps and highlight geometry
+still require hardware checks. See the
+[installation checkpoint](docs/todo-20261011.md#v079-touchhighlight-installation-checkpoint)
+for the measured results and remaining hardware checks.
 
 ## [0.7.8] - 2026-10-11
 

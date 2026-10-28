@@ -17,6 +17,7 @@ Contents:
   - [Drawing the region](#drawing-the-region)
 - [Per-game settings](#per-game-settings)
 - [Settings and dictionaries](#settings-and-dictionaries)
+  - [Removed features](#removed-features)
   - [Anki](#anki)
 - [Memory and troubleshooting](#memory-and-troubleshooting)
 - [Build and validation](#build-and-validation)
@@ -47,12 +48,8 @@ shown with its estimated time per textbox and the game memory it takes
 a game has too little free memory for the chosen size, a job runs the next
 smaller one by itself; only `log.txt` says so. The release stores the three
 sizes' models; a choice applies when you next open the overlay.
-
-Google Lens, the [upstream's](https://github.com/Dartv/vita-jp-overlay) online
-engine, has been removed: recognition never uses the network. A saved
-`ocr_backend` line is ignored, without a warning, and the Rubi app's next save
-and the installer delete it. The last
-build with Google Lens is the tag `archive/online-last` (branch `archive/online`).
+Google Lens, the VOCR2 trial, Meiki, the online dictionaries and the Hachidori relay
+were removed ([what becomes of their settings](#removed-features)).
 
 The engine's name comes from the pinned metadata of the model it runs
 (`core/vocr_models.c`, also written per model into the package's
@@ -66,45 +63,10 @@ shows that generation's name, with no change to the app; a size that keeps an
 earlier generation's model shows that one's. A `.vocr` file itself carries no
 generation. v0.2.0's models are generation VOCR1.
 
-The experimental VOCR2 trial (a separately trained FL10-sized model with a
-textbox finder, opt-in in 0.7.12 to v0.8.0-test.1; its promotion guard failed)
-has been removed. A saved `ocr_backend = vocr2` now loads as the local engine,
-and the app's next save and the installer delete the line; so does `ncnn`,
-which only the host tools run. The no-longer-used
-`ux0:data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr` can be deleted. The
-[`0.7.12` release](https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.7.12)
-contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; it also
-carried the optional Meiki engine. Earlier releases remain available.
-
-Meiki, a manual single-line recognizer, has been removed from the source after
-0.7.12. Its MNN engine had to be copied into each game's own `app0:` folder
-through a per-title rePatch mount, and two observed jobs took about eight
-seconds each. A saved `ocr_backend = meiki` now loads as VOCR with a config
-warning, and the installer deletes the line. Files copied for it,
-`ux0:data/VitaJPOverlay/ocr/meiki-stream-int8.mnn` and any
-`ux0:rePatch/TITLEID/VitaJPOverlay/meiki/` folders, are no longer used and can be deleted.
-
 VOCR has completed actual CLANNAD OCR jobs on the physical Vita.
 Hardware accuracy/CER and broader game compatibility remain unmeasured; host crop results are separate.
 See [OCR measurements and limits](vita-vn-ocr.md) and
 [project lessons](project-lessons.md).
-
-The v0.7.10 release prepares the first local match during automatic OCR and
-reuses completed results when reopening unchanged dialogue. In Whole word
-mode, Right skips the matched source word and Left retraces recent selections.
-The header also explicitly refreshes its highlight, with bounded layout retries.
-Host tests cover these paths; the physical Vita result remains unverified.
-This release does not include
-the experimental local-dictionary memory reservation from
-[issue #42](https://github.com/bee-san/Rubi_for_vita/issues/42).
-
-All six published v0.7.9 assets match the audited bundle. That version's installed
-Shell/Settings bytes and native Settings registration/launch are verified, and
-four actual Settings touch/controller actions saved both highlight modes while
-preserving VOCR and Japanese-only ON. In-game header taps and highlight geometry
-still require hardware checks. See the
-[installation checkpoint](todo-20261011.md#v079-touchhighlight-installation-checkpoint)
-for the measured results and remaining hardware checks.
 
 <a id="install"></a>
 
@@ -189,11 +151,11 @@ default and needs no step of its own: the kernel plugin loads the OCR worker int
 ON as it starts ([worker loading](worker-loading.md)), never into SceShell, a system app,
 VitaShell or the Rubi app, and never while L is held at the game's start. Close the Rubi app
 before installing a VPK over it (on its LiveArea page, pull the top-right corner), also when it is only
-suspended behind VitaShell: in test.4's console run VitaShell stopped with error `0x80101114` while the
+suspended behind VitaShell: in 0.8.0-test.4's console run VitaShell stopped with error `0x80101114` while the
 old app was open, and installed after a restart ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)).
 If the Install page then says `Restart the Vita first`, the app cannot read its own folder yet, as
 right after VitaShell installs it: restart the Vita and open Rubi again (nothing has been written).
-That path is host-tested only: in the owner's test.4.1 to 4.3 runs, with the app closed before
+That path is host-tested only: in the owner's 0.8.0-test.4.1 to 4.3 runs, with the app closed before
 VitaShell's install, the app read its folder every time, and its **Update** ran three times, each
 over the build before it ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)). An install on a Vita
 without the overlay has not run on a console yet.
@@ -235,10 +197,10 @@ The Rubi app is a system application, like the Music or Video app: it
 opens beside a running game, which stays suspended behind it, so there is no
 need to close the game first. It should also open from its LiveArea with no game
 running. In v0.8.0-test.3, the first build whose app is a system application, it
-did not (the owner's report, 2026-10-16); in test.4's console run it did
+did not (the owner's report, 2026-10-16); in 0.8.0-test.4's console run it did
 ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)).
 That start's log line (`GPU library 0x0A: 0x00000000; display: buffer 2 at read 1 after 0 ms`)
-shows that neither cause below applied there, so test.3's failure is still unexplained.
+shows that neither cause below applied there, so 0.8.0-test.3's failure is still unexplained.
 A possible cause, found in its graphics library's source and not
 seen on a console: its start waited for SceShell to hand it the screen without
 letting SceShell's threads at or below its priority run, and used the system's
@@ -350,7 +312,7 @@ background and replaces the text quietly only when it reads a different one
 shows nothing and is retried quietly. The Rubi app's **Read text** chooses this, **Automatically
 (when it changes)**, the default, or **Only when I press L + R** (`ocr_mode = on_press`), which recognizes
 only when the overlay opens: nothing runs before, and the press then waits for the reading
-([what each costs, and test.3's times](auto-vs-press.md)). With card mining on, Enter saves the shown word,
+([what each costs, and 0.8.0-test.3's times](auto-vs-press.md)). With card mining on, Enter saves the shown word,
 its sentence and every dictionary's entry for it to the card queue on the
 memory card, with a JPEG of the game's screen (about 60 KB, made in the game's
 own process: [screenshots](anki.md#the-screenshot)); the Rubi app exports
@@ -591,7 +553,7 @@ The left stick crosses a long line faster (#138), a character at a time where
 the d-pad goes a word at a time (the owner, 2026-10-20): on 昨日すき焼きを食べました,
 from 食べました the stick's right goes to べ, then to ま, whose lookup is ました,
 where the d-pad's Right goes past the whole word. Each arrow press looks its
-word up at once: 35-112 ms a step in the test.3 console run (median 56 ms, its
+word up at once: 35-112 ms a step in the 0.8.0-test.3 console run (median 56 ms, its
 31 cursor lookups in `log.txt`), and in Whole word mode Right skips a word only
 once that word's lookup is shown. The stick moves in the arrows' four
 directions: held, it steps through the text in reading order across rows, a
@@ -730,7 +692,7 @@ yet.
 `ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens. A line
 the plugins do not know or cannot use is listed in red in the open overlay and
 logged in `log.txt` once, and again only when the set of such lines changes
-(test.2's log had 76 lines from 8 of them, #101). A warning names the setting, or
+(0.8.0-test.2's log had 76 lines from 8 of them, #101). A warning names the setting, or
 a line without `=` by its number, and never quotes a value, which can be a key or
 an address. A removed feature's setting (any `ocr_backend` line: VOCR is the
 only engine; `log_host`; the online dictionaries' and AnkiConnect's settings) is
@@ -765,7 +727,7 @@ gate and two-level head and Large's two-level head, `ocr_head_gate = on`: 0.6, 0
 neither), calibrated to VOCR3-H15's measured 4.94 ms per CTC frame on the console (v0.8.0-test.1); at 444 MHz, the
 clock a job raises by default, 0.5, 0.6 and 1.5 s, and less again with lines read in parallel ([OCR
 speed](ocr-speed.md)). Small is about 0.1 s a box slower than 0.9.8's VOCR5-S, which had a head gate. On a console,
-test.4's logs measured VOCR5-N at 2.61 ms per CTC frame (10 jobs) and VOCR5-L at 4.98-5.10 ms (8 jobs), at 444 MHz,
+0.8.0-test.4's logs measured VOCR5-N at 2.61 ms per CTC frame (10 jobs) and VOCR5-L at 4.98-5.10 ms (8 jobs), at 444 MHz,
 each a job's recognition time over its frames (`tools/analyse_selftest.py --collect`,
 [#191](https://github.com/bee-san/Rubi_for_vita/issues/191)); VOCR6 has VOCR5's shapes, but no console has run it, and
 the box times above stay estimates.
@@ -837,7 +799,7 @@ every game, `off`). vita-vn-ocr #83 measured a dialogue gain with it on native
 CLANNAD for five of six models. The overlay sees a PSP game as
 Adrenaline shows it, 2× through a bilinear filter, where its accuracy is
 untested and the host's box fit is level, so `psp` is a trial that a console run's logs
-decide; none has reported it yet (test.3's PSP game got no OCR, and test.4 started none).
+decide; none has reported it yet (0.8.0-test.3's PSP game got no OCR, and 0.8.0-test.4 started none).
 Refined lines are read wider: on the
 host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 22-23 ms more per line found with VOCR3-H15 on the console
@@ -998,22 +960,33 @@ The subtitle strip (Select + R) shows the recognized text, without readings,
 and adds no lookups for it. Recognition and dictionary lookup make no network
 request and have no cloud fallback: the local dictionaries are the only ones.
 
-The online dictionaries jpdb.io and jiten.moe, which needed an API key, have
-been removed (the local Jitendex and every other Yomitan dictionary still
-work, converted as above). A saved `dictionary = jpdb` or `jiten` now loads
-as `local`; the installer
-(`tools/migrate_config.py`) and the Rubi app's next save write `local` and
-delete the `jpdb_api_key`, `jiten_api_key` and older `api_key` lines (the
-app's save leaves none in `config.ini.bak` either; the installer names each
-removed key, never its value). The subtitle strip's furigana, which only
-those two services gave, went with them.
+### Removed features
 
-The Hachidori relay, which looked words up in the Hachidori app on a computer
-on your local network (`dictionary = hachidori`, `hachidori_host`), has been
-removed from the overlay too; the Hachidori app itself is unaffected. A saved
-`dictionary = hachidori` now loads as `local`, and the
-Rubi app's next save and the installer write `local`; `hachidori_host` is
-ignored, and the installer drops it.
+Rubi is offline and has one OCR engine. What earlier versions had, and what becomes of a setting they saved:
+
+- **Google Lens**, the [upstream's](https://github.com/Dartv/vita-jp-overlay) online engine: recognition never uses
+  the network. A saved `ocr_backend` line is ignored, without a warning, and the Rubi app's next save and the
+  installer delete it. The last build with Google Lens is the tag `archive/online-last` (branch `archive/online`).
+- **The VOCR2 trial** (a separately trained FL10-sized model with a textbox finder, opt-in in 0.7.12 to v0.8.0-test.1;
+  its promotion guard failed): a saved `ocr_backend = vocr2` loads as the local engine, and the app's next save and
+  the installer delete the line; so does `ncnn`, which only the host tools run.
+  `ux0:data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr` can be deleted.
+- **Meiki**, a manual single-line recognizer, removed from the source after 0.7.12: its MNN engine had to be copied
+  into each game's own `app0:` folder through a per-title rePatch mount, and two observed jobs took about eight
+  seconds each. A saved `ocr_backend = meiki` loads as VOCR, and the installer deletes the line. Files copied for it,
+  `ux0:data/VitaJPOverlay/ocr/meiki-stream-int8.mnn` and any `ux0:rePatch/TITLEID/VitaJPOverlay/meiki/` folders, can
+  be deleted. The [`0.7.12` release](https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.7.12) contains the three
+  plugins, Settings, FL10/H15/VOCR2, JMdict and the optional Meiki engine; earlier releases remain available.
+- **The online dictionaries** jpdb.io and jiten.moe, which needed an API key (the local Jitendex and every other
+  Yomitan dictionary still work, converted as above): a saved `dictionary = jpdb` or `jiten` loads as `local`; the
+  installer (`tools/migrate_config.py`) and the Rubi app's next save write `local` and delete the `jpdb_api_key`,
+  `jiten_api_key` and older `api_key` lines (the app's save leaves none in `config.ini.bak` either; the installer
+  names each removed key, never its value). The subtitle strip's furigana, which only those two services gave, went
+  with them.
+- **The Hachidori relay**, which looked words up in the Hachidori app on a computer on your local network (`dictionary
+  = hachidori`, `hachidori_host`); the Hachidori app itself is unaffected. A saved `dictionary = hachidori` loads as
+  `local`, and the Rubi app's next save and the installer write `local`; `hachidori_host` is ignored, and the
+  installer drops it.
 
 ### Anki
 
@@ -1423,8 +1396,7 @@ failed cleanup. The integration tests model the observed syscall return
 encoding and require a subsequent real capture request after each completed job.
 Timeout and ownership tests run without release weights. Real
 accuracy is measured separately against vita-vn-ocr's hand-checked shared
-`eval/` screenshots. The experimental text-extraction branch remains
-separate from this release.
+`eval/` screenshots.
 
 [docs/offline-testing.md](offline-testing.md) says what of this runs where:
 the real plugin sources with the SDK boundary stubbed on the host, the pure-C

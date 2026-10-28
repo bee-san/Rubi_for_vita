@@ -250,16 +250,16 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Other firmware, 3.60–3.74 | untested |
 | ✅ | CLANNAD | OCR, lookups and Anki cards (OCR in every test build) |
 | ❓ | Other Vita games | Rubi's OCR has read no other game's text on a console yet |
-| ⚠️ | PSP games (Adrenaline) | one game started, with Rubi's OCR worker, using the [small bridge](compat/adrenaline_vsh/README.md) (on `main`, not in 0.8.0); reading its text is untested |
+| ⚠️ | PSP games (Adrenaline) | one game started, with Rubi's OCR worker, using the [small bridge](compat/adrenaline_vsh/README.md) (in the release zip since 0.9.0); reading its text is untested |
 | ✅ | Updating a one-VPK install, in the app | three times, the old app closed first |
 | ⚠️ | Updating an install made from a computer (0.7.12 or older) | refused in its one console run, and finished by hand; the cause is unconfirmed |
 | ❓ | A first install, on a Vita without Rubi | not run on a console yet |
 | ✅ | Model sizes Normal and Large | Large fitted in CLANNAD's free memory |
-| ❓ | Model size Small | 0.8.0's Small model has not run on a console |
+| ❓ | Model size Small | not chosen in a console run yet; a game short of memory read 7 jobs with 0.9.7's Small model on a PCH-2000 ([#324](https://github.com/bee-san/Rubi_for_vita/pull/324)) |
 | ⚠️ | OCR in a game short of memory, with the 1 MiB reserve | [#277](https://github.com/bee-san/Rubi_for_vita/issues/277)'s test build (0.9.4 with it): the owner reports that it works, with no figures; in [#324](https://github.com/bee-san/Rubi_for_vita/pull/324)'s run (0.9.7 with it) あおかな read with Small; 0.10.0's models have not run with it on a console |
 | ❓ | VOCR6, the Small, Normal and Large models in 0.10.0 | not run on a console yet ([details](docs/vita-vn-ocr.md#models)) |
 | ✅ | Read text: Automatically | the mode of every 0.8.0 test run |
-| ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
+| ❓ | Read text: Only when I press L + R | not run on a console yet |
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
@@ -267,7 +267,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |
 | ❓ | Characters read, characters/hour, active time and the streak (△ in the overlay) | not run on a console yet; the streak tested on the host ([details](docs/ocr-history.md#total-characters-read), [the streak](docs/ocr-history.md#streak)) |
-| ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
+| ❓ | Default OFF on the Games page | not run on a console since [#149](https://github.com/bee-san/Rubi_for_vita/pull/149) made it turn every game OFF (0.8.0-test.4) |
 | ❓ | A game's own line finder (its page in the Rubi app) | not run on a console yet ([details](docs/guide.md#a-games-own-page)) |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
