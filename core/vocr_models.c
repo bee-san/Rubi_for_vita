@@ -18,19 +18,21 @@
 #define FL10_JOB_BYTES 856064u  /* 659,456 + 131,072 + 65,536 */
 #define H15_JOB_BYTES 1413120u  /* 1,159,168 + 188,416 + 65,536 */
 #define W20_JOB_BYTES 1871872u  /* 1,560,576 + 245,760 + 65,536 (F20's shape) */
-/* The three tiers' blobs (include/vjo_vocr_sizes.h), each with the paths ocr_head_gate = on (the default) gives
- * it: VOCR5-S with its head gate, VOCR6-N and VOCR6-L with their two-level head (no gate). Their times are
- * vocr6-final-gate's (vita-vn-ocr #146, eval/vocr6_gate_final_20261027.json): vita/a9_layers.py under qemu on the
- * shipped blobs, calibrated to VOCR3-H15's measured console rate, one core at 333 MHz without credit for the
- * weights' prefetch, a nominal box of 3 lines of 80 CTC frames + 0.1 s for the finder, at the development share of
- * frames each path skips: Small 627 -> 519 ms with its gate, Normal 918 -> 789 ms and Large 2,073 -> 1,872 ms
- * with their two-level head. Estimates, not console measurements. */
-#define VOCR5_S_BOX_MS 519u
-#define VOCR6_N_BOX_MS 789u
-#define VOCR6_L_BOX_MS 1872u
-#define VOCR5_S_JOB_BYTES 1019904u  /* 823,296 + 131,072 + 65,536 */
-#define VOCR6_N_JOB_BYTES 1441792u  /* 1,187,840 + 188,416 + 65,536 (no gate section: a weights page fewer than VOCR5-N's) */
-#define VOCR6_L_JOB_BYTES 2813952u  /* 2,478,080 + 270,336 + 65,536 (VOCR5-L's pages) */
+/* The three tiers' blobs (include/vjo_vocr_sizes.h, v0.4.1-vocr6.2), each with the paths ocr_head_gate = on (the
+ * default) gives it: VOCR6-S plain (its blob has no section), VOCR6-N with its head gate (ε = 1e-4) and two-level
+ * head, VOCR6-L with its two-level head. Their times are vocr6-followup's gate fits (vita-vn-ocr #157, docs/vocr6.md
+ * "Speed: the follow-up's gate fits"; eval/vocr6_results_20261027.json "follow_up_gate", vita-vn-ocr's
+ * eval/vocr6_gate.sh, vocr6-final-gate's driver of #146): vita/a9_layers.py under qemu on the shipped blobs,
+ * calibrated to VOCR3-H15's measured console rate, one core at 333 MHz without credit for the weights' prefetch, a
+ * nominal box of 3 lines of 80 CTC frames + 0.1 s for the finder, at the development share of frames each path
+ * skips: Small 627 ms (plain: VOCR5-S with its gate was 519 ms), Normal 918 -> 774 ms with its gate and two-level
+ * head, Large 2,073 -> 1,880 ms with its two-level head. Estimates, not console measurements. */
+#define VOCR6_S_BOX_MS 627u
+#define VOCR6_N_BOX_MS 774u
+#define VOCR6_L_BOX_MS 1880u
+#define VOCR6_S_JOB_BYTES 1019904u  /* 823,296 + 131,072 + 65,536 (VOCR5-S's pages: 1,792 B fewer weights, 48 B less arena) */
+#define VOCR6_N_JOB_BYTES 1445888u  /* 1,191,936 + 188,416 + 65,536 (its gate section: a weights page more than v0.4.0's) */
+#define VOCR6_L_JOB_BYTES 2813952u  /* 2,478,080 + 270,336 + 65,536 (v0.4.0's VOCR6-L's pages) */
 /* VOCR5-V (vita-vn-ocr #99), the vertical model: VOCR5-S's shape without its head gate (its blob has none), so
  * v0.3.0's VOCR5-S estimate for the same CTC frames, 631 ms; its workspace adds the rotation buffer
  * (core/vocr_ocr.h VJO_VOCR_ROTATE_BYTES, 57,344 B). No model size runs it, so the Rubi app shows neither figure. */
@@ -42,10 +44,9 @@
 #include VJO_VOCR_MODEL_INFO_TEST
 #else
 static const VjoVocrModelInfo infos[] = {
-    /* The three tiers: Small VOCR5-S (vita-vn-ocr v0.3.0, eval/vocr5_protocol.json) with its head gate
-     * (v0.3.5-headgate.1, API 42); Normal and Large VOCR6-N and VOCR6-L (v0.4.0-vocr6.1, docs/vocr6.md) with their
-     * two-level head. Two generations: each file's own. */
-    {VJO_VOCR5_S_NAME, "VOCR5", "S", VJO_VOCR5_S_BYTES, VOCR5_S_BOX_MS, VOCR5_S_JOB_BYTES},
+    /* The three tiers: VOCR6-S, VOCR6-N and VOCR6-L (vita-vn-ocr v0.4.1-vocr6.2, docs/vocr6.md "The follow-up"),
+     * each with its blob's own paths. One generation (each file names its own: VOCR6 for all three). */
+    {VJO_VOCR6_S_NAME, "VOCR6", "S", VJO_VOCR6_S_BYTES, VOCR6_S_BOX_MS, VOCR6_S_JOB_BYTES},
     {VJO_VOCR6_N_NAME, "VOCR6", "N", VJO_VOCR6_N_BYTES, VOCR6_N_BOX_MS, VOCR6_N_JOB_BYTES},
     {VJO_VOCR6_L_NAME, "VOCR6", "L", VJO_VOCR6_L_BYTES, VOCR6_L_BOX_MS, VOCR6_L_JOB_BYTES},
     /* v0.2.5-vocr3.1 (vita-vn-ocr #67): the Normal and Small tiers before VOCR5. */

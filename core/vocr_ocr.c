@@ -39,14 +39,13 @@ typedef char vjo_vocr_spot_pins_fit[VJO_VOCR_SPOT_BYTES > 32u && VJO_VOCR_SPOT_B
                                     ? 1 : -1];
 typedef char vjo_vocr_spot_frame_fits[VJO_OCR_MAX_WIDTH <= VOCR_TEXTSPOT_MAX_SIDE &&
                                       VJO_OCR_MAX_HEIGHT <= VOCR_TEXTSPOT_MAX_SIDE ? 1 : -1];
-/* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.4.0-vocr6.1 (VOCR6, the
- * Normal and Large tiers), v0.3.6-head2level.1 (VOCR5-S, the Small tier), v0.2.5-vocr3.1
- * (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20), v0.3.2-vertical.1 (VOCR5-V) and v0.2.0
- * (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
+/* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.4.1-vocr6.2 (VOCR6, the
+ * three model tiers), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20), v0.3.2-vertical.1
+ * (VOCR5-V) and v0.2.0 (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
  * default 4-frame tiles and 16-frame head batches, any line width. */
 /* Every pinned size is within the weights block the game worker allows. */
 typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR_H15_BYTES <= VJO_VOCR_MAX_BYTES &&
-                               VJO_VOCR_F20_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR5_S_BYTES <= VJO_VOCR_MAX_BYTES &&
+                               VJO_VOCR_F20_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR6_S_BYTES <= VJO_VOCR_MAX_BYTES &&
                                VJO_VOCR6_N_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR6_L_BYTES <= VJO_VOCR_MAX_BYTES &&
                                VJO_VOCR5_V_BYTES <= VJO_VOCR_MAX_BYTES
                                ? 1 : -1];
@@ -77,29 +76,29 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #include VJO_VOCR_TEST_MODELS
 #else
 static const VjoVocrModel models[] VJO_DATA_TABLE(vocr_models) = {
-    /* The three tiers (include/vjo_vocr_sizes.h), the arena each plans with ocr_head_gate's default, on:
-     * Small, VOCR5-S (vita-vn-ocr eval/vocr5_protocol.json, v0.3.0) with its head gate (API 42, vita-vn-ocr #117,
-     * v0.3.5-headgate.1, carried by v0.3.6-head2level.1): v0.3.0's arena and the gate's frame indices (+48 B,
-     * vocr_arena_bytes with VOCR_HEAD_GATE_ON). Normal and Large, VOCR6-N and VOCR6-L (vita-vn-ocr #125,
-     * docs/vocr6.md, v0.4.0-vocr6.1), each with #122's two-level head and no gate: the plain blob's arena and the
-     * two-level head's level-1 maxima, escape units and fired frames (+1,456 B with vocr_opts.two_level). With the
-     * paths off a job plans less (the plain blobs' arenas). */
-    {VJO_VOCR5_S_NAME, VJO_VOCR5_S_BYTES,
-     {0x76,0xa1,0xbc,0x5d,0xe5,0xcd,0x04,0x19,0xa7,0xed,0xad,0x31,0xbc,0x19,0x8a,0xf8,
-      0x01,0x6b,0xda,0x55,0x92,0xa7,0xe5,0x95,0xde,0x75,0x69,0x76,0x71,0xd3,0xe9,0x28},
-     124880, VJO_VOCR_FINDER},
+    /* The three tiers (include/vjo_vocr_sizes.h), VOCR6-S, VOCR6-N and VOCR6-L (vita-vn-ocr #125, docs/vocr6.md
+     * "The follow-up", v0.4.1-vocr6.2), the arena each plans with ocr_head_gate's default, on, and the paths its
+     * blob has (run_opts): Small's blob is plain, v0.3.0's VOCR5-S arena (no gate, no two-level head: the same with
+     * the paths off); Normal's has #120's head gate and #122's two-level head, the plain blob's arena and the gate's
+     * frame indices (+48 B, vocr_arena_bytes with VOCR_HEAD_GATE_ON) and the two-level head's level-1 maxima, escape
+     * units and fired frames (+1,456 B with vocr_opts.two_level); Large's the two-level head alone (+1,456 B). With
+     * the paths off a job plans less (the plain blobs' arenas, 182,944 and 261,024 B). */
+    {VJO_VOCR6_S_NAME, VJO_VOCR6_S_BYTES,
+     {0x86,0x4b,0xbd,0x19,0x6d,0x5b,0xc5,0xd3,0xa7,0xbd,0x79,0x18,0xcf,0x72,0x74,0xb3,
+      0x50,0x3d,0xfe,0x65,0xd4,0x40,0x01,0x7e,0xf0,0x78,0x1e,0xa7,0xe7,0xba,0x37,0xd2},
+     124832, VJO_VOCR_FINDER},
     {VJO_VOCR6_N_NAME, VJO_VOCR6_N_BYTES,
-     {0x92,0x96,0x52,0xe3,0x3d,0xa1,0x0f,0xee,0x3b,0x7b,0xd3,0x99,0x1a,0x55,0x7e,0x8b,
-      0xbf,0x1a,0x16,0xfb,0xa8,0x3e,0xb5,0x77,0x5b,0xbd,0x02,0x98,0xab,0x65,0xc4,0xd6},
-     184400, VJO_VOCR_FINDER},
+     {0x10,0x7c,0xf0,0x84,0xcc,0x0c,0x1a,0x3a,0x61,0xce,0x4c,0x3f,0x9b,0x9c,0xf6,0xb3,
+      0x1d,0x6d,0xff,0x80,0xf0,0xa1,0xbd,0xb9,0x4a,0xfd,0x3f,0x7e,0xe9,0xae,0x3b,0xc9},
+     184448, VJO_VOCR_FINDER},
     {VJO_VOCR6_L_NAME, VJO_VOCR6_L_BYTES,
-     {0xb0,0x51,0xfd,0x4f,0x3a,0xbe,0x64,0x51,0x92,0x7d,0x74,0xb1,0xd1,0x20,0x9f,0x44,
-      0xa3,0x07,0x2a,0xb7,0x55,0xee,0x9e,0x1b,0x93,0x63,0x36,0x8f,0x00,0xfe,0xb4,0x5b},
+     {0x65,0x31,0x00,0x13,0xe8,0xf9,0x90,0x88,0x6e,0x4e,0x80,0x97,0xb2,0xfe,0x55,0xeb,
+      0x98,0xcd,0xf0,0x82,0xd7,0x19,0x3e,0xea,0x51,0x06,0x01,0xfc,0x0a,0xc2,0x6c,0x82},
      262480, VJO_VOCR_FINDER},
     /* VOCR3 (vita-vn-ocr #67): H15's and FL10's shapes retrained, the same sizes and
      * arenas; the Normal and Small tiers before VOCR5, now accepted by name only (as are
-     * VOCR4-W20 and v0.2.0's, below; VOCR5-N's and VOCR5-L's blobs, the Normal and Large
-     * tiers from API 42 until VOCR6, are not pinned any more). */
+     * VOCR4-W20 and v0.2.0's, below; the tiers' blobs before this set, VOCR5's of API 42 and
+     * v0.4.0-vocr6.1's VOCR6-N and VOCR6-L, are not pinned any more). */
     {VJO_VOCR3_H15_NAME, VJO_VOCR_H15_BYTES,
      {0xcb,0x3c,0x61,0xa8,0xf9,0x1f,0x9a,0xee,0xb3,0xef,0xcc,0x0e,0x79,0x31,0x3f,0x66,
       0x41,0x12,0xf2,0x5c,0x4b,0xd5,0x58,0x65,0xba,0xe9,0xdf,0x52,0x52,0x2b,0x36,0x0c},
@@ -145,7 +144,8 @@ static const VjoVocrModel models[] VJO_DATA_TABLE(vocr_models) = {
  * are VOCR6's LMs built with the hooked games' text (LM weight 0.6, bonus 2.5 nats,
  * the start-of-line context, no end-of-line term); tiers 1 and 3 are ctclm.2's,
  * byte for byte, with ctclm.2's settings (docs/ctc-lm-decode.md). vocr6-final-lm (vita-vn-ocr #151) checked them
- * on VOCR6's final blobs and kept them all but one job model's for one LM (lm_retuned, below). A host test's
+ * on v0.4.0-vocr6.1's VOCR6 blobs and kept them all but one job model's for one LM (lm_retuned, below); v0.4.1-vocr6.2's
+ * blobs read them unchanged (vita-vn-ocr's final read of that set used the 1 MB tier's). A host test's
  * model table may bring its own (VJO_VOCR_TEST_LMS: host/tests/test_parallel_models.h). */
 #ifndef VJO_VOCR_TEST_LMS
 static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] = {
@@ -178,15 +178,18 @@ const VjoVocrLm *vjo_vocr_lm_tier(unsigned tier)
 }
 
 /* The job models whose own decoder settings for an LM differ from its tier's (vjo_vocr_lm_settings): vita-vn-ocr's
- * check of Rubi's settings on VOCR6's final blobs (vocr6-final-lm, #151, merged as 92a65cf: its record
+ * check of Rubi's settings on v0.4.0-vocr6.1's VOCR6 blobs (vocr6-final-lm, #151, merged as 92a65cf: its record
  * eval/vocr6_final_lm_result_20261027.json, "rubi", per job model and LM tier; eval/vocr6_final_lm_protocol.json's
  * pre-registered rule: a grid setting by 2-fold CV, resolved better on the objective and not resolved worse on any
- * guard, #109's counter set included). It kept every LM tier's settings for VOCR6-N and VOCR6-L (VOCR5-S, Small's,
- * reported only, keeps them too) but VOCR6-N's with ctclm.2's 2000k LM: LM weight 0.4, bonus 1.5 nats, the
+ * guard, #109's counter set included). It kept every LM tier's settings for VOCR6-N and VOCR6-L (VOCR5-S, Small's
+ * then, reported only, keeps them too) but VOCR6-N's with ctclm.2's 2000k LM: LM weight 0.4, bonus 1.5 nats, the
  * start-of-line context and the end-of-line term (CV objective -0.260 [-0.800, -0.006] points; most of it one junk
- * line of one game, -0.027 [-0.058, -0.000] without it). The gate (8 nats), the cascade's threshold and the counter
- * re-decode's are unchanged. A job's cascade decodes its re-reads with the job model's settings, as vocr6-final-lm
- * scored them (its decode of every tier at one setting). */
+ * line of one game, -0.027 [-0.058, -0.000] without it). v0.4.1-vocr6.2's VOCR6-N (VJO_VOCR6_N_NAME now) keeps that
+ * row: it is the Normal tier's shipped setting at 2000k, and vocr6-final-lm's protocol keeps the shipped settings
+ * unless a measurement says otherwise; it was not measured again on the new blob. Its VOCR6-S has no row: it reads
+ * every LM tier at that tier's own settings, as VOCR5-S did. The gate (8 nats), the cascade's threshold and the
+ * counter re-decode's are unchanged. A job's cascade decodes its re-reads with the job model's settings, as
+ * vocr6-final-lm scored them (its decode of every tier at one setting). */
 static const struct {
     const char *model, *lm;
     int beta, alpha;

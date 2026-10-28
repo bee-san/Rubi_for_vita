@@ -347,7 +347,7 @@ class PackageVariants(unittest.TestCase):
         gate_att = b"the gate's attribution fixture"  # API 26: the text-presence gate's
         self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
             "https://fixture.invalid/G", len(gate_att), hashlib.sha256(gate_att).hexdigest())}))
-        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR6_ASSETS", "VOCR_LM_ASSETS",
+        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5V_ASSETS", "VOCR6_ASSETS", "VOCR_LM_ASSETS",
                   "VOCR_GATE_ASSETS", "VOCR_SPOT_ASSETS")  # API 54: the text spotter's weights
         for mod in (prepare, release):
             for table in tables:
