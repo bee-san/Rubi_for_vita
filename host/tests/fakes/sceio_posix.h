@@ -10,7 +10,7 @@
  * size and the three times (UTC, as the Vita gives them). Directory listings: SCEIO_DIRS at once,
  * handles 100 + slot (sceio_dirs and sceio_dir_paths, which a suite's own Dread reads), every entry
  * readdir gives ("." and ".." too: a Dread loop skips what is not its own) with the entry's
- * sceio_getstat as its d_stat. */
+ * sceio_getstat as its d_stat (included after acutest.h, an entry it cannot stat fails the test). */
 #ifndef VJO_TEST_SCEIO_POSIX_H
 #define VJO_TEST_SCEIO_POSIX_H
 #include <dirent.h>
@@ -120,6 +120,9 @@ static inline int sceio_dread(int d, SceIoDirent *ent)
     snprintf(ent->d_name, sizeof(ent->d_name), "%s", e->d_name);
     snprintf(path, sizeof(path), "%s/%s", sceio_dir_paths[d - 100], e->d_name);
     rc = sceio_getstat(path, &ent->d_stat);
+#ifdef TEST_ASSERT_ /* (acutest's: an entry the fake lists but cannot stat is the fake's failure, not the code's) */
+    TEST_ASSERT_(rc == 0, "sceIoDread: cannot stat %s", path);
+#endif
     return rc < 0 ? rc : 1;
 }
 static inline int sceio_dclose(int d)
