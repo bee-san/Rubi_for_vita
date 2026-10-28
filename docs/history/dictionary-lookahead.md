@@ -17,7 +17,7 @@ The before executable is the previous handle-session implementation, preserved a
 Both executables are normal host builds. Base source is `1f113ad6f29f452cb9ab7a81df6d8d2af5d31b8b`;
 the first session change was uncommitted, so the executable hash identifies that
 exact before version. Its counts also reproduce the previous
-[session benchmark](../docs/benchmarks/dict-session-20261017.json).
+[session benchmark](../benchmarks/dict-session-20261017.json).
 
 The dictionary is the pinned shipped 157,298,688-byte file, SHA-256
 `1c563c86a29801267c37fdf1def42650b02c69657f4144f09bd26d61b80d79b5`.
@@ -51,7 +51,7 @@ The artifact's prepared character sweep is diagnostic only; runtime lookahead is
 disabled in Character mode. Warm-host foreground timings are recorded as such;
 they are not SD-card latency or a measured console speedup.
 
-[All aggregates and provenance](../docs/benchmarks/dict-lookahead-20261017.json).
+[All aggregates and provenance](../benchmarks/dict-lookahead-20261017.json).
 Raw per-selection JSONL and the local comparison script are under `build/`.
 Reproduce the three word cases with the same directory, file and lines:
 

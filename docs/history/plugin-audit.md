@@ -3,7 +3,7 @@
 Date: 2026-10-13. Overlay commit audited: `599dd9c` (main; the same code as release
 `e759187`, API 16). Nineteen projects from the plugin-safety skill's audit set were
 cloned and read from source, end to end, by four agents; the per-project notes with
-`path:line` citations are in [docs/plugin-audit/notes/](plugin-audit/notes/). Segment
+`path:line` citations are in [docs/history/plugin-audit/notes/](plugin-audit/notes/). Segment
 sizes of the overlay's three modules were measured with `readelf -lW` on a build of
 this commit; everything else is read from source. Nothing here was run on a console,
 and no CPU3 number is claimed (see [What this audit cannot settle](#what-this-audit-cannot-settle)).
@@ -211,7 +211,7 @@ has confirmed the policy, not at module start.
 
 Status (2026-10-13): `module_start` returns `NO_RESIDENT` outside a candidate game
 (PR #68), and the installer registers the worker per game, one `*TITLEID` section for
-each `--title`, never `*ALL` ([vita-memory.md 4.3](vita-memory.md)). The settings app
+each `--title`, never `*ALL` ([vita-memory.md 4.3](../vita-memory.md)). The settings app
 does not write taiHEN sections; a game is added with the installer. The idle worker
 thread in candidate games is unchanged.
 
@@ -300,7 +300,7 @@ Since this audit: OCR reads its region in the game (API 19) and so does an Anki 
 screenshot (API 23), in strips into the game worker's own memory, and API 24 removed the
 kernel block and its syscalls (`vjoRequestCapture`, `vjoReadRaw`). The kernel's only block for
 a job is the capture ladder's last rung, a strip of at most 64 KiB for one call
-([ingame-capture.md](ingame-capture.md)).
+([ingame-capture.md](../ingame-capture.md)).
 
 ### 7. In-game weights and workspace: the right process, but allocations none of the reference overlays make (OOM in the game, medium)
 
@@ -405,7 +405,7 @@ nonpdrm, ds4vita, NoPsmDrm, pngshot, vitacompanion-vitadeck, psp2-cex-gpues4-pro
 VVNZRunner, BGFTP, PSVshell, VitaGrafix, Adrenaline (kernel/ only), at the commits named at
 the top of each note. Every `.c/.h/.cpp/.S/CMakeLists.txt/exports.yml/Makefile` in scope
 was read; each note lists its files and line counts. The schema every note follows is
-[docs/plugin-audit/SCHEMA.md](plugin-audit/SCHEMA.md). Overlay segment sizes:
+[docs/history/plugin-audit/SCHEMA.md](plugin-audit/SCHEMA.md). Overlay segment sizes:
 `readelf -lW build/vita/VitaJPOverlay_{Kernel,Shell,OCR}.velf` on a build of `599dd9c`
 (Kernel `R E` 0x6744 / `RW` 0x13130; Shell 0x36320 / 0x2b9c4; OCR 0x8c20 / 0x1180).
 Struct sizes (`VjoConfig` 3,516, `VjoGameOcrResult` 4,384, `SceneTracker` 15,056) from a

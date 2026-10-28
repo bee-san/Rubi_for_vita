@@ -13,7 +13,7 @@ spans, file format, session lifetime and the 128-candidate bound stay the same.
 The same pinned 157,298,688-byte dictionary and 50 committed VOCR lines were used
 for both versions, with 11 rounds. SHA-256 pins, exact executable hashes and all
 first-word, word and character aggregates are in the
-[experiment artifact](../docs/benchmarks/dict-cache-experiments-20261017.json).
+[experiment artifact](../benchmarks/dict-cache-experiments-20261017.json).
 Every return code, entry count, definition digest and highlight agrees in all
 cases and timed rounds.
 

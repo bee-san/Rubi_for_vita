@@ -34,7 +34,7 @@ event handler that the overlay's kernel already hooks.
 | henkaku (784e483) | `plugin/kernel.c:236-242` | `taiLoadPluginsForTitleForKernel(shell_pid, "main")` for a SceShell that started before taiHEN |
 | PSVshell (9a47b0e) | `src/main.c:144-207`, `348-358` | the process event handler (the overlay's hook) at start/exit/suspend/resume: classifies by title and by the `ScePspemu` main module; loads nothing. 3.60/3.65 NID pairs resolved with `module_get_export_func` |
 | reVita (f35adc5) | `reVita/src/main.c:450-505` | the process event handler; `ksceSblACMgrIsPspEmu(pid)` tells the PSP emulator (`PSPEMUCFW` or an Adrenaline Bubble Manager bubble) from other apps; an `NPXS` allowlist; loads nothing |
-| VitaTweaks NoTrophyMsg (4233c54) | `NoTrophyMsg/main.c` | a `*main` plugin that hooks SceShell by offset per SceShell module NID: no kernel loading; the other kernel plugins of the audit set ([plugin-audit.md](plugin-audit.md), 19 projects) load nothing into user processes either |
+| VitaTweaks NoTrophyMsg (4233c54) | `NoTrophyMsg/main.c` | a `*main` plugin that hooks SceShell by offset per SceShell module NID: no kernel loading; the other kernel plugins of the audit set ([plugin-audit.md](history/plugin-audit.md), 19 projects) load nothing into user processes either |
 
 NIDs: `ksceKernelStartPreloadingModules` is `0x432DCC7A` in `SceModulemgrForKernel`
 `0xC445FA63` on 0.931-3.61 and `0x998C7AE9` in `0x92C9FFC2` on 3.63-3.74 [wiki SceKernelModulemgr;
