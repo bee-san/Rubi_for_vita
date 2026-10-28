@@ -1024,7 +1024,8 @@ weights may still be read ahead by the session's warm-up, as after any job that 
 - **Memory.** Its arena (35,529 B at 960×544) takes scratch the finder leaves free, which the recognizer's arena
   holds anyway at every region size (`test_vocr_policy.c` checks every pinned model at every size up to 960×544): no
   job's workspace grows. Module pages, measured on both builds (VitaSDK gcc 15.2.0): the worker gains 3,488 B of text
-  and 1,560 B of .bss (the weights' block), on or off. The debug worker keeps its 98,304 B and the normal one takes
+  and 1,560 B of .bss (the weights' block), on or off (until #418; a block of the game's memory since, `VjoGameVocrGate`,
+  only while the jobs ask for the gate). The debug worker keeps its 98,304 B and the normal one takes
   one text page more, 94,208 → 98,304 B, in the game's memory. SceShell and the kernel keep their pages
   ([memory-ledger.md](memory-ledger.md)).
 - **Time (estimate, nothing of the gate has run on a console):** about 67-135 ms per 900×150 text box on one core at

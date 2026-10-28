@@ -110,8 +110,8 @@
 #define VJO_VOCR_TIER3_BYTES VJO_VOCR6_L_BYTES
 #endif
 /* The largest recognizer this build pins (the Large tier's): the most the game
- * worker's weights block and its cascade block take (game_ocr/main.c weights_alloc,
- * cascade_alloc; include/vjo_ledger_budget.h VJO_BUDGET_GAME_WEIGHTS and
+ * worker's weights block and its cascade block take (game_ocr/main.c resident_alloc, the
+ * weights_desc and cascade_desc limits; include/vjo_ledger_budget.h VJO_BUDGET_GAME_WEIGHTS and
  * VJO_BUDGET_GAME_CASCADE hold it page-rounded). Every pinned model is at most
  * this (core/vocr_ocr.c checks the macros it pins at compile time;
  * host/tests/test_ledger.c every entry of its table). */

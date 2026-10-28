@@ -510,6 +510,10 @@
  * text 180,544 -> 180,448 B and 171,596 -> 171,516 B: 221,184 -> 217,088 B and 208,896 -> 204,800 B of pages, one page
  * fewer in every game that is ON [measured: tools/check_memory_ledger.py's module rows, both builds, main a4ab7f49 and
  * this change, tools/fast_gate.sh's vitasdk image]. */
+/* #418's audit follow-up (F1: the gate's block decided from the job's own memory check, no second look): worker text
+ * 180,448 -> 180,512 B debug and 171,516 -> 171,596 B normal, data/bss unchanged, the same pages (436 B of the normal
+ * build's last code page left) [measured: tools/check_memory_ledger.py's module rows, both builds, main 579aa61a and
+ * this change, tools/fast_gate.sh's vitasdk image]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
@@ -852,7 +856,7 @@
  * STEINS;GATE's 5,364 B and ROBOTICS;NOTES's 6,432 B 8,192 B). Only in those games; held beside every job, so in the
  * job's worst case: 10,403,840 -> 10,420,224 B. Its load keeps VJO_GAME_RESERVE_HOOK_ONLY free beside it. */
 #define VJO_BUDGET_GAME_SC3 16384u
-/* API 54: the text spotter's weights and their parsed form (game_ocr/main.c spot_alloc, "VjoGameVocrSpot"; core/
+/* API 54: the text spotter's weights and their parsed form (game_ocr/main.c resident_alloc, "VjoGameVocrSpot"; core/
  * vocr_ocr.h VjoVocrSpotResident), USER_RW only, resident like the LM while the game is the active one and its jobs
  * ask for the spotter (ocr_finder = spotter, the default), given back with the others when a job does not fit,
  * the game leaves the front or a job asks for GRAD. Its worst case is the largest blob the protocol's rule admits,

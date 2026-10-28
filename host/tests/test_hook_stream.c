@@ -452,13 +452,25 @@ static void shared_counters(void)
                  results[w][3], results[w][2], results[w][1], results[w][0], results[w][4]);
 }
 
-/* The text is whole: every byte the first's, the length from it (the job's copy has no hash: it reads none). */
+/* The text is whole: every byte the first's, the length from it (the job's copy has no hash: it reads none; the
+ * slot's own is checked under its lock, slot_hash_ok). */
 static int shared_text_ok(const VjoStreamSnap *s)
 {
     if (s->n < 5 || s->n > 54 || s->n != 4u + s->raw[0]) return 0;
     for (unsigned k = 1; k < s->n; k++)
         if (s->raw[k] != s->raw[0]) return 0;
     return 1;
+}
+
+/* #418's audit F2: under the slot's own try-lock, as store() keeps it, its hash is its text's (FNV-1a of raw[0..n)): the
+ * identical-text test (store: s->hash == h) must never see a hash of another text. 1 ok, 0 torn, -1 busy. */
+static int slot_hash_ok(VjoStreamSlot *s)
+{
+    int ok;
+    if (!vjo_stream_try_lock(s)) return -1;
+    ok = !s->seq || s->hash == vjo_fnv1a(VJO_FNV_INIT, s->raw, s->n);
+    vjo_stream_unlock(s);
+    return ok;
 }
 
 static void test_concurrent(void)
@@ -474,11 +486,14 @@ static void test_concurrent(void)
     for (unsigned pass = 1; race_job(pass, shared_reads[0] && shared_reads[1] && shared_reads[2], WRITERS); pass++)
         for (unsigned k = 0; k < 3; k++) {
             shared_tries++;
+            if (!slot_hash_ok(&shared[k])) shared_torn++; /* -1 (busy) and 1 are fine */
             if (!vjo_stream_read(&shared[k], 1u, 0u, &out)) continue;
             shared_reads[k]++;
             if (!shared_text_ok(&out)) shared_torn++;
         }
     race_join(&shared_barrier, t, WRITERS);
+    for (unsigned k = 0; k < 3; k++) /* and once the writers are done */
+        if (slot_hash_ok(&shared[k]) != 1) shared_torn++;
     for (unsigned w = 0; w < WRITERS; w++) {
         dropped += results[w][0];
         same += results[w][1];
