@@ -43,26 +43,7 @@ while IFS=$'\t' read -r setting shown; do
   [ -n "$setting" ] || continue
   PACKAGE_SETS+=(--set "$setting")
   SHOWN="$SHOWN $shown"
-done < <(python3 -c '
-import json, re, sys
-text = open(sys.argv[2], encoding="utf-8-sig", errors="replace").read()
-keys = {m.group(1) for m in re.finditer(r"^(\w+)\s*=", text, re.M)}
-values = {}
-for m in re.finditer(r"^(\w+)[ \t]*=[ \t]*(.*?)[ \t\r]*$", text, re.M):
-    values.setdefault(m.group(1), m.group(2))
-secret = re.compile(r"api_key$|^anki_audio_url$")
-def one_line(v):
-    return len(("<" + v + ">").splitlines()) == 1 and all(ord(c) >= 32 and c != "\x7f" for c in v)
-for k, v in json.load(open(sys.argv[1], encoding="utf-8")).get("install_settings", {}).items():
-    if not (k in keys and re.fullmatch(r"[a-z][a-z0-9_]*", k) and isinstance(v, str)):
-        continue
-    if secret.search(k) and v == "set":
-        v = values.get(k, "")
-        if not v:
-            continue
-    if one_line(v):
-        print(k + "=" + v + "\t" + k + "=" + ((("set" if v else "empty") if secret.search(k) else v)))
-' "$PACKAGE/package-manifest.json" "$PACKAGE/config.ini")
+done < <(python3 "$PACKAGE/tools/package_release.py" --install-settings "$PACKAGE")
 [ -z "$SHOWN" ] || echo "package settings:$SHOWN"
 # No model and no model size is set: the Rubi app's Model size (vocr_tier) is the user's, and
 # an update keeps it; a first install gets the template's Normal, and an older build's model

@@ -726,3 +726,27 @@ class ReleaseInstall(unittest.TestCase):
         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
         self.assertIn("has no line of the overlay", again.stdout)
         self.assertEqual(len(self.dated_backups("ur0")), 2)
+
+
+class InstallSettings(unittest.TestCase):
+    """package_release.py --install-settings, which install-vita.sh reads its --set settings from (#418 P8: the
+    parser it carried inline): each manifest setting the template has, on one line, a credential only by its
+    template's value and never shown."""
+
+    def test_the_lines_install_vita_reads(self):
+        import package_release  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config.ini").write_text("\ufeffanki_mining = off\r\nlog_file = on\r\n"
+                                             "anki_audio_url = https://a.invalid/?k=1\r\njpdb_api_key = \r\n"
+                                             "highlight_mode = word\r\n", encoding="utf-8")
+            settings = {"anki_mining": "on", "anki_audio_url": "set", "jpdb_api_key": "set", "not_a_setting": "on",
+                        "log_file": "of\nf", "highlight_mode": 1, "Bad": "x"}
+            (root / "package-manifest.json").write_text(json.dumps({"files": {}, "install_settings": settings}))
+            want = ["anki_mining=on\tanki_mining=on", "anki_audio_url=https://a.invalid/?k=1\tanki_audio_url=set"]
+            self.assertEqual(package_release.install_settings(root), want)
+            out = subprocess.run([sys.executable, str(ROOT / "tools/package_release.py"), "--install-settings",
+                                  str(root)], capture_output=True, text=True, timeout=60)
+            self.assertEqual((out.returncode, out.stdout), (0, "".join(line + "\n" for line in want)))
+            (root / "package-manifest.json").write_text(json.dumps({"files": {}}))
+            self.assertEqual(package_release.install_settings(root), [])
