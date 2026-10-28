@@ -21,7 +21,7 @@ static unsigned test_cascade_conf; /* 0: the default; 1001: every line is doubtf
 static unsigned char workspace[2*1024*1024] __attribute__((aligned(64)));
 static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static unsigned char capture_mem[1024*1024] __attribute__((aligned(64)));
-/* API 52, the pause: the worker's frame block, and the kernel's frame copies into it (VJO_ROWS_FRAME) */
+/* API 55, the pause: the worker's frame block, and the kernel's frame copies into it (VJO_ROWS_FRAME) */
 static unsigned char frame_memory[128 * 1024] __attribute__((aligned(64)));
 static int frame_live;
 static unsigned frame_block, frame_allocs, frame_copies;
@@ -102,7 +102,7 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
         TEST_CHECK(!capture_live && size <= sizeof(capture_mem));
         capture_allocs++; capture_live = 1; capture_block = size; live_bytes += size; return 11;
     }
-    if (!strcmp(name, "VjoGameVocrFrame")) { /* API 52: the pause's frame block, USER first on its ladder */
+    if (!strcmp(name, "VjoGameVocrFrame")) { /* API 55: the pause's frame block, USER first on its ladder */
         if (type != SCE_KERNEL_MEMBLOCK_TYPE_USER_RW || alloc_failure) return (int)0x80024302u;
         TEST_CHECK(!frame_live && size <= sizeof(frame_memory));
         frame_allocs++; frame_live = 1; frame_block = size; live_bytes += size; return 15;
@@ -268,7 +268,7 @@ int vjoOcrComplete(const VjoGameOcrResult *out)
 /* The kernel's rows call: grey rows of the 200x60 region into the worker's block. */
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
-    if (req->flags & VJO_ROWS_FRAME) { /* API 52: the whole region from one frame, into the frame block */
+    if (req->flags & VJO_ROWS_FRAME) { /* API 55: the whole region from one frame, into the frame block */
         TEST_CHECK(req->size == sizeof(*req) && req->seq == 12 && !req->y && req->n == frame_h && info);
         TEST_CHECK(frame_live && dst == (void *)frame_memory && req->dst_stride == 200 && capture_live);
         rows_calls++; frame_copies++;
@@ -443,7 +443,7 @@ static VjoGameOcrRequest setup(void)
     drop_once = 0; drop_at_allocation = 0;
     model_closes = close_at = 0; close_cancels = close_columns = 0;
     columns_bad = 0; missing_open_rc = -123; grow_on_vertical_open = 0; /* API 47, auto */
-    frame_live = 0; frame_block = frame_allocs = frame_copies = 0; /* API 52, the pause */
+    frame_live = 0; frame_block = frame_allocs = frame_copies = 0; /* API 55, the pause */
     frame_uid = -1; frame_base = NULL; frame_bytes_held = 0; pause_capped = 0; memset(&pz, 0, sizeof(pz));
     psp_title = 0;
     weight_allocations = weight_frees = 0; weights_live = 0; live_bytes = 0;
@@ -4010,7 +4010,7 @@ TEST_LIST = {
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
     {"API 47: auto reads the columns where the rows look like vertical text, rows elsewhere",
      auto_reads_columns_where_the_rows_are_vertical},
-    {"API 52: auto with the pause copies each try's frame", auto_with_the_pause_copies_each_tries_frame},
+    {"API 55: auto with the pause copies each try's frame", auto_with_the_pause_copies_each_tries_frame},
     {"API 47: auto's retry waits no longer than one try: the job's stable-text wait is shared", auto_retry_shares_the_wait},
     {"API 47: auto's tries report the last one's model, never an earlier try's step down", auto_tries_report_the_last_ones_model},
     {"API 47: auto's columns try gives its tall-line block back before the rows' try (no vertical model)",

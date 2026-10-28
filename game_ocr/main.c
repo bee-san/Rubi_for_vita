@@ -93,7 +93,7 @@ static uint32_t spot_bytes_held;
 /* API 23: a shot's block (its colour strip, the encoder and the JPEG), only while a shot runs. */
 static SceUID shot_uid = -1;
 static uint32_t shot_bytes_held;
-/* API 52 (ocr_pause, docs/game-pause.md): a paused job's frame block, the region's grey rows from one frame,
+/* API 55 (ocr_pause, docs/game-pause.md): a paused job's frame block, the region's grey rows from one frame,
  * only while that job runs (freed as soon as the kernel refuses the copy). */
 static SceUID frame_uid = -1;
 static uint32_t frame_bytes_held;
@@ -178,7 +178,7 @@ static int free_sample(int32_t *main_bytes, int32_t *cdram, int32_t *phycont)
  * verified one stays for the next job (blocks_kept). */
 static unsigned blocks_held;
 static unsigned blocks_kept(void);
-/* API 52: the frame block's ALLOC and FREE steps are left out (its PAUSE step has its memory, bytes and refusal), so
+/* API 55: the frame block's ALLOC and FREE steps are left out (its PAUSE step has its memory, bytes and refusal), so
  * a paused job's log keeps the room the kernel's PACE step takes after it (VJO_GAME_OCR_STEPS). */
 static int steps_quiet;
 
@@ -451,7 +451,7 @@ static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, 
     }
 }
 
-/* ---- API 52: the pause for the frame (VJO_GAME_OCR_S_PAUSE, config.ini ocr_pause; docs/game-pause.md) ----
+/* ---- API 55: the pause for the frame (VJO_GAME_OCR_S_PAUSE, config.ini ocr_pause; docs/game-pause.md) ----
  * A job that asks for it and holds its frame block asks the kernel, at its first pass, for the whole region at once
  * (VJO_ROWS_FRAME): the display hook copies every row from the frame the game submits, inside that one display call,
  * which waits as long (the game's pause, at most VJO_GAME_OCR_PAUSE_MAX_US), into the frame block. Every later read
@@ -558,7 +558,7 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
     Capture *c = ud;
     int rc;
     if (cancelled(NULL)) return VJO_E_CANCELLED;
-    /* API 52: the first pass's first strip is the pause's copy, once a job */
+    /* API 55: the first pass's first strip is the pause's copy, once a job */
     if (pz.held && !pz.tried && (flags & VJO_STRIP_FIRST) && !y && (rc = pause_copy(c)) < 0) return rc;
     if (pz.frozen) {
         for (unsigned r = 0; r < n; r++)
@@ -581,7 +581,7 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
 typedef char vjo_line_column_check[VJO_VOCR_LINE_COLUMN == VJO_GAME_OCR_LINE_COLUMN ? 1 : -1];
 /* The core never asks for more than the ledger counts. */
 typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
-/* API 52: a frame block holds the largest region, and the worst case counts the larger of it and a tall line's
+/* API 55: a frame block holds the largest region, and the worst case counts the larger of it and a tall line's
  * block (a job holds one or the other: include/vjo_ledger_budget.h VJO_BUDGET_GAME_LINE_OR_FRAME). */
 typedef char vjo_frame_budget_check[PAGE_ROUND((uint32_t)VJO_OCR_MAX_WIDTH * VJO_OCR_MAX_HEIGHT) <= VJO_BUDGET_GAME_FRAME &&
                                     VJO_BUDGET_GAME_FRAME <= VJO_BUDGET_GAME_LINE_OR_FRAME &&
@@ -1128,7 +1128,7 @@ static int cleanup(void)
         if (game_memblock_free(GL_SHOT, VJO_GITEM_SHOT, shot_uid, shot_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
         else { shot_uid = -1; shot_bytes_held = 0; }
     }
-    if (frame_release() < 0) rc = VJO_E_OCR_UNAVAILABLE; /* API 52: a frame copy wrote here (kept as the capture is) */
+    if (frame_release() < 0) rc = VJO_E_OCR_UNAVAILABLE; /* API 55: a frame copy wrote here (kept as the capture is) */
     file_close(NULL);
     if (model_owned) rc = VJO_E_OCR_UNAVAILABLE;
     /* Between jobs a weights (or LM) block holds verified bytes or nothing. */
@@ -2125,7 +2125,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     uint32_t spot_load_us = 0;
     int spot_handed = 0;
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
-    uint32_t paused_us = 0; /* API 52: the game's waits for this job's frame copies (auto's earlier tries') */
+    uint32_t paused_us = 0; /* API 55: the game's waits for this job's frame copies (auto's earlier tries') */
     sceClibMemset(&pz, 0, sizeof(pz));
     pause_frames = 0;
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || shot_uid >= 0 || frame_uid >= 0 || model_owned) {
@@ -2242,7 +2242,7 @@ again:
     if (!want_spot && drop_spot()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; } /* a no-op when it holds nothing */
     if (want_spot && !vertical) {
         VjoPlatform spot_platform = {.file_open = file_open, .now_us = now_us};
-        VjoGreySource spot_cancel = {&capture, r->width, r->height, strip_source, cancelled, line_buffer};
+        VjoGreySource spot_cancel = {&capture, r->width, r->height, strip_source, cancelled, line_buffer, NULL};
         uint64_t s0 = now_wide();
         unsigned read = 0;
         spot_rc = vjo_vocr_spot_load(&spot_platform, r->model_dir, &spot_res, &spot_cancel, &read);
@@ -2384,7 +2384,7 @@ retry_smaller:
     unsigned use_helpers = 0;
     size_t helper_bytes = 0, helpers_need_bytes = 0;
     if (want_helpers > VJO_VOCR_HELPERS_MAX) want_helpers = VJO_VOCR_HELPERS_MAX;
-    /* API 52, the pause (ocr_pause, docs/game-pause.md): its frame block, the region's grey rows, when it fits beside
+    /* API 55, the pause (ocr_pause, docs/game-pause.md): its frame block, the region's grey rows, when it fits beside
      * everything the check chose, with that check's reserve, and without the resident blocks the check counted as
      * released (so it never makes the job give back another model's weights); asked for before the helpers, so a game
      * short of memory may read its lines one after the other for it, never with a smaller model, LM or cascade. */
@@ -2409,7 +2409,7 @@ retry_smaller:
         const int64_t room = (int64_t)out->free_user - (int64_t)out->reserve_bytes - (int64_t)out->need_workspace -
                              (int64_t)out->need_weights;
         int64_t release = (int64_t)out->release_bytes;
-        /* API 52 (the audit's F1): the frame block never makes the job give back another model's blocks. They count
+        /* API 55 (the audit's F1): the frame block never makes the job give back another model's blocks. They count
          * for the helpers only where, without the frame block, its helpers would need them too: the frame block may
          * cost a helper instead (the release below then finds the job fits beside them) */
         if (frame_need) {
@@ -2473,7 +2473,7 @@ retry_smaller:
     if (workspace_uid < 0) { workspace_uid = leaked; rc = VJO_E_OOM; goto done; }
     workspace_bytes_held = held;
     workspace_memory = mem;
-    if (frame_need) { /* API 52: refused, the job reads as without the pause */
+    if (frame_need) { /* API 55: refused, the job reads as without the pause */
         void *fb = NULL;
         SceUID fu;
         steps_quiet = 1;
@@ -2671,7 +2671,7 @@ retry_smaller:
                  stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
                  (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles),
                  stats.settle_us + tried_settle_us ? stats.settle_us + tried_settle_us : 1u, 0);
-    if (pz.asked) /* API 52: kind 1 frozen; sum the reason | the block's memory << 8; us the game's waits (1: none) */
+    if (pz.asked) /* API 55: kind 1 frozen; sum the reason | the block's memory << 8; us the game's waits (1: none) */
         step_add(VJO_GSTEP_PAUSE, pz.frozen ? 1u : 0u, pz.rows, pz.frozen ? 0 : pz.rc, pz.bytes,
                  (pz.frozen ? VJO_GPAUSE_FROZEN
                   : pz.tried ? VJO_GPAUSE_REFUSED
@@ -2789,7 +2789,7 @@ done:
     if (!(r && (r->flags & (VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))) { /* (theirs are their own) */
         out->source = capture.pass_strips ? capture.mode : VJO_GAME_OCR_SRC_NONE;
         out->strip_rows = stats.strip_rows;
-        /* API 52: a paused job's captures are the game's frames it read (its rows calls, the frame copy one), not its
+        /* API 55: a paused job's captures are the game's frames it read (its rows calls, the frame copy one), not its
          * reads of the frame block */
         out->captures = pause_frames ? capture.pass_strips : stats.strips + tried_strips;
         out->tears = stats.tears;

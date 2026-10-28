@@ -26,6 +26,7 @@
   report: config.ini: ocr_lm = 1000k
   report: config.ini: ocr_mode = auto
   report: config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  report: config.ini: ocr_pause = off
   report: config.ini: ocr_refine_lines = psp
   report: config.ini: ocr_settle_max_ms = 2000
   report: config.ini: ocr_settle_ms = 150
@@ -49,7 +50,7 @@
   @@ -58 +58 @@
   - text_source = auto
   + text_source = ocr
-  @@ -132 +132 @@
+  @@ -136 +136 @@
   - anki_mining = off
   + anki_mining = on
   r+ config.ini: anki_audio_url removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
@@ -91,7 +92,7 @@
   @@ -71 +71 @@
   - vocr_tier = normal
   + vocr_tier = large
-  @@ -132 +132 @@
+  @@ -136 +136 @@
   - anki_mining = off
   + anki_mining = on
   r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
@@ -121,12 +122,12 @@
   r- config.ini: toggle_button = l+r
   r- config.ini: vocr_tier = normal
 = docs/config.example.ini => exit 1
-> bogus = 1 => exit 0 | @@ -138,0 +139,2 @@ | + bogus = 1 | +
-> Bogus_Setting = 1 => exit 0 | @@ -138,0 +139,2 @@ | + bogus_setting = 1 | +
-> key with spaces = 1 => exit 0 | @@ -138,0 +139,2 @@ | + key with spaces = 1 | +
-> = value => exit 0 | @@ -138,0 +139,2 @@ | +  = value | +
->  = value => exit 0 | @@ -138,0 +139,2 @@ | +  = value | +
-> == => exit 0 | @@ -138,0 +139,2 @@ | +  = = | +
+> bogus = 1 => exit 0 | @@ -142,0 +143,2 @@ | + bogus = 1 | +
+> Bogus_Setting = 1 => exit 0 | @@ -142,0 +143,2 @@ | + bogus_setting = 1 | +
+> key with spaces = 1 => exit 0 | @@ -142,0 +143,2 @@ | + key with spaces = 1 | +
+> = value => exit 0 | @@ -142,0 +143,2 @@ | +  = value | +
+>  = value => exit 0 | @@ -142,0 +143,2 @@ | +  = value | +
+> == => exit 0 | @@ -142,0 +143,2 @@ | +  = = | +
 > font_size_ja = => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = | r- config.ini: font_size_ja = 18
 > font_size_ja = 20 ; inline comment => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 20 | r- config.ini: font_size_ja = 18
 > font_size_ja = 20 # inline comment => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 20 | r- config.ini: font_size_ja = 18
@@ -143,23 +144,23 @@
 > \xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20 => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 20 | r- config.ini: font_size_ja = 18
 > \xEF\xBBfont_size_ja = 20 => exit 2 | no file written
 > \xEFfont_size_ja = 20 => exit 2 | no file written
-> \xEF\xBB\xBEfont_size_ja = 20 => exit 0 | @@ -138,0 +139,2 @@ | + \xEF\xBB\xBEfont_size_ja = 20 | +
+> \xEF\xBB\xBEfont_size_ja = 20 => exit 0 | @@ -142,0 +143,2 @@ | + \xEF\xBB\xBEfont_size_ja = 20 | +
 > font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12 => exit 0 | @@ -41,2 +41,2 @@ | - font_size_ja = 18 | - font_size_en = 14 | + font_size_ja = 20 | + font_size_en = 12 | r- config.ini: font_size_en = 14 | r- config.ini: font_size_ja = 18
-> anki_mining\r= off => exit 0 | @@ -138,0 +139,2 @@ | +  = off | +
-> vocr_tier\r= large => exit 0 | @@ -138,0 +139,2 @@ | +  = large | +
-> vocr_tier \r= large => exit 0 | @@ -138,0 +139,2 @@ | +  = large | +
-> highlight_mode\r=character => exit 0 | @@ -138,0 +139,2 @@ | +  = character | +
-> japanese_only_selection \r = on => exit 0 | @@ -138,0 +139,2 @@ | +  = on | +
-> local_dictionary_results\r\t= 3 => exit 0 | @@ -138,0 +139,2 @@ | +  = 3 | +
-> vocr_model\r= FL10_w8.vocr => exit 0 | @@ -138,0 +139,2 @@ | +  = FL10_w8.vocr | +
-> font_size\r= 3 => exit 0 | @@ -138,0 +139,2 @@ | +  = 3 | +
-> jpdb_api_key\r= secret-17 => exit 0 | @@ -138,0 +139,2 @@ | +  = secret-17 | +
-> ocr_backend\r= lens => exit 0 | @@ -138,0 +139,2 @@ | +  = lens | +
+> anki_mining\r= off => exit 0 | @@ -142,0 +143,2 @@ | +  = off | +
+> vocr_tier\r= large => exit 0 | @@ -142,0 +143,2 @@ | +  = large | +
+> vocr_tier \r= large => exit 0 | @@ -142,0 +143,2 @@ | +  = large | +
+> highlight_mode\r=character => exit 0 | @@ -142,0 +143,2 @@ | +  = character | +
+> japanese_only_selection \r = on => exit 0 | @@ -142,0 +143,2 @@ | +  = on | +
+> local_dictionary_results\r\t= 3 => exit 0 | @@ -142,0 +143,2 @@ | +  = 3 | +
+> vocr_model\r= FL10_w8.vocr => exit 0 | @@ -142,0 +143,2 @@ | +  = FL10_w8.vocr | +
+> font_size\r= 3 => exit 0 | @@ -142,0 +143,2 @@ | +  = 3 | +
+> jpdb_api_key\r= secret-17 => exit 0 | @@ -142,0 +143,2 @@ | +  = secret-17 | +
+> ocr_backend\r= lens => exit 0 | @@ -142,0 +143,2 @@ | +  = lens | +
 > font_size_ja = 20\nfont_size_ja = 30 => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 30 | r- config.ini: font_size_ja = 18
 > font_size_ja = 20\nfont_size_ja = 99 => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 99 | r- config.ini: font_size_ja = 18
-> bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5 => exit 0 | @@ -138,0 +139,6 @@ | + bogus1 = 1 | + bogus2 = 2 | + bogus3 = 3 | + bogus4 = 4 | + bogus5 = 5 | +
-> an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1 => exit 0 | @@ -138,0 +139,2 @@ | + an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1 | +
-> https://example.invalid/path?a=b => exit 0 | @@ -138,0 +139,2 @@ | + https://example.invalid/path?a = b | +
+> bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5 => exit 0 | @@ -142,0 +143,6 @@ | + bogus1 = 1 | + bogus2 = 2 | + bogus3 = 3 | + bogus4 = 4 | + bogus5 = 5 | +
+> an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1 => exit 0 | @@ -142,0 +143,2 @@ | + an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1 | +
+> https://example.invalid/path?a=b => exit 0 | @@ -142,0 +143,2 @@ | + https://example.invalid/path?a = b | +
 > local_dictionary_dir = ux0:data/mine => exit 0 | @@ -7 +7 @@ | - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries | + local_dictionary_dir = ux0:data/mine | r- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 > local_dictionary_dir = ux0:data/mine ; not a comment here => exit 0 | @@ -7 +7 @@ | - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries | + local_dictionary_dir = ux0:data/mine | r- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 > local_dictionary_dir = => exit 0 | @@ -7 +7 @@ | - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries | + local_dictionary_dir = | r- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
@@ -264,13 +265,13 @@
 > hook_trust = off => exit 0 | @@ -65 +65 @@ | - hook_trust = on | + hook_trust = off | r- config.ini: hook_trust = on
 > HOOK_TRUST = Off => exit 0 | @@ -65 +65 @@ | - hook_trust = on | + hook_trust = Off | r- config.ini: hook_trust = on
 > hook_trust = off\nhook_trust = => exit 0 | @@ -65 +65 @@ | - hook_trust = on | + hook_trust = | r- config.ini: hook_trust = on
-> hook_trusted = off => exit 0 | @@ -138,0 +139,2 @@ | + hook_trusted = off | +
+> hook_trusted = off => exit 0 | @@ -142,0 +143,2 @@ | + hook_trusted = off | +
 > ocr_mode = auto => exit 0 | r- config.ini: ocr_mode = auto
-> ocr_mode = on_press => exit 0 | @@ -118 +118 @@ | - ocr_mode = auto | + ocr_mode = on_press | r- config.ini: ocr_mode = auto
-> ocr_mode = ON_PRESS => exit 0 | @@ -118 +118 @@ | - ocr_mode = auto | + ocr_mode = ON_PRESS | r- config.ini: ocr_mode = auto
-> ocr_mode = On_Press ; mine => exit 0 | @@ -118 +118 @@ | - ocr_mode = auto | + ocr_mode = On_Press | r- config.ini: ocr_mode = auto
-> ocr_mode = press => exit 0 | @@ -118 +118 @@ | - ocr_mode = auto | + ocr_mode = press | r- config.ini: ocr_mode = auto
-> ocr_mode = => exit 0 | @@ -118 +118 @@ | - ocr_mode = auto | + ocr_mode = | r- config.ini: ocr_mode = auto
+> ocr_mode = on_press => exit 0 | @@ -122 +122 @@ | - ocr_mode = auto | + ocr_mode = on_press | r- config.ini: ocr_mode = auto
+> ocr_mode = ON_PRESS => exit 0 | @@ -122 +122 @@ | - ocr_mode = auto | + ocr_mode = ON_PRESS | r- config.ini: ocr_mode = auto
+> ocr_mode = On_Press ; mine => exit 0 | @@ -122 +122 @@ | - ocr_mode = auto | + ocr_mode = On_Press | r- config.ini: ocr_mode = auto
+> ocr_mode = press => exit 0 | @@ -122 +122 @@ | - ocr_mode = auto | + ocr_mode = press | r- config.ini: ocr_mode = auto
+> ocr_mode = => exit 0 | @@ -122 +122 @@ | - ocr_mode = auto | + ocr_mode = | r- config.ini: ocr_mode = auto
 > vocr_tier = small => exit 0 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = small | r- config.ini: vocr_tier = normal
 > vocr_tier = normal => exit 0 | r- config.ini: vocr_tier = normal
 > vocr_tier = large => exit 0 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = large | r- config.ini: vocr_tier = normal
@@ -327,7 +328,7 @@
 > ocr_head_gate = two_level => exit 0 | @@ -97 +97 @@ | - ocr_head_gate = on | + ocr_head_gate = two_level | r- config.ini: ocr_head_gate = on
 > ocr_head_gate = Two_Level => exit 0 | @@ -97 +97 @@ | - ocr_head_gate = on | + ocr_head_gate = Two_Level | r- config.ini: ocr_head_gate = on
 > ocr_head_gate = sometimes => exit 0 | @@ -97 +97 @@ | - ocr_head_gate = on | + ocr_head_gate = sometimes | r- config.ini: ocr_head_gate = on
-> ocr_two_level = off => exit 0 | @@ -138,0 +139,2 @@ | + ocr_two_level = off | +
+> ocr_two_level = off => exit 0 | @@ -142,0 +143,2 @@ | + ocr_two_level = off | +
 > ocr_line_fix = off => exit 0 | @@ -99 +99 @@ | - ocr_line_fix = on | + ocr_line_fix = off | r- config.ini: ocr_line_fix = on
 > ocr_line_fix = on => exit 0 | r- config.ini: ocr_line_fix = on
 > ocr_line_fix = junk => exit 0 | @@ -99 +99 @@ | - ocr_line_fix = on | + ocr_line_fix = junk | r- config.ini: ocr_line_fix = on
@@ -357,37 +358,37 @@
 > ocr_wait_hint = off => exit 0 | @@ -81 +81 @@ | - ocr_wait_hint = on | + ocr_wait_hint = off | r- config.ini: ocr_wait_hint = on
 > OCR_Wait_Hint = OFF => exit 0 | @@ -81 +81 @@ | - ocr_wait_hint = on | + ocr_wait_hint = OFF | r- config.ini: ocr_wait_hint = on
 > ocr_wait_hint = maybe => exit 0 | @@ -81 +81 @@ | - ocr_wait_hint = on | + ocr_wait_hint = maybe | r- config.ini: ocr_wait_hint = on
-> ocr_wait_hints = off => exit 0 | @@ -138,0 +139,2 @@ | + ocr_wait_hints = off | +
-> ocr_wait = off => exit 0 | @@ -138,0 +139,2 @@ | + ocr_wait = off | +
-> ocr_vertical = off => exit 0 | @@ -113 +113 @@ | - ocr_vertical = auto | + ocr_vertical = off | r- config.ini: ocr_vertical = auto
-> ocr_vertical = on => exit 0 | @@ -113 +113 @@ | - ocr_vertical = auto | + ocr_vertical = on | r- config.ini: ocr_vertical = auto
+> ocr_wait_hints = off => exit 0 | @@ -142,0 +143,2 @@ | + ocr_wait_hints = off | +
+> ocr_wait = off => exit 0 | @@ -142,0 +143,2 @@ | + ocr_wait = off | +
+> ocr_vertical = off => exit 0 | @@ -117 +117 @@ | - ocr_vertical = auto | + ocr_vertical = off | r- config.ini: ocr_vertical = auto
+> ocr_vertical = on => exit 0 | @@ -117 +117 @@ | - ocr_vertical = auto | + ocr_vertical = on | r- config.ini: ocr_vertical = auto
 > ocr_vertical = auto => exit 0 | r- config.ini: ocr_vertical = auto
-> ocr_vertical = Auto => exit 0 | @@ -113 +113 @@ | - ocr_vertical = auto | + ocr_vertical = Auto | r- config.ini: ocr_vertical = auto
-> ocr_vertical = yes => exit 0 | @@ -113 +113 @@ | - ocr_vertical = auto | + ocr_vertical = yes | r- config.ini: ocr_vertical = auto
-> OCR_Vertical = 1 => exit 0 | @@ -113 +113 @@ | - ocr_vertical = auto | + ocr_vertical = 1 | r- config.ini: ocr_vertical = auto
+> ocr_vertical = Auto => exit 0 | @@ -117 +117 @@ | - ocr_vertical = auto | + ocr_vertical = Auto | r- config.ini: ocr_vertical = auto
+> ocr_vertical = yes => exit 0 | @@ -117 +117 @@ | - ocr_vertical = auto | + ocr_vertical = yes | r- config.ini: ocr_vertical = auto
+> OCR_Vertical = 1 => exit 0 | @@ -117 +117 @@ | - ocr_vertical = auto | + ocr_vertical = 1 | r- config.ini: ocr_vertical = auto
 > reading_time = adaptive => exit 0 | r- config.ini: reading_time = adaptive
-> reading_time = 15s => exit 0 | @@ -126 +126 @@ | - reading_time = adaptive | + reading_time = 15s | r- config.ini: reading_time = adaptive
-> Reading_Time = 15S => exit 0 | @@ -126 +126 @@ | - reading_time = adaptive | + reading_time = 15S | r- config.ini: reading_time = adaptive
-> reading_time = 30s => exit 0 | @@ -126 +126 @@ | - reading_time = adaptive | + reading_time = 30s | r- config.ini: reading_time = adaptive
-> reading_time = => exit 0 | @@ -126 +126 @@ | - reading_time = adaptive | + reading_time = | r- config.ini: reading_time = adaptive
+> reading_time = 15s => exit 0 | @@ -130 +130 @@ | - reading_time = adaptive | + reading_time = 15s | r- config.ini: reading_time = adaptive
+> Reading_Time = 15S => exit 0 | @@ -130 +130 @@ | - reading_time = adaptive | + reading_time = 15S | r- config.ini: reading_time = adaptive
+> reading_time = 30s => exit 0 | @@ -130 +130 @@ | - reading_time = adaptive | + reading_time = 30s | r- config.ini: reading_time = adaptive
+> reading_time = => exit 0 | @@ -130 +130 @@ | - reading_time = adaptive | + reading_time = | r- config.ini: reading_time = adaptive
 > log_file = on => exit 0 | r- config.ini: log_file = on
-> log_file = off => exit 0 | @@ -121 +121 @@ | - log_file = on | + log_file = off | r- config.ini: log_file = on
-> log_file = OFF => exit 0 | @@ -121 +121 @@ | - log_file = on | + log_file = OFF | r- config.ini: log_file = on
-> log_file = 1 => exit 0 | @@ -121 +121 @@ | - log_file = on | + log_file = 1 | r- config.ini: log_file = on
-> anki_mining = on => exit 0 | @@ -132 +132 @@ | - anki_mining = off | + anki_mining = on | r- config.ini: anki_mining = off
+> log_file = off => exit 0 | @@ -125 +125 @@ | - log_file = on | + log_file = off | r- config.ini: log_file = on
+> log_file = OFF => exit 0 | @@ -125 +125 @@ | - log_file = on | + log_file = OFF | r- config.ini: log_file = on
+> log_file = 1 => exit 0 | @@ -125 +125 @@ | - log_file = on | + log_file = 1 | r- config.ini: log_file = on
+> anki_mining = on => exit 0 | @@ -136 +136 @@ | - anki_mining = off | + anki_mining = on | r- config.ini: anki_mining = off
 > anki_mining = off => exit 0 | r- config.ini: anki_mining = off
-> anki_mining = ON => exit 0 | @@ -132 +132 @@ | - anki_mining = off | + anki_mining = ON | r- config.ini: anki_mining = off
-> anki_mining = yes => exit 0 | @@ -132 +132 @@ | - anki_mining = off | + anki_mining = yes | r- config.ini: anki_mining = off
+> anki_mining = ON => exit 0 | @@ -136 +136 @@ | - anki_mining = off | + anki_mining = ON | r- config.ini: anki_mining = off
+> anki_mining = yes => exit 0 | @@ -136 +136 @@ | - anki_mining = off | + anki_mining = yes | r- config.ini: anki_mining = off
 > anki_screenshot = on => exit 0 | r- config.ini: anki_screenshot = on
-> anki_screenshot = off => exit 0 | @@ -134 +134 @@ | - anki_screenshot = on | + anki_screenshot = off | r- config.ini: anki_screenshot = on
-> anki_screenshot = maybe => exit 0 | @@ -134 +134 @@ | - anki_screenshot = on | + anki_screenshot = maybe | r- config.ini: anki_screenshot = on
+> anki_screenshot = off => exit 0 | @@ -138 +138 @@ | - anki_screenshot = on | + anki_screenshot = off | r- config.ini: anki_screenshot = on
+> anki_screenshot = maybe => exit 0 | @@ -138 +138 @@ | - anki_screenshot = on | + anki_screenshot = maybe | r- config.ini: anki_screenshot = on
 > anki_screenshot_trim_bars = on => exit 0 | r- config.ini: anki_screenshot_trim_bars = on
-> anki_screenshot_trim_bars = off => exit 0 | @@ -137 +137 @@ | - anki_screenshot_trim_bars = on | + anki_screenshot_trim_bars = off | r- config.ini: anki_screenshot_trim_bars = on
-> Anki_Screenshot_Trim_Bars = OFF => exit 0 | @@ -137 +137 @@ | - anki_screenshot_trim_bars = on | + anki_screenshot_trim_bars = OFF | r- config.ini: anki_screenshot_trim_bars = on
-> anki_screenshot_trim_bars = x => exit 0 | @@ -137 +137 @@ | - anki_screenshot_trim_bars = on | + anki_screenshot_trim_bars = x | r- config.ini: anki_screenshot_trim_bars = on
-> anki_mining = on ; a comment => exit 0 | @@ -132 +132 @@ | - anki_mining = off | + anki_mining = on ; a comment | r- config.ini: anki_mining = off
-> anki_mining = off\nanki_mining = on => exit 0 | @@ -132 +132 @@ | - anki_mining = off | + anki_mining = on | r- config.ini: anki_mining = off
-> anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on => exit 0 | @@ -132 +132 @@ | - anki_mining = off | + anki_mining = on | @@ -134 +134 @@ | - anki_screenshot = on | + anki_screenshot = off | r- config.ini: anki_mining = off | r- config.ini: anki_screenshot = on
+> anki_screenshot_trim_bars = off => exit 0 | @@ -141 +141 @@ | - anki_screenshot_trim_bars = on | + anki_screenshot_trim_bars = off | r- config.ini: anki_screenshot_trim_bars = on
+> Anki_Screenshot_Trim_Bars = OFF => exit 0 | @@ -141 +141 @@ | - anki_screenshot_trim_bars = on | + anki_screenshot_trim_bars = OFF | r- config.ini: anki_screenshot_trim_bars = on
+> anki_screenshot_trim_bars = x => exit 0 | @@ -141 +141 @@ | - anki_screenshot_trim_bars = on | + anki_screenshot_trim_bars = x | r- config.ini: anki_screenshot_trim_bars = on
+> anki_mining = on ; a comment => exit 0 | @@ -136 +136 @@ | - anki_mining = off | + anki_mining = on ; a comment | r- config.ini: anki_mining = off
+> anki_mining = off\nanki_mining = on => exit 0 | @@ -136 +136 @@ | - anki_mining = off | + anki_mining = on | r- config.ini: anki_mining = off
+> anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on => exit 0 | @@ -136 +136 @@ | - anki_mining = off | + anki_mining = on | @@ -138 +138 @@ | - anki_screenshot = on | + anki_screenshot = off | r- config.ini: anki_mining = off | r- config.ini: anki_screenshot = on
 > dictionary = local => exit 0 | r- config.ini: dictionary = local
 > dictionary = LOCAL => exit 0 | @@ -4 +4 @@ | - dictionary = local | + dictionary = LOCAL | r- config.ini: dictionary = local
 > dictionary = local ; mine => exit 0 | r- config.ini: dictionary = local
@@ -395,8 +396,8 @@
 > dictionary = jpdbx => exit 0 | @@ -4 +4 @@ | - dictionary = local | + dictionary = jpdbx | r- config.ini: dictionary = local
 > dictionary = relay => exit 0 | @@ -4 +4 @@ | - dictionary = local | + dictionary = relay | r- config.ini: dictionary = local
 > dictionary = => exit 0 | @@ -4 +4 @@ | - dictionary = local | + dictionary = | r- config.ini: dictionary = local
-> dictionaryx = jpdb => exit 0 | @@ -138,0 +139,2 @@ | + dictionaryx = jpdb | +
-> dictionary local = 1 => exit 0 | @@ -138,0 +139,2 @@ | + dictionary local = 1 | +
+> dictionaryx = jpdb => exit 0 | @@ -142,0 +143,2 @@ | + dictionaryx = jpdb | +
+> dictionary local = 1 => exit 0 | @@ -142,0 +143,2 @@ | + dictionary local = 1 | +
 > dictionary = jpdb;x => exit 0 | @@ -4 +4 @@ | - dictionary = local | + dictionary = jpdb;x | r- config.ini: dictionary = local
 > dictionary = jiten#x => exit 0 | @@ -4 +4 @@ | - dictionary = local | + dictionary = jiten#x | r- config.ini: dictionary = local
 > dictionary = hachidori;relay => exit 0 | @@ -4 +4 @@ | - dictionary = local | + dictionary = hachidori;relay | r- config.ini: dictionary = local
@@ -411,15 +412,15 @@
 > jpdb_api_key = => exit 0 | r+ config.ini: jpdb_api_key removed
 > jpdb_api_key_old = secret-11 => exit 0 | r+ config.ini: jpdb_api_key removed
 > \xEF\xBB\xBFjpdb_api_key = secret-12 => exit 0 | r+ config.ini: jpdb_api_key removed
-> jpdb_api_ke = secret-13 => exit 0 | @@ -138,0 +139,2 @@ | + jpdb_api_ke = secret-13 | +
-> lens_api_key = secret-14 => exit 0 | @@ -138,0 +139,2 @@ | + lens_api_key = secret-14 | +
-> my_api_key = secret-15 => exit 0 | @@ -138,0 +139,2 @@ | + my_api_key = secret-15 | +
+> jpdb_api_ke = secret-13 => exit 0 | @@ -142,0 +143,2 @@ | + jpdb_api_ke = secret-13 | +
+> lens_api_key = secret-14 => exit 0 | @@ -142,0 +143,2 @@ | + lens_api_key = secret-14 | +
+> my_api_key = secret-15 => exit 0 | @@ -142,0 +143,2 @@ | + my_api_key = secret-15 | +
 > anki_host = 192.168.1.23 => exit 0 | r+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
 > ANKI_HOST=10.0.0.2 => exit 0 | r+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
 > anki_host = auto => exit 0 | r+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
 > anki_host = => exit 0 | r+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
 > anki_audio_url = https://a.invalid/?k=secret-20 => exit 0 | r+ config.ini: anki_audio_url removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
-> anki_audio_url https://a.invalid/?k=secret-21 => exit 0 | @@ -138,0 +139,2 @@ | + anki_audio_url https://a.invalid/?k = secret-21 | +
+> anki_audio_url https://a.invalid/?k=secret-21 => exit 0 | @@ -142,0 +143,2 @@ | + anki_audio_url https://a.invalid/?k = secret-21 | +
 > anki_deck = Mining => exit 0 | r+ config.ini: anki_deck removed
 > anki_deck = Mining #1 ; main => exit 0 | r+ config.ini: anki_deck removed
 > anki_note_type = Lapis => exit 0 | r+ config.ini: anki_note_type removed
@@ -427,9 +428,9 @@
 > anki_field_word = Word => exit 0 | r+ config.ini: anki_field_word removed
 > Anki_Field_Word = Word => exit 0 | r+ config.ini: anki_field_word removed
 > anki_field_misc_info = X => exit 0 | r+ config.ini: anki_field_misc_info removed
-> anki_field = x => exit 0 | @@ -138,0 +139,2 @@ | + anki_field = x | +
-> anki_fields = x => exit 0 | @@ -138,0 +139,2 @@ | + anki_fields = x | +
-> anki_hosts = x => exit 0 | @@ -138,0 +139,2 @@ | + anki_hosts = x | +
+> anki_field = x => exit 0 | @@ -142,0 +143,2 @@ | + anki_field = x | +
+> anki_fields = x => exit 0 | @@ -142,0 +143,2 @@ | + anki_fields = x | +
+> anki_hosts = x => exit 0 | @@ -142,0 +143,2 @@ | + anki_hosts = x | +
 > ocr_backend = vocr => exit 0 | r+ config.ini: ocr_backend removed
 > ocr_backend = VOCR => exit 0 | r+ config.ini: ocr_backend removed
 > ocr_backend = lens => exit 0 | r+ config.ini: ocr_backend removed
@@ -443,18 +444,18 @@
 > ocr_backend = vocr3 => exit 0 | r+ config.ini: ocr_backend removed
 > ocr_backend = google => exit 0 | r+ config.ini: ocr_backend removed
 > ocr_backend = => exit 0 | r+ config.ini: ocr_backend removed
-> ocr_backendx = lens => exit 0 | @@ -138,0 +139,2 @@ | + ocr_backendx = lens | +
+> ocr_backendx = lens => exit 0 | @@ -142,0 +143,2 @@ | + ocr_backendx = lens | +
 > log_host = 192.168.1.5 => exit 0 | r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
 > log_host = => exit 0 | r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
 > LOG_HOST=10.0.0.1 ; pc\r => exit 0 | r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
-> log_hosts = x => exit 0 | @@ -138,0 +139,2 @@ | + log_hosts = x | +
+> log_hosts = x => exit 0 | @@ -142,0 +143,2 @@ | + log_hosts = x | +
 > log_host =\nLOG_HOST= => exit 0 | r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
 > frequency_filter=500 => exit 0 | r+ config.ini: frequency_filter removed
 > frequency_filter = 3 => exit 0 | r+ config.ini: frequency_filter removed
 > FREQUENCY_FILTER = 5 => exit 0 | r+ config.ini: frequency_filter removed
 > font_size = 20 => exit 0 | r+ config.ini: font_size removed
 > font_size = 3 => exit 0 | r+ config.ini: font_size removed
-> font_size x = 1 => exit 0 | @@ -138,0 +139,2 @@ | + font_size x = 1 | +
+> font_size x = 1 => exit 0 | @@ -142,0 +143,2 @@ | + font_size x = 1 | +
 > hw_jpeg = on => exit 0 | r+ config.ini: hw_jpeg removed
 > hw_jpeg=1 => exit 0 | r+ config.ini: hw_jpeg removed
 > combo_delay_ms = 0 => exit 0 | r+ config.ini: combo_delay_ms removed
@@ -476,7 +477,7 @@
 > vocr_model = .vocr => exit 0 | r+ config.ini: vocr_model removed
 > vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => exit 0 | r+ config.ini: vocr_model removed
 > vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => exit 0 | r+ config.ini: vocr_model removed
-> vocr_model x = 1 => exit 0 | @@ -138,0 +139,2 @@ | + vocr_model x = 1 | +
+> vocr_model x = 1 => exit 0 | @@ -142,0 +143,2 @@ | + vocr_model x = 1 | +
 > vocr_model = meiki-stream-int8.mnn => exit 0 | r+ config.ini: vocr_model removed
 > vocr_model = => exit 0 | r+ config.ini: vocr_model removed
 > vocr_fallback_model = VOCR3_FL10_w8.vocr => exit 0 | r+ config.ini: vocr_fallback_model removed
@@ -488,7 +489,7 @@
 > vocr_tier = huge\nvocr_model = W20_w8.vocr => exit 0 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = large | r+ config.ini: vocr_model removed | r+ config.ini: vocr_tier = large | r- config.ini: vocr_tier = normal
 > vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr => exit 0 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = large | r+ config.ini: vocr_model removed | r+ config.ini: vocr_tier = large | r- config.ini: vocr_tier = normal
 > dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20 => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 20 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = large | r+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg) | r+ config.ini: jpdb_api_key removed | r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays) | r+ config.ini: ocr_backend removed | r+ config.ini: vocr_model removed | r+ config.ini: vocr_tier = large | r- config.ini: font_size_ja = 18 | r- config.ini: vocr_tier = normal
-> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99 => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 99 | @@ -138,0 +139,2 @@ | + bogus = 1 | + | r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays) | r+ config.ini: ocr_backend removed | r- config.ini: font_size_ja = 18
+> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99 => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 99 | @@ -142,0 +143,2 @@ | + bogus = 1 | + | r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays) | r+ config.ini: ocr_backend removed | r- config.ini: font_size_ja = 18
 > jpdb_api_key = SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS...[1515 bytes, fnv1a 239b4405b1ac6eb7] => exit 0 | r+ config.ini: jpdb_api_key removed
 > font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1515 bytes, fnv1a 9bb3a4e11799b4b1] => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1515 bytes, fnv1a 9bb3a4e11799b4b1] | r- config.ini: font_size_ja = 18
 > frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[619 bytes, fnv1a 780be23635715869] => exit 0 | r+ config.ini: frequency_filter removed
@@ -497,7 +498,7 @@
 > ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[614 bytes, fnv1a 083e677aa20fd2fd] => exit 0 | r+ config.ini: ocr_backend removed
 > log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[611 bytes, fnv1a ffa99aab22b09349] => exit 0 | r+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
 > vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 1b017f76d9ce7d7e] => exit 0 | r+ config.ini: vocr_model removed
-> bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc] => exit 0 | @@ -138,0 +139,2 @@ | + bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc] | +
+> bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc] => exit 0 | @@ -142,0 +143,2 @@ | + bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc] | +
 > local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[531 bytes, fnv1a ba2526befd514680] => exit 0 | @@ -10 +10 @@ | - local_dictionaries = plaintext.vjdict,vndb-names.vjdict | + local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[566 bytes, fnv1a 0ba8f1104f9a5eda] | r+ config.ini: local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[578 bytes, fnv1a e1ce21720915fc96] | r- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
 > local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[532 bytes, fnv1a 9e67b788711b7053] => exit 0 | @@ -10 +10 @@ | - local_dictionaries = plaintext.vjdict,vndb-names.vjdict | + local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[567 bytes, fnv1a f62c9bf0a0b066f7] | r+ config.ini: local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[579 bytes, fnv1a 65dfbddc9e40e41b] | r- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
 > local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[533 bytes, fnv1a 45ad0ed8319fa4f6] => exit 0 | @@ -10 +10 @@ | - local_dictionaries = plaintext.vjdict,vndb-names.vjdict | + local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[568 bytes, fnv1a 6d0b207e37beb668] | r+ config.ini: local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[580 bytes, fnv1a 734a856cf1b068e4] | r- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
@@ -505,13 +506,13 @@
 > local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => exit 0 | @@ -7 +7 @@ | - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries | + local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd | r- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 > local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => exit 0 | @@ -7 +7 @@ | - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries | + local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd | r- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 > ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => exit 0 | @@ -68 +68 @@ | - ocr_model_dir = ux0:data/VitaJPOverlay/ocr | + ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd | r- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => exit 0 | @@ -138,0 +139,2 @@ | + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 | +
-> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => exit 0 | @@ -138,0 +139,2 @@ | + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 | +
-> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => exit 0 | @@ -138,0 +139,2 @@ | + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 | +
-> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd] => exit 0 | @@ -138,0 +139,2 @@ | + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd] | +
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => exit 0 | @@ -142,0 +143,2 @@ | + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 | +
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => exit 0 | @@ -142,0 +143,2 @@ | + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 | +
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => exit 0 | @@ -142,0 +143,2 @@ | + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 | +
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd] => exit 0 | @@ -142,0 +143,2 @@ | + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd] | +
 = 39 records migrate as a first install
 > (none) --set log_file=on => as a first install
-> (none) --set vocr_tier=large log_file=off => exit 0 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = large | @@ -121 +121 @@ | - log_file = on | + log_file = off | r+ config.ini: log_file = off | r+ config.ini: vocr_tier = large | r- config.ini: log_file = on | r- config.ini: vocr_tier = normal
+> (none) --set vocr_tier=large log_file=off => exit 0 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = large | @@ -125 +125 @@ | - log_file = on | + log_file = off | r+ config.ini: log_file = off | r+ config.ini: vocr_tier = large | r- config.ini: log_file = on | r- config.ini: vocr_tier = normal
 > vocr_tier = small\n --set vocr_tier=huge => exit 0 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = small | r+ config.ini: vocr_tier huge is not a model size (small, normal or large); not set | r- config.ini: vocr_tier = normal
 > (empty) --set vocr_model=FL10_w8.vocr => exit 0 | @@ -71 +71 @@ | - vocr_tier = normal | + vocr_tier = small | r+ config.ini: vocr_tier = small | r- config.ini: vocr_tier = normal
 > vocr_tier = large\n --set vocr_model=H15_w8.vocr vocr_fallback_model=none => as a first install
@@ -521,8 +522,8 @@
 > (empty) --set jpdb_api_key=secret-50 API_KEY=secret-51 jiten_api_keyx=secret-52 => exit 0 | r+ config.ini: jpdb_api_key is no longer a setting, not set | r+ config.ini: api_key is no longer a setting, not set | r+ config.ini: jiten_api_key is no longer a setting, not set
 > (empty) --set anki_host=auto anki_audio_url=https://a.invalid/?k=secret-53 anki_field_word=Word => exit 0 | r+ config.ini: anki_host is no longer a setting, not set | r+ config.ini: anki_audio_url is no longer a setting, not set | r+ config.ini: anki_field_word is no longer a setting, not set
 > (empty) --set ocr_backend=lens log_host=10.0.0.1 frequency_filter=3 font_size=20 => exit 0 | r+ config.ini: ocr_backend is no longer a setting, not set | r+ config.ini: log_host is no longer a setting, not set | r+ config.ini: frequency_filter is no longer a setting, not set | r+ config.ini: font_size is no longer a setting, not set
-> (empty) --set my_debug_switch=1 => exit 0 | @@ -138,0 +139,2 @@ | + my_debug_switch = 1 | + | r+ config.ini: my_debug_switch = 1
-> my_debug_switch = 2\n --set (nothing) => exit 0 | @@ -138,0 +139,2 @@ | + my_debug_switch = 2 | +
-> (empty) --set Font_Size_JA=20  log_file = off\x20 => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 20 | @@ -121 +121 @@ | - log_file = on | + log_file = off | r+ config.ini: font_size_ja = 20 | r+ config.ini: log_file = off | r- config.ini: font_size_ja = 18 | r- config.ini: log_file = on
+> (empty) --set my_debug_switch=1 => exit 0 | @@ -142,0 +143,2 @@ | + my_debug_switch = 1 | + | r+ config.ini: my_debug_switch = 1
+> my_debug_switch = 2\n --set (nothing) => exit 0 | @@ -142,0 +143,2 @@ | + my_debug_switch = 2 | +
+> (empty) --set Font_Size_JA=20  log_file = off\x20 => exit 0 | @@ -41 +41 @@ | - font_size_ja = 18 | + font_size_ja = 20 | @@ -125 +125 @@ | - log_file = on | + log_file = off | r+ config.ini: font_size_ja = 20 | r+ config.ini: log_file = off | r- config.ini: font_size_ja = 18 | r- config.ini: log_file = on
 > (empty) --set local_dictionaries=mine.vjdict => exit 0 | @@ -10 +10 @@ | - local_dictionaries = plaintext.vjdict,vndb-names.vjdict | + local_dictionaries = mine.vjdict | r+ config.ini: local_dictionaries = mine.vjdict | r- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
 > local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 1\n --set local_dictionary_results=1 => exit 0 | @@ -13 +13 @@ | - local_dictionary_results = 2 | + local_dictionary_results = 1 | r- config.ini: local_dictionary_results = 2

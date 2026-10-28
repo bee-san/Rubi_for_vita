@@ -77,7 +77,7 @@ static void on_frame(const GameFb *fb)
         }
     }
 
-    /* The game OCR worker's rows (API 19), straight into its own memory. API 52 (ocr_pause, docs/game-pause.md): a
+    /* The game OCR worker's rows (API 19), straight into its own memory. API 55 (ocr_pause, docs/game-pause.md): a
      * frame copy is the whole region here, before the frame goes on (TAI_CONTINUE), so the game's display call waits
      * for it: at most VJO_GAME_OCR_PAUSE_MAX_US and a chunk. */
     game_ocr_rows_hook(fb->pid, fb->base, fb->pitch, fb->fmt, fb->w, fb->h);

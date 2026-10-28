@@ -1189,7 +1189,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     if (job_cfg.ocr_line_fix && stage < 0)
         request.speed |= VJO_GAME_OCR_S_LINE_FIX | (job_cfg.ocr_line_fix >= 2 ? VJO_GAME_OCR_S_LINE_JUNK : 0u) |
                          (job_cfg.ocr_line_fix == 3 ? VJO_GAME_OCR_S_LINE_VALLEY : 0u);
-    /* API 52: ocr_pause (off by default) pauses the game for its frame in the user's jobs (docs/game-pause.md) */
+    /* API 55: ocr_pause (off by default) pauses the game for its frame in the user's jobs (docs/game-pause.md) */
     if (job_cfg.ocr_pause && stage < 0) request.speed |= VJO_GAME_OCR_S_PAUSE;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
@@ -1804,7 +1804,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     if (job_running)
         return;
     job_prepare = 0;
-    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT; API 52: and the pause, while it is off) */
+    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT; API 55: and the pause, while it is off) */
     status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER
                  ? cfg.ocr_pause || game_static_fb ? WAIT_HINT : WAIT_HINT_PAUSE
                  : RECOGNIZING;
@@ -2962,7 +2962,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
 {
     const char *tid = id->key;
     int mode = id->mode;
-    game_static_fb = mode == VJO_GAME_STATIC_FB; /* API 52: WAIT_HINT_PAUSE's game */
+    game_static_fb = mode == VJO_GAME_STATIC_FB; /* API 55: WAIT_HINT_PAUSE's game */
     if (pid != hook_pid) { /* API 31: log this game session's installation counts again. */
         hook_pid = pid;
         hook_logged[0] = 0;

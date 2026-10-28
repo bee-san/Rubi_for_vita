@@ -94,7 +94,7 @@ extern "C" {
  * call or the end of the job), or NULL: that line is then left out. */
 #define VJO_STRIP_FIRST 0x1u
 #define VJO_STRIP_LAST 0x2u
-/* frozen(ud), optional (API 52, the pause: docs/game-pause.md): once the first pass's first strip (VJO_STRIP_FIRST,
+/* frozen(ud), optional (API 55, the pause: docs/game-pause.md): once the first pass's first strip (VJO_STRIP_FIRST,
  * row 0) is in, the whole region's grey rows if every read of the job, that one and every later one, returns them
  * as they are (the region copied from one frame at once: width x height bytes, stride width, valid until the job
  * ends), else NULL. A frozen job's later reads cannot change, so it takes that first pass for the region (the reads
@@ -377,7 +377,7 @@ typedef struct {
     unsigned cycling_rows;   /* distinct such rows */
     unsigned settled;        /* 1: the rows held still for settle_us before the lines were read */
     unsigned settle_timeout; /* 1: settle_max_us ran out first, so the job went on without it */
-    unsigned frozen;         /* API 52: 1 when the source froze the region at the first pass (VjoGreySource.frozen) */
+    unsigned frozen;         /* API 55: 1 when the source froze the region at the first pass (VjoGreySource.frozen) */
     /* The blank-line check (VjoVocrPolicy.blank). */
     unsigned blank;          /* lines skipped: no text-like ink in their crop */
     uint32_t blank_us;       /* time spent checking */

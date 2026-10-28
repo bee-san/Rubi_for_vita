@@ -79,7 +79,7 @@ ITEMS = {
                "VJO_BUDGET_KERNEL_POLICY"),
     # VJO_BUDGET_GAME_SHOT (API 23, a screenshot) is a job of the one slot: never beside an OCR
     # job's workspace, capture, line or helpers, so not in the sum (include/vjo_ledger_budget.h);
-    # VJO_BUDGET_GAME_FRAME (API 52, ocr_pause) or VJO_BUDGET_GAME_LINE, never both: the sum counts
+    # VJO_BUDGET_GAME_FRAME (API 55, ocr_pause) or VJO_BUDGET_GAME_LINE, never both: the sum counts
     # VJO_BUDGET_GAME_LINE_OR_FRAME, the larger
     "game": ("VJO_BUDGET_GAME_MODULE_PAGES", "VJO_BUDGET_GAME_STACK", "VJO_BUDGET_GAME_WEIGHTS", "VJO_BUDGET_GAME_WORKSPACE",
              "VJO_BUDGET_GAME_CAPTURE", "VJO_BUDGET_GAME_LINE", "VJO_BUDGET_GAME_FRAME", "VJO_BUDGET_GAME_LM", "VJO_BUDGET_GAME_CASCADE",

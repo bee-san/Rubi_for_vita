@@ -100,7 +100,7 @@ typedef struct {
     uint8_t *dst_kernel;               /* a kernel strip, or NULL */
     int sig;                           /* the rows continue g.capture_sig (capture_sig_begin) */
     int rgba;                          /* API 23, a shot: A8B8G8R8 words (4 bytes a pixel), not grey */
-    int frame;                         /* API 52 (VJO_ROWS_FRAME): every row of the region from this one frame, in
+    int frame;                         /* API 55 (VJO_ROWS_FRAME): every row of the region from this one frame, in
                                           chunks of VJO_GAME_OCR_PAUSE_ROWS, until VJO_GAME_OCR_PAUSE_MAX_US */
 } OcrRowsJob;
 int capture_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_w, uint32_t fb_h,

@@ -70,7 +70,7 @@ static uint32_t fb_fmt;
 static unsigned fb_w = FB_W, fb_h = FB_H;
 static int frames_come, frame_pid, in_hook, user_block_ok, hook_copy_fail, kstrip_alloc_fail;
 static int stall_copy; /* the hook starts the copy and has not finished it (another core) */
-static unsigned slow_copy_us; /* API 52: each read of a frame row in the hook takes this long (the clock moves) */
+static unsigned slow_copy_us; /* API 55: each read of a frame row in the hook takes this long (the clock moves) */
 static unsigned hook_row_reads; /* the hook's reads of the game's frame (rows) */
 static int gone_after_frame; /* the game exits right after its frame, while the rows call is in the kernel */
 static unsigned frees_seen_at_exit;
@@ -159,7 +159,7 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
 {
     if (bits == MEV_ROWS) { /* a rows call waits for the game's next frame, without the lock */
         TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout && *timeout <= 50000);
-        /* the hook's start, as game_ocr_rows_hook writes it before its claim (API 52's watchdog reads it) */
+        /* the hook's start, as game_ocr_rows_hook writes it before its claim (API 55's watchdog reads it) */
         if (stall_copy && rows.job.frame && rows.state == ROWS_PENDING) rows.frame_start = (uint32_t)model_clock | 1u;
         if (stall_copy && __sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING)) {
             model_clock += *timeout;
@@ -2832,7 +2832,7 @@ static void hook_cache_failures_preserve_previous_file(void)
 }
 
 
-/* ---- API 52: the pause for the frame (VJO_ROWS_FRAME, docs/game-pause.md) ---- */
+/* ---- API 55: the pause for the frame (VJO_ROWS_FRAME, docs/game-pause.md) ---- */
 static uint32_t submit_paused(uint32_t flags)
 {
     VjoGameOcrRequest r = make_request();
@@ -3071,13 +3071,13 @@ static void pause_refuses_a_stride_past_the_widest_row(void)
 }
 
 TEST_LIST = {
-    {"API 52: the pause copies the whole region in one display call and publishes it", pause_copies_the_region_in_one_display_call},
-    {"API 52: the pause refuses any other shape, a job without it and a game with no display call", pause_refuses_other_shapes_and_games},
-    {"API 52: the pause stops at its cap; the job then reads strip by strip", pause_stops_at_its_cap},
-    {"API 52: every other end of the pause returns the game's display call", pause_every_other_end_returns_the_display_call},
-    {"API 52: the pause through kernel/display.c's hook", pause_through_the_display_hook},
-    {"API 52: a frame copy's stride is at most VJO_MAX_W", pause_refuses_a_stride_past_the_widest_row},
-    {"API 52: the watchdog turns pausing off when a copy outlives twice its cap", pause_watchdog_turns_pausing_off},
+    {"API 55: the pause copies the whole region in one display call and publishes it", pause_copies_the_region_in_one_display_call},
+    {"API 55: the pause refuses any other shape, a job without it and a game with no display call", pause_refuses_other_shapes_and_games},
+    {"API 55: the pause stops at its cap; the job then reads strip by strip", pause_stops_at_its_cap},
+    {"API 55: every other end of the pause returns the game's display call", pause_every_other_end_returns_the_display_call},
+    {"API 55: the pause through kernel/display.c's hook", pause_through_the_display_hook},
+    {"API 55: a frame copy's stride is at most VJO_MAX_W", pause_refuses_a_stride_past_the_widest_row},
+    {"API 55: the watchdog turns pausing off when a copy outlives twice its cap", pause_watchdog_turns_pausing_off},
     {"hook cache: bounded authenticated broker and recoverable replacement", hook_cache_persists_with_bounded_broker},
     {"hook cache: copy IO size cancellation and close failures", hook_cache_failures_preserve_previous_file},
     {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},

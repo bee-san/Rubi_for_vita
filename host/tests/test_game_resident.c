@@ -21,7 +21,7 @@ static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((al
 static unsigned char pixels[W*H*4];
 static unsigned char capture_mem_block[64*1024] __attribute__((aligned(64)));
 static int capture_live;
-/* API 52, the pause: the worker's frame block, and the kernel's frame copies (VJO_ROWS_FRAME) */
+/* API 55, the pause: the worker's frame block, and the kernel's frame copies (VJO_ROWS_FRAME) */
 static unsigned char frame_mem_block[64*1024] __attribute__((aligned(64)));
 static int frame_live, frame_alloc_failure, frame_refuse, frame_busy_armed, frame_gone_first;
 static unsigned frame_block, frame_allocs, frame_calls, strip_calls, spin; /* spin: a spinner moves at each frame */
@@ -58,7 +58,7 @@ int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 { out->size_user = (int)(available - live_bytes); return free_query_error; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opts)
 {
-    if (!strcmp(name, "VjoGameVocrFrame")) { /* API 52: on the ladder (USER_RW, CDRAM, phycont) */
+    if (!strcmp(name, "VjoGameVocrFrame")) { /* API 55: on the ladder (USER_RW, CDRAM, phycont) */
         TEST_CHECK(!frame_live && !(size & 4095));
         if (frame_alloc_failure || type != SCE_KERNEL_MEMBLOCK_TYPE_USER_RW) return -1;
         TEST_CHECK(size <= sizeof(frame_mem_block));
@@ -167,7 +167,7 @@ static void spinner_moves(void)
         }
 }
 /* The kernel's rows: grey of the pixels, straight into the worker's capture block. Each call is one frame of the
- * game (16,667 us). API 52: a frame copy (VJO_ROWS_FRAME) is every row of the region from one frame, into the
+ * game (16,667 us). API 55: a frame copy (VJO_ROWS_FRAME) is every row of the region from one frame, into the
  * worker's frame block, in one call. */
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
@@ -836,7 +836,7 @@ static void fallback_file_failure_and_other_resident_model(void)
 }
 
 
-/* ---- API 52: the pause for the frame (VJO_GAME_OCR_S_PAUSE; docs/game-pause.md) ---- */
+/* ---- API 55: the pause for the frame (VJO_GAME_OCR_S_PAUSE; docs/game-pause.md) ---- */
 /* The request a job with the stable-text wait (150 ms, at most 200 ms) sends, with or without the pause. */
 static VjoGameOcrRequest paused(int pause)
 {
@@ -949,7 +949,8 @@ static void a_cancelled_or_stuck_copy(void)
 /* #324: the check passed, yet the model's weights were refused (the console's free memory in whole MiB): the job gives
  * its blocks back, the frame block too, and checks again from the next smaller model. That is a new check, so a new
  * try of the pause: its own frame block and its own copy (never the first try's, given back), the game's waits for
- * both copies in the step; the job's captures are the last try's, as its strips would be. */
+ * both copies in the step; the job's captures are both tries' frames, as its strips would be both tries' (#382's
+ * audit: the retry shares the job's captures). */
 static void weights_refused_after_the_check_the_smaller_models_try_copies_its_own_frame(void)
 {
     VjoGameOcrResult out;
@@ -963,7 +964,7 @@ static void weights_refused_after_the_check_the_smaller_models_try_copies_its_ow
     weights_refusals = 1;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
     TEST_CHECK(out.fallback == 1 && weights_allocs == 2 && resident.model == vjo_vocr_model("FL10_w8.vocr"));
-    TEST_CHECK_(frame_calls == 2 && !strip_calls && !out.tears && out.captures == 1,
+    TEST_CHECK_(frame_calls == 2 && !strip_calls && !out.tears && out.captures == 2,
                 "%u frame copies, %u strips, %u tears, %u captures", frame_calls, strip_calls, out.tears, out.captures);
     TEST_CHECK(frame_allocs == 2 && !frame_live && !capture_live && !job_live && !out.cleanup_status);
     const VjoGameOcrStep *ps = pause_step(&out);
@@ -1043,14 +1044,14 @@ static void the_frame_block_never_makes_the_job_give_back_another_models_weights
 }
 
 TEST_LIST = {
-    {"API 52: the pause reads one frame beside a spinner that tears every strip-by-strip read", the_pause_reads_one_frame_beside_a_spinner},
-    {"API 52: a refused or cut pause gives its block back and reads as before", a_refused_pause_reads_as_before},
-    {"API 52: without room for its block the job reads as before, with the same model", without_room_the_job_reads_as_before},
-    {"API 52: a cancelled copy, and one that outlived its call", a_cancelled_or_stuck_copy},
-    {"API 52, #324: weights refused after the check: the smaller model's try copies its own frame",
+    {"API 55: the pause reads one frame beside a spinner that tears every strip-by-strip read", the_pause_reads_one_frame_beside_a_spinner},
+    {"API 55: a refused or cut pause gives its block back and reads as before", a_refused_pause_reads_as_before},
+    {"API 55: without room for its block the job reads as before, with the same model", without_room_the_job_reads_as_before},
+    {"API 55: a cancelled copy, and one that outlived its call", a_cancelled_or_stuck_copy},
+    {"API 55, #324: weights refused after the check: the smaller model's try copies its own frame",
      weights_refused_after_the_check_the_smaller_models_try_copies_its_own_frame},
-    {"API 52: a copy that reaches the cap turns the pause off for the game", a_copy_that_reaches_the_cap_turns_the_pause_off_for_the_game},
-    {"API 52: the frame block never makes the job give back another model's weights",
+    {"API 55: a copy that reaches the cap turns the pause off for the game", a_copy_that_reaches_the_cap_turns_the_pause_off_for_the_game},
+    {"API 55: the frame block never makes the job give back another model's weights",
      the_frame_block_never_makes_the_job_give_back_another_models_weights},
     {"a job without lines warms the weights; the forced fallback keeps the model", a_job_without_lines_warms_the_weights},
     {"another model's weights go when the job needs their memory", another_models_weights_go_when_the_job_needs_them},

@@ -1040,7 +1040,7 @@ static void set_vertical(int index)
     preference_saved(vjo_preferences_save_vertical(vertical_choice[index], &scratch));
 }
 
-/* API 52, Pause the game to read (config.ini ocr_pause, docs/game-pause.md): applies when the overlay next opens. */
+/* API 55, Pause the game to read (config.ini ocr_pause, docs/game-pause.md): applies when the overlay next opens. */
 static void set_pause(int on)
 {
     if (on == preferences.ocr_pause) return;

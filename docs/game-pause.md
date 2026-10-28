@@ -1,4 +1,4 @@
-# Pause the game to read (`ocr_pause`, API 52, #348)
+# Pause the game to read (`ocr_pause`, API 55, #348)
 
 **What it does.** With the Rubi app's **Pause the game to read** ON (`ocr_pause = on` in `config.ini`; OFF by
 default), each reading copies the text box from one frame of the game, at once, inside that frame's display call,

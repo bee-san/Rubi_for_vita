@@ -1,4 +1,4 @@
-/* What the pause for the frame (config.ini ocr_pause, API 52; docs/game-pause.md) costs the game and buys the read,
+/* What the pause for the frame (config.ini ocr_pause, API 55; docs/game-pause.md) costs the game and buys the read,
  * on a simulated game screen, through the real job (core/vocr_ocr.c with vita-vn-ocr's real line finder; no weights:
  * a job that reaches the recognizer stops there, VJO_E_OCR_MODEL -115, so the figures are the capture and the wait,
  * not recognition). Every strip a job reads strip by strip is one frame of the game: the display hook copies those
