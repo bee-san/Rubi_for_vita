@@ -51,3 +51,13 @@ size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
     if (cap) out[0] = '\0';
     return 0;
 }
+
+int vjo_hooks_psp_poll(void)
+{
+    return 0;
+}
+
+uint32_t vjo_hooks_psp_status(void)
+{
+    return 0;
+}

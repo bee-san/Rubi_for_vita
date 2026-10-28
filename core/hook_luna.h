@@ -157,6 +157,8 @@ enum {
     VJO_RF_AOZORA_RUBY,             /* ｜base《reading》 ruby, and a kanji's bare 《reading》: the base */
     VJO_RF_CARET_NEWLINE,           /* ^ is a line break */
     VJO_RF_PCSG01250,               /* スキとスキとでサンカク恋愛: /ruby:base&reading/, #n, layout codes */
+    VJO_RF_5PB,                     /* PSP, 5pb. script engine (Memories Off 6): %K %P %p ∬, %N, {base}[reading] */
+    VJO_RF_KID,                     /* PSP, KID engine (Memories Off ～それから～): %N, %Cxxxx %LC %FS %FE, ⑳ */
     VJO_RF_END
 };
 

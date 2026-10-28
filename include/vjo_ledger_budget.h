@@ -522,6 +522,18 @@
  * flags], other features' code and speed, not this change's to trade. The job's limit is kept, as API 47's and API 50's
  * pages kept it. No block, thread or allocation: the line checksums take the row states' place in the job's capture
  * block. */
+/* PSP text and the PSP probe's format 4 (docs/native-hooks.md "PSP text (Adrenaline)", "PSP probe (debug build)"):
+ * one more page in the DEBUG build only, 188,416 -> 192,512 B, in each game that is ON (the game's partition, never
+ * SceShell's). Both builds gain PSP text (core/psp_text.c at -Os, its two profiles in the data segment; the 5pb. and
+ * KID filters; game_ocr/hooks.c vjo_hooks_psp_poll; game_ocr/main.c's call): the normal build's worker text
+ * 140,004 -> 141,012 B and data/bss 35,280 -> 35,584 B, still its 180,224 B of pages. The debug build also links the
+ * probe's format 4 (#278's mapping check, MIPS classifier, timed read and job lines, rebased, with Rubi's profile
+ * step and the hook fields; core/psp_probe.c at -Os and Luna's PSP table, 3,515 B, all in the code segment, whose
+ * new page has room): text 148,792 -> 154,880 B (768 B left in 155,648) and data/bss 35,288 -> 35,672 B (1,192 B
+ * left in 36,864) [measured: the build log's module rows, both builds, tools/fast_gate.sh on this change against
+ * main 627a673, CI's vitasdk image]. The debug text had 2,760 B of room on main and this adds 6,088 B, so one page
+ * is the least this takes. The kernel's and both Shells' pages are unchanged (the normal Shell's 36 B where[]
+ * table of shell/anki_queue.c moved to its data segment to keep them). No block, thread or allocation. */
 /* test/combined: the module page budget below is the combined build's (main + the drafts), measured; see the
  * test/combined note after it. */
 #if VJO_DEBUG

@@ -34,9 +34,19 @@ typedef char vjo_hook_snap_check[VJO_HOOK_RAW_BYTES == VJO_STREAM_RAW && VJO_HOO
  * the text source word `mode` allows in this game (vjoGetTextSource's: a VJO_TEXT_SOURCE_* in its low
  * byte; with VJO_TEXT_SOURCE_NO_SITES no table site, only the CALL source as the mode says; an unknown
  * mode or flag is OCR) (title_id, 9 characters; psp: the PSP emulator's process, where nothing is
- * installed in this version). Never fails the module's start: a hook that cannot be installed is counted
+ * installed: there VJO_TEXT_SOURCE_HOOKS without VJO_TEXT_SOURCE_NO_SITES turns on PSP text instead,
+ * vjo_hooks_psp_poll). Never fails the module's start: a hook that cannot be installed is counted
  * as refused and logged. */
 void vjo_hooks_start(const char *title_id, unsigned mode, int psp);
+
+/* PSP text (core/psp_text.h), the worker's thread at job time only: in the PSP emulator's process with PSP
+ * text on, reads the running PSP game's page buffer when its ID and code are a profile's, into stream 1 (a
+ * table site's stream without a hook: its text has to agree with OCR before it is shown, as any regular
+ * hook's). A game without a profile has no stream, and another game's text never stays in it. Returns 1 when
+ * what vjo_hooks_counts reports changed (read it again), else 0; does nothing anywhere else. */
+int vjo_hooks_psp_poll(void);
+/* The last poll's VJO_PSP_TEXT_* (VJO_PSP_TEXT_OFF when PSP text is off): the debug build's PSP probe logs it. */
+uint32_t vjo_hooks_psp_status(void);
 
 /* Called from module_stop: releases every hook, newest first. 0 when none can still be running in a
  * game thread (the module may unload); nonzero otherwise (module_stop then fails and the module stays). */

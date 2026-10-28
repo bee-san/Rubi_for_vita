@@ -1895,7 +1895,9 @@ static void hooks_cache_prepare(uint32_t pick)
     if (pick != VJO_HOOK_PICK_AUTO || !hk.installed || hk.cache_attempted || model_owned) return;
     hk.cache_key.mode = hk.mode;
     hk.cache_attempted = 1;
-    if (!IMPORT_READY(vjoOcrHookCache) || !hk.cache_key.title[0] ||
+    /* Not in the PSP emulator's process: its title and executable are the emulator's, which runs one PSP game
+     * after another; PSP text is learned again in each process (docs/native-hooks.md, "PSP text"). */
+    if (psp_title || !IMPORT_READY(vjoOcrHookCache) || !hk.cache_key.title[0] ||
         !hook_revision(hk.cache_key.definition)) return;
     if (!hk.build_known) {
         if (!vjo_hooks_build_id(hk.cache_key.build)) return;
@@ -2080,10 +2082,19 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (shot) { rc = run_shot(r, out); goto done; } /* both builds: an Anki card's screenshot (API 23) */
 #if VJO_DEBUG
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
-    vjo_psp_probe_job(psp_title); /* the read-only PSP probe: once, at the first OCR job (game_ocr/psp_probe.h) */
 #else
     if (r->flags & VJO_GAME_OCR_F_PROBE) goto done; /* no probe in the normal build: VJO_E_SOURCE */
 #endif
+    /* PSP text (core/psp_text.h): in the PSP emulator's process, the worker's own read of a profiled game's page
+     * buffer into its stream, before the streams' snapshot below. When a profiled game came or went (another
+     * game, Adrenaline's XMB, the same game started again), what vjo_hooks_counts reports is read again and the
+     * selection starts afresh: no lock or agreement carries over from one game's start to the next. Anywhere
+     * else, or with PSP text off, it does nothing. */
+    if (psp_title && vjo_hooks_psp_poll()) {
+        vjo_hooks_counts(&hk.mode, &hk.installed, &hk.refused);
+        sceClibMemset(&hk.sel, 0, sizeof(hk.sel));
+        hk.saved = hk.sel;
+    }
     /* Native hooks (docs/native-hooks.md): the streams as the job begins, and a stream that may answer
      * it without recognition. The self-test's jobs (every line recognized, or the fallback forced) are
      * OCR's work whatever their pick. With nothing installed, none of this runs. */
@@ -2886,7 +2897,17 @@ static int worker_main(SceSize args, void *argp)
                 if (!took) {
                     claim_outstanding = 1;
                     vjo_game_ocr_run_request(&request, &pending_result);
+#if VJO_DEBUG
+                    uint32_t job_us = (uint32_t)(now_wide() - job_started_us);
+#endif
                     if (!vjoOcrComplete(&pending_result) && !pending_result.cleanup_status) claim_outstanding = 0;
+#if VJO_DEBUG
+                    /* The read-only PSP probe, after the job, once the kernel has its result: it never holds up a
+                     * result (one still to hand over gets no probe), only this thread's next job, by the probe's
+                     * own time (game_ocr/psp_probe.h). */
+                    if (!claim_outstanding)
+                        vjo_psp_probe_after(psp_title, hk.cache_key.title, &request, &pending_result, job_us);
+#endif
                     nap = claim_outstanding; /* done: the next job may be queued already */
                 } else if (now_wide() - asked >= (pace ? pace / 2u : TAKE_WAITED_US)) {
                     nap = 0; /* the kernel held the take: its wait was the pace */

@@ -40,7 +40,8 @@ def inc_table():
     text = INC.read_text(encoding="utf-8")
 
     def block(name):
-        m = re.search(name + r"\[[^\]]*\]\s*=\s*(.*?);", text, re.S)
+        # an array may carry core/port.h's VJO_DATA_TABLE(...) between its size and its initializer
+        m = re.search(name + r"\[[^\]]*\](?:\s+VJO_DATA_TABLE\(\w+\))?\s*=\s*(.*?);", text, re.S)
         return m.group(1)
 
     ids = [f"{p}{int(n):05d}" for p, n in re.findall(r"VJO_LUNA_PSP_ID\(([A-Z]{4}), (\d+)\)", block("vjo_luna_psp_ids"))]
