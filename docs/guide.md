@@ -490,10 +490,10 @@ and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), appl
 **Suggest a text box** (ON by default: [the box Rubi suggests](#the-box-rubi-suggests); kept in
 `region.ini`, so it applies when a game next starts or resumes), and **Pause the game to read** (`ocr_pause`,
 OFF by default, the last card: [pause](game-pause.md)).
-Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
+Touch a size, a Read text choice, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
 Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection, two skip, Suggest and pause cards,
-Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, Automatic/Every
+Whole word/Character on the Highlight card, Automatic/Every
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
 overlay's next open: Automatic, the default, reads columns where the text box holds vertical text
@@ -718,7 +718,6 @@ these defaults:
 dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 local_dictionaries = plaintext.vjdict,vndb-names.vjdict
-local_dictionary_results = 2
 text_source = auto
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
 vocr_tier = normal
@@ -907,13 +906,12 @@ list while keeping custom dictionaries in order; if the list would exceed eight
 files, it stays as it was and the install plan asks you to choose.
 
 The main dictionary comes first for equal-length word matches; longer full names
-can still match the names dictionary. **Dictionaries shown** is 2 by default, so a
+can still match the names dictionary. Every enabled dictionary is shown automatically, so a
 word that is also a name (渚: a beach, and Nagisa) shows the word, then the name
 below it; scroll down with the right stick. Another dictionary's entry is always the
 same word: a name that only matches the start of a longer word (空 in 空港) is not
-shown. An update
-that enables the names (the Install page, `install_ftp.sh`) turns a count of 1
-into 2. The names source ZIP is committed unchanged, converted offline
+shown. Alternate readings and separate senses follow each dictionary's best entry.
+The names source ZIP is committed unchanged, converted offline
 with `python3 tools/prepare_vndb.py`, and verified against input/output checksums
 in [vndb-names.json](vndb-names.json). [Attribution and licences](vndb-attribution.txt)
 ship in both release ZIPs and standalone VPKs (ODbL 1.0 / DbCL 1.0).
@@ -932,8 +930,7 @@ The language used by the Japanese people since ancient times …
 
 No entry names a source: there are no `[Daijirin4 Plain]`-style labels. The
 dictionary names itself in its file, and that name, `Bee's Ultimate Dictionary`,
-is what Anki cards and `log.txt` record and what the Rubi app's
-**Dictionaries shown** card shows. A function word's summary replaces its
+is what Anki cards and `log.txt` record. A function word's summary replaces its
 definition (は is "Topic particle, pronounced "wa" …"); a content word with a
 grammatical use (上, こと, 無くなる) keeps its definition, with the summary on the
 line before it. An entry longer than the popup holds is cut at the end of its
@@ -965,11 +962,9 @@ travels inside each entry on disk: no table of ranks is held in memory.
 
 You can add your own Yomitan dictionaries with
 [the converter and installation guide](local-dictionaries.md).
-Up to eight dictionary files can be enabled in priority order. The Rubi
-app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 2) pages
-through files for the selected word. Bee's Ultimate Dictionary combines its
-word, grammar and kanji sources in one file; the names are a second file. Only
-the page on screen is held in memory. A character's name spelled as the text
+Up to eight dictionary files can be enabled in priority order. Every enabled file's
+matching entry and the other stored readings and senses are shown automatically. Bee's Ultimate Dictionary combines its
+word, grammar and kanji sources in one file; the names are a second file. The results share the existing bounded result allocation. A character's name spelled as the text
 (なぎさ) comes before the word spelled otherwise (渚), but not before one of the
 1,023 most frequent words (わたし shows 私 first): `config.ini` `names_first`,
 `auto` by default, `on` for names first always, `off` for the word first
@@ -1058,7 +1053,7 @@ and lookup, and saves them as Anki cards: a word you type, or a word of an earli
   of up to 128 characters; every language's keyboard is offered, Japanese among them, whatever the system's
   keyboards are. The text is looked up as the overlay looks up its text: the word at the cursor, longest match first,
   in its dictionary form (した → する), in `local_dictionaries`' order with the same ranking, the other dictionaries'
-  entries for the word below it (`local_dictionary_results`). The entry shows its headword, reading, frequency
+  entries and alternate readings/senses for the word below it. The entry shows its headword, reading, frequency
   badge (`frequency_badge`), the conjugation line, the definitions, and the kanji and grammar lines.
 - **Earlier lines.** The most recent game's last 200 lines in `history.csv`, newest first, each with its local
   time; Square, or a tap on the game's name, goes to the next game. The lines are those the overlay's line history
@@ -1209,11 +1204,10 @@ returned when it closes, never a static buffer; if it is refused, the overlay
 does not open that time and the game keeps its input. Local OCR-only/subtitle
 jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
-reads only the selected position and shows zero or one entry. With Dictionaries
-shown above 1 it also keeps a 208-byte table locating the other dictionaries'
-entries in the same arena, and reads each one's payload after the best match's
-in that arena; one that does not fit is left out, with those after it
-([Dictionaries shown](local-dictionaries.md#dictionaries-shown)).
+reads only the selected position, shows the best match, and stacks entries from every enabled
+dictionary and the other stored readings/senses below it. Locators and loaded definitions use
+that same fixed allocation. If results do not fit, the popup says to look up a specific reading
+([details](local-dictionaries.md#dictionaries-shown)).
 The previous local result is retired before it is reused. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep

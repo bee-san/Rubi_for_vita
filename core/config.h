@@ -40,7 +40,6 @@ enum { VJO_DICT_LOCAL = 3 };
 typedef struct {
     char local_dictionary_dir[160];
     char local_dictionaries[512]; /* comma-separated relative .vjdict filenames */
-    int local_dictionary_results; /* 1..8: dictionaries paged with an L/R tap per selected word */
     int non_japanese_filter;  /* VJO_FILTER_NONE | VJO_FILTER_LINES */
     int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */
     int highlight_mode;       /* VJO_HIGHLIGHT_*: match span or selected character */

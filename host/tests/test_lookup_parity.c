@@ -207,7 +207,13 @@ static void walk(const VjoConfig *cfg, int *lookups, int *entries, int *stacked)
                     TEST_CHECK(!strcmp(note.spelling, want.spelling) && !strcmp(note.reading, want.reading) &&
                                !strcmp(note.sentence, want.sentence) && note.hl_start == want.hl_start &&
                                note.hl_end == want.hl_end && note.rank == want.rank &&
-                               note.n_meanings == want.n_meanings && note.n_more == d.list.n_more);
+                               note.n_meanings == want.n_meanings && note.n_more <= d.list.n_more &&
+                               note.n_more <= VJO_ANKI_MAX_MORE);
+                    for (int k = 0; k < note.n_more; k++) {
+                        TEST_CHECK(!strcmp(note.more[k].spelling, d.list.more[k]->spelling));
+                        TEST_CHECK(!strcmp(note.more[k].reading, d.list.more[k]->reading));
+                        TEST_CHECK(!strcmp(note.more[k].meanings[0], d.list.more[k]->meanings[0]));
+                    }
                     TEST_CHECK(!strcmp(note.game, "SOME GAME") && !strcmp(note.platform, "vita") &&
                                !strcmp(note.ocr_engine, "vocr") && !strcmp(note.misc, "SOME GAME"));
                 }
@@ -236,10 +242,10 @@ static void lookups_equal_the_overlays(void)
         vjo_config_defaults(&cfg); /* the release defaults: word highlight, Japanese characters only OFF */
         snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "%s", dir);
         snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "plaintext.vjdict");
-        cfg.local_dictionary_results = 1;
+
         if (variant == 1) { /* the other dictionaries' entries stacked (the same file twice: its word again) */
             snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "plaintext.vjdict,plaintext.vjdict");
-            cfg.local_dictionary_results = 2;
+
         } else if (variant == 2) { /* Character highlight, Japanese characters only */
             cfg.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
             cfg.japanese_only_selection = 1;

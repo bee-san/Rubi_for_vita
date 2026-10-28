@@ -1094,7 +1094,7 @@ static void test_enter_records_every_dictionary(void)
     dict_build(&dict_files[2], "c.vjdict", &rows[2]);
     snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
     snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "main.vjdict,b.vjdict,c.vjdict");
-    cfg.local_dictionary_results = 3;
+
     reconfigure();
     /* the shown result: worker.c's lookup at 好き, its first page shown */
     vjo_arena_init(&a, mem, sizeof(mem));
@@ -1106,7 +1106,7 @@ static void test_enter_records_every_dictionary(void)
     view_page = 0;
     dict_opens = 0;
     enter(1);
-    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && dict_opens == 2);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && dict_opens == 5);
     TEST_CHECK(!dict_files[0].active && !dict_files[1].active && !dict_files[2].active);
     printf("measure: save with 2 other dictionaries' entries: arena %u bytes, peak %u\n", (unsigned)heap_last,
            (unsigned)last_peak);
@@ -1142,7 +1142,7 @@ static void test_enter_records_every_dictionary(void)
     view_page = 2;
     dict_opens = 0;
     enter(1);
-    TEST_CHECK(dict_opens == 2);
+    TEST_CHECK(dict_opens == 5);
     only_id(id);
     json = queue_file(id, "json", NULL);
     TEST_CHECK(json && strstr(json, "\"more\":[{\"dictionary\":\"Daijirin4 Plain\"") &&
@@ -1180,7 +1180,7 @@ static void test_enter_names_titled_dictionaries(void)
     dict_build(&dict_files[2], "c.vjdict", &rows[2]);
     snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
     snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "main.vjdict,b.vjdict,c.vjdict");
-    cfg.local_dictionary_results = 3;
+
     reconfigure();
     vjo_arena_init(&a, mem, sizeof(mem));
     vjo_platform_vita(&p);
@@ -1192,7 +1192,7 @@ static void test_enter_names_titled_dictionaries(void)
     view_page = 0;
     dict_opens = 0;
     enter(1);
-    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && dict_opens == 2);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && dict_opens == 5);
     only_id(id);
     json = queue_file(id, "json", &len);
     TEST_ASSERT(json != NULL);
@@ -1220,7 +1220,7 @@ static void test_enter_names_titled_dictionaries(void)
         dict_build(&dict_files[1], "b.vjdict", &rows[0]);
         snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
         snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "main.vjdict,b.vjdict");
-        cfg.local_dictionary_results = 2;
+
         reconfigure();
         vjo_arena_init(&a, mem, sizeof(mem));
         TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 2, &pages, &res, &err) == VJO_OK);
@@ -1279,7 +1279,7 @@ static void test_what_enter_saves_whatever_the_dictionaries(void)
             }
             snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
             snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", list_names);
-            cfg.local_dictionary_results = 8;
+
             cfg.anki_screenshot = with;
             reconfigure();
             vjo_arena_init(&a, mem, sizeof(mem));

@@ -141,7 +141,7 @@ static void lookups_through_it_are_the_host_platform_s(void)
     snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "%s", dir);
     snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "plaintext.vjdict,plaintext.vjdict");
     for (int results = 1; results <= 2; results++) {
-        cfg.local_dictionary_results = results;
+
         block_init(&app, 1);
         block_init(&host, 0);
         for (unsigned s = 0; s < sizeof(sentences) / sizeof(sentences[0]); s++) {

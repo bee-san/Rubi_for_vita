@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../core/local_dict.h" /* VJO_LOCAL_MAX_DICTS: local_dictionary_results' range */
 #include "../core/regions.h"
 #include "app_io.h" /* VJO_APP_MISSING */
 #define BACKUP VJO_PREFERENCES_PATH ".bak"
@@ -142,19 +141,18 @@ static int publish_without_secrets(const char *old, size_t bytes, int *primary, 
     return 0;
 }
 
-int vjo_preferences_save(int vocr_tier, int japanese_only, int highlight_mode,
-                         int dictionary_results, VjoArena *a)
+int vjo_preferences_save(int vocr_tier, int japanese_only, int highlight_mode, VjoArena *a)
 {
     size_t mark = vjo_arena_mark(a), bytes = 0;
     char *old = NULL;
     int primary, rc = -1;
     if (current_text(a, &old, &bytes, &primary) < 0 || publish_without_secrets(old, bytes, &primary, a) < 0)
         goto done;
-    /* the four owned lines, appended or longer than before, and a replaced line's growth */
+    /* the three owned lines, appended or longer than before, and a replaced line's growth */
     size_t cap = bytes + bytes / 4 + 192;
     char *next = vjo_arena_alloc(a, cap);
     int len = next ? vjo_config_patch_preferences(old, bytes, vocr_tier, japanese_only,
-                                                 highlight_mode, dictionary_results, next, cap) : -1;
+                                                 highlight_mode, next, cap) : -1;
     if (len < 0 || len > VJO_PREFERENCES_TEXT_MAX) goto done;
     rc = publish(next, len, primary);
 done:
@@ -245,23 +243,17 @@ int vjo_ini_patch_keys(const char *text, size_t len, const char *const *keys, co
     return patch_keys(text, len, keys, values, n, out, cap, 0);
 }
 
-int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier, int japanese_only, int highlight_mode,
-                                 int dictionary_results, char *out, size_t cap)
+int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier, int japanese_only, int highlight_mode, char *out, size_t cap)
 {
-    static const char *const keys[] = {"japanese_only_selection", "highlight_mode", "local_dictionary_results",
-                                       "vocr_tier"};
-    const char *values[4];
-    char results[12];
+    static const char *const keys[] = {"japanese_only_selection", "highlight_mode", "vocr_tier"};
+    const char *values[3];
     if (!vjo_vocr_tier_id(vocr_tier) || (japanese_only != 0 && japanese_only != 1) ||
-        (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
-        dictionary_results < 1 || dictionary_results > VJO_LOCAL_MAX_DICTS)
+        (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER))
         return -1;
     values[0] = japanese_only ? "on" : "off";
     values[1] = highlight_mode == VJO_HIGHLIGHT_WORD ? "word" : "character";
-    snprintf(results, sizeof(results), "%d", dictionary_results);
-    values[2] = results;
-    values[3] = vjo_vocr_tier_id(vocr_tier);
-    return patch_keys(text, len, keys, values, 4, out, cap, PREFERENCE_RULES);
+    values[2] = vjo_vocr_tier_id(vocr_tier);
+    return patch_keys(text, len, keys, values, 3, out, cap, PREFERENCE_RULES);
 }
 
 /* Saves `n` keys (vjo_config_patch_keys: each replaced where it is, appended

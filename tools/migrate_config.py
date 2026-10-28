@@ -24,7 +24,7 @@ RENAMED = {}
 # config.ini's removed settings: a copy of core/config.c's one list (removed_keys, core/config.h
 # vjo_config_removed), which tools/tests/test_migrate_config.py checks it against. REMOVED: the names of every kind but
 # the API keys' and the field mapping's prefix and the dictionary choice, dropped and reported by name.
-REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
+REMOVED = {"local_dictionary_results", "frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
            # Anki's field mapping, which one fixed note type replaced; with every anki_field_* key
            # (REMOVED_PREFIXES), as core/config.c ignores them.
            "anki_deck", "anki_note_type", "anki_tags",
@@ -142,14 +142,11 @@ def main():
         if not removed(k):
             vals[k] = REPLACED_VALUES.get(k, {}).get(v.lower(), v)
     # An update enables the bundled names after the user's dictionaries, as the Rubi app's does. Newly
-    # enabled, a count of 1 (the default before the names) becomes 2, so a word's name is a page. A --set
-    # below still wins.
+    # enabled dictionaries are all shown automatically.
     if old and "local_dictionaries" in vals:
         listed = bundled_dictionaries(vals["local_dictionaries"])
         if listed:
             vals["local_dictionaries"] = listed
-            if vals.get("local_dictionary_results") == "1":
-                vals["local_dictionary_results"] = "2"
     # An older build's model choice is its model size, unless the file already names a valid one.
     # core/config.c ignores a vocr_tier it cannot read (with a warning): so does this, in either
     # order of the two lines, so the installed file says the size the plugin would run.

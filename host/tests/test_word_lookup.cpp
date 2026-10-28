@@ -891,7 +891,9 @@ static void ultimate_dictionary_fixture_entries(void)
          * two spans a line. */
         VjoStyled st;
         TEST_ASSERT(vjo_styled_init(&st, &a, VJO_BODY_UNITS, VJO_BODY_SPANS) == 0);
-        vjo_styled_entry(&st, &d.list, 0, 27, 21, 0, 1);
+        VjoEntryList primary = d.list;
+        primary.more = NULL; primary.n_more = primary.more_omitted = 0;
+        vjo_styled_entry(&st, &primary, 0, 27, 21, 0, 1);
         std::u16string shown = styled_text(st), want = c.lines.empty() ? u"" : u"\n";
         for (auto &l : c.lines) want += u16("\n" + l.first + "=" + l.second);
         TEST_CHECK(!st.truncated && shown.size() >= want.size() &&

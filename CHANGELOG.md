@@ -20,6 +20,15 @@ been reported.
 
 ### Added
 
+- **Alternate word readings and senses**: the popup and Look up tab show the other stored
+  entries for the selected spelling below each dictionary's best match. The existing dictionary
+  already contains 経緯 as けいい and いきさつ; no format change or rebuild is needed. Every
+  enabled dictionary is included automatically. The **Dictionaries shown** card and
+  `local_dictionary_results` setting are removed; old lines are ignored and removed on save or
+  update. Anki keeps additional entries within its existing bounds. Results use the existing
+  fixed memory and text capacities; an omission notice asks for a specific reading when those
+  are exceeded. Host-tested only; console timing and module page sizes are not yet checked.
+
 - **Read the whole screen from the open overlay** (API 57): double-tap the rear touchpad for one scan
   through the text spotter, OCR and configured language-model decoder, forcing OCR even with trusted hooks.
   Navigate, look up and save its words as usual. The results stay until close or rescan; closing returns

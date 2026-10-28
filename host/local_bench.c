@@ -83,7 +83,7 @@ int main(int argc, char **argv)
     VjoConfig cfg;
     PosixPlatform pp = {0};
     VjoPlatform p;
-    int runs, results = 0;
+    int runs;
     size_t cursor = 0;
     unsigned long value;
     if ((argc < 5 || argc > 7) || (runs = atoi(argv[4])) < 1 || runs > 10000) {
@@ -95,10 +95,9 @@ int main(int argc, char **argv)
     }
     if (argc == 7) {
         if (parse_count(argv[6], VJO_LOCAL_MAX_DICTS, &value) || !value) return 2;
-        results = (int)value;
     }
     vjo_config_defaults(&cfg);
-    if (results) cfg.local_dictionary_results = results;
+
     if (strlen(argv[1]) >= sizeof(cfg.local_dictionary_dir) || strlen(argv[2]) >= sizeof(cfg.local_dictionaries)) return 2;
     strcpy(cfg.local_dictionary_dir, argv[1]); strcpy(cfg.local_dictionaries, argv[2]);
     posix_platform_init(&pp, &p); inner_open = p.file_open; p.file_open = tracked_open;
@@ -124,7 +123,7 @@ int main(int argc, char **argv)
         printf("{\"run\":%d,\"lookup_us\":%.3f,\"read_calls\":%" PRIu64 ",\"read_bytes\":%" PRIu64
                ",\"nonsequential_reads\":%" PRIu64 ",\"arena_peak\":%zu,\"entries\":%d,\"digest\":\"%016" PRIx64 "\"",
                run, elapsed / 1000.0, calls, bytes, seeks, a.peak, d.list.n_entries, digest);
-        if (results) {
+        if (argc == 7) {
             /* What stays allocated while this word is shown, then each page in
              * turn: its own time, reads and arena peak above that residency. */
             int count = vjo_overlay_page_count(&d);
