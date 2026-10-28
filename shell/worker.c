@@ -2116,8 +2116,11 @@ static void open_overlay(void)
         ov = OV_OPEN_OLD_JOB; /* a cancelled one is followed by a new one */
         /* An unsettled screen may have a background read still waiting in the
          * game worker. Cancel it and let on_job_done start the overlay's read
-         * without that wait, even before it captured anything. */
-        if (!st.stable && job_prepares && !job_cursor_only)
+         * without that wait, even before it captured anything. Not while the
+         * count of torn reads is held over (screen_changed_streak): the
+         * overlay's read would wait as that one does (start_job_kind), and that
+         * one is further along (#441's audit). */
+        if (!st.stable && job_prepares && !job_cursor_only && !screen_changed_streak)
             job_cancelled = 1;
         cancel_outdated_job(&st);
     } else {

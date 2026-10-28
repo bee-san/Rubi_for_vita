@@ -38,7 +38,9 @@ console logs or marked est. The logs hold the owner's reading, so only counts ar
   still waits for the stable text below when reading in the background. Opening the overlay confirms
   that the player wants the screen read now: a press with no result starts a job without the stability
   wait, whatever the tracker says. On an unsettled screen, a running background read is cancelled and
-  replaced with that immediate read once cancellation completes; its log line is a torn read's retry's,
+  replaced with that immediate read once cancellation completes, unless the count of torn reads is held over (the
+  press's own read would then wait too, below, and the running read is further along: it is kept, #441's audit F1);
+  the replacement's log line is a torn read's retry's,
   `job start (the screen changed during the last one)`, and the `open: background job still running (stable 0,
   quiet N)` line just before it tells the two apart. A quiet screen is unsettled too, and there the background read
   was the one that could learn the spot's icon: the press's read may tear on it, and then its retry waits (below).
@@ -68,22 +70,30 @@ when a background read, quiet refresh or diagnostic job may recognize:
   screen changed under every try (`shell/worker.c` `screen_changed_streak`, the count the wait hint uses) the open
   overlay's next tries wait as a background read does, first where the kernel has not called the screen stable,
   until a read ends the run; the press after that reads at once again (#413's audit F1). A press that finds the
-  count held over from a job that tore (Automatically's background read, or in Only when I press a press closed while
-  its tries still tore) waits from its first read. `ocr_settle_press_ms`, a press's limit before #413, is still
-  parsed for older builds and changes nothing.
+  count held over from a job that tore (Automatically's background read, a refresh of the open overlay, the subtitle
+  strip's read in either mode, or in Only when I press a press closed while its tries still tore) waits from its
+  first read, and one that finds the next background read already running after such a torn one keeps it rather than
+  cancel it for a read that would wait the same way (#441's audit F1). On the console that held over at **8 of
+  test.4's 75 openings** that waited for a recognition: each a background read running right after one that tore,
+  4 of them on a screen the kernel had not called stable, where #413's cancel would have thrown that read away
+  [measured: test.4's logs, #441's audit's replay of the Shell's count over every job]. `ocr_settle_press_ms`, a
+  press's limit before #413, is still parsed for older builds and changes nothing.
 
 The gap this leaves is known ([auto-vs-press.md](auto-vs-press.md#what-settled-means)): a
 typewriter pause longer than the window passes as settled.
 
 Why a press's retries wait: with #413's press, whose every try was a press, each change of an animated icon in the
 region between two reads of its rows tore the read. On the host bench of #379's box (`host/vertical_on_bench.c`, a
-24-px icon after the text turning for 15 frames and resting for 15, recognition charged per CTC frame, 12 presses),
-#413's press showed the text after 5.3 s at 30 frames a second and in 0 of 12 presses within 20 s at 60, where the
-wait before #413 gave 2.3 and 1.7 s; with the retries waiting, 3.4 and 5.9 s, 12 of 12 each. With slower icons a
-press now takes 1.0-2.2 s at 30 frames a second and 1.3-2.4 s at 60 (#413's 1.0-2.2 and 1.0-1.5 s, the wait's
-1.7-2.2 and 1.2-2.3 s), and a box of columns read as columns 0.7-2.3 s, as #413's within 0.4 s
-([the bench's tables](vita-vn-ocr.md#a-press-and-the-stable-text-wait-413), with the cells it still loses). Estimates
-of the bench's, not a console's.
+24-px icon after the text turning for 15 frames and resting for 15, recognition charged per CTC frame, 12 presses
+spread over the icon's cycle), #413's press showed the text in 11 of 12 presses after 2.6 s at 30 frames a second and
+in 0 of 12 within 20 s at 60, where the wait before #413 gave 2.5 and 7.1 s, 12 of 12 each; with the retries
+waiting, 3.4 and 6.0 s, 12 of 12 each. With slower icons a press now takes 1.1-1.3 s at 30 frames a second and
+0.9-1.7 s at 60 (#413's 1.1-1.3 and 0.9-1.0 s, the wait's 1.7-1.8 and 1.3-2.2 s), and a box of columns read as
+columns 0.6-2.3 s, as #413's or up to 0.3 s slower
+([the bench's tables](vita-vn-ocr.md#a-press-and-the-stable-text-wait-413), with the cells it still loses). With the
+12 presses at one moment of the cycle, as the bench placed them until #441's audit, the quickest icon at 60 frames a
+second gave 5.9 s against the wait's 1.7 s: that moment's figure, not the cycle's. Estimates of the bench's, not a
+console's.
 
 ## What the console runs show
 
@@ -334,19 +344,23 @@ it says:
   the kernel never pauses. See "With #355 and #359" below for how its clause fits.
 - **Starting over.** A region saved or cleared (□) starts the count over, as a new game does: the old region's tears
   say nothing of the new one's, and its next press says "Recognizing…" until two of its own jobs tear.
-- **Held over, in Only when I press L + R.** Nothing reads the screen between presses there, so a count of 2 from
-  one press holds until a read, a region or a new game. The next press then says why from its first try, and that
-  try waits for the text to hold still (#413's audit: the count also turns a press's wait back on). On a page
-  with the same icon that is still true; on another page, that try's read replaces the hint. In Automatically, the
-  background jobs after the close count again, or a read ends the run.
+- **Held over, in Only when I press L + R.** Nothing reads the screen between presses there but the subtitle strip
+  (Select + R), whose torn read counts too, so a count of 2 from one press holds until a read, a region or a new
+  game. The next press then says why from its first try, and that try waits for the text to hold still (#413's
+  audit: the count also turns a press's wait back on). On a page with the same icon that is still true; on another
+  page, that try's read replaces the hint. In Automatically, the background jobs after the close count again, or a
+  read ends the run; a press can still come while the read after a torn one runs, with the count at 1 (8 of test.4's
+  75 waiting openings, above): it keeps that read (#441's audit F1).
 - **Off.** `ocr_wait_hint = off` in `config.ini` keeps "Recognizing…" all along, as before (on by default).
 
 **Why 2.** `tools/wait_hint_replay.py` replays the rule for 1, 2 and 3 torn jobs in a row.
 - **On the owner's console:**
   - **The data:** CLANNAD, every debug build of API 20 or later (test.2-test.4), from the test.4 collect's
     `log.old.txt` and `log.txt`.
-  - **The waits:** none of the 75 openings that waited for a recognition met a torn job, so the hint would have shown
-    in none of them, whatever the count.
+  - **The waits:** none of the 75 openings that waited for a recognition met a torn job after the opening, so the hint
+    would have shown in none of them with 2 or 3. The replay counts only those jobs; the Shell's count from before
+    the opening was 1 at 8 of them (#441's audit), and at one of those the press's own job started with it, so with
+    1 the hint would have shown there.
   - **The tears:** the 376 background jobs had 16 torn ones, in 15 runs (14 single, 1 double), each followed by a
     read. A wait through those runs would have met the hint after 15 of them with 1 (each until the next job's
     result, a median 1.96 s later), after 1 with 2 (the double, 987 ms before its read), and after none with 3.

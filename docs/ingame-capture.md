@@ -28,8 +28,8 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
 2. The worker checks the game's free memory, then allocates its capture block: one strip of grey
    rows (at most 64 rows and 56 KiB) and a checksum and a bit per region row,
    `vjo_vocr_capture_bytes`: within 64 KiB at any region (65,480 B at 960×544, 61,388 B at
-   917×125). Since API 20 each row also keeps its recent states, so an animated icon is not a change
-   ([stable text](vita-vn-ocr.md#stable-text-and-blank-lines-api-20)): 16 earlier states when they
+   917×125). Since API 20 each row also keeps its recent states, so an animated icon is not a change in a
+   job with the stable-text wait ([stable text](vita-vn-ocr.md#stable-text-and-blank-lines-api-20)): 16 earlier states when they
    fit, as many as fit otherwise (6 at 960×544, 5 at 896×544, the widest strip).
 3. For each strip the worker calls `vjoOcrCaptureRows` with the strip (`seq`, first row `y`, `n` rows, the rung `mode`, `flags`, `dst_stride`) and `dst`.
    The kernel checks that `[dst, dst + bytes)` is one memory block of the worker's process

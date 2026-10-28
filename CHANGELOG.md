@@ -61,14 +61,26 @@ been reported.
     try of a press tore, for ever (#353's case; on the host bench's box with the quickest icon, 0 of 12 presses at 60
     frames a second). Now, once a read's screen changed under every try, the open overlay's next tries wait as a
     background read does (150 ms of still rows, within `ocr_settle_max_ms`), and the press after a read reads at once
-    again: 12 of 12 there, after 5.9 s (1.7 s before #413, when every try waited); with slower icons 1.0-2.4 s, #413's
-    1.0-2.2 s (estimates of the bench, [details](docs/vita-vn-ocr.md#a-press-and-the-stable-text-wait-413)). The one difference
-    from #413: a press that finds that count held over from a torn job (Automatically's, or a press closed while it
-    still tore) waits from its first read. With **Only when I press** every read is a press, so it never waits but
+    again: 12 of 12 there, a median 6.0 s after the press (7.1 s before #413, when every try waited); with slower icons
+    0.9-1.7 s, #413's 0.9-1.3 s (estimates of the bench, its 12 presses spread over the icon's cycle since #441's audit,
+    [details](docs/vita-vn-ocr.md#a-press-and-the-stable-text-wait-413)). The one difference from #413: a press that
+    finds that count held over from a torn job (Automatically's, a refresh's, the subtitle strip's, or a press closed
+    while it still tore) waits from its first read. With **Only when I press** every read is a press, so it never waits but
     for those retries. `ocr_settle_press_ms`, a press's limit before #413, changes nothing, and the guide, the
     `config.ini` template and the docs no longer say otherwise. The bench's `--press wait|nowait|retry[:MS]` replaces
     `--settle-ms`. Tests: the press's retry waits, a held-over count, and a reopen keeps the press's own read (#413's
     audit F3); each fails without its condition. Not run on a console.
+  - **#441's audit: a press after a torn read keeps the background read still running.** #413 cancelled a background
+    read still running on a screen not settled yet, so that the press read at once; with the count of torn reads held
+    over (#441) the press's own read waits too, so the cancel threw away a read further along for one that started its
+    wait again. 8 of test.4's 75 openings that waited for a recognition had the count held over, 4 of them on such a
+    screen [measured: the console's logs, the Shell's count replayed on the host]. Now that read is kept and its text
+    shown. The bench's 12 presses are spread over the icon's cycle (`--cluster` keeps the old spacing, all 12 within
+    87 ms of one moment of it, for the older tables), and its press figures are measured again: a sampling of one
+    moment had given "5.9 s against 1.7 s before #413", where the cycle gives 6.0 s against 7.1 s. The docs name every
+    source of the count, and the auto-vs-press page no longer says a press's job waits. Tests: the held-over count keeps
+    the read (it fails without the condition), and a press on a quiet screen cancels as on any other unsettled one.
+    The debug Shell takes 16 B more code, the normal one none: 4 B of code room left in each. Not run on a console.
 
 ### Added
 

@@ -1,6 +1,6 @@
 /* vjo-vertical-on-bench MODEL_DIR [--mode off|auto|on|columns] [--fps N] [--turn FRAMES] [--rest FRAMES]
  *                       [--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows]
- *                       [--press retry[:MS]|nowait|wait] < JOB > RESULTS.jsonl
+ *                       [--press retry[:MS]|nowait|wait] [--cluster] < JOB > RESULTS.jsonl
  *
  * #379: L + R on a dialogue region with an animated icon in it, as the game worker reads it (core/vocr_ocr.c, with
  * the policy game_ocr/main.c gives a press on config.ini's defaults: the 1 MB LM, the cascade with the next size up
@@ -19,7 +19,9 @@
  *    as the game shows its next frame), at --fps frames a second (30 by default).
  *  - The picture is the region with a 24-px icon at --icon (its top left corner in the region): a bar that turns one
  *    step a frame for --turn frames (15), then rests for --rest frames (15), and again; each phase of --phases (12)
- *    presses at another moment of it.
+ *    presses at another moment of it, phase p at p / phases of its cycle (#441's audit F3). --cluster: the phases
+ *    7,919 us apart, all 12 within 87 ms of one moment of the cycle, as the bench placed them until then (#385's,
+ *    #411's and #441's tables).
  *  - Recognition takes time on the same clock as the strips: each recognized line its CTC frames times a time a
  *    frame, --frame-us's three, in us: the Normal size's model (rows), the cascade's (the Large size's, for the
  *    frames it reads again) and the vertical model (columns). By default 2,610, 5,040 and 1,700: measured for rows,
@@ -231,7 +233,7 @@ int main(int argc, char **argv)
 {
     const char *mode = "on";
     unsigned fps = 30, phases = 12;
-    int tall_rows = 0;
+    int tall_rows = 0, cluster = 0;
     char line[512], id[256], press_name[32] = "retry:2000";
     Setup su = {.frame_us = {2610u, 5040u, 1700u}};
     if (argc < 2) goto usage;
@@ -247,6 +249,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--frame-us") && v &&
                  sscanf(v, "%u,%u,%u", &su.frame_us[0], &su.frame_us[1], &su.frame_us[2]) == 3) i++;
         else if (!strcmp(argv[i], "--tall") && v && !strcmp(v, "rows")) tall_rows = 1, i++;
+        else if (!strcmp(argv[i], "--cluster")) cluster = 1;
         else if (!strcmp(argv[i], "--press") && v) {
             unsigned ms = 2000u;
             char tail = 0;
@@ -309,7 +312,8 @@ int main(int argc, char **argv)
     unsigned shown = 0;
     double sum_ms = 0;
     for (unsigned ph = 0; ph < phases; ph++) {
-        vclock = 10000000ull + (uint64_t)ph * 7919u; /* another moment of the icon's turn each phase */
+        /* another moment of the icon's cycle each phase: over the whole cycle, or (--cluster) 7.9 ms apart */
+        vclock = 10000000ull + (cluster ? (uint64_t)ph * 7919u : (uint64_t)ph * (turn + rest) * frame_us / phases);
         const uint64_t press = vclock;
         unsigned jobs = 0, torn = 0, tears = 0, streak = 0, waited = 0;
         static char text[VJO_OCR_TEXT_CAP];
@@ -347,9 +351,10 @@ int main(int argc, char **argv)
             sum_ms += ms;
         }
         printf("{\"id\": \"%s\", \"mode\": \"%s\", \"fps\": %u, \"turn\": %u, \"rest\": %u, \"press\": \"%s\", "
+               "\"cluster\": %d, "
                "\"phase\": %u, \"rc\": %d, \"jobs\": %u, \"torn\": %u, \"waited\": %u, \"tears\": %u, \"strips\": %lu, "
                "\"ms\": %.0f, \"frames\": %lu, \"recognition_ms\": %.0f, \"columns\": %u, \"lines\": %u, \"text\": \"",
-               id, mode, fps, turn, rest, press_name, ph, rc, jobs, torn, waited, tears, strips, ms, charged_frames,
+               id, mode, fps, turn, rest, press_name, cluster, ph, rc, jobs, torn, waited, tears, strips, ms, charged_frames,
                (double)charged_us / 1000.0, rc == VJO_OK ? st.columns : 0u, rc == VJO_OK ? st.lines : 0u);
         for (const char *p = rc == VJO_OK ? text : ""; *p; p++) {
             if (*p == '\n') fputc('|', stdout);
@@ -369,7 +374,7 @@ int main(int argc, char **argv)
 usage:
     fprintf(stderr, "usage: %s MODEL_DIR [--mode off|auto|on|columns] [--fps N] [--turn FRAMES] [--rest FRAMES] "
                     "[--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows] "
-                    "[--press retry[:MS]|nowait|wait] < JOB\n",
+                    "[--press retry[:MS]|nowait|wait] [--cluster] < JOB\n",
             argv[0]);
     return 2;
 }
