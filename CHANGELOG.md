@@ -81,6 +81,21 @@ been reported.
     source of the count, and the auto-vs-press page no longer says a press's job waits. Tests: the held-over count keeps
     the read (it fails without the condition), and a press on a quiet screen cancels as on any other unsettled one.
     The debug Shell takes 16 B more code, the normal one none: 4 B of code room left in each. Not run on a console.
+  - **#413's audit: a line typing out no longer counts against a native text hook.** A press's read of a line still
+    typing out compared its first part with the hook's whole line: a disagreement, so one such read took a learned
+    hook's trust and two in a row unlocked it (it had to be learned again). Now, in a read without the wait, OCR's
+    text that agrees only with the beginning of the locked hook's line is no evidence either way: the press shows OCR's
+    text and the hook keeps its state; any other text still disagrees, and a background read is compared as before
+    ([details](docs/native-hooks.md#a-line-typing-out-413s-audit-f2)). On the
+    hooked page pool's 29 Vita sessions (host: the selection over OCR's real reads, half of the presses on a line typing
+    out) a correct hook is unlocked 47 times instead of 105, and keeps its trust for 5,149 lines instead of 3,510; it
+    is taken for a line typing out once until it agrees again, so a hook a page ahead of a page that collects its lines
+    is still unlocked, never trusted (in the actual worker with every job a press, 146 wrong lines against 103 in one
+    such game); background reads are compared exactly as before. The game worker takes 176 B more code (160 B in the debug build), the same pages. A press's partial line in
+    Automatically and the settled line after it are two `history.csv` records, so the reading totals count the start
+    twice: documented ([details](docs/ocr-history.md)); its fix does not fit the Shell's pages
+    ([measured](docs/memory-ledger.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)). Not run on
+    a console.
 
 ### Added
 

@@ -150,6 +150,18 @@ static unsigned score_of(const uint32_t *o, unsigned m, unsigned mf, const char 
     return d >= n ? 0u : (n - d) * 1000u / top;
 }
 
+/* #413's audit F2: OCR's text o (m characters kept, mf in all) against the beginning of h, h's first m characters, as
+ * score_of scores h (n <= m <= mf): a line still typing out (a press reads at once since #413) shows its beginning.
+ * For texts score_of compares (both of VJO_HOOK_MIN_CHARS or more); with h no longer than o it is score_of's. */
+static unsigned prefix_score(const uint32_t *o, unsigned m, unsigned mf, const char *h, size_t hn)
+{
+    uint32_t hc[CMP_MAX];
+    unsigned nf, n = cmp_form(h, hn, hc, &nf), d;
+    if (n > m) n = m;
+    d = within(o, m, hc, n);
+    return d >= n ? 0u : (n - d) * 1000u / mf;
+}
+
 unsigned vjo_hook_similarity(const char *o, size_t on, const char *h, size_t hn)
 {
     uint32_t oc[CMP_MAX];
@@ -352,7 +364,7 @@ uint32_t vjo_hook_select_no_memory(uint32_t pick, const VjoHookCand *c, unsigned
 }
 
 uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
-                               const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags)
+                               const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags, int unsettled)
 {
     uint32_t oc[CMP_MAX], f = 0;
     unsigned mf, m, best = 0, agree = 0, lscore = 0, pscore = 0;
@@ -417,6 +429,16 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
     if (st->interval && hh) {
         int fresh = hh != st->compare_hook_hash ||
                     (st->compare_ocr_hash && oh != st->compare_ocr_hash);
+        /* #413's audit F2: read without the wait (a press since #413), OCR's text agrees with the beginning of the
+         * locked stream's line: the line typing out, not a disagreement. No evidence either way: nothing changes, not
+         * the pair compared last, a pending check or disagreement, or trust. Once until the stream agrees again: a
+         * stream the screen keeps showing only the start of (a page that collects its lines, the stream a line ahead of
+         * it) disagrees at every later read, and two unlock it. A read with the wait is compared as before. */
+        if (unsettled && fresh && lscore < VJO_HOOK_AGREE && !st->typing &&
+            prefix_score(oc, m, mf, locked->text, locked->n) >= VJO_HOOK_AGREE) {
+            fresh = 0;
+            st->typing = 1;
+        }
         if (fresh) {
             st->compare_hook_hash = hh;
             st->compare_ocr_hash = oh;
@@ -426,7 +448,7 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
                 if (st->misses) st->interval = VJO_HOOK_INTERVAL_MIN;
                 else if (scheduled && st->interval < VJO_HOOK_INTERVAL_MAX) st->interval *= 2u;
                 if (scheduled || st->confirm || st->misses) st->unchecked = 0;
-                st->confirm = st->misses = 0;
+                st->confirm = st->misses = st->typing = 0;
                 st->shown_hash = hh;
                 st->locked_seq = locked->seq;
                 /* API 43: trust needs an agreement this close at the trusted interval (vjo_hook_select_trusted) */

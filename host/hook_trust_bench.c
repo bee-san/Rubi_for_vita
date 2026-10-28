@@ -5,10 +5,12 @@
  * memory is a figure the run sets, less the worker's own blocks. tools/hook_trust_bench.py writes the pages and
  * reads the jobs.
  *
- *   vjo-hook-trust-bench MODEL_DIR KIND TRUST FREE_MIB < pages.bin > jobs.jsonl
+ *   vjo-hook-trust-bench MODEL_DIR KIND TRUST FREE_MIB [press] < pages.bin > jobs.jsonl
  *     KIND   luna (a ported Luna site) | verified (a Rubi verified site) | call (a string copy's caller) |
  *            lag (a caller one page behind the screen: a source that must never be trusted)
  *     TRUST  1: VJO_GAME_OCR_S_TRUST in every job (hook_trust = on); 0: Rubi 0.9.7's selection
+ *     press  every job a press's (#413: no stable-text wait, as in Only when I press L + R; #413's audit F2), not the
+ *            background read's
  *     pages.bin: "VJTB" then per page: u32 width, u32 height, u32 text bytes, the hook's UTF-8 text, width x height
  *     RGB bytes (made grey here as the kernel does, (77 R + 150 G + 29 B) >> 8).
  *
@@ -235,10 +237,10 @@ int main(int argc, char **argv)
 {
     static VjoGameOcrResult out;
     char magic[4];
-    int trust;
+    int trust, press = argc == 6 && !strcmp(argv[5], "press");
     char *prev = NULL;
-    if (argc != 5) {
-        fprintf(stderr, "usage: vjo-hook-trust-bench MODEL_DIR luna|verified|call|lag 0|1 FREE_MIB < pages.bin\n");
+    if (argc != 5 && !press) {
+        fprintf(stderr, "usage: vjo-hook-trust-bench MODEL_DIR luna|verified|call|lag 0|1 FREE_MIB [press] < pages.bin\n");
         return 2;
     }
     model_dir = argv[1];
@@ -273,15 +275,15 @@ int main(int argc, char **argv)
         hook_seq = page + 1u;
         grey = pixels; width = w; height = h;
         /* the Shell's background job for it (shell/worker.c vocr_run_one, the defaults): Normal with Small below it,
-         * the 1 MB LM, the cascade within 2 s, PSP-only refinement, the 150 ms wait (the screen settled), two
-         * helpers, 444 MHz, the border rule, the head gate and the two-level head */
+         * the 1 MB LM, the cascade within 2 s, PSP-only refinement, the 150 ms wait (the screen settled; press: none,
+         * a press's since #413), two helpers, 444 MHz, the border rule, the head gate and the two-level head */
         VjoGameOcrRequest r = {.size = sizeof(r), .seq = page + 12u, .capture_seq = page + 11u, .fb_width = w,
                                .fb_height = h, .width = w, .height = h, .tiers = 3u};
         snprintf(r.model, sizeof(r.model), "%s", tier_names[VJO_VOCR_TIER_NORMAL - 1u]);
         snprintf(r.model_dir, sizeof(r.model_dir), "%s", VJO_VOCR_MODEL_ROOT);
         r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT |
-                  VJO_GAME_OCR_REFINE_PSP << VJO_GAME_OCR_REFINE_SHIFT | 15u << VJO_GAME_OCR_SETTLE_SHIFT |
-                  40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+                  VJO_GAME_OCR_REFINE_PSP << VJO_GAME_OCR_REFINE_SHIFT |
+                  (press ? 0u : 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT);
         r.speed = 2u | VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_DROP_BORDERS | VJO_GAME_OCR_S_HEAD_GATE |
                   VJO_GAME_OCR_S_TWO_LEVEL | (trust ? VJO_GAME_OCR_S_TRUST : 0u); /* ocr_head_gate = on: both */
         r.hook_pick = VJO_HOOK_PICK_AUTO;

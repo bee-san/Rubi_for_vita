@@ -6687,6 +6687,34 @@ static void test_a_press_after_a_torn_read_waits_from_its_first(void)
     }
 }
 
+/* #413's audit F5 (docs/ocr-history.md, "A press's partial line"): with Automatically a press reads at once (#413), so
+ * a line still typing is recorded as far as it had typed, and the settled screen's read after the close records the
+ * whole line: two records, as the history writer's 750 ms window for a grown line is past (shell/history.c). Pinned
+ * here so the docs say what the Shell does; a press's record that a later extension replaces needs Shell code the
+ * pages have no room for (docs/memory-ledger.md). */
+static void test_a_presss_partial_line_and_the_settled_one_are_two_records(void)
+{
+    cursor_setup();
+    history_calls = 0;
+    state.stable = state.quiet = 0;
+    fake_recognized_text = "猫";
+    open_overlay();
+    TEST_ASSERT(job_running && !job_prepares);
+    finish_current_job();
+    TEST_CHECK(!(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT)); /* the press: no wait */
+    TEST_CHECK(history_calls == 1 && !strcmp(history_text, "猫"));
+    close_overlay();
+    test_now += 2000000;
+    state.scene = state.region_scene = 8; state.region_seq++; state.stable = 1; /* typed out and settled */
+    fake_recognized_text = "猫犬鳥";
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_prepares);
+    finish_current_job();
+    TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == 15u); /* Auto's read waits */
+    TEST_CHECK(history_calls == 2 && !strcmp(history_text, "猫犬鳥"));
+    mem_free();
+}
+
 /* #413's audit F3: a reopen during the press's own read (the overlay closed and opened again before that read ended,
  * on a screen still changing) keeps that read and shows its result: only a background read (job_prepares) yields to
  * an opening (open_overlay). */
@@ -9184,6 +9212,8 @@ TEST_LIST = {
     {"a_reopen_keeps_the_presss_own_read", test_a_reopen_keeps_the_presss_own_read},
     {"a_held_over_count_keeps_the_running_background_read",
      test_a_held_over_count_keeps_the_running_background_read},
+    {"a_presss_partial_line_and_the_settled_one_are_two_records",
+     test_a_presss_partial_line_and_the_settled_one_are_two_records},
     {"an_opening_during_autos_job_on_a_changed_screen_gets_its_own",
      test_an_opening_during_autos_job_on_a_changed_screen_gets_its_own},
     {"a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_sentence (#182 a)",

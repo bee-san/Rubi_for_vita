@@ -56,8 +56,9 @@ def session_bytes(pagepool, pages_dir, title, limit):
 
 
 def run(args):
-    bench, models, kind, trust, free_mib, data = args
-    p = subprocess.run([bench, models, kind, str(trust), str(free_mib)], input=data, capture_output=True, timeout=7200)
+    bench, models, kind, trust, free_mib, data, press = args
+    p = subprocess.run([bench, models, kind, str(trust), str(free_mib)] + (["press"] if press else []), input=data,
+                       capture_output=True, timeout=7200)
     if p.returncode:
         raise RuntimeError(f"{bench} {kind} {trust}: rc {p.returncode}: {p.stderr[-500:]!r}")
     return [json.loads(l) for l in p.stdout.decode("utf-8").splitlines() if l.strip()]
@@ -102,6 +103,8 @@ def main():
     ap.add_argument("-o", "--output", required=True)
     ap.add_argument("--records", help="every job's line (JSONL, local only: it holds shown texts)")
     ap.add_argument("--configs", nargs="*", help="only these configurations (e.g. call:trust1:n4)")
+    ap.add_argument("--press", action="store_true",
+                    help="every job a press's, without the stable-text wait (#413; #413's audit F2)")
     args = ap.parse_args()
     pages_dir = args.pages_dir or str(Path(args.pagepool).parent.parent / "pages")
     titles = args.titles or sorted(f.stem for f in Path(args.pagepool).glob("PCS*.jsonl"))
@@ -128,7 +131,7 @@ def main():
     for t in titles:
         data, _ = sessions[t]
         for name, binary, kind, trust, free in configs:
-            tasks.append((binary, args.models, kind, trust, free, data))
+            tasks.append((binary, args.models, kind, trust, free, data, args.press))
             keys.append((name, t))
     with multiprocessing.Pool(max(1, args.jobs)) as pool:
         results = pool.map(run, tasks, chunksize=1)
@@ -141,7 +144,7 @@ def main():
                 rec_out.write(json.dumps(dict(j, config=name, title=t), ensure_ascii=False) + "\n")
     if rec_out:
         rec_out.close()
-    out = {"tool": "tools/hook_trust_bench.py", "pages_per_session": args.pages, "titles": titles,
+    out = {"tool": "tools/hook_trust_bench.py", "pages_per_session": args.pages, "press": args.press, "titles": titles,
            "excluded_titles": sorted(args.exclude), "free_mib": args.free_mib, "tight_mib": args.tight_mib,
            "sessions": {t: sessions[t][1] for t in titles}, "configs": {}}
     for name, by_title in per.items():

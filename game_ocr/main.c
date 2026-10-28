@@ -2496,8 +2496,9 @@ retry_smaller:
     /* Native hooks: a stream whose text agrees with OCR's replaces it (core/hook_select.h). */
     if (!rc && hk.installed) {
         unsigned score = 0;
+        /* #413's audit F2: read without the stable-text wait (a press since #413), its text may be a line typing out */
         uint32_t id = vjo_hook_select_after(&hk.sel, hook_pick, out->text, text_len(out->text, sizeof(out->text)),
-                                            hk.cand, hk.n, &score, &hk.flags);
+                                            hk.cand, hk.n, &score, &hk.flags, !(r->flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu));
         hk.score = score;
         if (id) {
             hook_show(out, hook_cand(id), 1, norm_flags(r));
