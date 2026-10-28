@@ -102,6 +102,12 @@ every row of the region has read the same for `ocr_settle_ms` = 150 ms:
   with `VJO_E_SCREEN_CHANGED` and is retried quietly later. From the third try in a row the open overlay
   says why it still is recognizing, and what helps (#358,
   [text-stability.md](text-stability.md#why-the-overlay-waits-358)).
+- A region that keeps changing for half the job's wait (an animated icon with more frames than a row's
+  16 recent states, a picture moving in the box), and a job whose rows changed while it read its lines
+  after the wait had held: the job watches its found lines' own pixels from then on, reads them anyway
+  at the limit, and has the finder look at them again twice `ocr_settle_ms` after it found them: lines
+  that typed on meanwhile by more than a quarter of their height end the job, and the next one reads them (#353,
+  [text-stability.md](text-stability.md#animated-icons-and-moving-pictures-353)).
 
 **Reading before the line has finished.** A typewriter pause longer than the window (150 ms and about
 one pass) passes the wait, and a pause longer than the whole job leaves its text with the line so far:

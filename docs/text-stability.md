@@ -78,6 +78,9 @@ when a background read, quiet refresh or diagnostic job may recognize:
   4 of them on a screen the kernel had not called stable, where #413's cancel would have thrown that read away
   [measured: test.4's logs, #441's audit's replay of the Shell's count over every job]. `ocr_settle_press_ms`, a
   press's limit before #413, is still parsed for older builds and changes nothing.
+- **An icon with more frames than that, or a moving picture** (#353): the job watches its found lines'
+  own pixels instead of the whole region
+  ([below](#animated-icons-and-moving-pictures-353)).
 
 The gap this leaves is known ([auto-vs-press.md](auto-vs-press.md#what-settled-means)): a
 typewriter pause longer than the window passes as settled.
@@ -427,3 +430,162 @@ section is the measurement made before, when neither fitted beside this change o
 **Not run on a console.** The rule and its text are host-tested (`host/tests/test_shell_worker.c`
 `open_overlay_says_why_it_waits`). Whether the hint reads well over a game, and when it shows there, waits for the
 owner's test build.
+
+## Animated icons and moving pictures (#353)
+
+**The report.** A user's overlay showed nothing while the log had read the dialogue, in STEINS;GATE and
+another game: their OCR region held the game's spinning "wait" icon (#353; the owner's analysis is there).
+
+**What `main` did, on the host.** `host/spinner_bench.c` plays a dialogue region at 60 frames a second with an
+icon drawn over it, through the kernel's change detection (`kernel/scene.c` itself), the game worker's job
+(`core/vocr_ocr.c` itself, config.ini's defaults, the release models) and a model of the Shell's decisions
+(`shell/worker.c`'s, function by function). The player presses L + R 3 s after the page appears and waits 20 s.
+The regions are 184 hooked pages of 46 titles (vita-vn-ocr's page pool, 4 pages a title), each page's dialogue
+region widened by three times its last line's height to the right and 1.5 times below, so that an icon has room.
+Times are estimates (a strip read is one frame, the finder 0.82 µs a pixel, VOCR5-N at 444 MHz); no console has run
+it. `tools/spinner_eval.py` runs it and `docs/benchmarks/spinner-20261027.json` has the numbers.
+
+- **An icon of 8 frames** (12 frames a second), after the text or in the region's corner: shown at once, as on a
+  still page. The kernel masks its cells, and the worker's rows take its 8 states for an icon's.
+- **An icon of more frames** (a 24-frame sprite at 30 frames a second, a smooth spinner of one turn a second, one
+  whose speed goes from 0.25 to 1.75 turns a second), **or a picture moving in the box**: shown in 0-5 of the 184
+  regions. Each job waited its whole limit, read the region three times and ended `VJO_E_SCREEN_CHANGED`, and the
+  Shell tried again, 7-8 times in the 20 s, with "Recognizing…" all along.
+- **An icon that turns, then rests** (0.8 s, then 0.6 s still): shown in 174 and 168 of 184, a few after 12-13 s.
+  In 7 and 13 regions a job recognized the lines and then dropped them (the log's `game vocr lines:`, nothing
+  shown): the report's symptom.
+
+**The list of checksums is bounded already; time is what fails.** A row keeps at most 16 earlier states
+(`VJO_VOCR_STATES_MAX`, 6 at 960 × 544) in the job's capture block, whose size is the region's alone (at most
+64 KiB, `VJO_BUDGET_GAME_CAPTURE`; 61,388 B at 917 × 125), and the kernel 16 states a cell of its 128 in its
+static tracker. The bench counts every allocation of a job: none after the first job's weights and LM, with or
+without an icon. An icon with more frames than a row's ring holds is never a "return to a recent state", so the
+wait never holds, and every change of its rows after the wait is a tear.
+
+**The line watch** (`core/vocr_ocr.c`, the stable-text wait's; with `ocr_settle_ms = 0` nothing changes).
+Once the region keeps changing, the job judges the text by the found lines' own pixels:
+- **When.** The rows have changed in the last pass after half the job's wait (1 s in the background, 0.5 s for a
+  press): until then the ring learns an icon of up to 16 frames, as before. Also when rows changed while the job
+  read its lines after its wait had held (an icon that rests between its turns).
+- **What it watches.** Each row's checksum over the columns of the lines the job's finder found (any finder: the
+  set of boxes the job reads, so a spotter's boxes would be watched the same way), with its own recent states in
+  the ring's memory. A change elsewhere (an icon beside the text) only marks the region as moved.
+- **The wait.** The job finds the lines (nothing is published) and waits until their pixels have held for
+  `ocr_settle_ms`. If the region moved meanwhile, the finder runs again: other lines (text typing on past its box,
+  a new line) are watched instead; the same lines are kept. Then the job's own first pass, the capture the Shell is
+  told of, and its finder: lines alike the kept ones are read at once; others are watched again from a new first
+  pass (8 times a job at most).
+- **Reading anyway.** When the waiting budget runs out while the lines' own pixels still change (an icon the finder
+  takes into the last line, a picture moving behind the text), the job reads the lines it found anyway: the changes
+  of those lines are no tears from then on, a change of another line still is. Once they are read, the finder runs
+  again, no sooner than twice `ocr_settle_ms` after it found them (the span the wait and its check take together
+  without the watch), and once more `ocr_settle_ms` later if they were not alike then (an icon beside a line can
+  change how the finder cuts it while it turns): lines that are not what they were (text that typed on by more than
+  a quarter of a line's height, a new line) end the job as a screen change, and the next one reads them. Typing that
+  moved a line's end by less is not seen, and the second look passes a line whose box the finder cuts as it did
+  before, typed on or not (audit-rubi-spinner-b G1: 1 of the 4 short reads below).
+- **Alike.** The same count and polarity, each box within a quarter of its height on every edge (2 px at least):
+  less than a character, so a line that typed on is another line. A line whose pixels changed may move by half its
+  height on its sides and start (an icon drawn in its box), but its end keeps the quarter: a line typing on changes
+  its own pixels too (audit-rubi-spinner F1: with 2.5 heights there, a slow typewriter was read half typed). An icon
+  after the last character that GRAD+refine take into the box (its end moving by more than the line's height in 26
+  of 146 such lines of hooked pages, with the icon's frames) then costs a look or a try more. At the
+  limit, an icon-sized box that only one find has is passed over (with an icon in the corner, the count of lines the
+  finder found changed with the icon's frames in 21-25 of 138 hooked regions; `vjo-spinner-bench --find`).
+- **Its memory.** No block, thread or allocation: the line checksums take the ring's memory (two of its 16-bit words
+  a row hold the checksum), the finder's runs the finder's own arena (the recognizer is done with it, or not set up
+  yet). On the worker's 32 KiB stack the job's frame grows from 1,512 to 2,616 B (`run_job`, with the line sets it
+  watches), and a finder's run takes `look_alike`'s 360 B on its way (`arm-vita-eabi-gcc -Os -fstack-usage`, the
+  build's flags). Its code, 2,640 B, takes the worker one page more, 4,096 B in each game that is ON, in both builds
+  ([memory-ledger.md](memory-ledger.md#the-line-watch-353)).
+
+**What it gives** (the 184 regions, 23 scenarios, eight of them audit-rubi-spinner's typing ones; median / 90th
+percentile / slowest time from L + R to the text, est.; "same": the still page's text exactly; "shorter": a read
+shorter than the still page's, as a line read half typed is):
+
+| icon or motion | `main` shown | `main` time | this change shown | its time | same | shorter (`main` → this change) |
+|---|---:|---|---:|---|---:|---:|
+| none (still page) | 181 | 0.0 / 0.0 / 0.0 s | 181 | 0.0 / 0.0 / 0.0 s | 184 | 0 → 0 |
+| the last line typing out | 181 | 0.0 / 0.0 / 0.4 s | 181 | 0.0 / 0.0 / 0.4 s | 184 | 0 → 0 |
+| 8 frames, after the text / in the corner | 181 / 181 | 0.0 / 0.0 / 0.4 s, 0.0 / 0.0 / 0.5 s | 181 / 181 | 0.0 / 0.0 / 0.4 s, 0.0 / 0.0 / 0.5 s | 180 / 180 | 1 / 1 → 1 / 1 |
+| turns and rests, after the text | 168 | 0.0 / 1.3 / 12.4 s | 181 | 0.0 / 2.2 / 4.9 s | 178 | 0 → 0 |
+| turns and rests, in the corner | 174 | 0.0 / 1.1 / 13.0 s | 181 | 0.0 / 1.6 / 7.8 s | 178 | 2 → 2 |
+| 24 frames, after the text | 5 | 0.9 / 1.3 / 4.7 s | 181 | 0.7 / 2.1 / 12.2 s | 181 | 0 → 0 |
+| 24 frames, in the corner | 1 | 0.9 / 0.9 / 0.9 s | 180 | 0.3 / 1.6 / 8.5 s | 177 | 0 → 1 |
+| smooth, after the text | 0 | — | 180 | 1.6 / 2.5 / 5.4 s | 177 | 0 → 0 |
+| smooth, in the corner | 0 | — | 180 | 1.3 / 2.3 / 9.6 s | 178 | 0 → 1 |
+| variable speed, after the text | 0 | — | 180 | 1.5 / 2.3 / 6.6 s | 179 | 0 → 1 |
+| variable speed, in the corner | 0 | — | 181 | 1.2 / 2.2 / 8.1 s | 179 | 0 → 2 |
+| variable speed in the corner, the line typing | 0 | — | 181 | 1.3 / 2.2 / 8.1 s | 179 | 0 → 2 |
+| a picture moving outside the text | 0 | — | 180 | 1.8 / 2.4 / 10.6 s | 178 | 0 → 3 |
+| a picture moving behind the text | 0 | — | 179 | 1.7 / 2.4 / 7.9 s | 178 | 0 → 4 |
+| slow typewriter, a character every 10 / 15 frames | 181 / 181 | 0.5 / 1.7 / 3.0 s, 1.5 / 3.6 / 6.1 s | 181 / 181 | 0.5 / 2.0 / 4.0 s, 1.5 / 3.8 / 6.1 s | 183 / 182 | 1 / 1 → 1 / 2 |
+| typing with 0.5 s pauses | 181 | 0.0 / 0.8 / 2.7 s | 181 | 0.0 / 1.1 / 3.0 s | 171 | 13 → 13 |
+| slow typewriter (10 frames), variable icon in the corner | 0 | — | 180 | 1.8 / 2.9 / 7.1 s | 176 | 0 → 2 |
+| typing with pauses, variable icon in the corner | 0 | — | 180 | 1.7 / 2.6 / 7.1 s | 177 | 0 → 3 |
+| slow typewriter, a smooth icon following the typed end | 0 | — | 180 | 1.9 / 3.0 / 18.7 s | 178 | 0 → 3 |
+| typing with pauses, a smooth / 8-frame icon following it | 0 / 181 | —, 0.9 / 1.9 / 3.2 s | 180 / 181 | 1.9 / 2.6 / 11.3 s, 0.9 / 2.1 / 6.6 s | 178 / 180 | 0 / 0 → 2 / 2 |
+
+"Shown" counts a read with text: the still page's read has text in 181 of the 184 regions.
+- **No region that `main` showed is lost**, in any scenario, and where nothing moves, or only an 8-frame icon, the
+  times and texts are `main`'s region by region. With the icon that rests, 13 and 7 more regions are shown, and
+  against `main`, region by region, the time is 0.27 s and 0.13 s shorter on the mean; 17 and 10 regions take more
+  than 0.3 s longer (by 2.3 s and 1.1 s at most: `main`'s job happened to read in a rest), 18 and 8 more than 0.3 s
+  less. The slow and pausing typewriters that `main` shows take 0.02-0.16 s longer on the mean (a line read anyway
+  is looked at again before it is given); region by region 12-53 of the 181 take more than 0.3 s longer, by at most
+  0.6 s (every 15 frames), 1.3 s (every 10), 0.9 s (with pauses) and 4.6 s (with pauses, an 8-frame icon following).
+- **Shorter reads.** 28 runs give a read shorter than the still page's where `main` did not: 24 in regions `main`
+  never shows at all (an icon of many frames or a moving picture), and 4 of the 1,777 where `main` showed the whole
+  line, later: the slowest typewriter in 1 region (the second look passed its line, cut as before while it typed
+  on), typing that pauses under an 8-frame icon following it in 2 (a pause longer than the wait's window, `main`'s
+  gap below, while the line was read anyway), and the 10-frame typewriter in 1 (as many bytes as the still read,
+  its last character read differently). In those 4 the next job (Automatically's) read the whole line 0.4-2.3 s
+  later.
+- **The jobs.** Over the 20 s an icon of many frames or a moving picture took `main` 1,293-1,376 jobs over the 184
+  regions, 1,293-1,371 of them ending with the screen changed; this change 185-205, 1-20 of them.
+- **The report's symptom** (lines recognized, then dropped, and nothing shown): 13 and 7 regions on `main` with the
+  icon that rests (2 each with the 24-frame one); here 11 runs of the 4,232, 1 or 2 in 10 scenarios, each one of
+  the 1-5 regions a scenario never shows.
+- **The synthetic box** (917 × 125, three lines of glyph-like strokes; ctest `spinner_bench`, the models lane):
+  `main` shows nothing in 15 of its 23 scenarios; this change shows the text in all 23, within 3.9 s (est.; the
+  slowest, a slow typewriter followed by a smooth icon), the still read's text wherever nothing moves inside a
+  line's box.
+
+**The hint.** A job whose screen changed under every read is still dropped quietly (#81 request 4), but the third in a
+row logs, in both builds, `ocr: screen changed under 3 jobs in a row; N line(s) not shown` (`shell/worker.c`
+`note_screen_changed`; the string is in the data segment). Why, and what helps, is what the open overlay says while it
+waits: #358's hint ([above](#why-the-overlay-waits-358)). The debug build's `gstep job settle` says what the watch did
+(kind: 1 its lines watched, + 2 read anyway, + 4 × the finder's runs; `tools/analyse_selftest.py --collect` sums them).
+
+**Limits.**
+- **Not run on a console.** The times are the host model's (frames, the finder's and the recognizer's estimated
+  speeds); each finder's run is about 94 ms for CLANNAD's 852 × 135 region at the measured 0.82 µs a pixel (est.).
+- **An icon inside a line's box is read with the line.** As on `main`, its pixels are the line's (a mark
+  read after the last character, or nothing). A text-line spotter that never boxes an icon (vita-vn-ocr's VOCR6
+  work, #125) would leave it outside the lines, and the watch then waits it out like an icon beside the text.
+- **A picture moving behind the glyphs** changes their pixels: the lines are read anyway at the limit.
+- **A page turned while the lines are read anyway** with the same layout (as many lines, as long, or one line more
+  or fewer of at most two characters, which the look passes over as an icon) is not seen by the last check: of
+  audit-rubi-spinner's runs of a page turned while a picture moves behind the text, 7 of 987 read lines of both
+  pages on the final code (11 before its F1 fix, `main` 0; audit-rubi-spinner-b's rerun). The Shell's own check of
+  the screen (its scene) then refreshes the open overlay.
+- **A slow typewriter** whose pause between two characters is longer than the wait's window and the reading together
+  (`ocr_settle_ms`, 150 ms by default, and the read) is read as far as it has typed, on `main` as here; the next job,
+  once it types on, reads more. Faster than that, the line never holds still: a line read anyway that has typed on by
+  more than a quarter of its height when it is looked at again ends the job as a screen change (the policy tests'
+  `a_slow_typewriter_is_never_read_half_typed`, a character every 8, 10 or 15 frames, with and without an icon). Less
+  typing than that, or a box the finder cuts as before at the second look, is given as read. The bench hides a
+  line's untyped part with one grey a row, which the finder can take into the line's box, so its box check sees less
+  of the typing than on a real screen: its counts are pessimistic for this change (audit-rubi-spinner-b G3).
+- **A job that reads anyway takes longer:** its looks once read add up to 3 × `ocr_settle_ms` and two finder's runs,
+  past its waiting budget; in the bench a press's job took at most 5.6 s (`main` 4.0 s) and a background job 6.7 s
+  (3.8 s) (audit-rubi-spinner-b, est.). It sees a cancellation after each pause (2 × `ocr_settle_ms` at most).
+- **In-sample.** The watch's rules (half the budget, a quarter and half a line's height) were chosen on these 184
+  regions. On 92 other pages of the same 46 titles (halfway between the measured ones, as audit-rubi-spinner held
+  them out), the final code shows 89-91 of the 92 with an icon of many frames or a moving picture (`main` 0-3), a
+  median 0.4-1.9 s, a 90th percentile 1.6-3.2 s (1.6-2.6 s without the typing scenarios) and at most 9.8 s after
+  L + R; no region `main` showed is lost, and
+  1 of the 889 runs `main` showed whole is read short first. The bench charges the finder's runs to the job at its
+  end, not while the frames play on, and plays 60 frames a second only.
+- **The kernel's tracker** is unchanged: with such an icon the region may never settle, and Automatically reads it
+  on its quiet events (a spot of 3 × 3 cells that keeps changing) instead.

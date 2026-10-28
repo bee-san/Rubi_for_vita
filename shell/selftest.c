@@ -330,7 +330,7 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
     } else {
         if (s->id == VJO_GSTEP_CHECK || s->id == VJO_GSTEP_LM || s->id == VJO_GSTEP_CASCADE ||
             s->id == VJO_GSTEP_REFINE || s->id == VJO_GSTEP_SHOT || s->id == VJO_GSTEP_SAVE ||
-            s->id == VJO_GSTEP_GATE || s->id == VJO_GSTEP_NORM || s->id == VJO_GSTEP_SPOT ||
+            s->id == VJO_GSTEP_GATE || s->id == VJO_GSTEP_NORM || s->id == VJO_GSTEP_SETTLE || s->id == VJO_GSTEP_SPOT ||
             ((s->id == VJO_GSTEP_RECOGNIZE || s->id == VJO_GSTEP_FIND) && s->kind)) {
             /* API 20: the LM tier (check: | 8 with the cascade), the refinement's mode; API 23: the
              * shot's JPEG quality, the save's chunks; API 26: the gate's mode; API 36: the norm step's lines
@@ -338,7 +338,7 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
              * percent (a job without it, or that skipped none, "-" as before); API 47: find's 1 columns, 2 rows
              * that looked like vertical text, 3 auto's columns without the vertical model (rows, "-", as before);
              * API 53: 4 on's rows, 5 the columns without room (the rows next);
-             * API 54: 1 when the spotter found the lines */
+             * API 54: 1 when the spotter found the lines; #353: settle's line watch (VJO_GSETTLE_K_*; 0 without it) */
             sceClibSnprintf(kindbuf, sizeof(kindbuf), "%u", (unsigned)s->kind);
             kind = kindbuf;
         }

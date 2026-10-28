@@ -2429,14 +2429,27 @@ static void on_cursor_done(void)
  * worker reads a region again up to VJO_VOCR_TRIES times), so nothing is
  * shown for it, no error either. The next try starts at once, from the
  * second in a row SCREEN_RETRY_MS later, doubling up to SCREEN_RETRY_MAX_MS;
- * a job that reads its screen ends the run. */
+ * a job that reads its screen ends the run. #353: the third in a row says so in
+ * the log (both builds), with the lines its game worker had recognized and that
+ * are not shown; the open overlay says why it waits from WAIT_HINT_AFTER on
+ * (#358, start_job_kind). For the debug Shell's room the line is short and in the
+ * data segment, its call where the streak is still in a register, and the pace's
+ * zero folded into its shift (the same waits). */
+#ifdef VJO_WITH_VOCR
+static const char SCREEN_MOVING_LOG[] VJO_DATA_TABLE(SCREEN_MOVING_LOG) =
+    "ocr: screen changed under 3 jobs in a row; %u line(s) not shown";
+#endif
 static void note_screen_changed(const char *what)
 {
-    uint32_t wait_ms = screen_changed_streak ? SCREEN_RETRY_MS << (screen_changed_streak - 1) : 0;
+    uint32_t wait_ms = SCREEN_RETRY_MS * ((1u << screen_changed_streak) >> 1); /* 0, then doubling */
     if (wait_ms > SCREEN_RETRY_MAX_MS)
         wait_ms = SCREEN_RETRY_MAX_MS;
     if (screen_changed_streak < 8)
         screen_changed_streak++;
+#ifdef VJO_WITH_VOCR
+    if (screen_changed_streak == 3) /* (the network thread's result: read after job_done) */
+        vjo_log(SCREEN_MOVING_LOG, (unsigned)vocr_result.recognized);
+#endif
     screen_retry_until = now_us() + (int64_t)wait_ms * 1000;
     vjo_dlog("%s dropped: the screen changed under it (%d in a row), next try in %u ms", what,
             screen_changed_streak, (unsigned)wait_ms);

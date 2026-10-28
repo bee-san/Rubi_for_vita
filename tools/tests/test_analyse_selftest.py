@@ -338,6 +338,17 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual(a.norm_line(nm), "  text normalised: 0 of 2 job(s) changed: 0 full-width form(s), 0 tilde(s), "
                                           "0 dash(es), 0 ellipsis(es), 0 一->ー, 0 ー->一; 30-30 us")
 
+    def test_the_settle_step_counts_the_line_watch(self):
+        # #353 (VJO_GSTEP_SETTLE's kind, VJO_GSETTLE_K_*): 1 the job watched its lines' own pixels, 2 read them anyway at
+        # the limit, bits 2-7 the finder's runs that checked them; "-" from a Shell before it (none counted)
+        def step(kind, rc):
+            return (f"gstep job settle kind={kind} arg=12 rc=0x{rc:08X} bytes=40 sum=0x00000000 main=0 cdram=0 "
+                    f"phycont=0 us=1016000\n")
+        st = a.summarise_log(step("-", 1) + step(1 | 2 << 2, 1) + step(1 | 2 | 3 << 2, 2) + step(0, 1))["settle"]
+        self.assertEqual((st["jobs"], st["held"], st["timeout"], st["lines"], st["anyway"], st["looks"]),
+                         (4, 3, 1, 2, 1, 5))
+        self.assertEqual(st["ms"], [1016, 1016, 1016, 1016])
+
     def test_the_gate_step_reads_its_score_beside_the_read_bit(self):
         # API 26 (VJO_GSTEP_GATE): bytes = score + 129 | (threshold + 129) << 16 | VJO_GLM_READ; arg 0 kept the
         # lines, a nonzero rc means the gate could not decide (the lines were kept)

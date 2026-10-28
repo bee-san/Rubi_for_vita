@@ -413,6 +413,14 @@ corner before Enter. Hold Square for one second for the full screen. The cursor
 and its acceleration are covered by host tests; how they feel on the console is
 not tested yet.
 
+A game's animated "wait" or "next" icon, or a picture moving in the box, can stay
+inside the region: Rubi then judges the text by its lines' own pixels and reads
+it once they hold still, or reads it anyway at the wait's limit (`ocr_settle_press_ms`
+for a press, `ocr_settle_max_ms` in the background;
+[text stability](text-stability.md#animated-icons-and-moving-pictures-353)). If
+the text still does not show after a few seconds, a region drawn around the text
+alone, leaving the icon out, is read at once.
+
 #### The box Rubi suggests
 
 A game with no box of its own (no line for it in `region.ini`, not even a full screen saved with Square held) is

@@ -58,7 +58,13 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
    under it (N in a row), next try in T ms` and tries again: at once, from the
    second in a row 250 ms later, doubling up to 4 s, until a job reads its screen
    (`shell/worker.c` `note_screen_changed`). An open overlay waiting for its text shows
-   "Recognizing…" meanwhile; one already showing text keeps it.
+   "Recognizing…" meanwhile; one already showing text keeps it (#358 makes it say why). The third
+   in a row logs (both builds) `ocr: screen changed under 3 jobs in a row; N line(s) not shown`
+   (#353). Since #353 a region that keeps changing (an animated icon, a moving picture) is waited on
+   through its lines' own pixels
+   ([text-stability.md](text-stability.md#animated-icons-and-moving-pictures-353)), so this should
+   be rare (an estimate: on the host, 11 of the 3,312 runs with an icon or a moving picture; no
+   console has run it).
 
 Pixel formats: `A8B8G8R8` (0x00000000), `A2B10G10R10` (0x60800000, the top 8 bits of each 10)
 and `A1B5G5R5` (0x50000000, each 5-bit channel `<< 3`), as the JPEG capture already converted
