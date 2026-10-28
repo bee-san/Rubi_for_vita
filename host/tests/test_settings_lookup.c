@@ -395,7 +395,7 @@ static void search_by_the_keyboard(void)
     TEST_CHECK(drawn.headers == 1 && badge_named("Search")->active && !badge_named("Earlier lines")->active);
     TEST_CHECK(shown("Triangle, or a tap here: type a word or a sentence.") != NULL);
     TEST_CHECK(shown_with("Type a word or a sentence (Triangle)") != NULL);
-    TEST_CHECK(!strcmp(drawn.controls, "Triangle or ×: type   L/R: earlier lines   Select: page   ○: exit"));
+    TEST_CHECK(!strcmp(drawn.controls, "Triangle or ×: type   L/R: earlier lines   Select: settings   ○: exit"));
     keyboard_types("猫が好き");
     TEST_CHECK(frame(SCE_CTRL_TRIANGLE) == 1); /* the keyboard ran in the frame */
     TEST_CHECK(vjo_test_ime_calls == 1 && vjo_test_ime_max == 128 && vjo_test_ime_languages == 0x1FFFF &&
@@ -623,7 +623,7 @@ static void no_history_yet_and_the_buttons_named(void)
     reset(VJO_BUTTON_ASSIGN_CIRCLE);
     show();
     frame(0);
-    TEST_CHECK(!strcmp(drawn.controls, "Triangle or ○: type   L/R: earlier lines   Select: page   ×: exit"));
+    TEST_CHECK(!strcmp(drawn.controls, "Triangle or ○: type   L/R: earlier lines   Select: settings   ×: exit"));
     frame(SCE_CTRL_RTRIGGER);
     settle();
     TEST_CHECK(shown_with("No earlier lines yet: Rubi keeps the lines it reads with Read text: Automatically") != NULL);

@@ -21,7 +21,7 @@ directory.
 
 ## Setup and use
 
-1. In the **Rubi** app's **Anki** page (Select, or tap the tab), turn
+1. In the **Rubi** app's **Settings → Anki** screen, turn
    **Card mining** ON (Enter, or Left/Right). This is `anki_mining` in
    `ux0:data/VitaJPOverlay/config.ini`; the overlay reads it when it next opens.
    **Screenshots**, below it, is ON by default (`anki_screenshot`): each card

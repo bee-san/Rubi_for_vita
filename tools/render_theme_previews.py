@@ -24,14 +24,17 @@ def render(record, font_path, target):
     scale = 2  # supersample for readable small labels
     screen = Image.new("RGBA", (960 * scale, 544 * scale), rgba(record["clear"]))
     draw = ImageDraw.Draw(screen)
-    for x, y, w, h, color, clipped, top, bottom in record["rects"]:
+    for x, y, w, h, color, clipped, top, bottom, left, right in record["rects"]:
         if clipped:
+            edge = min(x + w, right)
+            x = max(x, left)
+            w = edge - x
             end = min(y + h, bottom)
             y = max(y, top)
             h = end - y
         if w > 0 and h > 0:
             draw.rectangle((x * scale, y * scale, (x + w) * scale - 1, (y + h) * scale - 1), fill=rgba(color))
-    for x, y, color, size, clipped, top, bottom, text in record["texts"]:
+    for x, y, color, size, clipped, top, bottom, clip_left, clip_right, text in record["texts"]:
         if not text:
             continue
         font = ImageFont.truetype(str(font_path), max(1, round(18 * size * scale)))
@@ -43,14 +46,18 @@ def render(record, font_path, target):
         width = max(1, int(units * size + 0.5) * scale)
         ink = ink.resize((width, ink.height), Image.Resampling.LANCZOS)
         py = y * scale + ascent
+        px = x * scale
         if clipped:
             a = max(0, top * scale - py)
             b = min(ink.height, bottom * scale - py)
-            if b <= a:
+            l = max(0, clip_left * scale - px)
+            r = min(ink.width, clip_right * scale - px)
+            if b <= a or r <= l:
                 continue
-            ink = ink.crop((0, a, ink.width, b))
+            ink = ink.crop((l, a, r, b))
             py += a
-        screen.alpha_composite(ink, (x * scale, py))
+            px += l
+        screen.alpha_composite(ink, (px, py))
     screen = screen.resize((960, 544), Image.Resampling.LANCZOS)
     labelled = Image.new("RGB", (960, 588), "#e8e8e8")
     labelled.paste(screen.convert("RGB"), (0, 0))
@@ -69,7 +76,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="rubi-theme-previews-") as records:
         env = dict(os.environ, VJO_THEME_PREVIEW_DIR=records)
-        subprocess.run([str(args.test_bin.resolve()), "app_colour_schemes"], env=env, check=True)
+        subprocess.run([str(args.test_bin.resolve()), "app_colour_schemes", "settings_navigation"], env=env, check=True)
         for source in sorted(Path(records).glob("*.json")):
             target = args.output / (source.stem + ".png")
             render(json.loads(source.read_text()), args.font, target)

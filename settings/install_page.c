@@ -345,12 +345,12 @@ void vjo_install_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, 
     if (worker.running)
         snprintf(controls, sizeof(controls), "Working: it cannot be stopped part way");
     else if (showing == SHOW_RESULT)
-        snprintf(controls, sizeof(controls), "%s: back   %sSelect: page   %s: exit", ui->buttons->enter_glyph, scrolling,
+        snprintf(controls, sizeof(controls), "%s: back   %sSelect: look up   %s: settings", ui->buttons->enter_glyph, scrolling,
                  ui->buttons->cancel_glyph);
     else if (action_count)
-        snprintf(controls, sizeof(controls), "%s: %s   Left/Right: action   %s%s: exit", ui->buttons->enter_glyph,
+        snprintf(controls, sizeof(controls), "%s: %s   Left/Right: action   %s%s: settings", ui->buttons->enter_glyph,
                  action_name(actions[action_index]), scrolling, ui->buttons->cancel_glyph);
     else
-        snprintf(controls, sizeof(controls), "%sSelect: page   %s: exit", scrolling, ui->buttons->cancel_glyph);
+        snprintf(controls, sizeof(controls), "%sSelect: look up   %s: settings", scrolling, ui->buttons->cancel_glyph);
     ui->hints(controls);
 }

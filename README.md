@@ -158,7 +158,7 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
    a word. The right stick scrolls a long entry. **▲** on the top row goes back to this game's earlier
    lines, one at a time (with **Read text: Automatically**), and **▼** comes forward again
    ([earlier lines](docs/line-history.md)).
-4. **Make a card.** Turn **Card mining** ON on the app's **Anki** page once. Then press **Enter** on
+4. **Make a card.** Turn **Card mining** ON on the app's **Settings → Anki** screen once. Then press **Enter** on
    a word: it is saved with its sentence and a screenshot. **Export cards** on the Anki page writes
    them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: copy that file to a computer
    (VitaShell's USB or FTP connection) and open it in Anki.
@@ -170,20 +170,27 @@ Every control, setting and file is in the [guide](docs/guide.md#use-in-a-game).
 
 ## Settings
 
-In the Rubi app, Select or a tap on a tab changes the page. A choice is saved at once and applies
-when the overlay next opens; a game's ON or OFF applies when the game next starts or resumes.
+The Rubi app opens on **Settings**, with five categories: **Games**, **Reading & dictionaries**, **Anki**,
+**Appearance**, and **Install & repair**. Up/Down chooses a category and Enter opens it; tap a category to open it
+directly. Cancel or the **Back** button returns to the menu. **Look up** is the other top-level destination;
+Select switches between it and Settings. Installation problems still open Install & repair automatically.
+
+Reading & dictionaries keeps the usual controls together, with **Advanced reading** for text sources, OCR tuning
+and text-box options. Appearance offers **Mint**, **Sakura** and **Paper**, applied immediately and remembered.
+Other choices save at once and apply when the overlay next opens; a game's ON or OFF applies when it next starts
+or resumes.
 
 | Page | Setting | Default |
 | --- | --- | --- |
 | Games | Each game ON or OFF, and **Default** ON or OFF ([details](docs/guide.md#per-game-settings)) | ON |
 | | **Line finder** for one game (hold Enter on it): what cuts its text box into lines, the spotter or Rubi's finder with its fixes (`config.ini`'s `ocr_finder` and `ocr_line_fix` for that game alone), for a game the spotter reads worse ([details](docs/guide.md#a-games-own-page)) | Default (`config.ini`'s, the spotter) |
-| OCR & lookup | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
+| Reading & dictionaries | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
 | | **Read text**: Automatically (when it changes), or Only when I press L + R | Automatically |
 | | **Speed boost while reading (444 MHz)** | ON |
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries for the same word are shown, the best match first and the others below it (the right stick scrolls to them), 1–8 (2: a word and the same word as a character's name; which comes first: `names_first`, [details](docs/local-dictionaries.md#names-and-words)) | 2 |
-| | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
+| Reading → Advanced | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
 | | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready within a poll (16 ms) and the first word's lookup of the game writing it (measured on a computer; not run on a console yet; [details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns, but rows where the box plainly holds lines of text) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |

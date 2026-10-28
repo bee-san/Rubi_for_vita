@@ -40,8 +40,7 @@ AnkiConnect or AnkiWeb sync.
 
 Text is recognized on the Vita, offline, by the local engine, named after the
 generation of the model it runs (**VOCR6** for all three sizes in this package), automatically or
-when the overlay opens. In the **Rubi** app (press **Select** for the
-OCR & lookup page), **Model size** chooses its recognizer: **Small**
+when the overlay opens. In the **Rubi** app (**Settings → Reading & dictionaries**), **Model size** chooses its recognizer: **Small**
 (fastest), **Normal** (the default, balanced) or **Large** (most accurate), each
 shown with its estimated time per textbox and the game memory it takes
 ([model sizes](vita-vn-ocr.md#model-sizes-small-normal-large-api-21)). When
@@ -444,8 +443,10 @@ yet.
 The **Rubi** app shows five games per page, with compact titles, visible
 IDs and ON/OFF badges. The last page may have fewer games. Games are listed by letter (#,
 A–Z, kana by row, then other characters), alphabetically within it, capital
-and small letters together. Tap the **Games**, **OCR & lookup**, **Anki**, **Look up**
-or **Install** tab, or press Select, to change pages. Choices save automatically to
+and small letters together. The app opens on **Settings**, whose five categories are **Games**,
+**Reading & dictionaries**, **Anki**, **Appearance**, and **Install & repair**. Choose with Up/Down and Enter,
+or tap a category. Cancel or the **Back** button returns to the menu. Select switches between **Look up** and
+**Settings**; tapping Settings from a category also returns to the menu. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
 Icons load one per frame for the current page only, with at most five textures
 kept. Changing pages releases the previous page's icons; a card
@@ -465,13 +466,14 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
-| Select or touch a page tab | Switch between the Games, OCR & lookup, [Anki](anki.md#setup-and-use), [Look up](#look-up) and Install pages |
-| Cancel | Exit |
+| Select | Switch to Look up; Select there returns to Settings |
+| Cancel or Back | Return from a game's own page to the Games list, then to Settings; Cancel on Settings exits |
 
-On the **OCR & lookup** page, select a row with Up/Down. Enter
+In **Settings → Reading & dictionaries**, select a row with Up/Down. Enter
 or touch a row changes its choice: the Model size, **Read text**, the **Speed boost while
 reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, how many
-dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
+dictionaries are shown. Open **Advanced reading** (the last row, or the Advanced button) for
+the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
 switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
 and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
 **Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)),
@@ -506,7 +508,7 @@ rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
 API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and the
 removed engine choice's `ocr_backend` line goes).
 
-On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
+In **Settings → Anki** the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
 Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), then the
 exported cards' **Card type** (Word, Sentence, Both or Click: Enter takes the next, Left/Right the one beside it,
 a touch the one touched), **Game tag** and **Sentence readings** (ON/OFF), **Duplicates** (Tag, Skip or Keep: as
@@ -971,7 +973,7 @@ request and have no cloud fallback: the local dictionaries are the only ones.
 
 ### App colour schemes
 
-Open Rubi's **Appearance** tab (tap its tab, or press Select to cycle pages). Choose **Mint** (the original
+Open Rubi's **Settings → Appearance** category. Choose **Mint** (the original
 navy and mint), **Sakura** (plum and pink), or **Paper** (warm light with forest green). Tap a preview card,
 press Left/Right, or press Enter to cycle through the three. The labelled **Selected** card is the saved choice.
 Colours change immediately on every app page, including Look up's dictionary text, and stay after closing the app.

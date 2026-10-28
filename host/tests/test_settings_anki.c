@@ -579,7 +579,7 @@ static void the_rows_and_the_footer_do_not_overlap(void)
     TEST_CHECK(frames_begun == 1 && frames_shown == 1);
     check_layout(0);
     TEST_CHECK(focused() == 0 && !clipping);
-    TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ×: select   Select: page   ○: exit"));
+    TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ×: select   Select: look up   ○: back"));
     TEST_CHECK(strstr(drawn.footer, "ux0:data/VitaJPOverlay/anki/") && !drawn.footer_error);
     /* the rows' texts and states: mining off, screenshots on and their bars trimmed by default; #311: word cards,
      * with their game's tag (its row cut at the room's bottom) */
@@ -651,7 +651,7 @@ static void the_rows_and_the_footer_do_not_overlap(void)
     reset(VJO_BUTTON_ASSIGN_CIRCLE);
     show();
     frame(0);
-    TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ○: select   Select: page   ×: exit"));
+    TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ○: select   Select: look up   ×: back"));
     TEST_CHECK(text_starting("○ in the overlay saves the word"));
 }
 
@@ -1009,7 +1009,7 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     TEST_CHECK(!strcmp(badge(EXPORT)->label, "Exporting…") && badge(EXPORT)->active &&
                !strcmp(badge(KNOWN)->label, "Import") && !badge(KNOWN)->active);
     TEST_CHECK(text_starting("Reading the cards…") && text_starting("Imports known_words.txt") &&
-               !strcmp(drawn.controls, "○: stop   Select: page"));
+               !strcmp(drawn.controls, "○: stop   Select: look up"));
     /* busy: no save, no second export, from Enter, Left/Right or a touch */
     TEST_ASSERT(save_now(0, 1) == 0);
     TEST_ASSERT(read_file(VJO_PREFERENCES_PATH, before, sizeof(before)) > 0);
@@ -1081,7 +1081,7 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     frame(SCE_CTRL_CIRCLE);
     TEST_CHECK(focused() == EXPORT && vjo_anki_page_busy() && threads_created == 5);
     frame(0);
-    TEST_CHECK(!strcmp(drawn.controls, "×: stop   Select: page"));
+    TEST_CHECK(!strcmp(drawn.controls, "×: stop   Select: look up"));
     frame(SCE_CTRL_CIRCLE);
     run_worker();
     frame(0);

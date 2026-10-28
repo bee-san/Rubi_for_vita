@@ -505,9 +505,9 @@ void vjo_anki_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int
     }
     /* The last result, else how to get the file to Anki */
     if (busy)
-        snprintf(controls, sizeof(controls), "%s: stop   Select: page", ui->buttons->cancel_glyph);
+        snprintf(controls, sizeof(controls), "%s: stop   Select: look up", ui->buttons->cancel_glyph);
     else
-        snprintf(controls, sizeof(controls), "Up/Down: choose   %s: select   Select: page   %s: exit",
+        snprintf(controls, sizeof(controls), "Up/Down: choose   %s: select   Select: look up   %s: back",
                  ui->buttons->enter_glyph, ui->buttons->cancel_glyph);
     if (note[0])
         ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3, note, note_error, controls);

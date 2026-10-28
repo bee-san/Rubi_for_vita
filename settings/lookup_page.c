@@ -925,7 +925,7 @@ static void draw_page(void)
         draw_list();
     }
     if (mode == MODE_SEARCH && !vjo_lookup_text_len())
-        snprintf(controls, sizeof(controls), "Triangle or %s: type   L/R: earlier lines   Select: page   %s: exit", e, c);
+        snprintf(controls, sizeof(controls), "Triangle or %s: type   L/R: earlier lines   Select: settings   %s: exit", e, c);
     else if (mode == MODE_SEARCH)
         snprintf(controls, sizeof(controls), "Triangle: type   Left/Right: word   %s: save card   L/R: lines   %s: exit",
                  e, c);

@@ -1,6 +1,10 @@
-# App colour schemes
+# Settings and colour schemes
 
-Rubi's **Appearance** tab offers exactly three schemes. Tap a preview card, use Left/Right, or press Enter to cycle.
+Rubi opens on **Settings**, with Games, Reading & dictionaries, Anki, Appearance, and Install & repair.
+The top bar has only **Look up** and **Settings**. Cancel/Back goes up a level; Select switches destinations.
+Technical reading options are under **Advanced reading**.
+
+**Settings → Appearance** offers exactly three schemes. Tap a preview card, use Left/Right, or press Enter to cycle.
 Every app page changes immediately; `colour_scheme` in `app.ini` keeps the choice after closing the app.
 Mint is the default for existing installations and unknown values. The in-game overlay keeps its existing colours.
 
@@ -10,10 +14,22 @@ The harness supplies the rectangles, text positions, colours and clipping. Its s
 renderer’s Noto Sans CJK JP font approximate firmware PVF; hardware layout and performance remain unverified.
 Each PNG labels that distinction below the 960 × 544 app viewport.
 
+The category menu:
+
+| Mint | Sakura | Paper |
+| --- | --- | --- |
+| ![Mint Settings menu](mint-home.png) | ![Sakura Settings menu](sakura-home.png) | ![Paper Settings menu](paper-home.png) |
+
+Reading and appearance:
+
 | Mint · navy and mint | Sakura · plum and pink | Paper · warm light and green |
 | --- | --- | --- |
 | ![Mint settings](mint.png) | ![Sakura settings](sakura.png) | ![Paper settings](paper.png) |
 | ![Mint picker](mint-picker.png) | ![Sakura picker](sakura-picker.png) | ![Paper picker](paper-picker.png) |
+
+Advanced reading keeps hook and OCR tuning out of the usual controls:
+
+![Advanced reading](reading-advanced.png)
 
 ## Recreate the previews
 
@@ -26,6 +42,6 @@ cmake --build build/host --target vjo-settings-app-tests
 python3 tools/render_theme_previews.py --font /path/to/NotoSansCJKjp-Regular.otf
 ```
 
-The renderer runs `app_colour_schemes`, which also checks controller/touch choices, persistence, a failed save,
+The renderer runs `settings_navigation` and `app_colour_schemes`, which also checks controller/touch choices, persistence, a failed save,
 an unreadable file, backup recovery and independence from an unreadable `config.ini`. The app's existing
 preference and lookup suites cover value round trips, file preservation and themed dictionary rows.

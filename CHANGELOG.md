@@ -13,7 +13,11 @@ been reported.
 
 ### Added
 
-- **Three app colour schemes** on the new **Appearance** tab: Mint (the original), Sakura (plum and pink), and
+- **A consolidated Settings menu.** The two top-level destinations are Look up and Settings; Settings opens first
+  and groups Games, Reading & dictionaries, Anki, Appearance, and Install & repair. Cancel/Back returns to the
+  category menu. Technical reading options are under Advanced reading, and installation problems still open their
+  repair screen automatically.
+- **Three app colour schemes** in **Settings → Appearance**: Mint (the original), Sakura (plum and pink), and
   Paper (warm light with green). Touch a preview card or use Left/Right and Enter; every app page changes immediately,
   including dictionary text, and the choice is kept in `app.ini` across launches.
 

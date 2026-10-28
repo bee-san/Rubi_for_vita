@@ -1750,7 +1750,7 @@ static void the_page_shows_the_plan_and_runs_it(void)
     frame(0);
     for (int i = 0; i < drawn_count; i++) TEST_MSG("%s", drawn[i]);
     TEST_CHECK(shown(VJO_DEBUG ? "Install the overlay (v0.8.0, debug build)" : "Install the overlay (v0.8.0)"));
-    TEST_CHECK(shown("[Install*]") && shown("hints: ×: Install   Left/Right: action   Up/Down: scroll   ○: exit"));
+    TEST_CHECK(shown("[Install*]") && shown("hints: ×: Install   Left/Right: action   Up/Down: scroll   ○: settings"));
     TEST_CHECK(shown("1. Copy the 3 plugins"));
     frame(SCE_CTRL_CROSS); /* the stubs run the thread at once */
     frame(0);
@@ -2158,7 +2158,7 @@ static void the_page_pages_through_a_long_plan(void)
     /* its thumb: at the track's top first, shorter than it, inside it at every step, at its bottom at the end */
     TEST_CHECK_(bar_y[1] == bar_y[0] && bar_h[1] >= 12 && bar_h[1] < bar_h[0], "track %d+%d, thumb %d+%d", bar_y[0], bar_h[0],
                 bar_y[1], bar_h[1]);
-    TEST_CHECK(shown("Left/Right: action   Up/Down: scroll   ○: exit"));
+    TEST_CHECK(shown("Left/Right: action   Up/Down: scroll   ○: settings"));
     /* the first frame lays out only what the box shows and the first entry past it, as main's page did (the
      * bar counts entries: counting every entry's rows laid out the whole plan at once) */
     TEST_CHECK_(first_rows <= 16, "%d rows laid out in the first frame", first_rows);
@@ -2191,7 +2191,7 @@ static void the_page_pages_through_a_long_plan(void)
     frame(SCE_CTRL_RIGHT); /* Uninstall's plan: one short block */
     frame(0);
     TEST_CHECK_(bar_rects == 0, "%d", bar_rects);
-    TEST_CHECK(shown("hints: ×: Uninstall   Left/Right: action   ○: exit"));
+    TEST_CHECK(shown("hints: ×: Uninstall   Left/Right: action   ○: settings"));
 }
 
 /* N24: the page shows a reason a sentence a line: each sentence starts a row. */
