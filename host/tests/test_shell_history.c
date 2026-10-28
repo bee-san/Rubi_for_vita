@@ -2115,9 +2115,12 @@ static void test_streak_a_day_a_line(void)
     VjoStreak s = streak_record();
     TEST_CHECK(vjo_streak_valid(&s) && s.day == clock_day && s.current == 1 && s.longest == 1 && !s.seeded);
     TEST_CHECK(streak_opens == 1 && streak_writes == 1 && total_writes == 0);
+    unsigned version = g_view.version;
     r = record("同じ日の二行目");
     TEST_ASSERT(vjo_history_append(&r) == 1);
     TEST_CHECK(streak_opens == 2 && streak_writes == 1); /* read, but the day is counted already: no write */
+    /* and the streak shown is the same: no redraw (an open overlay's redraw resets its scroll; #501's audit, F4) */
+    TEST_CHECK_(g_view.version == version, "the view drawn again %u times for the same streak", g_view.version - version);
     for (int d = 1; d <= 3; d++) { /* the next three days */
         clock_day++;
         snprintf(text, sizeof(text), "%d日目", d + 1);
@@ -2158,6 +2161,9 @@ static void test_streak_in_the_triangle_view(void)
     VjoStreak s;
     reset();
     context = (VjoReadingScope){"vita-PCSG00415", 0, UINT64_MAX, 0, 0, 0};
+    /* before the record has been read since the Shell started (the view's first frames after a press): no line,
+     * never a streak of 0 that is not the record's */
+    TEST_CHECK_(!strcmp(streak_line(), ""), "'%s'", streak_line());
     count_total(); /* no record yet */
     TEST_CHECK(streak_opens == 1 && !strcmp(streak_line(), "\n\nStreak: current 0 days · longest 0"));
     VjoHistoryRecord r = record("一日目");

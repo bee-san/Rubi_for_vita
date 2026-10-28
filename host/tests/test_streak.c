@@ -218,7 +218,8 @@ static void start_file(void)
 /* The local noon of day d in a zone tz_minutes east of UTC, as Unix microseconds. */
 static uint64_t noon(int32_t d, int32_t tz) { return (uint64_t)d * DAY_US + 12 * 3600000000ull - (uint64_t)((int64_t)tz * 60000000ll); }
 
-/* The app's reading loop (settings/streak_seed.c count_history) over csv with windows of `window` bytes. */
+/* The app's reading loop (settings/streak_seed.c count_history, whose own loop test_streak_seed_files.c runs) over csv
+ * with windows of `window` bytes. */
 static VjoStreak seed(size_t window, int32_t tz)
 {
     static char buf[(1 << 16) + 1];
@@ -228,10 +229,12 @@ static VjoStreak seed(size_t window, int32_t tz)
         size_t base = pos ? pos - 1 : 0, to = csv_len - pos > window ? pos + window : csv_len, n = to - base, next;
         memcpy(buf, csv + base, n);
         next = base + vjo_streak_scan(&s, buf, n, !base, to == csv_len && buf[n - 1] == '\n', tz);
+        if (to < csv_len && next >= to)
+            next = to - 1;
         if (next <= pos) {
             if (to == csv_len)
                 break;
-            next = to;
+            next = to - 1;
         }
         pos = next;
     }
@@ -309,6 +312,16 @@ static void the_seed_keeps_what_the_shell_added(void)
     m = seed_rec;
     vjo_streak_merge(&m, &live);
     CHECK_STREAK(m, D + 2, 2, 3);
+    /* the same newest day: the Shell saw a longer run than the file still holds (its older lines moved away) */
+    live = AFTER(D - 6, D - 5, D - 4, D - 3, D - 2, D - 1);
+    m = seed_rec;
+    vjo_streak_merge(&m, &live);
+    CHECK_STREAK(m, D - 1, 6, 6);
+    /* and a shorter one: the file's stands */
+    live = AFTER(D - 1);
+    m = seed_rec;
+    vjo_streak_merge(&m, &live);
+    CHECK_STREAK(m, D - 1, 3, 3);
     /* the Shell's longest is kept too */
     live = AFTER(D - 40, D - 39, D - 38, D - 37, D - 36, D + 5);
     m = seed_rec;

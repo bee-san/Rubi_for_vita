@@ -735,6 +735,12 @@ vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_pa
 vjo_suite(settings_streak SOURCES host/tests/test_settings_streak.c settings/streak_seed.c
   INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs DEFINES VJO_TEST_CREATE_STUBS VJO_TEST_THREAD_STUBS UNUSED
   LIBS vjo_host)
+# The same seed's real window loop (settings/streak_seed.c count_history) on history.csv files of many windows, LF and
+# CRLF, a newest record not whole, a record longer than a window and one of a window less a byte; and the merge's
+# runs that end on one day or overlap (#501's audit, F1 and F2).
+vjo_suite(streak_seed_files SOURCES host/tests/test_streak_seed_files.c settings/streak_seed.c
+  INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs DEFINES VJO_TEST_CREATE_STUBS
+  VJO_TEST_THREAD_STUBS UNUSED LIBS vjo_host)
 # libvita2d's plain textures through the app's wrapper (settings/vita2d_textures.c, #313): no stale render target or
 # depth buffer, so that a font freed while the app runs frees nothing else.
 vjo_suite(settings_textures SOURCES host/tests/test_settings_textures.c settings/vita2d_textures.c

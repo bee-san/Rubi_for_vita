@@ -25,16 +25,22 @@ void vjo_streak_merge(VjoStreak *seed, const VjoStreak *live)
     if (!live || !vjo_streak_valid(live) || live->day == VJO_STREAK_NONE)
         return;
     longest = live->longest > seed->longest ? live->longest : seed->longest;
-    if (seed->day == VJO_STREAK_NONE || (int64_t)live->day > seed->day) {
-        /* history.csv lost the newest lines: the Shell's newest day, its streak joined to the seed's when it began
-         * the day after the seed's newest day (a run of live->current days ending at live->day) */
-        uint32_t current = live->current;
-        if (seed->day != VJO_STREAK_NONE && (int64_t)live->day - live->current == seed->day)
-            current += seed->current;
+    if (seed->day == VJO_STREAK_NONE) {
         seed->day = live->day;
-        seed->current = (uint16_t)(current > 0xFFFFu ? 0xFFFFu : current);
-        if (seed->current > longest)
-            longest = seed->current;
+        seed->current = live->current;
+    } else {
+        /* each record's run (current days in a row ending at its day) is days with a line: two runs that touch or
+         * overlap are one run, from the earlier start to the later end; else the later one is the current one */
+        int64_t e1 = seed->day, s1 = e1 - seed->current + 1, e2 = live->day, s2 = e2 - live->current + 1;
+        int64_t end = e1 > e2 ? e1 : e2, start;
+        if ((s1 > s2 ? s1 : s2) <= (e1 < e2 ? e1 : e2) + 1)
+            start = s1 < s2 ? s1 : s2;
+        else
+            start = e1 > e2 ? s1 : s2;
+        seed->day = (int32_t)end;
+        seed->current = (uint16_t)(end - start + 1 > 0xFFFF ? 0xFFFF : end - start + 1);
     }
+    if (seed->current > longest)
+        longest = seed->current;
     seed->longest = (uint16_t)longest;
 }

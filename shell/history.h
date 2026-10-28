@@ -54,7 +54,8 @@ void vjo_history_total_summary(char *buf, size_t cap);
  * appended a line with a character (VjoNet), adds today to the record; else (the control thread, as the Triangle
  * view asks for its statistics) it is only read. Either way the view's streak is set from it. */
 void vjo_history_streak(int add);
-/* Under the view lock: the Triangle view's streak line, "\n\nStreak: current 3 days · longest 12". */
+/* Under the view lock: the Triangle view's streak line, "\n\nStreak: current 3 days · longest 12"; "" until the record
+ * has been read since the Shell started (a line recorded, or the view's request). */
 void vjo_history_streak_text(char *buf, size_t cap);
 /* Control thread, each wakeup: one window (24 KiB, in scratch) of a count asked for. 1 while the count has
  * more (wake the thread again), 0 otherwise; a count that an append ran beside goes on at the next wakeup

@@ -1235,6 +1235,16 @@ class AnkiExportLines(unittest.TestCase):
                                                               ", not checked", 0, ", known not checked", 10)
             m = a.LOG["anki_export"].match(line)
             self.assertEqual([m.group(g) for g in range(12, 17)], ["2", "skip", ", not checked", "0", ", known not checked"])
+        # the 0.9.8 test builds' line (#315's Cards page: ", N held" before the time), which --collect still reads, as
+        # it was written (#501's audit, F6)
+        old = ("Rubi app: anki: export (queued) rc=0: 5 cards, 3 moved, 1 kept, 2 unreadable, 4 too large, 6 left, "
+               "7 stopped, 8 swept, 1000 bytes, arena peak 2000, 9 without screenshots, 3 duplicates (tag), 4 known, "
+               "2 held, 4321 ms")
+        m = a.LOG["anki_export"].match(old)
+        self.assertIsNotNone(m)
+        self.assertEqual([m.group(g) for g in (1, 2, 3, 15, 17)], ["queued", "0", "5", "4", "2"])
+        an = a.summarise_log(old + "\n")["anki"]
+        self.assertEqual(an.get("export_held"), 2)
         # the app's own idea of an error, which export_result follows (#314: "not checked" is one, as a missing
         # screenshot is: the package is whole, its result line says what it lacks)
         self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture || "

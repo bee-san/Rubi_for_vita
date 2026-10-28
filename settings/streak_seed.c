@@ -106,10 +106,13 @@ static int count_history(VjoStreak *s, int32_t tz, uint64_t *bytes)
             break;
         /* the file's end in a line break: its newest record is whole (one without it may still be being written) */
         next = base + vjo_streak_scan(s, window, n, !base, to == size && window[n - 1] == '\n', tz);
+        if (to < size && next >= to)
+            next = to - 1; /* no record starts in it: its last byte may start one (read with the byte after it) */
         if (next <= pos) {
             if (to == size)
                 break; /* the newest record, not whole yet: the Shell adds its day if it is today's */
-            next = to; /* a record longer than a window: none the writer makes (damaged): skipped */
+            next = to - 1; /* a record longer than a window: none the writer makes (damaged): skipped, but not the
+                            * window's last byte, where the next record may start */
         }
         pos = next;
     }

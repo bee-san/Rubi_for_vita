@@ -445,7 +445,11 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
   Anki already; it is kept, not exported.
 - `deleted/`: where the Cards page of the test builds v0.9.8-test.5 and test.6 put the cards it deleted or
   replaced. The page was removed (the owner, 2026-10-28) and nothing reads or writes the folder now: what is in
-  it is harmless and can be deleted by hand.
+  it is harmless and can be deleted by hand. One case is not: a Fix sentence or Drop picture that a stop
+  interrupted after its new card was saved left both cards queued, and the export now packages both (with
+  Duplicates: Tag, the second note gets the `duplicate` tag). Such a change left a `deleted/<old>.fix` file, which
+  names the new card; delete the old card's `<old>.json` and `<old>.jpg` from `anki_queue/` before exporting
+  (#501's audit, F5).
 
 A card is written to a temp file, flushed and renamed, and the memory card's
 directory is synced before Enter reports it; an interrupted save leaves no
