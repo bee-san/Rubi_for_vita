@@ -56,7 +56,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the bootstrap and boot guard lines, `status.txt` | `boot.c`, `guard.c`, `log_vita.c` | **keep** (recovery: `docs/boot-safety.md`) |
 | config warnings, the Rubi app check (#122), game start and exit, errors | `worker.c`, `files.c` | **keep** |
 | `log.txt` (`log_file`, 1 MB + one rotation) | `log_vita.c` | **keep**, the short log; the network thread's lines of a job go out in one append per file once the control thread has taken its result ([below](#no-log-append-on-the-result-path)) |
-| the UDP log (`log_host`) | `log_vita.c` | gone from both builds with the network stack (#145); `log_host` is a removed setting, a set one gives one config warning in both |
+| the UDP log (`log_host`) | `log_vita.c` | gone from both builds with the network stack (#145); `log_host` is a removed setting, ignored without a warning in both |
 | the network code's lines (sockets, resolver) | `platform_vita.c`, `core/` | gone from both builds: Google Lens and its capture with #130, the sockets, resolver and TLS with #145 |
 
 ### Kernel plugin (`VitaJPOverlay_Kernel.skprx`)

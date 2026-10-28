@@ -7,17 +7,13 @@
 #include "../include/vjo_api.h"
 
 enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
-/* One OCR engine: bee-san/vita-vn-ocr on the Vita CPU, in the game
- * (VJO_WITH_VOCR). The overlay is offline only (owner 2026-10-15): Google Lens
- * was removed, and with it the ocr_backend setting. A config.ini line naming an
- * engine (ocr_backend = vocr, lens, or a removed trial: vocr2, meiki, ncnn) is
- * ignored, Lens and the trials with a config warning; the Rubi app's next
- * save and the installer (tools/migrate_config.py) drop the line
- * (vjo_config_removed_line). The self-test still reports backend=2, the old
- * VOCR id, so its reports keep their form. log_host, the UDP log's computer,
- * went with the network too: a set one gives one config warning, an empty one
- * none, and the app's next save and the installer drop the line; log.txt and
- * status.txt stay. */
+/* One OCR engine: bee-san/vita-vn-ocr on the Vita CPU, in the game (VJO_WITH_VOCR); the overlay is offline only.
+ * The settings of removed features (the engine choice ocr_backend, the UDP log's log_host, the online dictionaries'
+ * API keys, AnkiConnect's, ...) are core/config.c's list (vjo_config_removed): the parser ignores their lines without
+ * a warning (dictionary and vocr_model are still read: a removed dictionary's value and a vocr_model that gives no
+ * size without one), and the Rubi app's next save and the installer (tools/migrate_config.py) drop or rewrite them
+ * (vjo_config_removed_line). The self-test still reports backend=2, the old VOCR id, so its reports keep their
+ * form. */
 /* text_source (API 31, docs/native-hooks.md): the kernel's VJO_TEXT_SOURCE_* (include/vjo_api.h), which
  * the Shell pushes with vjoSetTextSource whenever it reads the config; a game reads it as it starts. */
 enum { VJO_SOURCE_OCR = VJO_TEXT_SOURCE_OCR, VJO_SOURCE_AUTO = VJO_TEXT_SOURCE_AUTO,
@@ -26,12 +22,10 @@ enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 /* dictionary: the local .vjdict files, the only dictionary (VJO_DICT_NAME in
  * messages and the log). The self-test reports the value (config
  * dictionary=); keep the ID unchanged. The removed ones' IDs stay unused: 0
- * and 1 jpdb.io and jiten.moe, the online dictionaries with an API key
- * (removed after v0.8.0-test.2), 2 the Hachidori relay on a computer
- * (hachidori_host, removed after them). A config.ini naming one loads as
- * local with a warning; the Rubi app's next save and the installer write
- * local, and drop the API keys (vjo_config_removed_line, tools/
- * migrate_config.py); hachidori_host is ignored, and the installer drops it. */
+ * and 1 jpdb.io and jiten.moe, the online dictionaries with an API key, 2 the
+ * Hachidori relay on a computer. A config.ini naming one loads as local without
+ * a warning (another value but local warns); the Rubi app's next save and the
+ * installer write local (vjo_config_removed_line, tools/migrate_config.py). */
 enum { VJO_DICT_LOCAL = 3 };
 #define VJO_DICT_NAME "Local dictionaries"
 

@@ -541,37 +541,31 @@ static void test_config(void)
     TEST_CHECK(c.toggle_button == VJO_TRIGGER_SELECT_R && c.subtitle_button == VJO_TRIGGER_SELECT);
     TEST_CHECK(c.ocr_mode == VJO_OCR_ON_PRESS);
     TEST_CHECK(c.log_file == 1);
-    /* font_size_ja, the removed UDP log's set log_host, and bogus; the removed frequency_filter,
-     * hachidori_host and API keys are silent */
-    TEST_CHECK(c.n_warnings == 3 &&
-               !strcmp(c.warnings[1], "log_host: the UDP log was removed (the overlay is offline); log.txt stays"));
+    /* font_size_ja and bogus; the removed settings (the dictionary choice, frequency_filter, hachidori_host, the API
+     * keys, the UDP log's log_host) are silent (#418) */
+    TEST_CHECK(c.n_warnings == 2 && !strcmp(c.warnings[1], "unknown setting 'bogus'"));
     TEST_MSG("warnings: %d, the second '%s'", c.n_warnings, c.n_warnings > 1 ? c.warnings[1] : "");
     /* an empty log_host (the old template's line) says nothing: the app's save and the installer drop it */
     vjo_config_defaults(&c);
     vjo_config_parse(&c, "log_host =\nLOG_HOST=\n", strlen("log_host =\nLOG_HOST=\n"));
     TEST_CHECK(c.n_warnings == 0);
     /* jpdb.io and jiten.moe, the removed online dictionaries, and the removed
-     * Hachidori relay: local, with one warning, in any case; the online ones'
-     * API keys (and api_key, jpdb's older name) are ignored without one, so no
-     * warning shows a key's line, and so is the relay's hachidori_host. */
+     * Hachidori relay: local, without a warning (#418: the dictionary choice is a
+     * removed setting), in any case; the online ones' API keys (and api_key,
+     * jpdb's older name) are ignored without one too, so no warning shows a
+     * key's line, and so is the relay's hachidori_host. */
     {
-        static const struct { const char *ini, *warning; } removed[] = {
-            {"dictionary = jpdb\n", "dictionary: jpdb.io was removed; using local"},
-            {"dictionary = JITEN ; old\n", "dictionary: jiten.moe was removed; using local"},
-            {"Dictionary = Jpdb\r\n", "Dictionary: jpdb.io was removed; using local"},
-            {"dictionary = hachidori\nhachidori_host = 192.168.1.20:19633\n",
-             "dictionary: the Hachidori relay was removed; using local"},
-            {"hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori\n",
-             "DICTIONARY: the Hachidori relay was removed; using local"},
-            {"dictionary = hachidori\nhachidori_host = http://not a host\n",
-             "dictionary: the Hachidori relay was removed; using local"},
-        };
+        static const char *const removed[] = {
+            "dictionary = jpdb\n", "dictionary = JITEN ; old\n", "Dictionary = Jpdb\r\n",
+            "dictionary = hachidori\nhachidori_host = 192.168.1.20:19633\n",
+            "hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori\n",
+            "dictionary = hachidori\nhachidori_host = http://not a host\n"};
+        VjoConfig d;
+        vjo_config_defaults(&d);
         for (size_t i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
             vjo_config_defaults(&c);
-            vjo_config_parse(&c, removed[i].ini, strlen(removed[i].ini));
-            TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 1);
-            TEST_CHECK(!strcmp(c.warnings[0], removed[i].warning));
-            TEST_MSG("%s: %s", removed[i].ini, c.warnings[0]);
+            vjo_config_parse(&c, removed[i], strlen(removed[i]));
+            TEST_CHECK_(!memcmp(&c, &d, sizeof(c)), "%s: %d warnings", removed[i], c.n_warnings);
         }
         /* also a typo's line (the key glued to the name, "secret-8 ; x = y" read as the key),
          * and one too long to read, which would otherwise warn "value too long" */
@@ -598,16 +592,21 @@ static void test_config(void)
         vjo_config_parse(&c, others, strlen(others));
         TEST_CHECK(c.n_warnings == 2 && !strcmp(c.warnings[0], "ignored line 2 (no '=')") &&
                    !strcmp(c.warnings[1], "unknown setting 'lens_api_key'"));
-        /* local in any case, without a warning; another value is invalid and stays local */
+        /* local in any case, without a warning; another value is invalid and stays local (the line is read as on
+         * main: only a removed dictionary's value lost its warning, #418's audit F1) */
         static const char *const values[] = {"dictionary = LOCAL\n", "dictionary = hachidorix\n",
-                                             "dictionary = relay\n"};
+                                             "dictionary = relay\n", "dictionary =\n"};
         for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
             vjo_config_defaults(&c);
             vjo_config_parse(&c, values[i], strlen(values[i]));
             TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == (i ? 1 : 0));
-            TEST_CHECK(!i || strstr(c.warnings[0], "invalid value") != NULL);
+            TEST_CHECK(!i || strstr(c.warnings[0], "dictionary: invalid value") != NULL);
             TEST_MSG("%s", values[i]);
         }
+        /* a dictionary line without '=' is a malformed line, warned by its number as any other */
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, "dictionary\n", 11);
+        TEST_CHECK(c.n_warnings == 1 && !strcmp(c.warnings[0], "ignored line 1 (no '=')"));
         /* The ID the self-test reports (config dictionary=) does not move. */
         TEST_CHECK(VJO_DICT_LOCAL == 3);
     }
@@ -681,37 +680,21 @@ static void test_config(void)
     mining = "anki_mining = yes\n";
     vjo_config_parse(&c, mining, strlen(mining));
     TEST_CHECK(!c.anki_mining && c.n_warnings == 1);
-    /* One engine, vocr: the engine choice is gone (core/config.h). A saved vocr
-     * says nothing; a removed engine (Google Lens, the VOCR2 and Meiki trials,
-     * ncnn of the host tools) says so, in any case; anything else is invalid.
-     * Nothing else changes either way. */
+    /* One engine, vocr: the engine choice is gone (core/config.h), a removed setting: its line is ignored without a
+     * warning whatever it names (vocr, Google Lens, the VOCR2 and Meiki trials, ncnn of the host tools, anything else;
+     * #418), in any case, and nothing else changes. */
     {
-        static const struct { const char *ini, *warning; } removed[] = {
-            {"ocr_backend = lens\n", "ocr_backend: Google Lens was removed (the overlay is offline); using vocr"},
-            {"ocr_backend = Lens\n", "ocr_backend: Google Lens was removed (the overlay is offline); using vocr"},
-            {"ocr_backend = vocr2\n", "ocr_backend: VOCR2 was removed; using vocr"},
-            {"ocr_backend = VOCR2\n", "ocr_backend: VOCR2 was removed; using vocr"},
-            {"ocr_backend = Meiki\n", "ocr_backend: Meiki was removed; using vocr"},
-            {"OCR_BACKEND = meiki ; old\n", "OCR_BACKEND: Meiki was removed; using vocr"},
-            {"ocr_backend = ncnn\n", "ocr_backend: ncnn runs only in host tools; using vocr"},
-            {"ocr_backend = NCNN\n", "ocr_backend: ncnn runs only in host tools; using vocr"},
-        };
+        static const char *const removed[] = {
+            "ocr_backend = lens\n", "ocr_backend = Lens\n", "ocr_backend = vocr2\n", "ocr_backend = VOCR2\n",
+            "ocr_backend = Meiki\n", "OCR_BACKEND = meiki ; old\n", "ocr_backend = ncnn\n", "ocr_backend = NCNN\n",
+            "ocr_backend = vocr3\n", "ocr_backend = google\n", "ocr_backend =\n", "ocr_backend = vocr22\n",
+            "ocr_backend\n", "ocr_backend lens\n"};
         VjoConfig d;
         vjo_config_defaults(&d);
         for (size_t i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
             vjo_config_defaults(&c);
-            vjo_config_parse(&c, removed[i].ini, strlen(removed[i].ini));
-            TEST_CHECK(c.n_warnings == 1 && !strcmp(c.warnings[0], removed[i].warning));
-            TEST_MSG("%s: %s", removed[i].ini, c.n_warnings ? c.warnings[0] : "(none)");
-            TEST_CHECK(c.dictionary == d.dictionary && c.vocr_tier == d.vocr_tier && c.ocr_mode == d.ocr_mode);
-        }
-        static const char *const invalid[] = {"ocr_backend = vocr3\n", "ocr_backend = google\n",
-                                              "ocr_backend =\n", "ocr_backend = vocr22\n"};
-        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
-            vjo_config_defaults(&c);
-            vjo_config_parse(&c, invalid[i], strlen(invalid[i]));
-            TEST_CHECK(c.n_warnings == 1 && strstr(c.warnings[0], "invalid value") != NULL);
-            TEST_MSG("%s: %s", invalid[i], c.n_warnings ? c.warnings[0] : "(none)");
+            vjo_config_parse(&c, removed[i], strlen(removed[i]));
+            TEST_CHECK_(!memcmp(&c, &d, sizeof(c)), "%s: %d warnings", removed[i], c.n_warnings);
         }
         const char *engines = "ocr_backend = VOCR\nvocr_tier = large\n";
         vjo_config_defaults(&c);
@@ -2628,11 +2611,10 @@ static void test_config_warnings_name_no_value(void)
           "font_size_ja: invalid value (8-40)"}},
         {"local_dictionaries = SECRETe/../x.vjdict\n"
          "ocr_settle_ms = SECRETf\n"
-         "vocr_model = SECRETg.vocr\n"
+         "vocr_model = SECRETg.vocr\n" /* a removed setting: silent (#418) */
          "abcdefghijklmnopqrstuvwxyz0123456789SECRETh = 1\n",
          {"local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)",
-          "ocr_settle_ms: invalid value (ms, out of range)", "vocr_model: not a model of this build; using vocr_tier",
-          "unknown setting 'abcdefghijklmnopqrstuvwxyz012345'"}},
+          "ocr_settle_ms: invalid value (ms, out of range)", "unknown setting 'abcdefghijklmnopqrstuvwxyz012345'"}},
         {"local_dictionary_dir = ux0:data/SECRETj\nlocal_dictionary_dir =\n", {"local_dictionary_dir: empty (ignored)"}},
         /* audit-pr185 B1: a value too long names its key cut as an unknown one is (the long values are added below) */
         {NULL, {"abcdefghijklmnopqrstuvwxyz012345: value too long", "mystery: value too long",

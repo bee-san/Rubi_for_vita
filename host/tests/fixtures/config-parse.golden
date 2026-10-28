@@ -43,7 +43,7 @@
   ocr_finder=1
   ocr_spotter_refine=0
   n_warnings=0
-= host/tests/fixtures/config-old-app-test2.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 anki_mining=1 | w: ocr_backend: VOCR2 was removed; using vocr
+= host/tests/fixtures/config-old-app-test2.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 anki_mining=1
 = host/tests/fixtures/config-test3-owner.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 vocr_tier=3 vocr_tier_explicit=1 anki_mining=1
 = docs/config.example.ini => vocr_tier_explicit=1
 > bogus = 1 => | w: unknown setting 'bogus'
@@ -78,7 +78,6 @@
 > japanese_only_selection \r = on => japanese_only_selection=1
 > local_dictionary_results\r\t= 3 => local_dictionary_results=3
 > vocr_model\r= FL10_w8.vocr => vocr_tier=1
-> ocr_backend\r= lens => | w: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
 > font_size_ja = 20\nfont_size_ja = 30 => font_size_ja=30
 > font_size_ja = 20\nfont_size_ja = 99 => font_size_ja=20 | w: font_size_ja: invalid value (8-40)
 > bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5 => | w: unknown setting 'bogus1' | w: unknown setting 'bogus2' | w: unknown setting 'bogus3' | w: unknown setting 'bogus4'
@@ -277,12 +276,6 @@
 > anki_mining = on ; a comment => anki_mining=1
 > anki_mining = off\nanki_mining = on => anki_mining=1
 > anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on => anki_mining=1 anki_screenshot=0
-> dictionary = jpdb => | w: dictionary: jpdb.io was removed; using local
-> dictionary = JITEN ; old => | w: dictionary: jiten.moe was removed; using local
-> Dictionary = Jpdb\r => | w: Dictionary: jpdb.io was removed; using local
-> dictionary = jiten # x => | w: dictionary: jiten.moe was removed; using local
-> dictionary = hachidori => | w: dictionary: the Hachidori relay was removed; using local
-> DICTIONARY = Hachidori ; relay\r => | w: DICTIONARY: the Hachidori relay was removed; using local
 > dictionary = hachidorix => | w: dictionary: invalid value
 > dictionary = jpdbx => | w: dictionary: invalid value
 > dictionary = relay => | w: dictionary: invalid value
@@ -293,8 +286,6 @@
 > dictionary = jpdb;x => | w: dictionary: invalid value
 > dictionary = jiten#x => | w: dictionary: invalid value
 > dictionary = hachidori;relay => | w: dictionary: invalid value
-> dictionary = hachidori\nhachidori_host = 192.168.1.20:19633 => | w: dictionary: the Hachidori relay was removed; using local
-> hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori => | w: DICTIONARY: the Hachidori relay was removed; using local
 > jpdb_api_ke = secret-13 => | w: unknown setting 'jpdb_api_ke'
 > lens_api_key = secret-14 => | w: unknown setting 'lens_api_key'
 > my_api_key = secret-15 => | w: unknown setting 'my_api_key'
@@ -303,58 +294,25 @@
 > anki_hosts = x => | w: unknown setting 'anki_hosts'
 > anki_hosts => | w: ignored line 1 (no '=')
 > anki_mining\n => | w: ignored line 1 (no '=')
-> ocr_backend = lens => | w: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
-> ocr_backend = Lens => | w: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
-> ocr_backend = vocr2 => | w: ocr_backend: VOCR2 was removed; using vocr
-> ocr_backend = VOCR2 => | w: ocr_backend: VOCR2 was removed; using vocr
-> ocr_backend = meiki => | w: ocr_backend: Meiki was removed; using vocr
-> OCR_BACKEND = meiki ; old => | w: OCR_BACKEND: Meiki was removed; using vocr
-> ocr_backend = ncnn => | w: ocr_backend: ncnn runs only in host tools; using vocr
-> ocr_backend = NCNN => | w: ocr_backend: ncnn runs only in host tools; using vocr
-> ocr_backend = vocr3 => | w: ocr_backend: invalid value
-> ocr_backend = google => | w: ocr_backend: invalid value
-> ocr_backend = => | w: ocr_backend: invalid value
-> ocr_backend => | w: ignored line 1 (no '=')
-> ocr_backend lens => | w: ignored line 1 (no '=')
 > ocr_backendx = lens => | w: unknown setting 'ocr_backendx'
-> log_host = 192.168.1.5 => | w: log_host: the UDP log was removed (the overlay is offline); log.txt stays
-> LOG_HOST=10.0.0.1 ; pc\r => | w: LOG_HOST: the UDP log was removed (the overlay is offline); log.txt stays
-> log_host => | w: ignored line 1 (no '=')
-> log_host 10.0.0.1 => | w: ignored line 1 (no '=')
 > log_hosts = x => | w: unknown setting 'log_hosts'
-> font_size => | w: ignored line 1 (no '=')
-> font_size x = 1 => | w: unknown setting 'font_size'
-> hachidori_host => | w: ignored line 1 (no '=')
 > vocr_model = FL10_w8.vocr => vocr_tier=1
 > vocr_model = VOCR3_FL10_w8.vocr => vocr_tier=1
 > vocr_model = VOCR2_FL10_w8.vocr => vocr_tier=1
 > vocr_model = F20_w8.vocr => vocr_tier=3
 > vocr_model = VOCR4_W20_w8.vocr => vocr_tier=3
-> vocr_model = VOCR9_X_w8.vocr => | w: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = FL10 => | w: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = FL10_w8.bin => | w: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = dir/FL10_w8.vocr => | w: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = .vocr => | w: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => | w: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => | w: vocr_model: not a model of this build; using vocr_tier
 > vocr_model => | w: ignored line 1 (no '=')
 > vocr_model FL10_w8.vocr => | w: ignored line 1 (no '=')
 > vocr_model x = 1 => | w: unknown setting 'vocr_model'
-> vocr_model = meiki-stream-int8.mnn => | w: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = => | w: vocr_model: not a model of this build; using vocr_tier
-> vocr_fallback_model => | w: ignored line 1 (no '=')
 > vocr_tier = large\nvocr_model = FL10_w8.vocr => vocr_tier=3 vocr_tier_explicit=1
 > vocr_model = FL10_w8.vocr\nvocr_tier = large => vocr_tier=3 vocr_tier_explicit=1
 > vocr_model = FL10_w8.vocr\nvocr_tier = huge => vocr_tier=1 | w: vocr_tier: invalid value (small, normal or large)
 > vocr_tier = huge\nvocr_model = W20_w8.vocr => vocr_tier=3 | w: vocr_tier: invalid value (small, normal or large)
 > vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr => vocr_tier=3
-> dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20 => font_size_ja=20 vocr_tier=3 | w: dictionary: jpdb.io was removed; using local | w: ocr_backend: Google Lens was removed (the overlay is offline); using vocr | w: log_host: the UDP log was removed (the overlay is offline); log.txt stays
-> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99 => | w: ocr_backend: VOCR2 was removed; using vocr | w: log_host: the UDP log was removed (the overlay is offline); log.txt stays | w: dictionary: jiten.moe was removed; using local | w: ocr_backend: Meiki was removed; using vocr
+> dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20 => font_size_ja=20 vocr_tier=3
+> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99 => | w: unknown setting 'bogus' | w: font_size_ja: invalid value (8-40)
 > font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1515 bytes, fnv1a 9bb3a4e11799b4b1] => | w: font_size_ja: value too long
-> frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[619 bytes, fnv1a 780be23635715869] => | w: frequency_filter: value too long
 > dictionary = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 42438c3462c961e2] => | w: dictionary: value too long
-> ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[614 bytes, fnv1a 083e677aa20fd2fd] => | w: ocr_backend: value too long
-> log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[611 bytes, fnv1a ffa99aab22b09349] => | w: log_host: value too long
 > vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 1b017f76d9ce7d7e] => | w: vocr_model: value too long
 > bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc] => | w: bogus: value too long
 > local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[531 bytes, fnv1a ba2526befd514680] => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
@@ -368,4 +326,4 @@
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd] => | w: ignored line 1 (no '=')
-= 105 records parse as the defaults, with no warning
+= 147 records parse as the defaults, with no warning
