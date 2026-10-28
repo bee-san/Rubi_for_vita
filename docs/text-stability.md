@@ -78,10 +78,10 @@ typewriter pause longer than the window passes as settled.
 Why a press's retries wait: with #413's press, whose every try was a press, each change of an animated icon in the
 region between two reads of its rows tore the read. On the host bench of #379's box (`host/vertical_on_bench.c`, a
 24-px icon after the text turning for 15 frames and resting for 15, recognition charged per CTC frame, 12 presses),
-#413's press showed the text after 5.0 s at 30 frames a second and in 0 of 12 presses within 20 s at 60, where the
-wait before #413 gave 2.0 and 1.7 s; with the retries waiting, 3.1 and 5.9 s, 12 of 12 each. With slower icons a
-press now takes 0.6-1.9 s at 30 frames a second and 1.0-2.1 s at 60 (#413's 0.6-1.9 and 0.7-1.2 s, the wait's
-1.4-1.9 and 0.9-2.0 s), and a box of columns read as columns 0.7-2.3 s, as #413's within 0.4 s
+#413's press showed the text after 5.3 s at 30 frames a second and in 0 of 12 presses within 20 s at 60, where the
+wait before #413 gave 2.3 and 1.7 s; with the retries waiting, 3.4 and 5.9 s, 12 of 12 each. With slower icons a
+press now takes 1.0-2.2 s at 30 frames a second and 1.3-2.4 s at 60 (#413's 1.0-2.2 and 1.0-1.5 s, the wait's
+1.7-2.2 and 1.2-2.3 s), and a box of columns read as columns 0.7-2.3 s, as #413's within 0.4 s
 ([the bench's tables](vita-vn-ocr.md#a-press-and-the-stable-text-wait-413), with the cells it still loses). Estimates
 of the bench's, not a console's.
 

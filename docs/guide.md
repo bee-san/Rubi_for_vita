@@ -799,7 +799,7 @@ full-frame capture buffer, which nothing used any more. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 
-Text that types out is read once it is whole in the background: a background read recognizes nothing
+In the background, text that types out is read once it is whole: a background read recognizes nothing
 until every row of the region has held still for `ocr_settle_ms` (150 ms by default, `0` turns it off),
 waiting at most `ocr_settle_max_ms` (2000) per recognition, and a blinking "next" icon does not hold it up;
 on the console it has read no dialogue line early ([text stability](text-stability.md)). A press reads at

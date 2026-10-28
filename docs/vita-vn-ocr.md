@@ -1232,16 +1232,18 @@ status and no text publishes nothing (`shell/worker.c` `start_job_kind`): the vi
 0.9.8 and #385 read it, its rows still for 150 ms first within 1 s (`--press wait`; since #413 a press reads
 without that wait, below), on the horizontal box and on its vertical one
 (`host/samples/vertical.jpg`'s four columns, 220 × 380 px, the icon under the last one; both crops of the committed
-samples, `host/vertical_on_bench.c`; the icon's top left corner at 578,68 and 15,280). The last column is on now with
-a press as main reads it since #413's audit (`--press retry`, the bench's default;
+samples, `host/vertical_on_bench.c`; the icon's top left corner at 578,68 and 15,280). The 0.9.8 and #385 columns are
+those builds' benches, each with its own tree's models; off and on now are measured again on main since #420, with
+VOCR6.2's Normal and Large (the vertical model unchanged: the vertical box's columns read as before), and the last
+column is on now with a press as main reads it since #413's audit (`--press retry`, the bench's default;
 [below](#a-press-and-the-stable-text-wait-413)):
 
 | box, frames a second, icon turns/rests | off | on, 0.9.8 | on, #385 | on now | on now, a press now |
 |---|---:|---:|---:|---:|---:|
-| horizontal, 30, 15/15 | 12/12, 2.0 s | **0/12** | 12/12, 2.0 s | 12/12, 2.0 s | 12/12, 3.1 s |
-| horizontal, 30, 15/25 | 12/12, 1.9 s | **0/12** | 12/12, 1.9 s | 12/12, 1.9 s | 12/12, 0.6 s |
+| horizontal, 30, 15/15 | 12/12, 2.3 s | **0/12** | 12/12, 2.0 s | 12/12, 2.3 s | 12/12, 3.4 s |
+| horizontal, 30, 15/25 | 12/12, 2.2 s | **0/12** | 12/12, 1.9 s | 12/12, 2.2 s | 12/12, 1.0 s |
 | horizontal, 60, 15/15 | 12/12, 1.7 s | 12/12, 4.0 s | 12/12, 1.7 s | 12/12, 1.7 s | 12/12, 5.9 s |
-| horizontal, 60, 15/25 | 12/12, 2.0 s | 12/12, 8.8 s | 12/12, 2.0 s | 12/12, 2.0 s | 12/12, 2.1 s |
+| horizontal, 60, 15/25 | 12/12, 2.3 s | 12/12, 8.8 s | 12/12, 2.0 s | 12/12, 2.3 s | 12/12, 2.4 s |
 | vertical, 30, 15/15 | (rows) | 12/12, 2.0 s | 12/12, 2.2 s | 12/12, 1.6 s | 12/12, 1.2 s |
 | vertical, 30, 15/25 | (rows) | 12/12, 5.3 s | 12/12, 3.3 s | 12/12, 2.0 s | 12/12, 0.8 s |
 | vertical, 60, 15/15 | (rows) | 12/12, 1.4 s | 12/12, 4.2 s | 12/12, 1.2 s | 12/12, 0.7 s |
@@ -1274,10 +1276,10 @@ columns):
 
 | box, mode, frames a second, icon turns/rests | before #413 | #413 | now |
 |---|---:|---:|---:|
-| horizontal, every mode, 30, 15/15 | 12/12, 2.0 s | 12/12, 5.0 s | 12/12, 3.1 s |
-| horizontal, every mode, 30, 15/25 | 12/12, 1.9 s | 12/12, 0.6 s | 12/12, 0.6 s |
+| horizontal, every mode, 30, 15/15 | 12/12, 2.3 s | 12/12, 5.3 s | 12/12, 3.4 s |
+| horizontal, every mode, 30, 15/25 | 12/12, 2.2 s | 12/12, 1.0 s | 12/12, 1.0 s |
 | horizontal, every mode, 60, 15/15 | 12/12, 1.7 s | **0/12** | 12/12, 5.9 s |
-| horizontal, every mode, 60, 15/25 | 12/12, 2.0 s | 12/12, 0.7 s | 12/12, 2.1 s |
+| horizontal, every mode, 60, 15/25 | 12/12, 2.3 s | 12/12, 1.0 s | 12/12, 2.4 s |
 | vertical, on, 30, 15/15 | 12/12, 1.6 s | 12/12, 1.2 s | 12/12, 1.2 s |
 | vertical, on, 30, 15/25 | 12/12, 2.0 s | 12/12, 0.8 s | 12/12, 0.8 s |
 | vertical, on, 60, 15/15 | 12/12, 1.2 s | 12/12, 0.7 s | 12/12, 0.7 s |
@@ -1288,9 +1290,9 @@ columns):
 | vertical, auto, 60, 15/25 | 12/12, 2.7 s | 11/12, 1.9 s | 12/12, 3.5 s |
 
 - **Slower icons** (turning 15, 20 and 30 frames, resting 35, 40 and 45): 12 of 12 in every cell with each press. A
-  press now takes 1.4-1.9 s at 30 frames a second and 1.0-1.2 s at 60 on the horizontal box (#413's 1.1-1.9 and
-  0.7-1.2 s, the wait's 1.4-1.7 and 0.9-1.2 s), 1.2-2.3 and 0.7-1.3 s with on's columns, and 5.2-7.3 and 1.3-4.3 s with
-  auto on the vertical box (the wait's 2.7-3.8 and 1.8-3.0 s).
+  press now takes 1.8-2.2 s at 30 frames a second and 1.3-1.5 s at 60 on the horizontal box (#413's 1.5-2.2 and
+  1.0-1.5 s, the wait's 1.7-2.1 and 1.2-1.5 s), 1.2-2.3 and 0.7-1.3 s with on's columns (#413's 1.2-1.9 and 0.7-1.0 s),
+  and 5.2-7.3 and 1.3-4.3 s with auto on the vertical box (the wait's 2.7-3.8 and 1.8-3.0 s).
 - **At 333 MHz's time a frame (×1.33) and at twice the default**, with the two quicker icons: the horizontal box 12
   of 12 in every cell but one, at 60 frames a second with the icon resting 25 frames at ×1.33: **5 of 12** (#413's
   12 of 12, the wait's 3 of 12); #413's press showed none in 3 of those 8 cells. On's columns 12 of 12 in every cell;
@@ -1307,7 +1309,9 @@ columns):
   second retry on (858 presses of 960 at the default time a frame against 874, 752 of 768 at ×1.33 and ×2 against
   737), waiting on every other try (861 and 707), and the retries' wait within 1 s (870 of 960).
 
-The bench's estimates, not a console's.
+VOCR6.2 (#420) moved the horizontal box's times (its lines' CTC frames and the cascade's), not one cell's count of
+presses shown: the same grids on VOCR6.1's models showed each the same presses. The bench's estimates, not a
+console's.
 
 **The rule** (`core/vocr_ocr.c` `vjo_vocr_rows_horizontal`, on the rows auto's check takes: with `ocr_line_fix` on, in a
 region at least as tall as wide the frozen finder's, where a name tag beside the columns, joined to them by the fixes,

@@ -59,8 +59,8 @@ been reported.
     try of a press tore, for ever (#353's case; on the host bench's box with the quickest icon, 0 of 12 presses at 60
     frames a second). Now, once a read's screen changed under every try, the open overlay's next tries wait as a
     background read does (150 ms of still rows, within `ocr_settle_max_ms`), and the press after a read reads at once
-    again: 12 of 12 there, after 5.9 s (1.7 s before #413, when every try waited); with slower icons 0.6-2.1 s
-    (estimates of the bench, [details](docs/vita-vn-ocr.md#a-press-and-the-stable-text-wait-413)). The one difference
+    again: 12 of 12 there, after 5.9 s (1.7 s before #413, when every try waited); with slower icons 1.0-2.4 s, #413's
+    1.0-2.2 s (estimates of the bench, [details](docs/vita-vn-ocr.md#a-press-and-the-stable-text-wait-413)). The one difference
     from #413: a press that finds that count held over from a torn job (Automatically's, or a press closed while it
     still tore) waits from its first read. With **Only when I press** every read is a press, so it never waits but
     for those retries. `ocr_settle_press_ms`, a press's limit before #413, changes nothing, and the guide, the
