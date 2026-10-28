@@ -49,7 +49,7 @@ set(CORE_SRC
   core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/history_read.c core/streak.c core/streak_scan.c
   core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
-  core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
+  core/anki.c core/anki_queue.c core/local_dict.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c core/word_key.c core/sentence_reading.c
   core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c)

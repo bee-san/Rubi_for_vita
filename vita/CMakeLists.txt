@@ -32,7 +32,6 @@ include(${ROOT}/cmake/HookRevision.cmake)
 vjo_hook_revision(${ROOT})
 add_subdirectory(${ROOT}/compat/adrenaline_vsh ${CMAKE_CURRENT_BINARY_DIR}/adrenaline_compat)
 set(VJO_BUILD_VITA ON)
-option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
 # The release's version: the base zips' names and the Rubi app's version (beside its title). The
 # test builds use this version with a -test.N suffix; the final release sets it to its own
@@ -147,7 +146,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/config.c ${ROOT}/core/regions.c
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
-  ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
+  ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c
   ${ROOT}/core/hook_pick.c) # API 31: text-source config helpers
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
@@ -187,11 +186,6 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/hook_pick.c
   ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c ${ROOT}/core/streak.c
   PROPERTIES COMPILE_OPTIONS "-Os")
-if(VJO_WITH_NCNN)
-  include(${ROOT}/cmake/LocalOCR.cmake)
-  target_compile_definitions(vjo_core_vita PUBLIC VJO_WITH_NCNN=1)
-  target_link_libraries(vjo_ocr PUBLIC vjo_core_vita)
-endif()
 if(VJO_WITH_VOCR)
   include(${ROOT}/cmake/VocrOCR.cmake)
   target_compile_definitions(vjo_core_vita PUBLIC VJO_WITH_VOCR=1)
@@ -256,9 +250,6 @@ set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${RO
 # build links only those its code calls (the normal build no divmod).
 # GCC emits calls to these helpers after LTO's reachability pass; keep this tiny ABI object native.
 set_source_files_properties(${ROOT}/shell/divide.c PROPERTIES COMPILE_OPTIONS "-Os;-ffunction-sections;-fno-lto")
-if(VJO_WITH_NCNN)
-  target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)
-endif()
 # The Shell imports only the bounded job transport. No vocr inference is linked here.
 # More cold code built for size, which pays for the open overlay's quiet refresh
 # (#81 request 4) within the module's pages: the module and Paf allocator entry
@@ -768,7 +759,7 @@ add_custom_target(release_variants
   COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR} -B ${VJO_OTHER_DIR} -G ${CMAKE_GENERATOR}
     -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DVJO_DEBUG=${VJO_OTHER_DEBUG} -DVJO_VERSION=${VJO_VERSION} -DVJO_WITH_VOCR=${VJO_WITH_VOCR}
-    -DVJO_WITH_NCNN=${VJO_WITH_NCNN} -DVJO_VOCR_SOURCE_DIR=${VJO_VOCR_SOURCE_DIR}
+    -DVJO_VOCR_SOURCE_DIR=${VJO_VOCR_SOURCE_DIR}
     -DVJO_PLAINTEXT_SOURCE=${VJO_PLAINTEXT_SOURCE} -DPython3_EXECUTABLE=${Python3_EXECUTABLE}
     -DFETCHCONTENT_SOURCE_DIR_VJO_SETTINGS_PNG=${vjo_settings_png_SOURCE_DIR}
   COMMAND ${CMAKE_COMMAND} --build ${VJO_OTHER_DIR} --target release

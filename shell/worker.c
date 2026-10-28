@@ -26,7 +26,6 @@
 #include "../core/text_rows.h"
 #include "../core/history_lines.h"
 #ifdef VJO_WITH_VOCR
-#include "../core/local_ocr.h"
 #include "game_ocr_client.h"
 #include "history.h"
 #include "../include/vjo_vocr_sizes.h"
