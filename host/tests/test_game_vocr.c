@@ -2579,8 +2579,8 @@ static void auto_tries_report_the_last_ones_model(void)
     TEST_CHECK(!memory_live && !capture_live && !line_live);
 }
 
-/* API 47, auto's retry and the stable-text wait: a job waits at most ocr_settle_max_ms (or a press's
- * ocr_settle_press_ms) over all its tries (docs/text-stability.md), and auto's tries are the job's too. The text
+/* API 47, auto's retry and the stable-text wait: a job with the wait waits at most ocr_settle_max_ms over all its
+ * tries (docs/text-stability.md), and auto's tries are the job's too. The text
  * types out for longer than the limit allows the rows to hold still, then holds: the rows' try spends the whole
  * limit waiting (it never held still for the wait), and its rows look like vertical text. The columns' try, and
  * here (no vertical model to read) the rows' try after it, read the screen at once: the job waits no longer than
@@ -3000,8 +3000,9 @@ static void on_columns_weights_refused_read_the_rows(void)
         }
 }
 
-/* #385's audit F7: the step log of on's two tries. Vertical text in a region wider than tall, with a press's flags (the
- * LM's first tier, the cascade, a 150 ms wait, two helpers, the blank-line check): the rows' try hands the job to the
+/* #385's audit F7: the step log of on's two tries. Vertical text in a region wider than tall, with a waiting job's flags
+ * (a background read's, or since #413's audit a press's retry after a torn read: the LM's first tier, the cascade, a
+ * 150 ms wait, two helpers, the blank-line check): the rows' try hands the job to the
  * columns' try (auto's on the tall region the same). Its memory checks leave the log with its blocks (it read
  * nothing, and a later try of rows checks the sizes again), so no CHECK step comes before its find step of kind 2,
  * and the columns' try keeps every step a job of the vertical model alone logs on the same frame (its check, blocks,

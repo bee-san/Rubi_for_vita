@@ -49,7 +49,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_refine_lines = 2;
     c->ocr_helpers = 2; /* ocr_threads = 3 */
     c->ocr_boost_clock = 1; /* 444 MHz while a job recognizes; never lowers a clock (game_ocr/main.c) */
-    c->ocr_settle_press_ms = 1000; /* a job the open overlay waits for (docs/first-ocr.md) */
+    c->ocr_settle_press_ms = 1000; /* a press's wait before #413; read by nothing since (docs/text-stability.md) */
     c->stick_lookup_ms = 200; /* core/stick_cursor.h VJO_STICK_CURSOR_REST_MS */
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
@@ -139,8 +139,9 @@ const char *vjo_config_default_text(void)
            "; vocr model size (the Rubi app's Model size): small (fastest) | normal\n"
            "; (the default, balanced) | large (most accurate)\n"
            "vocr_tier = normal\n"
-           "; vocr: read text once still this long (ms, 0 = off), waiting at most the max,\n"
-           "; or the press max when the open overlay waits\n"
+           "; vocr: read text once still this long (ms, 0 = off), waiting at most the max;\n"
+           "; a press reads at once, its retries after a read that changed under every\n"
+           "; try (an animated icon?) as above. ocr_settle_press_ms: older builds only\n"
            "ocr_settle_ms = 150\n"
            "ocr_settle_max_ms = 2000\n"
            "ocr_settle_press_ms = 1000\n"

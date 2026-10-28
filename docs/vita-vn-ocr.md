@@ -1179,12 +1179,12 @@ fixes. Where the rows are vertical text, the job returns
 (`game_ocr/main.c`, `again:`): its own memory check, a request by name's reserve, the column job. A vertical model
 it cannot read (absent, short, failing its hash) or fit has the job read the rows instead; after a file it could not
 read, the game's later jobs read rows unchecked. The tries are one job: they share its stable-text wait (at most
-`ocr_settle_max_ms`, a press's `ocr_settle_press_ms`, over all of them, as the core's own tries do), so the
-column try reads the region at once and recognizes once its rows have held still within what is left of the
-wait; and the step log keeps the first pass and each try's `find` step, the memory checks of every try but a try of
+`ocr_settle_max_ms` over all of them, as the core's own tries do; a press's job has none since #413, unless it retries
+a read torn under every try), so the column try reads the region at once and recognizes once its rows have held still
+within what is left of the wait; and the step log keeps the first pass and each try's `find` step, the memory checks of every try but a try of
 rows whose rows went to the columns (it read nothing, and a later try of rows checks the sizes again: #385's audit),
-and only the last try's blocks (`alloc`, `free`). So a job of on's or auto's two tries with a press's flags (the LM,
-the cascade, the stable-text wait, two helpers, the blank-line check) keeps every step of its last try within the 20,
+and only the last try's blocks (`alloc`, `free`). So a job of on's or auto's two tries with a waiting job's flags (the
+LM, the cascade, the stable-text wait, two helpers, the blank-line check) keeps every step of its last try within the 20,
 its normalisation and parallel steps included (`test_game_vocr.c`; before, the rows' try's checks took their
 places); a longer job loses the steps logged last (the gate's and, API 54, the spotter's are). The rule
 was chosen on the hooked pages below, before it was checked on any other page; on the pages it was then
@@ -1229,21 +1229,23 @@ from its first try, as 0.9.8 did, but with the rectangle. And a try while the op
 status and no text publishes nothing (`shell/worker.c` `start_job_kind`): the view changes only when what it shows does
 (the wait hint once, the text). The bench (12 presses a cell; the median time from L + R to the text; deterministic:
 `--frame-us 0,0,0` gives #385's table again, with `--tall rows` for its on on the vertical box), with the press as
-0.9.8 and #385 read it, its rows still for 150 ms first within 1 s (`--settle-ms 150`; since #413 a press reads
+0.9.8 and #385 read it, its rows still for 150 ms first within 1 s (`--press wait`; since #413 a press reads
 without that wait, below), on the horizontal box and on its vertical one
 (`host/samples/vertical.jpg`'s four columns, 220 × 380 px, the icon under the last one; both crops of the committed
-samples, `host/vertical_on_bench.c`):
+samples, `host/vertical_on_bench.c`; the icon's top left corner at 578,68 and 15,280). The last column is on now with
+a press as main reads it since #413's audit (`--press retry`, the bench's default;
+[below](#a-press-and-the-stable-text-wait-413)):
 
-| box, frames a second, icon turns/rests | off | on, 0.9.8 | on, #385 | on now |
-|---|---:|---:|---:|---:|
-| horizontal, 30, 15/15 | 12/12, 2.0 s | **0/12** | 12/12, 2.0 s | 12/12, 2.0 s |
-| horizontal, 30, 15/25 | 12/12, 1.9 s | **0/12** | 12/12, 1.9 s | 12/12, 1.9 s |
-| horizontal, 60, 15/15 | 12/12, 1.7 s | 12/12, 4.0 s | 12/12, 1.7 s | 12/12, 1.7 s |
-| horizontal, 60, 15/25 | 12/12, 2.0 s | 12/12, 8.8 s | 12/12, 2.0 s | 12/12, 2.0 s |
-| vertical, 30, 15/15 | (rows) | 12/12, 2.0 s | 12/12, 2.2 s | 12/12, 1.6 s |
-| vertical, 30, 15/25 | (rows) | 12/12, 5.3 s | 12/12, 3.3 s | 12/12, 2.0 s |
-| vertical, 60, 15/15 | (rows) | 12/12, 1.4 s | 12/12, 4.2 s | 12/12, 1.2 s |
-| vertical, 60, 15/25 | (rows) | 12/12, 1.8 s | 12/12, 4.7 s | 12/12, 2.1 s |
+| box, frames a second, icon turns/rests | off | on, 0.9.8 | on, #385 | on now | on now, a press now |
+|---|---:|---:|---:|---:|---:|
+| horizontal, 30, 15/15 | 12/12, 2.0 s | **0/12** | 12/12, 2.0 s | 12/12, 2.0 s | 12/12, 3.1 s |
+| horizontal, 30, 15/25 | 12/12, 1.9 s | **0/12** | 12/12, 1.9 s | 12/12, 1.9 s | 12/12, 0.6 s |
+| horizontal, 60, 15/15 | 12/12, 1.7 s | 12/12, 4.0 s | 12/12, 1.7 s | 12/12, 1.7 s | 12/12, 5.9 s |
+| horizontal, 60, 15/25 | 12/12, 2.0 s | 12/12, 8.8 s | 12/12, 2.0 s | 12/12, 2.0 s | 12/12, 2.1 s |
+| vertical, 30, 15/15 | (rows) | 12/12, 2.0 s | 12/12, 2.2 s | 12/12, 1.6 s | 12/12, 1.2 s |
+| vertical, 30, 15/25 | (rows) | 12/12, 5.3 s | 12/12, 3.3 s | 12/12, 2.0 s | 12/12, 0.8 s |
+| vertical, 60, 15/15 | (rows) | 12/12, 1.4 s | 12/12, 4.2 s | 12/12, 1.2 s | 12/12, 0.7 s |
+| vertical, 60, 15/25 | (rows) | 12/12, 1.8 s | 12/12, 4.7 s | 12/12, 2.1 s | 12/12, 0.7 s |
 
 On the horizontal box on now is off's job in each of five icons (turning 15-30 frames, resting 15-45) at 30 and 60
 frames a second, 12 of 12 each; 0.9.8's on showed the text in 0, 0, 12, 12 and 12 of 12 at 30 (after 2.2-5.8 s where it
@@ -1256,16 +1258,56 @@ two quicker icons at 333 MHz's time a frame (×1.33), off and on now show the te
 the other cells of both boxes; at twice the default in 12 of 12 in every cell; 0.9.8's on in 0 of 12 at 30 frames a
 second on the horizontal box at both. These are the bench's estimates, not a console's.
 
-**A press without the stable-text wait** (since #413: opening the overlay confirms that the text is ready; the bench's
-default, `--settle-ms 0`). Without the wait the job does not learn an icon's rows (`core/vocr_ocr.c` `stream_check`
-tolerates a row that goes back to a recent state only while the wait is on), so every change of the icon between two
-reads of its rows tears the read, and the Shell's tries of a press are presses too. On the horizontal box with the
-quickest icon (turning 15 frames, resting 15) off and on showed the text in 12 of 12 after 5.0 s at 30 frames a second
-(5 tries, median) and in **0 of 12** within 20 s at 60 (9 torn tries each), where the wait gave 2.0 and 1.7 s; at twice
-the default time a frame also 0 of 12 at 30. With the slower icons the press was quicker than with the wait: 0.6-1.9 s
-at 30 and 0.7-1.2 s at 60, 12 of 12. On the vertical box on read the columns in 12 of 12 in 0.7-1.9 s; auto, which reads
-that box's rows, showed it in 0 of 12 at 30 and 60 with the quickest icon. The bench's estimates, not a console's;
-#413 is not changed here (keeping the icon's rows learned for a press without the wait would give its tolerance back).
+#### A press and the stable-text wait (#413)
+
+Since #413 opening the overlay confirms that the text is ready, and a press's job reads without the stable-text wait.
+Without the wait the job does not learn an icon's rows (`core/vocr_ocr.c` `stream_check` tolerates a row that goes
+back to a recent state only while the wait is on), so every change of the icon between two reads of its rows tears the
+read, and the Shell's tries of a press were presses too: with an icon quicker than a job's read, a press never showed
+the text (#413's audit F1). Since that audit the open overlay's tries wait once a read's screen changed under every
+try, as a background read does (`shell/worker.c` `start_job_kind`, `screen_changed_streak`: 150 ms of still rows first,
+within `ocr_settle_max_ms`), until a read ends the run ([text stability](text-stability.md)). The bench's `--press`:
+`wait`, the press before #413 (every job 150 ms first within 1 s); `nowait`, #413's; `retry`, main's since the audit
+(the default; `retry:MS`, the retries' wait within MS). The table's boxes and icons, 12 presses each (on the
+horizontal box off, on and auto read the same rows, phase for phase; on the vertical box auto reads its rows, on its
+columns):
+
+| box, mode, frames a second, icon turns/rests | before #413 | #413 | now |
+|---|---:|---:|---:|
+| horizontal, every mode, 30, 15/15 | 12/12, 2.0 s | 12/12, 5.0 s | 12/12, 3.1 s |
+| horizontal, every mode, 30, 15/25 | 12/12, 1.9 s | 12/12, 0.6 s | 12/12, 0.6 s |
+| horizontal, every mode, 60, 15/15 | 12/12, 1.7 s | **0/12** | 12/12, 5.9 s |
+| horizontal, every mode, 60, 15/25 | 12/12, 2.0 s | 12/12, 0.7 s | 12/12, 2.1 s |
+| vertical, on, 30, 15/15 | 12/12, 1.6 s | 12/12, 1.2 s | 12/12, 1.2 s |
+| vertical, on, 30, 15/25 | 12/12, 2.0 s | 12/12, 0.8 s | 12/12, 0.8 s |
+| vertical, on, 60, 15/15 | 12/12, 1.2 s | 12/12, 0.7 s | 12/12, 0.7 s |
+| vertical, on, 60, 15/25 | 12/12, 2.1 s | 12/12, 0.7 s | 12/12, 0.7 s |
+| vertical, auto, 30, 15/15 | 4/12, 11.6 s | **0/12** | **0/12** |
+| vertical, auto, 30, 15/25 | 12/12, 2.9 s | 9/12, 4.1 s | 12/12, 6.8 s |
+| vertical, auto, 60, 15/15 | 12/12, 3.0 s | **0/12** | 12/12, 2.5 s |
+| vertical, auto, 60, 15/25 | 12/12, 2.7 s | 11/12, 1.9 s | 12/12, 3.5 s |
+
+- **Slower icons** (turning 15, 20 and 30 frames, resting 35, 40 and 45): 12 of 12 in every cell with each press. A
+  press now takes 1.4-1.9 s at 30 frames a second and 1.0-1.2 s at 60 on the horizontal box (#413's 1.1-1.9 and
+  0.7-1.2 s, the wait's 1.4-1.7 and 0.9-1.2 s), 1.2-2.3 and 0.7-1.3 s with on's columns, and 5.2-7.3 and 1.3-4.3 s with
+  auto on the vertical box (the wait's 2.7-3.8 and 1.8-3.0 s).
+- **At 333 MHz's time a frame (×1.33) and at twice the default**, with the two quicker icons: the horizontal box 12
+  of 12 in every cell but one, at 60 frames a second with the icon resting 25 frames at ×1.33: **5 of 12** (#413's
+  12 of 12, the wait's 3 of 12); #413's press showed none in 3 of those 8 cells. On's columns 12 of 12 in every cell;
+  auto on the vertical box 45 of 48 presses at each (the wait's 46 and 45, #413's 20 and 9).
+- **Still lost.** Auto on the vertical box with the quickest icon at 30 frames a second shows none: the press's first
+  job without the wait moves the waiting tries one step along the Shell's pace, past the late reads that showed the
+  wait's 4 of 12.
+- **A second grid**, #413's audit's (the icon at 590,68 and 22,270, icons turning 15 or 30 frames and resting 15-45):
+  a press now shows the text in 108 of 120 presses on the horizontal box (#413's 96, the wait's 108), 113 of 120 with
+  on's columns (#413's 120, the wait's 112) and 81 of 120 with auto on the vertical box (53, 76). It loses presses
+  against #413's in five cells of the vertical box, each with an icon that turns for 30 frames: on's columns 8 and 9
+  of 12 against 12, and its rows (off, auto) 0, 8 and 0 of 12 against 12.
+- **Measured and not taken** (both grids, off, on and auto, the horizontal box once): waiting only from a press's
+  second retry on (858 presses of 960 at the default time a frame against 874, 752 of 768 at ×1.33 and ×2 against
+  737), waiting on every other try (861 and 707), and the retries' wait within 1 s (870 of 960).
+
+The bench's estimates, not a console's.
 
 **The rule** (`core/vocr_ocr.c` `vjo_vocr_rows_horizontal`, on the rows auto's check takes: with `ocr_line_fix` on, in a
 region at least as tall as wide the frozen finder's, where a name tag beside the columns, joined to them by the fixes,

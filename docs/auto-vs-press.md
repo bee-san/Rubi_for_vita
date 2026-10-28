@@ -14,7 +14,8 @@ the app applies from the next resume. The second Read text button names whatever
 (`toggle_button`: L + R unless changed, Select, Start, Select + L or R, or a double tap on the back).
 An update keeps both choices: `tools/install-vita.sh` no longer sets `ocr_mode = auto` (it did before
 this change), and `tools/migrate_config.py` keeps every value. The wait settings below stay in
-`config.ini` only: `ocr_settle_ms` (150), `ocr_settle_max_ms` (2000) and `ocr_settle_press_ms` (1000).
+`config.ini` only: `ocr_settle_ms` (150) and `ocr_settle_max_ms` (2000); `ocr_settle_press_ms` (1000), a
+press's limit before #413, changes nothing now.
 
 ## What each mode does
 
@@ -86,23 +87,29 @@ job, of both modes. Nothing is recognized until every row of the region has read
   finding lines until a pass with no change starts 150 ms or more after the start of the last pass that
   saw one. With test.3's passes of 56-73 ms the rows have to hold still for three passes, 0.17-0.29 s
   (est.), after the last change.
-- A job waits at most `ocr_settle_max_ms` = 2000 ms in all; a job the open overlay waits for (a press;
-  not Automatically's own job, a refresh or the self-test's) at most `ocr_settle_press_ms` = 1000 ms
-  (`shell/worker.c` `vocr_run_one`). When that runs out the job reads the region anyway.
+- A job waits at most `ocr_settle_max_ms` = 2000 ms in all; when that runs out it reads the region anyway.
+  A job the open overlay waits for (a press; not Automatically's own job, a refresh or the self-test's)
+  has no wait since #413 (`shell/worker.c` `start_job_kind`): opening the overlay confirms that the text
+  is ready. Only its retries after a read whose screen changed under every try wait, as a background job
+  does, since the wait is what learns an animated icon (#413's audit; [text stability](text-stability.md)).
+  Before #413 a press waited at most `ocr_settle_press_ms` = 1000 ms.
 - A row that changes after the wait, while the job finds or reads its lines, is a tear: that capture is
-  dropped and the job tries again, waiting first, up to three captures (`VJO_VOCR_TRIES`), then fails
+  dropped and the job tries again (waiting first, in a job with the wait), up to three captures
+  (`VJO_VOCR_TRIES`), then fails
   with `VJO_E_SCREEN_CHANGED` and is retried quietly later. From the third try in a row the open overlay
   says why it still is recognizing, and what helps (#358,
   [text-stability.md](text-stability.md#why-the-overlay-waits-358)).
 
 **Reading before the line has finished.** A typewriter pause longer than the window (150 ms and about
 one pass) passes the wait, and a pause longer than the whole job leaves its text with the line so far:
-a row that changes while the job still reads the region is a tear, read again. A press's job waits from
-the press, so the window is all it has; Automatically's background jobs start only once the kernel has
-seen no change for 300 ms, so a pause has to be longer still for them. In Automatically, the kernel then
-sees the typing resume, the screen settles again and the next job reads the whole line; the press shows
-that one, or the open overlay's refresh replaces the text. With Only when I press, a press during such a
-pause shows the part read, and nothing reads it again until the overlay is closed and opened again. The
+a row that changes while the job still reads the region is a tear, read again. A press's job has no
+window since #413: it reads at once, so a line still typing at the press is read as far as it has typed
+(before #413 it waited from the press, so the window was all it had). Automatically's background jobs start
+only once the kernel has seen no change for 300 ms, so a pause has to be longer still for them. In
+Automatically, the kernel then sees the typing resume, the screen settles again and the next job reads the
+whole line; the press shows that one, or the open overlay's refresh replaces the text. With Only when I
+press, a press during such a pause, or while the line types, shows the part read, and nothing reads it again
+until the overlay is closed and opened again. The
 host settle bench (`vjo-settle-bench 150`, a simulated 917 × 125 box at 60 fps, est.: the console's frame
 pacing differs) shows both sides: text typing one character every 3 frames is read whole (25 of 25
 characters, 1.6 s), and with 12 of 25 characters shown, a pause of 8 frames (133 ms) is waited out
@@ -203,6 +210,13 @@ background result. The log does not say what changed, or why there was no result
 | Press while the text is still settling | the rest of the background job, at most 0.8-3.3 s (est.; 7 of 19) | a job: 1.1-1.7 s to the word from its start, after the press's handling (est. 0.04-0.3 s; measured on Automatically's press jobs, the same path) |
 | First press of a game process | as above: jobs that found no line read the weights before | est. 0.3-0.8 s more: the job reads the model (125-295 ms in test.3), the LM (184 ms) and, for a doubtful line, the next size's model (185-331 ms) itself |
 | Work while you read | a job for every settled screen, at the lowest priority on the game's cores | none (subtitles off) |
+
+These are test.3's figures, from a build before #413, whose press jobs waited 0.6-1.0 s for the rows to
+hold still (above). Since #413 a press's job reads at once, and in Automatically a press on a screen the
+kernel has not called stable cancels the background job still running and reads at once too: each press's
+figure would be shorter by about its wait, and it may show a line still typing as far as it had typed
+(est.; not run on a console). A press whose reads tear under every try waits on its retries
+([text stability](text-stability.md)).
 
 The background jobs' cost to the game: during test.3's 28 jobs that logged the game's frame pacing,
 291 of 1,609 frames came more than 25 ms after the last one, against 52 of 26,941 frames in the time

@@ -38,7 +38,11 @@ console logs or marked est. The logs hold the owner's reading, so only counts ar
   still waits for the stable text below when reading in the background. Opening the overlay confirms
   that the player wants the screen read now: a press with no result starts a job without the stability
   wait, whatever the tracker says. On an unsettled screen, a running background read is cancelled and
-  replaced with that immediate read once cancellation completes. Completed results are still reused.
+  replaced with that immediate read once cancellation completes; its log line is a torn read's retry's,
+  `job start (the screen changed during the last one)`, and the `open: background job still running (stable 0,
+  quiet N)` line just before it tells the two apart. A quiet screen is unsettled too, and there the background read
+  was the one that could learn the spot's icon: the press's read may tear on it, and then its retry waits (below).
+  Completed results are still reused.
 
 **The game worker's stable-text wait** (`core/vocr_ocr.c` `settle_wait`, `settle_verify`) decides
 when a background read, quiet refresh or diagnostic job may recognize:
@@ -52,25 +56,34 @@ when a background read, quiet refresh or diagnostic job may recognize:
     (`settle_wait`), and so does a retry.
 - **Icons.** A row that goes back to one of its 16 recent states (a dialogue box's ring) is taken
   for an icon, not a change, for at most 64 rows a job (`VJO_VOCR_CYCLE_ROWS`). Text that types out
-  only moves on to new states.
+  only moves on to new states. Only a job with the wait learns them (`core/vocr_ocr.c` `stream_check`, `learn`):
+  in a job without it every change of a row is a tear.
 - **Tears.** A row that changes after the wait is a tear. The job reads again, up to 3 tries
   (`VJO_VOCR_TRIES`), then fails with `VJO_E_SCREEN_CHANGED` and is retried later.
 - **The limit.** A job waits at most `ocr_settle_max_ms` = 2000 ms over all its tries (`ocr_vertical = auto`'s
   column try included, API 47, and the next smaller model's after a model's weights were refused, #324);
-  then it reads anyway. Reads started for the open overlay skip both waits: the player's press is
-  confirmation that the text is ready. The saved `ocr_settle_press_ms` setting remains compatible
-  with older builds but no longer delays these reads. Actual screen-change detection and retries stay on.
+  then it reads anyway.
+- **A press** (#413). A read started for the open overlay skips the wait: the player's press is confirmation that
+  the text is ready. Tears and retries stay on, but such a read has no icon tolerance (above), so once a read's
+  screen changed under every try (`shell/worker.c` `screen_changed_streak`, the count the wait hint uses) the open
+  overlay's next tries wait as a background read does, first where the kernel has not called the screen stable,
+  until a read ends the run; the press after that reads at once again (#413's audit F1). A press that finds the
+  count held over from a job that tore (Automatically's background read, or in Only when I press a press closed while
+  its tries still tore) waits from its first read. `ocr_settle_press_ms`, a press's limit before #413, is still
+  parsed for older builds and changes nothing.
 
 The gap this leaves is known ([auto-vs-press.md](auto-vs-press.md#what-settled-means)): a
 typewriter pause longer than the window passes as settled.
 
-A read without the wait (a press since #413) does not learn an icon either: the icon rule above applies only while the
-wait is on (`core/vocr_ocr.c` `stream_check`, `learn`), so each change of an animated icon in the region between two
-reads of its rows is a tear, and the press's retries are presses too. On the host bench of #379's box
-(`host/vertical_on_bench.c`, a 24-px icon turning for 15 frames and resting for 15, recognition charged per CTC
-frame), a press showed the text after 5.0 s at 30 frames a second (2.0 s with the wait) and in 0 of 12 presses within
-20 s at 60 (1.7 s with it), in every `ocr_vertical` mode; with slower icons it was quicker than with the wait
-([vertical text](vita-vn-ocr.md#ons-rule-api-53-379)). An estimate of the bench's, not a console's.
+Why a press's retries wait: with #413's press, whose every try was a press, each change of an animated icon in the
+region between two reads of its rows tore the read. On the host bench of #379's box (`host/vertical_on_bench.c`, a
+24-px icon after the text turning for 15 frames and resting for 15, recognition charged per CTC frame, 12 presses),
+#413's press showed the text after 5.0 s at 30 frames a second and in 0 of 12 presses within 20 s at 60, where the
+wait before #413 gave 2.0 and 1.7 s; with the retries waiting, 3.1 and 5.9 s, 12 of 12 each. With slower icons a
+press now takes 0.6-1.9 s at 30 frames a second and 1.0-2.1 s at 60 (#413's 0.6-1.9 and 0.7-1.2 s, the wait's
+1.4-1.9 and 0.9-2.0 s), and a box of columns read as columns 0.7-2.3 s, as #413's within 0.4 s
+([the bench's tables](vita-vn-ocr.md#a-press-and-the-stable-text-wait-413), with the cells it still loses). Estimates
+of the bench's, not a console's.
 
 ## What the console runs show
 
@@ -218,9 +231,11 @@ apart. So the replay is the host's simulated screen (est.: the console's frame p
 - **In Automatically.** Its job starts only after the kernel has seen 300 ms without a change, more
   with a signature every 8th frame. So a line is read early only when the game stops typing
   mid-line for about 0.5 s or more at 60 fps (est.: those 300 ms, then the 217 ms of the first row).
-- **On a press.** A press has only the job's own window, from the moment of the press.
-  - With **Only when I press**, a press during such a pause shows the part read. Nothing reads it
-    again until the overlay is reopened ([auto-vs-press.md](auto-vs-press.md#what-settled-means)).
+- **On a press.** Before #413 a press had only the job's own window, from the moment of the press. Since #413 it
+  has none: its read starts at once, so a line still typing is read as far as it has typed (a retry after a read
+  torn under every try waits, #413's audit).
+  - With **Only when I press**, a press during such a pause, or while the line types, shows the part read. Nothing
+    reads it again until the overlay is reopened ([auto-vs-press.md](auto-vs-press.md#what-settled-means)).
 
 No dialogue read in these runs was early. So CLANNAD's typewriter never paused that long while a
 job read it (inferred).
@@ -241,7 +256,8 @@ job read it (inferred).
 
 **The cheap rules the workstream considered would change no measured read:**
 - **Hashing only the rows inside the box.** The worker already hashes only the region's rows.
-- **Leaving the cursor out.** The kernel masks it, and the worker's ring takes it for an icon.
+- **Leaving the cursor out.** The kernel masks it, and the worker's ring takes it for an icon in a job with the
+  wait (a background read, or since #413's audit a press's retry after a torn read).
 - **An adaptive wait from the measured reveal rate.** With no dialogue read early, there is nothing
   to adapt to.
 - **Accepting a read only when the next one does not extend it.** That would delay every read by a
@@ -263,8 +279,8 @@ learned model would have to wait out too.
 - **Another game.** Every measured text is CLANNAD's. A game whose typewriter stops mid-line for
   half a second or more (a dramatic beat, a voice cue), or whose box animates for longer than
   `ocr_settle_max_ms`, could read lines early or at the limit.
-- **Only when I press.** It has no run on a build with the stable-text wait. It also gets only the
-  job's own window.
+- **Only when I press.** It has no run on a build with the stable-text wait, and since #413 its reads have none:
+  only a retry after a read torn under every try waits.
 - **How to check.** Play a session of each mode in such a game with the debug build. Then run
   `tools/install_ftp.sh --collect`.
   - `tools/analyse_selftest.py --collect` prints `read before finished` (the table's read-early
@@ -296,8 +312,8 @@ it says:
 - **When.** At the overlay's next try once two jobs in a row tore, so from the third try of a press's own:
   - **On the host bench:** a median 2.85 s after L + R (est.: the bench's times, below).
   - **On the console:** no press has torn yet. Its 16 torn background jobs took 0.75-3.16 s each (median 2.45 s),
-    with twice a press's wait budget (`ocr_settle_max_ms` 2 s against `ocr_settle_press_ms`' 1 s), so a press's two
-    torn tries should take less (unmeasured).
+    each waiting within `ocr_settle_max_ms` (2 s). A press's first try has no wait since #413 and its retry waits as
+    they did (#413's audit), so a press's two torn tries should take less than two of them (unmeasured).
   - **After two torn background jobs, a press in the pace's gap** (no job running) starts a try that says it at once.
   - **A press while Automatically's next try runs**, the more common case (that try starts as soon as the pace
     allows), says "Recognizing…" until that try ends. If it tore too, the overlay's own next try, after the pace,
@@ -319,7 +335,8 @@ it says:
 - **Starting over.** A region saved or cleared (□) starts the count over, as a new game does: the old region's tears
   say nothing of the new one's, and its next press says "Recognizing…" until two of its own jobs tear.
 - **Held over, in Only when I press L + R.** Nothing reads the screen between presses there, so a count of 2 from
-  one press holds until a read, a region or a new game. The next press then says why from its first try. On a page
+  one press holds until a read, a region or a new game. The next press then says why from its first try, and that
+  try waits for the text to hold still (#413's audit: the count also turns a press's wait back on). On a page
   with the same icon that is still true; on another page, that try's read replaces the hint. In Automatically, the
   background jobs after the close count again, or a read ends the run.
 - **Off.** `ocr_wait_hint = off` in `config.ini` keeps "Recognizing…" all along, as before (on by default).

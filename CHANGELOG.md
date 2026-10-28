@@ -54,6 +54,19 @@ been reported.
 - Opening the overlay confirms that the text is ready: its OCR read skips the stability wait. On an unsettled
   screen, a running background read yields to a new read without the wait. Background reads and quiet refreshes
   keep their stability checks; completed results still reopen from the cache.
+  - **#413's audit: a press's retry after a read torn by an animated icon waits for it again.** The wait is also what
+    tells an icon that cycles from text (`core/vocr_ocr.c`), so with an icon in the region quicker than a read every
+    try of a press tore, for ever (#353's case; on the host bench's box with the quickest icon, 0 of 12 presses at 60
+    frames a second). Now, once a read's screen changed under every try, the open overlay's next tries wait as a
+    background read does (150 ms of still rows, within `ocr_settle_max_ms`), and the press after a read reads at once
+    again: 12 of 12 there, after 5.9 s (1.7 s before #413, when every try waited); with slower icons 0.6-2.1 s
+    (estimates of the bench, [details](docs/vita-vn-ocr.md#a-press-and-the-stable-text-wait-413)). The one difference
+    from #413: a press that finds that count held over from a torn job (Automatically's, or a press closed while it
+    still tore) waits from its first read. With **Only when I press** every read is a press, so it never waits but
+    for those retries. `ocr_settle_press_ms`, a press's limit before #413, changes nothing, and the guide, the
+    `config.ini` template and the docs no longer say otherwise. The bench's `--press wait|nowait|retry[:MS]` replaces
+    `--settle-ms`. Tests: the press's retry waits, a held-over count, and a reopen keeps the press's own read (#413's
+    audit F3); each fails without its condition. Not run on a console.
 
 ### Added
 
@@ -474,7 +487,7 @@ been reported.
     between two reads tears the read: on the bench's box with an icon that turns for 15 frames and rests for 15, OFF
     and ON then showed the text after 5.0 s at 30 frames a second (2.0 s with the wait) and not within 20 s at 60
     (1.7 s with it); with slower icons the press was quicker than with the wait. A bench estimate, not a console's;
-    `--settle-ms 150` gives the press with the wait ([details](docs/vita-vn-ocr.md#ons-rule-api-53-379)).
+    `--press wait` gives the press with the wait ([details](docs/vita-vn-ocr.md#ons-rule-api-53-379)).
   - Tests: the empty box (ON's reads equal OFF's), the columns' weights refused after their check (the rows read), the
     longest step log of ON's and Automatic's tries, the rectangle a byte short of room and the LM's room beside it, a
     square box, and a game whose vertical model's file failed; each fails without its fix. No module takes a page more
