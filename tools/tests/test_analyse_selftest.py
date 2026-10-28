@@ -153,19 +153,19 @@ class AnalyseV2(unittest.TestCase):
         # tier's ceilings of tools/model_tiers.json
         self.assertEqual([row["need"] for row in t["rows"]], [4_399_104, 2_449_408, 1_720_320])
         self.assertEqual([row["weights"] for row in t["rows"]], [2_500_000, 1_600_000, 999_999])
-        self.assertEqual([row["reserve"] for row in t["rows"]], [1 << 20, 1 << 20, 1 << 20])
+        self.assertEqual([row["reserve"] for row in t["rows"]], [1 << 19, 1 << 19, 1 << 19])  # the 512 KiB test draft
         self.assertEqual([row["box_ms"] for row in t["rows"]], [3000, 2000, 1000])
         self.assertEqual([row["id"] for row in t["rows"]], ["large", "normal", "small"])
         self.assertIn("recommendation: Large", r.stdout)
-        self.assertIn("  Large     2,500,000     < 3 s  1,310,720        4,399,104   1,048,576    85,778,432 yes\n",
+        self.assertIn("  Large     2,500,000     < 3 s  1,310,720        4,399,104     524,288    86,302,720 yes\n",
                       r.stdout)
         self.assertIn("box time: the tier's limit for a typical full textbox (3 lines of about 640 px, 1 core at "
                       "444 MHz), estimated; the recommendation is memory alone", r.stdout)
 
     def test_the_tier_falls_with_the_free_memory(self):
         # each tier's first job (above) plus its reserve, and one byte less
-        for free, want in ((5_447_680, "Large"), (5_447_679, "Normal"), (3_497_984, "Normal"), (3_497_983, "Small"),
-                           (2_768_896, "Small"), (2_768_895, None)):
+        for free, want in ((4_923_392, "Large"), (4_923_391, "Normal"), (2_973_696, "Normal"), (2_973_695, "Small"),
+                           (2_244_608, "Small"), (2_244_607, None)):
             self.assertEqual(a.tier_table(free)["recommendation"], want, free)
         # a refused stage has a negative headroom and says so: the textbox stage in a game with 5,000,000 B free
         text = (FIXTURES / "selftest-v2-pass.txt").read_text()
@@ -606,9 +606,10 @@ class SharedTierTable(unittest.TestCase):
                           ("large", "Large", 2_500_000, 3000)])
         self.assertEqual(table["box"], {"lines": 3, "line_px": 640, "cores": 1, "mhz": 444})
         self.assertEqual(table["default"], "normal")
-        # vita-vn-ocr docs/model-tiers.md 1.3: arenas; owner 2026-10-23: a fixed 1 MiB reserve
+        # vita-vn-ocr docs/model-tiers.md 1.3: arenas; owner 2026-10-23: a fixed 1 MiB reserve (#280), 512 KiB in
+        # the test draft (owner 2026-10-28)
         self.assertEqual([(t["arena_max_bytes"], t["reserve_bytes"]) for t in table["tiers"]],
-                         [(131_072, 1 << 20), (262_144, 1 << 20), (1_310_720, 1 << 20)])
+                         [(131_072, 1 << 19), (262_144, 1 << 19), (1_310_720, 1 << 19)])
 
     def test_other_keys_are_ignored_and_a_table_it_cannot_use_is_refused(self):
         table = self.table()
@@ -773,8 +774,9 @@ class SharedTierTable(unittest.TestCase):
     def test_the_self_test_doc_shows_the_analysers_table(self):
         doc = (ROOT / "docs/self-test.md").read_text(encoding="utf-8")
         for r in a.tier_table(0)["rows"]:
+            reserve = f"{r['reserve'] >> 20} MiB" if not r["reserve"] % (1 << 20) else f"{r['reserve'] >> 10} KiB"
             row = (f"| {r['tier']} | {r['weights']:,} B | < {r['box_ms'] / 1000:g} s | {r['arena']:,} B | "
-                   f"{r['need']:,} B | {r['reserve'] >> 20} MiB | {r['need'] + r['reserve']:,} B |")
+                   f"{r['need']:,} B | {reserve} | {r['need'] + r['reserve']:,} B |")
             if row not in doc:
                 self.fail(f"docs/self-test.md's tier table has no row {row!r}")
 

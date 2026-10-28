@@ -15,6 +15,14 @@ import prepare_ocr  # noqa: E402
 from test_vocr_defaults import array_body, c_table, entries, macros, metadata_table  # noqa: E402
 
 TIERS = json.loads((ROOT / "tools/model_tiers.json").read_text(encoding="utf-8"))
+# A reserve's #define: (N u * 1024u * 1024u), N MiB, or (N u * 1024u), N KiB (the 512 KiB test draft's)
+RESERVE_DEFINE = r"#define (VJO_GAME_RESERVE_\w+) \((\d+)u \* 1024u( \* 1024u)?\)"
+# The reserve the test draft keeps for every model size (owner, 2026-10-28: 512 KiB instead of #280's 1 MiB)
+RESERVE = 512 * 1024
+
+
+def reserve_value(m):
+    return int(m.group(2)) * 1024 * (1024 if m.group(3) else 1)
 
 
 def c_tiers(source=None):
@@ -22,9 +30,8 @@ def c_tiers(source=None):
     if source is None:
         source = (ROOT / "core/vocr_models.c").read_text()
     sizes = macros("include/vjo_ledger_budget.h")
-    for m in re.finditer(r"#define (VJO_GAME_RESERVE_\w+) \((\d+)u \* 1024u \* 1024u\)",
-                         (ROOT / "include/vjo_ledger_budget.h").read_text()):
-        sizes[m.group(1)] = int(m.group(2)) * 1024 * 1024
+    for m in re.finditer(RESERVE_DEFINE, (ROOT / "include/vjo_ledger_budget.h").read_text()):
+        sizes[m.group(1)] = reserve_value(m)
     body = array_body(source, "static const VjoVocrTierInfo tiers[VJO_VOCR_TIERS]")
     rows = [(m.group(1), (m.group(2), m.group(3), sizes[m.group(4)], sizes[m.group(5)]))
             for m in re.finditer(r'\{"(\w+)", "(\w+)", "([^"]+)", (VJO_\w+), (VJO_\w+)\}', body)]
@@ -41,7 +48,7 @@ class ModelTiers(unittest.TestCase):
         self.assertIn("source", TIERS)
         self.assertEqual([t["id"] for t in TIERS["tiers"]], ["small", "normal", "large"])
         for tier in TIERS["tiers"]:
-            self.assertEqual(tier["reserve_bytes"], 1 << 20, tier["id"])
+            self.assertEqual(tier["reserve_bytes"], RESERVE, tier["id"])
             for key in ("id", "name", "weights_max_bytes", "box_ms_under", "arena_max_bytes", "reserve_bytes",
                         "model", "tagline", "est_box_ms", "est_box_ms_444", "job_bytes", "need_bytes"):
                 self.assertIn(key, tier, tier["id"])
@@ -67,8 +74,8 @@ class ModelTiers(unittest.TestCase):
             self.assertEqual(sizes[f"VJO_VOCR_TIER{n}_NAME"], tier["model"])
             self.assertEqual(sizes[f"VJO_VOCR_TIER{n}_BYTES"], pins[tier["model"]][0])
             reserve_macro = {"small": "SMALL", "normal": "NORMAL", "large": "LARGE"}[tier["id"]]
-            got = int(re.search(rf"#define VJO_GAME_RESERVE_{reserve_macro} \((\d+)u \* 1024u \* 1024u\)",
-                                ledger).group(1)) * 1024 * 1024
+            got = reserve_value(re.search(RESERVE_DEFINE.replace(r"VJO_GAME_RESERVE_\w+",
+                                                                 f"VJO_GAME_RESERVE_{reserve_macro}"), ledger))
             self.assertEqual(got, tier["reserve_bytes"], tier["id"])
             # the Rubi app's estimates are the model's metadata
             _, _, _, box_ms, job_bytes = meta[tier["model"]]
