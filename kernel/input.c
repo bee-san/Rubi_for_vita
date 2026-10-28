@@ -99,12 +99,20 @@ static volatile int rear_busy; /* pad calls can come from several game threads *
 static volatile SceUID rear_peek_thid;
 static int64_t rear_sampled_us;
 static int rear_down, rear_taps;
+static int rear_mode = -1; /* discard a partial gesture when the overlay opens/closes */
 static int64_t rear_down_t, rear_up_t;
 static int16_t rear_x, rear_y;
 
 static void rear_double_tap(const KTouchData *t, int64_t now)
 {
     int down = t->reportNum > 0;
+    int mode = !!g.input_block;
+    if (rear_mode != mode) {
+        rear_mode = mode;
+        rear_down = down;
+        rear_taps = down ? -1 : 0; /* a finger already held is not the first tap */
+        return;
+    }
     if (down && !rear_down) {
         rear_down_t = now;
         rear_x = t->report[0].x;
@@ -118,7 +126,9 @@ static void rear_double_tap(const KTouchData *t, int64_t now)
             if (rear_taps == 1 && now - rear_up_t < TAP_GAP_US + TAP_MAX_US) {
                 int k = rear_trigger();
                 rear_taps = 0;
-                if (k >= 0)
+                if (mode)
+                    ksceKernelSetEventFlag(g.evf, VJO_EV_FULL_SCREEN);
+                else if (k >= 0)
                     fire_trigger(k, 0);
             } else {
                 rear_taps = 1;
@@ -135,16 +145,19 @@ static void rear_double_tap(const KTouchData *t, int64_t now)
     rear_down = down;
 }
 
-/* Called from the ctrl hooks. Also while the overlay blocks input: the
- * marked peek bypasses the touch filter, so a double tap closes it. */
+/* Called from the ctrl hooks. With the overlay open the marked peek bypasses
+ * the game's touch filter: rear double tap requests OCR, regardless of triggers. */
 static void rear_sample(void)
 {
     KTouchData t;
     int64_t now;
     int n;
-    if (rear_trigger() < 0 || g.game_pid <= 0 || !g.game_active ||
-        ksceKernelGetProcessId() != g.game_pid)
+    if (g.game_pid <= 0 || !g.game_active || ksceKernelGetProcessId() != g.game_pid)
         return;
+    if (!g.input_block && rear_trigger() < 0) {
+        rear_mode = -1;
+        return;
+    }
     if (!__sync_bool_compare_and_swap(&rear_busy, 0, 1))
         return;
     now = ksceKernelGetSystemTimeWide();

@@ -150,6 +150,9 @@ static uint32_t job_generation;
  * Each event has one handler below (on_*). */
 enum { OV_CLOSED, OV_OPEN, OV_OPEN_OLD_JOB };
 static int ov = OV_CLOSED;
+/* 0: dialogue, 1: a rear-tap scan queued behind cancellation, 2: its pinned view.
+ * The job snapshot survives a close until the game worker has finished. */
+static int full_screen, job_full_screen;
 static int subtitles; /* written by set_subtitles only */
 /* The strip says "Recognizing…" for the lookup or refresh in progress, which
  * brings it nothing (subtitles turned on after the close that dropped it): its
@@ -1164,7 +1167,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     /* API 42: vita-vn-ocr #117's head gate and two-level head, ocr_head_gate's VJO_HEAD_* bits, in the user's jobs */
     if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_head_gate << VJO_GAME_OCR_S_HEAD_SHIFT; /* 0-3: config.c */
     /* API 54: the text spotter as the finder, and its boxes refined, in the user's jobs too */
-    if (job_cfg.ocr_finder && stage < 0)
+    if ((job_cfg.ocr_finder || job_full_screen) && stage < 0)
         request.speed |= VJO_GAME_OCR_S_SPOT | (job_cfg.ocr_spotter_refine ? VJO_GAME_OCR_S_SPOT_REFINE : 0u);
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
@@ -1331,7 +1334,8 @@ static int run_vocr(VjoOverlayData *out)
     if (job_selftest) /* its records are its result: nothing is shown */
         return out->err.rc = run_selftest_stages(&vocr_result, tiers, &ran);
 #endif
-    out->err.rc = vocr_run_one(&vocr_result, 0, tiers, &ran, -1);
+    uint32_t flags = job_full_screen ? VJO_GAME_OCR_F_FULL : 0;
+    out->err.rc = vocr_run_one(&vocr_result, flags, tiers, &ran, -1);
     /* A tier's model failed to open or verify: keep OCR working with the next
      * smaller tier for this job. Only a file that is absent, the wrong length or
      * fails its hash (io 0: rejected after reading) leaves the tier out for this
@@ -1355,11 +1359,11 @@ static int run_vocr(VjoOverlayData *out)
         if (!below) break;
         tiers = below;
         sceClibMemset(&vocr_result, 0, sizeof(vocr_result));
-        out->err.rc = vocr_run_one(&vocr_result, 0, tiers, &ran, -1);
+        out->err.rc = vocr_run_one(&vocr_result, flags, tiers, &ran, -1);
     }
     /* The self-test's job runs on the screen of the last job that read text in the region
      * (a failed job's text is empty: the worker and the exchange clear it). */
-    text_generation = vocr_result.text[0] ? job_generation : 0;
+    text_generation = vocr_result.text[0] && !job_full_screen ? job_generation : 0;
     text_scene = job_capture_scene;
     text_seq = job_capture_seq;
     if (out->err.rc != VJO_OK) {
@@ -1559,7 +1563,7 @@ static void net_job(void)
      * thread may immediately switch game or post another job after that. The
      * job thread owns vocr_result until its next recognition, so history
      * needs no retained text, allocation, queue or additional thread. */
-    if (!job_cursor_only && !job_selftest && job_cfg.ocr_mode == VJO_OCR_AUTO &&
+    if (!job_cursor_only && !job_selftest && !job_full_screen && job_cfg.ocr_mode == VJO_OCR_AUTO &&
         !job_cancelled && job_generation == game_generation && vocr_result.rc == VJO_OK) {
         SceRtcTick tick;
         uint64_t elapsed = (uint64_t)(now_us() - job_started_us);
@@ -1800,6 +1804,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     }
     vjo_dlog("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
     job_refresh = refresh;
+    job_full_screen = full_screen == 2 && !refresh;
     job_lookup = lookup;
     job_prepares = ov == OV_CLOSED;
     job_cursor_only = 0;
@@ -2139,6 +2144,14 @@ static void close_overlay_for(int why)
         return;
     }
     ov = OV_CLOSED;
+    __atomic_store_n(&g_view.full_scan_requested, 0, __ATOMIC_RELEASE);
+    if (full_screen) {
+        full_screen = 0;
+        cache_ok = 0;
+        retire_local_text(1); /* full-frame text is never a cached dialogue-region result */
+        stable_pending = game_active();
+        if (job_running) job_cancelled = 1;
+    }
     history_step = 0; /* an earlier line shown goes once no job reads it: control_tick */
     if (net_busy()) dict_close_pending = 1;
     else vjo_local_session_close(plat.local_session);
@@ -2312,7 +2325,7 @@ static void history_show(int at)
  * and nothing else: a step asked for is always taken, unless a close or a retired text drops it. */
 static void history_ask(int d)
 {
-    if (ov == OV_CLOSED || !local_text_valid || history_step ||
+    if (ov == OV_CLOSED || full_screen || !local_text_valid || history_step ||
         (!history && (d < 0 || cfg.ocr_mode != VJO_OCR_AUTO || history_open() < 0)) ||
         (unsigned)(history->h.at + d) > (unsigned)history->h.n)
         return;
@@ -2584,6 +2597,14 @@ static void on_job_done(void)
         vjo_local_session_close(plat.local_session);
     dict_close_pending = 0;
     idle_since_us = now_us();
+    if (full_screen == 1) { /* the rear tap supersedes any kind of running job */
+        job_running = job_done = job_text_ready = job_cancelled = job_prepare = 0;
+        job_cursor_only = job_refresh = cursor_waiting = 0;
+#if VJO_DEBUG
+        job_selftest = 0;
+#endif
+        return; /* control_tick starts the full-frame job after commands/foreground changes */
+    }
     if (job_prepare) {
         job_running = job_done = job_prepare = 0;
         if (job_rc || job_cancelled || job_text_generation != local_text_generation) prepare_left = 0;
@@ -2645,7 +2666,8 @@ static void on_job_done(void)
     /* #358: the box this job on the whole screen suggests, for a game with no region of its own (the overlay offers it
      * once an activation): the newest screen's, none when its lines hold no dialogue (a box of an earlier screen is
      * never offered for this one); the job thread is done with the result */
-    vjo_rsel_publish(&g_view.suggest, vocr_result.suggest_rows);
+    if (!job_full_screen)
+        vjo_rsel_publish(&g_view.suggest, vocr_result.suggest_rows);
     ocr_failed = d->failed_stage == VJO_STAGE_OCR;
     backoff_note(&ocr_backoff, ocr_failed);
     if (!ocr_failed) /* OCR works again: the refreshes need not wait for theirs either */
@@ -2831,7 +2853,7 @@ static void on_command(void)
 
     switch (cmd) {
     case VJO_CMD_CURSOR:
-        if (ov == OV_CLOSED || !local_text_valid ||
+        if (ov == OV_CLOSED || full_screen == 1 || !local_text_valid ||
             cursor_generation != local_text_generation || cursor_byte != local_cursor_byte)
             break;
         if (!job_running || !job_cursor_only || job_cursor_seq != local_cursor_seq)
@@ -3107,7 +3129,7 @@ static void background_open(void)
     VjoState st = {.size = sizeof(st)};
     int64_t t = now_us();
     /* an earlier line is not this screen's: its refresh waits for the return to the current text */
-    if (ov != OV_OPEN || job_running || pending_cmd != VJO_CMD_NONE || history)
+    if (ov != OV_OPEN || job_running || pending_cmd != VJO_CMD_NONE || history || full_screen == 1)
         return;
     if (open_retry) {
         if (t >= screen_retry_until) {
@@ -3116,6 +3138,7 @@ static void background_open(void)
         }
         return;
     }
+    if (full_screen) return; /* keep a one-off full-frame scan usable until close/rescan */
     /* API 49: a trusted hook's line replaces the text at once, past the pace (docs/native-hooks.md) */
     if (!refresh_pending || shot_waiting() || vjoGetState(&st) < 0 ||
         (!st.hook_scene && (t < refresh_after_us || t < refresh_backoff.until || t - lookup_us < REFRESH_IDLE_US)))
@@ -3261,6 +3284,13 @@ static void control_tick(uint32_t bits)
         on_trigger();
     if (bits & VJO_EV_SUBTITLE)
         on_subtitle();
+    if ((bits & VJO_EV_FULL_SCREEN) && ov != OV_CLOSED && game_active()) {
+        full_screen = 1;
+        history_step = 0;
+        __atomic_store_n(&g_view.suggest, VJO_RSEL_TAKEN, __ATOMIC_RELAXED);
+        __atomic_store_n(&g_view.full_scan_requested, 1, __ATOMIC_RELEASE);
+        if (job_running) job_cancelled = 1;
+    }
     if (pending_cmd != VJO_CMD_NONE)
         on_command();
     if (job_running && job_text_ready)
@@ -3294,6 +3324,14 @@ static void control_tick(uint32_t bits)
             cancel_outdated_job(&st);
         }
     }
+    if (full_screen == 1 && !job_running) {
+        full_screen = 2;
+        ov = OV_OPEN; /* a cancelled old/background job no longer owns this opening */
+        open_retry = refresh_pending = 0;
+        screen_changed_streak = 0;
+        screen_retry_until = 0;
+        start_job("rear double tap: full screen", 1);
+    }
     auto_prefetch();
     background_open();
 #if VJO_DEBUG
@@ -3315,7 +3353,7 @@ static int ctl_main(SceSize args, void *argp)
     boot_ok_attempts = 0;
     while (running) {
         uint32_t bits = 0;
-        vjoWaitEvent(VJO_EV_TRIGGER | VJO_EV_SUBTITLE | VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET |
+        vjoWaitEvent(VJO_EV_TRIGGER | VJO_EV_SUBTITLE | VJO_EV_FULL_SCREEN | VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET |
                          VJO_EV_GAME_START | VJO_EV_GAME_EXIT | VJO_EV_SHELL,
                      &bits, POLL_TIMEOUT_US);
         control_tick(bits);

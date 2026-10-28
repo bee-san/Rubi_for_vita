@@ -373,10 +373,10 @@ static void render(int new_content)
     static const char line_queue_count[] VJO_DATA_TABLE(line_queue_count) = "Anki queue: %d · export in the Rubi app";
     static const char line_queue_export[] VJO_DATA_TABLE(line_queue_export) = "Anki queue · export in the Rubi app";
     static const char line_queue_error[] VJO_DATA_TABLE(line_queue_error) = "Anki queue unavailable: check ux0 storage";
-    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "<font color=\"#8a94a6\">%s · %sR stick scroll · □ region · %s close</font>";
-    static const char line_nav_character[] VJO_DATA_TABLE(line_nav_character) = "Tap / ◀▶▲▼ / stick character";
-    static const char line_nav_japanese[] VJO_DATA_TABLE(line_nav_japanese) = "Tap / ◀▶▲▼ / stick Japanese letter";
-    static const char line_nav_word[] VJO_DATA_TABLE(line_nav_word) = "Tap / ◀▶▲▼ / stick word";
+    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "<font color=\"#8a94a6\">%s · %sR stick ↕ · □ box · rear ×2 full OCR · %s close</font>";
+    static const char line_nav_character[] VJO_DATA_TABLE(line_nav_character) = "Tap / pad / stick character";
+    static const char line_nav_japanese[] VJO_DATA_TABLE(line_nav_japanese) = "Tap / pad / stick Japanese";
+    static const char line_nav_word[] VJO_DATA_TABLE(line_nav_word) = "Tap / pad / stick word";
     VjoStyled hdr, body;
     int ja, en, have_hdr = 0, have_body = 0, rebuild_header, cursor_matches = 1;
     const VjoEntryList *l;
@@ -854,9 +854,9 @@ static void open_page(void)
         }
     }
     {
-        char hint[128]; /* 95 B with a 3-byte glyph */
+        char hint[128];
         sceClibSnprintf(hint, sizeof(hint),
-                        "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · R stick scroll · □ region · %s close</font>",
+                        "<font color=\"#8a94a6\">◀▶▲▼ word · R stick ↕ · □ box · rear ×2 full OCR · %s close</font>",
                         s_btn.cancel_glyph);
         set_rich(s_hint, hint);
     }
@@ -1286,6 +1286,8 @@ static void frame(void *arg)
 /* One frame with the overlay page open. */
 static void frame_body(unsigned version, unsigned anki_version)
 {
+    if (__atomic_exchange_n(&g_view.full_scan_requested, 0, __ATOMIC_ACQ_REL) && s_mode == MODE_REGION)
+        leave_region_mode();
     if (version != s_seen_version) {
         s_seen_version = version;
         s_seen_anki_version = anki_version;
