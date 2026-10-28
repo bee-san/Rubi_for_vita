@@ -13,6 +13,7 @@
 #include "app_check.h"
 #include "app_prefs.h"
 #include "catalog.h"
+#include "chrome.h"
 #include "icons.h"
 #include "install_page.h"
 #include "letter.h"
@@ -314,20 +315,19 @@ static void centered_text(int x, int y, int width, unsigned color,
                           float pixels, const char *s)
 { text(x + (width - text_width(pixels, s)) / 2, y, color, pixels, s); }
 
+static void chrome_rect(int x, int y, int w, int h, unsigned colour)
+{ vita2d_draw_rectangle(x, y, w, h, colour); }
+
 static void focus_card(int y, int height, int focus)
 {
-    vita2d_draw_rectangle(24, y, 912, height, focus ? SELECTED : CARD);
-    if (focus) {
-        vita2d_draw_rectangle(24, y, 4, height, ACCENT);
-        vita2d_draw_rectangle(24, y, 912, 2, ACCENT);
-        vita2d_draw_rectangle(24, y + height - 2, 912, 2, ACCENT);
-        vita2d_draw_rectangle(932, y, 4, height, ACCENT);
-    }
+    vjo_chrome_panel(chrome_rect, 24, y, 912, height, theme, focus, 0);
 }
 
 static void badge(int x, int y, int width, int height, const char *label, int active)
 {
-    vita2d_draw_rectangle(x, y, width, height, active ? ACCENT : SELECTED);
+    vjo_chrome_button(chrome_rect, x, y, width, height, theme, active);
+    if ((!strcmp(label, "ON") || !strcmp(label, "OFF")) && (width == 108 || width == 128))
+        vjo_chrome_check(chrome_rect, x + 9, y + (height - 18) / 2, active ? BG : WHITE, active);
     centered_text(x, y + height / 2 + 9, width, active ? BG : WHITE, 26, label);
 }
 
@@ -389,7 +389,7 @@ static int reading_page(void) { return page == PAGE_OCR || page == PAGE_ADVANCED
 static int back_target(void) { return page == PAGE_ADVANCED ? PAGE_OCR : page == PAGE_GAMES && game_view >= 0 ? PAGE_GAMES : PAGE_SETTINGS; }
 static int back_at(int x, int y)
 {
-    return settings_child() && !app_banner[0] && x >= 24 && x < 112 && y >= 8 && y < 46;
+    return settings_child() && x >= 16 && x < 112 && y >= 508 && y < 544;
 }
 static int advanced_at(int x, int y)
 {
@@ -399,26 +399,31 @@ static int advanced_at(int x, int y)
 static void header(void)
 {
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
+    vjo_chrome_background(chrome_rect, theme);
+    vita2d_draw_rectangle(0, 4, 960, 44, vjo_chrome_mix(BG, CARD, 160));
     if (app_banner[0]) {
         vita2d_draw_rectangle(0, BANNER_Y, 960, BANNER_H, OFF);
         wrapped_text(24, BANNER_TEXT_Y, 912, BG, 20, BANNER_LINE_H, 2, app_banner);
     } else if (settings_child()) {
-        vita2d_draw_rectangle(24, 8, 88, 38, CARD);
-        centered_text(24, 35, 88, WHITE, 24, "Back");
-        text(128, 35, WHITE, 28, page == PAGE_ADVANCED ? "Reading / Advanced" : category_name[settings_selected]);
+        centered_text(24, 35, 912, WHITE, 28, page == PAGE_ADVANCED ? "Reading / Advanced" : category_name[settings_selected]);
         if (page == PAGE_OCR) {
-            vita2d_draw_rectangle(744, 8, 192, 38, CARD);
+            vjo_chrome_round(chrome_rect, 744, 8, 192, 38, CARD);
             centered_text(744, 35, 192, DIM, 24, "Advanced");
         }
     } else {
-        text(24, 35, WHITE, 32, "Rubi");
-        text(24 + text_width(32, "Rubi") + 14, 34, DIM, 22, VJO_APP_VERSION);
+        centered_text(24, 35, 912, WHITE, 32, "Rubi");
+        text(24, 34, DIM, 20, VJO_APP_VERSION);
         text(724, 34, DIM, 24, "Select: switch");
     }
     for (int i = 0; i < TOP_TABS; i++) {
         int x = TAB_LEFT + i * (TAB_W + TAB_GAP), active = i == (page == PAGE_LOOKUP ? 0 : 1);
-        vita2d_draw_rectangle(x, TAB_Y, TAB_W, TAB_H, active ? ACCENT : CARD);
+        if (active) vjo_chrome_button(chrome_rect, x, TAB_Y, TAB_W, TAB_H, theme, 1);
+        else vjo_chrome_panel(chrome_rect, x, TAB_Y, TAB_W, TAB_H, theme, 0, 0);
         centered_text(x, TAB_Y + 33, TAB_W, active ? BG : WHITE, 28, tab_label[i]);
+    }
+    if (settings_child()) {
+        vjo_chrome_round(chrome_rect, 16, 510, 96, 34, SELECTED);
+        text(24, 533, WHITE, 22, "← Back");
     }
 }
 
@@ -432,12 +437,14 @@ static void status_box(int y, int height, int text_y, int lines, const char *mes
     vita2d_disable_clipping();
 }
 
+static void hints_row(const char *controls);
+
 /* Status box and the control hints. */
 static void footer_at(int y, int height, int text_y, int lines, const char *message, int error,
                       const char *controls)
 {
     status_box(y, height, text_y, lines, message, error);
-    wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls);
+    hints_row(controls);
 }
 
 static void footer(const char *message, int error, const char *controls)
@@ -469,7 +476,8 @@ static void read_buttons(void)
 }
 
 static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
-static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }
+static void hints_row(const char *controls)
+{ wrapped_text(settings_child() ? 128 : 24, 535, settings_child() ? 808 : 912, DIM, settings_child() ? 20 : 24, 26, 1, controls); }
 
 static void clip(int x0, int y0, int x1, int y1)
 {
@@ -591,7 +599,7 @@ static void draw_settings(void)
     header();
     for (int i = 0; i < SETTINGS_CATEGORIES; i++) {
         int y = MENU_Y + i * MENU_PITCH;
-        focus_card(y, MENU_H, settings_selected == i);
+        vjo_chrome_panel(chrome_rect, 24, y, 912, MENU_H, theme, settings_selected == i, 1);
         text(42, y + 25, WHITE, 26, category_name[i]);
         text(42, y + 49, DIM, 20, category_help[i]);
         text(896, y + 37, settings_selected == i ? ACCENT : DIM, 28, ">");
@@ -1255,7 +1263,7 @@ static void size_button(int tier, int x, int y, int chosen)
 {
     const VjoVocrTierInfo *t = vjo_vocr_tier_info((unsigned)tier);
     char detail[32];
-    vita2d_draw_rectangle(x, y, OCR_SIZE_W, OCR_SIZE_H, chosen ? ACCENT : SELECTED);
+    vjo_chrome_button(chrome_rect, x, y, OCR_SIZE_W, OCR_SIZE_H, theme, chosen);
     vjo_model_size_detail(tier, detail, sizeof(detail));
     centered_text(x, y + 24, OCR_SIZE_W, chosen ? BG : WHITE, 24, t ? t->name : "?");
     centered_text(x, y + 47, OCR_SIZE_W, chosen ? BG : DIM, 22, detail);
@@ -1298,7 +1306,7 @@ static const char *open_buttons(int trigger)
 /* A Read text choice: its name and, smaller, what it means for the popup. */
 static void read_button(int x, int y, const char *name, const char *meaning, int chosen)
 {
-    vita2d_draw_rectangle(x, y, READ_BUTTON_W, READ_BUTTON_H, chosen ? ACCENT : SELECTED);
+    vjo_chrome_button(chrome_rect, x, y, READ_BUTTON_W, READ_BUTTON_H, theme, chosen);
     centered_text(x, y + 24, READ_BUTTON_W, chosen ? BG : WHITE, 22, name);
     centered_text(x, y + 47, READ_BUTTON_W, chosen ? BG : DIM, 20, meaning);
 }
@@ -1622,7 +1630,7 @@ static void draw(void)
         /* The counter changes on every move; drawn apart, the hints' layout is kept. */
         char counter[16];
         status_box(440, 64, 467, 2, status, status_error);
-        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1, game_hints);
+        wrapped_text(128, 535, 808 - COUNTER_W, DIM, 20, 26, 1, game_hints);
         snprintf(counter, sizeof(counter), "%d/%d", selected + 1, count);
         text(936 - text_width(24, counter), 535, DIM, 24, counter);
     } else footer(status, status_error, games_empty_hints);

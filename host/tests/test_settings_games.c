@@ -65,9 +65,12 @@
 #include "../../core/pspbubble.h"
 #include "settings_png_fixture.h"
 #include "settings_wrap_reference.h"
+#include "settings_preview.h"
 #include "settings_stubs/search_dialog_stub.h"
 #include <psp2/ime_dialog.h>
 
+static int preview_frame[2] = {-1, -1};
+static const char *preview_name[2];
 int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harness */
 
 /* settings/main.c's Games page layout. */
@@ -335,6 +338,8 @@ int sceDisplayWaitVblankStart(void)
     cur.live = live_textures();
     cur.anki_rows = vjo_anki_stub_rows;
     if (frame < MAX_FRAMES) session->shown[frame] = cur;
+    if (vp.active)
+        for (int p = 0; p < 2; p++) if (frame == preview_frame[p]) vp_finish(preview_name[p]);
     frame++;
     return 0;
 }
@@ -454,16 +459,17 @@ void vita2d_wait_rendering_done(void)
 int vita2d_init(void) { return 0; }
 int vita2d_fini(void) { return 0; }
 void vita2d_set_clear_color(unsigned int color) { (void)color; }
-void vita2d_start_drawing(void) { drawing = 1; }
+void vita2d_start_drawing(void) { drawing = 1; if (vp.active) vp_begin(NULL); }
 void vita2d_end_drawing(void) { drawing = 0; }
 void vita2d_swap_buffers(void) {}
 void vita2d_clear_screen(void) {}
 void vita2d_enable_clipping(void) {}
-void vita2d_disable_clipping(void) {}
+void vita2d_disable_clipping(void) { vp_clip(0, 0, 0, 0); }
 void vita2d_set_clip_rectangle(int x_min, int y_min, int x_max, int y_max)
-{ (void)x_min; (void)y_min; (void)x_max; (void)y_max; }
+{ vp_clip(x_min, y_min, x_max, y_max); }
 void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int color)
 {
+    vp_rect((int)x, (int)y, (int)w, (int)h, color);
     for (int r = 0; r < ROWS; r++)
         if ((int)x == 24 && (int)w == 912 && (int)h == GAME_H && (int)y == GAMES_Y + r * GAME_PITCH && color == SELECTED)
             cur.focus = r;
@@ -495,7 +501,8 @@ int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 /* What each card shows, by where main.c draws it. */
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text)
 {
-    (void)font; (void)scale;
+    (void)font;
+    vp_text(x, y, color, scale * 18, text);
     for (int r = 0; r < ROWS; r++) {
         int top = GAMES_Y + r * GAME_PITCH;
         if (x == 90 && y == top + 21) copy(cur.title[r][0], sizeof(cur.title[r][0]), text);
@@ -517,7 +524,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
         if (y == LF_BADGE_Y + 26 && x >= LF_X(i) && x < LF_X(i) + 138) copy(cur.lf_label[i], sizeof(cur.lf_label[i]), text);
     if (y == DEFAULT_BADGE_Y && x > 174 && x < 282) copy(cur.default_badge, sizeof(cur.default_badge), text);
     if (y == HINT_Y) {
-        if (x == 24) copy(cur.hints, sizeof(cur.hints), text);
+        if (x == 24 || x == 128) copy(cur.hints, sizeof(cur.hints), text);
         else { copy(cur.counter, sizeof(cur.counter), text); cur.counter_x = x; }
     }
     if (x == 40 && (y == STATUS_Y || y == STATUS_Y + 28)) copy(cur.status[(y - STATUS_Y) / 28], sizeof(cur.status[0]), text);
@@ -1574,12 +1581,12 @@ static void hints_leave_room_for_the_counter(void)
         TEST_CHECK(frames == at);
         const Frame *last = &session->shown[frames - 1];
         float px = 24.0f / 18.0f; /* text_scale(24): the em is 18 units, full-width */
-        int hints_w = (int)(stub_units(last->hints, &(int){0}) * px + 0.5f);
+        int hints_w = (int)(stub_units(last->hints, &(int){0}) * (20.0f / 18.0f) + 0.5f);
         int counter_w = (int)(stub_units(last->counter, &(int){0}) * px + 0.5f);
         TEST_CHECK_(!strcmp(last->counter, "512/512") && last->counter_x + counter_w == 936,
                     "wide %d: counter '%s' at %d, %d px", wide, last->counter, last->counter_x, counter_w);
-        TEST_CHECK_(hints_w <= 912 - 140 && 24 + hints_w < last->counter_x, "wide %d: hints %d px to %d, counter at %d",
-                    wide, hints_w, 24 + hints_w, last->counter_x);
+        TEST_CHECK_(hints_w <= 808 - 140 && 128 + hints_w < last->counter_x, "wide %d: hints %d px to %d, counter at %d",
+                    wide, hints_w, 128 + hints_w, last->counter_x);
         size_t n = strlen(last->hints);
         int cut = n > 3 && !strcmp(last->hints + n - 3, "...");
         TEST_CHECK_(cut == wide, "wide %d: hints '%s'", wide, last->hints);
@@ -3157,7 +3164,7 @@ static void the_games_page_by_touch_and_its_on_off(void)
     for (int k = 0; k < frames_at_60hz(500000) + 5; k++) script[at++] = (Input){0, 1, 400, y1, 0}; /* the page again */
     hold(0, 5);
     int again = at - 1;
-    script[at++] = (Input){0, 1, 40, 28, 0}; /* Back: the game list */
+    script[at++] = (Input){0, 1, 40, 525, 0}; /* Back: the game list */
     hold(0, 5);
     int tabbed = at - 1;
     int frames = run(at);
@@ -3505,7 +3512,26 @@ static void a_held_enter_that_moves_does_nothing(void)
     TEST_CHECK(!slurp(LINE_FIX_INI, NULL) && !slurp("ux0:data/VitaJPOverlay/games.ini", NULL));
 }
 
+static void settings_walkthrough(void)
+{
+    if (!vp_available()) return;
+    card(3, kind_none);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    preview_frame[0] = at - 1; preview_name[0] = "walk-games-1-library";
+    tap(DOWN, 3); /* a sample native game, below the shared Adrenaline row */
+    hold(ENTER, frames_at_60hz(500000) + 5);
+    hold(0, 5);
+    preview_frame[1] = at - 1; preview_name[1] = "walk-games-2-per-game";
+    vp_begin(NULL);
+    TEST_ASSERT(run(at) == at);
+    vp.active = 0;
+    preview_frame[0] = preview_frame[1] = -1;
+}
+
 TEST_LIST = {
+    {"settings_walkthrough", settings_walkthrough},
     {"search_finds_an_off_page_id_and_clear_restores_the_list", search_finds_an_off_page_id_and_clear_restores_the_list},
     {"search_matches_japanese_and_empty_results_remain_searchable", search_matches_japanese_and_empty_results_remain_searchable},
     {"search_cancel_and_filtering_preserve_choices", search_cancel_and_filtering_preserve_choices},

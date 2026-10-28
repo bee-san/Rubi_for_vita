@@ -728,7 +728,7 @@ vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/i
 # Shell's own loader, shell/files.c), and its export (the real settings/anki_export.c) on a temporary
 # memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
 # settings_stubs/anki_page_stub.c.
-vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
+vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c settings/text_layout.c
   settings/app_worker.c
   settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c vita/games_storage.c
   INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs

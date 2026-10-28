@@ -445,9 +445,11 @@ IDs and ON/OFF badges. The last page may have fewer games. Games are listed by l
 A–Z, kana by row, then other characters), alphabetically within it, capital
 and small letters together. The app opens on **Settings**, whose five categories are **Games**,
 **Reading & dictionaries**, **Anki**, **Appearance**, and **Install & repair**. Choose with Up/Down and Enter,
-or tap a category. Cancel or the **Back** button returns to the menu. Select switches between **Look up** and
+or tap a category. Cancel or the lower-left **Back** button returns to the menu. Select switches between **Look up** and
 **Settings**; tapping Settings from a category also returns to the menu. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
+The [settings walkthrough](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/WALKTHROUGH.md)
+shows each category and every option further down its page, with menu paths beside the pictures.
 Icons load one per frame for the current page only, with at most five textures
 kept. Changing pages releases the previous page's icons; a card
 shows **JP** until its icon is loaded, or for good when the icon is missing or

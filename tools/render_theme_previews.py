@@ -7,6 +7,7 @@ The test harness supplies positions, colours, clipping and substitute font width
 this renderer fits the supplied font to those widths. Firmware PVF may differ.
 """
 import argparse
+import copy
 import json
 import os
 from pathlib import Path
@@ -62,7 +63,7 @@ def render(record, font_path, target):
     labelled = Image.new("RGB", (960, 588), "#e8e8e8")
     labelled.paste(screen.convert("RGB"), (0, 0))
     label_font = ImageFont.truetype(str(font_path), 17)
-    ImageDraw.Draw(labelled).text((16, 553), "Host-rendered preview · substitute fonts · not a Vita capture",
+    ImageDraw.Draw(labelled).text((16, 553), "Host-rendered preview · sample data · substitute fonts · not a Vita capture",
                                   font=label_font, fill="#303030")
     labelled.save(target, optimize=True)
 
@@ -72,14 +73,39 @@ def main():
     parser.add_argument("--test-bin", type=Path, default=Path("build/host/vjo-settings-app-tests"))
     parser.add_argument("--font", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("docs/colour-schemes"))
+    parser.add_argument("--walkthrough", action="store_true", help="Capture every settings category and scroll position")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="rubi-theme-previews-") as records:
         env = dict(os.environ, VJO_THEME_PREVIEW_DIR=records)
-        subprocess.run([str(args.test_bin.resolve()), "app_colour_schemes", "settings_navigation"], env=env, check=True)
-        for source in sorted(Path(records).glob("*.json")):
-            target = args.output / (source.stem + ".png")
-            render(json.loads(source.read_text()), args.font, target)
+        tests = ["app_colour_schemes", "settings_navigation"]
+        if args.walkthrough:
+            tests.append("settings_walkthrough")
+        subprocess.run([str(args.test_bin.resolve()), *tests], env=env, check=True)
+        if args.walkthrough:
+            for unit in ("games", "anki", "install"):
+                binary = args.test_bin.resolve().parent / f"vjo-settings-{unit}-tests"
+                subprocess.run([str(binary), "settings_walkthrough"], env=env, check=True)
+        captures = {p.stem: json.loads(p.read_text()) for p in Path(records).glob("*.json")}
+        for name, record in sorted(captures.items()):
+            if "page" in record:
+                # Bodies are drawn by the real Anki/Install page. Compose main.c's real shared header,
+                # including its gradient and Back control; only the category title changes.
+                header = captures["mint-picker"]
+                rects = [copy.deepcopy(r) for r in header["rects"]
+                         if r[1] < 100 or (r[0] == 0 and r[2] == 960) or (r[0] < 112 and r[1] >= 508)]
+                texts = [copy.deepcopy(t) for t in header["texts"]
+                         if t[1] < 100 or (t[0] < 112 and t[1] >= 508)]
+                for t in texts:
+                    if t[-1] == "Appearance" and t[1] == 35:
+                        t[-1] = record["page"]
+                        width = int(sum(10 if ord(c) < 128 else 18 for c in t[-1]) * t[3] + 0.5)
+                        t[0] = 24 + (912 - width) // 2
+                record = dict(record, rects=rects + record["rects"], texts=texts + record["texts"])
+            folder = args.output / "walkthrough" if name.startswith("walk-") else args.output
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder / (name + ".png")
+            render(record, args.font, target)
             print(target)
 
 

@@ -122,7 +122,7 @@ typedef struct { int x, y, w, h; unsigned color; int clipped, clip_top, clip_bot
 typedef struct {
     unsigned clear;
     Text text[160]; int texts;
-    Rect rect[96]; int rects;
+    Rect rect[256]; int rects;
     char backend[16]; /* config.ini's ocr_backend value after this frame ("" without the line) */
     char tier[16];    /* its vocr_tier value */
     char mode[16];    /* its ocr_mode value */
@@ -617,7 +617,7 @@ static void check_room(int f)
     for (int i = 0; i < shown[f].rects; i++) {
         const Rect *r = &shown[f].rect[i];
         int bottom = r->y + r->h;
-        if (r->y < OCR_Y || (r->x == 24 && r->w == 912 && r->y == ROOM_END + 4)) continue; /* the header; the status box */
+        if ((r->x == 0 && r->w == 960) || r->y >= 510 || r->y < OCR_Y || (r->x == 24 && r->w == 912 && r->y == ROOM_END + 4)) continue; /* the header; the status box */
         if (r->clipped && r->clip_bottom < bottom) bottom = r->clip_bottom;
         TEST_CHECK_(bottom <= ROOM_END || r->y >= bottom, "frame %d: a %dx%d rectangle at %d,%d reaches %d", f, r->w,
                     r->h, r->x, r->y, bottom);
@@ -625,7 +625,7 @@ static void check_room(int f)
     for (int i = 0; i < shown[f].texts; i++) {
         const Text *t = &shown[f].text[i];
         int bottom = t->y + 8; /* a baseline's descenders */
-        if (t->y < OCR_Y || (t->x == 40 && t->y == ROOM_END + 4 + 22) || t->y == 535) continue; /* status line, hints */
+        if ((t->x < 112 && t->y >= 510) || t->y < OCR_Y || (t->x == 40 && t->y == ROOM_END + 4 + 22) || t->y == 535) continue; /* status line, hints */
         if (t->clipped && t->clip_bottom < bottom) bottom = t->clip_bottom;
         TEST_CHECK_(bottom <= ROOM_END || t->y - 24 >= bottom, "frame %d: '%s' at %d,%d drawn below the room", f,
                     t->text, t->x, t->y);
@@ -1891,7 +1891,7 @@ static void test_settings_navigation(void)
     /* Touch gaps do nothing; the basic screen keeps hook controls behind Advanced. */
     card(NULL);
     static const Input touch[] = {TAP(200, 172), TAP(479, 72), OCR_PAGE, PRESS(SCE_CTRL_UP),
-        PRESS(SCE_CTRL_CROSS | SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CIRCLE), TAP(40, 28), TAP(200, 325), TAP(40, 28)};
+        PRESS(SCE_CTRL_CROSS | SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CIRCLE), TAP(40, 525), TAP(200, 325), TAP(40, 525)};
     run(touch, sizeof(touch) / sizeof(touch[0]));
     TEST_CHECK(shows(1, "Choose a category") && shows(3, "Choose a category"));
     TEST_CHECK(shows(5, "Model size") && !shows(5, "Text source"));
@@ -1903,7 +1903,7 @@ static void test_settings_navigation(void)
     card(NULL);
     vjo_install_stub_open = 1;
     vjo_install_stub_busy_to = 6;
-    static const Input busy[] = {PRESS(SCE_CTRL_SELECT), TAP(40, 28), PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_CIRCLE)};
+    static const Input busy[] = {PRESS(SCE_CTRL_SELECT), TAP(40, 525), PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_CIRCLE)};
     run(busy, sizeof(busy) / sizeof(busy[0]));
     TEST_CHECK(session->lookup_shows == 0 && session->install_frames == 6 && shows(7, "Choose a category"));
     /* Cancel owned by an active Anki job is delivered to that job first. */
@@ -1914,7 +1914,30 @@ static void test_settings_navigation(void)
     TEST_CHECK(session->anki_frames == 4 && (session->anki_pressed & SCE_CTRL_CIRCLE) && shows(5, "Choose a category"));
 }
 
+/* The walkthrough captures both scroll positions so every usual and advanced reading option is visible. */
+static void test_settings_walkthrough(void)
+{
+    if (!getenv("VJO_THEME_PREVIEW_DIR")) return;
+    card(NULL);
+    static const Input home[] = {{0, 0, 0, 0}};
+    run(home, 1); preview_record(0, "walk-home");
+    static const Input basic[] = {OCR_PAGE, PRESS(SCE_CTRL_UP)};
+    run(basic, sizeof(basic) / sizeof(basic[0]));
+    preview_record(1, "walk-reading-1-usual");
+    preview_record(3, "walk-reading-2-selection");
+    TEST_CHECK(focused_card(3) == 12 && card_top(3, 3) >= OCR_Y && card_top(3, 5) >= OCR_Y);
+    static const Input advanced[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_UP)};
+    run(advanced, sizeof(advanced) / sizeof(advanced[0]));
+    preview_record(3, "walk-advanced-1-sources");
+    preview_record(5, "walk-advanced-2-textbox");
+    TEST_CHECK(focused_card(5) == 11 && card_top(5, 8) >= OCR_Y && card_top(5, 10) >= OCR_Y);
+    static const Input appearance[] = {APPEARANCE_PAGE};
+    run(appearance, sizeof(appearance) / sizeof(appearance[0]));
+    preview_record(1, "walk-appearance");
+}
+
 TEST_LIST = {
+    {"settings_walkthrough", test_settings_walkthrough},
     {"settings_navigation", test_settings_navigation},
     {"app_colour_schemes", test_app_colour_schemes},
     {"the_tab_bar_six_tabs_fit_their_labels_and_their_touches", test_the_tab_bar},

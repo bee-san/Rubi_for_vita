@@ -36,6 +36,7 @@
 #include "../../settings/anki_page.h"
 #include "../../settings/app_prefs.h"
 #include "../../settings/preferences.h"
+#include "settings_preview.h"
 
 void vjo_config_load(VjoConfig *cfg, VjoArena *scratch); /* shell/files.c: what the overlay reads */
 
@@ -178,8 +179,8 @@ static int frames_begun, frames_shown;
 /* the clipping the page sets around a row cut at the room's bottom, as each drawing call sees it */
 static int clipping, clip_x0, clip_y0, clip_x1, clip_y1;
 void vita2d_enable_clipping(void) { clipping = 1; }
-void vita2d_disable_clipping(void) { clipping = 0; }
-void vita2d_set_clip_rectangle(int x0, int y0, int x1, int y1) { clip_x0 = x0, clip_y0 = y0, clip_x1 = x1, clip_y1 = y1; }
+void vita2d_disable_clipping(void) { clipping = 0; vp_clip(0, 0, 0, 0); }
+void vita2d_set_clip_rectangle(int x0, int y0, int x1, int y1) { clip_x0 = x0, clip_y0 = y0, clip_x1 = x1, clip_y1 = y1; vp_clip(x0, y0, x1, y1); }
 void vita2d_start_drawing(void) { frames_begun++; }
 void vita2d_clear_screen(void) {}
 void vita2d_end_drawing(void) {}
@@ -1566,7 +1567,26 @@ static void a_lock_that_cannot_be_made_starts_nothing(void)
     TEST_CHECK(!vjo_anki_page_busy() && files_in(VJO_QUEUE_DIR, ".json") == 0);
 }
 
+/* Screenshot-only fixture: drive all ten real Anki rows without exporting or importing anything. */
+static void settings_walkthrough(void)
+{
+    if (!vp_available()) return;
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    queue_card("猫", 1);
+    show();
+    VjoPageUi preview = vp_ui(&buttons);
+    for (int row = 0; row < ROWS; row++) {
+        vp_begin("Anki");
+        vjo_anki_page_frame(&preview, row ? SCE_CTRL_DOWN : 0, -1, -1, &scratch);
+        if (row == 0) vp_finish("walk-anki-1-mining");
+        if (row == 6) vp_finish("walk-anki-2-card-options");
+        if (row == 9) vp_finish("walk-anki-3-import-export");
+    }
+    vp.active = 0;
+}
+
 TEST_LIST = {
+    {"settings_walkthrough", settings_walkthrough},
     {"the_rows_and_the_footer_do_not_overlap", the_rows_and_the_footer_do_not_overlap},
     {"up_down_and_the_stick_choose_a_row", up_down_and_the_stick_choose_a_row},
     {"enter_and_left_right_save_each_row_s_key", enter_and_left_right_save_each_row_s_key},
