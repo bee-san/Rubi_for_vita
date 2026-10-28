@@ -2285,14 +2285,15 @@ falls from two 128 KiB arenas to one 64 KiB arena (192 KiB less requested heap).
 New static text/UI buffers and code also occupy Shell memory, so that reduction
 is not a claim of 192 KiB more total free memory. These remain host measurements.
 
-`tools/benchmark_local_ocr.py` runs the host `vjo-ocr` tool (the same
+`tools/benchmark_local_ocr.py` (removed with the ncnn backend, #418; its SHA-256 and
+command are in the benchmark's JSON) ran the host `vjo-ocr` tool (the same
 finder, workspace and model checks as the game worker) once per region, in a fresh
 process, on vita-vn-ocr's hand-checked regions: vita-test (84 regions from 16
 Vita games, 960×544 screenshots) and psp-test (93 regions from 14 PSP games, at
 the PSP's native 480×272). Accuracy is eval's region-level concat CER: all
 lines a backend read, top to bottom, against all lines of the region; a refused
 region counts all its characters as errors. The ncnn row is this repository's
-own PP-OCRv5 mobile backend (`-DVJO_WITH_NCNN=ON`, the pinned 8,242,276-byte
+former PP-OCRv5 mobile backend (`-DVJO_WITH_NCNN=ON`, since removed; the pinned 8,242,276-byte
 model) with its bright-pixel line finder. Details:
 [benchmarks/vocr-vs-ncnn-20261010.json](benchmarks/vocr-vs-ncnn-20261010.json).
 

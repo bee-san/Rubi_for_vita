@@ -976,7 +976,7 @@ Rubi is offline and has one OCR engine. What earlier versions had, and what beco
   installer delete it. The last build with Google Lens is the tag `archive/online-last` (branch `archive/online`).
 - **The VOCR2 trial** (a separately trained FL10-sized model with a textbox finder, opt-in in 0.7.12 to v0.8.0-test.1;
   its promotion guard failed): a saved `ocr_backend = vocr2` loads as the local engine, and the app's next save and
-  the installer delete the line; so does `ncnn`, which only the host tools run.
+  the installer delete the line; so does `ncnn`, an engine only the host tools had, since removed.
   `ux0:data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr` can be deleted.
 - **Meiki**, a manual single-line recognizer, removed from the source after 0.7.12: its MNN engine had to be copied
   into each game's own `app0:` folder through a per-title rePatch mount, and two observed jobs took about eight
