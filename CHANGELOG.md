@@ -11,6 +11,19 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The reading streak's seed and line** (#501's audit; [details](docs/ocr-history.md#streak)). When the overlay's
+  own record and `history.csv`'s days both end on one day, or their runs of days overlap (`history.csv` moved away
+  before the Rubi app's first start), the seed keeps the whole run, from the earlier start to the later end; it kept
+  the file's shorter run before. A record just short of a 64 KiB window no longer makes the seed miss the record
+  after it (the overlay writes none that long). The Triangle view shows no streak line until the overlay has read the
+  record since it started, never a "current 0 days · longest 0" the file does not hold; and a line recorded while
+  the overlay is open redraws it only when the streak changed (a redraw resets the entry's scroll). A Cards change of
+  the 0.9.8 test builds that a stop interrupted left both of its cards queued:
+  [anki.md](docs/anki.md#the-queue-on-the-memory-card) says which to delete. The normal Shell's code grows by 32 B
+  (16 B in the debug build), in the same pages [measured: the module rows]. Host tests; not run on a console yet.
+
 ## [0.10.0] - 2026-10-28
 
 VOCR6 for all three model sizes, and a text spotter that finds the lines (vita-vn-ocr #125; v0.4.1-vocr6.2 and

@@ -20,8 +20,10 @@ size_t vjo_streak_scan(VjoStreak *s, char *buf, size_t len, int whole, int last,
 
 /* The seed of history.csv (seed) and the record the Shell kept meanwhile (live: the lines it added before the app
  * seeded it), one record into seed: history.csv has every line the Shell counted, so seed is the record unless the
- * file lost its newest lines (moved away, cut). Then live's newest day stands, and its streak goes on from seed's when
- * it started the day after seed's newest day; the longest is the longest of both. live may be NULL or not valid. */
+ * file lost lines (moved away, cut). Each record's current run (its current days in a row, ending at its day) is days
+ * with a line, so two runs that touch or overlap are one run, from the earlier start to the later end; else the run
+ * that ends later is the current one. The longest is the longest of both, and at least the current. live may be NULL
+ * or not valid (seed is kept). (#501's audit, F1.) */
 void vjo_streak_merge(VjoStreak *seed, const VjoStreak *live);
 
 #endif

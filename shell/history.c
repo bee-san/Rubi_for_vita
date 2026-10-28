@@ -73,7 +73,7 @@ static struct {
     uint32_t seq, top_seq;            /* seq: odd while the writer appends a record; top_seq: when top was read */
     int state, read, clean;           /* TOTAL_*; read: history_total.bin was read; clean: no append ran as top
                                        * was read */
-    uint32_t streak_seq;              /* the writer's updates of `streak` (vjo_history_streak) */
+    uint32_t streak_seq;              /* `streak`'s stores (vjo_history_streak); 0: not read since the Shell started */
 #if VJO_DEBUG
     uint32_t windows, bytes; /* the count's windows and bytes read, and when it started: its log line */
     int64_t started;
@@ -354,7 +354,7 @@ __attribute__((noinline)) void vjo_history_streak(int add)
 {
     char path[64];
     VjoStreak s;
-    uint32_t seq = total.streak_seq; /* the writer's updates before this read (the writer's own thread: VjoNet) */
+    uint32_t seq = total.streak_seq; /* the stores before this read (the writer's: VjoNet; the view's: VjoControl) */
     int32_t today = streak_today();
     SceUID fd = sceIoOpen(cache_path(path, sizeof(path), VJO_STREAK_NAME), SCE_O_RDONLY, 0);
     int n = fd < 0 ? fd : sceIoRead(fd, &s, sizeof(s));
@@ -366,11 +366,13 @@ __attribute__((noinline)) void vjo_history_streak(int add)
         vjo_streak_init(&s); /* none yet, or not one this writes: a new record (core/streak.c's rules take any fields) */
     if (add && vjo_streak_add(&s, today))
         vjo_file_write(path, &s, sizeof(s));
+    uint32_t shown = vjo_streak_current(&s, today) | (uint32_t)s.longest << 16;
     vjo_view_lock();
     if (add || seq == total.streak_seq) { /* a view's read, made while the writer wrote, never undoes the writer's */
-        total.streak = vjo_streak_current(&s, today) | (uint32_t)s.longest << 16;
-        total.streak_seq += (uint32_t)add;
-        g_view.version++;
+        /* drawn again only when it changed, or at its first store (an open overlay's redraw resets its scroll) */
+        g_view.version += total.streak != shown || !total.streak_seq;
+        total.streak = shown;
+        total.streak_seq++;
     }
     vjo_view_unlock();
 }
@@ -378,7 +380,9 @@ __attribute__((noinline)) void vjo_history_streak(int add)
 void vjo_history_streak_text(char *buf, size_t cap)
 {
     uint32_t current = total.streak & 0xFFFFu;
-    sceClibSnprintf(buf, cap, "\n\nStreak: current %u day%s · longest %u", (unsigned)current, current == 1 ? "" : "s",
+    *buf = '\0'; /* not read yet (the view's first frames after a press since the Shell started): no line, not 0 */
+    if (total.streak_seq)
+        sceClibSnprintf(buf, cap, "\n\nStreak: current %u day%s · longest %u", (unsigned)current, current == 1 ? "" : "s",
                     (unsigned)(total.streak >> 16));
 }
 

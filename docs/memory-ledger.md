@@ -12,9 +12,9 @@ Triangle view ([ocr-history.md](ocr-history.md#streak)). The Shell gains the str
 `vjo_history_streak`: a 16-byte file read when a line is recorded and when the view asks, written on a day's first
 line) and the view's line; nothing is allocated, no thread or PAF block is added, and the Shell's imports are the
 ones it had (`sceRtc*`, `sceIo*`). Measured with `tools/check_memory_ledger.py`'s module rows, both builds, main
-`52eb948` (#428 and #440 in it) against this change:
+`52eb948` (#428 and #440 in it; `ec27187f`, #501's base, has the same Shell) against #501:
 
-| Shell | main `52eb948` | this change |
+| Shell | main `52eb948` | #501 |
 |---|---:|---:|
 | normal | 85,316 + 77,664 B | 85,796 + 77,672 B (+480 code, +8 data) |
 | debug | 97,604 + 77,752 B | 98,116 + 77,760 B (+512 code, +8 data) |
@@ -29,6 +29,12 @@ the debug build) and the view's line, with the record's read and the clock, 336 
 the update, `arm-vita-eabi-size`]. The update stays in the Shell: the game worker cannot write `ux0:data` itself (its
 files go through the kernel's syscalls) and does not know which lines `history.csv` records (the Shell's writer
 decides, `vjo_history_append`). The Rubi app's seed is the app's own memory ([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)).
+
+#501's audit's follow-up (F3, F4: no streak line before the record's first read, and no redraw when the streak shown
+did not change) makes the Shell 85,796 → 85,828 B of code (normal, +32) and 98,116 → 98,132 B (debug, +16), data
+unchanged, the same pages (188 and 172 B of code room left) [measured: the module rows, #501 `92c19fb7` against the
+follow-up]. Its other fixes (F1, F2: the seed's merge and window loop) are the Rubi app's: its text 651,172 →
+651,364 B (normal) [measured: `arm-vita-eabi-size`].
 
 ## A press and the stable-text wait: #413's audit (#441) and #441's audit (no API change)
 

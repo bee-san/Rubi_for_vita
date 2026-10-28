@@ -505,23 +505,24 @@ Overlay. Just longest vs current streak kinda thing."). The rules are `core/stre
 reading caches: a magic number, the newest day counted, the current and the longest streak, and whether the Rubi app
 has seeded it. The overlay adds a line's day when it records the line and writes the file, through a temporary file
 and a rename, only when the record changes: at most once a day. It reads the file again when the Triangle view asks
-for its statistics. Nothing in the game scans `history.csv` for it. The overlay starts a missing or damaged record
+for its statistics; until it has read the file once since the Shell started (a line recorded, or that request), the
+view has no streak line, never a streak of 0 the file does not hold. Nothing in the game scans `history.csv` for it. The overlay starts a missing or damaged record
 afresh, not seeded, so the app seeds it again at its next start: deleting the file loses nothing `history.csv` holds.
 
 **Seeding.** The first time the Rubi app opens after the update (while the record is missing or not seeded), a
 thread of the app reads `history.csv` once, 64 KiB at a time, and replays every line's day through the same rules,
 in the time zone the Vita has then, so a streak read before the update carries over. What the overlay counted
 meanwhile is kept: those lines are in `history.csv` too, and when the file lost them (moved away, cut) the record's
-newest days stand. The record is then written, seeded, and the app no longer reads `history.csv` for it. A seed the
+newest days stand, or, when both end on the same day, the longer run of days in a row. The record is then written, seeded, and the app no longer reads `history.csv` for it. A seed the
 app's exit stopped, or one that could not read `history.csv` or write the record, writes nothing and runs again at
 the app's next start. The same seed removes the Stats tab's `stats_cache.bin`, which nothing reads now; with
 `log_file = on`, `log.txt` gets a `Rubi app: streak:` line with what it found.
 
-**Memory.** In SceShell the overlay keeps 8 bytes for it (the streak shown, and a count of the writer's updates of
-it, so that a view's read made while a line is recorded never shows an older streak) and allocates nothing; its code
-is 480 B of the normal Shell's (512 B of the debug one's), in the pages the Shell had [measured: the build's module
-rows, main `52eb948` against this change; [memory-ledger.md](memory-ledger.md#the-reading-streak-in-the-overlay-no-api-change)]. The
-file is 16 bytes. The seed's window and its thread's stack are the app's, in its own process
+**Memory.** In SceShell the overlay keeps 8 bytes for it (the streak shown, and a count of its stores, so that a
+view's read made while a line is recorded never shows an older streak, and none shows before the first) and
+allocates nothing; its code is 512 B of the normal Shell's (528 B of the debug one's), in the pages the Shell had
+[measured: the build's module rows, main `52eb948` against #501 and its audit's follow-up;
+[memory-ledger.md](memory-ledger.md#the-reading-streak-in-the-overlay-no-api-change)]. The file is 16 bytes. The seed's window and its thread's stack are the app's, in its own process
 ([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)).
 
 Not run on a console yet; measured on the host only: host tests of a day's rollover, gaps, a time-zone change, first
