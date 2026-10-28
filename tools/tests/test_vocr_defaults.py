@@ -28,7 +28,8 @@ VOCR3_FL10_SHA256 = "87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b820
 # blob plain (no gate kept: v0.3.0's VOCR5-S arena), Normal's with the head gate (ε = 1e-4, a 1,792 B section; the
 # arena with it on, +48 B) and the two-level head (the output rows in frequency order, a 1,984 B VOC2 trailer; the
 # arena with it on, +1,456 B), Large's with the two-level head alone. A tier whose new candidate did not beat its
-# incumbent keeps that model (0.10.0's test builds kept VOCR5-S beside v0.4.0-vocr6.1's Normal and Large).
+# incumbent keeps that model (the test builds v0.9.8-test.4 and test.5 kept VOCR5-S beside v0.4.0-vocr6.1's Normal
+# and Large).
 # The other tests read the tiers from here, tools/model_tiers.json or the C tier macros.
 TIER_PINS = {
     "small": ("VOCR6.2_S_w8.vocr", 819792, "864bbd196d5bc5d3a7bd7918cf7274b3503dfe65d440017ef0781ea7e7ba37d2", 124832,

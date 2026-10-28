@@ -5,7 +5,7 @@
  * docs/vocr6.md "The follow-up", pre-release v0.4.1-vocr6.2): Small's blob plain, Normal's with #120's head gate
  * (ε = 1e-4) and #122's two-level head, Large's with the two-level head alone; the arena with ocr_head_gate's
  * default, on (each blob's own paths). A size whose new candidate did not beat its incumbent keeps that model
- * (0.10.0's test builds had VOCR5-S beside VOCR6's Normal and Large). The C pins themselves
+ * (the test builds v0.9.8-test.4 and test.5 had VOCR5-S beside VOCR6's Normal and Large). The C pins themselves
  * (include/vjo_vocr_sizes.h, core/vocr_ocr.c, core/vocr_models.c, kernel/game_ocr.c) are checked
  * against this table. */
 #ifndef VJO_TEST_TIER_PINS_H

@@ -20,8 +20,10 @@ been reported.
   Small at half the learning rate. Measured on a computer (dialogue CER through the GRAD finder's path of Rubi 892cfb9,
   as vita-vn-ocr's final reads model it, with the 1 MB LM and the cascade; VOCR5 → VOCR6, 95 % intervals):
   - the hooked games' held-out pages: Small 1.177 → 1.049 % (−0.128 points, −0.189 to −0.074), Normal 1.008 → 0.936 %
-    (−0.072, −0.111 to −0.038), Large 0.990 → 0.917 % (−0.073, −0.118 to −0.036), three seeds of each recipe (the
-    shipped blobs then trained on those pages too);
+    (−0.072, −0.111 to −0.038), Large 0.990 → 0.917 % (−0.073, −0.118 to −0.036), three held-out seeds each, read with
+    the 1 MB LM's screening build. Small's are its shipped recipe's; Normal's and Large's are v0.4.0-vocr6.1's
+    15,000-step recipe's, as the shipped 45,000-step blobs (one seed) have no held-out read. The shipped blobs then
+    trained on those pages too;
   - other games: VOCR5's development score 1.674 → 1.549 (Small), 1.482 → 1.389 (Normal), 1.439 → 1.396 (Large),
     none resolved. Small in the set as it ships reads it +0.041 (−0.016 to +0.099) against VOCR5-S: worse in point,
     and its recipe was the second tried in its stage (the third at Small);
@@ -48,8 +50,8 @@ been reported.
   no budget changes: the module rows move by 16 B or less in both Vita builds, in the same pages (measured).
   `ocr/VOCR6-ATTRIBUTION.md` is the new release's (non-commercial use only; trained on copyrighted game data, which is
   not redistributed). An update leaves the sizes' old files in `ux0:data/VitaJPOverlay/ocr/`: 0.9.8's
-  `VOCR5_S_w8g.vocr`, `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (4,488,464 B), and a test build's
-  `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (3,663,296 B). Nothing reads them, so they may be deleted. Nothing of
+  `VOCR5_S_w8g.vocr`, `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (4,488,464 B), and the test builds
+  v0.9.8-test.4's and test.5's `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (3,663,296 B). Nothing reads them, so they may be deleted. Nothing of
   VOCR6 has run on a console ([details](docs/vita-vn-ocr.md#models)).
 - Opening the overlay confirms that the text is ready: its OCR read skips the stability wait. On an unsettled
   screen, a running background read yields to a new read without the wait. Background reads and quiet refreshes

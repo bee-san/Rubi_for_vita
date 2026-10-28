@@ -58,7 +58,8 @@ The engine's name comes from the pinned metadata of the model it runs
 (`core/vocr_models.c`, also written per model into the package's
 `package-manifest.json`), not from the app: VOCR6 for this package's three sizes (vita-vn-ocr's v0.4.1-vocr6.2
 pre-release, retrained on the owner's hooked games; Normal with its head gate and two-level head, Large with its
-two-level head, Small plain); in 0.10.0's test builds VOCR6 for Normal and Large and VOCR5 for Small, VOCR5 for all
+two-level head, Small plain); in the test builds v0.9.8-test.4 and test.5 VOCR6 for Normal and Large and VOCR5 for
+Small, VOCR5 for all
 three sizes in 0.8.0 to 0.9.8, and before it VOCR3 for Small and Normal
 and VOCR4 for Large). A release that pins a new generation's models as the sizes
 shows that generation's name, with no change to the app; a size that keeps an
