@@ -20,12 +20,13 @@
 #define VJO_GOLDEN_STR_FIELDS(X) X(local_dictionary_dir) X(local_dictionaries) X(ocr_model_dir)
 #define VJO_GOLDEN_INT_FIELDS(X)                                                                                     \
     X(dictionary) X(local_dictionary_results) X(non_japanese_filter) X(japanese_only_selection) X(highlight_mode)    \
-    X(frequency_badge) X(font_size_ja) X(font_size_en) X(toggle_button) X(subtitle_button) X(ocr_mode)              \
+    X(frequency_badge) X(overlay_on_text) X(font_size_ja) X(font_size_en) X(toggle_button) X(subtitle_button)        \
+    X(ocr_mode)                                                                                                      \
     X(text_source) X(vocr_tier) X(vocr_tier_explicit) X(ocr_settle_ms) X(ocr_settle_max_ms) X(ocr_skip_blank_lines) \
     X(ocr_lm) X(ocr_cascade_ms) X(ocr_refine_lines) X(log_file) X(anki_mining) X(ocr_helpers) X(ocr_boost_clock)  \
     X(ocr_settle_press_ms) X(anki_screenshot) X(stick_lookup_ms) X(ocr_text_gate) X(hook_sites)                    \
     X(anki_screenshot_trim_bars) X(reading_time) X(ocr_head_gate) X(hook_trust) X(ocr_vertical) X(ocr_line_fix)     \
-    X(ocr_wait_hint) X(names_first) X(ocr_finder) X(ocr_spotter_refine)
+    X(ocr_wait_hint) X(names_first) X(ocr_finder) X(ocr_spotter_refine) X(ocr_pause)
 #define VJO_GOLDEN_SIZE(f) +sizeof(((VjoConfig *)0)->f)
 _Static_assert(sizeof(VjoConfig) == 0 VJO_GOLDEN_STR_FIELDS(VJO_GOLDEN_SIZE) VJO_GOLDEN_INT_FIELDS(VJO_GOLDEN_SIZE) +
                                         sizeof(((VjoConfig *)0)->warnings) + sizeof(((VjoConfig *)0)->n_warnings),

@@ -9,6 +9,7 @@
   japanese_only_selection=0
   highlight_mode=0
   frequency_badge=1
+  overlay_on_text=0
   font_size_ja=18
   font_size_en=14
   toggle_button=2
@@ -42,6 +43,7 @@
   names_first=2
   ocr_finder=1
   ocr_spotter_refine=0
+  ocr_pause=0
   n_warnings=0
 = host/tests/fixtures/config-old-app-test2.ini
   local_dictionary_dir="ux0:data/VitaJPOverlay/dictionaries"
@@ -53,6 +55,7 @@
   japanese_only_selection=1
   highlight_mode=0
   frequency_badge=1
+  overlay_on_text=0
   font_size_ja=18
   font_size_en=14
   toggle_button=2
@@ -86,6 +89,7 @@
   names_first=2
   ocr_finder=1
   ocr_spotter_refine=0
+  ocr_pause=0
   n_warnings=1
   warning: ocr_backend: VOCR2 was removed; using vocr
 = host/tests/fixtures/config-test3-owner.ini
@@ -98,6 +102,7 @@
   japanese_only_selection=1
   highlight_mode=0
   frequency_badge=1
+  overlay_on_text=0
   font_size_ja=18
   font_size_en=14
   toggle_button=2
@@ -131,6 +136,7 @@
   names_first=2
   ocr_finder=1
   ocr_spotter_refine=0
+  ocr_pause=0
   n_warnings=0
 = docs/config.example.ini
   local_dictionary_dir="ux0:data/VitaJPOverlay/dictionaries"
@@ -142,6 +148,7 @@
   japanese_only_selection=0
   highlight_mode=0
   frequency_badge=1
+  overlay_on_text=0
   font_size_ja=18
   font_size_en=14
   toggle_button=2
@@ -175,6 +182,7 @@
   names_first=2
   ocr_finder=1
   ocr_spotter_refine=0
+  ocr_pause=0
   n_warnings=0
 > ; a comment
 > # a comment

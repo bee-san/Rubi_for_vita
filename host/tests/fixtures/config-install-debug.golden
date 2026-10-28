@@ -36,7 +36,7 @@
     +3 ocr_backend: a removed setting, goes\n
     +4 log_host: a removed setting, goes\n
 = docs/config.example.ini
-> ; Rubi settings. Changes apply the next time the overlay opens.\n\n; Dictionary us...[6585 bytes, fnv1a ccbe746729e9bb8a]
+> ; Rubi settings. Changes apply the next time the overlay opens.\n\n; Dictionary us...[7044 bytes, fnv1a 2c1bea82025e7865]
   config_ini=0
     -1 japanese_only_selection = off\n
     -2 highlight_mode = word\n

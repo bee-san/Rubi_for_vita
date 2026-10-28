@@ -2488,10 +2488,10 @@ static const vocr_charbox_cal *model_cal(const VjoVocrModel *mi)
     static const vocr_charbox_cal cal[3] = {{-110, {0, 32, 72, 39, -11, -1, 0, 18}},
                                             {0, {0, -45, -32, 48, -23, -4, 0, -6}},
                                             {-36, {0, -12, 4, 38, -16, -10, 0, 8}}};
-    /* test/combined: main's #373 made Normal and Large VOCR6-N and VOCR6-L, VOCR5-N's and VOCR5-L's shapes fine-tuned
-     * again: their rows keep VOCR5-N's and VOCR5-L's calibration, unmeasured with VOCR6 (the overlay's measured
-     * accuracy, docs/overlay-on-text.md, is VOCR5's) */
-    static const char *const names[3] = {VJO_VOCR5_S_NAME, VJO_VOCR6_N_NAME, VJO_VOCR6_L_NAME};
+    /* test/combined: main's #373 and #420 made the three sizes VOCR6-S, VOCR6-N and VOCR6-L (v0.4.1-vocr6.2), VOCR5-S's,
+     * VOCR5-N's and VOCR5-L's checkpoints fine-tuned again: their rows keep VOCR5's calibration, unmeasured with VOCR6
+     * (the overlay's measured accuracy, docs/overlay-on-text.md, is VOCR5's) */
+    static const char *const names[3] = {VJO_VOCR6_S_NAME, VJO_VOCR6_N_NAME, VJO_VOCR6_L_NAME};
     for (unsigned i = 0; mi && i < 3; i++)
         if (!strcmp(mi->name, names[i])) return &cal[i];
     return NULL;
