@@ -71,19 +71,16 @@ replaces its global-allocation source with placement operators only, and
 replaces shape-expression evaluation with a rejecting implementation; it
 does not modify the checked-out upstream sources.
 
-Optional vita-vn-ocr backend (`-DVJO_WITH_VOCR=ON`, not vendored):
+The OCR, vita-vn-ocr (not vendored; `VJO_WITH_VOCR`, on in every build: the only engine):
 
-- Runtime: https://github.com/bee-san/vita-vn-ocr at
-  `72cf4af0905091a0ee329d336889ccf0a8cd38c8`, `runtime/vocr.c`, `vocr.h`,
-  `vocr_lines.c` and `vocr_lines.h` (GPL-3.0-or-later). The build takes them from
-  `VJO_VOCR_SOURCE_DIR` and checks their SHA-256 (`cmake/VocrOCR.cmake`).
-- Weights: the int8 `.vocr` assets of that repository's release v0.2.0
-  (GPL-3.0-or-later), downloaded by `tools/prepare_ocr.py --backend vocr` and
-  checked by size and SHA-256, never committed. Their pretraining used line
-  crops from NVIDIA OCR-Synthetic-Multilingual-v1 (Japanese subset, revision
-  `69696a1cc543ef3a0f8e9892a89c17293e915263`), © NVIDIA Corporation, licensed
-  under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); the release
-  notes carry the full attribution.
+- Runtime: https://github.com/bee-san/vita-vn-ocr's `runtime/` C sources (GPL-3.0-or-later) at the commit
+  `cmake/VocrOCR.cmake` pins (`VJO_VOCR_COMMIT`; the text spotter's files at `VJO_VOCR_SPOT_COMMIT`). The build
+  takes them from `VJO_VOCR_SOURCE_DIR` and checks each file's SHA-256 there.
+- Weights and language models: that repository's release assets, downloaded by `tools/prepare_ocr.py` and checked
+  by size and SHA-256, never committed. Each release's attribution and terms ship beside them in the package's
+  `ocr/` folder (`VOCR6-ATTRIBUTION.md`, `MODEL-ATTRIBUTION.md`, `LM-ATTRIBUTION.md`, `GATE-ATTRIBUTION.md`, ...):
+  the recognizers' and the gate's weights are for non-commercial use only, the language models CC BY-SA 4.0
+  ([docs/vita-vn-ocr.md](../docs/vita-vn-ocr.md#models)).
 
 The Meiki single-line trial (MeikiOCR, its LGPL-3.0 converted model and MNN)
 was removed after v0.7.12; this tree no longer builds or ships it. Its pinned
