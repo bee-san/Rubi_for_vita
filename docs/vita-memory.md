@@ -385,7 +385,7 @@ Facts:
   `USER_RW` block, at most 64 KiB, a strip at a time ([ingame-capture.md](ingame-capture.md)).
   API 24 removed the full-frame buffer. The screenshot-saving fix (#207) adds a separate
   16 KiB kernel file-worker stack, with no new image buffer or Shell pages: the kernel pool's
-  declared worst case is 237,568 B (debug build), 233,472 B (normal build)
+  declared worst case is 241,664 B (debug build), 237,568 B (normal build)
   [source: `include/vjo_ledger_budget.h`; memory-ledger.md]. These are accounted sizes,
   not console headroom measurements.
 - PSVshell reads the foreground process's budget (main, CDRAM, phycont: free and total) from the
