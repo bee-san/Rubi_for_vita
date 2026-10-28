@@ -36,7 +36,12 @@ typedef struct {
 } VjoOverlayData;
 
 /* Looks up text in the local .vjdict files (core/local_dict.h), the only
- * dictionaries: no lookup uses the network. */
+ * dictionaries: no lookup uses the network. This, vjo_overlay_lookup,
+ * vjo_overlay_ocr_text and vjo_overlay_from_text have only host callers (the
+ * modules look up at a cursor: vjo_overlay_lookup_at), but moving them out of
+ * core/ moves the Shell's and the Rubi app's code (the import veneers' layout:
+ * #418 P6, rubi-cleanup-6's #465), so they stay here until a change that moves
+ * those modules anyway. */
 int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, const char *text,
                     VjoDictResult *res, VjoErr *err);
 
