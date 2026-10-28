@@ -28,7 +28,7 @@ import sys
 import time
 from pathlib import Path
 
-from evallib import LM_BOS, LM_MODEL_SETTINGS, LM_SETTINGS, lm_settings  # the worker's LM decoder settings
+from evallib import LM_BOS, LM_MODEL_SETTINGS, LM_SETTINGS, lm_settings, tier_models  # the worker's LM decoder
 
 # the four pinned tiers (tools/prepare_ocr.py, the default); ctclm.2's old 1000k / 4000k only by --lm
 PINNED = ("vocr_lm_o3_500k.vlm", "vocr_lm6_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm", "vocr_lm6_o3_4000k.vlm")
@@ -44,7 +44,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--vocr-repo", required=True, type=Path, help="vita-vn-ocr with runtime/vocr_lm.c, eval/ctclm.py")
     ap.add_argument("--models", required=True, type=Path, help="directory with the .vocr and .vlm files")
-    ap.add_argument("--model", action="append", help="recognizer (default VOCR3 H15 and FL10)")
+    ap.add_argument("--model", action="append", help="recognizer (default: the three model sizes', model_tiers.json)")
     ap.add_argument("--lm", action="append", choices=sorted(LM_SETTINGS),
                     help="LM file (default the four pinned tiers; ctclm.2's old 1000k/4000k by name)")
     ap.add_argument("--cascade", help="the larger recognizer a low-confidence line is read again with")
@@ -63,7 +63,7 @@ def main(argv=None):
     if not set(sets) <= set(SETS):
         raise SystemExit(f"lm_cer: only the development sets {SETS} are read here")
     rows = [r for s in sets for r in ctclm.load_set(s) if not r["name"]]
-    models = args.model or ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"]
+    models = args.model or tier_models()
     lms = args.lm or list(PINNED)
     every = models + ([args.cascade] if args.cascade and args.cascade not in models else [])
     rt = {m: Vocr(str(args.models / m), mode="w8i", max_width=1024) for m in every}

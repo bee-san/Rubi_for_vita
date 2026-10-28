@@ -2,6 +2,7 @@
 collect_word_lookup_lines.py, vocr_regions_pack.py): the protected sets they never read, the development
 manifests, a screenshot found in --shots, edit distance, the UTF-16 length, and the overlay's LM decoder
 settings."""
+import json
 from pathlib import Path
 
 # vita-vn-ocr's linefind development regions (eval/linefind/manifests): the only manifests these scripts read
@@ -20,6 +21,12 @@ def protected_set(row):
 def protected(row):
     """A protected set's row, or CLANNAD's by its VN."""
     return protected_set(row) or row.get("vn") in PROTECTED_VNS
+
+
+def tier_models():
+    """The three model sizes' pinned recognizers, smallest first (tools/model_tiers.json, the Rubi app's table)."""
+    tiers = json.loads((Path(__file__).resolve().parent / "model_tiers.json").read_text(encoding="utf-8"))["tiers"]
+    return [tier["model"] for tier in tiers]
 
 
 def find_shot(name, dirs):

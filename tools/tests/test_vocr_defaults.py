@@ -428,6 +428,9 @@ class VocrDefaults(unittest.TestCase):
                 self.assertEqual(evallib.lm_settings(model, name), want, model)
         for tool in (lm_cer_eval, lm_lines_eval):  # no copy of their own
             self.assertIs(tool.lm_settings, evallib.lm_settings, tool.__name__)
+        # lm_cer_eval's report names the tables it decoded with: evallib's, not a copy (audit-rubi-cleanup-8 F6)
+        self.assertIs(lm_cer_eval.LM_SETTINGS, evallib.LM_SETTINGS)
+        self.assertIs(lm_cer_eval.LM_MODEL_SETTINGS, evallib.LM_MODEL_SETTINGS)
         # the ledger's LM block holds the largest, page-rounded
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))

@@ -32,7 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import collect_word_lookup_lines as cw  # noqa: E402 (the shared reservation rules)
-from evallib import find_shot, lm_settings  # noqa: E402 (the worker's LM decoder settings)
+from evallib import find_shot, lm_settings, tier_models  # noqa: E402 (the worker's LM decoder settings)
 
 
 def main(argv=None):
@@ -41,7 +41,7 @@ def main(argv=None):
     ap.add_argument("--models", required=True, type=Path)
     ap.add_argument("--vocr-repo", required=True, type=Path, help="vita-vn-ocr checkout (runtime with vocr_lm.c)")
     ap.add_argument("--shots", action="append", required=True)
-    ap.add_argument("--model", action="append")
+    ap.add_argument("--model", action="append", help="recognizer (default: the three model sizes', model_tiers.json)")
     ap.add_argument("--lm", action="append")
     ap.add_argument("--limit", type=int, default=0, help="regions per manifest (0: all)")
     ap.add_argument("--cascade", help="the cascade's larger model (VOCR4_W20_w8.vocr)")
@@ -56,7 +56,7 @@ def main(argv=None):
     test_vns = set(json.loads((args.vocr_repo / "eval/manifests/test_games.json").read_text())["all"])
     reserved, is_test_vn = cw.reservation(args.vocr_repo)
     owner_test = cw.owner_test_folder_vns()
-    models = args.model or ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"]
+    models = args.model or tier_models()
     lms = args.lm or ["vocr_lm6_o3_4000k.vlm"]
     every = models + ([args.cascade] if args.cascade and args.cascade not in models else [])
     ref = {m: Vocr(str(args.models / m), mode="w8i", max_width=1024) for m in every}
