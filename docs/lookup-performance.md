@@ -106,8 +106,9 @@ python3 tools/convert_dictionary.py build/lookup-benchmark/jitendex.zip \
 
 The two builds' `vjo-local-bench` were then compared on the seven queries above by
 `tools/compare_lookup_benchmarks.py` (its query set `tools/lookup_benchmark_cases.json`), and the synthetic
-size/memory stress test was `tools/benchmark_local_dictionary.py`: both one-off scripts, removed in the tools
-cleanup of #418 (`git show 93e2bec:tools/compare_lookup_benchmarks.py` gives the comparison as it ran).
+size/memory stress test was `tools/benchmark_local_dictionary.py`: one-off files, removed in the tools cleanup of
+#418. Their last versions: `git show 93e2bec:tools/compare_lookup_benchmarks.py` (the comparison as it ran),
+`git show 93e2bec:tools/lookup_benchmark_cases.json` and `git show 93e2bec:tools/benchmark_local_dictionary.py`.
 
 ## Real recognized lines (2026-10-15)
 
