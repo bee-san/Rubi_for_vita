@@ -213,6 +213,44 @@ GOLDEN_FN void golden_escape_short(GoldenOut *o, const char *s, size_t n)
     golden_printf(o, "...[%zu bytes, fnv1a %016llx]", n, golden_hash(s, n));
 }
 
+/* The lines of a (an, the input) that b (bn, a save's output) drops, as "    - <line>", and those it adds, as
+ * "    + <line>", each with its line number in its own text: a save keeps every other line in its order, so this walk
+ * (a line kept when it is the next line of b, else dropped when no later line of b is it, else b's lines up to it
+ * are added) is the whole difference, and b can be rebuilt from a and it. Each line with its '\n', escaped. */
+GOLDEN_FN size_t golden_next_line(const char *s, size_t n, size_t at)
+{
+    while (at < n && s[at] != '\n') at++;
+    return at < n ? at + 1 : n;
+}
+GOLDEN_FN void golden_line_diff(GoldenOut *o, const char *a, size_t an, const char *b, size_t bn)
+{
+    size_t i = 0, j = 0;
+    unsigned ai = 1, bj = 1;
+    while (i < an || j < bn) {
+        size_t ie = golden_next_line(a, an, i), je = golden_next_line(b, bn, j);
+        if (i < an && j < bn && ie - i == je - j && !memcmp(a + i, b + j, ie - i)) {
+            i = ie, j = je, ai++, bj++;
+            continue;
+        }
+        int later = 0;
+        for (size_t k = j, ke; i < an && k < bn; k = ke) { /* is a's line a later line of b? */
+            ke = golden_next_line(b, bn, k);
+            if (ke - k == ie - i && !memcmp(b + k, a + i, ie - i)) { later = 1; break; }
+        }
+        if (i < an && !later) {
+            golden_printf(o, "    -%u ", ai);
+            golden_escape_short(o, a + i, ie - i);
+            golden_puts(o, "\n");
+            i = ie, ai++;
+        } else {
+            golden_printf(o, "    +%u ", bj);
+            golden_escape_short(o, b + j, je - j);
+            golden_puts(o, "\n");
+            j = je, bj++;
+        }
+    }
+}
+
 /* The line of text (len bytes) that starts at or before byte at: into out, cut to fit. */
 GOLDEN_FN void golden_line_at(const char *text, size_t len, size_t at, char *out, size_t cap)
 {

@@ -1,19 +1,62 @@
 # The Rubi app's saves of the config fixtures (host/tests/test_preferences.c config_saves_golden; VJO_UPDATE_GOLDEN=1 rewrites this file)
 = host/tests/fixtures/config-old-app-test2.ini
   preferences: 4408 bytes, fnv1a b4b67828d90f9e73
+    -23 jpdb_api_key =\n
+    -26 jiten_api_key =\n
+    -61 ocr_backend = vocr2\n
+    -65 vocr_model = VOCR3_H15_w8.vocr\n
+    -68 vocr_fallback_model = VOCR3_FL10_w8.vocr\n
+    -87 log_host =\n
+    -98 anki_host =\n
+    -100 anki_audio_url =\n
+    +93 vocr_tier = normal\n
   anki_keys: 4514 bytes, fnv1a f5848322d422106e
+    -23 jpdb_api_key =\n
+    -26 jiten_api_key =\n
+    -61 ocr_backend = vocr2\n
+    -87 log_host =\n
+    -98 anki_host =\n
+    -100 anki_audio_url =\n
+    +95 anki_screenshot = off\n
+    +96 anki_screenshot_trim_bars = on\n
   clean: 4461 bytes, fnv1a 47587792d8b74838
+    -23 jpdb_api_key =\n
+    -26 jiten_api_key =\n
+    -61 ocr_backend = vocr2\n
+    -87 log_host =\n
+    -98 anki_host =\n
+    -100 anki_audio_url =\n
   app_ini: 4605 bytes, fnv1a 6599f955c1bcfc8c
+    +101 anki_screenshot = off\n
+    +102 anki_screenshot_trim_bars = on\n
 = host/tests/fixtures/config-test3-owner.ini
   preferences: 3860 bytes, fnv1a 771c60d65e0212d5
+    -50 ocr_backend = vocr\n
+    -78 log_host =\n
   anki_keys: 3913 bytes, fnv1a 4c02da3444b2e7e1
+    -50 ocr_backend = vocr\n
+    -78 log_host =\n
+    +86 anki_screenshot = off\n
+    +87 anki_screenshot_trim_bars = on\n
   clean: 3860 bytes, fnv1a 771c60d65e0212d5
+    -50 ocr_backend = vocr\n
+    -78 log_host =\n
   app_ini: 3943 bytes, fnv1a 2359cf9439a1788b
+    +88 anki_screenshot = off\n
+    +89 anki_screenshot_trim_bars = on\n
 = docs/config.example.ini
   preferences: 6585 bytes, fnv1a ccbe746729e9bb8a
   anki_keys: 6585 bytes, fnv1a 15cb57bb638904da
+    -132 anki_mining = off\n
+    +132 anki_mining = on\n
+    -134 anki_screenshot = on\n
+    +134 anki_screenshot = off\n
   clean: 6585 bytes, fnv1a ccbe746729e9bb8a
   app_ini: 6585 bytes, fnv1a 15cb57bb638904da
+    -132 anki_mining = off\n
+    +132 anki_mining = on\n
+    -134 anki_screenshot = on\n
+    +134 anki_screenshot = off\n
 > ; a comment
   removed_line: K
   preferences: "; a comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
@@ -168,6 +211,24 @@
   removed_line: K
   preferences: "\xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
   anki_keys: "\xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> \xEF\xBBfont_size_ja = 20
+  removed_line: K
+  preferences: "\xEF\xBBfont_size_ja = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\xEF\xBBfont_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> \xEFfont_size_ja = 20
+  removed_line: K
+  preferences: "\xEFfont_size_ja = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\xEFfont_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> \xEF\xBB\xBEfont_size_ja = 20
+  removed_line: K
+  preferences: "\xEF\xBB\xBEfont_size_ja = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\xEF\xBB\xBEfont_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
   clean: (unchanged)
   app_ini: (as anki_keys)
 > font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12
@@ -606,6 +667,24 @@
   removed_line: K
   preferences: "font_size_ja = big\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
   anki_keys: "font_size_ja = big\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 100000001
+  removed_line: K
+  preferences: "font_size_ja = 100000001\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 100000001\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 999999999999
+  removed_line: K
+  preferences: "font_size_ja = 999999999999\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 999999999999\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 0020
+  removed_line: K
+  preferences: "font_size_ja = 0020\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 0020\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
   clean: (unchanged)
   app_ini: (as anki_keys)
 > font_size_en = 8
@@ -1634,6 +1713,18 @@
   anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
   clean: (unchanged)
   app_ini: (as anki_keys)
+> anki_mining = off\nanki_mining = on
+  removed_line: K K
+  preferences: "anki_mining = off\nanki_mining = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on
+  removed_line: K K K
+  preferences: "anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_screenshot = off\nanki_mining = on\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
 > dictionary = local
   removed_line: K
   preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
@@ -1724,6 +1815,30 @@
   anki_keys: "dictionaryx = jpdb\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
   clean: (unchanged)
   app_ini: (as anki_keys)
+> dictionary local = 1
+  removed_line: K
+  preferences: "dictionary local = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary local = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = jpdb;x
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "dictionary = jpdb;x\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> dictionary = jiten#x
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "dictionary = jiten#x\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> dictionary = hachidori;relay
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "dictionary = hachidori;relay\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
 > dictionary = hachidori\nhachidori_host = 192.168.1.20:19633
   removed_line: R(dictionary = local\n) K
   preferences: "dictionary = local\nhachidori_host = 192.168.1.20:19633\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
@@ -2276,6 +2391,36 @@
   anki_keys: "vocr_model = .vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
   clean: (unchanged)
   app_ini: (as anki_keys)
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model
+  removed_line: K
+  preferences: "vocr_model\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model FL10_w8.vocr
+  removed_line: K
+  preferences: "vocr_model FL10_w8.vocr\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model FL10_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model x = 1
+  removed_line: K
+  preferences: "vocr_model x = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model x = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
 > vocr_model = meiki-stream-int8.mnn
   removed_line: K
   preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
@@ -2474,3 +2619,42 @@
   anki_keys: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1175 bytes, fnv1a 94c0c3f51ee94b7d]"
   clean: (unchanged)
   app_ini: (as anki_keys)
+= the saves' refusals and limits
+> (empty)
+  preferences choices: 100 -1 -1 -1 -1 -1 -1 -1 103
+  keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 44
+  preferences room (103): 104:103 103:-1 105:103 3:-1 4:-1 0:-1
+  keys room (39): 40:39 39:-1 41:39 3:-1 4:-1 0:-1
+  clean room (0): 1:0 0:-1 2:0 3:0 4:0 0:-1
+  app_ini room (39): 40:39 39:-1 41:39 3:-1 4:-1 0:-1
+> \xEF\xBB\xBF
+  preferences choices: 104 -1 -1 -1 -1 -1 -1 -1 107
+  keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 48
+  preferences room (107): 108:107 107:-1 109:107 3:-1 4:-1 0:-1
+  keys room (43): 44:43 43:-1 45:43 3:-1 4:-1 0:-1
+  clean room (3): 4:3 3:-1 5:3 3:-1 4:3 0:-1
+  app_ini room (43): 44:43 43:-1 45:43 3:-1 4:-1 0:-1
+> \xEF\xBB\xBFvocr_tier = large\n
+  preferences choices: 103 -1 -1 -1 -1 -1 -1 -1 106
+  keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 65
+  preferences room (106): 107:106 106:-1 108:106 3:-1 4:-1 0:-1
+  keys room (60): 61:60 60:-1 62:60 3:-1 4:-1 0:-1
+  clean room (21): 22:21 21:-1 23:21 3:-1 4:-1 0:-1
+  app_ini room (60): 61:60 60:-1 62:60 3:-1 4:-1 0:-1
+> anki_mining = on\nfont_size_ja = 20
+  preferences choices: 135 -1 -1 -1 -1 -1 -1 -1 138
+  keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 79
+  preferences room (138): 139:138 138:-1 140:138 3:-1 4:-1 0:-1
+  keys room (57): 58:57 57:-1 59:57 3:-1 4:-1 0:-1
+  clean room (34): 35:34 34:-1 36:34 3:-1 4:-1 0:-1
+  app_ini room (57): 58:57 57:-1 59:57 3:-1 4:-1 0:-1
+> dictionary = jpdb\nlog_host = x\n
+  preferences choices: 119 -1 -1 -1 -1 -1 -1 -1 122
+  keys: n=-1 -1, n=9 -1, a value with LF -1, with CR -1, a 40-byte key -1, a 39-byte key 63
+  preferences room (122): 123:122 122:-1 124:122 3:-1 4:-1 0:-1
+  keys room (58): 59:58 58:-1 60:58 3:-1 4:-1 0:-1
+  clean room (19): 20:19 19:-1 21:19 3:-1 4:-1 0:-1
+  app_ini room (70): 71:70 70:-1 72:70 3:-1 4:-1 0:-1
+> (NULL, NUL, too long)
+  preferences: -1 -1 -1 -1
+  keys: -1 -1 -1 -1

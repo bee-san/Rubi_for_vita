@@ -235,6 +235,15 @@
   font_size_ja=20
 > \xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20
   font_size_ja=20
+> \xEF\xBBfont_size_ja = 20
+  n_warnings=1
+  warning: unknown setting '\xEF\xBBfont_size_ja'
+> \xEFfont_size_ja = 20
+  n_warnings=1
+  warning: unknown setting '\xEFfont_size_ja'
+> \xEF\xBB\xBEfont_size_ja = 20
+  n_warnings=1
+  warning: unknown setting '\xEF\xBB\xBEfont_size_ja'
 > font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12
   font_size_ja=20
   font_size_en=12
@@ -411,6 +420,14 @@
 > font_size_ja = big
   n_warnings=1
   warning: font_size_ja: invalid value (8-40)
+> font_size_ja = 100000001
+  n_warnings=1
+  warning: font_size_ja: invalid value (8-40)
+> font_size_ja = 999999999999
+  n_warnings=1
+  warning: font_size_ja: invalid value (8-40)
+> font_size_ja = 0020
+  font_size_ja=20
 > font_size_en = 8
   font_size_en=8
 > font_size_en = 40
@@ -802,6 +819,11 @@
   warning: anki_screenshot_trim_bars: invalid value
 > anki_mining = on ; a comment
   anki_mining=1
+> anki_mining = off\nanki_mining = on
+  anki_mining=1
+> anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on
+  anki_mining=1
+  anki_screenshot=0
 > dictionary = local
 > dictionary = LOCAL
 > dictionary = local ; mine
@@ -841,6 +863,18 @@
 > dictionaryx = jpdb
   n_warnings=1
   warning: unknown setting 'dictionaryx'
+> dictionary local = 1
+  n_warnings=1
+  warning: unknown setting 'dictionary'
+> dictionary = jpdb;x
+  n_warnings=1
+  warning: dictionary: invalid value
+> dictionary = jiten#x
+  n_warnings=1
+  warning: dictionary: invalid value
+> dictionary = hachidori;relay
+  n_warnings=1
+  warning: dictionary: invalid value
 > dictionary = hachidori\nhachidori_host = 192.168.1.20:19633
   n_warnings=1
   warning: dictionary: the Hachidori relay was removed; using local
@@ -1012,6 +1046,21 @@
 > vocr_model = .vocr
   n_warnings=1
   warning: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
+  n_warnings=1
+  warning: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
+  n_warnings=1
+  warning: vocr_model: not a model of this build; using vocr_tier
+> vocr_model
+  n_warnings=1
+  warning: ignored line 1 (no '=')
+> vocr_model FL10_w8.vocr
+  n_warnings=1
+  warning: ignored line 1 (no '=')
+> vocr_model x = 1
+  n_warnings=1
+  warning: unknown setting 'vocr_model'
 > vocr_model = meiki-stream-int8.mnn
   n_warnings=1
   warning: vocr_model: not a model of this build; using vocr_tier

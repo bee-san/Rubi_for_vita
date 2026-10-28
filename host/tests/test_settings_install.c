@@ -40,6 +40,7 @@
 #include "../../include/vjo_vocr_sizes.h"
 #include "../../settings/install.h"
 #include "../../settings/install_page.h"
+#include "config_golden.h" /* #418: the install plan's golden file */
 
 #ifndef VJO_SOURCE_DIR
 #define VJO_SOURCE_DIR "."
@@ -2731,7 +2732,73 @@ static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
     TEST_CHECK(scan_now().state == VJO_INSTALL_NOT_INSTALLED);
 }
 
+/* #418 (cleanup package P2, audit F4): the Rubi app's install of each config.ini record (host/tests/config_golden.h):
+ * over an installed card, with the record as config.ini, the scan's plan for it: what it does (s.config_ini) and the
+ * lines it lists, each changed or dropped line named by its setting (ini_line_name, the older settings' drop), as the
+ * lines it drops from and adds to an empty config.ini's plan (golden_line_diff), against
+ * host/tests/fixtures/config-install-<debug|normal>.golden (the debug build's install also sets log_file = on). */
+static VjoInstallScan *install_golden_scan;
+static char install_golden_base[VJO_INSTALL_INI_CHANGES * 121 + 1];
+static size_t install_golden_base_len;
+static int install_golden_base_ini;
+static size_t install_golden_plan(const char *record, size_t n, char *out, size_t cap)
+{
+    size_t used = 0;
+    put(VJO_PREFERENCES_PATH_TEST, record, n);
+    vjo_install_scan(install_golden_scan, &build);
+    for (int i = 0; i < install_golden_scan->config_change_count; i++)
+        used += (size_t)snprintf(out + used, cap - used, "%s\n", install_golden_scan->config_changes[i]);
+    return used;
+}
+static void install_golden_record(const char *record, size_t n, void *arg)
+{
+    static char plan[sizeof(install_golden_base)];
+    GoldenOut *o = (GoldenOut *)arg;
+    size_t len = install_golden_plan(record, n, plan, sizeof(plan));
+    golden_puts(o, "> ");
+    golden_escape_short(o, record, n);
+    golden_puts(o, "\n");
+    if (install_golden_scan->config_ini != install_golden_base_ini)
+        golden_printf(o, "  config_ini=%d\n", install_golden_scan->config_ini);
+    golden_line_diff(o, install_golden_base, install_golden_base_len, plan, len);
+    if (install_golden_scan->config_change_more) golden_printf(o, "  more=%d\n", install_golden_scan->config_change_more);
+}
+
+static void the_install_plans_every_config_ini_record_as_its_golden_file(void)
+{
+    static VjoInstallScan s;
+    static const char *const files[] = {"host/tests/fixtures/config-old-app-test2.ini",
+                                        "host/tests/fixtures/config-test3-owner.ini", "docs/config.example.ini"};
+    GoldenOut o = {0};
+    char why[GOLDEN_WHY];
+    fresh_card(1);
+    install_golden_scan = &s;
+    golden_printf(&o, "# The Rubi app's install plan of the config fixtures, the %s build (host/tests/test_settings_install.c "
+                  "the_install_plans_every_config_ini_record_as_its_golden_file; VJO_UPDATE_GOLDEN=1 rewrites this file)\n",
+                  VJO_DEBUG ? "debug" : "normal");
+    install_golden_base_len = install_golden_plan("", 0, install_golden_base, sizeof(install_golden_base));
+    install_golden_base_ini = s.config_ini;
+    golden_printf(&o, "= an empty config.ini: config_ini=%d\n", s.config_ini);
+    golden_line_diff(&o, "", 0, install_golden_base, install_golden_base_len);
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        char path[512];
+        size_t len;
+        snprintf(path, sizeof(path), "%s/%s", VJO_SOURCE_DIR, files[i]);
+        char *text = slurp(path, &len);
+        TEST_ASSERT_(text != NULL, "%s", path);
+        golden_printf(&o, "= %s\n", files[i]);
+        install_golden_record(text, len, &o);
+    }
+    TEST_CHECK(golden_records(VJO_SOURCE_DIR "/host/tests/fixtures/config-lines.txt", install_golden_record, &o) > 300);
+    golden_long_records(install_golden_record, &o);
+    int rc = golden_check(&o, VJO_DEBUG ? VJO_SOURCE_DIR "/host/tests/fixtures/config-install-debug.golden"
+                                        : VJO_SOURCE_DIR "/host/tests/fixtures/config-install-normal.golden", why, sizeof(why));
+    TEST_CHECK_(rc >= 0, "%s", why);
+    free(o.p);
+}
+
 TEST_LIST = {
+    {"the_install_plans_every_config_ini_record_as_its_golden_file", the_install_plans_every_config_ini_record_as_its_golden_file},
     {"a_payload_the_folder_refuses_is_installed_from_app0", a_payload_the_folder_refuses_is_installed_from_app0},
     {"the_diff_at_its_line_bound", the_diff_at_its_line_bound},
     {"a_plan_stays_within_its_max", a_plan_stays_within_its_max},
