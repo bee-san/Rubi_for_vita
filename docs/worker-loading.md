@@ -154,7 +154,7 @@ every title without a row of its own.
 
 ## Memory
 
-- **Game partition.** Unchanged per process: the worker's module pages (212,992 B in the normal build and 221,184 B in the debug build since API 55's pause for the frame, 208,896 B and 217,088 B since API 54's text spotter, which the hook farm's 20 verified entries keep: [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-54)) and its idle
+- **Game partition.** Unchanged per process: the worker's module pages (212,992 B in the normal build and 221,184 B in the debug build since API 55's pause for the frame, 208,896 B and 217,088 B since API 54's text spotter, which the hook farm's 20 verified entries keep: [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-54); in the combined test build `test/combined`, `main` with the open drafts, 217,088 and 229,376 B, measured on its builds) and its idle
   thread (32,768 B stack + 4,096 B TLS) until a job, then the jobs' blocks as before
   ([memory-ledger.md](memory-ledger.md)). What changes is where: every title ON in `games.ini`,
   not only those with a line. With `default = enabled`, the installer's default, that is every

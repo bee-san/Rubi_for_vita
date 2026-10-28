@@ -51,7 +51,7 @@ set(ARCH -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard)
 # runtime/README.md "Porting notes": C99, -O2, no FP contraction, so every platform computes the same bits
 add_library(smoke_vocr_rt STATIC ${RT}/vocr.c ${RT}/vocr_lm.c ${RT}/vocr_lines.c ${RT}/vocr_lines_rows.c
   ${RT}/vocr_lines_fix.c ${RT}/vocr_lines_refine.c ${RT}/vocr_textgate.c ${RT}/vocr_vertical.c ${RT}/vocr_post.c
-  ${SPOT_RT}/vocr_textspot6.c)
+  ${RT}/vocr_charbox.c ${SPOT_RT}/vocr_textspot6.c) # vocr_charbox.c: test/combined, draft #326
 target_include_directories(smoke_vocr_rt PUBLIC ${RT} ${SPOT_RT})
 target_compile_options(smoke_vocr_rt PRIVATE ${ARCH} -std=c99 -O2 -ffp-contract=off)
 # the pinned spotter's form (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_FORM), as cmake/VocrOCR.cmake builds it
@@ -71,7 +71,9 @@ add_executable(vjo_smoke main.c ${ROOT}/game_ocr/main.c ${ROOT}/core/vocr_ocr.c 
   ${ROOT}/core/shottrim.c ${ROOT}/core/arena.c ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S
   ${ROOT}/core/hook_place.c ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c
   ${ROOT}/core/hook_text.c ${ROOT}/core/hook_sc3.c ${ROOT}/core/sfo.c ${ROOT}/core/hook_select.c
-  ${ROOT}/core/hook_cache.c)
+  ${ROOT}/core/hook_cache.c
+  # test/combined: draft #318's PSP text and draft #326's char map (its writer and the UTF-8 it reads)
+  ${ROOT}/core/psp_text.c ${ROOT}/core/charmap.c ${ROOT}/core/charmap_build.c ${ROOT}/core/utf.c)
 target_include_directories(vjo_smoke PRIVATE ${ROOT}/core ${ROOT}/include ${RT} ${ROOT}/third_party/bearssl/inc)
 target_compile_definitions(vjo_smoke PRIVATE VJO_GAME_OCR_NO_MODULE_ENTRY=1 VJO_WITH_VOCR=1)
 target_compile_options(vjo_smoke PRIVATE ${ARCH} -O2 -Wall -Wextra -Wno-unused-parameter)

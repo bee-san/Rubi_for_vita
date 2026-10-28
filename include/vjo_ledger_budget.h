@@ -542,12 +542,18 @@
  * at the end of its workspace block (VJO_BUDGET_GAME_WORKSPACE), only with overlay_on_text on [measured: the build
  * log's module rows, both builds of main e2100e0 and this change, the gate's vitasdk container]. So each game that
  * is ON holds 188,416 -> 192,512 B (debug) and 180,224 -> 184,320 B (normal), the setting on or off. */
-/* test/combined: the module page budget below is the combined build's (main + the drafts), measured; see the
- * test/combined note after it. */
+/* test/combined (the combined test build: main 8d11f2d and every open draft, #318, #326 and #359, with the 512 KiB
+ * reserve draft; never merged): the drafts' code takes the worker three pages more than main's in both builds, debug
+ * 180,448 + 31,968 -> 195,488 + 32,336 B (217,088 -> 229,376 B of pages, 1,120 B of text room left) and normal
+ * 171,516 + 31,952 -> 181,476 + 32,256 B (204,800 -> 217,088 B, 2,844 B left) [measured: tools/check_memory_ledger.py's
+ * module rows, both builds, this branch and main 8d11f2d with the 512 KiB draft built alike, tools/fast_gate.sh's
+ * vitasdk image]: #359's line watch, #318's PSP text and #326's char places, as in v0.9.8-test.6 (20 KiB and 16 KiB
+ * then, against main 5794be4, before #355's own page, which is main's now). The Shell's and the kernel's pages are
+ * main's in both builds. This is the test build's budget; the drafts' own branches keep theirs. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 229376u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

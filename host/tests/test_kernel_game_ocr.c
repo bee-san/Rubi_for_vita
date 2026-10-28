@@ -1159,7 +1159,8 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x4000000; TEST_CHECK(vjoOcrSubmit(&r) != VJO_ERR_ARG); /* API 54: bit 26, its refinement (alone: ignored) */
     r.speed = 0x8000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: 18-19; API 43: 20; API 50: 21-23) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
-    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 25 (draft #326's), 27, 31 unknown */
+    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) != VJO_ERR_ARG); /* test/combined: bit 25, draft #326's S_CHARS */
+    r.speed = 0x8000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* 27 and 31 unknown */
     r.speed = 0x80000000u; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     /* API 55: bit 30, the pause for the frame, an OCR job's, never a shot's */
     TEST_CHECK(VJO_GAME_OCR_S_PAUSE == 0x40000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_PAUSE) &&

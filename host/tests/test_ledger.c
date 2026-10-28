@@ -132,7 +132,8 @@ static void test_budget_table_is_consistent(void)
                                      VJO_BUDGET_GAME_LINE_OR_FRAME + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE +
                                      VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SC3 + VJO_BUDGET_GAME_SPOT +
                                      VJO_BUDGET_GAME_GATE);
-    TEST_CHECK_(VJO_WORST_GAME_JOB == 11026432u && VJO_LIMIT_GAME_JOB == 11214848u &&
+    /* test/combined: draft #326's workspace page (a job's characters, VJO_BUDGET_GAME_WORKSPACE): 11,030,528 B */
+    TEST_CHECK_(VJO_WORST_GAME_JOB == 11030528u && VJO_LIMIT_GAME_JOB == 11214848u &&
                     VJO_WORST_GAME_JOB <= VJO_LIMIT_GAME_JOB,
                 "the game job's worst case %u B, its limit %u B", (unsigned)VJO_WORST_GAME_JOB,
                 (unsigned)VJO_LIMIT_GAME_JOB);

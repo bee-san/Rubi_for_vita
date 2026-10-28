@@ -688,6 +688,7 @@ add_custom_target(release
     ${ROOT}/docs/line-history.md ${ROOT}/docs/native-hooks.md ${ROOT}/docs/hook-titles.md
     ${ROOT}/docs/hook-requests.md ${ROOT}/docs/first-box.md ${ROOT}/docs/roadmap.md ${ROOT}/docs/reading-time.md
     ${ROOT}/docs/conjugation-display.md ${ROOT}/docs/game-pause.md
+    ${ROOT}/docs/overlay-on-text.md # test/combined: draft #326's
     ${ROOT}/docs/memory-ledger.md ${ROOT}/docs/boot-safety.md
     ${ROOT}/docs/worker-loading.md ${ROOT}/docs/ingame-capture.md ${ROOT}/docs/performance.md
     ${ROOT}/docs/auto-vs-press.md ${ROOT}/docs/first-ocr.md ${ROOT}/docs/ocr-speed.md
@@ -698,6 +699,11 @@ add_custom_target(release
     ${ROOT}/docs/img/conjugation-before-polite-host.png ${ROOT}/docs/img/conjugation-after-polite-host.png
     ${ROOT}/docs/img/conjugation-after-chain-host.png ${ROOT}/docs/img/conjugation-after-exact-host.png
     ${STAGE}/docs/img/
+  # test/combined: draft #326's docs/overlay-on-text.md shows these
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/docs/overlay-on-text
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/overlay-on-text/adv-bottom.png ${ROOT}/docs/overlay-on-text/adv-second-line.png
+    ${ROOT}/docs/overlay-on-text/nvl-top.png ${ROOT}/docs/overlay-on-text/walk.gif ${ROOT}/docs/overlay-on-text/wrapped-word.png
+    ${STAGE}/docs/overlay-on-text/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/settings-dictionaries-vita3k.png ${STAGE}/docs/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/refine-20261015.json

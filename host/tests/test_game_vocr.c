@@ -2526,13 +2526,14 @@ static void weights_refused_retry_shares_the_wait(void)
         TEST_CHECK(!drop_resident());
     }
     TEST_ASSERT(settle[0] != NULL && settle[1] != NULL);
-    /* the whole wait was the refused try's: the job waited 2 s, timed out, and the retry read at once */
-    TEST_CHECK_(settle[1]->us >= 2000000u && settle[1]->rc == VJO_GSETTLE_TIMEOUT && settle[0]->rc == VJO_GSETTLE_TIMEOUT,
+    /* test/combined: with draft #359's line watch the refused try's wait ends when its lines hold (HELD), not at
+     * the limit, and the retry learns its watch again. #382's guarantee: the job's wait is at most ocr_settle_max_ms
+     * over both tries (2 s), counts both tries' wait, and the job takes no longer than that and its passes. */
+    TEST_CHECK_(settle[1]->us <= 2050000u && settle[1]->us >= settle[0]->us,
                 "the wait step: %u us, rc %d (Small alone: %u us, rc %d)", (unsigned)settle[1]->us,
                 (int)settle[1]->rc, (unsigned)settle[0]->us, (int)settle[0]->rc);
-    /* the refused try costs its own passes (the finder's and the wait's last, a few frames), never another wait */
-    TEST_CHECK_(took[1] < took[0] + 120000u, "the retry took %llu us, Small alone %llu us: %lld us more",
-                (unsigned long long)took[1], (unsigned long long)took[0], (long long)(took[1] - took[0]));
+    TEST_CHECK_(took[1] < 2000000u + 120000u, "the retry took %llu us, Small alone %llu us",
+                (unsigned long long)took[1], (unsigned long long)took[0]);
     free_mib = 0;
 }
 

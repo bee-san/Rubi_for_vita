@@ -9,6 +9,7 @@
   japanese_only_selection=0
   highlight_mode=0
   frequency_badge=1
+  overlay_on_text=0
   font_size_ja=18
   font_size_en=14
   toggle_button=2

@@ -2178,8 +2178,9 @@ static void chars_recognize_under_a_hook_answer(void)
     /* the same job without the bit: the first pass only, as before */
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && runs == 1 && first_pass_only());
     TEST_CHECK(out.text_from == 2 && out.hook_flags == (VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR));
-    /* no memory for OCR: the stream that answered, without places */
-    available = 2 * 1024 * 1024;
+    /* no memory for OCR: the stream that answered, without places (test/combined: room for the hook-only pass and
+     * none for OCR; since #280's 1 MiB reserve a game with 2 MiB free has room for this harness's job) */
+    available = VJO_GAME_RESERVE_HOOK_ONLY + 64 * 1024;
     vjo_game_ocr_cache_clear();
     rows_calls = 0;
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);

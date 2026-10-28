@@ -130,7 +130,6 @@ class Collect(unittest.TestCase):
         (data / "games.ini").write_text("default = on\n")
         (data / "ocr_line_fix.ini").write_text("ULJM05674 = all\n")  # #333
         (data / "region.ini").write_text("PCSG00415 = 1536,48188,62600,15059\n")
-        (data / "hooks.log").write_text("hooks: mode 1, 0 sites\n")
         (data / "psp_probe.log").write_text("psp probe 2: process PSPEMUCFW\n")
         (data / "anki_queue/exported").mkdir()
         (data / "anki_queue/exported/00112233445566778899aabbccddeeff.json").write_text('{"version":3}\n')
