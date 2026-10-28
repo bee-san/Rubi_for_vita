@@ -247,11 +247,17 @@ Two lists name them:
       (its argument, one hit a page; the speaker's `【name】` is the `name` command, not hooked).
     - From the hook farm's runs of 2026-10-26/27 (psandvita #1). The first three are the farm's relocations (runs
       `paired-vita-<title>-reloc-20261027`) of a verified hook whose patch held a branch or was decoded in the wrong
-      mode, to a site whose 8 patched bytes its export checked on the dumped segment 0 (no branch, PC use or IT, and
-      no branch in segment 0 into them; `scripts/rubi_export.py --report` said EXPORT):
+      mode. A relocation job must move to a site whose 8 patched bytes the farm's export passes (`scripts/rubi_export.py
+      --report` says EXPORT); that export checks the bytes and the branches into them on the dumped segment 0 only when
+      the dump is on its disk, and says EXPORT without it too. What the records hold: each window's instructions (no
+      branch, PC use or IT in any), and for PCSG00370 and PCSG01127 the engineer's check that nothing in segment 0
+      branches into it ("no branch, not a branch target"; "no branch, PC use or branch target"). For PCSG00139 no
+      recorded result says so (audit-psandvita-1 N2):
       - PCSG00139 フォトカノ Kiss, NID 0x1695A771 (`GMV_Rom`), +0x1608D4, Thumb, r4, CP932, filter none; 105 farm pages.
         Dingo's message-window setter, right after it copies the final page to its window (the player's name already
-        in it, one hit a page; the speaker's name is another hit, which no entry hooks). The farm's first site,
+        in it). One hit a page, or one a line when a dialogue window's lines come in one burst before their click waits
+        (27 of the 105 farm pages: 2 or 3 hits within 2 ms), so the popup shows the page's latest line there; the
+        speaker's name is another hit, which no entry hooks. The farm's first site,
         0x81160986 r2, is a `bl`. Patch: `ldrsb.w lr, [r7, #0x61c]; cmp.w lr, #0x31`. Luna's 0x81161B0E for the title
         is another site (the script opcode's copy before the name's substitution).
       - PCSG00370 デュラララ!! 3way standoff -alley- V, NID 0x89BB8C3B (`drrr_ap`), +0x4FBD8, Thumb, r3, CP932, filter
@@ -268,7 +274,8 @@ Two lists name them:
         of foaf4's page-build record (`VJO_PLACE_READ_CELLS_B`), CP932, filter `RF_PCSG00769`; 37 farm pages. The
         engine's page commit, after its busy check (r6 the record, a static; one hit a page). Patch (12 bytes): `ldr
         r0, [r6, #0x8]; str.w r0, [r4, #0xee0]; ldr r0, [r6, #0x18]; str.w r0, [r4, #0xef0]`. **Unchecked:** a branch
-        elsewhere in segment 0 into the middle of them (the farm's export stopped at the reader it then lacked). Luna's
+        elsewhere in segment 0 into the middle of them, and an IT block just before the site (the farm's export stopped
+        at its codec, `foaf4-u16sjis`, before its window checks; audit-psandvita-1 N3). Luna's
         0x8003CA08 for the title fires only at a line's end (the farm's notes).
 
     Of the hook farm's 20, only 三国恋戦記 and DIABOLIK LOVERS LIMITED V EDITION are fixed-address executables; the
@@ -321,8 +328,8 @@ Two lists name them:
     [farm checks](#farm-checks)), Rubi's own sites, proven in Vita3K only. The bucket has no segment-0 dump,
     so only the recorded 16 bytes were checked: no branch, PC use or IT among the patched instructions
     (disassembled with LLVM 18's `llvm-mc`). **Unchecked for these two:** a branch elsewhere in segment 0 into
-    the middle of the patched bytes, which the entries above had checked on their dumps (one would crash the
-    game when it is taken; the farm's dumps, on the owner's machine, can settle it):
+    the middle of the patched bytes, and an IT block just before them, which the entries above had checked on their
+    dumps (one would crash the game when it is taken; the farm's dumps, on the owner's machine, can settle it):
     - PCSG00628 ALIA's CARNIVAL! サクラメント (APP_VER 01.00), NID 0x1EE45F02, +0x3373C, Thumb, r5, CP932 with its 0xA0
       (`VJO_HOOK_ENC_CP932_A0`), filter
       `RF_PCSG00628`; 1208 farm pages. Patch: `str r4, [r6, #0x2c]; movs r4, #0; str.w r9, [r6, #0xb4]`.
@@ -458,10 +465,10 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00415` | CLANNAD | `＊Ａ` (CP932 81 96 82 60) and `＊Ｂ` (81 96 82 61), the script's name variables for the protagonist's family and given name, to 岡崎 and 朋也 (CLANNAD has no name entry) | not the farm's: a console's `history.csv` (Rubi 0.9.8, the verified site's stream): 16 of 1,347 hook lines, e.g. `「ありゃ、＊Ａ、どこいくんだよっ」` where OCR read 岡崎, `「俺はＤ組の＊Ａ＊Ｂ」` |
 | `PCSG00020`, `PCSG00883` | 極限脱出ＡＤＶ 善人シボウデス (and the Double Pack's) | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
-| `PCSG00769` | 逢魔が刻～かくりよの縁～ | `㌫` `㍊` to the defaults of its name entry, 榊 and 水緒; then `FOAF4`: `PCSG00380`'s array from its third op (the dash pieces, the trim, not its names) | pages 14 and 22 (`㊤㊥…㊦` drawn as one `―` each; 7 of its 37 pages); pages 27 and 16 (`「大丈夫、㌫さん？」` and `「―――㍊！！！」`, 10 glyphs each: the farm's text leaves the codes out) |
+| `PCSG00769` | 逢魔が刻～かくりよの縁～ | `㌫` `㍊` to the defaults of its name entry, 榊 and 水緒; then `FOAF4`: `PCSG00380`'s array from its third op (the dash pieces, the trim, not its names) | pages 14 and 22 (`㊤㊥…㊦` drawn as one `―` each; 6 of its 37 pages); pages 27 and 16 (`「大丈夫、㌫さん？」` and `「―――㍊！！！」`, 10 glyphs each: the farm's text leaves the codes out) |
 | `PCSG00370` | デュラララ!! 3way standoff -alley- V | drops the `▼` (0x81A5) that ends every page, a click wait not drawn; keeps the line breaks, the `　` that indents a continued line and the `＞` that opens a monologue (Luna's filter for the title drops all four) | all 101 pages of its relocation run; page 2 (`＞不思議な街だったなあ、池袋。\n　活気があって…。▼`) |
 | `PCSG00766` | ニル・アドミラリの天秤 帝都幻惑綺譚 | the speaker glued before `#Pos` on a line of its own (the nameplate); then `IFENGINE` | page 2 (`久世ヒタキ#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]「今、…`, 久世ヒタキ over the line); page 29 (`#Ruby[睨,にら]`); all 31 pages |
-| `PCSG01282` | 死神と少女 | drops the two-character `\d` (a click wait); the two-character `\n` to a line break; trims | page 6 (`\n陽が沈み、…色。\d`, an NVL page's first hit); 55 `\d` codes in the hits its 31 pages hold |
+| `PCSG01282` | 死神と少女 | drops the two-character `\d` (a click wait); the two-character `\n` to a line break; drops the engine's other undrawn codes, as the farm's rule does: `#STAND\<file>.bmp N#` (a sprite change), `@mRRGGBB` and `@0` (a colour), `\u` (NVL continue), `$` (emphasis: a `$` the game drew would go too, as with Luna's filter); trims | page 6 (`\n陽が沈み、…色。\d`, an NVL page's first hit); 55 `\d` and 92 `\n` codes in the 72 hits its 31 pages hold; the other codes are in none of them, only in the farm's survey of the script's message records (`\u` 92 records, `@m..@0` 476, `#STAND..#` 73, `$..$` 62; audit-psandvita-1 F1: Luna's filter dropped `#STAND..#` and `$`) |
 | `PCSG00700` | 蒼の彼方のフォーリズム | `<a>(X)` to X (a spoken line opens `<a>(｢)`); `<ruby>(n,reading)` and `<ruby2>(..)` dropped, leaving the base; any other `<tag>` dropped (the eboot's tag table also names `f`, `c`, `parallel`); half-width kana to hiragana | Vita3K: 31 of the first 60 pages; console: `<ruby>(2,しとう)四島市` drawn 四島市 (the other tags in no page seen) |
 | `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
 | `PCSG00853` | ピリオドキューブ | `#Name[1]` 花宮, `#Name[2]` かずは, `#Name[3]` カズハ, then `IFENGINE` | samples 78, 120, 259, 371, 464, 492 |

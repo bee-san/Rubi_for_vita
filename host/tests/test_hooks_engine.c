@@ -2179,17 +2179,24 @@ static void test_verified_build_cells(void)
     TEST_CHECK(s.n == 9 && !memcmp(s.raw, "\x81\x75\x82\xA0\x81\x76\x0A\x82\xA2", 9));
     TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) > 0 && !strcmp(text, "「あ」\nい"));
     TEST_MSG("got [%s]", text);
+    /* a count past the buffer reads 256 cells (VJO_HOOK_RAW_BYTES / 2), as the page record's (audit-psandvita-1 F4: with
+     * the clamp for the page record only, every test passed) */
+    count = 1000;
+    memcpy(data + 0x200 + BUILD_COUNT, &count, 4);
+    for (unsigned i = 0; i < 256; i++) data[0x200 + BUILD_CELLS + 2 * i] = 'A', data[0x201 + BUILD_CELLS + 2 * i] = 0;
+    vjo_hooks_observe(0, frame);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2 && s.n == 256);
     /* its cells past the block's end (the count read, 32 cells not), or a count of 0: no hit */
     frame[6] = a32(data) + DATA_SIZE - 0x40u;
     count = 32;
     memcpy(data + DATA_SIZE - 0x40u + BUILD_COUNT, &count, 4);
     vjo_hooks_observe(0, frame);
-    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 1);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2);
     count = 0;
     frame[6] = rec;
     memcpy(data + 0x200 + BUILD_COUNT, &count, 4);
     vjo_hooks_observe(0, frame);
-    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 1);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2);
 }
 
 /* ---- MAGES SC3 sites on the farm's own pages (tools/sc3_charset.py --fixtures) ---- */

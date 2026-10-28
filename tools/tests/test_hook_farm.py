@@ -71,6 +71,29 @@ class HookFarm(unittest.TestCase):
         self.assertNotIn("000004", out)
         self.assertNotIn("000005", out)
 
+    def test_check_cell_record_entry(self):
+        """A page-build record's entry (PCSG00769, VJO_PLACE_READ_CELLS_B): the checker reads the farm's raw bytes as its
+        cells, two bytes a character (audit-psandvita-1 N8: a checker that read them as a string passed every test). A
+        single-byte character's cell has a 0 high byte, where a string read would stop; ㌫ is drawn as the game's default
+        name (DEFAULT_NAMES), which the farm's text leaves out. Text made here, none of the game's."""
+        folder = Path(self.tmp, "vita", "PCSG00769 Test")
+        (folder / "hook").mkdir(parents=True)
+        (folder / "hook" / "rubi-hook.json").write_text(json.dumps(dict(
+            RECORD_628, title="PCSG00769", register=6, segment0_offset="0x31306", module_nid="0xd597d1ca",
+            signature="b068c4f8e00eb069c4f8f00e307f84f8",
+            reader={"schema": "vn-hook-reader/1", "encoding": "cp932", "data_offset": 46,
+                    "length": {"offset": 32, "width": 4, "scale": 2, "unit": "bytes"}})))
+
+        def cells(text):  # each character a little-endian cell: its first CP932 byte, then its second or 0
+            return b"".join(c.encode("cp932").ljust(2, b"\0") for c in text).hex()
+        recs = [{"id": pid, "review_state": "approved", "text_clean": farm,
+                 "raw_text_events": [{"id": 1, "pc": 0x81031306, "encoding": "cp932", "raw_hex": cells(raw)}]}
+                for pid, raw, farm in (("000001", "「Aあ」\n", "「Aあ」"), ("000002", "「㌫さん」\n", "「さん」"))]
+        (folder / "pages.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in recs),
+                                            encoding="utf-8")
+        out = self.run_tool("check", "PCSG00769")
+        self.assertIn("PCSG00769: 2 pages; single-hit 2: shown 1 (+1 default name), exact 1;", out)
+
     def test_the_farm_text_goes_with_the_last_hit(self):
         """The worker shows a site's latest hit: a page's text is the checker's farm text for its last hit only."""
         seen = []
