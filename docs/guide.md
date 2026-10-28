@@ -799,12 +799,16 @@ full-frame capture buffer, which nothing used any more. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 
-Text that types out is read once it is whole: a job recognizes nothing until
-every row of the region has held still for `ocr_settle_ms` (150 ms by default,
-`0` turns it off), waiting at most `ocr_settle_max_ms` (2000) per recognition,
-or `ocr_settle_press_ms` (1000; `0`: the same limit) when the open overlay waits
-for it ([first-ocr.md](first-ocr.md)), and a blinking "next" icon does not hold it up; on the console
-it has read no dialogue line early ([text stability](text-stability.md)). When the text changed under
+In the background, text that types out is read once it is whole: a background read recognizes nothing
+until every row of the region has held still for `ocr_settle_ms` (150 ms by default, `0` turns it off),
+waiting at most `ocr_settle_max_ms` (2000) per recognition, and a blinking "next" icon does not hold it up;
+on the console it has read no dialogue line early ([text stability](text-stability.md)). A press reads at
+once: opening the overlay says the text is ready (#413), so a line still typing is read as far as it has
+typed (with **Automatically** the open overlay's refresh replaces it once the screen settles). The wait is
+also what tells an animated icon from text, so once a press's read changed under every try, its next tries
+wait as a background read does, and the press after a read reads at once again
+([text stability](text-stability.md)). `ocr_settle_press_ms`, a press's limit before #413, changes nothing.
+When the text changed under
 every read of two jobs in a row (an animated icon in the region, or text still typing), the open overlay says so as
 it tries again, and what helps where it can: a region drawn around just the text, if that leaves the moving thing
 out (`ocr_wait_hint = off` keeps

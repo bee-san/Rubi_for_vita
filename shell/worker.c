@@ -1824,10 +1824,13 @@ static void start_job_kind(const char *why, int lookup, int refresh)
         job_text_generation = 0;
     job_idx = refresh ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
-    /* Opening the overlay confirms that this screen is ready. Turn off both
-     * stability waits in this job's snapshot; background reads, refreshes and
-     * self-test jobs keep the configured wait. */
-    if (!job_prepares && !refresh)
+    /* Opening the overlay confirms that this screen is ready (#413): its read skips
+     * the stability wait in this job's snapshot. Not once a read's screen changed
+     * under every try (screen_changed_streak, the wait hint's count): the worker
+     * learns a cycling icon only in that wait (core/vocr_ocr.c stream_check), so
+     * without it the overlay's retries tear on the icon for ever (#353, #379).
+     * Background reads, refreshes and self-test jobs keep the configured wait. */
+    if (!job_prepares && !refresh && !screen_changed_streak)
         job_cfg.ocr_settle_ms = 0;
     job_generation = game_generation;
     sceClibMemcpy(job_title, title_id, sizeof(job_title));

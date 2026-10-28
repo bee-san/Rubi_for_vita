@@ -1,14 +1,20 @@
 /* vjo-vertical-on-bench MODEL_DIR [--mode off|auto|on|columns] [--fps N] [--turn FRAMES] [--rest FRAMES]
- *                       [--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows] [--settle-ms MS]
- *                       < JOB > RESULTS.jsonl
+ *                       [--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows]
+ *                       [--press retry[:MS]|nowait|wait] < JOB > RESULTS.jsonl
  *
  * #379: L + R on a dialogue region with an animated icon in it, as the game worker reads it (core/vocr_ocr.c, with
  * the policy game_ocr/main.c gives a press on config.ini's defaults: the 1 MB LM, the cascade with the next size up
- * within 2 s, the line finder's fixes, the head gate; since #413 no stable-text wait, --settle-ms 0, the default;
- * --settle-ms 150 is the press before #413, 0.9.8's and #385's, waiting first for 150 ms of still rows within 1 s) and
- * the Shell tries it again (shell/worker.c note_screen_changed: a job whose screen changed under every read is dropped
- * quietly, the next try at once, then 250 ms later, doubling up to 4 s), for 20 s after the press. Without the wait
- * an icon's rows are not learned (core/vocr_ocr.c stream_check: every change of them between two reads tears the read).
+ * within 2 s, the line finder's fixes, the head gate) and the Shell tries it again (shell/worker.c
+ * note_screen_changed: a job whose screen changed under every read is dropped quietly, the next try at once, then
+ * 250 ms later, doubling up to 4 s), for 20 s after the press.
+ *  - The stable-text wait, --press: retry (the default, main's since #413's audit, shell/worker.c start_job_kind):
+ *    the press's first job reads at once (#413: opening the overlay confirms that the text is ready), and once a job's
+ *    screen changed under every read (the Shell's count of them, screen_changed_streak) the retries wait as a
+ *    background read does, for 150 ms of still rows first (ocr_settle_ms; the kernel has not called a screen whose
+ *    icon moves stable), within ocr_settle_max_ms, 2 s (retry:MS: within MS); nowait, #413's, no job waits; wait, the
+ *    press before #413 (0.9.8's and #385's), every job 150 ms first within 1 s (ocr_settle_press_ms). The worker
+ *    learns an icon's rows only in the wait (core/vocr_ocr.c stream_check): without it every change of them between
+ *    two reads tears the read.
  *  - Every strip read is the game's next frame (kernel/game_ocr.c vjoOcrCaptureRows: the display hook copies the rows
  *    as the game shows its next frame), at --fps frames a second (30 by default).
  *  - The picture is the region with a 24-px icon at --icon (its top left corner in the region): a bar that turns one
@@ -36,10 +42,10 @@
  * vertical one host/samples/vertical.jpg's 220 x 380 at (630, 50), e.g. with Pillow:
  *   python3 -c "import sys; from PIL import Image; im = Image.open(sys.argv[1]).convert('RGBA').crop((30, 360, 930,
  *   520)); sys.stdout.buffer.write(b'box 900 160\n' + im.tobytes())" host/samples/vn_textbox.jpg > box.job
- * RESULTS: one JSON object per phase: the wait, rc (0 shown, -120 the screen changed under every try for 20 s), the jobs, those
- * torn, the rows that tore, the strips read, ms from the press to the text, the CTC frames recognized and the ms
- * charged for them (the cascade's included), whether it was read as columns, its lines and text ('|' between lines).
- * A summary line on stderr. Host only. */
+ * RESULTS: one JSON object per phase: the press's wait (--press), rc (0 shown, -120 the screen changed under every try
+ * for 20 s), the jobs, those torn, those that waited, the rows that tore, the strips read, ms from the press to the
+ * text, the CTC frames recognized and the ms charged for them (the cascade's included), whether it was read as
+ * columns, its lines and text ('|' between lines). A summary line on stderr. Host only. */
 #define _POSIX_C_SOURCE 200809L
 #include <math.h>
 #include <stdint.h>
@@ -62,6 +68,12 @@ static uint64_t vclock;              /* the simulated clock, us */
 static unsigned frame_us, turn = 15, rest = 15, icon_x, icon_y, rw, rh;
 static unsigned char *still;         /* the region's grey rows, the icon left out */
 static unsigned long strips;
+/* --press: which jobs of a press wait for still rows, and within what (the header) */
+enum { PRESS_RETRY, PRESS_NOWAIT, PRESS_WAIT };
+static int press_mode = PRESS_RETRY;
+static uint32_t retry_max_us = 2000000u; /* ocr_settle_max_ms */
+#define SETTLE_US 150000u                /* ocr_settle_ms */
+#define PRESS_CAP_US 1000000u            /* ocr_settle_press_ms: a press's wait budget before #413 */
 
 static uint64_t now_cb(void *ud)
 {
@@ -164,7 +176,7 @@ typedef struct {
     const VjoVocrModel *model, *cascade, *vertical;
     const VjoVocrLm *lm;
     uint32_t frame_us[3]; /* a CTC frame's time: the rows' model, the cascade's, the vertical model */
-    uint32_t settle_us;   /* the stable-text wait (VjoVocrPolicy.settle_us), 0: none */
+    uint32_t settle_us;   /* the job's stable-text wait (VjoVocrPolicy.settle_us), 0: none; set for each job (--press) */
 } Setup;
 
 /* One try of a job: the worker's policy for a press (game_ocr/main.c request_policy, vjo_game_ocr_run_request). */
@@ -198,8 +210,8 @@ static int run_try(const Setup *su, const VjoPlatform *plat, const VjoVocrModel 
     pol.head_gate = pol.two_level = 1;
     pol.line_fix = cols ? 0u : VOCR_FIX_DEFAULT;
     pol.vertical_check = check;
-    pol.settle_us = su->settle_us; /* ocr_settle_ms: since #413 none for a press, 150 ms before it */
-    pol.settle_max_us = settle_left; /* ocr_settle_press_ms, over the job's tries */
+    pol.settle_us = su->settle_us; /* ocr_settle_ms in a job that waits (--press), else 0 */
+    pol.settle_max_us = settle_left; /* the job's wait budget, over its tries */
     pol.settle_first = first;
     pol.sleep = sleep_cb;
     pol.line = line_cb;
@@ -220,8 +232,8 @@ int main(int argc, char **argv)
     const char *mode = "on";
     unsigned fps = 30, phases = 12;
     int tall_rows = 0;
-    char line[512], id[256];
-    Setup su = {.frame_us = {2610u, 5040u, 1700u}, .settle_us = 0}; /* a press since #413: no stable-text wait */
+    char line[512], id[256], press_name[32] = "retry:2000";
+    Setup su = {.frame_us = {2610u, 5040u, 1700u}};
     if (argc < 2) goto usage;
     su.dir = argv[1];
     for (int i = 2; i < argc; i++) {
@@ -235,7 +247,18 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--frame-us") && v &&
                  sscanf(v, "%u,%u,%u", &su.frame_us[0], &su.frame_us[1], &su.frame_us[2]) == 3) i++;
         else if (!strcmp(argv[i], "--tall") && v && !strcmp(v, "rows")) tall_rows = 1, i++;
-        else if (!strcmp(argv[i], "--settle-ms") && v) su.settle_us = 1000u * (uint32_t)atoi(v), i++;
+        else if (!strcmp(argv[i], "--press") && v) {
+            unsigned ms = 2000u;
+            char tail = 0;
+            if (!strcmp(v, "wait")) press_mode = PRESS_WAIT;
+            else if (!strcmp(v, "nowait")) press_mode = PRESS_NOWAIT;
+            else if (!strcmp(v, "retry") || (sscanf(v, "retry:%u%c", &ms, &tail) == 1 && ms && ms <= 10000u))
+                press_mode = PRESS_RETRY, retry_max_us = 1000u * ms;
+            else goto usage;
+            if (press_mode == PRESS_RETRY) snprintf(press_name, sizeof(press_name), "retry:%u", ms);
+            else snprintf(press_name, sizeof(press_name), "%s", v);
+            i++;
+        }
         else goto usage;
     }
     const int m_off = !strcmp(mode, "off"), m_auto = !strcmp(mode, "auto"), m_on = !strcmp(mode, "on"),
@@ -288,7 +311,7 @@ int main(int argc, char **argv)
     for (unsigned ph = 0; ph < phases; ph++) {
         vclock = 10000000ull + (uint64_t)ph * 7919u; /* another moment of the icon's turn each phase */
         const uint64_t press = vclock;
-        unsigned jobs = 0, torn = 0, tears = 0, streak = 0;
+        unsigned jobs = 0, torn = 0, tears = 0, streak = 0, waited = 0;
         static char text[VJO_OCR_TEXT_CAP];
         VjoVocrStats st;
         int rc = VJO_E_SCREEN_CHANGED;
@@ -297,11 +320,17 @@ int main(int argc, char **argv)
         charged_us = 0;
         while (vclock - press < PRESS_US) {
             jobs++;
-            rc = run_try(&su, &plat, first_cols ? su.vertical : su.model, &src, first_cols ? 0 : check, 1000000u, 1, text,
+            /* this job's wait (--press): retry's once a job tore under every read (shell/worker.c start_job_kind,
+             * screen_changed_streak), wait's always, nowait's never */
+            const uint32_t budget = press_mode == PRESS_WAIT ? PRESS_CAP_US
+                                    : press_mode == PRESS_RETRY && streak ? retry_max_us : 0u;
+            su.settle_us = budget ? SETTLE_US : 0u;
+            waited += budget != 0;
+            rc = run_try(&su, &plat, first_cols ? su.vertical : su.model, &src, first_cols ? 0 : check, budget, 1, text,
                          sizeof(text), &st);
             tears += st.tears;
             if (rc == VJO_E_VERTICAL) { /* the worker's next try: the columns, within what is left of the wait */
-                const uint32_t left = 1000000u > st.settle_us ? 1000000u - st.settle_us : 1u;
+                const uint32_t left = budget > st.settle_us ? budget - st.settle_us : 1u;
                 rc = run_try(&su, &plat, su.vertical, &src, 0, left, 0, text, sizeof(text), &st);
                 tears += st.tears;
             }
@@ -317,12 +346,10 @@ int main(int argc, char **argv)
             shown++;
             sum_ms += ms;
         }
-        printf("{\"id\": \"%s\", \"mode\": \"%s\", \"fps\": %u, \"turn\": %u, \"rest\": %u, \"settle_ms\": %u, "
-               "\"phase\": %u, \"rc\": %d, "
-               "\"jobs\": %u, \"torn\": %u, \"tears\": %u, \"strips\": %lu, \"ms\": %.0f, \"frames\": %lu, "
-               "\"recognition_ms\": %.0f, \"columns\": %u, \"lines\": %u, \"text\": \"",
-               id, mode, fps, turn, rest, (unsigned)(su.settle_us / 1000u), ph, rc, jobs, torn, tears, strips, ms,
-               charged_frames,
+        printf("{\"id\": \"%s\", \"mode\": \"%s\", \"fps\": %u, \"turn\": %u, \"rest\": %u, \"press\": \"%s\", "
+               "\"phase\": %u, \"rc\": %d, \"jobs\": %u, \"torn\": %u, \"waited\": %u, \"tears\": %u, \"strips\": %lu, "
+               "\"ms\": %.0f, \"frames\": %lu, \"recognition_ms\": %.0f, \"columns\": %u, \"lines\": %u, \"text\": \"",
+               id, mode, fps, turn, rest, press_name, ph, rc, jobs, torn, waited, tears, strips, ms, charged_frames,
                (double)charged_us / 1000.0, rc == VJO_OK ? st.columns : 0u, rc == VJO_OK ? st.lines : 0u);
         for (const char *p = rc == VJO_OK ? text : ""; *p; p++) {
             if (*p == '\n') fputc('|', stdout);
@@ -332,8 +359,8 @@ int main(int argc, char **argv)
         puts("\"}");
         fflush(stdout);
     }
-    fprintf(stderr, "%s %s, %u fps, turn %u rest %u: shown in %u of %u phases, mean %.0f ms\n", id, mode, fps, turn,
-            rest, shown, phases, shown ? sum_ms / shown : 0.0);
+    fprintf(stderr, "%s %s, %u fps, turn %u rest %u, press %s: shown in %u of %u phases, mean %.0f ms\n", id, mode, fps,
+            turn, rest, press_name, shown, phases, shown ? sum_ms / shown : 0.0);
     vjo_vocr_resident_drop(&res);
     vjo_vocr_resident_drop(&vres);
     vjo_vocr_resident_drop(&cres);
@@ -341,7 +368,8 @@ int main(int argc, char **argv)
     return 0;
 usage:
     fprintf(stderr, "usage: %s MODEL_DIR [--mode off|auto|on|columns] [--fps N] [--turn FRAMES] [--rest FRAMES] "
-                    "[--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows] [--settle-ms MS] < JOB\n",
+                    "[--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows] "
+                    "[--press retry[:MS]|nowait|wait] < JOB\n",
             argv[0]);
     return 2;
 }

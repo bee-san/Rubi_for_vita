@@ -10,10 +10,10 @@
   clean: 3860 bytes, fnv1a 771c60d65e0212d5
   app_ini: 3943 bytes, fnv1a 2359cf9439a1788b
 = docs/config.example.ini
-  preferences: 6482 bytes, fnv1a 536d654bc466c7c7
-  anki_keys: 6482 bytes, fnv1a d16fa2e1841bb497
-  clean: 6482 bytes, fnv1a 536d654bc466c7c7
-  app_ini: 6482 bytes, fnv1a d16fa2e1841bb497
+  preferences: 6585 bytes, fnv1a ccbe746729e9bb8a
+  anki_keys: 6585 bytes, fnv1a 15cb57bb638904da
+  clean: 6585 bytes, fnv1a ccbe746729e9bb8a
+  app_ini: 6585 bytes, fnv1a 15cb57bb638904da
 > ; a comment
   removed_line: K
   preferences: "; a comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"

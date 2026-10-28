@@ -2305,7 +2305,7 @@ retry_smaller:
     request_policy(r, &policy);
     if (retried) {
         /* API 47, auto's next try: the same job, so the same stable-text wait, as the core's own tries share it
-         * (docs/text-stability.md): at most ocr_settle_max_ms (a press's ocr_settle_press_ms) over all of them.
+         * (docs/text-stability.md): at most ocr_settle_max_ms over all of them (a press's first job has none).
          * The try before has just read the region (and waited first where the request asked): this one reads it
          * at once, its first pass the job's capture, and recognizes once the rows have held still settle_us,
          * within what is left of the wait (1 us: none, it reads anyway). */

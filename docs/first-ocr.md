@@ -166,7 +166,10 @@ its result (its text's, its lookup's), written with the done line after it, so n
    (`limit` against `held`), their tears and tries (`tools/analyse_timeline.py --jobs`) decide whether
    it stays. In test.3, 1 of the 9 jobs that waited under the press cap reached it (1,041 ms; the
    others held after 0.4-1.0 s); how each mode's presses fared is in
-   [auto-vs-press.md](auto-vs-press.md#from-the-press-to-the-popup).
+   [auto-vs-press.md](auto-vs-press.md#from-the-press-to-the-popup). Since #413 a press does not wait at
+   all (opening the overlay confirms that the text is ready) and `ocr_settle_press_ms` changes nothing;
+   since #413's audit a press's retries after a read whose screen changed under every try wait within
+   `ocr_settle_max_ms`, as any other job does ([text stability](text-stability.md)).
 4. **Measured, not guessed, next time.** The TEAR step's `bytes` is when the last try began (us since
    the job's start), the warm-up's LOAD step has `arg=1`, and the done line has the exchange and log
    times.
