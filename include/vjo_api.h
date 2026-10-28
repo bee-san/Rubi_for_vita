@@ -18,7 +18,9 @@
  * (VJO_GITEM_FRAME), which the job reads from; the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged.
  * What each earlier number changed: 14 to 55 one by one in this comment as main f5d66795 has it (git show
  * f5d66795:include/vjo_api.h), and CHANGELOG.md (the releases that changed it name it). */
-#define VJO_API_VERSION 55
+/* 56: VJO_EV_FULL_SCREEN, a rear double tap while the overlay blocks game input.
+ * It requests one full-screen OCR lookup without changing the saved region. */
+#define VJO_API_VERSION 56
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
@@ -66,7 +68,8 @@ enum VjoTrigger {
 #define VJO_EV_SUBTITLE      0x20u /* subtitle trigger pressed */
 #define VJO_EV_REGION_QUIET  0x40u /* the region became quiet (VjoState.quiet) */
 #define VJO_EV_SHELL         0x80u /* local command/text/result ready: inspect Shell state */
-#define VJO_EV_ALL           0xFFu
+#define VJO_EV_FULL_SCREEN   0x100u /* rear double tap with the overlay open: one full-screen OCR lookup */
+#define VJO_EV_ALL           0x1FFu
 
 typedef struct {
     uint32_t size;          /* sizeof(VjoState), set by caller */

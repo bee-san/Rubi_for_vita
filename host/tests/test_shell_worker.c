@@ -945,6 +945,7 @@ int vjoOcrCancel(uint32_t seq) { return 0; }
 
 static void reset(void)
 {
+    full_screen = job_full_screen = 0;
     /* API 31: no game session's hook state, no hook fields in the results */
     hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
     game_static_fb = 0; /* API 55: a native game (the hint names the pause) until a test starts the PSP emulator's */
@@ -5829,6 +5830,102 @@ static void test_trusted_hook_line_is_read_at_once(void)
 
 /* ocr_mode = on_press recognizes only when the overlay opens: the open
  * overlay keeps its text and runs no refresh, however the screen settles. */
+static void test_rear_full_screen_pipeline_and_lifetime(void)
+{
+  for (int mode = VJO_OCR_AUTO; mode <= VJO_OCR_ON_PRESS; mode++) {
+    cursor_setup();
+    cfg.ocr_mode = loaded.ocr_mode = mode;
+    cfg.ocr_finder = loaded.ocr_finder = VJO_FINDER_GRAD; /* explicit scan still uses the spotter */
+    open_overlay(); finish_current_job();
+    int saves = region_saves, pushes = regions_set;
+    unsigned recorded = history_calls;
+    fake_recognized_text = "犬猫";
+    control_tick(VJO_EV_FULL_SCREEN);
+    TEST_ASSERT(job_running && job_full_screen && full_screen == 2 && ov == OV_OPEN && input_blocked);
+    TEST_CHECK(g_view.full_scan_requested && g_view.suggest == VJO_RSEL_TAKEN);
+    finish_current_job();
+    TEST_CHECK(fake_game_request.flags & VJO_GAME_OCR_F_FULL);
+    TEST_CHECK(fake_game_request.speed & VJO_GAME_OCR_S_SPOT);
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
+    TEST_CHECK(((fake_game_request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK) == (unsigned)cfg.ocr_lm);
+    TEST_CHECK(region_saves == saves && regions_set == pushes && history_calls == recorded);
+    TEST_CHECK(!local_text_scene && !local_text_capture_seq && !text_generation);
+    check_shown("犬猫", "dog", 0);
+    vjo_post_cursor(3, local_text_generation); on_command(); finish_current_job();
+    check_shown("犬猫", "cat", 3);
+    unsigned scans = submits;
+    next_scene(40); state.hook_scene = 40;
+    test_now += 4 * REFRESH_GAP_US;
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && submits == scans);
+    check_shown("犬猫", "cat", 3);
+    close_overlay();
+    TEST_CHECK(!full_screen && !local_text_valid && !cache_ok && !input_blocked);
+    open_overlay(); finish_current_job();
+    TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_FULL));
+    TEST_CHECK(!(fake_game_request.speed & VJO_GAME_OCR_S_SPOT));
+    close_overlay(); mem_free();
+  }
+}
+
+static void test_rear_full_screen_supersedes_work_and_cancels(void)
+{
+  for (int busy = 0; busy < 3; busy++) {
+    cursor_setup();
+    open_overlay();
+    if (busy) {
+        finish_current_job();
+        if (busy == 1) {
+            vjo_post_cursor(3, local_text_generation); on_command();
+            TEST_ASSERT(job_cursor_only);
+        } else {
+            next_scene(9); test_now += REFRESH_IDLE_US;
+            control_tick(VJO_EV_REGION_STABLE);
+            TEST_ASSERT(job_refresh);
+        }
+    }
+    control_tick(VJO_EV_FULL_SCREEN);
+    TEST_CHECK(full_screen == 1 && job_cancelled);
+    finish_current_job(); control_tick(0);
+    TEST_ASSERT(job_running && job_full_screen && !job_cursor_only && !job_refresh);
+    fake_recognized_text = "犬猫";
+    finish_current_job(); check_shown("犬猫", "dog", 0);
+    control_tick(VJO_EV_FULL_SCREEN); /* rescan, then close before its answer */
+    TEST_ASSERT(job_running && job_full_screen);
+    close_overlay();
+    TEST_CHECK(job_cancelled && !full_screen);
+    finish_current_job();
+    TEST_CHECK(!local_text_valid && !g_view.open);
+    control_tick(VJO_EV_FULL_SCREEN); /* no action outside the overlay */
+    TEST_CHECK(!full_screen); /* Auto may prefetch the saved dialogue region */
+    if (job_running) { TEST_CHECK(!job_full_screen); finish_current_job(); }
+    mem_free();
+  }
+}
+
+static void test_rear_full_screen_retries_fallback_and_exit(void)
+{
+    cursor_setup(); open_overlay(); finish_current_job();
+    fake_screen_changes = 1;
+    fake_recognized_text = "犬猫";
+    control_tick(VJO_EV_FULL_SCREEN);
+    finish_current_job(); /* a torn screen retries the full frame, never the saved region */
+    TEST_ASSERT(job_running && job_full_screen);
+    TEST_CHECK(fake_game_request.flags & VJO_GAME_OCR_F_FULL);
+    fake_missing_model = vjo_vocr_tier_model(VJO_VOCR_TIER_NORMAL);
+    unsigned before = submits;
+    finish_current_job();
+    TEST_CHECK(submits == before + 2 && (fake_game_request.flags & VJO_GAME_OCR_F_FULL));
+    TEST_CHECK(fake_game_request.speed & VJO_GAME_OCR_S_SPOT);
+    check_shown("犬猫", "dog", 0);
+    control_tick(VJO_EV_FULL_SCREEN);
+    on_game_exit(); /* foreground/suspend drops the one-off request and its result */
+    TEST_CHECK(!full_screen && job_cancelled && !g_view.full_scan_requested);
+    finish_current_job();
+    TEST_CHECK(!local_text_valid && !g_view.open);
+    mem_free();
+}
+
 static void test_on_press_overlay_never_refreshes(void)
 {
     cursor_setup();
@@ -9235,6 +9332,9 @@ TEST_LIST = {
     {"history_a_step_waiting_for_a_cancelled_ocr_job", test_history_a_step_waiting_for_a_cancelled_ocr_job},
     {"refresh_replacement_resets_dictionary_pages", test_refresh_replacement_resets_dictionary_pages},
     {"on_press_overlay_never_refreshes", test_on_press_overlay_never_refreshes},
+    {"rear_full_screen_pipeline_and_lifetime", test_rear_full_screen_pipeline_and_lifetime},
+    {"rear_full_screen_supersedes_work_and_cancels", test_rear_full_screen_supersedes_work_and_cancels},
+    {"rear_full_screen_retries_fallback_and_exit", test_rear_full_screen_retries_fallback_and_exit},
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},
     {"refresh_names_its_model_on_the_cards_only_when_it_replaces", test_refresh_names_its_model_on_the_cards_only_when_it_replaces},
     {"refresh_logs_quietly_and_a_failing_one_backs_off", test_refresh_logs_quietly_and_a_failing_one_backs_off},

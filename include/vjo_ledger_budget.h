@@ -28,9 +28,9 @@
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
 /* VitaJPOverlay_Shell.suprx. The normal build (docs/release-variants.md) compiles out the self-test
  * (shell/selftest.c), the lines of the game worker's step log, of the recognized text and of every job and lookup,
- * and the timings and traces. Both builds' packaged segments, each rounded to pages: debug 97,620 + 69,192 B ->
- * 167,936 B (684 B of code room, 440 B of data room), normal 85,388 + 69,128 B -> 155,648 B (628 B, 504 B) [measured:
- * tools/check_memory_ledger.py's module rows, both builds, main 6b028b2b, tools/fast_gate.sh's vitasdk image]. The
+ * and the timings and traces. Both builds' packaged segments, each rounded to pages: debug 97,996 + 69,184 B ->
+ * 167,936 B (308 B of code room, 448 B of data room), normal 85,724 + 69,116 B -> 155,648 B (292 B, 516 B) [measured:
+ * tools/check_memory_ledger.py's module rows, both local builds with VitaSDK GCC 15.2.0, API 56's rear-tap scan]. The
  * normal build's check is exact (--exact): its budget must equal its pages. How each change moved them: its own
  * section of docs/memory-ledger-history.md, and before #418 that file's "Budget history". */
 #if VJO_DEBUG
