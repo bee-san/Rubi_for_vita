@@ -17,7 +17,7 @@
  *  - Recognition takes time on the same clock as the strips: each recognized line its CTC frames times a time a
  *    frame, --frame-us's three, in us: the Normal size's model (rows), the cascade's (the Large size's, for the
  *    frames it reads again) and the vertical model (columns). By default 2,610, 5,040 and 1,700: measured for rows,
- *    estimated for columns. test.4's console logs measured VOCR5-N (VOCR6-N's shape) at 2.61 ms a frame and VOCR5-L
+ *    estimated for columns. 0.8.0-test.4's console logs measured VOCR5-N (VOCR6-N's shape) at 2.61 ms a frame and VOCR5-L
  *    (VOCR6-L's) at 4.98-5.10 ms, at 444 MHz, the clock a job raises by default, each a job's recognition time over
  *    its frames with the LM's decoding and the default two helpers (docs/guide.md); VOCR5-V's is VOCR5-S's estimate at
  *    444 MHz (docs/vita-vn-ocr.md). The bench recognizes one line at a time (the line callback turns the helpers off,
