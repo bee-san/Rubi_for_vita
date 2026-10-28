@@ -1,5 +1,5 @@
-<p align="center"><b>Beta:</b> tested on the owner's PS Vita (PCH-1001, firmware 3.65) in CLANNAD, and in part on a
-  contributor's PS Vita Slim.
+<p align="center"><b>Beta:</b> tested on the owner's PS Vita (PCH-1001, firmware 3.65) in CLANNAD, and in part on PS Vita
+  Slims.
   <a href="#supported">What is tested</a></p>
 
 <p align="center">
@@ -246,12 +246,12 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | | What | On a console |
 | :-: | --- | --- |
 | ✅ | PS Vita (PCH-1000 series) | the owner's PCH-1001, in every test build |
-| ⚠️ | PS Vita Slim (PCH-2000) | a contributor's, on 3.65: the install and a boot (0.9.2's tree, [#257](https://github.com/bee-san/Rubi_for_vita/pull/257)), OCR in あおかな with Small ([#324](https://github.com/bee-san/Rubi_for_vita/pull/324)), and the hooks of アマツツミ ([#273](https://github.com/bee-san/Rubi_for_vita/pull/273)) and 蒼の彼方のフォーリズム (0.9.7) |
+| ⚠️ | PS Vita Slim (PCH-2000) | a contributor's, on 3.65: the install and a boot (0.9.2's tree, [#257](https://github.com/bee-san/Rubi_for_vita/pull/257)), OCR in あおかな with Small ([#324](https://github.com/bee-san/Rubi_for_vita/pull/324)), and the hooks of アマツツミ ([#273](https://github.com/bee-san/Rubi_for_vita/pull/273)) and 蒼の彼方のフォーリズム ([#350](https://github.com/bee-san/Rubi_for_vita/pull/350)); a user's (0.9.8): OCR in 遙かなる時空の中で Ultimate ([#379](https://github.com/bee-san/Rubi_for_vita/issues/379)) |
 | ❓ | PS TV | untested |
 | ✅ | Firmware 3.65 | the owner's, with taiHEN |
 | ❓ | Other firmware, 3.60–3.74 | untested |
 | ✅ | CLANNAD | OCR, lookups and Anki cards (OCR in every test build) |
-| ❓ | Other Vita games | Rubi's OCR has read no other game's text on a console yet |
+| ⚠️ | Other Vita games | on PCH-2000s, OCR in あおかな and in 遙かなる時空の中で Ultimate (above); no other game's text yet |
 | ⚠️ | PSP games (Adrenaline) | one game started, with Rubi's OCR worker, using the [small bridge](compat/adrenaline_vsh/README.md) (in the release zip since 0.9.0); reading its text is untested |
 | ✅ | Updating a one-VPK install, in the app | three times, the old app closed first |
 | ⚠️ | Updating an install made from a computer (0.7.12 or older) | refused in its one console run, and finished by hand; the cause is unconfirmed |
@@ -271,7 +271,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Characters read, characters/hour, active time and the streak (△ in the overlay) | not run on a console yet; the streak tested on the host ([details](docs/ocr-history.md#total-characters-read), [the streak](docs/ocr-history.md#streak)) |
 | ❓ | Default OFF on the Games page | not run on a console since [#149](https://github.com/bee-san/Rubi_for_vita/pull/149) made it turn every game OFF (0.8.0-test.4) |
 | ❓ | A game's own line finder (its page in the Rubi app) | not run on a console yet ([details](docs/guide.md#a-games-own-page)) |
-| ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
+| ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; アマツツミ's and 蒼の彼方のフォーリズム's sites on a contributor's PCH-2000; the other game-specific sites and titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
 | ❓ | Trim black bars on Anki screenshots | not run on a console yet ([details](docs/anki.md#black-bars)) |
 | ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |
@@ -283,8 +283,8 @@ What each build changed, and what its console run showed: the [changelog](CHANGE
 - Vertical text is read only in a text box drawn around it: on a whole screen Automatic reads rows, and ON reads columns
   on most screens, a horizontal game's too (84 % of the hooked ones measured), which gives no sensible text. Not run on
   a console yet ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
-- Two consoles have tested Rubi, one of them in part ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
-  not measured on a console yet.
+- The owner's console has tested Rubi, and PS Vita Slims some of it ([Supported](#supported)). OCR accuracy,
+  battery use and CPU3 load are not measured on a console yet.
 - The game can stutter while Rubi reads ([FAQ](#will-it-slow-my-game-down)).
 - A big text box or model may not fit in a game's free memory: Rubi then uses a smaller model, or
   says it can't read ([FAQ](#does-it-work-with-my-game-is-there-enough-memory)).
