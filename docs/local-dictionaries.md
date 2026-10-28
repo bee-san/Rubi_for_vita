@@ -648,7 +648,6 @@ cmake --build build/host
 ctest --test-dir build/host --output-on-failure
 ./build/host/vjo-cli --dict local --local-dir . --local-dicts main.vjdict \
   --text '猫は食べました。' --nav --stats
-python3 tools/benchmark_local_dictionary.py --entries 1000000
 ```
 
 CTest runs conversion, real disk lookup, deinflection, UTF-16 highlights,
@@ -656,6 +655,8 @@ structured/HTML glossaries, dictionary priority, format corruption, interrupted
 configuration replacement, and memory-size regression checks. Worker tests cover
 local lookup and changing dictionaries during an in-flight job.
 The generated deinflection table is checked against its pinned source.
+The synthetic size and memory stress test (`tools/benchmark_local_dictionary.py --entries 1000000`) was a
+one-off script, removed in the tools cleanup of #418: `git show 93e2bec:tools/benchmark_local_dictionary.py`.
 
 ### Host benchmark (2026-10-08)
 
