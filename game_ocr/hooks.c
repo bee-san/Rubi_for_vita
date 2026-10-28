@@ -22,6 +22,10 @@
 #include <taihen.h>
 
 #include "hooks.h"
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+#include "../core/hook_profile.h"
+static VjoHookProfile profile; /* one title, immutable from before hooks start until stop */
+#endif
 #include "../core/hook_place.h"
 #include "../core/hook_sc3.h"
 #include "../core/hook_stream.h"
@@ -546,6 +550,15 @@ static void start(const char *title_id, unsigned word, int psp)
     }
     seg_base = (uint32_t)(uintptr_t)mi.segments[0].vaddr;
     mem_info_ok = VJO_IMPORT_READY(sceKernelGetMemBlockInfoByAddr);
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+    vjo_hook_profile_clear();
+    if (!(word & VJO_TEXT_SOURCE_NO_SITES) && VJO_IMPORT_READY(vjoOcrHookProfile)) {
+        int bytes = vjoOcrHookProfile(profile.raw, sizeof(profile.raw));
+        int loaded = bytes > 0 && vjo_hook_profile_parse(&profile, title_id, (unsigned)bytes);
+        DLOG("profile: %s (%d bytes)\n", loaded ? "loaded current title" : "unavailable: CALL/OCR fallback", bytes);
+        (void)loaded;
+    }
+#endif
     live = 1;
     /* hook_sites = off (audit-hooks F3): no table site, verified or Luna's, so a console run can tell the
      * CALL source from the sites */

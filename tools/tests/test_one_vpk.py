@@ -135,15 +135,16 @@ class PayloadList(unittest.TestCase):
         # VOCR6-ATTRIBUTION.md
         # API 54: the text spotter's two once published
         spot = 2 if package_release.VOCR_SPOT_PUBLISHED else 0
-        self.assertEqual(len(files), 24 + spot)
+        self.assertEqual(len(files), 25 + spot)
         self.assertEqual(sorted(d for d, _ in files if "/hooks/" in d),
-                         ["ux0:data/VitaJPOverlay/hooks/%s.sc3" % t for t in ("PCSG00146", "PCSG00352", "PCSG00555")])
+                         ["ux0:data/VitaJPOverlay/hooks/%s.sc3" % t for t in ("PCSG00146", "PCSG00352", "PCSG00555")]
+                         + ["ux0:data/VitaJPOverlay/hooks/profiles.vjhp"])
         self.assertTrue(all(k == "copy" for d, k in files if "/hooks/" in d))
         header = (ROOT / "include/vjo_payload.h").read_text()
         self.assertRegex(header, r"#define VJO_PAYLOAD_SPOT_FILES 2\n#else\n#define VJO_PAYLOAD_SPOT_LIST\(X\)\n"
                                  r"#define VJO_PAYLOAD_SPOT_FILES 0\n")
         kernel = kernel_index()
-        self.assertEqual(kernel, 19 + spot)
+        self.assertEqual(kernel, 20 + spot)
         self.assertEqual(files[kernel], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))
         self.assertEqual(files[kernel - 1], ("ux0:data/VitaJPOverlay/dictionaries/plaintext.vjdict", "move"))
         self.assertEqual([d for d, _ in files[kernel:kernel + 4]],  # VJO_PAYLOAD_PLUGINS: the plugins and the RCO
@@ -180,8 +181,9 @@ class PayloadList(unittest.TestCase):
                 vert = files.index("ux0:data/VitaJPOverlay/ocr/VERTICAL-ATTRIBUTION.md")  # API 47's, after the gate's
                 self.assertEqual(files[vert + 1:vert + 1 + len(extra)], extra)
                 # then the SC3 hooks' charsets (docs/native-hooks.md "SC3 text")
-                self.assertEqual(files[vert + 1 + len(extra)], "ux0:data/VitaJPOverlay/hooks/PCSG00146.sc3")
-                self.assertEqual(len(files), 24 + len(extra))
+                self.assertEqual(files[vert + 1 + len(extra)], "ux0:data/VitaJPOverlay/hooks/profiles.vjhp")
+                self.assertEqual(files[vert + 2 + len(extra)], "ux0:data/VitaJPOverlay/hooks/PCSG00146.sc3")
+                self.assertEqual(len(files), 25 + len(extra))
 
     def test_a_file_named_twice_is_refused(self):
         """core/payload.c refuses a manifest naming a file twice ("a file named twice"), so the packaging

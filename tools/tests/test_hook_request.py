@@ -30,6 +30,7 @@ TOOL = ROOT / "tools/hook_request.py"
 # and is read already: draft PR #318's line for the PSP emulator's process.
 REASONS = ["range", "align", "entry", "window", "signature", "unported", "version", "full", "tai", "relocated"]
 FORMATS = {
+    "profile: %s (%d bytes)\n": [("loaded current title", 533), ("unavailable: CALL/OCR fallback", -123)],
     "%.9s: text source %u%s\n": [("PCSG00628", 1, ""), ("PCSG00628", 2, ", sites off"), ("", 1, "")],
     "nothing: %s\n": [("the PSP emulator's process",), ("no title ID",)],
     "nothing: no main module (eboot.bin) with a segment 0\n": [()],

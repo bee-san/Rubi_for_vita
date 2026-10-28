@@ -144,6 +144,13 @@ PATCH_ARGS=(--worker "$WORKER")
 for title in ${TITLES[@]+"${TITLES[@]}"}; do PATCH_ARGS+=(--title "$title"); done
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+PROFILE_DB=$TMP/profiles.vjhp
+if [ -n "$PACKAGE_DIR" ]; then
+  PROFILE_DB=$PACKAGE_DIR/ux0/data/VitaJPOverlay/hooks/profiles.vjhp
+  [ -f "$PROFILE_DB" ] || { echo "package is missing hooks/profiles.vjhp"; exit 1; }
+else
+  python3 tools/hook_profiles.py --output "$PROFILE_DB"
+fi
 
 c() { curl --fail -s --show-error --max-time 300 "$@"; }
 exists() { c -o /dev/null "$FTP/$1" 2>/dev/null; }
@@ -514,6 +521,7 @@ for f in "$SC3_DIR"/*.sc3; do
   [ -f "$f" ] || continue
   put "$f" "ux0:/data/VitaJPOverlay/hooks/$(basename "$f")"
 done
+put "$PROFILE_DB" "ux0:/data/VitaJPOverlay/hooks/profiles.vjhp"
 # The Rubi app: its VPK, installed in VitaShell (the box at the end says whether it still has to be), and
 # the record of it the Shell plugin compares the installed app with. Without a stamp (a source build whose VPK
 # was not built) the record is emptied, as boot.txt is: "no record" is unknown to the plugins, never another

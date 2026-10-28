@@ -11,9 +11,16 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- Native Vita hooks load only the current game's profile from an indexed disk archive, including its
+  filters and version/signature checks. The worker uses 12 KiB fewer loaded pages in both builds
+  (measured from the packaged binaries); CALL discovery and OCR remain available if a profile is missing
+  or invalid. Full updates include the archive. API 57; console startup timing is unmeasured.
+
 ### Added
 
-- **Read the whole screen from the open overlay** (API 56): double-tap the rear touchpad for one scan
+- **Read the whole screen from the open overlay** (API 57): double-tap the rear touchpad for one scan
   through the text spotter, OCR and configured language-model decoder, forcing OCR even with trusted hooks.
   Navigate, look up and save its words as usual. The results stay until close or rescan; closing returns
   to the saved dialogue box. No region is saved, and the scan does not add menus to dialogue history.

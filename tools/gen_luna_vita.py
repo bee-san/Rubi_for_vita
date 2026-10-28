@@ -552,6 +552,7 @@ def render_inc():
     out += ["    VJO_LF_%s," % n for n in lnames]
     out += ["    VJO_LF_COUNT", "};", ""]
     out += [f"#define VJO_LUNA_TITLES {len(titles)}u", f"#define VJO_LUNA_SITES {len(sites)}u", ""]
+    out.append("#ifndef VJO_EXTERNAL_HOOK_PROFILES")
     out.append("static const char vjo_luna_ids[VJO_LUNA_TITLES][10] VJO_DATA_TABLE(luna_title_ids) = {")
     for i in range(0, len(titles), 6):
         out.append("    " + " ".join('"%s",' % t for t in titles[i:i + 6]))
@@ -569,6 +570,7 @@ def render_inc():
                s["version"], s["id"], s["line"]))
     out.append("};")
     out.append("")
+    out.append("#endif /* built-in catalogue: host tools and Rubi app only */")
     out.append("/* Luna's katakanaMap (stringfilters.cpp, its remapkatakana): what U+FF61-U+FF9F become */")
     out.append("static const uint16_t vjo_luna_kana[63] = {")
     for i in range(0, 63, 12):

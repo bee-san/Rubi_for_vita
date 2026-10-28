@@ -34,6 +34,13 @@ static unsigned test_place_verified(const char *title_id, const VjoPlaceVerified
 static unsigned test_luna_sites(const char *title_id, const VjoLunaSite **sites);
 #define VJO_IMPORT_H 1
 #define VJO_IMPORT_READY(fn) test_ready((const void *)(uintptr_t)(fn))
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+static const char *profile_test_title;
+static unsigned profile_test_reads;
+static int profile_test_missing;
+int vjoOcrHookProfile(void *dst, uint32_t cap);
+#define vjo_hooks_start profile_engine_start
+#endif
 #define vjo_place_verified test_place_verified
 #define vjo_luna_sites test_luna_sites
 #include "../../game_ocr/hooks.c"
@@ -41,6 +48,41 @@ static unsigned test_luna_sites(const char *title_id, const VjoLunaSite **sites)
 #undef vjo_luna_sites
 unsigned vjo_place_verified(const char *title_id, const VjoPlaceVerified **out);
 unsigned vjo_luna_sites(const char *title_id, const VjoLunaSite **sites);
+
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+#undef vjo_hooks_start
+static int profile_file_read(void *ud, void *dst, unsigned bytes, uint32_t off)
+{
+    FILE *f = ud;
+    return fseek(f, off, SEEK_SET) ? -1 : (int)fread(dst, 1, bytes, f);
+}
+int vjoOcrHookProfile(void *dst, uint32_t cap)
+{
+    FILE *f;
+    long size;
+    int n;
+    profile_test_reads++;
+    if (profile_test_missing) return 0;
+    f = fopen(VJO_PROFILE_ARCHIVE_PATH, "rb");
+    TEST_ASSERT(f != NULL);
+    TEST_ASSERT(!fseek(f, 0, SEEK_END)); size = ftell(f);
+    TEST_ASSERT(size > 0 && (uint64_t)size <= UINT32_MAX);
+    n = vjo_hook_profile_read(profile_file_read, f, (uint32_t)size, profile_test_title, dst, cap);
+    fclose(f);
+    return n;
+}
+static void vjo_hooks_start(const char *title, unsigned mode, int psp)
+{
+    profile_test_title = title;
+    profile_engine_start(title, mode, psp);
+}
+static void profile_for_farm(const char *title)
+{
+    profile_test_title = title;
+    int n = vjoOcrHookProfile(profile.raw, sizeof(profile.raw));
+    TEST_ASSERT(n > 0 && vjo_hook_profile_parse(&profile, title, (unsigned)n));
+}
+#endif
 
 /* CP932 (Python's cp932 codec) */
 #define L_TODAY "\x8D\xA1\x93\xFA\x82\xCD\x82\xA2\x82\xA2\x93\x56\x8B\x43\x82\xC5\x82\xB7\x82\xCB\x81\x42" /* 今日はいい天気ですね。 22 B */
@@ -407,6 +449,9 @@ void vjo_hooks_observer_7(void) { observer_runs[7] += 8; }
 
 static void reset(void)
 {
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+    profile_test_reads = 0; profile_test_missing = 0;
+#endif
     if (!code) code = low_map(CODE_SIZE, PAGE);
     if (!data) data = low_map(DATA_SIZE, PAGE);
     TEST_ASSERT_(code && data, "memory below 4 GiB");
@@ -1760,6 +1805,9 @@ _Static_assert(sizeof farm_sites / sizeof farm_sites[0] == HOOK_FARM_SITE_COUNT,
  * padding, so a wrong one passed. */
 static const FarmSite *farm_entry(const char *title, const VjoPlaceVerified **entry)
 {
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+    profile_for_farm(title);
+#endif
     const FarmSite *fs = NULL;
     const VjoPlaceVerified *all, *v = NULL;
     unsigned nv;
@@ -2249,6 +2297,9 @@ static void test_sc3_sites(void)
         char text[1024];
         size_t n, n_other;
         uint32_t seq;
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+        profile_for_farm(row->title);
+#endif
         TEST_ASSERT_(vjo_place_verified(row->title, &v) == 1 && v->read == VJO_PLACE_READ_SC3 &&
                      v->off + 64u <= seg_size, "%s: its SC3 entry", row->title);
         fs = farm_entry(row->title, &v); /* the farm's record of the hook, which the game below is */
@@ -2337,7 +2388,36 @@ static void test_clean_stream_text(void)
     }
 }
 
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+static void test_profile_fallback(void)
+{
+    reset(); profile_test_missing = 1;
+    vjo_hooks_start("PCSG00415", VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(profile_test_reads == 1 && !vjo_hook_profile_current());
+    TEST_CHECK(n_sites == 0 && n_calls == CALL_IMPORTS && live);
+    TEST_CHECK(!vjo_hooks_stop());
+    reset();
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(profile_test_reads == 1 && n_sites == 0 && n_calls == CALL_IMPORTS);
+    TEST_CHECK(!vjo_hooks_stop());
+    reset();
+    vjo_hooks_start("PCSG00415", VJO_TEXT_SOURCE_OCR, 0);
+    TEST_CHECK(profile_test_reads == 0 && !live);
+    reset();
+    vjo_hooks_start("PCSG00415", VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES, 0);
+    TEST_CHECK(profile_test_reads == 0 && n_sites == 0 && n_calls == CALL_IMPORTS);
+    TEST_CHECK(!vjo_hooks_stop());
+    reset();
+    vjo_hooks_start("PCSG00415", VJO_TEXT_SOURCE_AUTO, 1);
+    TEST_CHECK(profile_test_reads == 0 && !live);
+}
+#endif
 TEST_LIST = {
+#ifdef VJO_EXTERNAL_HOOK_PROFILES
+    {"external profiles: current-title farm excerpts through real capture and filters", test_farm_excerpts},
+    {"external profiles: SC3 sites still load their character tables", test_sc3_sites},
+    {"external profiles: missing/unlisted CALL fallback, OCR/sites-off/PSP skip disk", test_profile_fallback},
+#else
     {"a verified entry at a Luna site's address takes Luna's text processing", test_verified_takes_luna_text},
     {"a verified entry: deref, its own filter in place of a Luna site's", test_verified_deref_and_filter},
     {"a verified entry's APP_VER: only that version, read without Luna sites", test_verified_version},
@@ -2362,5 +2442,6 @@ TEST_LIST = {
     {"vjo_hooks_stop: newest first, once; STOP_FAIL while a thread is inside", test_stop},
     {"APP_VER of param.sfo", test_app_version},
     {"hooks.log names APP_VER for a hook request; the same hooks in both builds", test_app_ver_for_requests},
+#endif
     {NULL, NULL},
 };

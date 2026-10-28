@@ -16,6 +16,8 @@
 #define vjoOcrHookCache test_kernel_hook_cache
 #include "../../kernel/game_ocr.c"
 
+__attribute__((weak)) int vjoGetTextSource(void) { return VJO_TEXT_SOURCE_OCR; }
+
 /* An SC3 charset's open (VJO_GAME_OCR_OPEN_SC3) asks the loader for the caller's title ID: this harness has no
  * loader, so that open is refused, as with a loader that is off. */
 __attribute__((weak)) int loader_title(SceUID pid, char *title, SceSize len)

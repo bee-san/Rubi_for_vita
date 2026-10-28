@@ -2713,7 +2713,7 @@ static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
         size_t n = payload_bytes(i, 0, bytes, sizeof(bytes));
         put(vjo_payload_dest(i), bytes, n);
     }
-    TEST_CHECK(hooks == 3 && !there("ux0:data/VitaJPOverlay/hooks"));
+    TEST_CHECK(hooks == 4 && !there("ux0:data/VitaJPOverlay/hooks"));
     put_text(VJO_APP_STAMP_PACKAGE, "vjoapp1 api=" VJO_STR(VJO_API_VERSION) " build=fedcba9876543210\n");
     VjoInstallScan s = scan_now();
     TEST_CHECK_(s.state == VJO_INSTALL_UPDATE, "state %d %s", s.state, s.title);
@@ -2727,6 +2727,7 @@ static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
     TEST_CHECK(installed_files(1));
     for (unsigned k = 0; k < 3; k++) TEST_CHECK_(there(sc3[k]), "%s", sc3[k]);
+    TEST_CHECK(there(VJO_PAYLOAD_HOOKS "profiles.vjhp"));
     TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
     /* one data file deleted by hand: a Check and repair, whose plan names the file's folder */
     for (unsigned k = 0; k < sizeof(one) / sizeof(one[0]); k++) {

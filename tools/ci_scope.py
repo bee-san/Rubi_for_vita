@@ -42,6 +42,7 @@ PACKAGING = re.compile(
     r"|tools/(install-vita|install_ftp|fast_gate)\.sh|tools/model_tiers\.json|tools/gate/.*"
     r"|tools/tests/(ftp_mock|test_e2e_package|test_ci_scope)\.py|tools/tests/fixtures/selftest-v2-diagnostics\.txt"
     r"|docs/config\.example\.ini|compat/adrenaline_vsh/.*|core/app_stamp\.h|core/vocr_models\.c"
+    r"|core/hook_(profile(?:_file)?|ops)\.(?:c|h)|tools/hook_profiles\.(?:c|py)"
     r"|include/vjo_(api|payload|vocr_sizes)\.h|\.github/.*)$")
 
 
