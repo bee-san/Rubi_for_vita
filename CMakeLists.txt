@@ -714,7 +714,7 @@ vjo_suite(settings_search SOURCES host/tests/test_settings_search.c settings/sea
 # The one-VPK install (settings/install.c, install_page.c, core/payload.c, docs/one-vpk-install.md) on a
 # temporary memory card with a payload: fresh installs, updates, config.ini, faults at every write and
 # rename, the interrupted swap, uninstall, the manifest's rules, the page. The kernel loads the worker
-# (VJO_KERNEL_LOADS_WORKER: t3-worker-any-game's include/vjo_api.h; defined here for the test, which also
+# (VJO_KERNEL_LOADS_WORKER, 1 in include/vjo_api.h; defined here for the test, which also
 # checks the lines mode's refusal of another build's payload).
 vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/install.c settings/install_page.c
   settings/app_worker.c
