@@ -34,16 +34,16 @@ game worker's SELFs are byte for byte main's.
   The thread's deepest path of the plugin's own frames: 600 → 1,000 B (normal) and 608 → 1,008 B (debug), the
   firmware's calls counted as 0 B as before (`-fstack-usage -fcallgraph-info=su`, the gate's vitasdk image).
 - **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows),
-  main `b55c5f5` against this change:
+  main `b83c82f` against this change:
 
   | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
   |---|---:|---:|---:|
-  | Kernel | 43,508 + 77,780 → 43,572 + 72,372 B | 38,356 + 76,092 → 38,436 + 70,684 B | 122,880 → 118,784 / 118,784 → 114,688 B |
-  | Shell | 98,276 + 77,816 B, the same SELF | 85,988 + 77,728 B, the same SELF | 176,128 / 163,840 B, unchanged |
-  | Game worker | 180,208 + 36,720 B, the same SELF | 171,244 + 36,712 B, the same SELF | 217,088 / 208,896 B, unchanged |
+  | Kernel | 43,496 + 77,780 → 43,560 + 72,372 B | 38,344 + 76,092 → 38,424 + 70,684 B | 122,880 → 118,784 / 118,784 → 114,688 B |
+  | Shell | 98,284 + 77,816 B, the same SELF | 85,996 + 77,728 B, the same SELF | 176,128 / 163,840 B, unchanged |
+  | Game worker | 179,760 + 36,840 B, the same SELF | 170,796 + 36,832 B, the same SELF | 217,088 / 208,896 B, unchanged |
 
-  Room left in the kernel's last pages: 1,484 B of code and 1,356 B of data (44 B before) in the debug build,
-  2,524 B and 3,044 B in the normal one. The kernel pool's worst case and limit (`VJO_WORST_KERNEL`) 241,664 →
+  Room left in the kernel's last pages: 1,496 B of code and 1,356 B of data (44 B before) in the debug build,
+  2,536 B and 3,044 B in the normal one. The kernel pool's worst case and limit (`VJO_WORST_KERNEL`) 241,664 →
   237,568 B (debug) and 237,568 → 233,472 B (normal). The text grows 64 B (debug) and 80 B (normal): the second
   signature's begin and row, the grid's rebuild check.
 - **Proof** (host): `capture_parity`, the recognizer's input against API 18's capture, on 162 regions now (two more:
