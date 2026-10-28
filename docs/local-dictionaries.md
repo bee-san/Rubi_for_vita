@@ -33,8 +33,7 @@ names its source: the definitions carry no `[Daijirin4 Plain]`-style first line
 and the attribution is in `plaintext-attribution.txt` and the metadata. The
 file names itself instead, `Bee's Ultimate Dictionary` in page 0
 ([format](#binary-format-version-3-with-frequency-ranks)), and that is the
-dictionary's name on Anki cards, in `log.txt` and on the Rubi app's
-Dictionaries shown card. A grammar point's summary replaces a function word's
+dictionary's name on Anki cards and in `log.txt`. A grammar point's summary replaces a function word's
 definition (は, に, ので, てしまう) and comes before a content word's on a line of
 its own (上, こと, 無くなる); a point no word entry had is an entry of its own, and
 its other spellings are lookup keys of it (でしまう finds てしまう). There are
@@ -126,8 +125,8 @@ Enable `daijirin.vjdict` alone to prefer its bilingual definitions, or put it
 before `jmdict.vjdict` in `local_dictionaries` to retain plain JMdict as a
 fallback. Use the actual installed filenames. This changes dictionary lookup
 without changing the OCR engine. The local overlay performs one lookup at the
-selected character and shows the best match first; with **Dictionaries shown**
-at 2, JMdict's entry for the same word follows below it (see below).
+selected character and shows the best match first; JMdict's entry for the same
+word and the stored alternate readings/senses follow below it (see below).
 
 Nested English and Japanese text becomes plain text. Ruby annotation text,
 styles and link destinations are omitted; the base characters and visible link
@@ -248,30 +247,28 @@ the previous dictionary.
 
 ### Dictionaries shown
 
-The overlay shows the best match at the selected character first.
-Rubi app → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
-in `config.ini`, 1–8, default 2) shows the other enabled dictionaries' entries
-for the same word below it, in the same body; 1 shows the best match only. The default
-of 2 shows a word, then the bundled names' entry for it (渚: the word, then Nagisa); an update
-that enables the names turns a count of 1, the default before them, into 2:
+Every enabled dictionary in `local_dictionaries` is included automatically (up to eight files),
+in priority order, when it matches the selected word's whole span. There is no count setting:
+old `local_dictionary_results` lines are ignored and removed on save or update. A dictionary
+that only matches a shorter prefix adds nothing (空 in 空港).
 
-```ini
-local_dictionaries = jitendex.vjdict,jmdict.vjdict,names.vjdict
-local_dictionary_results = 3
-```
+The best match keeps its existing ranking. Below each dictionary's best entry, Rubi shows the
+other stored readings and separate senses for that exact spelling, in source order. For example,
+the dictionary shipped in 0.10.0 already contains 経緯 as けいい and いきさつ; neither needs a
+new dictionary build. Homophones with another spelling are excluded. The right stick scrolls
+through the entries. This applies in the game overlay and the app's Look up tab. Anki keeps
+additional entries within its existing seven-extra-entry and record-size bounds.
 
-The best match is unchanged: the longest match, then an exact match, then dictionary
-order. Below it, after a blank line, each other enabled dictionary that has an entry
-for the same word follows, in `local_dictionaries` order (its definition starts with
-its own `[title]`); dictionaries with no entry are left out. The right stick scrolls
-the body down to them, as it scrolls a long definition. Every stacked entry is the
-same word: a dictionary counts only with an entry for the best match's whole span, so
-with `猫舌` shown, a dictionary that has only `猫` adds nothing, and the lookup searches
-no shorter span. So a name that is the whole word (渚) is shown, and a name that is only
-its start (空 in 空港) is not. A best match too long for the body is clipped first
-(`…`), so the entries below it keep their room. Changing the count looks the word up
-again without capturing or recognizing the screen again. Separate files are stacked; a
-combined file built from several ZIPs is one dictionary.
+The format is unchanged: versions 1, 2 and 3 already preserve these entries. A bundle's
+source-priority deduplication still determines which senses it contains; lookup cannot recover
+rows discarded when the bundle was built.
+
+The existing 64 KiB result allocation and 4,096-unit/96-span text body remain bounded. Alternate
+collection uses at most 128 transient 24-byte locators in that allocation, with the existing
+64-posting-per-key search bound. Definitions are loaded only while they fit. Long articles are
+clipped to keep later readings visible. If results exceed the lookup, memory or display bounds,
+the popup says **More entries omitted. Look up a specific reading.** Console timing and the
+built modules' page sizes have not yet been measured for this change.
 
 ### Names and words
 
@@ -296,14 +293,9 @@ and fixes わたし; `off` would lose about 190 (on 27,970 lines of the same gam
 audit). No cut separates the rest: 遥か, 爽やか and 仄か (#5,955, #5,294, #21,690) are meant where the names
 はるか, さわやか and ほのか come first, but 満ちる (#2,327) and 祈り (#6,822) are not where みちる and いのり do.
 
-With Dictionaries shown 1, the first is the only one. It is the first of more except for `names_first`'s
-word: one result ends the search at the first dictionary with an entry spelled as the text (the name),
-before the first dictionary's inflections are read. So, with `off` (or `auto` and a word among the 1,023
-most frequent), a word spelled otherwise comes first with one shown but the name with more when the first
-dictionary also has an inflection spelled as the text (ゆめみ: 夢見 with one, the name with two), and only
-with more can a homograph of an inflection come first (いなケン: the name with one, 嘶く with two). On the
-27,970 lines, 8 of their 759,994 character positions show another first entry with one than with two, all
-with `off`, none with `auto` or `on` (#321's audit).
+The production lookup always includes every enabled dictionary. The low-level single-result
+API remains available for sentence-reading and ranking checks; its early exit can differ from
+the multi-dictionary search in the historical ambiguous cases described in #321.
 
 Until 0.9.6 the other dictionaries were pages, one at a time, with an L or R tap
 (`L/R Dictionary 2 of 3`). Stacking reads them with the word: when looking it up, the
@@ -367,7 +359,7 @@ zero leaves locator caching disabled.
 | Resource | Bound |
 | --- | --- |
 | Selected-entry output budget, including metadata | 8,192 + 256 bytes |
-| Other dictionaries' page locators (Dictionaries shown 2–8) | 208 bytes in the result arena; none for 1 |
+| Dictionary page locators | 208 bytes in the result arena; alternate locators also use the same bounded allocation |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
 | Session, filter directories and word locators | 6,784 bytes inside that 64 KiB allocation on Vita [measured]; at most 7 KiB [compile-time bound] |

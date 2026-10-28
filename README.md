@@ -60,7 +60,8 @@
   definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
   English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. The bundled
   [PSP/Vita names dictionary](docs/vndb-attribution.txt) adds 12,151 VNDB characters from 1,202
-  visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too.
+  visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too. All enabled dictionaries are shown automatically,
+  with the other stored readings and senses below the best match; scroll with the right stick.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
   sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
   [Lapis](https://github.com/donkuri/lapis) notes for Anki.
@@ -187,7 +188,6 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Speed boost while reading (444 MHz)** | ON |
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
-| | **Dictionaries shown**: how many dictionaries' entries for the same word are shown, the best match first and the others below it (the right stick scrolls to them), 1–8 (2: a word and the same word as a character's name; which comes first: `names_first`, [details](docs/local-dictionaries.md#names-and-words)) | 2 |
 | | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
 | | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready within a poll (16 ms) and the first word's lookup of the game writing it (measured on a computer; not run on a console yet; [details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |

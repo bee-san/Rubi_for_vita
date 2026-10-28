@@ -44,7 +44,7 @@ enum {
 /* The largest screenshot JPEG a card keeps (cards of earlier builds: this
  * build takes none). */
 #define VJO_ANKI_PICTURE_MAX (192u * 1024u)
-#define VJO_ANKI_MAX_MORE 7 /* other dictionaries' entries on a card (local_dictionary_results 8) */
+#define VJO_ANKI_MAX_MORE 7 /* other dictionaries' entries on a card (up to eight entries) */
 
 /* ---- field values (HTML, as Anki stores fields) ---- */
 

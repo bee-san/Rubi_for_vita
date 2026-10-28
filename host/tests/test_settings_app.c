@@ -557,7 +557,7 @@ static const char *const SIZES[3] = {"Small", "Normal", "Large"};
 #ifndef VJO_VOCR_MODEL_INFO_TEST
 #define CARDS 12 /* the page's cards, top to bottom, by their titles */
 static const char *const CARD_NAMES[CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
-                                              "Japanese characters only", "Highlight", "Dictionaries shown",
+                                              "Japanese characters only", "Highlight",
                                               "Text source", /* API 31 */
                                               "Trusted hooks replace OCR", "Skip OCR on screens without text", /* API 43 */
                                               "Vertical text", /* API 47 */
@@ -1025,7 +1025,7 @@ static void test_the_page_scrolls_a_card_at_a_time(void)
     static const struct { int frame, focus, top; } want[] = {
         {1, 0, 0}, {3, 1, 0}, {5, 2, 0}, {7, 3, 1}, {9, 4, 2}, {11, 5, 2},
         {13, 4, 2}, {15, 3, 2}, {17, 2, 2}, {19, 1, 1}, {21, 0, 0},
-        {23, 11, 8}, /* Up from the first: the last (API 55: Pause the game to read, Skip OCR on top) */
+        {23, 10, 7}, /* Up from the first: the last (API 55: Pause the game to read, Skip OCR on top) */
     };
     for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         int f = want[i].frame, top = card_top(f, want[i].top), mine = card_top(f, want[i].focus);
@@ -1044,8 +1044,8 @@ static void test_the_page_scrolls_a_card_at_a_time(void)
         int thumb = 0;
         for (int k = 0; k < shown[f].rects; k++)
             if (shown[f].rect[k].x == 942 && shown[f].rect[k].color == DIM)
-                thumb = shown[f].rect[k].y == OCR_Y + 310 * offset[want[i].top] / 920 &&
-                        shown[f].rect[k].h == 310 * (920 - offset[want[i].top] < 310 ? 920 - offset[want[i].top] : 310) / 920;
+                thumb = shown[f].rect[k].y == OCR_Y + 310 * offset[want[i].top] / 848 &&
+                        shown[f].rect[k].h == 310 * (848 - offset[want[i].top] < 310 ? 848 - offset[want[i].top] : 310) / 848;
         TEST_CHECK_(thumb, "frame %d: the scroll bar's thumb", f);
     }
     /* the size buttons' place is Read text's title row once the page has scrolled: a tap there
@@ -1085,23 +1085,14 @@ static void test_scrolled_cards_keep_their_touch_targets(void)
 {
     card("highlight_mode = word\nlocal_dictionaries = a.vjdict,b.vjdict,c.vjdict\nlocal_dictionary_results = 1\n");
     static const struct { int x, y; const char *highlight, *results; } taps[] = {
-        {724, HL_Y + 6, "character", "1"},   /* Character, top-left pixel */
-        {707, HL_Y + 39, "word", "1"},       /* Whole word, bottom-right pixel */
-        {600, HL_Y + 20, "word", "1"},       /* Whole word again: chosen, it stays (a toggle would switch it) */
-        {919, HL_Y + 39, "character", "1"},  /* Character, bottom-right pixel */
-        {800, HL_Y + 20, "character", "1"},  /* Character again: it stays */
-        {532, HL_Y + 6, "word", "1"},        /* Whole word, top-left pixel */
-        {300, HL_Y + 30, "character", "1"},  /* the title: switches */
-        {715, HL_Y + 20, "word", "1"},       /* between the badges: switches */
-        {636, DICT_Y + 6, "word", "3"},      /* 3, top-left pixel */
-        {679, DICT_Y + 39, "word", "3"},     /* 3, bottom-right pixel */
-        {680, DICT_Y + 20, "word", "3"},     /* the gap after 3: focus only */
-        {684, DICT_Y + 20, "word", "4"},     /* 4, left edge */
-        {919, DICT_Y + 20, "word", "8"},     /* 8, right edge */
-        {920, DICT_Y + 20, "word", "8"},     /* right of 8: focus only */
-        {540, DICT_Y + 5, "word", "8"},      /* above the numbers: focus only */
-        {540, DICT_Y + 40, "word", "8"},     /* below them: focus only */
-        {540, DICT_Y + 6, "word", "1"},      /* 1, top-left pixel */
+        {724, HL_Y + 6, "character", ""},   /* Character, top-left pixel */
+        {707, HL_Y + 39, "word", ""},       /* Whole word, bottom-right pixel */
+        {600, HL_Y + 20, "word", ""},       /* Whole word again: chosen, it stays (a toggle would switch it) */
+        {919, HL_Y + 39, "character", ""},  /* Character, bottom-right pixel */
+        {800, HL_Y + 20, "character", ""},  /* Character again: it stays */
+        {532, HL_Y + 6, "word", ""},        /* Whole word, top-left pixel */
+        {300, HL_Y + 30, "character", ""},  /* the title: switches */
+        {715, HL_Y + 20, "word", ""},       /* between the badges: switches */
     };
     enum { N = sizeof(taps) / sizeof(taps[0]), KEYS = 10 };
     static Input in[KEYS + 2 * N] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
@@ -1112,7 +1103,6 @@ static void test_scrolled_cards_keep_their_touch_targets(void)
                 "frame 9: Speed boost at %d, Highlight at %d, Dictionaries at %d", card_top(9, 2), card_top(9, 4),
                 card_top(9, 5));
     TEST_CHECK(rect_at(9, 532, HL_Y + 6, 176, 34) && rect_at(9, 724, HL_Y + 6, 196, 34)); /* the badges, there */
-    for (int k = 0; k < 8; k++) TEST_CHECK_(rect_at(9, 540 + k * 48, DICT_Y + 6, 44, 34), "number %d", k + 1);
     for (int i = 0; i < N; i++) {
         int f = KEYS + 2 * i;
         TEST_CHECK_(!strcmp(shown[f].highlight, taps[i].highlight) && !strcmp(shown[f].results, taps[i].results),
@@ -1128,26 +1118,14 @@ static void test_scrolled_cards_keep_their_touch_targets(void)
  * takes the next count, 8 then 1; Left and Right the count beside it, never past 1 or 8. */
 static void test_dictionaries_shown_by_its_buttons(void)
 {
-    static const struct { uint32_t button; const char *results; } steps[] = {
-        {SCE_CTRL_CROSS, "2"}, {SCE_CTRL_RIGHT, "3"}, {SCE_CTRL_LEFT, "2"}, {SCE_CTRL_LEFT, "1"},
-        {SCE_CTRL_LEFT, "1"}, /* not past 1 */
-        {SCE_CTRL_RIGHT, "2"}, {SCE_CTRL_RIGHT, "3"}, {SCE_CTRL_RIGHT, "4"}, {SCE_CTRL_RIGHT, "5"},
-        {SCE_CTRL_RIGHT, "6"}, {SCE_CTRL_RIGHT, "7"}, {SCE_CTRL_RIGHT, "8"},
-        {SCE_CTRL_RIGHT, "8"}, /* not past 8 */
-        {SCE_CTRL_CROSS, "1"}, /* round: 8, then 1 */
-    };
-    enum { N = sizeof(steps) / sizeof(steps[0]), KEYS = 12 }; /* the page, then Down to Dictionaries shown */
-    static Input in[KEYS + 2 * N] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
-                                     PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN)};
+    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+        PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_RIGHT)};
     card("local_dictionaries = a.vjdict,b.vjdict,c.vjdict\nlocal_dictionary_results = 1\n");
-    for (int i = 0; i < N; i++) in[KEYS + 2 * i] = (Input){steps[i].button, 0, 0, 0};
-    TEST_ASSERT(run(in, KEYS + 2 * N) == KEYS + 2 * N);
-    for (int i = 0; i < N; i++) {
-        int f = KEYS + 2 * i;
-        TEST_CHECK_(focused_card(f) == 5 && !strcmp(shown[f].results, steps[i].results),
-                    "press %d (0x%x): card %d focused, results '%s'; want %s", i, (unsigned)steps[i].button,
-                    focused_card(f), shown[f].results, steps[i].results);
-    }
+    TEST_ASSERT(run(in, sizeof(in) / sizeof(in[0])) == sizeof(in) / sizeof(in[0]));
+    TEST_CHECK(focused_card(sizeof(in) / sizeof(in[0]) - 1) == 5);
+    for (int f = 0; f < (int)(sizeof(in) / sizeof(in[0])); f++)
+        for (int t = 0; t < shown[f].texts; t++)
+            TEST_CHECK(strcmp(shown[f].text[t].text, "Dictionaries shown"));
 }
 
 /* The press choice names what opens the overlay (config.ini toggle_button). */
@@ -1258,7 +1236,7 @@ static void test_text_source_by_keys_and_touch(void)
         int f = want[i].frame;
         TEST_CHECK_(!strcmp(shown[f].source, want[i].source), "frame %d: text_source '%s', want '%s'", f,
                     shown[f].source, want[i].source);
-        TEST_CHECK_(focused_card(f) == 6 && !strcmp(shown[f].tier, "small"), "frame %d: card %d", f, focused_card(f));
+        TEST_CHECK_(focused_card(f) == 5 && !strcmp(shown[f].tier, "small"), "frame %d: card %d", f, focused_card(f));
         check_room(f);
     }
     const Text *st = text_at(14, ROOM_END + 4 + 22, 40, 41);
@@ -1290,10 +1268,10 @@ static void test_text_source_by_keys_and_touch(void)
     script_taps[22].y = top + 30; /* the title row: focus only */
     frames = run(script_taps, (int)(sizeof(script_taps) / sizeof(script_taps[0])));
     TEST_ASSERT(frames == (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_CHECK_(card_top(12, 6) == top, "Text source at %d, want %d", card_top(12, 6), top);
+    TEST_CHECK_(card_top(12, 5) == top, "Text source at %d, want %d", card_top(12, 5), top);
     static const char *const after[] = {"auto", "hooks", "ocr", "ocr", "ocr", "auto"};
     for (unsigned i = 0; i < 6; i++)
-        TEST_CHECK_(!strcmp(shown[14 + 2 * i].source, after[i]) && focused_card(14 + 2 * i) == 6,
+        TEST_CHECK_(!strcmp(shown[14 + 2 * i].source, after[i]) && focused_card(14 + 2 * i) == 5,
                     "tap %u: text_source '%s', want %s", i, shown[14 + 2 * i].source, after[i]);
 }
 
@@ -1312,14 +1290,14 @@ static void test_ocr_skip_switches_by_keys_and_touch(void)
     int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
     TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
     static const struct { int frame, focus; const char *gate, *trust; } want[] = {
-        {8, 8, "", ""},        /* Up four times: Skip OCR on screens without text, OFF by default, nothing saved */
-        {10, 8, "on", "on"},   /* Enter: ON (both keys saved) */
-        {12, 8, "on", "on"},   /* Right: ON already */
-        {14, 8, "off", "on"},  /* Left: OFF */
-        {16, 7, "off", "on"},  /* Up: Trusted hooks replace OCR, ON by default, nothing changes */
-        {18, 7, "off", "off"}, /* Left: OFF */
-        {20, 7, "off", "on"},  /* Enter: ON */
-        {22, 8, "off", "on"},  /* Down: back to Skip OCR */
+        {8, 7, "", ""},        /* Up four times: Skip OCR on screens without text, OFF by default, nothing saved */
+        {10, 7, "on", "on"},   /* Enter: ON (both keys saved) */
+        {12, 7, "on", "on"},   /* Right: ON already */
+        {14, 7, "off", "on"},  /* Left: OFF */
+        {16, 6, "off", "on"},  /* Up: Trusted hooks replace OCR, ON by default, nothing changes */
+        {18, 6, "off", "off"}, /* Left: OFF */
+        {20, 6, "off", "on"},  /* Enter: ON */
+        {22, 7, "off", "on"},  /* Down: back to Skip OCR */
     };
     for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         int f = want[i].frame;
@@ -1330,7 +1308,7 @@ static void test_ocr_skip_switches_by_keys_and_touch(void)
         check_room(f);
     }
     /* the badges say so: OFF on frame 8's Skip OCR card, ON on frame 10's */
-    const Text *b2 = text_at(8, card_top(8, 8) + 32, 812, 920), *b4 = text_at(10, card_top(10, 8) + 32, 812, 920);
+    const Text *b2 = text_at(8, card_top(8, 7) + 32, 812, 920), *b4 = text_at(10, card_top(10, 7) + 32, 812, 920);
     TEST_CHECK_(b2 && !strcmp(b2->text, "OFF") && b4 && !strcmp(b4->text, "ON"), "badges '%s', '%s'",
                 b2 ? b2->text : "(none)", b4 ? b4->text : "(none)");
     const Text *st = text_at(10, ROOM_END + 4 + 22, 40, 41);
@@ -1354,13 +1332,13 @@ static void test_ocr_skip_switches_by_keys_and_touch(void)
                                  TAP(860, OCR_Y + 564 - 564 + 20), TAP(500, OCR_Y + 636 - 564 + 60)};
     frames = run(taps, (int)(sizeof(taps) / sizeof(taps[0])));
     TEST_ASSERT(frames == (int)(sizeof(taps) / sizeof(taps[0])));
-    TEST_CHECK_(card_top(10, 8) == OCR_Y + 636 - 564 && card_top(10, 7) == OCR_Y + 564 - 564, "cards at %d, %d",
-                card_top(10, 7), card_top(10, 8));
-    TEST_CHECK_(!strcmp(shown[12].gate, "on") && !strcmp(shown[12].trust, "off") && focused_card(12) == 8,
+    TEST_CHECK_(card_top(10, 7) == OCR_Y + 636 - 564 && card_top(10, 6) == OCR_Y + 564 - 564, "cards at %d, %d",
+                card_top(10, 6), card_top(10, 7));
+    TEST_CHECK_(!strcmp(shown[12].gate, "on") && !strcmp(shown[12].trust, "off") && focused_card(12) == 7,
                 "tap 1: '%s', '%s'", shown[12].gate, shown[12].trust);
-    TEST_CHECK_(!strcmp(shown[14].gate, "on") && !strcmp(shown[14].trust, "on") && focused_card(14) == 7,
+    TEST_CHECK_(!strcmp(shown[14].gate, "on") && !strcmp(shown[14].trust, "on") && focused_card(14) == 6,
                 "tap 2: '%s', '%s'", shown[14].gate, shown[14].trust);
-    TEST_CHECK_(!strcmp(shown[16].gate, "off") && !strcmp(shown[16].trust, "on") && focused_card(16) == 8,
+    TEST_CHECK_(!strcmp(shown[16].gate, "off") && !strcmp(shown[16].trust, "on") && focused_card(16) == 7,
                 "tap 3: '%s', '%s'", shown[16].gate, shown[16].trust);
     for (int f = 0; f < frames; f++) check_room(f);
 }
@@ -1393,7 +1371,7 @@ static void test_vertical_text_by_keys_and_touch(void)
         int f = want[i].frame;
         TEST_CHECK_(!strcmp(shown[f].vertical, want[i].mode), "frame %d: ocr_vertical '%s', want '%s'", f,
                     shown[f].vertical, want[i].mode);
-        TEST_CHECK_(focused_card(f) == 9 && !strcmp(shown[f].tier, "small"), "frame %d: card %d", f, focused_card(f));
+        TEST_CHECK_(focused_card(f) == 8 && !strcmp(shown[f].tier, "small"), "frame %d: card %d", f, focused_card(f));
         check_room(f);
     }
     TEST_CHECK(shows(6, "Columns where the text box holds vertical text.") &&
@@ -1426,10 +1404,10 @@ static void test_vertical_text_by_keys_and_touch(void)
     script_taps[16].y = top + 30; /* the title row: focus only */
     frames = run(script_taps, (int)(sizeof(script_taps) / sizeof(script_taps[0])));
     TEST_ASSERT(frames == (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_CHECK_(card_top(6, 9) == top && top + CARD_H <= ROOM_END, "Vertical text at %d, want %d", card_top(6, 9), top);
+    TEST_CHECK_(card_top(6, 8) == top && top + CARD_H <= ROOM_END, "Vertical text at %d, want %d", card_top(6, 8), top);
     static const char *const after[] = {"off", "auto", "on", "on", "on", "off"};
     for (unsigned i = 0; i < 6; i++)
-        TEST_CHECK_(!strcmp(shown[8 + 2 * i].vertical, after[i]) && focused_card(8 + 2 * i) == 9,
+        TEST_CHECK_(!strcmp(shown[8 + 2 * i].vertical, after[i]) && focused_card(8 + 2 * i) == 8,
                     "tap %u: ocr_vertical '%s', want %s", i, shown[8 + 2 * i].vertical, after[i]);
 }
 
@@ -1454,11 +1432,11 @@ static void test_pause_card_by_keys_and_touch(void)
     };
     for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         int f = want[i].frame;
-        TEST_CHECK_(focused_card(f) == 11 && !strcmp(shown[f].pause, want[i].pause) && !strcmp(shown[f].tier, "small"),
+        TEST_CHECK_(focused_card(f) == 10 && !strcmp(shown[f].pause, want[i].pause) && !strcmp(shown[f].tier, "small"),
                     "frame %d: card %d, ocr_pause '%s', want '%s'", f, focused_card(f), shown[f].pause, want[i].pause);
         check_room(f);
     }
-    const Text *off = text_at(2, card_top(2, 11) + 32, 812, 920), *on = text_at(4, card_top(4, 11) + 32, 812, 920);
+    const Text *off = text_at(2, card_top(2, 10) + 32, 812, 920), *on = text_at(4, card_top(4, 10) + 32, 812, 920);
     TEST_CHECK_(off && !strcmp(off->text, "OFF") && on && !strcmp(on->text, "ON"), "badges '%s', '%s'",
                 off ? off->text : "(none)", on ? on->text : "(none)");
     TEST_CHECK(shows(2, "ON: a brief pause, so an icon can't spoil a read. Draw a box."));
@@ -1484,9 +1462,9 @@ static void test_pause_card_by_keys_and_touch(void)
     taps[6].y = top + 20;
     frames = run(taps, (int)(sizeof(taps) / sizeof(taps[0])));
     TEST_ASSERT(frames == (int)(sizeof(taps) / sizeof(taps[0])));
-    TEST_CHECK_(card_top(2, 11) == top && top + CARD_H <= ROOM_END, "Pause card at %d, want %d", card_top(2, 11), top);
-    TEST_CHECK_(!strcmp(shown[4].pause, "off") && focused_card(4) == 11, "tap 1: '%s'", shown[4].pause);
-    TEST_CHECK_(!strcmp(shown[6].pause, "on") && focused_card(6) == 11, "tap 2: '%s'", shown[6].pause);
+    TEST_CHECK_(card_top(2, 10) == top && top + CARD_H <= ROOM_END, "Pause card at %d, want %d", card_top(2, 10), top);
+    TEST_CHECK_(!strcmp(shown[4].pause, "off") && focused_card(4) == 10, "tap 1: '%s'", shown[4].pause);
+    TEST_CHECK_(!strcmp(shown[6].pause, "on") && focused_card(6) == 10, "tap 2: '%s'", shown[6].pause);
     for (int f = 0; f < frames; f++) check_room(f);
 }
 
@@ -1514,10 +1492,10 @@ static void test_suggest_a_text_box_saved_in_region_ini(void)
     };
     for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         int f = want[i].frame;
-        const Text *b = text_at(f, card_top(f, 10) + 32, 812, 920);
+        const Text *b = text_at(f, card_top(f, 9) + 32, 812, 920);
         char expect[96];
         snprintf(expect, sizeof(expect), "%s%s", game, want[i].line ? "region = full\n" : "");
-        TEST_CHECK_(focused_card(f) == 10 && b && !strcmp(b->text, want[i].badge), "frame %d: card %d, badge '%s'", f,
+        TEST_CHECK_(focused_card(f) == 9 && b && !strcmp(b->text, want[i].badge), "frame %d: card %d, badge '%s'", f,
                     focused_card(f), b ? b->text : "(none)");
         TEST_CHECK_(!strcmp(shown[f].region, expect), "frame %d: region.ini '%s'", f, shown[f].region);
         TEST_CHECK_(!strcmp(shown[f].tier, "small") && !shown[f].vertical[0], "frame %d: config.ini changed", f);
@@ -1539,10 +1517,10 @@ static void test_suggest_a_text_box_saved_in_region_ini(void)
     script_taps[8].y = script_taps[10].y = top + 30;
     frames = run(script_taps, (int)(sizeof(script_taps) / sizeof(script_taps[0])));
     TEST_ASSERT(frames == (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_CHECK_(card_top(4, 10) == top && top + CARD_H <= ROOM_END, "Suggest a text box at %d, want %d",
-                card_top(4, 10), top);
+    TEST_CHECK_(card_top(4, 9) == top && top + CARD_H <= ROOM_END, "Suggest a text box at %d, want %d",
+                card_top(4, 9), top);
     TEST_CHECK_(!strcmp(shown[6].region, "-"), "Right on ON: region.ini '%s'", shown[6].region);
-    TEST_CHECK_(!strcmp(shown[8].region, "region = full\n") && focused_card(8) == 10, "tap 1: region.ini '%s'",
+    TEST_CHECK_(!strcmp(shown[8].region, "region = full\n") && focused_card(8) == 9, "tap 1: region.ini '%s'",
                 shown[8].region);
     TEST_CHECK_(!strcmp(shown[10].region, ""), "tap 2: region.ini '%s'", shown[10].region);
     /* an old install's box for every game: OFF; ON drops it, the games' own lines kept */
@@ -1552,7 +1530,7 @@ static void test_suggest_a_text_box_saved_in_region_ini(void)
     frames = run(old, (int)(sizeof(old) / sizeof(old[0])));
     TEST_ASSERT(frames == (int)(sizeof(old) / sizeof(old[0])));
     {
-        const Text *b = text_at(4, card_top(4, 10) + 32, 812, 920);
+        const Text *b = text_at(4, card_top(4, 9) + 32, 812, 920);
         TEST_CHECK_(b && !strcmp(b->text, "OFF"), "an old box for every game: '%s'", b ? b->text : "(none)");
     }
     TEST_CHECK_(!strcmp(shown[6].region, "PCSB00001 = full\n"), "ON: region.ini '%s'", shown[6].region);
@@ -1565,7 +1543,7 @@ static void test_suggest_a_text_box_saved_in_region_ini(void)
     close_fails = NULL;
     TEST_ASSERT(frames == (int)(sizeof(locked) / sizeof(locked[0])));
     {
-        const Text *b = text_at(6, card_top(6, 10) + 32, 812, 920);
+        const Text *b = text_at(6, card_top(6, 9) + 32, 812, 920);
         TEST_CHECK_(b && !strcmp(b->text, "--") && shows(6, "Cannot read region.ini."), "unreadable: '%s'",
                     b ? b->text : "(none)");
         TEST_CHECK_(!strcmp(shown[6].region, game), "unreadable: region.ini '%s'", shown[6].region);
@@ -1737,93 +1715,14 @@ static void test_banner_is_drawn_on_every_page(void)
     unlink(VJO_APP_STAMP_OWN); unlink(VJO_APP_STAMP_PACKAGE); unlink(VJO_APP_STATUS_PATH);
 }
 
-/* The Dictionaries shown card's help line: drawn 30 px below its title
- * (settings/main.c: CARD_TITLE_Y 30, CARD_HELP_Y 60 within the card). */
-static const Text *results_help(int f)
-{
-    for (int i = 0; i < shown[f].texts; i++)
-        if (!strcmp(shown[f].text[i].text, "Dictionaries shown"))
-            return text_at(f, shown[f].text[i].y + 30, 0, 960);
-    return NULL;
-}
-#define DICT_DIR "ux0:data/VitaJPOverlay/dictionaries"
-/* A dictionary's page 0 as the bundle writes it: magic, version, the frequency
- * list's name at 64 and, when given, the title at 192 (the rest of the file is
- * not read by the app). */
-static void put_dictionary(const char *name, const char *magic, const char *title)
-{
-    char path[256];
-    unsigned char page0[4096] = {0};
-    memcpy(page0, magic, 8);
-    page0[8] = (unsigned char)(magic[6] - '0');
-    memcpy(page0 + 64, "Jiten", 5);
-    if (title) memcpy(page0 + 192, title, strlen(title));
-    snprintf(path, sizeof(path), DICT_DIR "/%s", name);
-    mkdir(DICT_DIR, 0777);
-    FILE *f = fopen(path, "wb");
-    TEST_ASSERT(f != NULL);
-    TEST_ASSERT(fwrite(page0, 1, sizeof(page0), f) == sizeof(page0));
-    TEST_ASSERT(fclose(f) == 0);
-}
-/* The card names the one enabled dictionary by its file's own title, as the
- * bundled Bee's Ultimate Dictionary has one; without a readable title (none,
- * a version 1 file whose index fills those bytes, a malformed one, no file)
- * it counts the dictionaries as before. */
 static void test_dictionaries_card_names_the_bundled_dictionary(void)
 {
-    /* the page scrolled to the card (#146's cards above it): Highlight focused, Dictionaries shown
-     * drawn below it in the last frame */
-    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
-                               PRESS(SCE_CTRL_DOWN)};
-    enum { FRAMES = (int)(sizeof(in) / sizeof(in[0])), LAST = FRAMES - 1 };
-    static const struct { const char *magic, *title, *line; } cases[] = {
-        {"VJDICT3\0", "Bee's Ultimate Dictionary", "Best match only: Bee's Ultimate Dictionary."},
-        {"VJDICT2\0", "Jitendex.org", "Best match only: Jitendex.org."},
-        {"VJDICT3\0", NULL, "Best match only. 1 dictionary enabled."},
-        {"VJDICT1\0", "index records", "Best match only. 1 dictionary enabled."},
-        {"VJDICT3\0", "bad\x01title", "Best match only. 1 dictionary enabled."},
-    };
-    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        card("local_dictionaries = plaintext.vjdict\n");
-        put_dictionary("plaintext.vjdict", cases[i].magic, cases[i].title);
-        TEST_CASE_("case %u", i);
-        TEST_ASSERT(run(in, FRAMES) == FRAMES);
-        const Text *t = results_help(LAST);
-        TEST_CHECK_(t && !strcmp(t->text, cases[i].line), "'%s'", t ? t->text : "(none)");
-    }
-    /* no file: the count */
-    card("local_dictionaries = plaintext.vjdict\n");
-    unlink(DICT_DIR "/plaintext.vjdict");
-    TEST_ASSERT(run(in, FRAMES) == FRAMES);
-    const Text *t = results_help(LAST);
-    TEST_CHECK_(t && !strcmp(t->text, "Best match only. 1 dictionary enabled."), "'%s'", t ? t->text : "(none)");
-    /* one file with 2 shown (the default): nothing to page to, so best match only */
-    card("local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 2\n");
-    put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
-    TEST_ASSERT(run(in, FRAMES) == FRAMES);
-    t = results_help(LAST);
-    TEST_CHECK_(t && !strcmp(t->text, "Best match only: Bee's Ultimate Dictionary."), "'%s'",
-                t ? t->text : "(none)");
-    /* two files and 1 shown: the count */
-    card("local_dictionaries = plaintext.vjdict,vndb-names.vjdict\nlocal_dictionary_results = 1\n");
-    TEST_ASSERT(run(in, FRAMES) == FRAMES);
-    t = results_help(LAST);
-    TEST_CHECK_(t && !strcmp(t->text, "Best match only. 2 dictionaries enabled."), "'%s'", t ? t->text : "(none)");
-    /* a file shorter than page 0's 256 bytes (cut inside its title): the count */
-    card("local_dictionaries = plaintext.vjdict\n");
-    put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
-    TEST_ASSERT(truncate(DICT_DIR "/plaintext.vjdict", 200) == 0);
-    TEST_ASSERT(run(in, FRAMES) == FRAMES);
-    t = results_help(LAST);
-    TEST_CHECK_(t && !strcmp(t->text, "Best match only. 1 dictionary enabled."), "'%s'", t ? t->text : "(none)");
-    /* The defaults: two bundled files and 2 shown, the paging line (it names none). */
+    static const Input in[] = {OCR_PAGE};
     card(NULL);
-    put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
-    TEST_ASSERT(run(in, FRAMES) == FRAMES);
-    t = results_help(LAST);
-    TEST_CHECK_(t && !strcmp(t->text, "Best match, then the others below it. 2 enabled."), "'%s'",
-                t ? t->text : "(none)");
-    TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
+    TEST_ASSERT(run(in, 2) == 2);
+    for (int f = 0; f < 2; f++)
+        for (int i = 0; i < shown[f].texts; i++)
+            TEST_CHECK(strcmp(shown[f].text[i].text, "Dictionaries shown"));
 }
 
 /* The tab bar, laid out from its labels since the fifth tab (#313's Look up; #312's Stats came and went): five tabs

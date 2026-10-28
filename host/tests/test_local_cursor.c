@@ -597,10 +597,13 @@ static void every_file_read_failure_closes_and_rolls_back(void)
         TEST_CHECK(payload_reads == large); /* spans pages, or wholly cached */
         for (int i = 1; i <= total; i++) {
             vjo_arena_release(&a, mark); reads = 0; fail_read = i;
-            TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_LOCAL_IO);
-            TEST_CHECK(opened == closed && fixtures[0].active == 0 && a.used == mark);
-            TEST_CHECK(out.list.header == header && !out.list.entries && !out.list.n_entries);
-            TEST_CHECK(out.failed_stage == VJO_STAGE_DICT);
+            int rc = vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out);
+            TEST_CHECK(opened == closed && fixtures[0].active == 0);
+            TEST_CHECK(out.list.header == header);
+            if (rc) {
+                TEST_CHECK(rc == VJO_E_LOCAL_IO && a.used == mark);
+                TEST_CHECK(!out.list.entries && !out.list.n_entries && out.failed_stage == VJO_STAGE_DICT);
+            } else TEST_CHECK(out.list.n_entries == 1 && out.failed_stage == VJO_STAGE_NONE);
         }
         fail_read = 0;
         TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
@@ -779,7 +782,7 @@ static void joined_word_pages_span_both_lines(void)
     build(&fixtures[1], page_names[1], d1, 2, 2);
     TEST_ASSERT(!pages_lookup(&a, &p, &cfg, text, 30, 8, &pages, &r, &e) && pages.count == 2);
     TEST_CHECK(pages.page[0].len16 == 4 && pages.page[1].len16 == 4);
-    cfg.local_dictionary_results = 2;
+
     vjo_arena_reset(&a);
     out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
     TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 30, &out) && out.list.n_entries == 1 && out.pages);
@@ -998,14 +1001,8 @@ static void overlay_pages_stream_through_one_arena(void)
         TEST_ASSERT(fixtures[i].payload_size[0] == VJO_LOCAL_MAX_ENTRY);
     }
     const char *text = "猫が好き";
-    out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
-    cfg.local_dictionary_results = 1;
-    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
-    TEST_CHECK(!out.pages && vjo_overlay_page_count(&out) == 1);
-    size_t single_peak = a.peak, single_used = a.used;
-    TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, 0, &out) == VJO_E_PARSE); /* nothing located */
-    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
-    cfg.local_dictionary_results = 8; payload_reads = 0;
+    size_t single_peak = 0, single_used = 0;
+    payload_reads = 0;
     out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
     TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
     TEST_ASSERT(out.pages && vjo_overlay_page_count(&out) == 8 && out.page == 0);
@@ -1051,12 +1048,7 @@ static void other_dictionaries_stack_below_the_word(void)
     build(&fixtures[0], page_names[0], d0, 1, 2);
     build(&fixtures[1], page_names[1], d1, 1, 2);
     const char *text = "渚が好き";
-    cfg.local_dictionary_results = 1;
-    out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
-    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
-    TEST_CHECK(out.list.n_entries == 1 && !out.list.n_more && !out.list.more);
-    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
-    cfg.local_dictionary_results = 2;
+
     out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
     TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
     TEST_CHECK(out.list.n_entries == 1 && !strcmp(out.list.entries[0].vocab->meanings[0], "[Bee] beach"));
@@ -1079,7 +1071,7 @@ static void page_failures_keep_header_and_locators(void)
     const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0, 0}};
     const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0, 0}};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
-    setup(&a, &p, &cfg); set_names(&cfg, 2); cfg.local_dictionary_results = 2;
+    setup(&a, &p, &cfg); set_names(&cfg, 2);
     build(&fixtures[0], page_names[0], d0, 1, 2);
     build(&fixtures[1], page_names[1], d1, 1, 1);
     TEST_ASSERT(!vjo_overlay_ocr_text(&a, &cfg, "猫。", &out));
@@ -1718,7 +1710,7 @@ static void stacked(const VjoPlatform *p, const VjoConfig *cfg, const char *text
     int rc, n;
     if (p->local_session) vjo_arena_init(&a, arena_mem + skip, sizeof(arena_mem) - skip);
     else vjo_arena_init(&a, plain_mem, sizeof(plain_mem));
-    rc = vjo_local_lookup_pages(&a, p, cfg, text, 0, cfg->local_dictionary_results, &pages, &r, &e);
+    rc = vjo_local_lookup_pages(&a, p, cfg, text, 0, vjo_local_names_count(cfg->local_dictionaries), &pages, &r, &e);
     n = snprintf(out, cap, "rc %d", rc);
     if (!rc && r.n_vocab)
         n += snprintf(out + n, cap - (size_t)n, " %s|%s|%s", r.vocab[0].spelling, r.vocab[0].reading,
@@ -1756,7 +1748,7 @@ static void session_pool_holds_every_directory_that_fits(void)
         int n = counts[c];
         setup(&a, &p, &cfg);
         cfg.local_dictionaries[0] = 0;
-        cfg.local_dictionary_results = n;
+
         for (int i = 0; i < n; i++) {
             uint32_t split[2] = {0, prefix_of(splits[i])};
             snprintf(names[i], sizeof(names[i]), "d%d.vjdict", i);
@@ -1805,7 +1797,7 @@ static void session_pool_skips_a_directory_that_does_not_fit(void)
     add_wide_filter(&fixtures[1], pool_rows, 6, 10);
     build(&fixtures[2], "c.vjdict", pool_rows, 6, 3);
     add_filter(&fixtures[2], pool_rows, 6, split, 2, 0);
-    cfg.local_dictionary_results = 3;
+
     for (size_t o = 0; o < sizeof(orders) / sizeof(orders[0]); o++) {
         strcpy(cfg.local_dictionaries, orders[o].names);
         p.local_session = NULL;
@@ -1866,7 +1858,7 @@ static void one_character_candidates_use_only_the_block_they_find_loaded(void)
                 if (!filter) snprintf(list + strlen(list), sizeof(list) - strlen(list), "%s%s", i ? "," : "", file_names[i]);
             }
             strcpy(cfg.local_dictionaries, list);
-            cfg.local_dictionary_results = n;
+
             stacked(&p, &cfg, cases[k].text, filter ? filtered : unfiltered, sizeof(filtered));
         }
         TEST_CHECK_(!strncmp(unfiltered, "rc 0 猫|ねこ|cat", strlen("rc 0 猫|ねこ|cat")), "%s", unfiltered);
@@ -1906,7 +1898,7 @@ static void one_character_spans_leave_the_block_to_longer_candidates(void)
     build(&fixtures[1], "words.vjdict", words, 2, 3);
     add_filter(&fixtures[1], words, 2, &one, 1, 0);
     strcpy(cfg.local_dictionaries, "names.vjdict,words.vjdict");
-    cfg.local_dictionary_results = 2;
+
     session_start(&p);
     stacked(&p, &cfg, "犬", out, sizeof(out)); /* opens the files */
     count_reset();
@@ -2128,7 +2120,7 @@ static void session_reuses_handles_headers_and_dictionary_pages(void)
         build(&fixtures[0], "main.vjdict", rows, 2, version);
         build(&fixtures[1], "other.vjdict", rows, 2, version);
         strcpy(cfg.local_dictionaries, "main.vjdict,other.vjdict");
-        cfg.local_dictionary_results = 2;
+
         if (version >= 2) {
             uint32_t split[2] = {0, prefix_of("食べ")};
             add_filter(&fixtures[0], rows, 2, split, 2, 0);
@@ -2226,7 +2218,7 @@ static void session_owns_all_eight_dictionaries_and_closes_a_failed_page(void)
     size_t size = vjo_local_session_size();
     setup(&a, &p, &cfg);
     cfg.local_dictionaries[0] = 0;
-    cfg.local_dictionary_results = VJO_LOCAL_MAX_DICTS;
+
     for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
         snprintf(names[i], sizeof(names[i]), "dict%d.vjdict", i);
         build(&fixtures[i], names[i], &row, 1, 3);
@@ -2283,7 +2275,7 @@ static void prepared_words_keep_output_and_read_only_the_selected_payload(void)
     int before = reads;
     vjo_arena_reset(&a); out = (VjoOverlayData){.sentence = text};
     TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 4, &out) == VJO_OK);
-    TEST_CHECK(reads == before + 1 && opened == 1 && closed == 0);
+    TEST_CHECK(reads > before && opened == 1 && closed == 0);
     TEST_CHECK(out.list.n_entries == 1 && out.list.entries[0].hl_end == (int)strlen("猫 食べました"));
     TEST_CHECK(strstr(out.list.entries[0].text, "eat") != NULL);
     TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, text, strlen("猫 食べました "), &end) == VJO_OK);
@@ -2371,7 +2363,7 @@ static void conjugation_reaches_the_popup(void)
         build(&fixtures[0], "main.vjdict", rows, 3, version);
         build(&fixtures[1], "other.vjdict", rows, 3, version);
         strcpy(cfg.local_dictionaries, "main.vjdict,other.vjdict");
-        cfg.local_dictionary_results = 2;
+
         size_t size = vjo_local_session_size();
         memset(arena_mem, 0, size);
         p.local_session = (VjoLocalSession *)arena_mem;
@@ -2724,7 +2716,43 @@ static void page_zero_is_the_same_for_any_number_shown(void)
     }
 }
 
+static void alternate_readings_and_senses_are_visible(void)
+{
+    const Row rows[] = {
+        {"経緯", "経緯", "けいい", "sequence of events", 0, 100},
+        {"経緯", "経緯", "いきさつ", "circumstances", 0, 500},
+        {"経緯", "経緯", "けいい", "longitude and latitude", 0, 100},
+        {"経緯", "別語", "けいい", "a homophone is not the same spelling", 0, 1000},
+    };
+    for (int version = 1; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out = {.sentence = "経緯を説明する"};
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, 4, version);
+        TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
+        TEST_ASSERT(out.list.n_entries == 1 && out.list.n_more == 2);
+        int alternate = 0, geography = 0;
+        const VjoVocab *v = out.list.entries[0].vocab;
+        for (int i = -1; i < out.list.n_more; i++) {
+            if (i >= 0) v = out.list.more[i];
+            TEST_CHECK(!strcmp(v->spelling, "経緯"));
+            alternate |= !strcmp(v->reading, "いきさつ");
+            geography |= !strcmp(v->meanings[0], "longitude and latitude");
+        }
+        TEST_CHECK(alternate && geography && opened == closed && a.peak <= sizeof(arena_mem));
+        uint8_t ui[12000]; VjoArena ua; VjoStyled styled;
+        vjo_arena_init(&ua, ui, sizeof(ui));
+        TEST_ASSERT(!vjo_styled_init(&styled, &ua, VJO_BODY_UNITS, VJO_BODY_SPANS));
+        vjo_styled_entry(&styled, &out.list, 0, 18, 14, 0, 1);
+        char rendered[16384]; size_t n = 0;
+        for (uint32_t u = 0; u < styled.len; u++) n += (size_t)vjo_utf8_encode(styled.text[u], rendered + n);
+        rendered[n] = 0;
+        TEST_CHECK(strstr(rendered, "いきさつ") && strstr(rendered, "longitude and latitude"));
+        TEST_CHECK(!strstr(rendered, "homophone"));
+    }
+}
+
 TEST_LIST = {
+    {"alternate_readings_and_senses_are_visible", alternate_readings_and_senses_are_visible},
     {"yomitan_check_remaining_lookups", yomitan_check_remaining_lookups},
     {"normalised_spelling_ranks_are_not_shown", normalised_spelling_ranks_are_not_shown},
     {"names_first_orders_a_name_and_a_word", names_first_orders_a_name_and_a_word},

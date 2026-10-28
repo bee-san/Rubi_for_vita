@@ -267,23 +267,37 @@ static int keep_entry(const VjoVocab *v, size_t mark, VjoAnkiGloss *g)
     return 0;
 }
 
-/* The other dictionaries' entries for the word (local_dictionary_results
- * above 1): each page's payload read from its file, one at a time, kept
- * while the card's record fits. */
+/* Other dictionaries and the stored readings/senses of the shown spelling,
+ * read one payload at a time while the card's existing record bounds allow. */
 static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
 {
     VjoAnkiGloss *g;
+    VjoLocalPage *alternates;
+    int count = 0, full = 0;
     char name[96];
     if (!pages || !(g = (VjoAnkiGloss *)vjo_arena_alloc(&arena, sizeof(*g) * VJO_ANKI_MAX_MORE)))
         return;
     n->more = g;
-    for (int i = 0; i < pages->count && n->n_more < VJO_ANKI_MAX_MORE && !stopping(); i++) {
+    size_t located = vjo_arena_mark(&arena);
+    alternates = vjo_arena_alloc(&arena, sizeof(*alternates) * VJO_LOCAL_MAX_RESULTS);
+    if (alternates) count = vjo_local_alternates(&arena, &plat, acfg, pages, alternates, VJO_LOCAL_MAX_RESULTS, &full);
+    if (count < 0) count = 0;
+    vjo_arena_release(&arena, count ? (size_t)((uint8_t *)alternates - arena.base) +
+        (size_t)count * sizeof(*alternates) : located);
+    for (int d = 0; d < pages->count && n->n_more < VJO_ANKI_MAX_MORE && !stopping(); d++)
+      for (int i = -1; i < count && n->n_more < VJO_ANKI_MAX_MORE && !stopping(); i++) {
         size_t mark = vjo_arena_mark(&arena);
+        VjoLocalPages one = {.count = 1, .pos16 = pages->pos16, .cursor_byte = pages->cursor_byte};
         VjoDictResult r;
         VjoErr err;
-        if (i == shown)
-            continue;
-        if (vjo_local_read_page(&arena, &plat, acfg, pages, i, &r, &err) || !r.n_vocab || !r.vocab[0].n_meanings ||
+        if (i < 0) {
+            if (d == shown) continue;
+            one.page[0] = pages->page[d];
+        } else {
+            if (alternates[i].dict != pages->page[d].dict) continue;
+            one.page[0] = alternates[i];
+        }
+        if (vjo_local_read_page(&arena, &plat, acfg, &one, 0, &r, &err) || !r.n_vocab || !r.vocab[0].n_meanings ||
             keep_entry(&r.vocab[0], mark, &g[n->n_more]) < 0) {
             vjo_arena_release(&arena, mark);
             continue;
@@ -297,7 +311,7 @@ static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
         if (!fits(n)) {
             vjo_log("anki: %d other dictionaries' entries kept: the next would make the card too large", --n->n_more);
             vjo_arena_release(&arena, mark);
-            break;
+            return;
         }
     }
 }

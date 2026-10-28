@@ -327,19 +327,19 @@ class MigrateConfig(unittest.TestCase):
         # of 1 (the old default) becomes 2, so a word that is also a name pages to it.
         text, report = self.migrate("local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 1\n")
         self.assertIn("\nlocal_dictionaries = plaintext.vjdict,vndb-names.vjdict\n", text)
-        self.assertIn("\nlocal_dictionary_results = 2\n", text)
-        self.assertIn("config.ini: local_dictionary_results = 2", report)
+        self.assertNotIn("local_dictionary_results =", text)
+        self.assertIn("local_dictionary_results removed", report)
         text, _ = self.migrate("local_dictionaries = mine.vjdict, jmdict.vjdict\nlocal_dictionary_results = 3\n")
         self.assertIn("\nlocal_dictionaries = mine.vjdict,plaintext.vjdict,vndb-names.vjdict\n", text)
-        self.assertIn("\nlocal_dictionary_results = 3\n", text)  # a count the user chose stays
+        self.assertNotIn("local_dictionary_results =", text)  # a count the user chose stays
         # both there already: nothing changes, a 1 included (chosen with the names enabled)
         text, _ = self.migrate("local_dictionaries = plaintext.vjdict,vndb-names.vjdict\nlocal_dictionary_results = 1\n")
-        self.assertIn("\nlocal_dictionary_results = 1\n", text)
+        self.assertNotIn("local_dictionary_results =", text)
         # no room for the names (eight files): the list and the count stay
         eight = ",".join("d%d.vjdict" % i for i in range(7)) + ",plaintext.vjdict"
         text, _ = self.migrate("local_dictionaries = %s\nlocal_dictionary_results = 1\n" % eight)
         self.assertIn("\nlocal_dictionaries = %s\n" % eight, text)
-        self.assertIn("\nlocal_dictionary_results = 1\n", text)
+        self.assertNotIn("local_dictionary_results =", text)
         # an explicit --set wins
         text, _ = self.migrate("local_dictionaries = plaintext.vjdict\n", "local_dictionaries=plaintext.vjdict")
         self.assertIn("\nlocal_dictionaries = plaintext.vjdict\n", text)

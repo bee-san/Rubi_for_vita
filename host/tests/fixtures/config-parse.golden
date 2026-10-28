@@ -3,7 +3,6 @@
   local_dictionary_dir="ux0:data/VitaJPOverlay/dictionaries"
   local_dictionaries="plaintext.vjdict,vndb-names.vjdict"
   ocr_model_dir="ux0:data/VitaJPOverlay/ocr"
-  local_dictionary_results=2
   non_japanese_filter=1
   japanese_only_selection=0
   highlight_mode=0
@@ -41,8 +40,8 @@
   ocr_spotter_refine=0
   ocr_pause=0
   n_warnings=0
-= host/tests/fixtures/config-old-app-test2.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 anki_mining=1
-= host/tests/fixtures/config-test3-owner.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 vocr_tier=3 anki_mining=1
+= host/tests/fixtures/config-old-app-test2.ini => local_dictionaries="plaintext.vjdict" japanese_only_selection=1 text_source=0 anki_mining=1
+= host/tests/fixtures/config-test3-owner.ini => local_dictionaries="plaintext.vjdict" japanese_only_selection=1 text_source=0 vocr_tier=3 anki_mining=1
 = docs/config.example.ini =>
 > bogus = 1 => | w: unknown setting 'bogus'
 > bogus line => | w: ignored line 1 (no '=')
@@ -74,7 +73,6 @@
 > vocr_tier \r= large => vocr_tier=3
 > highlight_mode\r=character => highlight_mode=1
 > japanese_only_selection \r = on => japanese_only_selection=1
-> local_dictionary_results\r\t= 3 => local_dictionary_results=3
 > vocr_model\r= FL10_w8.vocr => vocr_tier=1
 > font_size_ja = 20\nfont_size_ja = 30 => font_size_ja=30
 > font_size_ja = 20\nfont_size_ja = 99 => font_size_ja=20 | w: font_size_ja: invalid value (8-40)
@@ -98,12 +96,6 @@
 > local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
 > local_dictionaries = => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
 > local_dictionaries = , => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionary_results = 1 => local_dictionary_results=1
-> local_dictionary_results = 8 => local_dictionary_results=8
-> local_dictionary_results = 0 => | w: local_dictionary_results: invalid value (1-8)
-> local_dictionary_results = 9 => | w: local_dictionary_results: invalid value (1-8)
-> local_dictionary_results = two => | w: local_dictionary_results: invalid value (1-8)
-> local_dictionary_results = => | w: local_dictionary_results: invalid value (1-8)
 > non_japanese_filter = none => non_japanese_filter=0
 > non_japanese_filter = None ; mine => non_japanese_filter=0
 > non_japanese_filter = all => | w: non_japanese_filter: invalid value
@@ -320,4 +312,4 @@
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd] => | w: ignored line 1 (no '=')
-= 151 records parse as the defaults, with no warning
+= 158 records parse as the defaults, with no warning

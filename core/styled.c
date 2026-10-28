@@ -249,20 +249,38 @@ void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_
                       int show_rank)
 {
     uint32_t cap, room = 0;
+    int omitted, span_cap;
     if (!l || selected < 0 || selected >= l->n_entries)
         return;
-    /* the stacked entries below keep their room: a long entry is clipped instead */
+    /* Keep later readings visible even when several articles are long. */
     cap = s->cap;
+    span_cap = s->cap_spans;
+    omitted = selected == 0 && l->more_omitted;
+    if ((omitted || (selected == 0 && l->n_more)) && cap > s->len + 64) {
+        s->cap = cap - 64;
+        if (s->cap_spans > 0) s->cap_spans--;
+    }
+    uint32_t body_cap = s->cap;
     for (int i = 0; i < l->n_more && selected == 0; i++)
         room += stacked_units(l->more[i]);
-    s->cap = cap > s->len + room ? cap - room : s->len;
+    s->cap = body_cap > s->len + room ? body_cap - room :
+        s->len + (body_cap - s->len) / (uint32_t)(l->n_more + 1);
     vocab_text(s, l->entries[selected].vocab, l, &l->entries[selected], ja_px, en_px, in_anki, show_rank);
-    s->cap = cap;
     for (int i = 0; i < l->n_more && selected == 0; i++) {
         const VjoVocab *v = l->more[i];
+        s->cap = body_cap;
+        if (s->n_spans + 6 >= span_cap) { omitted = 1; break; }
+        room -= stacked_units(v);
+        s->cap = body_cap > s->len + room ? body_cap - room :
+            s->len + (body_cap - s->len) / (uint32_t)(l->n_more - i);
         vjo_styled_puts(s, "\n\n", VJO_RGB_DIM, en_px); /* its definition names its dictionary ("[title]") */
         vocab_text(s, v, l, NULL, ja_px, en_px, 0, 0);
     }
+    s->cap = cap;
+    s->cap_spans = span_cap;
+    if (selected == 0 && l->n_more && s->truncated) omitted = 1;
+    if (omitted)
+        vjo_styled_puts(s, "\n\nMore entries omitted. Look up a specific reading.", VJO_RGB_DIM, en_px);
 }
 
 void vjo_styled_dict_page(VjoStyled *s, int page, int pages, int en_px)

@@ -12,6 +12,7 @@
  * as on the console. */
 #define _GNU_SOURCE /* memmem */
 #define main acutest_main
+#include "../../settings/lookup.h"
 #include "acutest.h"
 #undef main
 #include "test_tmpdir.h"
@@ -816,7 +817,43 @@ static void a_zero_width_is_measured_again(void)
                 42 + stub_width(26, "猫が好"));
 }
 
+static void a_card_keeps_an_alternate_reading(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    uint8_t bytes[16384];
+    const char *word = "経緯";
+    size_t size = vjdict2_one(bytes, sizeof(bytes), word, word, "けいい", "sequence of events", "Bee");
+    size_t posting = 8192 + strlen(word), payload = posting + 16;
+    size_t first_size = size - payload;
+    memmove(bytes + payload + 16, bytes + payload, first_size);
+    vjdict_put64(bytes + posting, payload + 16);
+    size += 16;
+    size_t second = size;
+    const char *parts[] = {word, "いきさつ", "circumstances"};
+    for (int i = 0; i < 3; i++) {
+        size_t n = strlen(parts[i]) + 1;
+        memcpy(bytes + size, parts[i], n); size += n;
+    }
+    vjdict_put64(bytes + posting + 16, second);
+    vjdict_put32(bytes + posting + 24, (uint32_t)(size - second));
+    vjdict_put32(bytes + posting + 28, 0);
+    vjdict_put32(bytes + 16, 2);
+    vjdict_put32(bytes + 4128, 2);
+    vjdict_put64(bytes + 40, size);
+    FILE *f = fopen(DICT_DIR "/plaintext.vjdict", "wb");
+    TEST_ASSERT(f && fwrite(bytes, 1, size, f) == size && !fclose(f));
+    show(); keyboard_types(word); frame(SCE_CTRL_TRIANGLE);
+    TEST_ASSERT(vjo_lookup_result()->list.n_more == 1);
+    frame(SCE_CTRL_CROSS);
+    VjoAnkiNote note;
+    TEST_ASSERT(queued(&note, "") == 1);
+    TEST_CHECK(!strcmp(note.reading, "けいい") && note.n_more == 1);
+    TEST_CHECK(!strcmp(note.more[0].reading, "いきさつ"));
+    TEST_CHECK(!strcmp(note.more[0].meanings[0], "circumstances"));
+}
+
 TEST_LIST = {
+    {"a card keeps an alternate reading", a_card_keeps_an_alternate_reading},
     {"a zero width is measured again", a_zero_width_is_measured_again},
     {"each mode keeps its text and cursor", each_mode_keeps_its_cursor},
     {"an opened line is filtered as the overlay shows it", an_opened_line_is_filtered_as_the_overlay_shows_it},

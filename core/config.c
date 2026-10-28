@@ -27,7 +27,6 @@ void vjo_config_defaults(VjoConfig *c)
     memset(c, 0, sizeof(*c));
     vjo_snprintf(c->local_dictionary_dir, sizeof(c->local_dictionary_dir), "ux0:data/VitaJPOverlay/dictionaries");
     vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "plaintext.vjdict,vndb-names.vjdict");
-    c->local_dictionary_results = 2; /* a word's entry, then the same word as a name (vndb-names) */
     c->non_japanese_filter = VJO_FILTER_LINES;
     c->japanese_only_selection = 0; /* OFF: the cursor can select any character (the owner, 2026-10-20; ON before) */
     c->highlight_mode = VJO_HIGHLIGHT_WORD;
@@ -78,9 +77,6 @@ const char *vjo_config_default_text(void)
            "; The bundled word/grammar/kanji and PSP/Vita character-name dictionaries.\n"
            "; Up to 8 filenames, separated by commas, in priority order.\n"
            "local_dictionaries = plaintext.vjdict,vndb-names.vjdict\n"
-           "; Dictionaries shown per selected word, 1-8: the best match first, then the same\n"
-           "; word in each other dictionary, in the order above. L/R tap pages; one is in memory.\n"
-           "local_dictionary_results = 2\n"
            "; A character's name spelled as the text (わたし) before a word spelled otherwise\n"
            "; (私): auto (the name second when the word is among the 1,023 most frequent) |\n"
            "; on (names first, as Rubi 0.9.8) | off (the word first)\n"
@@ -299,7 +295,7 @@ static const char removed_keys[] =
     REMOVED("a", "anki_audio_url") REMOVED("A", "anki_field_")
     /* The engine choice (VOCR is the only engine) and the UDP log's computer (the log went with the network): every
      * save drops their line */
-    REMOVED("e", "ocr_backend") REMOVED("e", "log_host")
+    REMOVED("e", "local_dictionary_results") REMOVED("e", "ocr_backend") REMOVED("e", "log_host")
     /* Older settings (the relay's hachidori_host too): the saves keep their line, the install drops it */
     REMOVED("o", "frequency_filter") REMOVED("o", "font_size") REMOVED("o", "hw_jpeg") REMOVED("o", "combo_delay_ms")
     REMOVED("o", "hachidori_host")
@@ -579,12 +575,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val, int *tier_set
             warn(c, "%s: invalid value", key);
     } else if (switch_field(c, key, &sw, &names)) {
         set_choice(c, key, val, sw, names);
-    } else if (vjo_ieq(key, "local_dictionary_results")) {
-        int v;
-        if (parse_int(val, &v) == 0 && v >= 1 && v <= VJO_LOCAL_MAX_DICTS)
-            c->local_dictionary_results = v;
-        else
-            warn(c, "%s: invalid value (1-8)", key);
     } else if (vjo_ieq(key, "font_size_ja")) {
         set_font(c, key, val, &c->font_size_ja);
     } else if (vjo_ieq(key, "font_size_en")) {

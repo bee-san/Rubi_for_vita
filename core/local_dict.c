@@ -692,6 +692,10 @@ typedef struct {
     Match *fallback;
     uint32_t *fallback_score;
     uint32_t score; /* the taken posting's rank */
+    /* An alternate pass visits the same index without changing its ranking. */
+    const VjoLocalPage *selected;
+    VjoLocalPage *alternates;
+    int capacity, count, full;
 } Query;
 
 static const char *table_value(const char *table, const char *key)
@@ -869,6 +873,27 @@ static int take_postings(Workspace *w, int di, const Candidate *c, Query *q, int
     int rc, any = 0;
     for (uint32_t j = 0; j < n; j++) {
         if ((rc = posting_at(w, d, group, key_len, j, &r, &hint))) return rc;
+        if (q->selected) {
+            char spelling[VJO_LOCAL_MAX_KEY + 1];
+            size_t bytes = r.entry_len - d->prefix;
+            if (r.entry_off == q->selected->entry_off) continue;
+            if (bytes > sizeof(spelling)) bytes = sizeof(spelling);
+            READ_KIND(VJO_READ_HEAD);
+            if ((rc = cached_read(w, d, r.entry_off + d->prefix, spelling, bytes))) return rc;
+            /* A kana index also contains homophones with other spellings. */
+            if (bytes <= q->written_len || memcmp(spelling, q->written, q->written_len) ||
+                spelling[q->written_len]) continue;
+            int duplicate = 0;
+            for (int i = 0; i < q->count; i++)
+                if (q->alternates[i].entry_off == r.entry_off) duplicate = 1;
+            if (duplicate) continue;
+            if (q->count == q->capacity) { q->full = 1; continue; }
+            VjoLocalPage *pg = &q->alternates[q->count++];
+            *pg = *q->selected;
+            pg->entry_off = r.entry_off;
+            pg->entry_len = r.entry_len;
+            continue;
+        }
         if ((c->rules && !(c->rules & r.rules)) || is_duplicate(w, di, &r)) continue;
         if ((rc = rank_posting(w, d, &r, hint, q, &score))) return rc;
         if (q->strict && !(score & (RANK_PREFERRED | RANK_KANA))) {
@@ -919,6 +944,10 @@ static int find_matches_v1(Workspace *w, int di, const Candidate *c, Query *q, i
     for (; lo + n < d->count && n < MAX_HOMONYMS; n++) {
         if ((rc = record_at(w, d, lo + n, &r, key))) return rc;
         if (strcmp(key, c->key)) break;
+    }
+    if (q->selected && n == MAX_HOMONYMS && lo + n < d->count) {
+        if ((rc = record_at(w, d, lo + n, &r, key))) return rc;
+        if (!strcmp(key, c->key)) q->full = 1;
     }
     if (n) STAT(found);
     return n ? take_postings(w, di, c, q, limit, lo, 0, n) : VJO_OK;
@@ -987,7 +1016,10 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c, Query *q, i
             if ((rc = cached_read(w, d, group, key, key_len))) return rc;
             if (memcmp(key, c->key, key_len)) continue;
             STAT(found);
-            if (n > MAX_HOMONYMS) n = MAX_HOMONYMS;
+            if (n > MAX_HOMONYMS) {
+                if (q->selected) q->full = 1;
+                n = MAX_HOMONYMS;
+            }
             return take_postings(w, di, c, q, limit, group, key_len, n);
         }
         if (!next) break;
@@ -1027,6 +1059,59 @@ static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw
     }
 #endif
     return w->dicts[di].version >= 2 ? find_matches_v2(w, di, cand, q, limit) : find_matches_v1(w, di, cand, q, limit);
+}
+
+int vjo_local_alternates(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                          const VjoLocalPages *pages, VjoLocalPage *out, int cap, int *full)
+{
+    size_t mark = vjo_arena_mark(a);
+    Workspace *w;
+    VjoErr err = {0};
+    int count = 0, rc = VJO_OK;
+    if (!full) return VJO_E_PARSE;
+    *full = 0;
+    if (!pages || pages->count < 0 || pages->count > VJO_LOCAL_MAX_DICTS || cap < 0 || (!out && cap))
+        return VJO_E_PARSE;
+    if (!(w = workspace(a))) return VJO_E_OOM;
+    if ((rc = open_dictionaries(w, p, cfg, &err))) goto done;
+    for (int i = 0; i < pages->count; i++) {
+        const VjoLocalPage *pg = &pages->page[i];
+        char spelling[VJO_LOCAL_MAX_KEY + 1];
+        Candidate key = {0};
+        Dictionary *d;
+        size_t bytes, n, off = 0;
+        if (pg->dict >= w->n_dicts) { rc = VJO_E_PARSE; goto done; }
+        d = &w->dicts[pg->dict];
+        if (d->file.size != pg->file_size) { rc = VJO_E_LOCAL_IO; goto done; }
+        if (pg->entry_len < min_entry(d) || pg->entry_off < d->data ||
+            !range_ok(d, pg->entry_off, pg->entry_len)) { rc = VJO_E_LOCAL_FORMAT; goto done; }
+        bytes = pg->entry_len - d->prefix;
+        if (bytes > sizeof(spelling)) bytes = sizeof(spelling);
+        READ_KIND(VJO_READ_HEAD);
+        if ((rc = cached_read(w, d, pg->entry_off + d->prefix, spelling, bytes))) goto done;
+        for (n = 0; n < bytes && spelling[n]; n++) {}
+        if (!n || n == bytes) { rc = VJO_E_LOCAL_FORMAT; goto done; }
+        while (off < n) {
+            char enc[4];
+            int size = vjo_utf8_encode(normalize(vjo_utf8_next(spelling, n, &off)), enc);
+            if (key.len + size > VJO_LOCAL_MAX_KEY) { rc = VJO_E_LOCAL_FORMAT; goto done; }
+            memcpy(key.key + key.len, enc, (size_t)size);
+            key.len += (uint16_t)size;
+        }
+        Query q = {.written = spelling, .written_len = n, .selected = pg,
+            .alternates = out ? out + count : NULL, .capacity = cap - count};
+        STAT(candidates);
+        STAT(probes);
+        rc = d->version >= 2 ? find_matches_v2(w, pg->dict, &key, &q, 0)
+                              : find_matches_v1(w, pg->dict, &key, &q, 0);
+        if (rc) goto done;
+        count += q.count;
+        *full |= q.full;
+    }
+done:
+    close_dictionaries(w, p, rc);
+    vjo_arena_release(a, mark);
+    return rc ? rc : count;
 }
 
 #ifdef VJO_LOCAL_STATS
@@ -1525,7 +1610,7 @@ int vjo_local_prepare_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg
     VjoLocalPages pages;
     VjoDictResult res;
     VjoErr err;
-    int rc = lookup_pages(a, p, cfg, text, cursor_byte, cfg->local_dictionary_results, &pages, &res, &err, 0);
+    int rc = lookup_pages(a, p, cfg, text, cursor_byte, vjo_local_names_count(cfg->local_dictionaries), &pages, &res, &err, 0);
     size_t end = cursor_byte, len = strlen(text);
     int units = 0;
     if (!rc && pages.count)

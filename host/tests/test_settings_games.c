@@ -1415,11 +1415,11 @@ static void list_keys_only_on_the_games_page(void)
  * first. The d-pad still wraps round there. */
 /* The OCR & lookup page's focused card in frame f: its place among the page's
  * cards (settings/main.c PREF_*), by its title, or -1. */
-#define OCR_CARDS 12
+#define OCR_CARDS 11
 static int ocr_card(const Frame *f)
 {
     static const char *const titles[OCR_CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
-                                                  "Japanese characters only", "Highlight", "Dictionaries shown",
+                                                  "Japanese characters only", "Highlight",
                                                   "Text source", /* API 31 */
                                                   "Trusted hooks replace OCR", "Skip OCR on screens without text",
                                                   "Vertical text", "Suggest a text box",

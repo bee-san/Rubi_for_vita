@@ -69,14 +69,11 @@
 #define CARD_HELP_Y 60
 #define CARD_BADGE_Y 6
 #define CARD_BADGE_H 34
-#define RESULT_BADGE_X 540
-#define RESULT_BADGE_W 44
-#define RESULT_BADGE_PITCH 48
 #define SOURCE_BADGE_X 440 /* API 31: Text source's three choices */
 #define SOURCE_BADGE_W 152
 #define SOURCE_BADGE_PITCH 160
 /* The rows Up/Down select, the page's cards top to bottom: how text is read
- * (the Model size, Read text, Speed boost), then the three lookup cards. They
+ * (the Model size, Read text, Speed boost), then the two lookup cards. They
  * are more than the room between the tabs and the status line: the page
  * scrolls a card at a time, the selected card always whole; a card cut at the
  * bottom shows there is more, and a bar at the right where the view is. */
@@ -85,16 +82,15 @@
 #define PREF_BOOST 2
 #define PREF_SELECTION 3
 #define PREF_HIGHLIGHT 4
-#define PREF_RESULTS 5
-#define PREF_SOURCE 6 /* API 31: Text source (config.ini text_source) */
+#define PREF_SOURCE 5 /* API 31: Text source (config.ini text_source) */
 /* API 43: OCR skipped where it has nothing to read: a text box without text (ocr_text_gate) and a line a trusted hook
  * has (hook_trust) */
-#define PREF_TRUST 7
-#define PREF_GATE 8
-#define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical) */
-#define PREF_SUGGEST 10 /* #358: Suggest a text box (region.ini's line for every game: preferences.h) */
-#define PREF_PAUSE 11   /* API 55: Pause the game to read (config.ini ocr_pause), the last card */
-#define PREFERENCES 12
+#define PREF_TRUST 6
+#define PREF_GATE 7
+#define PREF_VERTICAL 8 /* API 47: Vertical text (config.ini ocr_vertical) */
+#define PREF_SUGGEST 9 /* #358: Suggest a text box (region.ini's line for every game: preferences.h) */
+#define PREF_PAUSE 10   /* API 55: Pause the game to read (config.ini ocr_pause), the last card */
+#define PREFERENCES 11
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -894,42 +890,9 @@ static void list_key(uint32_t keys)
     else if (keys & SCE_CTRL_RIGHT) letter_jump(1);
 }
 
-/* The first enabled dictionary's own name (page 0 bytes 192..255 of its
- * file: Bee's Ultimate Dictionary names itself so, core/local_dict.h), for the
- * Dictionaries shown card; "" when it has none or is missing. Read with the
- * preferences: one 256-byte read, never per frame. */
-static char dictionary_title[VJO_LOCAL_TITLE_SIZE];
-
-static void read_dictionary_title(void)
-{
-    const char *names = preferences.local_dictionaries;
-    char path[256];
-    uint8_t page0[256];
-    size_t n = 0;
-    int fd, got;
-    dictionary_title[0] = '\0';
-    if (vjo_local_names_count(names) <= 0)
-        return;
-    while (*names == ' ' || *names == '\t')
-        names++;
-    while (names[n] && names[n] != ',' && names[n] != ' ' && names[n] != '\t')
-        n++;
-    got = snprintf(path, sizeof(path), "%s/%.*s", preferences.local_dictionary_dir, (int)n, names);
-    if (got < 0 || got >= (int)sizeof(path) || (fd = sceIoOpen(path, SCE_O_RDONLY, 0)) < 0)
-        return;
-    got = sceIoRead(fd, page0, sizeof(page0));
-    sceIoClose(fd);
-    if (got > 0)
-        vjo_local_title(page0, (size_t)got, dictionary_title);
-}
-
 static void check_models(void)
 {
-    /* The model sizes: which tiers' files are there (the card
-     * names the chosen size's model, or reports it missing); the bundled
-     * dictionary's name. */
     vjo_model_size_card(&preferences, &model_card);
-    read_dictionary_title();
 }
 
 static void load_preferences(void)
@@ -967,10 +930,10 @@ static void preference_saved(int rc)
         : "Saved. It applies when the overlay next opens.");
 }
 
-static void change_preference(int tier, int japanese_only, int highlight_mode, int dictionary_results)
+static void change_preference(int tier, int japanese_only, int highlight_mode)
 {
     if (preferences_locked()) return;
-    preference_saved(vjo_preferences_save(tier, japanese_only, highlight_mode, dictionary_results, &scratch));
+    preference_saved(vjo_preferences_save(tier, japanese_only, highlight_mode, &scratch));
 }
 
 /* Read text (ocr_mode) and Speed boost while reading (ocr_boost_clock), saved
@@ -1047,16 +1010,7 @@ static void set_pause(int on)
 static void set_tier(int tier)
 {
     if (tier < 1 || tier > (int)VJO_VOCR_TIERS || tier == preferences.vocr_tier) return;
-    change_preference(tier, preferences.japanese_only_selection, preferences.highlight_mode,
-                      preferences.local_dictionary_results);
-}
-
-/* Dictionaries shown: enter cycles 1..8; Left/Right step within it. */
-static void set_dictionary_results(int results)
-{
-    if (results < 1 || results > VJO_LOCAL_MAX_DICTS || results == preferences.local_dictionary_results) return;
-    change_preference(preferences.vocr_tier, preferences.japanese_only_selection, preferences.highlight_mode,
-                      results);
+    change_preference(tier, preferences.japanese_only_selection, preferences.highlight_mode);
 }
 
 /* Enter takes the selected card's next choice, round (dir 0); Left and Right the choice beside the chosen one (-1,
@@ -1073,10 +1027,6 @@ static void choose_preference(int dir)
         break;
     case PREF_VERTICAL:
         set_vertical(choice_step(dir, vertical_index(p->ocr_vertical), (vertical_index(p->ocr_vertical) + 1) % 3));
-        break;
-    case PREF_RESULTS:
-        set_dictionary_results(choice_step(dir, p->local_dictionary_results,
-                                           p->local_dictionary_results % VJO_LOCAL_MAX_DICTS + 1));
         break;
     case PREF_SIZE: set_tier(choice_step(dir, p->vocr_tier, p->vocr_tier % (int)VJO_VOCR_TIERS + 1)); break;
     case PREF_READ:
@@ -1095,14 +1045,13 @@ static void choose_preference(int dir)
                                                   : p->japanese_only_selection,
             preference_selected == PREF_HIGHLIGHT
                 ? (choice_flip(dir, p->highlight_mode) ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
-                : p->highlight_mode,
-            p->local_dictionary_results);
+                : p->highlight_mode);
     }
 }
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
 static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H,
-                                             CARD_H, CARD_H, CARD_H};
+                                             CARD_H, CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -1223,32 +1172,6 @@ static void draw_highlight_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, "Word skips matched text. Character moves one character.");
 }
 
-static void draw_results_card(int y)
-{
-    text(42, y + CARD_TITLE_Y, WHITE, 28, "Dictionaries shown");
-    for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
-        char number[4];
-        snprintf(number, sizeof(number), "%d", i + 1);
-        badge(RESULT_BADGE_X + i * RESULT_BADGE_PITCH, y + CARD_BADGE_Y, RESULT_BADGE_W, CARD_BADGE_H,
-              number, preferences_writable && preferences.local_dictionary_results == i + 1);
-    }
-    char results_help[120];
-    int enabled = vjo_local_names_count(preferences.local_dictionaries);
-    if (!preferences_writable)
-        snprintf(results_help, sizeof(results_help), "Cannot read the saved choice.");
-    else if (!enabled)
-        snprintf(results_help, sizeof(results_help), "Set local_dictionaries in config.ini first.");
-    /* one file has nothing to page to, whatever the count */
-    else if (enabled == 1 && dictionary_title[0])
-        snprintf(results_help, sizeof(results_help), "Best match only: %s.", dictionary_title);
-    else if (preferences.local_dictionary_results == 1 || enabled == 1)
-        snprintf(results_help, sizeof(results_help), "Best match only. %d %s enabled.",
-                 enabled, enabled == 1 ? "dictionary" : "dictionaries");
-    else
-        snprintf(results_help, sizeof(results_help), "Best match, then the others below it. %d enabled.", enabled);
-    text(42, y + CARD_HELP_Y, DIM, 24, results_help);
-}
-
 /* API 31: where the overlay's text comes from (docs/native-hooks.md). The saved Every game choice is
  * retained for compatibility; Automatic now tries the same native hooks in every enabled Vita game. */
 static void draw_source_card(int y)
@@ -1324,7 +1247,7 @@ static void draw_card(int i, int y)
         draw_switch_card(y, "Pause the game to read", w, preferences.ocr_pause,
                          "ON: a brief pause, so an icon can't spoil a read. Draw a box.");
         break;
-    default: draw_results_card(y); break;
+    default: break;
     }
 }
 
@@ -1410,17 +1333,13 @@ static void touch_preference(int x, int y)
         else choose_preference(0);
         break;
     }
-    /* Text source, Vertical text and Dictionaries shown: touch a choice to take it; the rest of the card only
+    /* Text source and Vertical text: touch a choice to take it; the rest of the card only
      * focuses. */
     case PREF_SOURCE:
         if ((k = badge_at(x, dy, SOURCE_BADGE_X, SOURCE_BADGE_PITCH, SOURCE_BADGE_W, 3)) >= 0) set_text_source(k);
         break;
     case PREF_VERTICAL:
         if ((k = badge_at(x, dy, SOURCE_BADGE_X, SOURCE_BADGE_PITCH, SOURCE_BADGE_W, 3)) >= 0) set_vertical(k);
-        break;
-    case PREF_RESULTS:
-        if ((k = badge_at(x, dy, RESULT_BADGE_X, RESULT_BADGE_PITCH, RESULT_BADGE_W, VJO_LOCAL_MAX_DICTS)) >= 0)
-            set_dictionary_results(k + 1);
         break;
     default: /* the ON/OFF cards: Speed boost, Japanese characters only, (API 43) the two OCR skips, (#358) Suggest,
              * (API 55) the pause */

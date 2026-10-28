@@ -107,19 +107,44 @@ static int show_local_entry(VjoArena *a, VjoOverlayData *out, const VjoDictResul
 static void stack_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, VjoOverlayData *out)
 {
     const VjoLocalPages *pages = out->pages;
+    VjoLocalPage *alternates;
     const VjoVocab **more;
-    if (pages->count < 2 || !(more = vjo_arena_alloc(a, sizeof(*more) * (size_t)(pages->count - 1))))
+    int count = 0, full = 0;
+    size_t mark = vjo_arena_mark(a);
+    alternates = vjo_arena_alloc(a, sizeof(*alternates) * VJO_LOCAL_MAX_RESULTS);
+    if (alternates) count = vjo_local_alternates(a, p, cfg, pages, alternates, VJO_LOCAL_MAX_RESULTS, &full);
+    out->list.more_omitted = !alternates || count < 0 || full;
+    if (count < 0) count = 0;
+    /* Keep just the located rows; the collection workspace has already gone. */
+    vjo_arena_release(a, count ? (size_t)((uint8_t *)alternates - a->base) +
+        (size_t)count * sizeof(*alternates) : mark);
+    if (pages->count + count < 2 ||
+        !(more = vjo_arena_alloc(a, sizeof(*more) * (size_t)(pages->count + count - 1)))) {
+        if (pages->count + count >= 2) out->list.more_omitted = 1;
         return;
+    }
     out->list.more = more;
-    for (int i = 1; i < pages->count; i++) {
-        size_t mark = vjo_arena_mark(a);
-        VjoDictResult r;
-        VjoErr err;
-        if (vjo_local_read_page(a, p, cfg, pages, i, &r, &err) || !r.n_vocab) {
-            vjo_arena_release(a, mark);
-            return;
+    for (int d = 0; d < pages->count; d++) {
+        /* A dictionary's best result first, then its other readings and senses. */
+        for (int i = -1; i < count; i++) {
+            VjoLocalPages one = {.count = 1, .cursor_byte = pages->cursor_byte, .pos16 = pages->pos16};
+            if (i < 0) {
+                if (!d) continue; /* page 0 is already shown */
+                one.page[0] = pages->page[d];
+            } else {
+                if (alternates[i].dict != pages->page[d].dict) continue;
+                one.page[0] = alternates[i];
+            }
+            size_t entry_mark = vjo_arena_mark(a);
+            VjoDictResult r;
+            VjoErr err;
+            if (vjo_local_read_page(a, p, cfg, &one, 0, &r, &err) || !r.n_vocab) {
+                vjo_arena_release(a, entry_mark);
+                out->list.more_omitted = 1;
+                return;
+            }
+            more[out->list.n_more++] = &r.vocab[0];
         }
-        more[out->list.n_more++] = &r.vocab[0];
     }
 }
 
@@ -136,7 +161,7 @@ int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
     size_t mark = vjo_arena_mark(a);
     VjoDictResult result;
     VjoLocalPages *pages = NULL;
-    int limit = cfg->local_dictionary_results, rc;
+    int limit = vjo_local_names_count(cfg->local_dictionaries), rc;
 
     local_lookup_begin(out);
     out->pages = NULL;
@@ -147,7 +172,7 @@ int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
     }
     /* Paging keeps only these locators ahead of the shown entry, so a page
      * change releases one entry and reads one payload. */
-    if (limit > 1 && !(pages = vjo_arena_zalloc(a, sizeof(*pages)))) {
+    if (!(pages = vjo_arena_zalloc(a, sizeof(*pages)))) {
         rc = VJO_E_OOM;
         goto failed;
     }
@@ -158,10 +183,8 @@ int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
         return VJO_OK;
     }
     if ((rc = show_local_entry(a, out, &result, cursor_byte))) goto failed;
-    if (limit > 1) {
-        out->pages = pages;
-        stack_pages(a, p, cfg, out);
-    }
+    out->pages = pages;
+    stack_pages(a, p, cfg, out);
     return VJO_OK;
 failed:
     vjo_arena_release(a, mark);
