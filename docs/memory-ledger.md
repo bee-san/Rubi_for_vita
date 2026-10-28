@@ -23,23 +23,24 @@ game worker's rows are main's.
 ## #413's audit: a line typing out, and a press's partial line (no API change)
 
 **F2** ([native-hooks.md](native-hooks.md#a-line-typing-out-413s-audit-f2)) is `core/hook_select.c`'s `prefix_score`,
-one condition and its argument (the request's settle time, `game_ocr/main.c`), in the game worker only
-(`core/hook_select.c` built `-Os`): its code 170,796 → 170,956 B in the normal worker and 179,760 → 179,920 B in the
-debug one, +160 B each, the same pages (1,076 and 304 B of code room left), data unchanged.
+one condition and its argument (the request's settle time, `game_ocr/main.c`) and a word of `VjoHookSelect` (`typing`,
+in the worker's job state: never persisted, the cache's record unchanged), in the game worker only (`core/hook_select.c`
+built `-Os`): its code 170,796 → 170,972 B in the normal worker and 179,760 → 179,920 B in the debug one (+176 and
++160 B), the same pages (1,060 and 304 B of code room left), data unchanged (the state is in `.bss`'s existing page).
 Its comparison's scratch is the similarity's own: one more call of the same frame size, never beside it, so the
 stack's peak is unchanged (a code point array and the edit distance's row, as `score_of`'s). The Shell's and the
-kernel's rows are main's [measured: `tools/check_memory_ledger.py`'s module rows, both builds, main `c010578` against
+kernel's rows are main's [measured: `tools/check_memory_ledger.py`'s module rows, both builds, main `b6507605` against
 this change].
 
 **F5** (a press's partial line and the settled one are two `history.csv` records:
 [ocr-history.md](ocr-history.md)) is documented, not changed. Its fix, a record of a read without the wait that a
 later extension replaces within 10 s instead of 750 ms (a field in `VjoHistoryRecord`, set in `net_job` from the job's
-snapshot, and the window's choice in `vjo_history_append`), measured as a prototype on main `e17f42e`: **+32 B of code
+snapshot, and the window's choice in `vjo_history_append`), measured as a prototype on main `b6507605`: **+32 B of code
 and +8 B of data in each Shell build**. The normal Shell would take 167,936 B of pages against its 163,840 B budget
-(86,044 B of code, 4 B of room before it), the debug Shell 180,224 B against 176,128 B (98,316 B of code, 20 B of
-room; its data then 77,824 B, full). So it needs 28 B of the normal Shell's code moved to its data segment (88 B of
-room after it) and 12 B of the debug Shell's code saved elsewhere, as its data segment would have none left to take
-a string: not done here, and no budget raised.
+(86,044 B of code, 4 B of room before it), the debug Shell 180,224 B against 176,128 B (98,332 B of code, 4 B of room
+before it since #441's audit; its data then 77,824 B, full). So it needs 28 B of each Shell's code moved to its data
+segment, which the normal build has room for (88 B after it) and the debug build has not (none after it): not done
+here, and no budget raised.
 
 ## The hook farm's 20 verified entries (no API change)
 

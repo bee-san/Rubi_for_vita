@@ -696,8 +696,8 @@ keep their pinned stream first, then the newest texts. Then, by the request's `h
   learning. Empty/short OCR is inconclusive and neither clears nor adds a pending disagreement. So is, in a job read
   without the stable-text wait (a press since #413), OCR's text that agrees (700) only with the beginning of the
   locked stream's line, its first characters as many as OCR's (`core/hook_select.c` `prefix_score`): the line still
-  typing out ([a line typing out](#a-line-typing-out-413s-audit-f2)); the job shows OCR's text and nothing changes, a
-  check that was due stays due, a source's trust stays. A missing
+  typing out ([a line typing out](#a-line-typing-out-413s-audit-f2)), once until the stream agrees again; the job
+  shows OCR's text and nothing changes, a check that was due stays due, a source's trust stays. A missing
   or short hook temporarily uses OCR and requires confirmation when it returns; menus and blank screens
   do not erase a reliable identity. Changed source kind, offset or encoding must earn fresh confidence.
 
@@ -783,14 +783,45 @@ after (the backlog, a line prepared ahead), a page of which the stream holds one
 the line (`host/tests/test_hook_select.c` `a_wrong_stream_still_disagrees`). A read with the wait (a background read,
 a press's retry after a torn read) is compared as before: its text held still, so a stream that holds more than it
 (a page that collects its lines, the stream a line ahead) still disagrees there. The rule cannot tell such a stream
-from a line typing out, which is why a read without the wait is all it is used for, and why the job shows OCR's text,
-not the stream's whole line.
+from a line typing out, which is why a read without the wait is all it is used for, why the job shows OCR's text, not
+the stream's whole line, and why it is taken **once until the stream agrees again** (`VjoHookSelect.typing`): a
+stream the screen keeps showing only the start of disagrees from its second such read, and two unlock it, as before.
+Without that limit, on the pool's one game whose pages collect their lines (PCSG00648), a stream a page ahead of the
+screen was taken for a line typing out at every press and trusted (134 trusted answers of another page's text, below).
 
 On the hooked page pool's 29 Vita sessions (the [trusted-hook bench](#why-four-agreements-measured)'s, 300 pages each;
 OCR's reads of every page with main's models, the background job's policy, against the pages' verified hook lines)
 [measured, host]:
 
-PREFIX_TABLE
+- **The comparison alone** (`prefix_score` against the whole-line similarity; 8,640 pages, 7,147 whose OCR agrees with
+  their own line): OCR's read of the line cut to a quarter, a half and three quarters of its characters, as a press
+  reads a line typing out, is a disagreement for main in 4,258, 6,100 and 1,015 of them (the rest agree, or are too
+  short to compare), and no evidence with the rule; of the reads of every page against the line before (8,499) and
+  after (8,500), the rule takes 6 and 92 for a line typing out, 85 of the 92 in PCSG00648, whose pages collect their
+  lines (the next page is this one and more). Of the pages' own reads, 20 whose OCR misses its line are taken so.
+- **The selection over the sessions** (the real `core/hook_select.c`, every job a press, a string copy's caller,
+  hook_trust on; a press reads a line typing out at random, its first 25-75 % of characters; host simulation of the
+  sequence, 8,640 jobs a configuration):
+
+| presses on a line typing out | source | main: unlocks, trusted answers, wrong answers | this change | the worker skipping a press's miss (option b) |
+|---|---|---|---|---|
+| 20 % | the page's own line | 21, 6,068, 0 | 15, 6,283, 0 | 0, 6,829, 0 |
+| 50 % | the page's own line | **105**, 3,510, 0 | **47**, 5,149, 0 | 0, 6,611, 0 |
+| 20 % | a page ahead | 2, 0, 15 | 2, 0, 20 | 0, **133**, **152** |
+| 50 % | a page ahead | 2, 0, 10 | 2, 0, 10 | 0, 12, 62 |
+| 50 % | a page behind (the backlog) | 1, 0, 43 | 1, 0, 43 | 0, 61, 109 |
+
+  Skipping every miss of a press (the audit's option b, and the worker's settle-time check alone) never unlocks a wrong
+  stream: with Only when I press, every read a press, a stream a page ahead earns trust. The rule halves a correct
+  stream's unlocks at half the presses on a line typing out and keeps the rest.
+- **The actual worker** (`host/hook_trust_bench.c`, the bench above, OCR on every page's own pixels, no line typing
+  out: 300 still pages a session): with the background read's wait, every configuration (the page's own line, a page
+  behind, a page ahead; hook_trust off and on) is main's in every count (OCR jobs, hook and trusted answers, wrong
+  answers, unlocks, locked jobs). Every job a press (`press`, as Only
+  when I press reads), the page's own line and a page behind are main's too; a stream a page ahead, which the rule
+  cannot tell from a line typing out, shows another page's text in 146 jobs against main's 103 (PCSG00648 and one more
+  session), none of them trusted. Before the once-until-it-agrees limit it earned trust there: 179 such answers, 134
+  of them trusted.
 
 ## Trusted hooks (API 43)
 
