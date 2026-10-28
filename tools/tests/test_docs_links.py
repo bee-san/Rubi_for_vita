@@ -1,8 +1,8 @@
 """Every relative link in the project's documents resolves (#418, P9): README.md, CHANGELOG.md, AGENTS.md,
 third_party/README.md and every Markdown file under docs/ and reports/. A link's file (or directory) exists, and its
-#anchor is a heading or an `id`/`name` of the Markdown file it names (or of the same file), as GitHub makes them:
-on main b55c5f5 these anchors were every one of GitHub's own for the 74 documents (881 headings), and these links
-every relative link its rendering of them has.
+#anchor is a heading or an `id`/`name` of the Markdown file it names (or of the same file), as GitHub makes them.
+Checked against GitHub's own rendering of the 75 documents on main b55c5f5: the same 881 heading anchors, and the
+same relative links (but the test-build issue's template fields, below).
 
 What counts as a link: an inline link or image, `[text](target)` (its text may wrap), a reference definition,
 `[label]: target`, and an HTML `href`/`src` attribute; never what a fenced code block, a code span or an HTML
