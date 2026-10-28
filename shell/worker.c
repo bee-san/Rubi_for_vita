@@ -1088,7 +1088,6 @@ static void log_tier_checks(const VjoGameOcrResult *r)
 static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
 {
     static const char hook_format[] VJO_DATA_TABLE(hook_format) = "hooks in %s: text source %s%s, %u table sites and %u string copies hooked, %u sites refused";
-    static const char *const modes[] = {"ocr", "auto", "hooks"};
     if ((VJO_DEBUG || r->hook_installed || r->hook_refused) &&
         (hook_logged[0] != r->hook_mode + 1u || hook_logged[1] != r->hook_installed || hook_logged[2] != r->hook_refused)) {
         hook_logged[0] = r->hook_mode + 1u; /* 0: none logged in this session */
@@ -1097,7 +1096,7 @@ static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
         /* hook_mode: the text source word the worker applied (its mode, and NO_SITES: hook_sites = off) */
         vjo_log(hook_format,
                 job_title[0] ? job_title : "this game",
-                (r->hook_mode & VJO_TEXT_SOURCE_MODE_MASK) < 3 ? modes[r->hook_mode & VJO_TEXT_SOURCE_MODE_MASK] : "?",
+                (r->hook_mode & VJO_TEXT_SOURCE_MODE_MASK) < 3 ? vjo_text_source_names[r->hook_mode & VJO_TEXT_SOURCE_MODE_MASK] : "?",
                 (r->hook_mode & VJO_TEXT_SOURCE_NO_SITES) ? ", sites off" : "",
                 (unsigned)(r->hook_installed >> 16), (unsigned)(r->hook_installed & 0xFFFFu), (unsigned)r->hook_refused);
     }
@@ -1112,15 +1111,9 @@ static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
 }
 
 /* View lock held. Snapshot only when this job's text is accepted, before its result is reused. */
-static void line_debug_accept(const VjoGameOcrResult *r, const char *model)
+static void line_debug_accept(const VjoGameOcrResult *r)
 {
-    g_view.line_debug = (VjoLineDebug){
-        .origin = r->text_from ? VJO_LINE_HOOK : VJO_LINE_OCR,
-        .stream = r->text_from, .flags = r->hook_flags, .score = r->hook_score,
-        .streams = r->hook_streams, .mode = r->hook_mode,
-        .installed = r->hook_installed, .refused = r->hook_refused,
-        .scene = job_capture_scene, .capture_seq = job_capture_seq, .model = model
-    };
+    g_view.line_debug.origin = r->text_from ? VJO_LINE_HOOK : VJO_LINE_OCR;
 }
 
 /* One job: request (flags: VJO_GAME_OCR_F_*; tiers: the model tiers it may run,
@@ -1437,7 +1430,7 @@ static int run_vocr(VjoOverlayData *out)
     local_text_scene = job_capture_scene;
     local_text_capture_seq = job_capture_seq;
     vjo_view_lock();
-    line_debug_accept(&vocr_result, read_by);
+    line_debug_accept(&vocr_result);
     vjo_view_unlock();
     __sync_synchronize();
     local_text_valid = 1;
@@ -1445,7 +1438,6 @@ static int run_vocr(VjoOverlayData *out)
     if (!job_lookup || !len || job_cursor_byte >= len || mem_alloc() == 0)
         return VJO_OK;
     out->failed_stage = VJO_STAGE_DICT;
-    out->err.dict = VJO_DICT_LOCAL;
     out->err.detail = OOM_SHELL_RESULTS;
     return out->err.rc = VJO_E_OOM;
 }
@@ -1518,7 +1510,6 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     if (job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
     if (mem_alloc() < 0) {
         out->failed_stage = VJO_STAGE_DICT;
-        out->err.dict = VJO_DICT_LOCAL;
         out->err.detail = OOM_SHELL_RESULTS;
         return out->err.rc = VJO_E_OOM;
     }
@@ -2517,7 +2508,7 @@ static void on_refresh_done(void)
                 size_t was = sceClibStrnlen(local_text, sizeof(local_text));
                 int grown = was && was < len && !sceClibMemcmp(local_text, text, was);
                 sceClibMemcpy(local_text, text, len + 1);
-                line_debug_accept(&vocr_result, refresh_model);
+                line_debug_accept(&vocr_result);
                 advance_generation(&local_text_generation);
                 local_page = 0;
                 if (!grown)

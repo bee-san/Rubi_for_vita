@@ -12,7 +12,6 @@ int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, con
                     VjoDictResult *res, VjoErr *err)
 {
     memset(err, 0, sizeof(*err));
-    err->dict = VJO_DICT_LOCAL;
     return vjo_local_lookup(a, p, cfg, text, res, err); /* it clears res */
 }
 
@@ -127,7 +126,6 @@ static void stack_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
 static void local_lookup_begin(VjoOverlayData *out)
 {
     memset(&out->err, 0, sizeof(out->err));
-    out->err.dict = VJO_DICT_LOCAL;
     out->failed_stage = VJO_STAGE_NONE;
     out->list = (VjoEntryList){.header = out->sentence ? out->sentence : ""};
 }

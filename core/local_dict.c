@@ -1323,7 +1323,6 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
 
     memset(res, 0, sizeof(*res));
     memset(err, 0, sizeof(*err));
-    err->dict = VJO_DICT_LOCAL;
     if (limit < 1 || !pages) limit = 1;
     if (limit > VJO_LOCAL_MAX_DICTS) limit = VJO_LOCAL_MAX_DICTS;
     if (!pages) pages = &located;
@@ -1564,7 +1563,6 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
 
     memset(res, 0, sizeof(*res));
     memset(err, 0, sizeof(*err));
-    err->dict = VJO_DICT_LOCAL;
     if (!pages || page < 0 || page >= pages->count || pages->count > VJO_LOCAL_MAX_DICTS)
         return err->rc = VJO_E_PARSE;
     pg = &pages->page[page];
