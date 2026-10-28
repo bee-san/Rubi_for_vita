@@ -72,7 +72,7 @@ a Vita memory-card measurement.
 | Header-page reads | 616 | 549 |
 | Peak lookup bytes, including session | 54,928 | 57,416 |
 
-[Aggregate results for first-word, word and character selections](../docs/benchmarks/dict-session-20261017.json).
+[Aggregate results for first-word, word and character selections](../benchmarks/dict-session-20261017.json).
 First-word selection is cold in both modes (50 opens and 312 reads); this optimization
 targets subsequent selections and dictionary pages.
 

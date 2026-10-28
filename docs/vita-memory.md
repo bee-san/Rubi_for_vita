@@ -238,8 +238,8 @@ VjoNet's stack, 64 KiB until #132 (it was for TLS), is 16 KiB: 217,088 B [the le
 
 ### 4.4 How other plugins stay inside the budgets
 
-The 19-project audit ([plugin-audit.md](plugin-audit.md), per-project notes in
-`docs/plugin-audit/notes/`) read each plugin's allocations. The patterns that have shipped for
+The 19-project audit ([plugin-audit.md](history/plugin-audit.md), per-project notes in
+`docs/history/plugin-audit/notes/`) read each plugin's allocations. The patterns that have shipped for
 years, by context [source: the audit notes, with file:line]:
 
 | Plugin | Context | What it holds, where | Pattern |

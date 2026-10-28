@@ -329,7 +329,7 @@ copies those bytes into the output instead of reading them again. Entries that
 cross pages keep the direct payload read. Candidate scratch starts at eight
 records and grows up to the same 128-record bound; failed growth reports OOM
 without returning a shortened candidate set. The allocation stays at 64 KiB.
-The [follow-up benchmark](../reports/dictionary-cache-experiments.md) records the
+The [follow-up benchmark](history/dictionary-cache-experiments.md) records the
 read savings and the smaller scratch high-water mark.
 The Shell reuses open files and parsed headers between selections. The session also
 keeps the configured files' filter directories in one 1,024-byte pool, in
@@ -341,7 +341,7 @@ every file did before (when the session kept one directory, the two bundled file
 evicted each other's: 1.88 page-0 reads a lookup). The session keeps 16
 word-location records too, including misses. Together these occupy 6,784 bytes
 inside the existing 64 KiB allocation [measured Vita build;
-[lookup report](../reports/dictionary-lookahead.md); the pool took the single
+[lookup report](history/dictionary-lookahead.md); the pool took the single
 directory's bytes and its bookkeeping the padding of each file's record, so the
 size did not change]. Definitions and the four page
 buffers are not retained in this cache. Auto keeps the session with its recognized

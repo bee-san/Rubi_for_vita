@@ -37,7 +37,7 @@ no reinstall, no second bubble, no moved data, no second Anki deck.
 | RCO | `vitajpoverlay.rco`, resource `vitajpoverlay_plugin` | Its string table is empty: it shows no text. |
 | Stamps, identifiers | `vjo_app.txt` (`vjoapp1 ...`), `vjo_*`, `VJO_*`, `Vjo*`, CMake projects and targets, the Vita3K smoke VPK (`VJOSMK002`) | Internal; the stamps are compared across builds. |
 | Anki deck and tag | deck **Vita JP Overlay** (ID `1760534400000`), tag `vita-jp-overlay` | Anki matches an imported deck by its name: a new name would add a second deck beside the old one in a collection that has imported cards (the owner's rule: no duplicate decks). The tag stays for the same reason: one tag for all the owner's cards. The docs say the deck keeps its name from before the rename. |
-| History | published releases and their assets (`VitaJPOverlay-0.7.12.zip`, the 0.8.0 test builds), dated records (`docs/todo-20261011.md`, `docs/plugin-audit*`, `docs/issue-59-root-cause.md`, `docs/benchmarks/*.json`), test fixtures that are old logs or files | Facts about those builds. Their GitHub links are updated (the commits are the same). |
+| History | published releases and their assets (`VitaJPOverlay-0.7.12.zip`, the 0.8.0 test builds), dated records (`docs/todo-20261011.md`, `docs/history/plugin-audit*`, `docs/issue-59-root-cause.md`, `docs/benchmarks/*.json`), test fixtures that are old logs or files | Facts about those builds. Their GitHub links are updated (the commits are the same). |
 | The `JP` placeholder | a game card without its icon | Not the product's name. |
 
 Nothing internal is renamed, so nothing needs a migration or a console test of one.

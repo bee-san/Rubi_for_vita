@@ -118,7 +118,7 @@ Marked as unverified until the self-test (plan item 5) reports them:
 1. that `ur0:data/VitaJPOverlay/boot.txt` can be written from the kernel plugin's
    `module_start`. taiHEN reads `ur0:tai/config.txt` moments earlier, and PSVshell's kernel
    plugin creates `ur0:data/PSVshell/profiles/` and reads profiles in its own `module_start`
-   ([audit note](plugin-audit/notes/PSVshell.md)), so writing is expected to work; it is not
+   ([audit note](history/plugin-audit/notes/PSVshell.md)), so writing is expected to work; it is not
    yet observed on this console;
 2. that `taiGetModuleInfoForKernel` finds `VitaJPOverlay_Shell` while its own `module_start`
    runs (taiHEN lists modules in every state; if not, the Shell's marks at stages 2 and 3 are

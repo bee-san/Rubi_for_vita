@@ -9,7 +9,7 @@ Three modules (vita/CMakeLists.txt):
 | VitaJPOverlay_Shell.suprx | `*main` = SceShell | SceShell (UI, dictionary, Anki, network, job control) | patch_tai_config.py:35 |
 | VitaJPOverlay_OCR.suprx | `*ALL` | every user process; a worker thread only in "candidate" titles | patch_tai_config.py:48 (README "under *ALL") |
 
-Status 2026-10-13 (after this audit of `599dd9c`): the installer registers the worker per game, one `*TITLEID` section for each `--title`, never `*ALL`, and comments out an `*ALL` worker line ([vita-memory.md 4.3](../../vita-memory.md)).
+Status 2026-10-13 (after this audit of `599dd9c`): the installer registers the worker per game, one `*TITLEID` section for each `--title`, never `*ALL`, and comments out an `*ALL` worker line ([vita-memory.md 4.3](../../../vita-memory.md)).
 - Measured resident image: Kernel text 26,436 B + RW 78,128 B (bss 78,108); Shell text 221,984 B + RW 178,628 B (bss 178,472) = 400.6 KiB in SceShell; OCR worker text 35,872 B + RW 4,480 B = 39.4 KiB in every process it is loaded into.
 
 ## 2. Module start / stop
