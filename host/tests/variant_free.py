@@ -204,10 +204,19 @@ def main(argv=None):
     def named_in_blocks(word):
         return everything or word in configured
 
+    # the commands as CMake wrote them, for a test whose program ctest does not resolve (not built yet: no "command")
+    written = {}
+    testfile = build / "CTestTestfile.cmake"
+    if testfile.exists():
+        for name, args in cmake_commands(testfile.read_text(encoding="utf-8")):
+            if name == "add_test" and args:
+                args = [x[1:-1] if len(x) > 1 and x[0] == x[-1] == '"' else x for x in args]
+                written[args[0]] = args[1:]
+
     # which tests: their programs
     candidates = {}
     for t in tests:
-        cmd = t.get("command") or []
+        cmd = t.get("command") or written.get(t["name"]) or []
         props = {p["name"]: p["value"] for p in t.get("properties", [])}
         envs = [e.split("=", 1)[1] for e in props.get("ENVIRONMENT", []) if "=" in e]
         programs = [by_file[x] for x in cmd + envs if x in by_file]

@@ -146,7 +146,10 @@ class Derivation(unittest.TestCase):
                 {"name": "t_tool", "command": [py, str(src / "tools.py"), str(build / "free")]},
                 {"name": "t_odd", "command": [str(build / "odd")]},
                 {"name": "t_unbuilt", "command": [str(build / "unbuilt")]},
+                {"name": "t_unresolved"},  # (ctest gives no command for a program not built: CTestTestfile.cmake's)
             ]
+            (build / "CTestTestfile.cmake").write_text(f'add_test(t_unresolved "{build / "free"}")\n'
+                                                     'set_tests_properties(t_unresolved PROPERTIES  LABELS "y")\n')
             ctest = root / "ctest"
             ctest.write_text(f"#!{py}\nimport sys\nassert sys.argv[1:] == ['--show-only=json-v1']\n"
                              f"print({json.dumps(json.dumps({'tests': tests}))})\n")
@@ -158,6 +161,7 @@ class Derivation(unittest.TestCase):
             self.assertIn('set_tests_properties("t_free" PROPERTIES LABELS "x;variant_free")', text)
             self.assertIn('set_tests_properties("t_driven" PROPERTIES LABELS "variant_free")', text)
             self.assertIn('set_tests_properties("t_env" PROPERTIES LABELS "variant_free")', text)
+            self.assertIn('set_tests_properties("t_unresolved" PROPERTIES LABELS "variant_free")', text)
             for name in ("t_debug", "t_model", "t_nothing", "t_tool", "t_odd", "t_unbuilt"):
                 self.assertNotIn(f'"{name}"', text)
             report = Path(str(out) + ".txt").read_text()
