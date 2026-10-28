@@ -18,7 +18,6 @@ Each binary runs in a fresh process, as each part runs in its own process on the
 claim (docs/offline-testing.md)."""
 import hashlib
 import json
-import math
 import os
 import re
 import sqlite3
@@ -31,17 +30,13 @@ from pathlib import Path
 
 from PIL import Image
 
+from testlib import psnr
+
 ROOT = Path(__file__).resolve().parents[2]
 SHOT = str(Path(sys.argv.pop(1)).resolve())
 SHELL = str(Path(sys.argv.pop(1)).resolve())
 APP = str(Path(sys.argv.pop(1)).resolve())
 PICTURE = 10  # the Lapis note's Picture field (host/tests/test_apkg.py FIELDS)
-
-
-def psnr(a, b):
-    pa, pb = a.tobytes(), b.tobytes()
-    err = sum((x - y) * (x - y) for x, y in zip(pa, pb)) / len(pa)
-    return 99.0 if not err else 10 * math.log10(255 * 255 / err)
 
 
 class MinedCardCarriesTheScreenshot(unittest.TestCase):

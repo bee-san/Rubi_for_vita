@@ -12,7 +12,6 @@ each bar, and at 2x (the whole screen) the whole frame, as without the option.
     python3 host/tests/test_game_shot.py BUILD/vjo-game-shot-tests
 """
 import json
-import math
 import subprocess
 import sys
 import tempfile
@@ -21,15 +20,11 @@ from pathlib import Path
 
 from PIL import Image
 
+from testlib import psnr
+
 BINARY = str(Path(sys.argv.pop(1)).resolve())
 ROOT = Path(__file__).resolve().parents[2]
 FORMATS = (("abgr", 35.0), ("a2b10", 35.0), ("a1b5", 30.0))
-
-
-def psnr(a, b):
-    pa, pb = a.tobytes(), b.tobytes()
-    err = sum((x - y) * (x - y) for x, y in zip(pa, pb)) / len(pa)
-    return 99.0 if not err else 10 * math.log10(255 * 255 / err)
 
 
 def shot(frame, fmt, tmp, trim=False):

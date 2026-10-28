@@ -65,32 +65,19 @@ static const char *logged(const char *needle)
     return NULL;
 }
 
-/* ---- the memory card ---- */
+/* ---- the memory card (fakes/sceio_posix.h), every open, read and stat counted; no listing ---- */
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_READ | SCEIO_GETSTAT | SCEIO_DOPEN | SCEIO_DREAD | SCEIO_DCLOSE)
+#include "fakes/sceio_posix.h"
 static int opens, reads, stats, dirs;
 static size_t largest_read; /* the most one sceIoRead asked for */
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
-int sceIoOpen(const char *p, int flags, unsigned mode) { opens++; return native(open(p, flags, mode)); }
-int sceIoClose(int fd) { return native(close(fd)); }
+int sceIoOpen(const char *p, int flags, unsigned mode) { opens++; return sceio_open(p, flags, mode); }
 int sceIoRead(int fd, void *p, size_t len)
 {
     reads++;
     if (len > largest_read) largest_read = len;
-    return native((int)read(fd, p, len));
+    return sceio_read(fd, p, len);
 }
-int sceIoWrite(int fd, const void *p, size_t len) { return native((int)write(fd, p, len)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-int sceIoGetstat(const char *p, SceIoStat *out)
-{
-    struct stat st;
-    stats++;
-    int rc = stat(p, &st);
-    if (!rc) out->st_mode = st.st_mode;
-    return native(rc);
-}
-int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoSync(const char *p, unsigned flags) { return 0; }
+int sceIoGetstat(const char *p, SceIoStat *out) { stats++; return sceio_getstat(p, out); }
 int sceIoDopen(const char *p) { dirs++; return -1; }
 int sceIoDread(int d, SceIoDirent *e) { return -1; }
 int sceIoDclose(int d) { return 0; }

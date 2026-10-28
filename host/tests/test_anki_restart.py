@@ -30,19 +30,11 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from testlib import guid_of
+
 SHELL = str(Path(sys.argv.pop(1)).resolve())
 APP = str(Path(sys.argv.pop(1)).resolve())
 APP_QUEUE = str(Path(sys.argv.pop(1)).resolve())
-BASE91 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&()*+,-./:;<=>?@[]^_`{|}~"
-
-
-def guid_of(queue_id):
-    v, out = int(queue_id[:16], 16), ""
-    while True:
-        out = BASE91[v % 91] + out
-        v //= 91
-        if not v:
-            return out
 
 
 class Storage(unittest.TestCase):

@@ -187,6 +187,12 @@ static int ends_with(const char *s, const char *suffix)
     size_t n = strlen(s), k = strlen(suffix);
     return n >= k && !strcmp(s + n - k, suffix);
 }
+/* The memory card's files (fakes/sceio_posix.h; a failure is -1, as the suite's own calls return it), with the
+ * suite's faults, crash points and its one listing at a time. */
+#define SCEIO_ERROR(e) ((void)(e), -1)
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_READ | SCEIO_WRITE | SCEIO_RENAME | SCEIO_SYNCBYFD | SCEIO_SYNC | \
+                   SCEIO_DOPEN | SCEIO_DREAD | SCEIO_DCLOSE)
+#include "fakes/sceio_posix.h"
 static int jpg_opens; /* sceIoOpen of a .jpg or .jpg.tmp: SceShell never opens one (AGENTS.md rule 1) */
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
@@ -216,18 +222,6 @@ int sceIoWrite(int fd, const void *p, size_t n)
         crash_at("json_partial");
     return wrote;
 }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return mkdir(p, mode); }
-int sceIoGetstat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    int rc = stat(p, &s);
-    if (!rc) {
-        st->st_mode = s.st_mode;
-        st->st_size = s.st_size; /* (so a Shell that read a file it stats would show in the arena's peak too) */
-    }
-    return rc;
-}
 int sceIoRename(const char *from, const char *to)
 {
     int rc = fail_rename ? -1 : rename(from, to);
@@ -237,7 +231,6 @@ int sceIoRename(const char *from, const char *to)
     }
     return rc;
 }
-int sceIoRemove(const char *p) { return unlink(p); }
 int sceIoSyncByFd(int fd, int flag)
 {
     int rc = fail_sync ? -1 : fsync(fd);
