@@ -54,6 +54,9 @@ void parity_crop_of(uint16_t rx, uint16_t ry, uint16_t rw, uint16_t rh, uint32_t
                     uint32_t *y, uint32_t *w, uint32_t *h);
 int parity_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_w, uint32_t fb_h,
                      const ParityRowsJob *job);
+/* The capture's signature begun for a w x h first pass (kernel/capture.c capture_sig_begin), as vjoOcrCaptureRows begins
+ * it at a VJO_ROWS_SIG request's row 0. */
+void parity_sig_begin(uint32_t w, uint32_t h);
 
 /* A vocr_model parsed from the real weights, or NULL (then no tensors). */
 extern const void *parity_model;

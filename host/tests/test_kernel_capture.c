@@ -384,12 +384,15 @@ static void signatures_share_one_grid(void)
 {
     static const VjoRect box = {2048, 43000, 61000, 18000}, other = {16384, 8192, 24000, 30000};
     static const VjoRect full = {0, 0, 0, 0}, edge = {60700, 60536, 4300, 5000}; /* 889,502 63x42 */
+    static const VjoRect taller = {2048, 30000, 61000, 30000}; /* box's columns, another height (the audit's F1: M7) */
     static const struct { const VjoRect *job, *before, *after; uint32_t strip; } cases[] = {
         {&full, &box, &box, 64},  /* a full-frame job (the self-test's) beside the text box's signatures */
         {&box, &full, &full, 16}, /* the box's job, no region set */
         {&box, &box, &box, 5},    /* the same size: no rebuild */
         {&box, &box, &other, 7},  /* the region changed during the job (vjoSetRegion) */
         {&edge, &other, &edge, 3}, /* an odd-sized box at the frame's last rows and columns */
+        {&box, &taller, &taller, 9}, /* the same width, another height: the grid is keyed on both */
+        {&taller, &box, &box, 11},
     };
     unsigned bad_region = 0;
     sig_frames();
@@ -426,7 +429,33 @@ static void signatures_share_one_grid(void)
     TEST_MSG("%u region signatures wrong", bad_region);
 }
 
+/* The rule the one grid rests on (#418 P3, its audit's F1): the job's begin (capture_sig_begin, in the worker's
+ * vjoOcrCaptureRows) writes no byte of the region signature's SceneAcc, whose grid the display hook may be reading on
+ * another CPU then; only rows added in on_frame rebuild it. For a begin of the region's own size, another width,
+ * another height, the whole frame and 1 x 1, after a region signature of a box and of the whole frame. */
+static void capture_begin_writes_no_grid(void)
+{
+    static const VjoRect regions[] = {{2048, 43000, 61000, 18000}, {0, 0, 0, 0}};
+    static const uint32_t sizes[][2] = {{894, 150}, {600, 150}, {894, 250}, {SIG_FW, SIG_FH}, {1, 1}};
+    static SceneAcc before;
+    SceneSig sig;
+    sig_frames();
+    for (unsigned r = 0; r < sizeof(regions) / sizeof(regions[0]); r++) {
+        setup();
+        g.region = regions[r];
+        TEST_ASSERT(region_sig_hook((uintptr_t)sig_fb32, SIG_FW, VJO_FB_A8B8G8R8, SIG_FW, SIG_FH, &sig) == 0);
+        memcpy(&before, &region_acc, sizeof(before));
+        for (unsigned k = 0; k < sizeof(sizes) / sizeof(sizes[0]); k++) {
+            capture_sig_begin(sizes[k][0], sizes[k][1]);
+            TEST_CHECK_(!memcmp(&before, &region_acc, sizeof(before)), "region %u, a begin of %ux%u wrote the grid", r,
+                        (unsigned)sizes[k][0], (unsigned)sizes[k][1]);
+            TEST_CHECK(g.capture_sig.w == sizes[k][0] && g.capture_sig.h == sizes[k][1] && capture_rows.next_y == 0);
+        }
+    }
+}
+
 TEST_LIST = {
+    {"the job's begin writes no byte of the region signature's grid (the audit's F1)", capture_begin_writes_no_grid},
     {"rows converted in place: every format, odd widths, the frame's edges, 960 pixels", rows_in_place_every_format_and_edge},
     {"the region's signature and a job's first pass share one grid, any sizes", signatures_share_one_grid},
     {"the job's crop of the region: a box, a small frame, the whole frame, the 32 px minimum", region_crops},

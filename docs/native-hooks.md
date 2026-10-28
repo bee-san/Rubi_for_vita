@@ -1403,8 +1403,8 @@ probe are not). Adrenaline's XMB runs in the same process as the
 game started from it, and a reading there would use the probe up with no game's ID, so start the game
 from its own bubble, or set **Read text** to **Only when I press L + R** and press it first in the game. To
 probe again, close the emulator (or the bubble) and start it again. The text source reaches the worker
-through the kernel's `vjoGetTextSource` (`kernel/exports.yml` exports it, and the worker imports it:
-`VJO_HAVE_TEXT_SOURCE_IMPORT` in `vita/CMakeLists.txt`), so the debug build's probe runs as described
+through the kernel's `vjoGetTextSource` (`kernel/exports.yml` exports it since API 31, and the worker imports it), so
+the debug build's probe runs as described
 here; it does nothing with `text_source = ocr`, or with a kernel of another API version, which the worker
 reads as OCR.
 

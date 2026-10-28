@@ -154,12 +154,20 @@ static void game_frame(void)
 static int second_display_call;
 static unsigned second_display_reads;
 static void model_tick(void);
+/* #418 P3's audit F1: the region signature's SceneAcc (kernel/capture.c region_acc) as a rows call must leave it, checked
+ * at its wait for the frame (armed, the hook not run yet): the grid the display hook may be reading on another CPU. */
+static int grid_watch;
+static SceneAcc grid_seen;
 /* A model syscall waiting for the kernel worker: g.lock is not held, so the
  * worker can run (wait_runs_worker) and finish the queued operation. */
 int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *out, SceUInt *timeout)
 {
     if (bits == MEV_ROWS) { /* a rows call waits for the game's next frame, without the lock */
         TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout && *timeout <= 50000);
+        if (grid_watch) {
+            TEST_CHECK_(!memcmp(&grid_seen, &region_acc, sizeof(grid_seen)), "the rows call wrote the region's grid");
+            grid_watch = 0;
+        }
         /* the hook's start, as game_ocr_rows_hook writes it before its claim (API 55's watchdog reads it) */
         if (stall_copy && rows.job.frame && rows.state == ROWS_PENDING) rows.frame_start = (uint32_t)model_clock | 1u;
         if (stall_copy && __sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING)) {
@@ -1261,6 +1269,31 @@ static void rows_hook_copies_grey_and_publishes_the_capture(void)
     TEST_CHECK(rows_call(seq, 3, 5, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == 5 && rows_match(user_rows, 3, 5, 32, 0));
     TEST_CHECK(game_ocr_capture_busy_locked()); /* the job still owns the capture */
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
+}
+/* #418 P3 (its audit's F1): a first pass's arming (VJO_ROWS_SIG from row 0: capture_sig_begin under g.lock) writes
+ * no byte of the region signature's grid, which the display hook may read meanwhile; the hook's rows then give the
+ * job its capture as before, in strips and in one call. */
+static void rows_arming_leaves_the_region_grid(void)
+{
+    VjoGameOcrRowsInfo info;
+    SceneSig sig;
+    for (unsigned strips = 0; strips < 2; strips++) {
+        setup(); uint32_t seq = submit(); take(seq);
+        TEST_ASSERT(region_sig_hook((uintptr_t)game_fb, FB_PITCH, fb_fmt, fb_w, fb_h, &sig) == 0); /* every 8th frame */
+        memcpy(&grid_seen, &region_acc, sizeof(grid_seen));
+        grid_watch = 1; frames_come = 1;
+        TEST_CHECK(rows_call(seq, 0, strips ? 16 : 32, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | (strips ? 0 : VJO_ROWS_LAST), 40,
+                             user_rows, &info) == (strips ? 16 : 32));
+        TEST_CHECK(!grid_watch); /* the call waited for the frame, and the grid was the region signature's */
+        if (strips) {
+            frames_come = 1;
+            TEST_CHECK(rows_call(seq, 16, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_LAST, 40, user_rows, &info) == 16);
+        }
+        TEST_CHECK(g.region_seq == request.capture_seq && capture_events == 1 && g.capture_sig.w == 32 &&
+                   !memcmp(g.capture_sig.hash, sig.hash, sizeof(sig.hash))); /* the region is the whole 32 x 32 frame */
+        caller = 7; message.size = sizeof(message); message.seq = seq;
+        TEST_CHECK(vjoOcrComplete(&message) == 0);
+    }
 }
 /* API 41: the registered worker's thread reports a hooked line between jobs (vjoOcrHookLine): the region
  * gets a new scene, held while the line draws, the last capture stops standing for the screen, the Shell is
@@ -3173,6 +3206,7 @@ TEST_LIST = {
     {"model broker late I/O cancellation exit Shell restart and pending close", model_cancel_exit_restart_and_late_io},
     {"model broker failed close and automatic orphan recovery", model_failed_close_and_orphan_recovery},
     {"rows: the hook copies grey rows into the worker block; the first pass publishes the capture", rows_hook_copies_grey_and_publishes_the_capture},
+    {"#418 P3: a first pass's arming leaves the region signature's grid", rows_arming_leaves_the_region_grid},
     {"rows: bad requests are refused without arming", rows_refuse_bad_requests_without_arming},
     {"rows: no frame, another process's frame or another size", rows_timeout_other_process_and_size},
     {"rows: cancellation during the wait", rows_cancelled_while_waiting},

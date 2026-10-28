@@ -32,7 +32,9 @@ static void reset_change_detection(void)
     g.seen_sig_seq = g.hook_sig_seq;
 }
 
-static void change_detection(void)
+/* Not inlined into the worker's loop (#418 P3's audit F4): its 524 B signature copy is then on VjoWorker's stack only
+ * during this call, not beside the loop's other calls (kernel_file_flush's 512 B buffer). */
+static __attribute__((noinline)) void change_detection(void)
 {
     SceneSig sig; /* 524 B of VjoWorker's 16 KiB stack: the hook's signature, copied under the lock */
     uint32_t seq, id = 0;
