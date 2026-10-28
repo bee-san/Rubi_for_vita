@@ -4,7 +4,7 @@
  * v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0 releases. Built with
  * -DVJO_WITH_VOCR=ON; see docs/vita-vn-ocr.md.
  *
- * API 19: a job never holds the region. It reads the region in strips of grey
+ * A job never holds the region. It reads the region in strips of grey
  * rows (VjoGreySource: in the game, the display hook copies each strip from the
  * game's framebuffer), finds the lines with the runtime's row-callback finder
  * (vocr_lines_rows.h) and recognizes each line straight from the strip that
@@ -71,7 +71,7 @@ extern "C" {
  * screen it read, which is no longer shown). Not learning such rows once the
  * job reads would close that, at a retry whenever a "next" icon that blinks
  * slower than the wait goes back while the job reads (docs/vita-vn-ocr.md).
- * Without the wait every change is one, as in API 19. */
+ * Without the wait every change is one. */
 #define VJO_VOCR_CYCLE_ROWS 64u
 /* The wait reads at most this many strips a job, whatever the clock says (a
  * real job reads a few hundred at most: its waits end by settle_max_us). */
@@ -294,7 +294,7 @@ typedef struct {
     uint8_t slot;            /* who recognized it: 0 the caller's thread, 1.. a helper (VjoVocrPool) */
     uint8_t cached;          /* 1: its pixels were unchanged since a job read them (VjoVocrCache): no vocr_run */
     /* #358, the box suggested on first use (core/region_suggest.h): the kana and kanji of the text it was read as
-     * (vjo_suggest_kana; before API 52 a pad), and its box's top left in region pixels (a column's, too) */
+     * (vjo_suggest_kana), and its box's top left in region pixels (a column's, too) */
     uint16_t kana;
     uint32_t cpu_us;         /* the recognizing thread's run time for it (VjoVocrPool.thread_us), else 0 */
     uint16_t x, y;

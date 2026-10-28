@@ -1,6 +1,6 @@
 /* Bounded OCR-only transport between the Shell, the kernel and the game worker.
  *
- * API 19: the capture happens in the game's process. The worker asks the kernel
+ * The capture happens in the game's process. The worker asks the kernel
  * for rows of the job's region (vjoOcrCaptureRows); the kernel's display hook,
  * which runs in the game's own thread on the frame the game submits, converts
  * those rows to 8-bit grey and copies them straight into the worker's buffer in
@@ -16,8 +16,8 @@
 #include "vjo_api.h" /* VjoRect */
 
 #define VJO_GAME_OCR_MODULE "VitaJPOverlay_OCR"
-/* The model directory (API 23: 128 B, from 256): the kernel accepts only VJO_VOCR_MODEL_ROOT
- * (27 characters), and its file paths, the root's and a shot's (75 characters), fit. */
+/* The model directory: the kernel accepts only VJO_VOCR_MODEL_ROOT (27 bytes with its NUL), and its
+ * file paths, the root's and a shot's (at most 75 bytes with the NUL), fit. */
 #define VJO_GAME_OCR_MODEL_DIR_BYTES 128u
 #define VJO_GAME_OCR_TEXT_BYTES 4096u
 #define VJO_GAME_OCR_MODEL_BYTES 32u
@@ -66,8 +66,7 @@
  * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed but
  * (API 32) VJO_GAME_OCR_S_TRIM. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
-/* Bit 15 is not defined: API 27 (#213, reverted) and draft #223's API 29 had vertical text there; API 47 has it in
- * the speed word (VJO_GAME_OCR_S_VERTICAL). */
+/* Bit 15 is not defined (VJO_GAME_OCR_F_ALL refuses it). */
 #define VJO_GAME_OCR_F_ALL 0xFFFF7FFFu
 /* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
  * two agree), named by the card's queue ID (32 lowercase hex digits), at most
@@ -86,8 +85,9 @@
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
  * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below); API 36, bit 16
  * the border rule (below); API 42, bits 18-19 the head gate and the two-level head; API 43, bit 20 trusted hooks;
- * API 50, bits 21-23 the line finder's fixes (below); API 54, bits 24 and 26 the text spotter (below). Other bits are
- * refused, as unknown flags are. */
+ * API 50, bits 21-23 the line finder's fixes (below); API 54, bits 24 and 26 the text spotter (below); API 47, bits
+ * 28-29 vertical text (below); API 55, bit 30 the pause for the frame (below). Other bits are refused, as unknown
+ * flags are (VJO_GAME_OCR_S_ALL). */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
 #define VJO_GAME_OCR_S_NOCACHE 0x8u
@@ -100,8 +100,7 @@
 /* API 36, bit 16: the text the job returns (OCR's or a hook's) drops a line made only of a box's border read as
  * text (core/textnorm.h, the border rule; its norm step counts them); without it such a line stays. The Shell
  * sets it in the user's jobs with config non_japanese_filter = lines, the default (the self-test's stages read as
- * before, as with the gate). Not bit 5 (draft #228's VJO_GAME_OCR_S_SPOT), bit 7 (draft #245's PSP probe) or
- * bits 8-15 (draft #226's frame pacing), so all four can merge. */
+ * before, as with the gate). */
 #define VJO_GAME_OCR_S_DROP_BORDERS 0x10000u
 /* API 42, bits 18 and 19: vita-vn-ocr #117's speed work (core/vocr_ocr.h VjoVocrPolicy.head_gate, two_level).
  * Bit 18, the head gate: a model whose blob carries one (a VOCG section) skips its output head on the CTC frames
@@ -109,8 +108,7 @@
  * head's frequent rows on every frame it does not skip and the rare rows only where its escape picks the frame.
  * The Shell sets them in the user's jobs from config.ini ocr_head_gate, whose value is the two bits
  * (core/config.h VJO_HEAD_*: on, the default, both; gate; two_level; off neither), shifted by
- * VJO_GAME_OCR_S_HEAD_SHIFT; the self-test's stages read as before, as with the text gate. Not bit 17 (closed
- * draft #271's VJO_GAME_OCR_S_CHARS). */
+ * VJO_GAME_OCR_S_HEAD_SHIFT; the self-test's stages read as before, as with the text gate. */
 #define VJO_GAME_OCR_S_HEAD_SHIFT 18
 #define VJO_GAME_OCR_S_HEAD_GATE (1u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x40000 */
 #define VJO_GAME_OCR_S_TWO_LEVEL (2u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x80000 */
@@ -120,7 +118,7 @@
  * once its interval reaches VJO_HOOK_TRUST_INTERVAL with a close agreement there. Such a job opens no model, keeps no
  * OCR reserve (its one capture pass keeps VJO_GAME_RESERVE_HOOK_ONLY) and, after a run of them, gives back the
  * resident weights, LM and cascade model. Without the bit a job selects as API 42's did. The Shell sets it in the
- * user's jobs; a pick of OCR or a stream ignores it. Not bit 17 (closed draft #271's VJO_GAME_OCR_S_CHARS). */
+ * user's jobs; a pick of OCR or a stream ignores it. */
 #define VJO_GAME_OCR_S_TRUST 0x100000u
 /* API 47, bits 28-29: vertical text (config.ini ocr_vertical, core/config.h VJO_VERTICAL_*, vita-vn-ocr #99;
  * docs/vita-vn-ocr.md "Vertical text"). 0: the region's rows, as before. 1 (on): the job runs the vertical model
@@ -135,11 +133,8 @@
  * 0); with 1 and 2, where the vertical model cannot be read or has no room (its memory check refuses it, or its
  * weights after the check: find kinds 3 and 5), the rows as with 0. #385's audit: with 1, a region at least as tall
  * as wide is read as with 1 before API 53, its columns at once, and a wider one with no row at all as with 0. 3 is
- * refused. A line
- * read as a column carries VJO_GAME_OCR_LINE_COLUMN
- * in VjoGameOcrLine.flags. The Shell sets the field in the user's jobs (the self-test's stages read rows). Not
- * bits 21-27: API 50's line-finder fixes have 21-23, and VOCR6's spotter finder and draft #326's text overlay
- * (test.17, in flight) the others, so all of them can merge. */
+ * refused. A line read as a column carries VJO_GAME_OCR_LINE_COLUMN in VjoGameOcrLine.flags. The Shell sets the
+ * field in the user's jobs (the self-test's stages read rows). */
 #define VJO_GAME_OCR_S_VERTICAL_SHIFT 28u
 #define VJO_GAME_OCR_S_VERTICAL_MASK 0x3u
 #define VJO_GAME_OCR_S_VERTICAL (VJO_GAME_OCR_S_VERTICAL_MASK << VJO_GAME_OCR_S_VERTICAL_SHIFT) /* 0x30000000 */
@@ -151,8 +146,7 @@
  * edge and repeating ornaments are not lines; it can drop a text line in a region drawn tight, so it is opt-in).
  * Bit 23: VOCR_FIX_VALLEY (two touching rows split; opt-in). Without them the finder is the frozen one, bit for bit.
  * The Shell sets them in the user's jobs (ocr_line_fix = on, the default: bit 21; junk: 21-22; all: 21-23); the
- * self-test's stages read as before. Not bit 17 (closed draft #271's VJO_GAME_OCR_S_CHARS), 18-19 (the head gate
- * and the two-level head) or 20 (trusted hooks). */
+ * self-test's stages read as before. */
 #define VJO_GAME_OCR_S_LINE_FIX 0x200000u
 #define VJO_GAME_OCR_S_LINE_JUNK 0x400000u
 #define VJO_GAME_OCR_S_LINE_VALLEY 0x800000u
@@ -163,9 +157,7 @@
  * wrong, no memory) reads with GRAD. VJO_GAME_OCR_S_SPOT_REFINE, with VJO_GAME_OCR_S_SPOT: the spotter's boxes
  * refined (VOCR_REFINE_DEFAULT; ocr_spotter_refine = on) in place of the refinement's mode (bits 12-13), which is
  * GRAD's; ignored without VJO_GAME_OCR_S_SPOT. The Shell sets them in the user's jobs; the self-test's stages read as
- * before. Bits 24 and 26 of the 21-27 that API 47's note kept for the line finder's fixes (21-23), this spotter and
- * draft #326's text overlay (25); not bit 5 (closed draft #228's VJO_GAME_OCR_S_SPOT, whose builds exist) or 30
- * (draft #355's pause). */
+ * before. */
 #define VJO_GAME_OCR_S_SPOT 0x1000000u        /* bit 24 */
 #define VJO_GAME_OCR_S_SPOT_REFINE 0x4000000u /* bit 26 */
 /* API 55, bit 30: pause the game for its frame (config.ini ocr_pause, off by default; docs/game-pause.md, #348). The
@@ -174,15 +166,14 @@
  * worker's frame block; every later read of the job is from that copy, so a spinning icon or an animated background
  * cannot change the rows under the read, and the stable-text check after the finder (core/vocr_ocr.c settle_verify)
  * has nothing to wait for. A game the kernel cannot pause (VJO_GAME_STATIC_FB, or the watchdog turned it off), a frame
- * block that does not fit beside the job, or a copy that fails reads as before, strip by strip. Not bits 24-27
- * (VOCR6's spotter finder, draft #326's text overlay: VJO_GAME_OCR_S_CHARS 0x2000000) nor 17 (closed draft #271). */
+ * block that does not fit beside the job, or a copy that fails reads as before, strip by strip. */
 #define VJO_GAME_OCR_S_PAUSE_SHIFT 30u /* the Shell shifts ocr_pause (0/1) into it */
 #define VJO_GAME_OCR_S_PAUSE (1u << VJO_GAME_OCR_S_PAUSE_SHIFT) /* 0x40000000 */
+/* Bit 25 is taken by an open draft: #326's VJO_GAME_OCR_S_CHARS. */
 #define VJO_GAME_OCR_S_ALL 0x75FD001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
- * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
- * Not bit 5: draft #228's scan screen (API 30) has it (VJO_GAME_OCR_S_SPOT), so the two can merge. */
+ * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows. */
 #define VJO_GAME_OCR_S_TRIM 0x40u
 #define VJO_GAME_OCR_S_SHOT_ALL VJO_GAME_OCR_S_TRIM
 #define VJO_PACE_SLOW_US 25000 /* a frame gap over 25 ms: a dropped frame at 60 fps */
@@ -276,7 +267,7 @@ typedef struct {
 #define VJO_GAME_OCR_SC3_DIR "ux0:data/VitaJPOverlay/hooks/"
 #define VJO_GAME_OCR_SC3_BYTES 16384u
 /* API 54: the text spotter's weights (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_NAME), for a request with
- * VJO_GAME_OCR_S_SPOT only. (Closed draft #228 used 18 for its spotter, in an API of its own; 18 is the SC3 charset's since #368.) */
+ * VJO_GAME_OCR_S_SPOT only. */
 #define VJO_GAME_OCR_OPEN_SPOT 19u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
