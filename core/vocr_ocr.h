@@ -189,17 +189,32 @@ const VjoVocrLm *vjo_vocr_lm_tier(unsigned tier); /* NULL for 0 or one out of ra
  * not measured again). A model or LM this build does not pin: the tier's. */
 void vjo_vocr_lm_settings(const char *model, const VjoVocrLm *lm, int *alpha, int *beta, unsigned *flags);
 
-/* LM bytes kept between jobs, as VjoVocrResident keeps the recognizer's. */
+/* A pinned file's verified bytes kept between jobs: the recognizer's weights (VjoVocrResident, model), the LM's
+ * (VjoVocrLmResident, lm) and the text spotter's (VjoVocrSpotResident, verified), one type (#418). The caller
+ * supplies their memory: alloc returns 16-byte aligned memory for `bytes`, or NULL (the job then reads without
+ * them, or fails with VJO_E_OOM for its weights); release frees it and returns 0, or nonzero if it could not (the
+ * memory then stays held but is never used). Zero-initialize the state fields; vocr_ocr.c maintains them. The file
+ * is opened in every job that uses it and read and hashed again only when its size or stamp changed, its stamp is
+ * unknown or nothing verified is held. Between jobs, data is non-NULL exactly when the file's field (model, lm or
+ * verified) is: memory is held only for verified bytes. */
 typedef struct {
     void *(*alloc)(void *ud, size_t bytes);
     int (*release)(void *ud);
     void *ud;
-    const VjoVocrLm *lm;        /* verified bytes of this LM are in data, else NULL */
-    unsigned char *data;
-    size_t capacity;
-    uint64_t size, stamp;
-} VjoVocrLmResident;
-int vjo_vocr_lm_drop(VjoVocrLmResident *resident);
+    union {
+        const VjoVocrModel *model; /* VjoVocrResident: verified weights of this model are in data, else NULL */
+        const VjoVocrLm *lm;       /* VjoVocrLmResident: verified bytes of this LM */
+        const void *verified;      /* VjoVocrSpotResident: non-NULL once data holds the pinned weights */
+    };
+    unsigned char *data;        /* the memory held, or NULL */
+    size_t capacity;            /* bytes of data */
+    uint64_t size, stamp;       /* VjoFile.size and .stamp of the file they were read from */
+} VjoVocrResident;
+typedef VjoVocrResident VjoVocrLmResident;
+/* Releases the resident bytes. 0, or the release callback's failure (the memory is then still held, and
+ * unverified). */
+int vjo_vocr_resident_drop(VjoVocrResident *resident);
+#define vjo_vocr_lm_drop vjo_vocr_resident_drop
 
 /* API 26: the text-presence gate's weights (VjoVocrPolicy.gate_res), kept between jobs. The file
  * VJO_VOCR_GATE_NAME in the job's model directory is opened in every job that uses the gate and read and
@@ -218,16 +233,9 @@ typedef struct {
  * memory). The weights are never a static array (52-450 KB: pages in every game). vjo_vocr_spot_load opens the file
  * in every job that uses the spotter and reads and checks it again only when its size or stamp changed or nothing
  * verified is held; a missing, wrong or refused file, or a failed read, releases the block (memory is held only
- * for verified weights). The caller owns it (the worker: a static) and zero-initializes its state fields. */
-typedef struct {
-    void *(*alloc)(void *ud, size_t bytes);
-    int (*release)(void *ud);    /* 0, or nonzero when the block could not be freed (it stays held, unused) */
-    void *ud;
-    int verified;                /* 1: data holds the pinned weights and their parsed form */
-    unsigned char *data;         /* the block held, or NULL */
-    size_t capacity;
-    uint64_t size, stamp;        /* VjoFile.size and .stamp of the file they were read from */
-} VjoVocrSpotResident;
+ * for verified weights). The caller owns it (the worker: a static) and zero-initializes its state fields; verified
+ * is non-NULL once data holds the pinned weights and their parsed form. */
+typedef VjoVocrResident VjoVocrSpotResident;
 /* The block's bytes: the weights (VJO_VOCR_SPOT_BYTES, 16-byte aligned), then their parsed form. */
 size_t vjo_vocr_spot_block_bytes(void);
 /* Verified, parsed weights in res (see VjoVocrSpotResident). VJO_OK; VJO_E_OCR_MODEL (missing, wrong size or hash,
@@ -237,7 +245,7 @@ size_t vjo_vocr_spot_block_bytes(void);
 int vjo_vocr_spot_load(const VjoPlatform *platform, const char *model_dir, VjoVocrSpotResident *res,
                        const VjoGreySource *im, unsigned *read);
 /* Releases the block: 0, or the release callback's failure (the block is then still held, and unverified). */
-int vjo_vocr_spot_drop(VjoVocrSpotResident *res);
+#define vjo_vocr_spot_drop vjo_vocr_resident_drop
 /* The spotter's part of a job's scratch for a width x height region cut from a frame_w x frame_h frame (0 x 0: the
  * Vita's 960 x 544): its arena, vocr_textspot6_arena_bytes_flags() at the scale its blob's rule gives that frame
  * (VOCR_TEXTSPOT6_SCALE2 for a half-scale blob and any frame wider than its half_above: every 960 x 544 one), and
@@ -470,22 +478,6 @@ typedef struct {
  * carries it: the band's rows on the 960 x 544 screen (vjo_region_rows), or 0 (no line like dialogue, or the lines
  * were columns). The game worker's (game_ocr/main.c) and the host tools' (host/page_ocr.c); core/region_suggest.c. */
 uint32_t vjo_vocr_suggest(const VjoVocrStats *st, unsigned fb_w, unsigned fb_h);
-
-/* Weights kept between jobs. The caller supplies their memory: alloc returns
- * 16-byte aligned memory for `bytes`, or NULL (the job then fails with
- * VJO_E_OOM); release frees it and returns 0, or nonzero if it could not (the
- * memory then stays held but is never used as weights). Zero-initialize the
- * state fields; vocr_ocr.c maintains them. Between jobs, data is non-NULL
- * exactly when model is: memory is held only for verified weights. */
-typedef struct {
-    void *(*alloc)(void *ud, size_t bytes);
-    int (*release)(void *ud);
-    void *ud;
-    const VjoVocrModel *model;  /* verified weights of this model are in data, else NULL */
-    unsigned char *data;        /* the memory held, or NULL */
-    size_t capacity;            /* bytes of data */
-    uint64_t size, stamp;       /* VjoFile.size and .stamp of the file they were read from */
-} VjoVocrResident;
 
 /* What a job does besides finding and recognizing the lines; a zeroed policy
  * (or NULL) is API 19's job exactly.
@@ -739,10 +731,6 @@ size_t vjo_vocr_gate_bytes(const VjoVocrGateResident *res, unsigned width, unsig
 int vjo_vocr_ink(const unsigned char *pixels, size_t stride, unsigned w, unsigned h, VjoVocrInk *out);
 int vjo_vocr_blank(const VjoVocrInk *ink);
 
-
-/* Releases the resident weights. 0, or the release callback's failure (the
- * memory is then still held, and model is NULL). */
-int vjo_vocr_resident_drop(VjoVocrResident *resident);
 
 /* Exact workspace bytes for a job on a width x height region with `model`:
  * vjo_vocr_job_bytes() without the weights (resident form), or

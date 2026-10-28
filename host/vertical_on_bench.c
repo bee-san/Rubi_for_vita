@@ -291,10 +291,10 @@ int main(int argc, char **argv)
     su.vertical = vjo_vocr_model(VJO_VOCR_VERTICAL_NAME);
     su.lm = vjo_vocr_lm_tier(2); /* ocr_lm = 1000k */
     if (!su.model || !su.vertical || !su.lm) goto usage;
-    res = (VjoVocrResident){heap_alloc, res_release, &res, NULL, NULL, 0, 0, 0};
-    vres = (VjoVocrResident){heap_alloc, res_release, &vres, NULL, NULL, 0, 0, 0};
-    cres = (VjoVocrResident){heap_alloc, res_release, &cres, NULL, NULL, 0, 0, 0};
-    lres = (VjoVocrLmResident){heap_alloc, lres_release, &lres, NULL, NULL, 0, 0, 0};
+    res = (VjoVocrResident){heap_alloc, res_release, &res, {NULL}, NULL, 0, 0, 0};
+    vres = (VjoVocrResident){heap_alloc, res_release, &vres, {NULL}, NULL, 0, 0, 0};
+    cres = (VjoVocrResident){heap_alloc, res_release, &cres, {NULL}, NULL, 0, 0, 0};
+    lres = (VjoVocrLmResident){heap_alloc, lres_release, &lres, {NULL}, NULL, 0, 0, 0};
     VjoGreySource src;
     memset(&src, 0, sizeof(src));
     src.width = rw;

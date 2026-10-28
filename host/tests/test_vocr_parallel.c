@@ -353,10 +353,10 @@ static void setup(void)
     setup_files();
     posix_platform_init(&pp, &plat);
     if (!res.alloc) {
-        res = (VjoVocrResident){heap_alloc, res_release, &res, NULL, NULL, 0, 0, 0};
-        res2 = (VjoVocrResident){heap_alloc, res_release, &res2, NULL, NULL, 0, 0, 0};
-        cres = (VjoVocrResident){heap_alloc, res_release, &cres, NULL, NULL, 0, 0, 0};
-        lres = (VjoVocrLmResident){heap_alloc, lres_release, &lres, NULL, NULL, 0, 0, 0};
+        res = (VjoVocrResident){heap_alloc, res_release, &res, {NULL}, NULL, 0, 0, 0};
+        res2 = (VjoVocrResident){heap_alloc, res_release, &res2, {NULL}, NULL, 0, 0, 0};
+        cres = (VjoVocrResident){heap_alloc, res_release, &cres, {NULL}, NULL, 0, 0, 0};
+        lres = (VjoVocrLmResident){heap_alloc, lres_release, &lres, {NULL}, NULL, 0, 0, 0};
     }
     vjo_vocr_unstick();
     cancel_now = 0;

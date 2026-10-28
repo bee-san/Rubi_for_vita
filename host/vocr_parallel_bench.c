@@ -119,9 +119,9 @@ int main(int argc, char **argv)
     f = fopen(argv[1], "rb");
     if (!f || fread(&count, 4, 1, f) != 1) return 2;
     posix_platform_init(&pp, &plat);
-    res = (VjoVocrResident){heap_alloc, res_release, &res, NULL, NULL, 0, 0, 0};
-    cres = (VjoVocrResident){heap_alloc, res_release, &cres, NULL, NULL, 0, 0, 0};
-    lres = (VjoVocrLmResident){heap_alloc, lres_release, &lres, NULL, NULL, 0, 0, 0};
+    res = (VjoVocrResident){heap_alloc, res_release, &res, {NULL}, NULL, 0, 0, 0};
+    cres = (VjoVocrResident){heap_alloc, res_release, &cres, {NULL}, NULL, 0, 0, 0};
+    lres = (VjoVocrLmResident){heap_alloc, lres_release, &lres, {NULL}, NULL, 0, 0, 0};
     for (uint32_t i = 0; i < count; i++) {
         uint32_t wh[2];
         unsigned char *px;

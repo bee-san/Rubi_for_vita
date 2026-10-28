@@ -192,7 +192,7 @@ static int policy_job(unsigned w, unsigned h, int check, unsigned fix, int gate,
     static VjoVocrGateResident gate_res;
     VjoPlatform platform = {0};
     VjoGreySource image = {NULL, w, h, strip, NULL, NULL, NULL};
-    VjoVocrResident res = {heap_alloc, NULL, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {heap_alloc, NULL, NULL, {NULL}, NULL, 0, 0, 0};
     VjoVocrPolicy pol;
     static unsigned char capture[64 * 1024];
     char text[16];

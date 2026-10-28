@@ -269,8 +269,8 @@ static VjoGameOcrRequest setup_job(const char *name, int keep_weights)
     memset(&g, 0, sizeof(g)); game_ocr_init();
     worker = workspace_uid = -1; model_owned = 0; model_seq = 0;
     if (!keep_weights) {
-        if (weights_live) { TEST_CHECK(!drop_weights()); }
-        weights_uid = -1; resident.model = NULL; resident.data = NULL; resident.capacity = 0;
+        if (weights_live) { TEST_CHECK(!drop_one(&resident)); }
+        weights_blk.uid = -1; resident.model = NULL; resident.data = NULL; resident.capacity = 0;
         weights_allocated = weights_released = 0; live_bytes = peak_bytes = 0;
         file_mtime = (SceDateTime){2026, 10, 12, 21, 0, 0, 0};
     }

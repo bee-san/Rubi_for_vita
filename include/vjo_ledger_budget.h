@@ -492,10 +492,15 @@
  * it replaces); no thread. The page is in every game that is ON, whether or not ocr_pause is: one page of the game's
  * memory, 0.005 % of the 90,177,536 B free USER the least any job saw in CLANNAD [measured, #81's v0.8.0-test.1
  * log]. */
+/* #418 (cleanup P4, #455): one resident-block allocator, one file loader and one broker poll loop in the worker:
+ * debug 181,936 -> 180,544 B of text (data/bss 36,424 B unchanged), the same pages; normal 172,972 -> 171,596 B and
+ * 36,416 -> 36,408 B, under its last code page again: 212,992 -> 208,896 B of pages, the page #355 took (436 B of code
+ * room left in the normal build, 3,776 B in the debug one) [measured: tools/check_memory_ledger.py's module rows,
+ * both builds, main 93c99c7e and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 221184u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 212992u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 208896u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

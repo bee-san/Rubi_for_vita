@@ -981,68 +981,70 @@ static int join_path(char *path, size_t cap, const char *dir, const char *name)
     return 0;
 }
 
-int vjo_vocr_lm_drop(VjoVocrLmResident *r)
-{
-    if (!r) return 0;
-    r->lm = NULL;
-    r->size = r->stamp = 0;
-    if (!r->data) return 0;
-    if (r->release && r->release(r->ud)) return -1;
-    r->data = NULL;
-    r->capacity = 0;
-    return 0;
-}
-
-static int lm_drop_with(VjoVocrLmResident *r, int rc)
-{
-    return vjo_vocr_lm_drop(r) ? VJO_E_OCR_UNAVAILABLE : rc;
-}
-
-/* Verified bytes of the LM lm in r->data, as resident_weights does for the
- * recognizer: opened every job, read and hashed again only when its size or
- * stamp changed (or none is held). */
-static int resident_lm(const VjoPlatform *p, const char *dir, const VjoVocrLm *lm, VjoVocrLmResident *r,
-                       const VjoGreySource *im, VjoVocrStats *st)
+/* Verified bytes of a pinned file in r->data (#418: the one loader of the weights, the LM and the spotter's): the
+ * file `name` in dir, `bytes` long with SHA-256 sha256, whose pin (its VjoVocrModel, VjoVocrLm or the spotter's
+ * name) r->verified then holds, in a block of `block` bytes from r->alloc. Opened every job, read and hashed again
+ * only when its size or stamp changed, the stamp is unknown, or no verified copy is held (*read 1; else *kept 1).
+ * Another file's bytes are released first: never two. */
+static int resident_file(const VjoPlatform *p, const char *dir, const void *pin, const char *name, uint32_t bytes,
+                         const unsigned char *sha256, size_t block, VjoVocrResident *r, const VjoGreySource *im,
+                         unsigned *read, unsigned *kept)
 {
     char path[256];
     VjoFile file;
     int rc;
-    if (r->lm != lm && vjo_vocr_lm_drop(r)) return VJO_E_OCR_UNAVAILABLE; /* another tier's: never two */
-    if (join_path(path, sizeof(path), dir, lm->name) < 0) return lm_drop_with(r, VJO_E_OCR_MODEL);
+    if (r->verified != pin && vjo_vocr_resident_drop(r)) return VJO_E_OCR_UNAVAILABLE;
+    if (join_path(path, sizeof(path), dir, name) < 0) return drop_with(r, VJO_E_OCR_MODEL);
     memset(&file, 0, sizeof(file));
     if (!p->file_open || p->file_open(p->ud, path, &file) < 0)
-        return cancelled(im) ? VJO_E_CANCELLED : lm_drop_with(r, VJO_E_OCR_MODEL);
-    if (file.size != lm->bytes || !file.read || !file.close) {
+        /* A cancelled check proves nothing about the file: keep verified bytes. */
+        return cancelled(im) ? VJO_E_CANCELLED : drop_with(r, VJO_E_OCR_MODEL);
+    if (file.size != bytes || !file.read || !file.close) {
         if (file.close) file.close(file.ctx);
-        return lm_drop_with(r, VJO_E_OCR_MODEL);
+        return drop_with(r, VJO_E_OCR_MODEL);
     }
-    if (r->lm == lm && r->data && file.stamp && file.stamp == r->stamp && file.size == r->size) {
+    if (r->verified == pin && r->data && file.stamp && file.stamp == r->stamp && file.size == r->size) {
         file.close(file.ctx);
-        st->lm_cached = 1;
+        *kept = 1;
         return VJO_OK;
     }
-    r->lm = NULL;
+    /* From here until the hash matches, the memory holds no verified bytes. */
+    r->verified = NULL;
     if (!r->data) {
-        unsigned char *data = r->alloc ? (unsigned char *)r->alloc(r->ud, lm->bytes) : NULL;
+        unsigned char *data = r->alloc ? (unsigned char *)r->alloc(r->ud, block) : NULL;
         if (!data) {
             file.close(file.ctx);
             return VJO_E_OOM;
         }
         r->data = data;
-        r->capacity = lm->bytes;
+        r->capacity = block;
         if ((uintptr_t)data & 15u) {
             file.close(file.ctx);
-            return lm_drop_with(r, VJO_E_OOM);
+            return drop_with(r, VJO_E_OOM);
         }
     }
-    rc = read_verified(&file, lm->bytes, lm->sha256, r->data, im);
+    rc = read_verified(&file, bytes, sha256, r->data, im);
     file.close(file.ctx);
-    if (rc) return lm_drop_with(r, rc); /* partly read: memory is held only for verified bytes */
-    r->lm = lm;
+    if (rc) return drop_with(r, rc); /* partly read: memory is held only for verified bytes */
+    r->verified = pin;
     r->size = file.size;
     r->stamp = file.stamp;
-    st->lm_loaded = 1;
+    *read = 1;
     return VJO_OK;
+}
+
+/* Verified weights of m in r->data (resident_file). */
+static int resident_weights(const VjoPlatform *p, const char *dir, const VjoVocrModel *m,
+                            VjoVocrResident *r, const VjoGreySource *im, unsigned *loaded, unsigned *cached)
+{
+    return resident_file(p, dir, m, m->name, m->bytes, m->sha256, m->bytes, r, im, loaded, cached);
+}
+
+/* Verified bytes of the LM lm in r->data (resident_file). */
+static int resident_lm(const VjoPlatform *p, const char *dir, const VjoVocrLm *lm, VjoVocrLmResident *r,
+                       const VjoGreySource *im, VjoVocrStats *st)
+{
+    return resident_file(p, dir, lm, lm->name, lm->bytes, lm->sha256, lm->bytes, r, im, &st->lm_loaded, &st->lm_cached);
 }
 
 /* API 26: the text-presence gate's verified weights in r->data, as resident_weights does for the recognizer:
@@ -1097,124 +1099,28 @@ static int spot_digest(unsigned char out[32])
     return 0;
 }
 
-int vjo_vocr_spot_drop(VjoVocrSpotResident *r)
-{
-    if (!r) return 0;
-    r->verified = 0;
-    r->size = r->stamp = 0;
-    if (!r->data) return 0;
-    if (r->release && r->release(r->ud)) return -1;
-    r->data = NULL;
-    r->capacity = 0;
-    return 0;
-}
-
-static int spot_drop_with(VjoVocrSpotResident *r, int rc)
-{
-    return vjo_vocr_spot_drop(r) ? VJO_E_OCR_UNAVAILABLE : rc;
-}
+/* The pin resident_file keeps in a VjoVocrSpotResident's verified (and the file's name). */
+static const char spot_file[] = VJO_VOCR_SPOT_NAME;
 
 int vjo_vocr_spot_load(const VjoPlatform *p, const char *dir, VjoVocrSpotResident *r, const VjoGreySource *im,
                        unsigned *read)
 {
     static const VjoGreySource no_source; /* no cancel test */
-    char path[256];
     unsigned char sha[32];
-    VjoFile file;
+    unsigned got = 0, kept = 0;
     int rc;
     if (read) *read = 0;
     if (!p || !dir || !r) return VJO_E_SOURCE;
     if (!im) im = &no_source;
-    if (spot_digest(sha) < 0 || join_path(path, sizeof(path), dir, VJO_VOCR_SPOT_NAME) < 0)
-        return spot_drop_with(r, VJO_E_OCR_MODEL);
-    memset(&file, 0, sizeof(file));
-    if (!p->file_open || p->file_open(p->ud, path, &file) < 0)
-        /* A cancelled open proves nothing about the file: verified weights stay. */
-        return cancelled(im) ? VJO_E_CANCELLED : spot_drop_with(r, VJO_E_OCR_MODEL);
-    if (file.size != VJO_VOCR_SPOT_BYTES || !file.read || !file.close) {
-        if (file.close) file.close(file.ctx);
-        return spot_drop_with(r, VJO_E_OCR_MODEL);
-    }
-    if (r->verified && r->data && file.stamp && file.stamp == r->stamp && file.size == r->size) {
-        file.close(file.ctx);
-        return VJO_OK;
-    }
-    /* From here until the hash matches and the runtime takes them, the block holds no weights. */
-    r->verified = 0;
-    if (!r->data) {
-        unsigned char *data = r->alloc ? (unsigned char *)r->alloc(r->ud, vjo_vocr_spot_block_bytes()) : NULL;
-        if (!data) {
-            file.close(file.ctx);
-            return VJO_E_OOM;
-        }
-        r->data = data;
-        r->capacity = vjo_vocr_spot_block_bytes();
-        if ((uintptr_t)data & 15u) {
-            file.close(file.ctx);
-            return spot_drop_with(r, VJO_E_OOM);
-        }
-    }
-    rc = read_verified(&file, VJO_VOCR_SPOT_BYTES, sha, r->data, im);
-    file.close(file.ctx);
-    if (rc) return spot_drop_with(r, rc); /* partly read: memory is held only for verified weights */
+    if (spot_digest(sha) < 0) return drop_with(r, VJO_E_OCR_MODEL);
+    rc = resident_file(p, dir, spot_file, spot_file, VJO_VOCR_SPOT_BYTES, sha, vjo_vocr_spot_block_bytes(), r, im,
+                       &got, &kept);
+    if (rc || !got) return rc;
     /* Verified bytes the runtime refuses (a multi-scale blob in a VOCR_TEXTSPOT6_NO_MS build) would fail every job. */
     if (vocr_textspot6_load((vocr_textspot6 *)(void *)(r->data + ALIGN16((size_t)VJO_VOCR_SPOT_BYTES)), r->data,
                             VJO_VOCR_SPOT_BYTES) != VOCR_LINES_OK)
-        return spot_drop_with(r, VJO_E_OCR_MODEL);
-    r->verified = 1;
-    r->size = file.size;
-    r->stamp = file.stamp;
-    if (read) *read = 1;
-    return VJO_OK;
-}
-
-/* Verified weights of m in r->data. The file is always opened (its size and
- * stamp decide); it is read and hashed again only if they changed, the stamp
- * is unknown, or no verified copy is held. */
-static int resident_weights(const VjoPlatform *p, const char *dir, const VjoVocrModel *m,
-                            VjoVocrResident *r, const VjoGreySource *im, unsigned *loaded, unsigned *cached)
-{
-    char path[256];
-    VjoFile file;
-    int rc;
-    /* Another model's weights: never hold two. */
-    if (r->model != m && vjo_vocr_resident_drop(r)) return VJO_E_OCR_UNAVAILABLE;
-    if (join_path(path, sizeof(path), dir, m->name) < 0) return drop_with(r, VJO_E_OCR_MODEL);
-    memset(&file, 0, sizeof(file));
-    if (!p->file_open || p->file_open(p->ud, path, &file) < 0)
-        /* A cancelled check proves nothing about the file: keep verified weights. */
-        return cancelled(im) ? VJO_E_CANCELLED : drop_with(r, VJO_E_OCR_MODEL);
-    if (file.size != m->bytes || !file.read || !file.close) {
-        if (file.close) file.close(file.ctx);
         return drop_with(r, VJO_E_OCR_MODEL);
-    }
-    if (r->model == m && r->data && file.stamp && file.stamp == r->stamp && file.size == r->size) {
-        file.close(file.ctx);
-        *cached = 1;
-        return VJO_OK;
-    }
-    /* From here until the hash matches, the memory holds no weights. */
-    r->model = NULL;
-    if (!r->data) {
-        unsigned char *data = r->alloc ? (unsigned char *)r->alloc(r->ud, m->bytes) : NULL;
-        if (!data) {
-            file.close(file.ctx);
-            return VJO_E_OOM;
-        }
-        r->data = data;
-        r->capacity = m->bytes;
-        if ((uintptr_t)data & 15u) {
-            file.close(file.ctx);
-            return drop_with(r, VJO_E_OOM);
-        }
-    }
-    rc = read_verified(&file, m->bytes, m->sha256, r->data, im);
-    file.close(file.ctx);
-    if (rc) return drop_with(r, rc);
-    r->model = m;
-    r->size = file.size;
-    r->stamp = file.stamp;
-    *loaded = 1;
+    if (read) *read = 1;
     return VJO_OK;
 }
 
@@ -1474,7 +1380,7 @@ static int lm_setup(const VjoPlatform *p, const char *dir, const VjoGreySource *
     if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
     if (rc) return st->lm_rc = rc;
     if (vocr_lm_load(lm, pol->lm_res->data, pol->lm->bytes) != VOCR_OK) {
-        rc = lm_drop_with(pol->lm_res, VJO_E_OCR_MODEL); /* verified bytes the runtime refuses: every job would */
+        rc = drop_with(pol->lm_res, VJO_E_OCR_MODEL); /* verified bytes the runtime refuses: every job would */
         return rc == VJO_E_OCR_UNAVAILABLE ? rc : (st->lm_rc = rc);
     }
     lm_opts(mi, pol->lm, &o);

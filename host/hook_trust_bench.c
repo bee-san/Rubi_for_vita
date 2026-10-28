@@ -252,7 +252,7 @@ int main(int argc, char **argv)
     game_free = (int64_t)atoi(argv[4]) * 1024 * 1024;
     if (fread(magic, 1, 4, stdin) != 4 || memcmp(magic, "VJTB", 4)) return 2;
     ledger_init();
-    worker = workspace_uid = weights_uid = capture_uid = line_uid = lm_uid = cascade_uid = -1;
+    worker = workspace_uid = weights_blk.uid = capture_uid = line_uid = lm_blk.uid = cascade_blk.uid = -1;
     for (unsigned page = 0;; page++) {
         uint32_t w, h, tn;
         char *text;

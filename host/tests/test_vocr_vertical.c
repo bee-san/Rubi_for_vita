@@ -240,9 +240,9 @@ static void *cres_alloc(void *ud, size_t n) { (void)ud; return alloc16(&cres_mem
 static int cres_release(void *ud) { (void)ud; free(cres_mem); cres_mem = NULL; return 0; }
 static void *lm_alloc(void *ud, size_t n) { (void)ud; return alloc16(&lm_mem, n); }
 static int lm_release(void *ud) { (void)ud; free(lm_mem); lm_mem = NULL; return 0; }
-static VjoVocrResident res = {res_alloc, res_release, NULL, NULL, NULL, 0, 0, 0};
-static VjoVocrResident cres = {cres_alloc, cres_release, NULL, NULL, NULL, 0, 0, 0}; /* a cascade's */
-static VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, NULL, NULL, 0, 0, 0};
+static VjoVocrResident res = {res_alloc, res_release, NULL, {NULL}, NULL, 0, 0, 0};
+static VjoVocrResident cres = {cres_alloc, cres_release, NULL, {NULL}, NULL, 0, 0, 0}; /* a cascade's */
+static VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, {NULL}, NULL, 0, 0, 0};
 
 /* What the line callback saw, in order. */
 #define MAXL VJO_VOCR_MAX_LINES
