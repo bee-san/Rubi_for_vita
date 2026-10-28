@@ -638,10 +638,12 @@ uses the spotter, and the spotter's code to the game worker, in every game that 
   516,096 B (`VJO_BUDGET_GAME_SPOT`: the 512,000 B blob vita-vn-ocr's rule admits). `USER_RW` only, through
   `game_memblock_alloc` (`GL_SPOT`, the game ledger's twelfth item, after #368's `GL_SC3`; `VJO_LEDGER_MAX_ITEMS`
   11 → 12, 8 B more of bss in each module's ledger) after its own check that the game keeps
-  `VJO_GAME_RESERVE` (4 MiB) beside it, before the job's memory check (its parsed form sizes its scratch); kept
+  `VJO_GAME_RESERVE` (1 MiB since #280; 4 MiB before) beside it, before the job's memory check (its parsed form
+  sizes its scratch); kept
   between jobs like the LM, given back by a job without the spotter and with the other resident blocks. The memory
   check counts it as a block the job gives back, and the job keeps it only when it and its scratch fit beside what
-  the check chose, at that check's reserve (4, 8 or 16 MiB), so it never takes a model size's, the LM's or the
+  the check chose, at that check's reserve (1 MiB for every size since #280; 4, 8 or 16 MiB before), so it never
+  takes a model size's, the LM's or the
   cascade's room; otherwise the job gives it back and reads with GRAD.
 - **Its part of the scratch**: its arena and its 1,684 B result, at most 262,144 + 1,696 = 263,840 B
   (`VJO_VOCR_SPOT_ARENA_MAX`), in the scratch GRAD's and the recognizer's arenas reuse in turn, so a job grows by
@@ -734,7 +736,7 @@ outside the job's memory check and reserve: `check_memory` counts the workspace,
 and the cascade's model, not the tall-line block, and `line_buffer` asked the memory ladder alone. Up to 516,096 B on
 a whole screen (measured on the host by #385 and its audit: 428 KB median on Yunohana SpRING!'s, 345 KB on hooked
 horizontal ones read with `on`; 29-43 KB on drawn boxes, 153 KB at most), it could cut up to 504 KiB into a job of
-columns' 4 MiB reserve; with `ocr_skip_blank_lines`
+columns' reserve (4 MiB then; 1 MiB since #280); with `ocr_skip_blank_lines`
 on, whose job reads the weights only at its first line that is not blank, after the columns are fetched, it could
 take the weights' room, so that they were refused and the job read the columns' text as rows (find kind 5). Now
 `line_buffer` (`game_ocr/main.c`) takes a block larger than one column's bound (`VJO_VOCR_ROTATE_BYTES`, 57,344 B:

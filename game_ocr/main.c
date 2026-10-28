@@ -488,10 +488,11 @@ typedef char vjo_line_unchecked_check[VJO_GAME_LINE_UNCHECKED <= VJO_VOCR_ROTATE
  * rotation buffer's bound: #379's rectangle of a job's columns, or a rare band of rows) is taken only from what the
  * game has free beyond the job's reserve and the job's weights still to come, which its memory check counted and the
  * line block is not in, and for a job of columns its LM's too (#385's audit F5: the rectangle, up to 504 KiB, cut
- * into a job of columns' 4 MiB reserve, or with the blank-line check took its weights' room, so they were refused and
- * it read the columns' text as rows). Refused, the columns are read one by one, each in a block of its own, as before
- * #379; such a band of rows is left out and counted (tall_skipped), so a job of rows keeps no LM's or cascade's room
- * for it: those blocks keep the reserve themselves, and their refusal only costs the LM's or the cascade's reading. */
+ * into a job of columns' reserve, 4 MiB then, or with the blank-line check took its weights' room, so they were
+ * refused and it read the columns' text as rows). Refused, the columns are read one by one, each in a block of its
+ * own, as before #379; such a band of rows is left out and counted (tall_skipped), so a job of rows keeps no LM's or
+ * cascade's room for it: those blocks keep the reserve themselves, and their refusal only costs the LM's or the
+ * cascade's reading. */
 static void *line_buffer(void *ud, size_t bytes)
 {
     void *base = NULL;
@@ -880,9 +881,10 @@ static size_t extra_job_bytes(const VjoVocrModel *m, const VjoVocrLm *lm, const 
            VJO_GAME_OCR_TEXT_BYTES;
 }
 
-/* All tiers, cascades and requests by name (tier 0) keep the fixed 1 MiB game
- * reserve (include/vjo_ledger_budget.h). The tier constants remain in the shared
- * model table; their model allocations are counted separately. */
+/* The reserve a job of model tier `tier` keeps (include/vjo_ledger_budget.h): since PR #280 the same fixed 1 MiB
+ * for every tier, the cascade's included, and for a request by name (tier 0, GAME_RESERVE); from API 21 until then
+ * the largest tier the job held, the cascade's (the next tier up) when it had one: 4, 8 or 16 MiB. The tier
+ * constants stay for the shared model table; the job's blocks are counted separately beside the reserve. */
 static uint32_t check_reserve(unsigned tier, const VjoVocrModel *casc)
 {
     unsigned held = casc && tier ? tier + 1u : tier;
@@ -2103,7 +2105,8 @@ again:
      * by tiers names its tiers, the largest first; one by name its model, then its
      * fallback, used only if it is another pinned model needing less memory. A
      * job of columns (API 47) runs the vertical model alone, whatever its tiers, with
-     * a request by name's reserve (VOCR5-S's shape: the Small size's 4 MiB). */
+     * a request by name's reserve (GAME_RESERVE: 1 MiB, as every size's since PR #280;
+     * VOCR5-S's shape had the Small size's 4 MiB before). */
     Candidate cand[CANDIDATES];
     unsigned n = 0, top = 0;
     tiered = r->tiers != 0 && !vertical;
@@ -2216,9 +2219,9 @@ retry_smaller:
     if (want_spot && !spot && drop_spot()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     /* Helpers (ocr_threads, API 22) only when they fit beside everything else the
      * check chose (the tier's model, its LM, the cascade), keeping the same reserve
-     * as that check (out->reserve_bytes: 1 MiB for every tier): one fewer at a
-     * time, down to none, which is the serial job, so helpers never make a job step down a tier. Their line slots end the
-     * workspace block. */
+     * as that check (out->reserve_bytes: 1 MiB for every tier since PR #280): one
+     * fewer at a time, down to none, which is the serial job, so helpers never make a
+     * job step down a tier. Their line slots end the workspace block. */
     unsigned want_helpers = r->speed & VJO_GAME_OCR_S_HELPERS_MASK;
     unsigned use_helpers = 0;
     size_t helper_bytes = 0, helpers_need_bytes = 0;
@@ -2270,8 +2273,8 @@ retry_smaller:
     }
     /* The check counted another model's weights, or another LM (or one this job
      * has no room for), as free: release them. Another model's weights stay
-     * while the job fits beside them with its own reserve (its size's since API
-     * 21, out->reserve_bytes), until it reads its own (never two: the core drops
+     * while the job fits beside them with its own reserve (out->reserve_bytes: its
+     * size's from API 21, 1 MiB for every size since PR #280), until it reads its own (never two: the core drops
      * them first), so a job that reads no line keeps them: the self-test's
      * fallback stage on a screen without text keeps the user's model
      * (docs/first-ocr.md). */

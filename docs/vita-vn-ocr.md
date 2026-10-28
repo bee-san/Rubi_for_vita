@@ -87,8 +87,10 @@ first whose job fits the game's free USER memory beside a fixed 1 MiB reserve.
 Its own resident blocks of another size count as free because they are released
 first. The former 4/8/16 MiB margins came from vita-vn-ocr `docs/model-tiers.md`
 §1.3/1.5's untuned proposal. After あおかな reported 3 MiB free but Small was
-refused for its 4 MiB margin, the owner chose 1 MiB for all sizes (2026-10-23;
-an estimate, console validation pending). Model, workspace, LM, cascade and
+refused for its 4 MiB margin, the owner chose 1 MiB for all sizes (2026-10-23,
+#280; #277's console test build carried it, and the owner reports that it works,
+2026-10-28: still an estimate, as no figures of that run were reported). Model,
+workspace, LM, cascade and
 helper allocations are still counted separately beside that margin.
 Each try is a `check` step of the job
 (`include/vjo_game_ocr.h` VJO_GSTEP_CHECK: the size in the kind, refused or
@@ -96,7 +98,7 @@ passed, what it needed). Nothing on screen says that a smaller size ran (owner
 2026-10-15 04:54Z): the Shell writes it to `log.txt`, e.g.
 
 ```
-tier large did not fit in PCSG00415 (need 3854336, free 3000000); using normal
+tier large did not fit in PCSG00415 (need 3862528, free 3000000); using normal
 ```
 
 with need = the size's workspace, weights and reserve, and free = the game's free
@@ -1351,7 +1353,8 @@ by one, as before #379 ([memory ledger](memory-ledger.md)).
 auto; 3 is refused, as unknown bits are, by the kernel and by the game worker. The Shell sends the setting as it is
 in the user's jobs (`ocr_vertical`'s values are the field's: `core/config.h` `VJO_VERTICAL_*`); the self-test's
 stages and the Anki screenshot never carry it. A job of columns runs the vertical model alone, whatever its tiers,
-with a request by name's 4 MiB reserve (the Small size's) and no smaller model to step down to, and opens it as
+with a request by name's reserve (1 MiB, every size's since #280; 4 MiB, the Small size's, before) and no smaller
+model to step down to, and opens it as
 `VJO_GAME_OCR_OPEN_VERTICAL`, which the kernel's broker allows only for a request with a vertical mode, never by the
 name a request gives as its model or fallback. A vertical model that cannot be read or has no room has the job read
 the rows instead, with `on` as with `auto` since API 53 (before it, `on`'s job failed; no size is left out of the game's

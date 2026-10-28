@@ -860,10 +860,11 @@ or `LOCKED`):
 - opens no model, LM or cascade file and makes no OCR memory check, and (API 49) reads no pixels: the kernel
   publishes the trusted line's scene as its capture ([below](#no-wait-for-a-trusted-line-api-49)), and (API 51) the
   region's current scene once it shows another. Only when the region has no screen yet (just set, no trusted line
-  since) does it read its one capture pass (API 43's), beside `VJO_GAME_RESERVE_HOOK_ONLY` (1 MiB) instead of the OCR
-  reserve (4 MiB). So a game short of memory, even with no memory free, still gets a Luna or verified site's lines;
-  a string copy earns trust only through OCR, so in a game that never has the OCR reserve free it is never trusted
-  (the bench's tight rows refuse every one of its jobs, trust on or off);
+  since) does it read its one capture pass (API 43's), beside `VJO_GAME_RESERVE_HOOK_ONLY` (1 MiB; the OCR reserve
+  was 4 MiB then, and is 1 MiB too since #280). So a game short of memory, even with no memory free, still gets a Luna
+  or verified site's lines; a string copy earns trust only through OCR, so in a game that never has room for an OCR
+  job beside its reserve it is never trusted (the bench's tight rows refused every one of its jobs, trust on or off,
+  under the 4 MiB reserve);
 - gives back the weights, LM and cascade model an earlier OCR job left resident (`drop_resident`) once trusted
   answers have run 8 jobs in a row (`TRUST_DROP_ANSWERS`): a game whose title screen was read by OCR before its
   first hooked line holds none of them while its hook supplies the text. Not at the first answer: a job between
@@ -926,6 +927,11 @@ claim]:
 | Luna site, 3 MiB free | **every one of the 8,640 jobs refused**: its pass kept the 4 MiB OCR reserve | 0 refused |
 | Rubi verified site, 3 MiB free | 603 refused (lines under 4 characters, the no-memory path's limit) | 0 refused |
 | String copy, 3 MiB free | every one of the 8,640 jobs refused | the same: it earns trust only through OCR |
+
+The three rows with 3 MiB free were measured with the 4 MiB OCR reserve of then. Since #280 the reserve is 1 MiB, so
+3 MiB leaves room for a Luna site's pass and for an OCR job (Normal's or Small's), and those rows no longer stand for a
+game short of memory; they were not measured again. A game with less than 1 MiB and a strip free is where they hold
+now (the worker's host tests: `host/tests/test_game_hooks.c`, a trusted answer with no memory free).
 
 In no session did trust add an OCR job. The two string-copy sessions never trusted (PCSG00805, PCSG00854) are those
 whose source kept disagreeing with OCR, so 0.9.7's recovery kept resetting it: they run as in 0.9.7. Which sessions

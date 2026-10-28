@@ -332,8 +332,9 @@ Facts:
 
 Rules:
 
-- Preflight every allocation, keep a reserve (1 MiB for every model size, owner 2026-10-23;
-  [estimate] console validation is pending), allocate the whole job's memory in as few blocks as possible, free it when
+- Preflight every allocation, keep a reserve (1 MiB for every model size, owner 2026-10-23; an
+  [estimate], although #277's console test build carried it and the owner reports that it works, 2026-10-28, with no
+  figures reported), allocate the whole job's memory in as few blocks as possible, free it when
   the job ends, and treat a failed `sceKernelAllocMemBlock` after a passed preflight as normal
   (the game moved first).
 - Resident data (the weights, the LM, the cascade's model) must be dropped once the game has not

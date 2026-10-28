@@ -79,7 +79,8 @@ ROUTES = (("user", "user API (sceKernelGetFreeMemorySize)"), ("block kernel", "k
 # tier choice reads too, so the two cannot drift apart (audit-test-build-2 N2). The free game USER a
 # first job of a tier needs is page(weights) + page(max(the line finder's arena at 960x544, the tier's
 # W8I arena) + the runtime's structs) + the capture block + the line-block ceiling (vita-vn-ocr
-# docs/model-tiers.md, section 1.5), and the tier keeps its own reserve. Here each tier is priced at
+# docs/model-tiers.md, section 1.5), and the tier keeps its reserve ("reserve_bytes": 1 MiB for every tier since
+# Rubi #280, 4/8/16 MiB before). Here each tier is priced at
 # its ceilings. The capture block is today's (that section has API 19's 61,440 B); a test ties it and
 # the line block to include/vjo_ledger_budget.h and core/vocr_ocr.h.
 TIER_FINDER_ARENA, TIER_RUNTIME_STRUCTS = 83_323, 3_760     # vita-vn-ocr docs/model-tiers.json "overlay" (main 64b5726)

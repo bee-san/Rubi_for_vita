@@ -801,7 +801,7 @@
  * 1,601,536 B, Normal's 1.6 MB, before VOCR5's Large), and a full-screen workspace of at most
  * VJO_BUDGET_GAME_WORKSPACE (by construction since API 22), and (API 20) the 4 MB LM and the
  * cascade's larger model: a job's peak, which the preflight (free USER minus the job's reserve,
- * 4-16 MiB by tier) has to cover. Raised from 2,392,064 B for the LM and the cascade (8,105,984 B:
+ * 1 MiB since PR #280, 4-16 MiB by tier before) has to cover. Raised from 2,392,064 B for the LM and the cascade (8,105,984 B:
  * 9 % of the 90,177,536 B free USER, the least any job saw in CLANNAD [measured, #81's
  * v0.8.0-test.1 log]) and for API 22's parallel lines (the helpers' line slots in the workspace
  * and two 20,480 B thread stacks: 8,720,384 B, 9.7 %). Raised again for VOCR5's Large tier, the

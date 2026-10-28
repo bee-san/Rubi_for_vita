@@ -16,6 +16,7 @@ static unsigned test_cascade_conf; /* 0: the default; 1001: every line is doubtf
 #endif
 #include "../../game_ocr/main.c"
 #include "test_tier_pins.h"
+#include "vocr_models.h" /* vjo_vocr_tier_need: the Rubi app's table (tools/model_tiers.json "need_bytes") */
 
 static unsigned char workspace[2*1024*1024] __attribute__((aligned(64)));
 static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
@@ -1551,7 +1552,7 @@ static void lm_jobs(void)
     TEST_CHECK(!(out.line[0].flags & VJO_VOCR_LINE_LM) && (out.line[0].flags & VJO_VOCR_LINE_CONF) == VJO_VOCR_LINE_CONF_NONE);
     /* room beside the resident weights for the 2 MB LM, not the 4 MB one: the 2 MB one */
     r.flags = 4u << VJO_GAME_OCR_LM_SHIFT;
-    available = (int)(live_bytes + 4u * 1024 * 1024 + 400000u + 2900000u);
+    available = (int)(live_bytes + GAME_RESERVE + 400000u + 2900000u);
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(lm_res.lm && lm_res.lm->tier == 3 && lm_live);
     TEST_MSG("tier %u with %d B free", lm_res.lm ? lm_res.lm->tier : 0, available - (int)live_bytes);
@@ -1561,7 +1562,7 @@ static void lm_jobs(void)
     line();
     r.flags = 4u << VJO_GAME_OCR_LM_SHIFT;
     /* FL10 greedy needs 806,912 B beside the reserve, with the 0.5 MB LM 1,368,064 B */
-    available = (int)(4u * 1024 * 1024 + 900000u);
+    available = (int)(GAME_RESERVE + 900000u);
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(!lm_live && !lm_res.lm && out.recognized >= 1 && !(out.line[0].flags & VJO_VOCR_LINE_LM));
     TEST_MSG("lm_live %d lm %p recognized %u flags 0x%x free %d need %u+%u", lm_live, (void *)lm_res.lm, out.recognized,
@@ -1753,7 +1754,7 @@ static void cascade_jobs(void)
     TEST_CHECK(!(out.line[0].flags & VJO_VOCR_LINE_CASCADE));
     /* room for the model and the LM, not for the cascade too: the LM alone */
     r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
-    available = (int)(live_bytes + 4u * 1024 * 1024 + 500000u);
+    available = (int)(live_bytes + GAME_RESERVE + 500000u);
     vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(!cascade_live && lm_live && !(out.line[0].flags & VJO_VOCR_LINE_CASCADE));
@@ -1795,7 +1796,32 @@ static void cascade_jobs(void)
     vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(cascade_live && lm_live && weights_live);
-    available = (int)(live_bytes + 1000000u); /* under the reserve, even with them given back */
+    /* free memory under the reserve, 1,000,000 B: with the 1 MiB reserve (PR #280) the job still reads, in room the
+     * LM's and the cascade's blocks give back (under the 4 MiB reserve before, it was refused), and leaves the game
+     * at least the reserve free beside what stays resident */
+    available = (int)(live_bytes + 1000000u);
+    vjo_game_ocr_cache_clear();
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.recognized >= 1 && weights_live && resident.model && (!cascade_live || !lm_live));
+    TEST_CHECK(available - (int)live_bytes >= (int)GAME_RESERVE);
+    TEST_MSG("free %d B: cascade %d, LM %d (tier %u), %u B resident", available - (int)live_bytes, cascade_live, lm_live,
+             lm_res.lm ? lm_res.lm->tier : 0u, live_bytes);
+    /* no LM or cascade asked for (they go), then no room for the job beside the reserve with only its weights
+     * resident: refused, and the weights go back to the game too */
+    r.flags = 0;
+    available = 64 * 1024 * 1024;
+    vjo_game_ocr_cache_clear();
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(!cascade_live && !lm_live && weights_live);
+    {
+        VjoGameOcrResult o;
+        memset(&o, 0, sizeof(o));
+        o.free_user = INT32_MAX;
+        check_memory(&o, vjo_vocr_model(r.model), vjo_vocr_job_bytes(r.model, r.width, r.height),
+                     vjo_vocr_capture_bytes(r.width, r.height), NULL, NULL, 0);
+        TEST_ASSERT(!o.need_weights && !o.release_bytes); /* the weights resident, nothing else held */
+        available = (int)(live_bytes + GAME_RESERVE + o.need_workspace - 4096u);
+    }
     vjo_game_ocr_cache_clear();
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM);
     TEST_CHECK(!cascade_live && !lm_live && !weights_live && !cascade_res.model && !lm_res.lm && !resident.model);
@@ -2087,6 +2113,57 @@ static void three_mib_free_can_start_ocr(void)
     available = 3 * 1024 * 1024; alloc_failure = 1;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM && !out.text[0]);
     TEST_CHECK(!memory_live && !capture_live && !weights_live);
+}
+
+/* VOCR6's three sizes beside the fixed 1 MiB reserve (PR #280), through the game worker's own memory check at the
+ * full screen (960x544, the case tools/model_tiers.json prices): every size keeps 1 MiB, with its cascade (the next
+ * size up) and with each LM tier too; a first job of a size needs its table's figure (core/vocr_models.c
+ * vjo_vocr_tier_need, model_tiers.json "need_bytes": 2,068,480, 2,494,464 and 3,862,528 B; a 64-bit host's runtime
+ * structs may add a page), fits with exactly that free and not with a page less. In whole MiB, as the console reports
+ * the game's free memory (#324): with 3 MiB (あおかな's 3,072 KiB) Large does not fit and Normal does; with 2 MiB
+ * (アマツツミ's) Normal does not and Small passes the check; with 1 MiB none does. Under the 4, 8 and 16 MiB reserves
+ * before PR #280 none passed below 5,214,208 B. No model files: the check reads none. */
+static void vocr6_sizes_beside_the_fixed_reserve(void)
+{
+    const uint32_t mib = 1024u * 1024u;
+    VjoGameOcrRequest r = setup();
+    r.width = r.fb_width = 960;
+    r.height = r.fb_height = 544;
+    const size_t capture = vjo_vocr_capture_bytes(r.width, r.height);
+    uint32_t need[VJO_VOCR_TIERS + 1u] = {0};
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++) {
+        const VjoVocrModel *m = vjo_vocr_model(tier_names[t - 1u]);
+        TEST_ASSERT(m != NULL);
+        TEST_CHECK_(!strcmp(m->name, test_tier_pins[t - 1u].name) && m->bytes == test_tier_pins[t - 1u].bytes,
+                    "size %u: %s, %u B", t, m->name, m->bytes);
+        const size_t job = vjo_vocr_job_bytes(m->name, r.width, r.height);
+        const uint32_t table = vjo_vocr_tier_need(t);
+        need[t] = tier_need(&r, t, 0);
+        TEST_CHECK_(sizeof(void *) == 4 ? need[t] == table : need[t] >= table && need[t] <= table + 4096u,
+                    "size %u: the worker's check needs %u B, the table %u B", t, need[t], table);
+        VjoGameOcrResult o;
+        memset(&o, 0, sizeof(o));
+        o.free_user = (int32_t)need[t];
+        TEST_CHECK(check_memory(&o, m, job, capture, NULL, NULL, t) && o.reserve_bytes == mib);
+        TEST_CHECK(o.need_workspace + o.need_weights + o.reserve_bytes == need[t] && !o.release_bytes);
+        o.free_user = (int32_t)(need[t] - 4096u);
+        TEST_CHECK(!check_memory(&o, m, job, capture, NULL, NULL, t));
+        /* with its cascade, the next size's model (Large has none), and each LM tier: the same 1 MiB */
+        const VjoVocrModel *casc = t < VJO_VOCR_TIERS ? vjo_vocr_model(tier_names[t]) : NULL;
+        for (unsigned l = 0; l <= VJO_VOCR_LM_TIERS; l++)
+            for (unsigned c = 0; c < 2u; c++) {
+                o.free_user = INT32_MAX;
+                (void)check_memory(&o, m, job, capture, l ? vjo_vocr_lm_tier(l) : NULL, c ? casc : NULL, t);
+                TEST_CHECK_(o.reserve_bytes == mib, "size %u, LM tier %u, cascade %u: reserve %u B", t, l, c,
+                            (unsigned)o.reserve_bytes);
+            }
+        TEST_CHECK(check_reserve(t, NULL) == mib && check_reserve(t, casc) == mib);
+    }
+    TEST_CHECK(check_reserve(0, NULL) == mib && GAME_RESERVE == mib && VJO_GAME_RESERVE_HOOK_ONLY == mib);
+    TEST_CHECK(need[1] < need[2] && need[2] < need[3]);
+    TEST_CHECK_(need[3] > 3u * mib && need[2] <= 3u * mib, "3 MiB: Large needs %u B, Normal %u B", need[3], need[2]);
+    TEST_CHECK_(need[2] > 2u * mib && need[1] <= 2u * mib, "2 MiB: Normal needs %u B, Small %u B", need[2], need[1]);
+    TEST_CHECK_(need[1] > mib, "1 MiB: Small needs %u B", need[1]);
 }
 
 static unsigned check_steps(const VjoGameOcrResult *out, const VjoGameOcrStep **steps)
@@ -2600,7 +2677,19 @@ static void auto_tries_report_the_last_ones_model(void)
     r.flags = 1u << VJO_GAME_OCR_LM_SHIFT;
     r.speed = VJO_GAME_OCR_VERTICAL_AUTO << VJO_GAME_OCR_S_VERTICAL_SHIFT;
     tall_columns_frame(&r);
-    available = (int)(12u * 1024u * 1024u);             /* Normal's 8 MiB reserve and its job, not Large's 16 MiB */
+    /* room for Normal and its LM beside the 1 MiB reserve, not for Large even without its LM (with the 4, 8 and
+     * 16 MiB reserves before PR #280: 12 MiB) */
+    const uint32_t large = tier_need(&r, 3, 0);
+    TEST_ASSERT(tier_lm_need(&r, 2, vjo_vocr_lm_tier(1)) <= large - 4096u);
+    available = (int)(large - 4096u);
+    {   /* that memory steps the rows' try down: the request with ocr_vertical = off, one try, runs Normal */
+        VjoGameOcrRequest off = r; VjoGameOcrResult o;
+        off.speed = 0;
+        (void)vjo_game_ocr_run_request(&off, &o);
+        TEST_CHECK_(o.fallback == 1u && o.reserve_bytes == VJO_GAME_RESERVE_NORMAL, "off: fallback %u, reserve %u",
+                    (unsigned)o.fallback, (unsigned)o.reserve_bytes);
+        TEST_CHECK(!drop_resident() && !memory_live && !capture_live && !line_live && !vertical_opens);
+    }
     grow_on_vertical_open = (int)(16u * 1024u * 1024u); /* then room for Large */
     (void)vjo_game_ocr_run_request(&r, &out);
     TEST_CHECK_(find_steps(&out, 2) == 1 && vertical_opens == 1, "%u steps of kind 2, %u vertical opens",
@@ -2655,11 +2744,14 @@ static void auto_retry_shares_the_wait(void)
 
 /* #324's audit F2 on the longest path, and N2 (the free memory checked again for the next model): auto's rows look
  * like vertical text, the columns cannot be read (no vertical model: ENOENT), the rows' try checks Normal with the
- * LM, and the game takes more than the LM's bytes meanwhile, so Normal's weights are refused; Small reads with the
- * LM, after a 150 ms wait. Each try's blocks leave the log with it, so the last try's ALLOC steps, its wait, LOAD,
- * RECOGNIZE and LM steps are within the 20 steps (before: none of them; the refused try's blocks and the second PASS
- * and SIG took their places). Small's check is made on the memory as it is then: its result's free memory is the
- * game's less what it took (the first sample saw all of it). */
+ * LM, and the game takes memory meanwhile, so Normal's weights are refused; Small reads with the LM, after a 150 ms
+ * wait. Each try's blocks leave the log with it, so the last try's ALLOC steps, its wait, LOAD, RECOGNIZE and LM
+ * steps are within the 20 steps (before: none of them; the refused try's blocks and the second PASS and SIG took
+ * their places). Small's check is made on the memory as it is then: its result's free memory is the game's less what
+ * it took (the first sample saw all of it). The game reports its free memory in whole MiB, as the console does
+ * (#324): with every size's reserve 1 MiB (PR #280), Normal's need is only 430,080 B over Small's here, less than
+ * the LM's slack at Normal's weights, so only the console's rounding refuses Normal's weights and leaves Small and its
+ * LM room (with the 4 MiB difference between the reserves before, a game that took more than the LM's bytes did). */
 static void weights_refused_retry_after_auto_s_tries(void)
 {
     if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent; the weights' own check is not reached"); return; }
@@ -2674,10 +2766,24 @@ static void weights_refused_retry_after_auto_s_tries(void)
     missing_open_rc = (int)0x80010002u; /* ENOENT */
     const VjoVocrLm *lm = vjo_vocr_lm_tier(1);
     TEST_ASSERT(lm != NULL);
+    const uint32_t mib = 1024u * 1024u, lm_bytes = (uint32_t)PAGE_ROUND(lm->bytes);
     const uint32_t need_n = tier_lm_need(&r, 2, lm), need_s = tier_lm_need(&r, 1, lm);
-    const uint32_t take = (uint32_t)PAGE_ROUND(lm->bytes) + 65536u; /* Normal's slack at its weights is the LM's */
-    TEST_ASSERT(need_n - take >= need_s); /* Small and the LM still fit */
-    available = (int)need_n;
+    const uint32_t weights_n = (uint32_t)PAGE_ROUND(vjo_vocr_model(VJO_VOCR_TIER2_NAME)->bytes);
+    const uint32_t weights_s = (uint32_t)PAGE_ROUND(vjo_vocr_model(VJO_VOCR_TIER1_NAME)->bytes);
+    /* each model's job blocks (workspace and capture block): its need less its weights, the LM and the reserve */
+    const uint32_t blocks_n = need_n - weights_n - lm_bytes - VJO_GAME_RESERVE_NORMAL;
+    const uint32_t blocks_s = need_s - weights_s - lm_bytes - VJO_GAME_RESERVE_SMALL;
+    TEST_ASSERT(need_n - need_s < lm_bytes); /* in bytes, no game's take refuses Normal's weights and fits Small's LM */
+    /* the check sees 4 MiB; the game then takes 1 MiB and a page, so once Normal's blocks are taken it reads 2 MiB
+     * (1 MiB beside the reserve, short of Normal's weights); Small's check reads 3 MiB, and its weights and LM fit */
+    const uint32_t first = 4u * mib, after = 3u * mib + blocks_n - 4096u, take = first + blocks_n - after;
+    TEST_ASSERT(blocks_n >= 8192u && blocks_n < mib && blocks_s <= blocks_n && need_n <= first);
+    TEST_ASSERT((after - blocks_n) / mib * mib < VJO_GAME_RESERVE_NORMAL + weights_n);           /* Normal's refused */
+    TEST_ASSERT(after / mib * mib == 3u * mib && 3u * mib >= need_s);                              /* Small's check */
+    TEST_ASSERT((after - blocks_s) / mib * mib >= VJO_GAME_RESERVE_SMALL + weights_s);             /* its weights */
+    TEST_ASSERT((after - blocks_s - weights_s) / mib * mib >= VJO_GAME_RESERVE_SMALL + lm_bytes);  /* its LM */
+    free_mib = 1;
+    available = (int)(first + blocks_n);
     drop_once = (int)take;
     drop_at_allocation = 3; /* at the rows' last try's workspace: the rows' first try's is 1, the columns' 2 */
     int rc = vjo_game_ocr_run_request(&r, &out);
@@ -2685,8 +2791,9 @@ static void weights_refused_retry_after_auto_s_tries(void)
                     find_steps(&out, 3) == 1 && vertical_opens == 1 && allocations == 4u,
                 "rc %d, %u lines, fallback %u, find steps of kinds 2 and 3: %u, %u; %u vertical opens, %u workspaces", rc,
                 out.lines, (unsigned)out.fallback, find_steps(&out, 2), find_steps(&out, 3), vertical_opens, allocations);
-    TEST_CHECK_(out.free_user == (int32_t)(need_n - take), "Small checked at %d B free (the game's: %u B)",
-                (int)out.free_user, need_n - take);
+    TEST_CHECK_(out.free_user == (int32_t)(3u * mib) && out.reserve_bytes == VJO_GAME_RESERVE_SMALL,
+                "Small checked at %d B free (the game's now: 3 MiB; the first check's 4 MiB), reserve %u",
+                (int)out.free_user, (unsigned)out.reserve_bytes);
     unsigned weights = 0, lm_block = 0;
     for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
         weights += out.step[i].id == VJO_GSTEP_ALLOC && out.step[i].arg == VJO_GITEM_WEIGHTS;
@@ -3762,6 +3869,8 @@ TEST_LIST = {
 #else
 TEST_LIST = {
     {"3 MiB free: Normal or Small can start; reserve and allocation failures still enforced", three_mib_free_can_start_ocr},
+    {"PR #280: VOCR6's three sizes keep the fixed 1 MiB reserve and need their table's bytes at the full screen",
+     vocr6_sizes_beside_the_fixed_reserve},
     {"a job without lines reads the weights, the LM and the cascade (ocr-first)", a_job_without_lines_reads_the_weights_lm_and_cascade},
     {"the TEAR step says when the retry began", the_tear_step_says_when_the_retry_began},
     {"100 real vocr jobs and game USER reserve", repeated_jobs_and_reserve},

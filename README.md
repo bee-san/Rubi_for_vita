@@ -260,6 +260,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | A first install, on a Vita without Rubi | not run on a console yet |
 | ✅ | Model sizes Normal and Large | Large fitted in CLANNAD's free memory |
 | ❓ | Model size Small | 0.8.0's Small model has not run on a console |
+| ⚠️ | OCR in a game short of memory (2–3 MiB free), with the 1 MiB reserve | a test build of 0.9.4 with it: the owner reports that it works; `main`'s models have not run with it on a console |
 | ❓ | VOCR6, the Small, Normal and Large models on `main` | not run on a console yet ([details](docs/vita-vn-ocr.md#models)) |
 | ✅ | Read text: Automatically | the mode of every 0.8.0 test run |
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
@@ -317,7 +318,7 @@ when you press.
 
 Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the emulator's), never in
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
-game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
+game has free, leaves the game a reserve of 1 MiB, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
 Rubi's OCR worker from its start: 240 KiB of its memory (204 KiB of module pages, 36 KiB of stack and
 TLS: the normal build's figures; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or

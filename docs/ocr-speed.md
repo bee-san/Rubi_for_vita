@@ -112,8 +112,8 @@ that cannot be created runs its line on the worker's thread. A line of at most a
 one taller than a strip too: it is copied out of the tall-line block into the helper's slot first, so no helper reads
 that block; a larger line runs on the worker's thread. The job's memory check counts the helpers' slots (the worker's own, 68,160 B, and per helper its
 recognizer arena, context and slot: 253,104 B for H15) and stacks, after everything else it chose (the model, the
-LM, the cascade), and takes one helper fewer at a time down to none when the game's free memory minus the 4 MiB
-reserve is short. A cancelled job stops its helpers at their next 4-frame tile and joins them before it returns. A
+LM, the cascade), and takes one helper fewer at a time down to none when the game's free memory minus the job's
+reserve (4 MiB when this was written; 1 MiB for every size since #280) is short. A cancelled job stops its helpers at their next 4-frame tile and joins them before it returns. A
 helper that cannot be joined (its `sceKernelWaitThreadEnd` times out) may still run in the job's workspace: the job
 fails with `VJO_E_OCR_UNAVAILABLE` and is not tried again, the workspace and the weights stay allocated, and the
 worker takes no more jobs; when the plugin stops, it waits for the worker first, then for the helper, and only then

@@ -1201,8 +1201,10 @@ time stops while the game is suspended, so a suspend and resume keeps them) and
 on exit. A job
 then needs only its region-sized workspace. The worker leaves free USER memory
 for the game beside what the job holds: a fixed 1 MiB for every model size,
-including cascades and helper threads (owner 2026-10-23; an estimate pending
-console validation). This replaces the untuned 4/8/16 MiB tier margins, which
+including cascades and helper threads, and for an Anki screenshot (owner
+2026-10-23, #280; #277's console test build carried it, and the owner reports
+that it works, 2026-10-28; an estimate still, as no figures of that run were
+reported). This replaces the untuned 4/8/16 MiB tier margins, which
 blocked Small in あおかな despite 3 MiB free and only 996 KiB needed for OCR.
 The worker checks the full page-rounded memory need plus this reserve before
 allocating any block; allocation can still fail because the game or system uses memory
