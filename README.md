@@ -260,7 +260,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | A first install, on a Vita without Rubi | not run on a console yet |
 | ✅ | Model sizes Normal and Large | Large fitted in CLANNAD's free memory |
 | ❓ | Model size Small | 0.8.0's Small model has not run on a console |
-| ❓ | VOCR6, the Normal and Large models on `main` | not run on a console yet ([details](docs/vita-vn-ocr.md#models)) |
+| ❓ | VOCR6, the Small, Normal and Large models on `main` | not run on a console yet ([details](docs/vita-vn-ocr.md#models)) |
 | ✅ | Read text: Automatically | the mode of every 0.8.0 test run |
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
@@ -356,7 +356,7 @@ Vita too, grows as you read and is never deleted by itself; **Only when I press 
 ### How good is the OCR?
 
 Rubi reads text with VOCR, small recognizers that [vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr)
-trains for visual-novel dialogue boxes, and decodes each line with a language model. On `main`, Normal and Large are
+trains for visual-novel dialogue boxes, and decodes each line with a language model. On `main`, all three sizes are
 VOCR6, retrained on the owner's hooked PS Vita and PSP games (better on those games, level on others, measured on a
 computer). Its accuracy on
 a console is not measured yet; the host measurements are in [docs/vita-vn-ocr.md](docs/vita-vn-ocr.md).
@@ -403,12 +403,12 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
 - Based on [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay).
 - **OCR:** VOCR, from [bee-san/vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr) (GPL-3.0). Its
-  recognizers, VOCR5-S for Small (v0.3.0, with its head gate) and VOCR6-N and VOCR6-L for Normal and Large
-  (v0.4.0-vocr6.1: VOCR5's checkpoints fine-tuned again on the owner's hooked PS Vita and PSP games, with their
-  two-level heads), were trained in part on NVIDIA's OCR-Synthetic-Multilingual-v1 (CC BY 4.0) and on fonts and text
-  that are free for non-commercial use only, and VOCR6's also on copyrighted game captures used for training only, so
-  their weights are for non-commercial use only: their attribution and terms ship beside them as
-  `ocr/MODEL-ATTRIBUTION.md` and `ocr/VOCR6-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#models)). Its character
+  recognizers, VOCR6-S, VOCR6-N and VOCR6-L for Small, Normal and Large (v0.4.1-vocr6.2: VOCR5's checkpoints
+  fine-tuned again on the owner's hooked PS Vita and PSP games, Normal with its head gate and two-level head, Large with
+  its two-level head), were trained in part on NVIDIA's OCR-Synthetic-Multilingual-v1 (CC BY 4.0), on fonts and text
+  that are free for non-commercial use only and on copyrighted game captures used for training only, so their weights
+  are for non-commercial use only: their attribution and terms ship beside them as `ocr/VOCR6-ATTRIBUTION.md` and
+  `ocr/MODEL-ATTRIBUTION.md` (VOCR5's, the checkpoints they start from; [details](docs/vita-vn-ocr.md#models)). Its character
   language models are CC BY-SA 4.0; the 1 MB and 4 MB ones also carry n-gram counts of the owner's hooked console
   captures (vita-vn-ocr #127). The optional text-presence gate's weights (`ocr_text_gate`, off by
   default) were trained on synthetic text in fonts and text pools free for non-commercial use only and on

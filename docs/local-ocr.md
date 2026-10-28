@@ -6,7 +6,7 @@ inside each enabled game through the game OCR worker, which the kernel plugin
 loads into each game ON in `games.ini` as it starts ([worker-loading.md](worker-loading.md));
 the `*main` plugin owns
 the UI and dictionary lookup. The Rubi app's Model size chooses the
-recognizer: Small (VOCR5-S), Normal (VOCR6-N, the default) or Large
+recognizer: Small (VOCR6-S), Normal (VOCR6-N, the default) or Large
 (VOCR6-L); a job runs the next smaller size when the game has too little free
 memory ([model sizes](vita-vn-ocr.md#model-sizes-small-normal-large-api-21)). With the bundled local JMdict, the whole
 recognition/lookup pipeline needs no network. See the guide for real-screenshot
@@ -17,7 +17,7 @@ is offline, and no image ever leaves the Vita. A saved `ocr_backend` line is
 ignored (`lens` with a config warning) and the Rubi app's next save and the
 installer delete it; the last build with Google Lens is the tag
 `archive/online-last`. The Rubi app names the engine after its model's
-generation, VOCR6 for Normal and Large and VOCR5 for Small ([the engine's name](vita-vn-ocr.md#the-engines-name-the-model-generation)).
+generation, VOCR6 for all three sizes ([the engine's name](vita-vn-ocr.md#the-engines-name-the-model-generation)).
 
 The earlier CPU-only ncnn adapter is available for host experiments with
 `-DVJO_WITH_NCNN=ON` (`vjo-ocr --backend ncnn`). This does not enable ncnn in

@@ -655,10 +655,10 @@ static void check_boost(int f, int y, const char *label, int on)
 }
 
 static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR6-N found.";
-static const char *const SMALL_STATUS = "Small: fastest. VOCR5-S found.";
+static const char *const SMALL_STATUS = "Small: fastest. VOCR6-S found.";
 static const char *const LARGE_STATUS = "Large: most accurate. VOCR6-L found.";
-/* This package's estimates (core/vocr_models.c): VOCR5-S, VOCR6-N, VOCR6-L (two generations, each named). */
-static const char *const DETAILS[3] = {"0.5 s, 1.0 MB", "0.8 s, 1.4 MB", "1.9 s, 2.8 MB"};
+/* This package's estimates (core/vocr_models.c): VOCR6-S, VOCR6-N, VOCR6-L (v0.4.1-vocr6.2). */
+static const char *const DETAILS[3] = {"0.6 s, 1.0 MB", "0.8 s, 1.4 MB", "1.9 s, 2.8 MB"};
 
 /* This package: one engine, VOCR; the OCR card is its Model size, Normal chosen,
  * each size with its estimates from the models' metadata, and the status line

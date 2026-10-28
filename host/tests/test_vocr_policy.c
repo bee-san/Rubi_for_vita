@@ -1219,7 +1219,8 @@ static void test_the_lm_paths(void)
 
 /* vocr6-final-lm (vita-vn-ocr #151): a job on VOCR6-N with the 2000k LM (tier 3) plans its own decoder and its
  * cascade's (VOCR6-L reading a doubtful line again) with VOCR6-N's settings for that LM, LM weight 0.4, bonus 1.5
- * nats and both line flags (core/vocr_ocr.c lm_retuned), as vocr6-final-lm scored them; the same job with the 1000k
+ * nats and both line flags (core/vocr_ocr.c lm_retuned: measured on v0.4.0-vocr6.1's VOCR6-N, kept for
+ * v0.4.1-vocr6.2's), as vocr6-final-lm scored them; the same job with the 1000k
  * LM, and a job on VOCR6-L (Large's own: no cascade) with the 2000k LM, plan the tier's. With the release files. */
 static void test_the_retuned_lm_settings_reach_both_decoders(void)
 {
@@ -2203,10 +2204,11 @@ static void test_the_counter_redecode(void)
     TEST_MSG("shown '%s'", text);
     /* tier 2 (VOCR6's LM, vita-vn-ocr #127): the same re-decode feeds it the same edited top-K. Its reading of the
      * crafted line is 「九月です」: the default tier's known counter loss (its settings', audit-vocr6-lm-rubi F7).
-     * vita-vn-ocr's check of the settings on VOCR6's final blobs (vocr6-final-lm, #151) kept the 1 MB tier's for
-     * every model, #109's counter set among its guards (VOCR6-N and VOCR6-L keep the counter in 3,322 and 3,326 of
-     * its 3,969 crops), so the expectation stays. (Only VOCR6-N's settings for the 2000k LM changed:
-     * test_the_retuned_lm_settings_reach_both_decoders.) */
+     * vita-vn-ocr's check of the settings on v0.4.0-vocr6.1's VOCR6 blobs (vocr6-final-lm, #151) kept the 1 MB tier's
+     * for every model, #109's counter set among its guards (v0.4.0's VOCR6-N and VOCR6-L keep the counter in 3,322
+     * and 3,326 of its 3,969 crops), and v0.4.1-vocr6.2's blobs read with them unchanged (vita-vn-ocr #157's final
+     * read), so the expectation stays: this line is crafted top-K on FL10's classes, no blob's reading. (Only
+     * VOCR6-N's settings for the 2000k LM changed: test_the_retuned_lm_settings_reach_both_decoders.) */
     {
         VjoVocrPolicy on6 = on;
         on6.lm = lm6;
@@ -2253,30 +2255,21 @@ static void test_the_counter_redecode(void)
     free(ws);
 }
 
-/* API 42: the two-level head (vita-vn-ocr #117 item 2, VjoVocrPolicy.two_level), on the real VOCR6-N blob with it
- * (when the model directory has it; it has no head gate: vita-vn-ocr #146). Its runs compute the rare rows on part
- * of the frames only (VjoVocrStats head_escaped); a line its run read with a full-size カ or ケ before a counter
- * character, where its escape can have missed the small ヵ or ヶ, is read again with the full head
- * (vocr_extra.ungated), and only with the two-level head; a line without one is not. With it off (ocr_head_gate =
- * gate or off), its blob reads with the full head: it has no gate to run. */
-static void test_the_two_level_head(void)
+/* API 42: the two-level head (vita-vn-ocr #117 item 2, VjoVocrPolicy.two_level), on the real blobs with it (when the
+ * model directory has them): Normal's VOCR6-N, which has the head gate too, and Large's VOCR6-L, which has the
+ * two-level head alone (v0.4.1-vocr6.2, vita-vn-ocr #157's fits). Its runs compute the rare rows on part of the frames
+ * only (VjoVocrStats head_escaped); a line its run read with a full-size カ or ケ before a counter character, where
+ * its escape can have missed the small ヵ or ヶ, is read again with the full head (vocr_extra.ungated), and only with
+ * the two-level head; a line without one is not. With it off (ocr_head_gate = gate), Normal's blob reads with its gate
+ * alone and Large's with the full head (it has no gate to run). */
+static void two_level_checks(VjoPlatform *p, const VjoVocrModel *m, int gated)
 {
-    static const char *const files[] = {VJO_VOCR6_N_NAME, VJO_VOCR_LM2_NAME};
     const char *dir = VJO_VOCR_MODEL_DIR;
-    const VjoVocrModel *n5 = vjo_vocr_model(VJO_VOCR6_N_NAME);
     const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
-    VjoPlatform p;
     VjoVocrStats st;
     static char text[1024], raw[1024], t_gate[1024];
     unsigned char *ws = NULL;
-    size_t ws_bytes;
-    if (!n5 || !lm2 || !have_files(dir, files, 2)) {
-        TEST_SKIP("no VOCR6-N two-level blob and the 1000k LM in VJO_VOCR_MODEL_DIR");
-        return;
-    }
-    posix_platform_init(&cascade_pp, &p);
-    p.file_open = posix_open ? posix_open : p.file_open;
-    ws_bytes = vjo_vocr_job_bytes(n5->name, W, H) + vjo_vocr_lm_job_bytes(n5->name);
+    size_t ws_bytes = vjo_vocr_job_bytes(m->name, W, H) + vjo_vocr_lm_job_bytes(m->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
     VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
     VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
@@ -2287,27 +2280,27 @@ static void test_the_two_level_head(void)
                          .two_level = 1};
     VjoVocrPolicy gate = two;
     gate.two_level = 0;
-#define RUN(pol) vjo_vocr_ocr_policy(&p, dir, n5->name, &im, &res, ws, ws_bytes, capture, \
+#define RUN(pol) vjo_vocr_ocr_policy(p, dir, m->name, &im, &res, ws, ws_bytes, capture, \
                                      vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
-    /* with it off: no frame runs the rare rows apart (the full head's reading: the blob has no gate) */
+    /* with it off: no frame runs the rare rows apart (the gate's reading, or the full head's without a gate) */
     reset();
     scr.three_lines = 1;
     wrap_reset();
     TEST_ASSERT(RUN(&gate) == VJO_OK);
     memcpy(t_gate, text, sizeof(t_gate));
-    TEST_CHECK(!st.head_escaped && !wrap.ungated_runs);
-    /* on: its escape runs on every frame (no gate skips any; on these synthetic lines, a test pattern and no text,
-     * it may fire on every one of them, and the reading is then the full head's bit for bit); none read again (no
-     * カ or ケ) */
+    TEST_CHECK(!st.head_escaped && !wrap.ungated_runs && (gated || !st.head_gated));
+    /* on: its escape runs on the frames the gate keeps, every frame without a gate (on these synthetic lines, a test
+     * pattern and no text, it may fire on every one of them, and the reading is then the gate's, or the full head's,
+     * bit for bit); none read again (no カ or ケ) */
     reset();
     scr.three_lines = 1;
     wrap_reset();
     TEST_ASSERT(RUN(&two) == VJO_OK);
     TEST_CHECK(st.frames > 0 && st.head_escaped > 0 && st.head_escaped + st.head_gated <= st.frames);
-    TEST_MSG("VOCR6-N two-level: %u of %u frames escaped, %u gated, %u re-reads; '%s'", st.head_escaped, st.frames,
-             st.head_gated, st.head_rereads, text);
+    TEST_MSG("%s two-level: %u of %u frames escaped, %u gated, %u re-reads; '%s'", m->name, st.head_escaped,
+             st.frames, st.head_gated, st.head_rereads, text);
     if (st.head_escaped + st.head_gated == st.frames) TEST_CHECK(!strcmp(text, t_gate));
-    TEST_CHECK(!wrap.ungated_runs && !st.head_rereads && !st.head_gated);
+    TEST_CHECK(!wrap.ungated_runs && !st.head_rereads && (gated || !st.head_gated));
     /* a reading with カ before 月 and no frame that ran the rare rows: read again with the full head, which stands */
     reset();
     wrap_reset();
@@ -2315,8 +2308,8 @@ static void test_the_two_level_head(void)
     TEST_ASSERT(RUN(&two) == VJO_OK);
     TEST_CHECK(wrap.ungated_runs == 1 && st.head_rereads == 1 && !strstr(text, "カ月"));
     TEST_MSG("shown '%s', logged '%s', %u re-reads", text, raw, st.head_rereads);
-    /* the same reading without the two-level head (ocr_head_gate = gate: VOCR6-N then runs neither path, no frame
-     * skipped): not read again */
+    /* the same reading without the two-level head (ocr_head_gate = gate: Normal's gate alone, no frame skipped
+     * here; Large then runs neither path): not read again */
     reset();
     wrap_reset();
     wrap.kana_line = 1;
@@ -2336,7 +2329,7 @@ static void test_the_two_level_head(void)
     wrap_reset();
     TEST_ASSERT(RUN(&alone) == VJO_OK);
     TEST_CHECK(st.frames > 0 && st.head_escaped > 0 && !st.head_gated && !wrap.ungated_runs);
-    TEST_MSG("VOCR6-N two-level alone: %u of %u frames escaped", st.head_escaped, st.frames);
+    TEST_MSG("%s two-level alone: %u of %u frames escaped", m->name, st.head_escaped, st.frames);
     /* audit-vocr6-rubi-gate F5: a job without the LM extras (no LM, no cascade: greedy text only) reads the kana
      * line again with the full head too; with the gate alone (no two-level head) it does not */
     VjoVocrPolicy greedy_two = {.head_gate = 1, .two_level = 1}, greedy_gate = {.head_gate = 1};
@@ -2352,16 +2345,33 @@ static void test_the_two_level_head(void)
     TEST_ASSERT(RUN(&greedy_gate) == VJO_OK);
     TEST_CHECK(!wrap.ungated_runs && !st.head_rereads && strstr(text, "九カ月です"));
 #undef RUN
+    wrap.on = 0;
     TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
     free(ws);
+}
+
+static void test_the_two_level_head(void)
+{
+    static const char *const files[] = {VJO_VOCR6_N_NAME, VJO_VOCR6_L_NAME, VJO_VOCR_LM2_NAME};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *n6 = vjo_vocr_model(VJO_VOCR6_N_NAME), *l6 = vjo_vocr_model(VJO_VOCR6_L_NAME);
+    VjoPlatform p;
+    if (!n6 || !l6 || !vjo_vocr_lm_tier(2) || !have_files(dir, files, 3)) {
+        TEST_SKIP("no VOCR6-N and VOCR6-L two-level blobs and the 1000k LM in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    two_level_checks(&p, n6, 1); /* the head gate as well */
+    two_level_checks(&p, l6, 0); /* the two-level head alone */
 }
 
 /* API 42: the head gate (vita-vn-ocr #117, VjoVocrPolicy.head_gate). Every reading plans its context with the gate
  * when the policy asks for it and the blob has one; a line whose reading skipped frames (vocr_extra.gated) and whose
  * counter re-decode finds a counter context is read again without the gate (vocr_extra.ungated), and that reading
  * is the line's: its re-decode, its decode, its text. A reading that skipped frames without a counter context is
- * not read again, and with the gate off nothing changes. On the real gated VOCR5-S blob (when the model directory
- * has it) the gate skips frames of the synthetic lines and gives their text. */
+ * not read again, and with the gate off nothing changes. On the real gated blob, Normal's VOCR6-N (when the model
+ * directory has it), the gate skips frames of the synthetic lines and gives their text. */
 static void test_the_head_gate(void)
 {
     static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM3_NAME};
@@ -2451,13 +2461,13 @@ static void test_the_head_gate(void)
 #undef RUN
     TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
     free(ws);
-    /* the real gated blob, Small's VOCR5-S (VOCR6's Normal and Large have no gate), greedy: the gate skips part of
-     * the synthetic lines' frames, within the pinned arena (the job plans it with the gate); without it nothing is
-     * skipped */
-    static const char *const gated_files[] = {VJO_VOCR5_S_NAME};
-    const VjoVocrModel *n5 = vjo_vocr_model(VJO_VOCR5_S_NAME);
+    /* the real gated blob, Normal's VOCR6-N (v0.4.1-vocr6.2: Small's and Large's blobs have no gate), greedy: the
+     * gate skips part of the synthetic lines' frames, within the pinned arena (the job plans it with the gate);
+     * without it nothing is skipped */
+    static const char *const gated_files[] = {VJO_VOCR6_N_NAME};
+    const VjoVocrModel *n5 = vjo_vocr_model(VJO_VOCR6_N_NAME);
     if (!n5 || !have_files(dir, gated_files, 1)) {
-        TEST_MSG("no %s in VJO_VOCR_MODEL_DIR: the real gated blob's check skipped", VJO_VOCR5_S_NAME);
+        TEST_MSG("no %s in VJO_VOCR_MODEL_DIR: the real gated blob's check skipped", VJO_VOCR6_N_NAME);
         return;
     }
     ws_bytes = vjo_vocr_job_bytes(n5->name, W, H);
@@ -2476,10 +2486,63 @@ static void test_the_head_gate(void)
     scr.three_lines = 1;
     TEST_ASSERT(RUN5(&g5) == VJO_OK);
     TEST_CHECK(st.head_gated > 0 && st.head_gated < st.frames);
-    TEST_MSG("VOCR5-S gated: %u of %u frames skipped; '%s' / '%s'", st.head_gated, st.frames, text, t_off);
+    TEST_MSG("VOCR6-N gated: %u of %u frames skipped; '%s' / '%s'", st.head_gated, st.frames, text, t_off);
 #undef RUN5
     TEST_CHECK(!vjo_vocr_resident_drop(&nres));
     free(ws);
+}
+
+/* v0.4.1-vocr6.2 (vita-vn-ocr #157's fits): with ocr_head_gate = on (both paths asked for, the default) each size runs
+ * the paths its own blob has (core/vocr_ocr.c run_opts), on the real blobs (when the model directory has them):
+ * Small's VOCR6-S neither (plain: no frame skipped, none escaped, the reading the same as with both off), Normal's
+ * VOCR6-N its head gate and its two-level head (frames skipped and frames escaped), Large's VOCR6-L its two-level head
+ * alone (frames escaped, none skipped). Greedy, on the synthetic three-line screen. */
+static void test_each_size_runs_the_paths_its_blob_has(void)
+{
+    static const char *const files[] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME};
+    static const int gated[3] = {0, 1, 0}, escaped[3] = {0, 1, 1};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024], raw[1024], t_off[1024];
+    if (!have_files(dir, files, 3)) {
+        TEST_SKIP("no model sizes' blobs in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    wrap.on = 0;
+    for (unsigned t = 0; t < 3; t++) {
+        const VjoVocrModel *m = vjo_vocr_model(files[t]);
+        unsigned char *ws = NULL;
+        size_t ws_bytes;
+        TEST_ASSERT(m != NULL);
+        ws_bytes = vjo_vocr_job_bytes(m->name, W, H);
+        TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+        VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
+        res.ud = &res;
+        VjoVocrPolicy on = {.raw = raw, .raw_cap = sizeof(raw), .head_gate = 1, .two_level = 1},
+                      off = {.raw = raw, .raw_cap = sizeof(raw)};
+#define RUNT(pol) vjo_vocr_ocr_policy(&p, dir, m->name, &im, &res, ws, ws_bytes, capture, \
+                                      vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
+        reset();
+        scr.three_lines = 1;
+        TEST_ASSERT(RUNT(&off) == VJO_OK);
+        memcpy(t_off, text, sizeof(t_off));
+        TEST_CHECK_(st.frames > 0 && !st.head_gated && !st.head_escaped, "%s off: %u frames, %u skipped, %u escaped",
+                    m->name, st.frames, st.head_gated, st.head_escaped);
+        reset();
+        scr.three_lines = 1;
+        TEST_ASSERT(RUNT(&on) == VJO_OK);
+        TEST_CHECK_((st.head_gated > 0) == gated[t] && (st.head_escaped > 0) == escaped[t] && st.head_gated < st.frames,
+                    "%s on: %u of %u frames skipped, %u escaped", m->name, st.head_gated, st.frames, st.head_escaped);
+        if (!gated[t] && !escaped[t]) TEST_CHECK(!strcmp(text, t_off)); /* a plain blob: the same job either way */
+        TEST_MSG("%s with ocr_head_gate = on: %u of %u frames skipped, %u escaped; '%s' / '%s'", m->name, st.head_gated,
+                 st.frames, st.head_escaped, text, t_off);
+#undef RUNT
+        TEST_CHECK(!vjo_vocr_resident_drop(&res));
+        free(ws);
+    }
 }
 
 /* audit-vocr6-rubi-gate F10, F12: the confidence cascade's reading, gated (vocr_extra.gated) with a counter context,
@@ -2573,6 +2636,8 @@ TEST_LIST = {
     {"the_counter_redecode_feeds_the_lm_and_keeps_the_recognizer_text_off_unchanged", test_the_counter_redecode},
     {"the_head_gate_rereads_a_gated_counter_line_and_skips_frames_of_a_gated_blob", test_the_head_gate},
     {"the_two_level_head_rereads_a_kana_counter_line_and_counts_its_escaped_frames", test_the_two_level_head},
+    {"each_size_runs_the_paths_its_blob_has_vocr6_s_plain_n_gate_and_two_level_l_two_level",
+     test_each_size_runs_the_paths_its_blob_has},
     {"the_cascade_rereads_a_gated_counter_line_and_counts_its_skipped_frames",
      test_the_cascade_rereads_a_gated_counter_line},
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},

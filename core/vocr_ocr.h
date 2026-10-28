@@ -1,8 +1,8 @@
 /* vita-vn-ocr backend: bee-san/vita-vn-ocr's polarity-agnostic dialogue line
  * finder and tiny CTC recognizer (plain C99, no malloc), with the int8 weights
- * published in its v0.4.0-vocr6.1 (VOCR6, the Normal and Large tiers), v0.3.6-head2level.1
- * (VOCR5-S, the Small tier), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0
- * releases. Built with -DVJO_WITH_VOCR=ON; see docs/vita-vn-ocr.md.
+ * published in its v0.4.1-vocr6.2 (VOCR6, the three model tiers), v0.3.2-vertical.1 (VOCR5-V),
+ * v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0 releases. Built with
+ * -DVJO_WITH_VOCR=ON; see docs/vita-vn-ocr.md.
  *
  * API 19: a job never holds the region. It reads the region in strips of grey
  * rows (VjoGreySource: in the game, the display hook copies each strip from the
@@ -46,7 +46,7 @@
 extern "C" {
 #endif
 
-#define VJO_VOCR_DEFAULT_MODEL "VOCR6_N_w8_2l.vocr" /* the Normal tier's, VJO_VOCR_TIER2_NAME (include/vjo_vocr_sizes.h) */
+#define VJO_VOCR_DEFAULT_MODEL "VOCR6.2_N_w8g2.vocr" /* the Normal tier's, VJO_VOCR_TIER2_NAME (include/vjo_vocr_sizes.h) */
 
 /* The capture block: one strip of at most this many bytes of grey rows (the
  * strip is region width x VJO_VOCR_STRIP_ROWS(width) rows), plus per region
@@ -176,7 +176,8 @@ const VjoVocrLm *vjo_vocr_lm_tier(unsigned tier); /* NULL for 0 or one out of ra
 /* The settings a job on `model` (a file name, the request's: its own lines and its cascade's re-reads) decodes with
  * `lm`: the LM tier's (lm's alpha, beta and flags), or the job model's own for that tier where vita-vn-ocr's
  * retune on the model's logits changed them (vocr6-final-lm, vita-vn-ocr #151: VOCR6-N at the 2000k tier, LM
- * weight 0.4, bonus 1.5 nats, both line flags). A model or LM this build does not pin: the tier's. */
+ * weight 0.4, bonus 1.5 nats, both line flags; measured on v0.4.0-vocr6.1's VOCR6-N and kept for v0.4.1-vocr6.2's,
+ * not measured again). A model or LM this build does not pin: the tier's. */
 void vjo_vocr_lm_settings(const char *model, const VjoVocrLm *lm, int *alpha, int *beta, unsigned *flags);
 
 /* LM bytes kept between jobs, as VjoVocrResident keeps the recognizer's. */

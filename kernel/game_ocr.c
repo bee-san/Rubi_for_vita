@@ -894,7 +894,7 @@ int vjoOcrCancel(uint32_t seq)
 static uint32_t model_size(const char *name)
 {
     if (!strcmp(name, VJO_VOCR6_N_NAME)) return VJO_VOCR6_N_BYTES;
-    if (!strcmp(name, VJO_VOCR5_S_NAME)) return VJO_VOCR5_S_BYTES;
+    if (!strcmp(name, VJO_VOCR6_S_NAME)) return VJO_VOCR6_S_BYTES;
     if (!strcmp(name, VJO_VOCR6_L_NAME)) return VJO_VOCR6_L_BYTES;
     if (!strcmp(name, VJO_VOCR3_H15_NAME)) return VJO_VOCR_H15_BYTES;
     if (!strcmp(name, VJO_VOCR3_FL10_NAME)) return VJO_VOCR_FL10_BYTES;

@@ -482,8 +482,8 @@ touch on a size chooses it, the row's title, the gaps and the status line only
 focus it. The focus bar at the card's left edge is beside the selected row only.
 The status line names the chosen size's model from its pinned metadata (`settings/engine.c`:
 `Large: most accurate. VOCR6-L found.`, or `VOCR6-L missing. Reinstall the package.`), so the
-generation shown follows the size: VOCR6 for this package's Normal and Large, VOCR5 for its Small (a size that keeps an
-earlier generation's model shows that one's). When a game's free memory
+generation shown follows the size: VOCR6 for all three of this package's sizes (`Small: fastest. VOCR6-S found.`; a
+size that keeps an earlier generation's model shows that one's, as Small's VOCR5-S did in 0.10.0's test builds). When a game's free memory
 has no room for the chosen size a job runs a smaller one; nothing in the app says
 so (owner 2026-10-15 04:54Z), only `log.txt`. `host/tests/test_settings_app.c`
 drives it: every size's edges and gaps by touch, Down/Left/Right/Enter/Up, the

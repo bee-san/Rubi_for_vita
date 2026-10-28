@@ -35,25 +35,24 @@
 #define VJO_VOCR4_W20_NAME "VOCR4_W20_w8.vocr"
 #define VJO_VOCR_CASCADE_NAME VJO_VOCR4_W20_NAME
 #define VJO_VOCR_CASCADE_BYTES VJO_VOCR_F20_BYTES
-/* VOCR5-S (bee-san/vita-vn-ocr eval/vocr5_protocol.json, release v0.3.0): the Small tier's
- * recognizer, FL10's topology with 4,987 classes (exact train/export.py size). API 42: with its
- * head gate (vita-vn-ocr #117, docs/headgate.md, pre-release v0.3.5-headgate.1, carried byte for
- * byte by v0.3.6-head2level.1): v0.3.0's bytes unchanged, then a 1,792 B VOCG gate section
- * (VjoVocrPolicy.head_gate). VOCR6-S was not adopted (vita-vn-ocr docs/vocr6.md: other games'
- * development score resolved worse), so Small keeps it. */
-#define VJO_VOCR5_S_NAME "VOCR5_S_w8g.vocr"
-#define VJO_VOCR5_S_BYTES 821584u
-/* VOCR6 (bee-san/vita-vn-ocr #125, docs/vocr6.md, eval/vocr6_protocol.json stage 4; pre-release
- * v0.4.0-vocr6.1): the Normal and Large tiers' recognizers, VOCR5-N's and VOCR5-L's shapes (H15's
- * topology, and late-wide with channels 64/128/256/480/576; 5,631 classes each) fine-tuned again on the
- * owner's hooked PS Vita and PSP games. Each with #122's two-level head (docs/head2level.md: its output
- * rows and vocab in frequency order, then a 1,984 B VOC2 trailer, VjoVocrPolicy.two_level) and no head
- * gate (#120's rule rejected it on VOCR6's logits: vocr6-final-gate, vita-vn-ocr #146), so with
- * ocr_head_gate = on they run the two-level head alone. Each blob's own sections drive these paths: a
- * later generation's blobs bring theirs, and only these pins change. */
-#define VJO_VOCR6_N_NAME "VOCR6_N_w8_2l.vocr"
-#define VJO_VOCR6_N_BYTES 1187616u
-#define VJO_VOCR6_L_NAME "VOCR6_L_w8_2l.vocr"
+/* VOCR6 (bee-san/vita-vn-ocr #125, docs/vocr6.md "The follow-up: stages 4c and 4d", eval/vocr6_protocol.json
+ * stage 4 amendments 6 and 7; pre-release v0.4.1-vocr6.2, from vita-vn-ocr #157's merge c933e15): the three tiers'
+ * recognizers, VOCR5-S's, VOCR5-N's and VOCR5-L's shapes (FL10's topology with 4,987 classes; H15's, and late-wide
+ * with channels 64/128/256/480/576, with 5,631 each) fine-tuned again on the owner's hooked PS Vita and PSP games:
+ * Small at half the learning rate (stage 4d), Normal and Large for 45,000 steps (stage 4c). Each blob carries the
+ * speed sections vita-vn-ocr's rules (#120, #122) kept for it, and a job runs those its ocr_head_gate asks for
+ * (core/vocr_ocr.c run_opts): Small's blob is plain (the gate rule kept no gate for it, so ocr_head_gate does
+ * nothing for Small), Normal's has a 1,792 B VOCG head gate (ε = 1e-4, VjoVocrPolicy.head_gate) and #122's two-level
+ * head (docs/head2level.md: its output rows and vocab in frequency order, then a 1,984 B VOC2 trailer,
+ * VjoVocrPolicy.two_level), Large's the two-level head alone. The release names carry the set's ".2"
+ * (VOCR6.2_*): v0.4.0-vocr6.1's VOCR6_N_w8_2l.vocr and VOCR6_L_w8_2l.vocr, the Normal and Large tiers before
+ * (and VOCR5_S_w8g.vocr, Small's), keep theirs and are not pinned any more, so one file name is one set of bytes.
+ * Each blob's own sections drive these paths: a later set's blobs bring theirs, and only these pins change. */
+#define VJO_VOCR6_S_NAME "VOCR6.2_S_w8.vocr"
+#define VJO_VOCR6_S_BYTES 819792u
+#define VJO_VOCR6_N_NAME "VOCR6.2_N_w8g2.vocr"
+#define VJO_VOCR6_N_BYTES 1189408u
+#define VJO_VOCR6_L_NAME "VOCR6.2_L_w8_2l.vocr"
 #define VJO_VOCR6_L_BYTES 2475680u
 /* The runtime's two structs a job's workspace holds beside its arena (vocr_model and vocr_ctx, each 16-byte
  * aligned: core/vocr_ocr.c's layout) as the console's compiler lays them out at the pinned runtime: 3,920 B at
@@ -74,19 +73,19 @@
 /* API 21: the three model tiers the Rubi app offers (config.ini vocr_tier),
  * smallest first; tools/model_tiers.json is the same table (its "tiers", in
  * this order), and tools/tests/test_vocr_defaults.py checks the two agree. A
- * tier is a pinned blob: this package's Small is VOCR5-S, its Normal (the
- * default) VOCR6-N and its Large VOCR6-L. A job runs the largest tier the
+ * tier is a pinned blob: this package's Small, Normal (the default) and Large
+ * are VOCR6-S, VOCR6-N and VOCR6-L (v0.4.1-vocr6.2). A job runs the largest tier the
  * request allows that fits the game's free memory beside that tier's reserve
  * (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*), else the next smaller one;
  * the confidence cascade reads doubtful lines again with the next tier up, when
- * that fits too. The tiers may come from two generations (Small VOCR5-S, Normal and
- * Large VOCR6): each blob carries its own generation in the pins (core/vocr_models.c,
- * tools/prepare_ocr.py VOCR_GENERATION). A later generation's three blobs (or an earlier one's, for a
- * tier whose new candidate did not beat it) replace these through the pins:
- * these six lines, the model's pins where every model is pinned
+ * that fits too. The tiers may come from different generations (0.10.0's test builds
+ * had Small VOCR5-S beside VOCR6's Normal and Large): each blob carries its own generation
+ * in the pins (core/vocr_models.c, tools/prepare_ocr.py VOCR_GENERATION). A later set's three
+ * blobs (or an earlier one's, for a tier whose new candidate did not beat it) replace these
+ * through the pins: these six lines, the model's pins where every model is pinned
  * (core/vocr_ocr.c, core/vocr_models.c, kernel/game_ocr.c, tools/prepare_ocr.py),
  * tools/model_tiers.json, and a new release's attribution (tools/prepare_ocr.py
- * VOCR_MODEL_ATTRIBUTION_PIN). Two sizes with one model take one edit more: the
+ * VOCR6_ATTRIBUTION_PIN, VOCR_MODEL_ATTRIBUTION_PIN). Two sizes with one model take one edit more: the
  * one-VPK payload (include/vjo_payload.h) names each size's file, and the
  * Rubi app refuses a payload that names a file twice, so its list must name
  * the shared file once, with VJO_PAYLOAD_KERNEL_INDEX and test_one_vpk.py's
@@ -102,8 +101,8 @@
  * two sizes with one model. */
 #include VJO_VOCR_TIERS_TEST
 #else
-#define VJO_VOCR_TIER1_NAME VJO_VOCR5_S_NAME
-#define VJO_VOCR_TIER1_BYTES VJO_VOCR5_S_BYTES
+#define VJO_VOCR_TIER1_NAME VJO_VOCR6_S_NAME
+#define VJO_VOCR_TIER1_BYTES VJO_VOCR6_S_BYTES
 #define VJO_VOCR_TIER2_NAME VJO_VOCR6_N_NAME
 #define VJO_VOCR_TIER2_BYTES VJO_VOCR6_N_BYTES
 #define VJO_VOCR_TIER3_NAME VJO_VOCR6_L_NAME

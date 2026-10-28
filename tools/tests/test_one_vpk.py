@@ -140,7 +140,8 @@ class PayloadList(unittest.TestCase):
         import package_release
         files = vpk.payload_files()
         # the bundled PSP/Vita names are a separate payload file; API 47: VOCR5-V and VERTICAL-ATTRIBUTION.md;
-        # the SC3 hooks' three charsets (docs/native-hooks.md "SC3 text"); VOCR6 (Normal and Large): VOCR6-ATTRIBUTION.md
+        # the SC3 hooks' three charsets (docs/native-hooks.md "SC3 text"); VOCR6 (every size since v0.4.1-vocr6.2):
+        # VOCR6-ATTRIBUTION.md
         # API 54: the text spotter's two once published
         spot = 2 if package_release.VOCR_SPOT_PUBLISHED else 0
         self.assertEqual(len(files), 24 + spot)
