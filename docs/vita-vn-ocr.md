@@ -223,7 +223,7 @@ longer opens `VOCR2_FL10_w8.vocr`; the file may be deleted.
    use), a strip at a time into the game worker's own capture block. No copy
    of the region exists; the kernel gives OCR no buffer.
 2. The polarity-agnostic line finder (`vocr_find_lines`, gradient/contrast
-   projection) finds up to 16 lines. Unlike the PP-OCRv5 backend's bright-pixel
+   projection) finds up to 16 lines. Unlike the former PP-OCRv5 backend's bright-pixel
    finder it reads dark text on light boxes, outlined text and coloured names,
    and never rejects a region. A region with no line ends here: the weights
    file is not read.
