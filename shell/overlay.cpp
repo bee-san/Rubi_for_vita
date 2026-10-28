@@ -40,9 +40,9 @@
 #include "paf_ui.h"
 #include "header_highlight.h"
 #include "touch_hold.h"
-#include "word_navigation.h"
 #include "wrap_fix.h"
 extern "C" {
+#include "../core/text_rows.h"
 #include "../core/utf.h"
 #include "../core/text_hit.h"
 #include "../core/port.h"

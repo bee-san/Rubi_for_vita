@@ -3423,7 +3423,7 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
     TEST_CHECK(!strcmp(g_view.list->entries[0].vocab->spelling, "伊佐"));
     TEST_CHECK(g_view.list->entries[0].hl_start == 0 && g_view.list->entries[0].hl_end == (int)strlen("伊佐"));
-    /* Right: the word step past 伊佐 (shell/word_navigation.h) looks up 那. */
+    /* Right: the word step past 伊佐 (core/text_rows.h vjo_word_step) looks up 那. */
     uint32_t generation = local_text_generation;
     vjo_post_cursor((uint32_t)strlen("伊佐"), generation); on_command(); finish_current_job();
     TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
