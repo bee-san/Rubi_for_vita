@@ -4,8 +4,8 @@ with what tools/prepare_plaintext.py and tools/prepare_vndb.py stage there (the 
 - Every file README.md or docs/guide.md links (in docs/, outside the history) is in the zip, so the guide's
   feature and recovery links work in the downloaded zip, and so is every Markdown document that a document of the zip
   links (its measurement records, docs/benchmarks/*.json and images, may stay on GitHub).
-- No history record is: docs/history/ and docs/memory-ledger-history.md stay on GitHub (a shipped document's link to
-  one is to the repository's copy).
+- No history record is: docs/history/ and docs/memory-ledger-history.md stay on GitHub (a zip document's link to one
+  works there, not in the zip).
 - Every file the zip takes from docs/ exists, and is linked or named by README.md or by another document of the zip,
   or is a file a tool of the zip reads (DATA).
 """
