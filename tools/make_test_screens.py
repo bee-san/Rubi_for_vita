@@ -39,18 +39,8 @@ def vertical():
     im.save(os.path.join(OUT, "vertical.jpg"), quality=90)
 
 
-def small_res():
-    im = Image.new("RGB", (720, 408), (10, 10, 10))
-    d = ImageDraw.Draw(im)
-    f = ImageFont.truetype(GOTHIC, 22)
-    d.text((40, 300), "どうぐ　を　つかいますか？", font=f, fill="white")
-    d.text((60, 340), "▶ はい　　いいえ", font=f, fill="white")
-    im.save(os.path.join(OUT, "small_res.jpg"), quality=90)
-
-
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     vn_textbox()
     vertical()
-    small_res()
     print("wrote", sorted(os.listdir(OUT)))

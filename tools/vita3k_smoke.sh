@@ -13,6 +13,8 @@
 #
 #   env VITASDK              VitaSDK (to build the app)
 #   env VJO_VOCR_SOURCE_DIR  vita-vn-ocr checkout at the pinned commit
+#   env VJO_VOCR_SPOT_SOURCE_DIR  vita-vn-ocr checkout at the text spotter's pin (cmake/VocrOCR.cmake
+#                            VJO_VOCR_SPOT_COMMIT), when VJO_VOCR_SOURCE_DIR lacks its files
 #   env VJO_VOCR_MODEL_DIR   directory with H15_w8.vocr, FL10_w8.vocr and the three model sizes'
 #                            recognizers (tools/model_tiers.json "model")
 #   env VITA3K               an extracted Vita3K build (vita-vn-ocr vita/scripts/fetch_vita3k.sh),
@@ -38,6 +40,7 @@ command -v xvfb-run > /dev/null || skip "(xvfb-run is not installed)"
 build=$root/build/vita3k-smoke$([ "${VJO_DEBUG:-1}" = 0 ] && echo -normal)
 # VJO_DEBUG=0: the normal build's game worker (docs/release-variants.md)
 cmake -S "$root/tools/vita3k_smoke" -B "$build" -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
+  -DVJO_VOCR_SPOT_SOURCE_DIR="${VJO_VOCR_SPOT_SOURCE_DIR:-}" \
   -DVJO_DEBUG="$([ "${VJO_DEBUG:-1}" = 0 ] && echo OFF || echo ON)" > "$build.config.log" 2>&1 \
   && cmake --build "$build" -j4 > "$build.build.log" 2>&1 || fail "(the app did not build: $build.build.log)"
 mkdir -p "$out"

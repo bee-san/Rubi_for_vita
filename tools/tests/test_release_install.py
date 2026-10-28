@@ -655,6 +655,47 @@ class ReleaseInstall(unittest.TestCase):
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
 
+    def test_a_stale_copy_whose_aside_name_is_taken_stays(self):
+        """The Vita's rename refuses an existing destination (libftpvita's RNTO answers 550, then 226): the stale
+        copy stays, the file of that name is left alone, and the installer says so (audit-rubi-cleanup-8 F9)."""
+        stamp = "20261028-120000"
+        fixed = self.root / "fixed-date"
+        fixed.mkdir()
+        (fixed / "date").write_text('#!/bin/sh\n[ "$1" = "+%Y%m%d-%H%M%S" ] && { echo ' + stamp + '; exit 0; }\n'
+                                    'exec /bin/date "$@"\n')
+        (fixed / "date").chmod(0o755)
+        self.environment["PATH"] = str(fixed) + os.pathsep + self.environment["PATH"]
+        tai = self.device / "ux0/tai"
+        (tai / "VitaJPOverlay_OCR.suprx").write_bytes(b"an old worker")
+        (tai / f"VitaJPOverlay_OCR.suprx.vjo-stale-{stamp}").write_bytes(b"an earlier stale copy")
+        result = self.install("install-vita.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("could not rename ux0:tai/VitaJPOverlay_OCR.suprx: delete it in VitaShell", result.stdout)
+        self.assertEqual((tai / "VitaJPOverlay_OCR.suprx").read_bytes(), b"an old worker")
+        self.assertEqual((tai / f"VitaJPOverlay_OCR.suprx.vjo-stale-{stamp}").read_bytes(), b"an earlier stale copy")
+
+    def test_the_mock_renames_as_the_vita_does(self):
+        """tools/tests/ftp_mock.py's RNFR/RNTO, as libftpvita answers them (ftpvita.c cmd_RNFR_func, cmd_RNTO_func): a
+        missing source 550; a rename 350 then 226; an existing destination 550 and then 226 as well."""
+        import ftplib  # noqa: PLC0415
+        tai = self.device / "ux0/tai"
+        (tai / "a").write_bytes(b"a")
+        (tai / "b").write_bytes(b"b")
+        ftp = ftplib.FTP()
+        ftp.connect("127.0.0.1", self.ftp.port, timeout=10)
+        ftp.login()
+        with self.assertRaises(ftplib.error_perm):
+            ftp.sendcmd("RNFR /ux0:/tai/missing")
+        self.assertTrue(ftp.sendcmd("RNFR /ux0:/tai/a").startswith("350"))
+        with self.assertRaises(ftplib.error_perm):  # b exists: refused...
+            ftp.sendcmd("RNTO /ux0:/tai/b")
+        self.assertTrue(ftp.getline().startswith("226"))  # ...and answered 226 too, with nothing renamed
+        self.assertEqual(((tai / "a").read_bytes(), (tai / "b").read_bytes()), (b"a", b"b"))
+        self.assertTrue(ftp.sendcmd("RNFR /ux0:/tai/a").startswith("350"))
+        self.assertTrue(ftp.sendcmd("RNTO /ux0:/tai/c").startswith("226"))
+        self.assertEqual(((tai / "c").read_bytes(), (tai / "a").exists()), (b"a", False))
+        ftp.close()
+
     def test_a_configuration_taihen_cannot_read_whole_stops_the_install(self):
         # A line taiHEN stops at, or a comments-only file: nothing reaches the Vita, and the message says why.
         for broken in (b"*KERNEL\r\n" + b"#" * 300 + b"\r\n*main\r\n", b"# nothing here\r\n"):

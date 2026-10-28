@@ -124,6 +124,9 @@ int vjoOcrShotWrite(uint32_t seq, uint32_t off, uint32_t bytes, const void *src)
     shot_written = off + bytes;
     return (int)bytes;
 }
+/* API 31/41: the hook cache and a hook's line between jobs: none here (the smoke runs no game, so no hook) */
+int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data) { (void)seq; (void)operation; (void)data; return VJO_ERR_BUSY; }
+int vjoOcrHookLine(uint32_t seq, uint32_t bytes) { (void)seq; (void)bytes; return 0; }
 int vjoOcrShotSave(uint32_t seq, uint32_t bytes)
 {
     char tmp[160], path[160];
