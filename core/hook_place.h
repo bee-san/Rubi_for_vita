@@ -167,12 +167,4 @@ int vjo_place_pointer_array(const uint8_t *p, unsigned n);
  * $HERD/shared/artifacts/hooks-fix-engine/shape_variants.txt]. */
 #define VJO_PLACE_POINTER_MIN 20u
 
-/* 32-bit FNV-1a of n bytes (the streams' change test). */
-static inline uint32_t vjo_place_hash(const uint8_t *p, unsigned n)
-{
-    uint32_t h = 2166136261u;
-    for (unsigned i = 0; i < n; i++) h = (h ^ p[i]) * 16777619u;
-    return h;
-}
-
 #endif

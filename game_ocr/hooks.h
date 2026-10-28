@@ -14,6 +14,7 @@
 #include "../include/vjo_game_ocr.h"
 #include "../core/hook_luna.h"
 #include "../core/hook_sc3.h"
+#include "../core/hook_stream.h"
 #include "../core/hook_text.h"
 
 #define VJO_HOOK_RAW_BYTES 512u /* a stream's raw text, at most (a hit copies no more) */
@@ -22,17 +23,12 @@
 #define VJO_HOOK_KIND_SITE 1u /* a table site (Luna's or Rubi's own) */
 #define VJO_HOOK_KIND_CALL 2u /* a CALL caller: the game's string copies from one return address */
 
-typedef struct {
-    uint32_t id;       /* 1..VJO_HOOK_STREAMS (vjo_game_ocr.h) */
-    uint32_t kind;     /* VJO_HOOK_KIND_* */
-    uint32_t seq;      /* changes at each new text (an identical copy does not change it) */
-    uint32_t hits;     /* hits so far, identical copies included */
-    uint32_t key;      /* a site's segment-0 offset; a caller's return address minus segment 0's base */
-    uint32_t encoding; /* VJO_HOOK_ENC_* of raw */
-    uint32_t n;        /* bytes in raw */
-    const VjoLunaSite *site; /* the site (its filter), NULL for a CALL caller or Rubi's own entry */
-    uint8_t raw[VJO_HOOK_RAW_BYTES];
-} VjoHookSnap;
+/* A stream's text as the job copies it (core/hook_stream.h VjoStreamSnap, vjo_stream_read, #418): id
+ * 1..VJO_HOOK_STREAMS (vjo_game_ocr.h); key a site's segment-0 offset, a caller's return address minus segment 0's
+ * base; site the site's VjoLunaSite (its filter), NULL for a CALL caller or Rubi's own entry. */
+typedef VjoStreamSnap VjoHookSnap;
+typedef char vjo_hook_snap_check[VJO_HOOK_RAW_BYTES == VJO_STREAM_RAW && VJO_HOOK_KIND_SITE == VJO_STREAM_KIND_SITE
+                                 ? 1 : -1];
 
 /* Called once from module_start, after the safe-boot, candidate and another-copy checks: installs what
  * the text source word `mode` allows in this game (vjoGetTextSource's: a VJO_TEXT_SOURCE_* in its low

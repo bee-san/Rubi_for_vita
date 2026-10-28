@@ -650,26 +650,8 @@ void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced)
 
 int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
 {
-    VjoStreamSlot *s;
-    if (!out || !id || id > VJO_HOOK_STREAMS) return 0;
-    s = &slots[id - 1];
-    if (!vjo_stream_try_lock(s)) return 0;
-    if (!s->seq || !s->n || s->n > VJO_HOOK_RAW_BYTES) {
-        vjo_stream_unlock(s);
-        return 0;
-    }
-    out->id = id;
-    out->kind = s->kind;
-    out->seq = s->seq;
-    out->hits = s->hits;
     /* a site's slot key is its segment-0 offset + 1; a caller's is its return address */
-    out->key = s->kind == VJO_HOOK_KIND_SITE ? s->key - 1u : s->key - seg_base;
-    out->encoding = s->encoding;
-    out->n = s->n;
-    out->site = (const VjoLunaSite *)s->site;
-    sceClibMemcpy(out->raw, s->raw, s->n);
-    vjo_stream_unlock(s);
-    return 1;
+    return out && id && id <= VJO_HOOK_STREAMS ? vjo_stream_read(&slots[id - 1], id, seg_base, out) : 0;
 }
 
 uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *bytes)
