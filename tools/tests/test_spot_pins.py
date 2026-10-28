@@ -111,7 +111,9 @@ class Pins(unittest.TestCase):
         gate = (ROOT / "tools/fast_gate.sh").read_text()
         self.assertIn("s/^set(VJO_VOCR_SPOT_COMMIT", gate)
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
-        self.assertEqual(workflow.count(f"ref: {commit}"), 3)  # the host, ARM and Vita jobs' checkouts
+        # the host, ARM and Vita jobs' checkouts: the action they share
+        self.assertEqual((ROOT / ".github/actions/pinned-sources/action.yml").read_text().count(f"ref: {commit}"), 1)
+        self.assertEqual(workflow.count("\n      - uses: ./.github/actions/pinned-sources\n"), 3)
         self.assertEqual(workflow.count("VJO_VOCR_SPOT_SOURCE_DIR=$PWD/.refs/vita-vn-ocr-spot"), 4)
 
 
