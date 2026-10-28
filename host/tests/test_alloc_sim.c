@@ -496,7 +496,7 @@ static void shell_paf_fits_at_the_74_game_start(void)
 }
 
 
-/* API 55, the pause for the frame (docs/game-pause.md): a CLANNAD-sized text box (917 x 125) with a spinner beside its
+/* API 55, the pause for the frame (docs/game-pause.md): a CLANNAD-sized text box (917 x 126) with a spinner beside its
  * last line that shows a new shade at every frame, read with the stable-text wait (150 ms, at most 1 s). Strip by
  * strip, the region is read over many display calls and its re-reads tear (on main the job then shows nothing,
  * VJO_E_SCREEN_CHANGED: #348's report; the rc is printed, not asserted, as another stabilisation may read it anyway);
@@ -521,14 +521,14 @@ static void api55_pause_reads_one_frame_beside_a_spinner(void)
     display_calls = 0; case_speed = 0;
     Outcome o = run_case(VJO_VOCR_TIER2_NAME, settle, box[0], box[1], box[2], box[3]);
     fprintf(stderr, "alloc-sim: %-58s rc=%-4d %u display calls (64 rows at most in one), %u rows torn\n",
-            "API 55 textbox 917x125 + spinner, strip by strip", o.rc, display_calls, (unsigned)last_out.tears);
+            "API 55 textbox 917x126 + spinner, strip by strip", o.rc, display_calls, (unsigned)last_out.tears);
     TEST_CHECK_(last_out.tears > 0 && display_calls > 3 && !step_of(&last_out, VJO_GSTEP_PAUSE),
                 "strip by strip: rc %d, %u tears, %u display calls", o.rc, (unsigned)last_out.tears, display_calls);
     display_calls = 0; case_speed = VJO_GAME_OCR_S_PAUSE;
     o = run_case(VJO_VOCR_TIER2_NAME, settle, box[0], box[1], box[2], box[3]);
     const VjoGameOcrStep *ps = step_of(&last_out, VJO_GSTEP_PAUSE);
     fprintf(stderr, "alloc-sim: %-58s rc=%-4d %u display call(s), %u rows in the longest, %u lines%s\n",
-            "API 55 textbox 917x125 + spinner, paused", o.rc, display_calls, ps ? ps->arg : 0u, o.lines,
+            "API 55 textbox 917x126 + spinner, paused", o.rc, display_calls, ps ? ps->arg : 0u, o.lines,
             models ? "" : " (no release models: stops at the model)");
     TEST_CHECK_(ps && ps->kind == 1 && ps->arg == last_out.height && (ps->sum & 0xFFu) == VJO_GPAUSE_FROZEN &&
                 ps->sum >> 8 == VJO_GAME_OCR_MEM_USER && !ps->rc &&
