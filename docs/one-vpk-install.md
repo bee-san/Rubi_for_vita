@@ -140,8 +140,8 @@ From VitaShell 81af709 (`package_installer.c` `install_thread`):
   and add the bubble (henkaku wiki, ScePromoterUtil and Packages). The `.vpk` can be deleted after.
 - Nothing in it limits an app's size or its number of files (v0.8.0's release zip has 72 entries; a
   later release's differs). The promoter's own limits are documented nowhere we could read.
-- The README says to close the Rubi app before installing a VPK over it. In test.4's console run
-  VitaShell's install stopped with `0x80101114` while test.3's app was suspended behind it, and the
+- The README says to close the Rubi app before installing a VPK over it. In 0.8.0-test.4's console run
+  VitaShell's install stopped with `0x80101114` while 0.8.0-test.3's app was suspended behind it, and the
   same VPK installed after a restart (#194); what the promoter does to a running system application is
   otherwise unmeasured.
 
@@ -174,7 +174,7 @@ in all). Without room it stops before anything is written.
   `.vjo-new`, or already there), the app folder's copy goes in the same run, and the done screen and
   `log.txt` say what became of it: `install: this app's copy of the dictionary deleted (N B freed)`, or
   `kept (N B)` with the reason. A **Check and repair** that writes no file of the overlay but deletes
-  that copy says both (#194: test.4's owner had the overlay's files from FTP beside the VPK's payload,
+  that copy says both (#194: 0.8.0-test.4's owner had the overlay's files from FTP beside the VPK's payload,
   157 MB twice, and its done screen said only "nothing needed writing"). `log.txt` also says whether the
   dictionary was moved or copied out of the app.
 - Plugins, the RCO and the models (11.9 MB) are copied: the app keeps them for a Repair without the
@@ -492,9 +492,9 @@ named).
 
 **The Python patcher works on bytes** with taiHEN's rules: it cuts lines at `\r` and `\n` only, trims
 only `b" \t\n\v\f\r"`, measures the 256-byte limit on the raw line before trimming, and refuses NUL.
-Today's `patch_tai_config.py` decodes UTF-8 and uses `str.splitlines()` and `str.strip()`, which also
-cut at VT, FF, `\x1c`-`\x1e`, NEL and U+2028/2029 and strip U+00A0, U+3000 and others: the audit
-measured `b"# note\x0c*ALL\n..."`, one comment line to taiHEN, written back as a live `*ALL` header. A
+Before this design it decoded UTF-8 and used `str.splitlines()` and `str.strip()`, which also cut at
+VT, FF, `\x1c`-`\x1e`, NEL and U+2028/2029 and strip U+00A0, U+3000 and others: the audit measured
+`b"# note\x0c*ALL\n..."`, one comment line to taiHEN, written back as a live `*ALL` header. A
 differential test runs the Python and the vendored C parser on every fixture and on a generated corpus
 of lines built from CR, LF, VT, FF, NEL, U+2028, U+3000, U+00A0, `*`, `!`, `#` and our paths.
 
@@ -503,13 +503,14 @@ of lines built from CR, LF, VT, FF, NEL, U+2028, U+3000, U+00A0, `*`, `!`, `#` a
 None through config.txt. The owner (issue #138, Agent A, 2026-10-16): "Remove the need for a taiHEN
 line for each title before the OCR worker can run ... Load the worker from the kernel plugin when a
 process starts and its title is enabled in `games.ini` ... Do not use `*ALL`. The installer should
-stop writing worker lines for each title and remove the ones older installs left." That is
-t3-worker-any-game's PR (kernel, Shell, worker; it merges before this one): the kernel loads
+stop writing worker lines for each title and remove the ones older installs left." Since
+t3-worker-any-game's PR (kernel, Shell, worker), the kernel loads
 `ur0:tai/VitaJPOverlay_OCR.suprx` (`ux0:tai/`'s only when ur0's is missing) into every process whose
 title is ON, never SceShell or a system app but Adrenaline's, skips it while L is held at the app's
-start, and for one release tolerates a worker line left in a configuration (the worker refuses a second
-copy of itself in a process). AGENTS.md rule 2, `docs/boot-safety.md`, the README's Install and Memory
-sections (now [the guide's](guide.md#memory-and-troubleshooting)) and `docs/vita-memory.md` §4.3 change to that rule in t3-worker-any-game's PR.
+start, and tolerates a worker line left in a configuration (the worker refuses a second copy of itself
+in a process). AGENTS.md rule 2, `docs/boot-safety.md`, [the guide's](guide.md#memory-and-troubleshooting)
+Memory section and `docs/vita-memory.md` §4.3 state that rule; [worker-loading.md](worker-loading.md) is
+the loader's design.
 
 So this installer, and `install-vita.sh` with it, in **`kernel` mode**:
 
@@ -527,8 +528,8 @@ release recipe ships a kernel-mode main VPK only, unless the owner decides other
 The mode is gated twice (R2), so that the loader can be reverted or fixed without an editor change and
 no user loses working lines:
 
-- at build time by `VJO_KERNEL_LOADS_WORKER` (`include/vjo_api.h`, t3-worker-any-game's PR): this PR's
-  code fails to build without it (`#error`), which enforces the merge order;
+- at build time by `VJO_KERNEL_LOADS_WORKER` (`include/vjo_api.h`, t3-worker-any-game's PR): the Rubi
+  app's install page fails to build without it (`#error` in `settings/install_page.c`);
 - at run time by the manifests' `worker kernel` or `worker lines` (the VPK's `payload/manifest.txt`
   and the zip's `package-manifest.json`). They come from the built base zip, never from the checkout
   that packages it: the Rubi app's eboot carries a `vjoworker=kernel` (or `lines`) mark compiled
@@ -544,8 +545,8 @@ registered before keeps its worker line, the worker goes right after the first h
 game's section (`install-vita.sh --title`), never under `*ALL`, and misplaced worker lines are
 commented out. The in-app Install then keeps the lines it finds and adds no game of its own (a first
 install in that mode needs `install-vita.sh --title`, as before #124). The app's Games page edits no
-configuration in either mode: #124's registration is removed with this PR, so a reverted loader would
-also need it back for PSP rows. The fixtures run both modes.
+configuration in either mode: #124's registration went with the one-VPK install, so a reverted loader
+would also need it back for PSP rows. The fixtures run both modes.
 
 ## Versions (#122)
 
@@ -555,11 +556,11 @@ also need it back for PSP rows. The fixtures run both modes.
   VPK, or the other variant, is named as such (R7).
 - The Shell's in-game notice becomes one neutral line, since the Shell cannot tell which side is newer
   when both have one API: `Rubi app and plugins are different builds: open the Rubi app.` The
-  app says which way it is and what to do. It replaces both of today's notices (`VJO_APP_NOTICE`,
-  `VJO_APP_NOTICE_NEWER` in `core/app_stamp.h`, 82 and 89 characters) with one of 67, so SceShell's
-  pages do not grow (AGENTS.md rule 1; the ledger's page check shows it). Nothing else of the Shell,
-  the kernel or the worker changes here, and the API stays 22.
-- An app without a payload (the zip's) keeps today's banner texts, which name `install-vita.sh`.
+  app says which way it is and what to do. It replaced the two notices before it (`VJO_APP_NOTICE`,
+  `VJO_APP_NOTICE_NEWER` in `core/app_stamp.h`, 82 and 89 characters; both names give the one now)
+  with one of 67, so SceShell's pages did not grow (AGENTS.md rule 1; the ledger's page check shows
+  it). Nothing else of the Shell, the kernel or the worker changed with it (at API 22).
+- An app without a payload (the zip's) keeps its banner texts, which name `install-vita.sh`.
 
 ## config.ini on install and update
 
@@ -745,7 +746,7 @@ The code audit (MERGE_OK on #158) left six suggestions, all taken here:
 6. Over this build a `config.ini` missing beside its `config.ini.bak` is written again from the backup.
 
 Host tests only (`host/tests/test_settings_install.c`); the page's paging is a console check of
-test.4.
+0.8.0-test.4.
 
 ## Unmeasured until a console run
 
@@ -756,8 +757,8 @@ test.4.
   of `ux0:app/VJOSET001`, and that the Unsafe Homebrew probe means for a system application what it
   means for VitaShell.
 - What the promoter does with a previous version's files on an update, and to a running app (one
-  observation: test.4's install stopped with `0x80101114` while test.3's app was suspended, and went
-  through after a restart, #194; the code's meaning is undocumented in the sources we read).
+  observation: 0.8.0-test.4's install stopped with `0x80101114` while 0.8.0-test.3's app was suspended,
+  and went through after a restart, #194; the code's meaning is undocumented in the sources we read).
 - That the app's writes to `ur0:tai` work while a game is suspended behind it.
 - `sceShellUtilLock` and `sceKernelPowerTick` in a system application; the app's permissions after an
   L start.
