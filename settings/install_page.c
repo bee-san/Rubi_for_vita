@@ -38,6 +38,7 @@ static const VjoInstallBuild build = {VJO_API_VERSION, VJO_VERSION_STRING, VJO_V
                                       VJO_KERNEL_LOADS_WORKER ? VJO_TAI_WORKER_KERNEL : VJO_TAI_WORKER_LINES};
 
 static VjoInstallScan scan;   /* the main thread's, but while the worker runs (it scans again into it) */
+static int scan_state;       /* scan.state as the main thread last scanned it: the frame's, also while a run rewrites scan */
 static int scanned, action_index, scroll, stick_move;
 static int actions[4], action_count;
 /* what the box shows: the plan, the progress, or what the last action did */
@@ -98,6 +99,7 @@ static void set_lines(void)
 static void rescan(void)
 {
     vjo_install_scan(&scan, &build);
+    scan_state = scan.state;
     scanned = 1;
     action_count = 0;
     /* a stopped swap: putting its file back comes first when config.txt is HENkaku's default now and the
@@ -317,7 +319,7 @@ void vjo_install_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, 
     ui->header();
     /* the state */
     ui->card(TITLE_Y, TITLE_H, 0);
-    ui->text(42, TITLE_Y + 33, scan.state == VJO_INSTALL_CANNOT || scan.state == VJO_INSTALL_INTERRUPTED ? ui->off : ui->white,
+    ui->text(42, TITLE_Y + 33, scan_state == VJO_INSTALL_CANNOT || scan_state == VJO_INSTALL_INTERRUPTED ? ui->off : ui->white,
              26, worker.running ? (running_action == VJO_INSTALL_ACT_UNINSTALL ? "Uninstalling..." : running_action == VJO_INSTALL_ACT_INSTALL
                             ? "Installing..." : "Working...") : scan.title);
     /* the plan, the progress, or the result */
