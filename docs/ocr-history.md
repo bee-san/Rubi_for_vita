@@ -128,7 +128,7 @@ GameSentenceMiner imports both lines [host: #413's audit's probe P5, `host/tests
 how often on a console is not measured]. Before #413 this needed a line still typing more than 1 s after the press.
 Only when I press L + R records nothing, so it has neither. A record of a read without the wait that a later
 extension replaces within a longer window would fix it; it does not fit the Shell's pages
-([memory-ledger.md](memory-ledger.md): measured in #413's audit's follow-up, its PR).
+([measured](memory-ledger.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)).
 
 Short writes are retried. Write/flush/close errors are best effort and do not
 change OCR or its UI; a failed append attempts to restore the previous file

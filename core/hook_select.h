@@ -109,10 +109,13 @@ uint32_t vjo_hook_select_trusted(VjoHookSelect *st, uint32_t pick, const VjoHook
  * when present. Initial learning needs two distinct normalized lines from the same stable source.
  * A scheduled successful check doubles the interval up to32; startup/missing-text confirmation does
  * not. One comparable disagreement retains the source and checks the next new line; a match resets
- * to8, two disagreements unlock. Inconclusive or duplicate comparisons neither add nor clear misses.
+ * to8, two disagreements unlock. Inconclusive or duplicate comparisons neither add nor clear misses. unsettled: OCR's
+ * text was read without the stable-text wait (a press since #413; the request had no settle time), so it may be a
+ * line still typing out: then text that agrees with the beginning of the locked stream's line only is no evidence
+ * either (#413's audit F2): it changes nothing, its job shows OCR's text. A read with the wait gets the rule above.
  * Pinned/OCR-only calls never change AUTO state. Equal scores prefer the streak, a site, newest seq. */
 uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
-                               const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags);
+                               const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags, int unsettled);
 
 /* After OCR was refused for memory, so no stream can ever agree with it (a game that leaves less than
  * the smallest model's reserve free): with the automatic pick, the newest candidate from a Rubi verified

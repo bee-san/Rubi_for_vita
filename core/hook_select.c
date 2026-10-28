@@ -364,7 +364,7 @@ uint32_t vjo_hook_select_no_memory(uint32_t pick, const VjoHookCand *c, unsigned
 }
 
 uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
-                               const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags)
+                               const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags, int unsettled)
 {
     uint32_t oc[CMP_MAX], f = 0;
     unsigned mf, m, best = 0, agree = 0, lscore = 0, pscore = 0;
@@ -429,10 +429,12 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
     if (st->interval && hh) {
         int fresh = hh != st->compare_hook_hash ||
                     (st->compare_ocr_hash && oh != st->compare_ocr_hash);
-        /* #413's audit F2: OCR's text agrees with the beginning of the locked stream's line, the line typing out (a
-         * press reads at once since #413), not a disagreement. No evidence either way: nothing changes, not the pair
-         * compared last (a disagreement read again stays a duplicate), a pending check or disagreement, or trust. */
-        if (fresh && lscore < VJO_HOOK_AGREE && prefix_score(oc, m, mf, locked->text, locked->n) >= VJO_HOOK_AGREE)
+        /* #413's audit F2: read without the wait (a press since #413), OCR's text agrees with the beginning of the
+         * locked stream's line: the line typing out, not a disagreement. No evidence either way: nothing changes, not
+         * the pair compared last, a pending check or disagreement, or trust. A read with the wait is compared as
+         * before: a stream that holds more than the still screen (a page that collects its lines) still disagrees. */
+        if (unsettled && fresh && lscore < VJO_HOOK_AGREE &&
+            prefix_score(oc, m, mf, locked->text, locked->n) >= VJO_HOOK_AGREE)
             fresh = 0;
         if (fresh) {
             st->compare_hook_hash = hh;

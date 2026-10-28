@@ -81,6 +81,17 @@ been reported.
     source of the count, and the auto-vs-press page no longer says a press's job waits. Tests: the held-over count keeps
     the read (it fails without the condition), and a press on a quiet screen cancels as on any other unsettled one.
     The debug Shell takes 16 B more code, the normal one none: 4 B of code room left in each. Not run on a console.
+  - **#413's audit: a line typing out no longer counts against a native text hook.** A press's read of a line still
+    typing out compared its first part with the hook's whole line: a disagreement, so one such read took a learned
+    hook's trust and two in a row unlocked it (it had to be learned again). Now OCR's text that agrees only with the
+    beginning of the locked hook's line is no evidence either way: the press shows OCR's text and the hook keeps its
+    state; any other text still disagrees ([details](docs/native-hooks.md#a-line-typing-out-413s-audit-f2)). On the
+    hooked page pool's 29 Vita sessions (host, OCR's real reads cut to a quarter, a half and three quarters of the
+    line) PREFIX_CHANGELOG. The game worker takes 112 B more code, the same pages. A press's partial line in
+    Automatically and the settled line after it are two `history.csv` records, so the reading totals count the start
+    twice: documented ([details](docs/ocr-history.md)); its fix does not fit the Shell's pages
+    ([measured](docs/memory-ledger.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)). Not run on
+    a console.
 
 ### Added
 
