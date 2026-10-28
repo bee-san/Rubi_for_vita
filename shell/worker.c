@@ -1783,6 +1783,13 @@ static int net_busy(void)
 static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) =
     "Recognizing… Something in the region keeps moving (an animated icon? text still typing?). If a region around "
     "just the text leaves it out, press □ to draw one.";
+/* API 55 (#358's item: "name the cause and the fix: shrink the box, or turn on Pause the game to read"): the hint and
+ * the pause (docs/game-pause.md), while ocr_pause is off in a game it works in: it reads the region from one frame,
+ * which an animated icon cannot change. One copy of the hint: this is a format of it, written on VjoControl's stack
+ * (start_job_kind), as #364's audit asked (docs/text-stability.md). Never in the PSP emulator's process
+ * (game_static_fb), where the pause does nothing. */
+static const char WAIT_HINT_PAUSE[] VJO_DATA_TABLE(WAIT_HINT_PAUSE) = "%s Or turn on Pause the game to read in the Rubi app.";
+static int game_static_fb; /* the active game's frames come from its pad calls (VJO_GAME_STATIC_FB): no pause there */
 /* the overlay's and the strip's status while a job runs, in the data segment too (#358: its code room back) */
 static const char RECOGNIZING[] VJO_DATA_TABLE(RECOGNIZING) = "Recognizing…";
 
@@ -1792,12 +1799,19 @@ static const char RECOGNIZING[] VJO_DATA_TABLE(RECOGNIZING) = "Recognizing…";
  * goes to cache_data[1] (local lookups use [0] and one arena). */
 static void start_job_kind(const char *why, int lookup, int refresh)
 {
-    const char *status;
+    const char *status = RECOGNIZING;
+    char hint[sizeof(g_view.status)];
     if (job_running)
         return;
     job_prepare = 0;
-    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT) */
-    status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER ? WAIT_HINT : RECOGNIZING;
+    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT; API 55: and the pause, while it is off) */
+    if (cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER) {
+        status = WAIT_HINT;
+        if (!cfg.ocr_pause && !game_static_fb) {
+            sceClibSnprintf(hint, sizeof(hint), WAIT_HINT_PAUSE, WAIT_HINT);
+            status = hint;
+        }
+    }
     if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
          * after all capture/model/inference allocations have been freed. #379: not
@@ -2105,8 +2119,10 @@ static void open_overlay(void)
         return;
     }
     /* Why the background result can't be used (tuning). */
-    /* Keep the debug Shell within its existing code pages (as the other log formats above). */
-    static const char open_state[] VJO_DATA_TABLE(overlay_open_state) = "open: %s (stable %u, quiet %u)";
+    /* A debug-only format (vjo_dlog: none in the normal build): read-only data again (#355's review H1: the debug
+     * Shell's data page is the fuller one with the pause's hint, and core/config.c's switch table gave its code room
+     * back), after #413 had moved it to the data segment for the code pages. */
+    static const char open_state[] = "open: %s (stable %u, quiet %u)";
     vjo_dlog(open_state,
             job_running ? "background job still running"
             : !cache_ok || active < 0 ? "no background result"
@@ -2952,6 +2968,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
 {
     const char *tid = id->key;
     int mode = id->mode;
+    game_static_fb = mode == VJO_GAME_STATIC_FB; /* API 55: WAIT_HINT_PAUSE's game */
     if (pid != hook_pid) { /* API 31: log this game session's installation counts again. */
         hook_pid = pid;
         hook_logged[0] = 0;
