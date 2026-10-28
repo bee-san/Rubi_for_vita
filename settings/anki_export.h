@@ -11,9 +11,8 @@
  * Anki adds only what it does not have. After a verified package, the queue's
  * screenshots no card names (a save stopped between its JPEG and its record,
  * or during the JPEG's write) are removed (#161; anki_export.c remove_orphans).
- * Before it reads the queue, an export finishes or undoes what a stop left of a
- * Cards page change (#315, settings/cards.h vjo_cards_recover); it never reads
- * anki_queue/deleted/, where the Cards page's deleted cards are.
+ * It never reads anki_queue/deleted/ (0.9.8 test builds' Cards page, #315,
+ * removed by the owner 2026-10-28, kept its deleted cards there).
  *
  * Every storage call that fails is logged (vjo_log, log.txt) with its error
  * code. All calls are made by one thread at a time. */
@@ -63,7 +62,6 @@ typedef struct {
     int too_large;   /* left in the queue: no room in memory to make their note */
     int missing_picture; /* exported without an absent/damaged screenshot; original record preserved */
     int left;        /* over VJO_APKG_MAX_CARDS: the newest, left for the next export */
-    int held;        /* #315: left in the queue: a Cards page change of them did not finish (settings/cards.h) */
     int swept;       /* screenshots no card names, removed from the queue (#161) */
     int media;       /* screenshot files in it */
     int duplicates;  /* #314: cards whose word an earlier card has: tagged duplicate (Tag) or left out (Skip) */

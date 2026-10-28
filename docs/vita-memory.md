@@ -447,10 +447,7 @@ close first, is an inference [inference].
 - **Heap.** newlib's default heap is 128 MiB [measured: `_init_vita_heap` in the toolchain's
   `libc.a`], which does not fit; `settings/sysapp.c` fixes it at 8 MiB. The app's own code does
   not `malloc`; the heap serves libvita2d's structures and GXM host memory, libpng and ScePvf's
-  library, and, while the Cards page decodes a card's picture, libjpeg (#315,
-  `settings/card_picture.c`): 32,592 B at most for a 960 × 544 screenshot [measured, host,
-  libjpeg-turbo 2.1.5], a progressive JPEG's coefficient arrays at most 4 MiB, all of it freed
-  after each picture. The PVF glyph atlas is a 512 x 512 one-byte texture, a 256 KiB `USER_RW` block, not
+  library. The PVF glyph atlas is a 512 x 512 one-byte texture, a 256 KiB `USER_RW` block, not
   heap [source: libvita2d a8f15ab `vita2d_pvf.c`, `texture_atlas.c`].
 - **Graphics.** libvita2d detects the system-application budget (`sceAppMgrGetBudgetInfo`), draws
   to the shared framebuffer through `sceGxmVshInitialize`, and allocates its textures in
@@ -473,16 +470,14 @@ measured on the console]:
 | Anki export arena (2 MiB, `settings/anki_export.h` `VJO_EXPORT_MEM`; the app has no SceNet pool since the AnkiConnect page was removed), config scratch, game list | about 2.2 MiB |
 | The export's sentence readings (#311, `settings/anki_export.c`): the lookups' scratch (`VJO_READINGS_SCRATCH`, 196,608 B: one lookup's 64 KiB result and 48 KiB scratch budgets and the longest sentence's copies and readings), the dictionaries' session (8 KiB), and the Anki page's copy of `config.ini` for them (`job_dicts`, 1,376 B) [measured: the objects' `.bss`, `arm-vita-eabi-size`]; with its code the app's segments grew by 226,816 B at #311 (`tools/check_settings_self.py`, `6cbf58d` → `cc25de3`: 8,149,204 → 8,376,020 B in the normal build, 8,149,716 → 8,376,548 B (+226,832) in the debug one) | 206,176 B |
 | PSP rows (`settings/psp.c`): a bubble target's blocks and PARAM.SFO, two taiHEN configurations | 306,800 B |
-| Stats tab (#312, `settings/stats_page.c`, `core/stats.h`): its counts (512 games, 16,384 game-days, 16,384 cards: 958,576 B), the work memory its count reads history.csv and the cache with (1 MiB) and its rows (111,184 B); the count's thread stack (64 KiB) | about 2.1 MiB |
 | Look up tab (#313, `settings/lookup*.c`): a lookup block as the Shell's (64 KiB: the dictionary session, then the lookup's arena), its scratch (48 KiB), a card's arena (128 KiB), the history window (64 KiB), the 200 lines' table (30,400 B), the entry's rows and the glyph widths (49,984 B), the text, and the two fonts' glyph sets in `settings/main.c` (8,200 B): 439,188 B of tables [measured: the objects' `.bss`, `arm-vita-eabi-size` and `nm`, the debug build of #313's audit follow-up: `lookup.c` 251,821, `lookup_history.c` 117,269, `lookup_page.c` 61,898 B]; with its code the app's segments grew by 477,704 B at #313 (`tools/check_settings_self.py`, `18cf1ab` → `b128ef0`: 7,013,424 → 7,491,128 B in the debug build, 7,012,944 → 7,490,696 B in the normal one) and by 6,600 B (debug) and 6,728 B (normal) with its audit's follow-up (`73db61e`: 8,142,716 → 8,149,316 B and 8,142,220 → 8,148,948 B) | about 0.45 MiB |
-| The Cards page (#315, `settings/cards_page.c`): its list's table (2,000 rows of 128 B), two card views, the keyboard's buffers and the held cards' list, 311,484 B of `.bss` [measured: the ELF, at #315's audit follow-up]; its picture's texture, at most 512 × 288 RGB, 442,368 B, only while a card is open; the decoded rows are in the Anki export's arena, libjpeg's work in the heap (below) | about 0.7 MiB |
-| Code, stacks, PVF atlases (256 KiB each, four at most: the drawing font's and the measuring font's, the drawing font a frame replaced, freed once the GPU is done with it, and for a moment a new measuring font, as the one it replaces is never drawn with and so freed at once: `settings/main.c` `glyphs_for`, `measured_for`, `font_tick`, #313; each replaced font leaves its glyph table in the heap, 4 KiB at the switch's 350 characters, libvita2d's `int_htab_free` [source: libvita2d a8f15ab]; the code: 961,460 B of text in the debug build at #315, 319,360 B more than main `9ad8eb5`'s: the Cards page's 29,741 B and libjpeg-turbo's decoder; its audit's follow-up added 4,288 B to main `dd94591b`'s 991,192 B, the Cards page's code then 33,412 B [measured: arm-vita-eabi-size]) | about 3.1 MiB |
-| **Total** | **about 28 MiB of 50 MiB** |
+| The streak's seed ([ocr-history.md](ocr-history.md#streak), `settings/streak_seed.c`): its window of `history.csv` (65,537 B, static) and, only while it runs, its thread's stack (16 KiB) [source: `settings/streak_seed.c`] | 81,921 B |
+| Code, stacks, PVF atlases (256 KiB each, four at most: the drawing font's and the measuring font's, the drawing font a frame replaced, freed once the GPU is done with it, and for a moment a new measuring font, as the one it replaces is never drawn with and so freed at once: `settings/main.c` `glyphs_for`, `measured_for`, `font_tick`, #313; each replaced font leaves its glyph table in the heap, 4 KiB at the switch's 350 characters, libvita2d's `int_htab_free` [source: libvita2d a8f15ab]; the code: 651,236 B of text in the normal build since the Stats tab, the Cards page and libjpeg-turbo's decoder, which only the page called, went (2026-10-28; 993,814 B on main `52eb948`) [measured: arm-vita-eabi-size]) | about 2.8 MiB |
+| **Total** | **about 25 MiB of 50 MiB** |
 
 The Games search and the Look up tab's keyboard (#313) share one bounded dialog (`settings/search.c`
 `vjo_ime_dialog`): two 129-unit UTF-16 buffers and a 513-byte UTF-8 text on the app's stack (about 1 KiB), with the
-Games search's 257-byte query or the Look up page's 513-byte text; not the Shell or a game's memory. The Cards page's
-Fix sentence (#315) has two static 2,049-unit buffers (in its `.bss` above). The native IME module is
+Games search's 257-byte query or the Look up page's 513-byte text; not the Shell or a game's memory. The native IME module is
 loaded only during text entry when not already loaded, and released afterwards; its additional
 runtime memory is unmeasured on a console. These sizes come from the source, not console samples.
 

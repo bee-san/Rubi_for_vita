@@ -36,7 +36,7 @@ int sceImeDialogInit(const SceImeDialogParam *p)
     for (n = 0; n + 1 < 64 && p->title && p->title[n]; n++)
         vjo_test_ime_title[n] = p->title[n];
     if (vjo_test_ime_on_open) vjo_test_ime_on_open();
-    /* the SDK's range (SCE_IME_DIALOG_MAX_TEXT_LENGTH): the Look up page's 128, the Cards page's 2,048 (#315) */
+    /* the SDK's range (SCE_IME_DIALOG_MAX_TEXT_LENGTH, 2,048): the Look up page's 128 */
     return p->maxTextLength >= 1 && p->maxTextLength <= 2048 ? vjo_test_ime_init_rc : -1;
 }
 SceCommonDialogStatus sceImeDialogGetStatus(void)

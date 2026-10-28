@@ -9,7 +9,7 @@ extern int vjo_test_ime_loaded, vjo_test_ime_load_rc;
 extern unsigned vjo_test_ime_max;          /* maxTextLength */
 extern uint64_t vjo_test_ime_languages;    /* supportedLanguages */
 extern int vjo_test_ime_forced;            /* languagesForced */
-/* #315: option (line breaks), textBoxMode and dialogMode of the last keyboard */
+/* option (line breaks), textBoxMode and dialogMode of the last keyboard */
 extern unsigned vjo_test_ime_option, vjo_test_ime_textbox, vjo_test_ime_mode;
 /* Called once per keyboard, before its reply is read (NULL: none): a harness sets the reply there. */
 extern void (*vjo_test_ime_on_open)(void);

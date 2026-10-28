@@ -99,48 +99,6 @@ int vjo_ime_dialog(const uint16_t *title, int max_chars, int languages, char *te
     return rc;
 }
 
-int vjo_text_dialog(const uint16_t *title, const char *initial, char *out, size_t cap, unsigned max_units,
-                    int multiline, uint16_t *initial_buf, uint16_t *input_buf, void (*draw)(void))
-{
-    SceImeDialogParam param;
-    SceImeDialogResult result;
-    int own_module = sceSysmoduleIsLoaded(SCE_SYSMODULE_IME) < 0, rc;
-    if (own_module && (rc = sceSysmoduleLoadModule(SCE_SYSMODULE_IME)) < 0) return rc;
-    to_utf16(initial, initial_buf, max_units);
-    memset(input_buf, 0, sizeof(uint16_t) * (max_units + 1));
-    sceImeDialogParamInit(&param);
-    /* Japanese to edit: every keyboard, whatever the system settings enable (as vjo_ime_dialog's languages) */
-    param.supportedLanguages = 0x0001FFFF;
-    param.languagesForced = SCE_TRUE;
-    param.type = SCE_IME_TYPE_DEFAULT;
-    /* Several lines (the Cards page's sentence) as VitaShell's text editor opens them (VitaShell ime_dialog.c:
-     * initImeDialog): a cancel button, the default text box; there Enter types a line break, and the dialog's
-     * done button comes back as CLOSE (updateImeDialog). One line, as the games search always had it. */
-    if (multiline) param.option = SCE_IME_OPTION_MULTILINE;
-    param.dialogMode = SCE_IME_DIALOG_DIALOG_MODE_WITH_CANCEL;
-    param.textBoxMode = multiline ? SCE_IME_DIALOG_TEXTBOX_MODE_DEFAULT : SCE_IME_DIALOG_TEXTBOX_MODE_WITH_CLEAR;
-    param.title = title;
-    param.maxTextLength = max_units;
-    param.initialText = initial_buf;
-    param.inputTextBuffer = input_buf;
-    rc = sceImeDialogInit(&param);
-    if (rc >= 0) {
-        SceCommonDialogStatus state;
-        while ((state = sceImeDialogGetStatus()) == SCE_COMMON_DIALOG_STATUS_RUNNING) draw();
-        memset(&result, 0, sizeof(result));
-        rc = state == SCE_COMMON_DIALOG_STATUS_FINISHED ? sceImeDialogGetResult(&result) : -1;
-        if (rc >= 0 && result.result < 0) rc = result.result;
-        int ended = sceImeDialogTerm();
-        if (rc >= 0 && ended < 0) rc = ended;
-        if (rc >= 0) {
-            rc = result.button == (multiline ? SCE_IME_DIALOG_BUTTON_CLOSE : SCE_IME_DIALOG_BUTTON_ENTER);
-            if (rc) from_utf16(input_buf, max_units, out, cap);
-        }
-    }
-    if (own_module) sceSysmoduleUnloadModule(SCE_SYSMODULE_IME);
-    return rc;
-}
-
 int vjo_search_dialog(char query[VJO_SEARCH_BYTES], void (*draw)(void))
 {
     static const uint16_t title[] = {'S','e','a','r','c','h',' ','g','a','m','e','s',0};

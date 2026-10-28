@@ -1,5 +1,6 @@
 /* history.csv's records, read in the Rubi app as the Shell reads them (core/history_lines.c), for the app's pages
- * that read the file: the Look up page's earlier lines (#313) and the Stats page (#312). docs/ocr-history.md has the
+ * that read the file: the Look up page's earlier lines (#313) and the reading streak's seed (settings/streak_seed.c,
+ * core/streak_scan.c). docs/ocr-history.md has the
  * format. No I/O and no allocation: a caller reads the file a window at a time, as shell/history.c does.
  *
  * A window is buf[0, len): bytes of the file and, unless `whole` (the window starts at the file's first byte),

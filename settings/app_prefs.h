@@ -1,4 +1,4 @@
-/* The Rubi app's own settings: ux0:data/VitaJPOverlay/app.ini (#310's rule for app features; #311, #312, #314).
+/* The Rubi app's own settings: ux0:data/VitaJPOverlay/app.ini (#310's rule for app features; #311, #314).
  *
  * The overlay never reads this file. config.ini is the overlay's: a key it does not know shows "unknown setting" in
  * the open overlay (core/config.c), and teaching the Shell a key costs Shell bytes, so a choice that only the app
@@ -29,9 +29,6 @@ enum { VJO_DUPLICATES_TAG = 0, VJO_DUPLICATES_SKIP = 1, VJO_DUPLICATES_KEEP = 2 
  * word_sentence, click. */
 typedef struct {
     int anki_duplicates; /* VJO_DUPLICATES_*: tag (the default), skip or keep */
-    /* stats_daily_goal (#312): the Stats tab's Daily goal, core/stats.h VJO_GOAL_*: off (the default), a number of
-     * characters (2,000 to 50,000) or of minutes (15 to 120) a day */
-    int stats_daily_goal;
     int anki_card_type;  /* VJO_CARD_* (core/lapis.h): word, the default */
     int anki_game_tag;   /* 1 (the default): each note has its game's tag, Game::<title> */
     int anki_sentence_readings; /* 1 (the default, reports/sentence-readings.md): readings over the sentence */
@@ -43,7 +40,6 @@ static inline void vjo_app_prefs_defaults(VjoAppPrefs *p)
 {
     memset(p, 0, sizeof(*p));
     p->anki_duplicates = VJO_DUPLICATES_TAG;
-    p->stats_daily_goal = 0; /* VJO_GOAL_OFF */
     p->anki_card_type = 0; /* VJO_CARD_WORD */
     p->anki_game_tag = 1;
     p->anki_sentence_readings = 1;
@@ -55,7 +51,8 @@ void vjo_app_prefs_parse(VjoAppPrefs *p, const char *text, size_t len);
  * values as unknown and saves none, as it does for config.ini). */
 int vjo_app_prefs_load(VjoAppPrefs *p, VjoArena *scratch);
 /* Saves n settings (1-8): keys[i] = the name of values[i], its value's index. Each key's first line is replaced and
- * its later ones dropped, a missing key appended, every other line kept; published as config.ini is (app.ini.tmp
+ * its later ones dropped, a missing key appended, a removed setting's line dropped (stats_daily_goal, the Stats tab's
+ * Daily goal, #312: removed 2026-10-28), every other line kept; published as config.ini is (app.ini.tmp
  * written and synced, the old file kept as app.ini.bak, then renamed). 0, or -1: a key or value the table does not
  * have (nothing is read or written), an unreadable app.ini (never rewritten), or a storage failure (the old file
  * stays, or is put back). */

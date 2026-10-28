@@ -64,18 +64,9 @@ void vjo_log(const char *fmt, ...)
 }
 
 /* Restart steps (test_anki_restart.py) run this binary in fresh processes:
- * _exit at the chosen storage boundary skips every cleanup. The Cards page's changes (#315,
- * settings/cards.c) stop at theirs too: an intent's temporary file written, the intent, the new
- * picture's temporary file written, the picture, the new record's temporary file written, the record,
- * the memory card synced after it, the old record retired into deleted/, its picture retired, the
- * intent removed. */
+ * _exit at the chosen storage boundary skips every cleanup. */
 static const char *crash_point;
-static int moves, record_renamed;
-static int ends_with(const char *s, const char *end)
-{
-    size_t n = strlen(s), k = strlen(end);
-    return n >= k && !strcmp(s + n - k, end);
-}
+static int moves;
 static void crash_at(const char *point)
 {
     if (crash_point && !strcmp(crash_point, point))
@@ -192,28 +183,11 @@ int sceIoRename(const char *from, const char *to)
     int rc;
     if (io.fail_rename && strstr(from, io.fail_rename))
         return -1;
-    /* #315: a Cards page change's steps, before and after their renames */
-    if (ends_with(from, ".fix.tmp"))
-        crash_at("intent_tmp");
-    if (ends_with(from, ".jpg.tmp") && !strstr(from, "/exported/"))
-        crash_at("picture_tmp");
-    if (ends_with(from, ".json.tmp") && !strstr(from, "/deleted/"))
-        crash_at("record_tmp");
     if (strstr(to, "/exported/"))
         crash_at(moves ? "moving" : "verified"); /* before the first move, and later ones */
     if (strstr(from, ".apkg.tmp"))
         crash_at("checked"); /* the package verified, still under its temporary name */
     rc = rename(from, to);
-    if (!rc && ends_with(from, ".fix.tmp"))
-        crash_at("intent");
-    if (!rc && ends_with(from, ".jpg.tmp") && !strstr(from, "/exported/"))
-        crash_at("picture");
-    if (!rc && ends_with(from, ".json.tmp") && !strstr(from, "/deleted/")) {
-        record_renamed = 1;
-        crash_at("record");
-    }
-    if (!rc && strstr(to, "/deleted/") && (ends_with(to, ".json") || ends_with(to, ".jpg")))
-        crash_at(ends_with(to, ".json") ? "retired_json" : "retired_jpg"); /* (not the intent's own rename) */
     if (!rc && strstr(from, ".apkg.tmp"))
         crash_at("apkg_renamed");
     if (!rc && strstr(to, "/exported/")) {
@@ -229,8 +203,6 @@ int sceIoRemove(const char *p)
     if (io.fail_remove && strstr(p, io.fail_remove))
         return (int)0x80010005u;
     rc = sceio_remove(p);
-    if (!rc && ends_with(p, ".fix") && !ends_with(p, ".fix.tmp"))
-        crash_at("intent_removed");
     /* a screenshot removed from the queue itself (never exported/): after the first, a stop */
     if (!rc && !strstr(p, "/exported/") && strstr(p, VJO_QUEUE_DIR "/") &&
         ((n > 4 && !strcmp(p + n - 4, ".jpg")) || (n > 8 && !strcmp(p + n - 8, ".jpg.tmp"))))
@@ -250,10 +222,6 @@ int sceIoSync(const char *device, unsigned flags)
 {
     (void)device, (void)flags;
     io.syncs++;
-    if (record_renamed) { /* the memory card synced after a Cards change's record */
-        record_renamed = 0;
-        crash_at("record_synced");
-    }
     return io.fail_sync ? -1 : 0;
 }
 int sceIoDopen(const char *p)
@@ -278,7 +246,6 @@ int sceRtcGetCurrentTick(SceRtcTick *t)
 }
 
 #include "../../settings/anki_export.c"
-#include "../../settings/cards.h"
 
 /* ---------------- the queue ---------------- */
 
@@ -2655,8 +2622,8 @@ static int write_packages(const char *dir)
     FILE *f;
     Card a = cat, b = dog, c = eat;
     const char *ids[8];
-    char saved[12][VJO_QUEUE_ID_SIZE], edited[2][VJO_QUEUE_ID_SIZE], richer[VJO_QUEUE_ID_SIZE];
-    int n = 0, e0 = 0, readings; /* e0: the first of the edited package's cards in saved (#315), after the second run's */
+    char saved[12][VJO_QUEUE_ID_SIZE], richer[VJO_QUEUE_ID_SIZE];
+    int n = 0, e0 = 0, readings; /* e0: the cards in saved after the second run's */
     reset();
     /* first: three cards, one with a screenshot (a real JPEG, the game worker's encoder's: API 23);
      * v1 and v2 records too */
@@ -2756,42 +2723,7 @@ static int write_packages(const char *dir)
         if (take_package(r.path, path))
             return 1;
     }
-    /* #315: cards changed on the Cards page (settings/cards.c): one's sentence fixed (its picture, the game
-     * worker's JPEG, kept), another's picture dropped, a third deleted; the package has the first two as they
-     * are now */
-    {
-        static const char fixed_sentence[] = "猫舌なので、\n熱いのは苦手";
-        Card x = cat, y = dog, z = eat;
-        VjoCardChange ch;
-        uint8_t id[16];
-        x.spelling = "猫舌", x.reading = "ねこじた", x.sentence = "猫舌だから", x.hl_start = 0, x.hl_end = 6;
-        x.picture = REAL_PICTURE, x.time = 1791900000;
-        y.spelling = "犬歯", y.reading = "けんし", y.sentence = "犬歯が痛い", y.hl_start = 0, y.hl_end = 6;
-        y.picture = 7, y.time = 1791900060;
-        z.spelling = "食パン", z.reading = "しょくぱん", z.sentence = "食パンを焼く", z.hl_start = 0, z.hl_end = 9;
-        z.picture = 5, z.time = 1791900120;
-        e0 = n;
-        snprintf(saved[n++], VJO_QUEUE_ID_SIZE, "%s", queue_card(&x, 0)); /* saved[e0..e0 + 2]: the cards as queued */
-        snprintf(saved[n++], VJO_QUEUE_ID_SIZE, "%s", queue_card(&y, 0));
-        snprintf(saved[n++], VJO_QUEUE_ID_SIZE, "%s", queue_card(&z, 0));
-        vjo_arena_init(&A, mem, sizeof(mem));
-        if (vjo_cards_unhex(saved[e0], id) || vjo_cards_fix_sentence(&A, id, fixed_sentence, &ch) ||
-            ch.done != VJO_CARDS_CHANGED || !ch.picture || !ch.word_found)
-            return fprintf(stderr, "fix sentence failed\n%s", logs), 1;
-        vjo_cards_hex(ch.id, edited[0]);
-        vjo_arena_init(&A, mem, sizeof(mem));
-        if (vjo_cards_unhex(saved[e0 + 1], id) || vjo_cards_drop_picture(&A, id, &ch) || ch.done != VJO_CARDS_CHANGED)
-            return fprintf(stderr, "drop picture failed\n%s", logs), 1;
-        vjo_cards_hex(ch.id, edited[1]);
-        vjo_arena_init(&A, mem, sizeof(mem));
-        if (vjo_cards_unhex(saved[e0 + 2], id) || vjo_cards_delete(&A, id))
-            return fprintf(stderr, "delete failed\n%s", logs), 1;
-        if (run(0, &r, msg) != VJO_OK || r.cards != 2)
-            return fprintf(stderr, "%s\n%s", msg, logs), 1;
-        snprintf(path, sizeof(path), "%s/edited.apkg", dir);
-        if (take_package(r.path, path))
-            return 1;
-    }
+    e0 = n;
     /* richer (#311): a sentence card, with its game's tag and, with the bundled dictionary, readings */
     {
         Card school = cat;
@@ -2834,11 +2766,6 @@ static int write_packages(const char *dir)
     /* the cards whose notes have the duplicate tag (#314): 猫 (version 3) after version 1's, and 犬 again */
     fprintf(f, "],\"duplicates\":[\"%s\",\"%s\"]", saved[0], saved[e0 - 1]);
     fprintf(f, ",\"app\":[\"%s\",\"%s\"]", app_ids[0], app_ids[1]);
-    /* #315: the edited package: the fixed card (its word, its new sentence), the one without its picture, and
-     * the IDs they replaced and the deleted card's, which are in no package */
-    fprintf(f, ",\"edited\":{\"fixed\":\"%s\",\"word\":\"猫舌\",\"sentence\":\"猫舌なので、\\n熱いのは苦手\","
-               "\"dropped\":\"%s\",\"replaced\":[\"%s\",\"%s\"],\"deleted\":\"%s\"}", edited[0], edited[1], saved[e0],
-            saved[e0 + 1], saved[e0 + 2]);
     fprintf(f, ",\"many\":700,\"notetype_id\":%lld,\"deck_id\":%lld,\"deck\":\"%s\",\"richer\":\"%s\","
                "\"readings\":%s}\n",
             vjo_lapis_notetype_id, vjo_lapis_deck_id, vjo_lapis_deck_name, richer, readings ? "true" : "false");
@@ -2962,34 +2889,9 @@ static int write_sqlw_shapes(const char *dir)
 
 /* ---------------- restart steps (test_anki_restart.py) ---------------- */
 
-/* The queued card a Cards restart step changes: the one with a picture whose ID is the smallest. */
-static int restart_card(uint8_t id[16], char hex[VJO_QUEUE_ID_SIZE])
-{
-    DIR *d = opendir(VJO_EXPORT_QUEUE_DIR);
-    struct dirent *e;
-    int found = 0;
-    if (!d)
-        return -1;
-    while ((e = readdir(d))) {
-        char jpg[300];
-        if (strlen(e->d_name) != 37 || strcmp(e->d_name + 32, ".json"))
-            continue;
-        snprintf(jpg, sizeof(jpg), "%s/%.32s.jpg", VJO_EXPORT_QUEUE_DIR, e->d_name);
-        if (access(jpg, F_OK) || (found && strncmp(e->d_name, hex, 32) >= 0))
-            continue;
-        memcpy(hex, e->d_name, 32);
-        hex[32] = '\0';
-        found = 1;
-    }
-    closedir(d);
-    return found ? vjo_cards_unhex(hex, id) : -1;
-}
-
 /* DIR ACTION [CRASH]: queue (five cards, two with the same screenshot),
  * export, export-all, or inspect (what the queue, the archive and the
- * packages hold, and every complete package's GUIDs); #315: fix, drop or
- * delete (the Cards page's Fix sentence, Drop picture or Delete of the queued
- * card with a picture whose ID is the smallest). Prints one JSON line. */
+ * packages hold, and every complete package's GUIDs). Prints one JSON line. */
 static int restart_step(int argc, char **argv)
 {
     const char *what;
@@ -3025,41 +2927,6 @@ static int restart_step(int argc, char **argv)
         int rc = run(!strcmp(what, "export-all"), &r, msg);
         printf("{\"rc\":%d,\"cards\":%d,\"moved\":%d,\"kept\":%d,\"missing_picture\":%d,\"name\":\"%s\"}\n",
                rc, r.cards, r.moved, r.kept, r.missing_picture, r.name);
-        return 0;
-    }
-    if (!strcmp(what, "fix") || !strcmp(what, "drop") || !strcmp(what, "delete")) {
-        VjoCardChange ch;
-        uint8_t id[16];
-        char hex[VJO_QUEUE_ID_SIZE], now[VJO_QUEUE_ID_SIZE];
-        int rc;
-        if (restart_card(id, hex) < 0)
-            return 2;
-        vjo_arena_init(&A, mem, sizeof(mem));
-        memset(&ch, 0, sizeof(ch));
-        memcpy(ch.id, id, 16);
-        if (!strcmp(what, "delete"))
-            rc = vjo_cards_delete(&A, id);
-        else if (!strcmp(what, "drop"))
-            rc = vjo_cards_drop_picture(&A, id, &ch);
-        else {
-            VjoAnkiNote n;
-            char path[300], json[VJO_QUEUE_TEXT_MAX + 1], sentence[600];
-            FILE *f;
-            size_t len;
-            int picture;
-            snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, hex);
-            if (!(f = fopen(path, "rb")))
-                return 2;
-            len = fread(json, 1, sizeof(json) - 1, f);
-            fclose(f);
-            if (vjo_queue_decode(&A, json, len, &n, &picture) < 0)
-                return 2;
-            snprintf(sentence, sizeof(sentence), "直した：%s", n.sentence);
-            rc = vjo_cards_fix_sentence(&A, id, sentence, &ch);
-        }
-        vjo_cards_hex(ch.id, now);
-        printf("{\"rc\":%d,\"done\":%d,\"old\":\"%s\",\"new\":\"%s\",\"picture\":%d,\"word_found\":%d}\n", rc,
-               ch.done, hex, now, ch.picture, ch.word_found);
         return 0;
     }
     if (!strcmp(what, "inspect")) {

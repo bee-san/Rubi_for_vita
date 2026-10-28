@@ -4,8 +4,8 @@
     python3 host/tests/test_apkg.py BUILD/vjo-apkg-tests
 
 The C test binary writes the packages (`--write DIR`: first, second, all,
-many and edited, from records the overlay's Enter writes and from earlier
-builds', and, #315, cards the Rubi app's Cards page changed), and
+many, app and richer, from records the overlay's Enter writes, the Rubi app's
+Look up page saves and earlier builds'), and
 this checks them with Python's zipfile and sqlite3: the ZIP (stored entries,
 CRC-32s, no `meta`, the media map), the SQLite collection (PRAGMA
 integrity_check, schema 11, the Lapis note type exactly as
@@ -161,7 +161,7 @@ class TestPackages(unittest.TestCase):
         subprocess.run([BINARY, "--write", str(cls.out)], check=True)
         cls.expected = json.loads((cls.out / "expected.json").read_text())
         cls.pkg = {name: Package(cls.out / f"{name}.apkg")
-                   for name in ("first", "second", "all", "many", "app", "edited", "richer")}
+                   for name in ("first", "second", "all", "many", "app", "richer")}
 
     def test_zip(self):
         for name, p in self.pkg.items():
@@ -329,25 +329,6 @@ class TestPackages(unittest.TestCase):
         self.assertIn('data-dictionary="Daijirin4 Plain"', room[5])
         self.assertEqual(room[20], "9999999")
 
-    def test_cards_changed_on_the_cards_page(self):
-        """#315: a card whose sentence the Cards page fixed is a new note (the new record's ID, its GUID), with
-        the new sentence, the word in it in <b>, and the old card's picture; one whose picture was dropped has
-        none; the cards they replaced and a deleted one are in no package."""
-        e = self.expected["edited"]
-        p = self.pkg["edited"]
-        notes = {n[1]: n[6].split("\x1f") for n in p.notes()}
-        self.assertEqual(set(notes), {guid_of(e["fixed"]), guid_of(e["dropped"])})
-        fixed, dropped = notes[guid_of(e["fixed"])], notes[guid_of(e["dropped"])]
-        self.assertEqual(fixed[0], e["word"])
-        self.assertEqual(fixed[7], e["sentence"].replace(e["word"], f"<b>{e['word']}</b>", 1).replace("\n", "<br>"))
-        self.assertRegex(fixed[10], r'^<img src="vitajp_[0-9a-f]{32}\.jpg">$')
-        self.assertEqual(list(p.media.values()), [fixed[10][10:-2]])
-        self.assertEqual(dropped[10], "")
-        for name, pkg in self.pkg.items():
-            guids = {n[1] for n in pkg.notes()}
-            for gone in e["replaced"] + [e["deleted"]]:
-                self.assertNotIn(guid_of(gone), guids, name)
-
 
 ANKI_CHECK = r'''
 import json, os, shutil, sqlite3, sys, tempfile, pathlib, zipfile
@@ -414,19 +395,6 @@ log = imp(col, "app"); r["app_new"] = len(log.new)
 answers = [col.get_card(c).answer() for c in col.find_cards('"deck:Vita JP Overlay"')]
 r["app_answers"] = len(answers); r["app_img"] = sum("<img" in a for a in answers)
 r["app_line"] = sum("<b>犬</b>が鳴いた" in a and "CLANNAD (2026-10-28 00:30)" in a for a in answers)
-col.close()
-# #315: the cards the Cards page changed, in a new collection: the fixed one with its new sentence and the
-# picture it kept, the one whose picture was dropped without one
-col = new_col()
-e = expected["edited"]
-log = imp(col, "edited"); r["edited_new"] = len(log.new)
-fixed = col.get_note(col.find_notes(f'"Expression:{e["word"]}"')[0])
-r["edited_sentence"] = fixed["Sentence"]; r["edited_picture"] = fixed["Picture"]
-m = re.search(r'<img src="(vitajp_[0-9a-f]{32}[.]jpg)">', fixed["Picture"])
-r["edited_media"] = bool(m) and os.path.exists(os.path.join(col.media.dir(), m.group(1)))
-card = col.get_card(fixed.cards()[0].id); r["edited_answer"] = card.answer()
-others = [col.get_note(n) for n in col.find_notes("") if n != fixed.id]
-r["dropped_pictures"] = [n["Picture"] for n in others]
 col.close()
 # A profile that has Lapis from its own package, restyled since (newer): a
 # package of that note type alone (first.apkg's, without notes, its styling
@@ -580,19 +548,6 @@ class TestAnkiImport(unittest.TestCase):
         # (the package's note is never newer than one the user edited: Anki's IfNewer keeps the edit)
         self.assertTrue(self.r["edit_kept"])
         self.assertEqual(self.r["review_kept"], [2, 2, 10, 100, 1])  # still in review, one card
-
-    def test_an_edited_card_imports_with_its_new_sentence_and_its_picture(self):
-        """#315: the Cards page's fixed card in Anki: its new sentence, the word bold, its picture shown (the
-        file in the collection's media); the card whose picture was dropped has none."""
-        r, e = self.r, self.expected["edited"]
-        self.assertEqual(r["edited_new"], 2)
-        self.assertEqual(r["edited_sentence"],
-                         e["sentence"].replace(e["word"], f"<b>{e['word']}</b>", 1).replace("\n", "<br>"))
-        self.assertRegex(r["edited_picture"], r'^<img src="vitajp_[0-9a-f]{32}[.]jpg">$')
-        self.assertTrue(r["edited_media"])
-        self.assertIn(r["edited_picture"], r["edited_answer"])
-        self.assertIn("熱いのは苦手", r["edited_answer"])
-        self.assertEqual(r["dropped_pictures"], [""])
 
     def test_a_profiles_own_lapis_is_kept(self):
         r = self.r

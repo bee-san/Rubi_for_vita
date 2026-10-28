@@ -20,11 +20,4 @@ int vjo_search_matches(const char *title, const char *id, const char *query);
 int vjo_ime_dialog(const uint16_t *title, int max_chars, int languages, char *text, size_t cap, void (*draw)(void));
 /* The Games search: vjo_ime_dialog titled "Search games", 64 characters, the system's keyboards. */
 int vjo_search_dialog(char query[VJO_SEARCH_BYTES], void (*draw)(void));
-/* The keyboard for a longer text (the Cards page's Fix sentence, #315): initial shown (UTF-8), at most max_units
- * UTF-16 units (to the SDK's 2,048), every language's keyboard offered (as vjo_ime_dialog's languages), line breaks
- * too when multiline (its done button, not Enter, then accepts: VitaShell's reading of the multi-line keyboard; not
- * run on a console here). initial_buf and input_buf hold max_units + 1 units each (the caller's). 1 accepted (out,
- * cap bytes, holds the text as UTF-8, untrimmed), 0 cancelled, <0 an SDK error; out changes only when accepted. */
-int vjo_text_dialog(const uint16_t *title, const char *initial, char *out, size_t cap, unsigned max_units,
-                    int multiline, uint16_t *initial_buf, uint16_t *input_buf, void (*draw)(void));
 #endif

@@ -46,7 +46,7 @@ target_compile_options(vjo_taihen_parser PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
-  core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/history_read.c core/stats.c
+  core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/history_read.c core/streak.c core/streak_scan.c
   core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
@@ -267,8 +267,8 @@ if(_vjo_plaintext)
   set(_vjo_plaintext_dir ${CMAKE_BINARY_DIR}/plaintext)
 endif()
 
-# The Rubi app's history.csv reader (core/history_read.c: the Look up page's earlier lines, #313, the Stats page,
-# #312) against the Shell's own (core/history_lines.c) on random files, whole and in windows.
+# The Rubi app's history.csv reader (core/history_read.c: the Look up page's earlier lines, #313, the streak's seed)
+# against the Shell's own (core/history_lines.c) on random files, whole and in windows.
 vjo_suite(history_read SOURCES host/tests/test_history_read.c LIBS vjo_host)
 # The Rubi app's sceIo VjoPlatform (settings/app_platform.c) over the host's files: opens, sizes, short reads.
 vjo_suite(app_platform SOURCES host/tests/test_app_platform.c settings/app_platform.c INCLUDES host/tests/vita_stubs
@@ -332,16 +332,10 @@ target_include_directories(vjo-history-writer PRIVATE host/tests/vita_stubs)
 target_compile_definitions(vjo-history-writer PRIVATE VJO_HOST=1)
 target_compile_options(vjo-history-writer PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-history-writer PRIVATE vjo_core) # shell/history.c also contains the line-history reader
-# The Rubi app's Stats tab, its counts (core/stats.c, #312): each game's equal to the Shell's count of the same
-# history.csv (core/history_lines.c, the Triangle view's), any windows, a cache at any of them, cut and damaged
-# records, local days and midnight, the timelines of tools/reading_time_sim.py, the cache's checks, the streak.
-vjo_suite(stats SOURCES host/tests/test_stats.c DEFINES VJO_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures" UNUSED
-  LIBS vjo_core)
-# The same counts as a tool (vjo-stats FILE: JSON), for tools/tests/test_stats_tab.py (VJO_STATS_TOOL: against
-# tools/reading_stats.py and the Shell's own count) and #312's parse-time measurement (--synthetic, --bench).
-add_executable(vjo-stats host/stats_tool.c)
-target_compile_options(vjo-stats PRIVATE -Wall -Wextra -Wno-unused-parameter)
-target_link_libraries(vjo-stats vjo_core)
+# The reading streak (core/streak.c, the overlay's Triangle line; core/streak_scan.c, the Rubi app's seed from
+# history.csv): its rule on day rollovers, gaps, a time zone moved, a clock set back, first use, the seed's windows
+# against the Shell's own writer's records, and the merge with the Shell's record.
+vjo_suite(streak SOURCES host/tests/test_streak.c UNUSED LIBS vjo_core)
 # Line history (docs/line-history.md): history.csv's records read back from a window of the file,
 # this game's lines newest first, filtered and deduplicated as the overlay shows them.
 vjo_suite(history_lines SOURCES host/tests/test_history_lines.c LIBS vjo_core)
@@ -356,8 +350,8 @@ vjo_suite(lookup_history SOURCES host/tests/test_lookup_history.c settings/looku
 # them, every storage failure; its restart steps for host/tests/test_anki_restart.py.
 vjo_suite(app_queue SOURCES host/tests/test_app_queue.c settings/app_queue.c INCLUDES host/tests/vita_stubs UNUSED
   LIBS vjo_host)
-# (#315: the export settles Cards changes; #311: its sentence readings' files)
-vjo_suite(apkg SOURCES host/tests/test_apkg.c settings/app_queue.c settings/cards.c settings/app_platform.c
+# (#311: its sentence readings' files)
+vjo_suite(apkg SOURCES host/tests/test_apkg.c settings/app_queue.c settings/app_platform.c
   INCLUDES host/tests/vita_stubs UNUSED LIBS vjo_host)
 # Real shell control policy, with host-only substitutes for Vita SDK I/O.
 # shell/log_vita.c on an in-memory file system: a batch of lines (vjo_log_batch_begin/end)
@@ -534,7 +528,7 @@ foreach(_vjo_suite IN LISTS _vjo_tool_suites)
   # the same result in both builds: label variant_free, which the normal build's CI job and
   # tools/fast_gate.sh leave to the debug build's run (ctest -LE variant_free).
   file(READ ${_vjo_suite} _vjo_suite_text)
-  if(NOT _vjo_suite_text MATCHES "VJO_(CLI|BENCH|SELFTEST_WRITER|DICT_BENCH|TAICFG|HISTORY_WRITER|STATS_TOOL|CAPTURE_PARITY)|build/host")
+  if(NOT _vjo_suite_text MATCHES "VJO_(CLI|BENCH|SELFTEST_WRITER|DICT_BENCH|TAICFG|HISTORY_WRITER|CAPTURE_PARITY)|build/host")
     set_property(TEST ${_vjo_test} APPEND PROPERTY LABELS variant_free)
   endif()
 endforeach()
@@ -564,7 +558,6 @@ endif()
 string(APPEND _vjo_tool_env ";VJO_DICT_BENCH=$<TARGET_FILE:vjo-dict-bench>")
 string(APPEND _vjo_tool_env ";VJO_TAICFG=$<TARGET_FILE:vjo-taicfg>")
 string(APPEND _vjo_tool_env ";VJO_HISTORY_WRITER=$<TARGET_FILE:vjo-history-writer>")
-string(APPEND _vjo_tool_env ";VJO_STATS_TOOL=$<TARGET_FILE:vjo-stats>")
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
 endif()
@@ -650,7 +643,7 @@ vjo_suite(app_prefs SOURCES host/tests/test_app_prefs.c settings/app_prefs.c set
 # test_settings_games.c, VJO_TEST_ZLIB settings/psp.c and the Games page's suite (vjo_settings_catalog, below).
 add_library(vjo_settings_app OBJECT settings/engine.c settings/preferences.c settings/icons.c settings/text_layout.c
   settings/letter.c settings/app_check.c settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
-  vita/games_storage.c vita/buttons_vita.c host/tests/settings_stubs/stats_page_stub.c
+  vita/games_storage.c vita/buttons_vita.c host/tests/settings_stubs/streak_seed_stub.c
   host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
   host/tests/settings_stubs/lookup_page_stub.c)
 add_library(vjo_settings_main OBJECT settings/main.c)
@@ -733,18 +726,15 @@ vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/i
 # memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
 # settings_stubs/anki_page_stub.c.
 vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
-  settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c settings/cards.c
-  settings/cards_page.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
-  host/tests/settings_stubs/card_picture_stub.c
+  settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c
   INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs
   DEFINES VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS UNUSED LIBS vjo_host)
-# The Rubi app's Stats tab itself (settings/stats_page.c, #312): each game's row as the Triangle view shows it (the
-# Shell's count of the same history.csv), the rows and their scrolling, the goal in app.ini (settings/app_prefs.c,
-# never config.ini), the 14 days and the year, touch, the cache and its checks, the cards per game, on a temporary
-# memory card, its count on the page's worker thread run when the test says.
-vjo_suite(settings_stats SOURCES host/tests/test_settings_stats.c settings/stats_page.c settings/app_prefs.c
-  settings/preferences.c INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs host/tests
-  DEFINES VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS UNUSED LIBS vjo_host)
+# The Rubi app's seed of the overlay's reading streak (settings/streak_seed.c) on a temporary memory card: once (a
+# seeded record is never read again), history.csv's days, the Shell's record kept, a stop that writes nothing, a
+# history.csv that cannot be read, stats_cache.bin removed; its thread run when the test says.
+vjo_suite(settings_streak SOURCES host/tests/test_settings_streak.c settings/streak_seed.c
+  INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs DEFINES VJO_TEST_CREATE_STUBS VJO_TEST_THREAD_STUBS UNUSED
+  LIBS vjo_host)
 # libvita2d's plain textures through the app's wrapper (settings/vita2d_textures.c, #313): no stale render target or
 # depth buffer, so that a font freed while the app runs frees nothing else.
 vjo_suite(settings_textures SOURCES host/tests/test_settings_textures.c settings/vita2d_textures.c
@@ -756,26 +746,6 @@ vjo_suite(settings_lookup SOURCES host/tests/test_settings_lookup.c settings/loo
   settings/lookup_history.c settings/app_queue.c settings/app_platform.c settings/search.c settings/preferences.c
   host/tests/settings_stubs/search_dialog_stub.c
   INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs host/tests UNUSED LIBS vjo_host)
-# The Cards page's storage (#315, settings/cards.c) on real files, with failures injected: the list and its
-# windows, a card's view, Delete, Empty deleted, Fix sentence (the word found again) and Drop picture, every
-# order of their steps, the intent files' recovery after a stop between any two, and the export after it.
-vjo_suite(cards SOURCES host/tests/test_cards.c settings/cards.c settings/anki_export.c settings/app_platform.c
-  INCLUDES host/tests/vita_stubs UNUSED LIBS vjo_host)
-# A card's picture decoded by libjpeg as the app decodes it (settings/card_picture.c): its scale to the
-# page's box, a grey picture, a damaged or cut file returned as an error (setjmp), never an exit; where
-# libjpeg's headers are (the Vita build links the SDK's libjpeg-turbo). The fast gate's image and CI's host
-# job have them (libjpeg-turbo8-dev) and set VJO_REQUIRE_JPEG, so there the test is never left out (#315's
-# audit, F3); elsewhere it is built only when they are found.
-option(VJO_REQUIRE_JPEG "Fail the configure without libjpeg's headers (the card_picture test)" OFF)
-if(VJO_REQUIRE_JPEG)
-  find_package(JPEG REQUIRED)
-else()
-  find_package(JPEG QUIET)
-endif()
-if(JPEG_FOUND)
-  vjo_suite(card_picture SOURCES host/tests/test_card_picture.c settings/card_picture.c
-    DEFINES VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" UNUSED LIBS vjo_host JPEG::JPEG)
-endif()
 vjo_suite(game_input SOURCES host/tests/test_game_input.c kernel/triggers.c INCLUDES host/tests/vita_stubs UNUSED
   LIBS vjo_host)
 
