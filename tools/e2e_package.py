@@ -438,6 +438,8 @@ class E2E:
         d = dev / "ux0/data/VitaJPOverlay"
         shutil.copyfile(FIXTURE, d / "selftest-report.txt")
         (d / "selftest.txt").unlink()
+        # The log lines' formats are today's; their figures are an older build's (VOCR3-H15, Normal's 8 MiB reserve
+        # of API 21 until #280: 1 MiB for every size since), which the analyser reads line by line as it reads any.
         (d / "log.txt").write_text(
             f"bootstrap: shell API {api} entered\nRubi shell started (kernel API {api})\nbootstrap: worker started\n"
             "game PCSG00415 started: dictionary local (key MISSING), trigger l+r, subtitles select+r, ocr_mode auto\n"

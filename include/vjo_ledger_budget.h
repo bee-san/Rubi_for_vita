@@ -746,8 +746,10 @@
  * margins, 4 MiB for Small, 8 MiB for Normal and 16 MiB for Large by the largest model tier the job holds
  * (vita-vn-ocr docs/model-tiers.md §1.3 and §1.5), were an untuned proposal; 1 MiB is an estimate too (no figures
  * of that run were reported). It is headroom left free, never allocated: model, LM,
- * cascade, spotter and helper memory is counted separately beside it, every block a job takes after its check
- * keeps it too (game_ocr/main.c job_reserve), and an Anki screenshot's check keeps it (VJO_GAME_RESERVE). The
+ * cascade, spotter and helper memory is counted separately beside it; the spotter's block keeps it when it loads,
+ * before the check, and the blocks a job takes after its check keep it too (game_ocr/main.c job_reserve: the weights,
+ * the LM, the cascade's model, a tall line over one column's bound), and an Anki screenshot's check keeps it
+ * (VJO_GAME_RESERVE). The
  * three tier names stay for the shared model table (tools/model_tiers.json "reserve_bytes", core/vocr_models.c). */
 #define VJO_GAME_RESERVE_SMALL (1u * 1024u * 1024u)
 #define VJO_GAME_RESERVE_NORMAL (1u * 1024u * 1024u)
@@ -756,8 +758,10 @@
 /* The capture pass of a job a Rubi verified table site answers after OCR was refused for memory
  * (game_ocr/main.c, core/hook_select.h vjo_hook_select_no_memory): one strip's block (at most
  * VJO_VOCR_STRIP_BYTES, 56 KiB), freed with the job, beside this reserve, the same 1 MiB as OCR's since PR #280
- * (smaller than OCR's 4 MiB before it). A game with too little room for any OCR job (アマツツミ, PCSG01198: 2 MiB
- * measured on a console, 2026-10-23, before #280) can still show its hook's text when this capture-only pass fits.
+ * (smaller than OCR's 4 MiB before it). A game with too little room for any OCR job, or whose last model's weights
+ * are refused after its check passed (#280's audit F1: アマツツミ, PCSG01198, 2 MiB measured on a console, 2026-10-23,
+ * passes Small's check at 1 MiB, and on a console that reports free memory in whole MiB its weights are then
+ * refused), can still show its hook's text when this capture-only pass fits.
  * It adds nothing to
  * VJO_WORST_GAME_JOB: it is the capture block every job may hold. API 43: a trusted hook's answer
  * (VJO_GAME_OCR_S_TRUST, core/hook_select.h vjo_hook_select_trusted) takes the same one strip beside

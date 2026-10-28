@@ -198,7 +198,14 @@ size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
 /* ---- the Vita SDK and kernel transport, as the worker sees them ---- */
 SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
-int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out) { out->size_user = (int)(available - live_bytes); return 0; }
+/* 1: the free USER memory in whole MiB, rounded down, as a console reports it (#324: あおかな on a PCH-2000) */
+static int free_mib;
+int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
+{
+    out->size_user = (int)(available - live_bytes);
+    if (free_mib && out->size_user > 0) out->size_user -= out->size_user % (1024 * 1024);
+    return 0;
+}
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opts)
 {
     (void)opts;
@@ -404,7 +411,7 @@ static void reset(void)
     keeps = 0; memset(kept_ids, 0, sizeof(kept_ids)); memset(kept_keys, 0, sizeof(kept_keys)); fake_call_dropped = fake_call_replaced = 0;
     capture_live = job_live = weights_live = 0; capture_block = capture_allocs = 0; live_bytes = 0;
     shot_allocs = probe_allocs = 0;
-    available = 64*1024*1024; clock_value = 0;
+    available = 64*1024*1024; clock_value = 0; free_mib = 0;
     file_open_now = cancel_now = rows_error = 0;
     opens = finds = runs = 0; rows_calls = 0; hook_publishes = 0; hook_publish_rc = 0;
     spy_text = "猫";
@@ -1250,6 +1257,59 @@ static void verified_site_answers_when_ocr_has_no_memory(void)
     }
 }
 
+/* #280's audit F1: with every size's reserve 1 MiB, a game at アマツツミ's measured 2 MiB (PCSG01198, 2026-10-23)
+ * passes the model's check, and on a console that reports its free memory in whole MiB (#324) the weights are refused
+ * once the job's blocks are taken (2 MiB less those blocks reads 1 MiB, the reserve). No smaller model is left, so no
+ * OCR can run in this game now, as when the check fails: with hook_trust = off a Rubi verified site's newest text
+ * answers unconfirmed there too, after the try's blocks go back (its ALLOC steps leave the log, its passed check
+ * stays), with one more pass beside the hook-only reserve. A CALL caller alone keeps the refusal; with the exact
+ * figure OCR runs and agrees; a trusted site answers before any check, as before. */
+static void verified_site_answers_when_its_weights_are_refused(void)
+{
+    VjoGameOcrResult out;
+    for (unsigned exact = 0; exact < 2; exact++) {
+        reset();
+        free_mib = !exact;
+        available = 2 * 1024 * 1024;
+        fake_verified = 1u; /* stream 1: a Rubi verified site */
+        stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
+        spy_text = OCR1;
+        TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+        TEST_CHECK_(!strcmp(out.text, LINE1) && out.text_from == 1, "%s from %u", out.text, (unsigned)out.text_from);
+        if (exact) { /* room for the weights too: OCR reads, and the hook agrees */
+            TEST_CHECK(runs == 1 && out.hook_flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_SITE));
+            TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE && weights_live);
+            continue;
+        }
+        TEST_CHECK_(out.hook_flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE) && !runs &&
+                        !out.lines && !out.recognized,
+                    "flags 0x%x, %u runs, %u lines", (unsigned)out.hook_flags, runs, (unsigned)out.lines);
+        TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY && out.need_workspace == capture_block);
+        TEST_CHECK(capture_allocs == 2 && !weights_live && !job_live && !capture_live); /* the try's, then the pass's */
+        TEST_CHECK(!hk.sel.locked && !hk.sel.interval && !hk.sel.streak); /* nothing learned without OCR */
+        unsigned passed = 0, workspace = 0;
+        for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+            passed += out.step[i].id == VJO_GSTEP_CHECK && !out.step[i].rc;
+            workspace += out.step[i].id == VJO_GSTEP_ALLOC && out.step[i].arg == VJO_GITEM_WORKSPACE;
+        }
+        TEST_CHECK_(passed == 1 && !workspace, "%u passed checks, %u workspace ALLOC steps", passed, workspace);
+        /* a CALL caller alone: the refusal, as before */
+        reset();
+        free_mib = 1;
+        available = 2 * 1024 * 1024;
+        stream(9, VJO_HOOK_KIND_CALL, 6, LINE2);
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.text[0] && !runs);
+        /* hook_trust = on: the trusted site answers before any check, with no block */
+        reset();
+        free_mib = 1;
+        available = 2 * 1024 * 1024;
+        fake_verified = 1u;
+        stream(1, VJO_HOOK_KIND_SITE, 7, LINE3);
+        TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && !strcmp(out.text, LINE3));
+        TEST_CHECK(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR) && !capture_allocs);
+    }
+}
+
 /* ---- API 43: trusted hooks (VJO_GAME_OCR_S_TRUST) through the worker's job path ---- */
 
 /* A Rubi verified site answers from its first line without OCR: no model opened, no line found or recognized,
@@ -1881,6 +1941,8 @@ TEST_LIST = {
     {"API 49: the learned source is reported flagged once trusted, restored ones by identity", trusted_watch_learned_source},
     {"API 50: the line finder's fixes follow the request", line_fix_follows_the_request},
     {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
+    {"#280's audit F1: a verified site answers when the weights are refused after the check (アマツツミ's 2 MiB, "
+     "whole MiB)", verified_site_answers_when_its_weights_are_refused},
     {"Luna: no initial, periodic or repeated OCR and no generic cache IO", luna_never_loads_ocr_or_generic_learning},
     {"Luna: preserve generic learning and resume it when unavailable", luna_preserves_generic_state_and_falls_back_when_unavailable},
     {"Luna: pool saturation, newest script, stable ties and sequence wrap", luna_survives_pool_saturation_and_uses_newest_script},

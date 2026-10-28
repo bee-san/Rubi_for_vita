@@ -168,7 +168,7 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
     r->size = sizeof(*r);
     r->width = w; r->height = h; r->region_x = full ? 0 : 22; r->region_y = full ? 0 : 400;
     r->fb_width = 960; r->fb_height = 544; r->fb_pitch = 960; r->fb_format = 0;
-    r->free_user = freem; r->reserve_bytes = 4194304;
+    r->free_user = freem; r->reserve_bytes = 4194304; /* 0.8.0's H15 figures: its 4 MiB reserve (1 MiB since #280) */
     r->need_workspace = ws + cap; r->need_weights = weights == 1 ? (fallback ? 659456 : 1159168) : 0;
     add(r, VJO_GSTEP_MEM, 0, 0, 0, 0, freem, 10);
     add(r, VJO_GSTEP_CHECK, 0, 0, 0, r->need_workspace + r->need_weights + r->reserve_bytes, freem, 20);
@@ -228,7 +228,7 @@ static void empty_region_job(VjoGameOcrResult *r, int fallback, int resident)
     r->size = sizeof(*r);
     r->width = 917; r->height = 125; r->region_x = 22; r->region_y = 400;
     r->fb_width = 960; r->fb_height = 544; r->fb_pitch = 960; r->fb_format = 0;
-    r->free_user = freem; r->reserve_bytes = 4194304;
+    r->free_user = freem; r->reserve_bytes = 4194304; /* 0.8.0's H15 figures: its 4 MiB reserve (1 MiB since #280) */
     r->need_workspace = ws + cap; r->need_weights = resident ? 0 : fallback ? 659456 : 1159168;
     r->fallback = (uint32_t)fallback;
     r->resident_bytes = resident ? 1159168 : 0;
