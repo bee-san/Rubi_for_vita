@@ -554,11 +554,11 @@ would also need it back for PSP rows. The fixtures run both modes.
 - Installing a new VPK gives a new app beside the old plugins: at start the app finds the records are
   another build's, opens on Install with **Update the overlay to 0.8.1**, and lists the plan. An older
   VPK, or the other variant, is named as such (R7).
-- The Shell's in-game notice becomes one neutral line, since the Shell cannot tell which side is newer
+- The Shell's in-game notice is one neutral line, since the Shell cannot tell which side is newer
   when both have one API: `Rubi app and plugins are different builds: open the Rubi app.` The
   app says which way it is and what to do. It replaced the two notices before it (`VJO_APP_NOTICE`,
   `VJO_APP_NOTICE_NEWER` in `core/app_stamp.h`, 82 and 89 characters; both names give the one now)
-  with one of 67, so SceShell's pages did not grow (AGENTS.md rule 1; the ledger's page check shows
+  with one of 67 (61 since the Rubi rename), so SceShell's pages did not grow (AGENTS.md rule 1; the ledger's page check shows
   it). Nothing else of the Shell, the kernel or the worker changed with it (at API 22).
 - An app without a payload (the zip's) keeps its banner texts, which name `install-vita.sh`.
 
@@ -745,8 +745,8 @@ The code audit (MERGE_OK on #158) left six suggestions, all taken here:
    above says what is done with an empty file.
 6. Over this build a `config.ini` missing beside its `config.ini.bak` is written again from the backup.
 
-Host tests only (`host/tests/test_settings_install.c`); the page's paging is a console check of
-0.8.0-test.4.
+Host tests only (`host/tests/test_settings_install.c`); no console run has reported the page's paging (a plan of
+more than 40 lines).
 
 ## Unmeasured until a console run
 
