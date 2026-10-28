@@ -1012,7 +1012,8 @@ weights may still be read ahead by the session's warm-up, as after any job that 
   licence is that file's: the weights are for non-commercial use only, as the recognizers are; they are data the
   plugin reads, not part of its code. The kernel's broker opens the file only for a request with the gate's bit
   (`VJO_GAME_OCR_OPEN_GATE`), at its pinned size. The worker reads it once, checks its SHA-256 and keeps it in a
-  1,540 B static block (`VjoVocrGateResident`); each later job with the gate opens the file to check that it is
+  block of its own (`VjoGameVocrGate`, 4,096 B of the game's `USER_RW` memory, while its jobs ask for the gate: a
+  1,540 B static one before #418, [memory-ledger.md](memory-ledger.md#the-workers-data-page-the-gates-weights-and-the-line-caches-greedy-texts-418-no-api-change)); each later job with the gate opens the file to check that it is
   unchanged (its size and time, as for the models) and reads it again only when it changed; `vocr_textgate_load`
   checks its CRC-32 in every job. Without the file (an `ocr` folder from an older package) the gate does not decide:
   the job reads as without it, and the gate's step says why.

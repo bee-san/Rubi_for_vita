@@ -1995,7 +1995,12 @@ static void test_the_line_fix_keeps_a_line_across_a_wide_gap(void)
 #ifndef VJO_VOCR_GATE_TEST_DIR
 #define VJO_VOCR_GATE_TEST_DIR ""
 #endif
-static VjoVocrGateResident gate_res;
+/* #418: the gate's weights in a block the caller gives (the worker's VjoGameVocrGate): here a static one */
+static unsigned char gate_block[VJO_VOCR_GATE_BYTES] __attribute__((aligned(16)));
+static void *gate_alloc(void *ud, size_t n) { (void)ud; return n <= sizeof(gate_block) ? gate_block : NULL; }
+static int gate_release(void *ud) { (void)ud; return 0; }
+#define GATE_RESIDENT {gate_alloc, gate_release, NULL, {NULL}, NULL, 0, 0, 0}
+static VjoVocrGateResident gate_res = GATE_RESIDENT;
 static PosixPlatform gate_pp;
 static VjoPlatform gate_posix;
 static unsigned gate_opens;
@@ -2038,7 +2043,7 @@ static void test_the_gate_stops_a_region_without_text(void)
     VjoVocrStats st;
     unsigned strips_off;
     if (!gate_ready()) return;
-    memset(&gate_res, 0, sizeof(gate_res));
+    gate_res = (VjoVocrGateResident)GATE_RESIDENT;
     reset();
     scr.stripes = 1;
     TEST_CHECK(run_gate(&off, &st, H, VJO_VOCR_GATE_TEST_DIR) == VJO_E_OCR_MODEL && st.lines == 1 && scr.opens == 1 &&
@@ -2103,11 +2108,11 @@ static void test_the_gate_keeps_the_lines_without_its_weights(void)
 {
     VjoVocrPolicy on = {.gate = 1, .gate_res = &gate_res};
     VjoVocrStats st;
-    VjoVocrGateResident none = {{0}, 0, 0, 0};
+    VjoVocrGateResident none = {0};
     VjoVocrPolicy no_res = {.gate = 1};
     reset();
     scr.stripes = 1;
-    memset(&gate_res, 0, sizeof(gate_res));
+    gate_res = (VjoVocrGateResident)GATE_RESIDENT;
     if (!gate_posix.file_open) posix_platform_init(&gate_pp, &gate_posix); /* a real open, of a missing file */
     TEST_CHECK(run_gate(&on, &st, H, "missing") == VJO_E_OCR_MODEL && st.lines == 1 && scr.opens == 1);
     TEST_CHECK(st.gate_rc == VJO_E_OCR_MODEL && !st.gate_ran && !st.gate_stopped && !gate_res.verified);

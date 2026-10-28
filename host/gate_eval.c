@@ -70,9 +70,14 @@ static void json_text(const char *s)
 
 static int read_u32(uint32_t *v) { return fread(v, 4, 1, stdin) == 1; }
 
+/* #418: the gate's weights in a block the caller gives (the worker's VjoGameVocrGate): here a static one */
+static unsigned char gate_block[VJO_VOCR_GATE_BYTES] __attribute__((aligned(16)));
+static void *gate_alloc(void *ud, size_t n) { (void)ud; return n <= sizeof(gate_block) ? gate_block : NULL; }
+static int gate_release(void *ud) { (void)ud; return 0; }
+
 int main(int argc, char **argv)
 {
-    static VjoVocrGateResident gate_res;
+    static VjoVocrGateResident gate_res = {gate_alloc, gate_release, NULL, {NULL}, NULL, 0, 0, 0};
     static char text[VJO_GAME_OCR_TEXT_BYTES], raw[VJO_GAME_OCR_TEXT_BYTES];
     const char *model = VJO_VOCR_TIER2_NAME, *cascade_name = VJO_VOCR_TIER3_NAME;
     char magic[4];

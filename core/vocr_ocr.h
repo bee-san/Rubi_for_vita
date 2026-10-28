@@ -219,15 +219,14 @@ typedef VjoVocrResident VjoVocrLmResident;
 int vjo_vocr_resident_drop(VjoVocrResident *resident);
 #define vjo_vocr_lm_drop vjo_vocr_resident_drop
 
-/* API 26: the text-presence gate's weights (VjoVocrPolicy.gate_res), kept between jobs. The file
- * VJO_VOCR_GATE_NAME in the job's model directory is opened in every job that uses the gate and read and
- * hashed (its SHA-256 pinned in core/vocr_ocr.c) only when its size or stamp changed or nothing verified is
- * held. The caller owns it (the worker: a static) and zero-initializes it. */
-typedef struct {
-    unsigned char data[VJO_VOCR_GATE_BYTES];
-    int verified;            /* 1: data holds the pinned weights */
-    uint64_t size, stamp;    /* of the file they were read from */
-} VjoVocrGateResident;
+/* API 26: the text-presence gate's weights (VjoVocrPolicy.gate_res), kept between jobs in a block of
+ * VJO_VOCR_GATE_BYTES that alloc gives, as the LM's are (#418: the worker's VjoGameVocrGate, never a static array):
+ * the file VJO_VOCR_GATE_NAME in the job's model directory is opened in every job that uses the gate and read and
+ * hashed (its SHA-256 pinned in core/vocr_ocr.c) only when its size or stamp changed or nothing verified is held; a
+ * missing, wrong or unreadable file releases the block. No block (alloc NULL): the job reads as without the gate
+ * (stats->gate_rc VJO_E_OOM). The caller owns it (the worker: a static) and zero-initializes its state fields;
+ * verified is non-NULL once data holds the pinned weights. */
+typedef VjoVocrResident VjoVocrGateResident;
 
 /* API 54: the text spotter's weights (VjoVocrPolicy.spot_res; vita-vn-ocr #128, runtime/vocr_textspot6.c), kept
  * between jobs as the LM's are: the file VJO_VOCR_SPOT_NAME in the job's model directory, of its pinned size and
@@ -427,6 +426,7 @@ typedef struct {
     unsigned dispatched;     /* lines a helper recognized */
     unsigned run_failures;   /* helpers that could not start: their line ran on the caller's thread */
     unsigned cached;         /* lines whose text came from the cache */
+    unsigned cache_long;     /* lines the cache left out for their texts' length (VJO_VOCR_CACHE_TEXT) */
     uint32_t key_us;         /* time spent hashing lines for the cache */
     unsigned stuck;          /* 1: a helper could not be joined: it may still run in the workspace */
     /* ocr-first (docs/first-ocr.md). */
@@ -583,7 +583,12 @@ typedef struct {
  * weights from the file again empties it. A job adds its lines once it has
  * succeeded. */
 #define VJO_VOCR_CACHE_LINES 8u
-#define VJO_VOCR_CACHE_TEXT 368u /* longer line texts are not kept */
+/* An entry's text bytes: the line's shown text and, where the LM or the cascade changed it (VJO_VOCR_LINE_CHANGED:
+ * its greedy text is another), its greedy text after the shown text's NUL (#418: the greedy text was a second
+ * buffer of its own, the shown text's copy on every line nothing changed). A line whose texts do not fit (a shown
+ * text of 368 B or more, or with another greedy text 366 B or more of the two) is not kept, and counted
+ * (VjoVocrStats.cache_long). */
+#define VJO_VOCR_CACHE_TEXT 368u
 typedef struct {
     uint64_t key;            /* 0: empty */
     const VjoVocrModel *model;
@@ -592,14 +597,25 @@ typedef struct {
     uint16_t flags;          /* the line's VjoVocrLineStat.flags */
     uint16_t greedy_len;     /* its greedy text's bytes */
     uint16_t need;           /* the longest text the job placed for it (greedy, LM, cascade) */
-    uint16_t pad;
+    uint16_t greedy_at;      /* its greedy text at text + greedy_at: 0 (the shown text), or after the shown one's NUL */
     char text[VJO_VOCR_CACHE_TEXT];
-    char greedy[VJO_VOCR_CACHE_TEXT];
 } VjoVocrCacheLine;
 typedef struct {
     VjoVocrCacheLine line[VJO_VOCR_CACHE_LINES];
     uint32_t tick, hits, misses;
 } VjoVocrCache;
+#ifndef __vita__
+/* Host builds only (#418; nothing of it in the Vita's): a hook before (after 0) and after (after 1) each lookup of the
+ * line cache (text NULL) and each entry a job offers it, for host/tests/cache_replay.h, which replays them through the
+ * cache's layout before #418. The cache's own put and lookup, for the same tests. */
+typedef void (*VjoVocrCacheTrace)(int after, const VjoVocrCache *c, const VjoVocrModel *m, uint64_t key,
+                                  const char *text, size_t len, const char *greedy, size_t greedy_len, unsigned frames,
+                                  unsigned flags, size_t need);
+extern VjoVocrCacheTrace vjo_vocr_cache_trace;
+int vjo_vocr_test_cache_put(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key, const char *text, size_t len,
+                            const char *greedy, size_t greedy_len, unsigned frames, uint16_t flags, size_t need);
+VjoVocrCacheLine *vjo_vocr_test_cache_find(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key);
+#endif
 
 typedef struct {
     uint32_t settle_us, settle_max_us;

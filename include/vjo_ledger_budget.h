@@ -497,10 +497,16 @@
  * 36,416 -> 36,408 B, under its last code page again: 212,992 -> 208,896 B of pages, the page #355 took (436 B of code
  * room left in the normal build, 3,776 B in the debug one) [measured: tools/check_memory_ledger.py's module rows,
  * both builds, main 93c99c7e and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
+/* #418 (cleanup P4, #471): the text-presence gate's weights a block of their own (VJO_BUDGET_GAME_GATE, 1,560 B of
+ * .bss before) and the line cache's greedy texts inside its entries' text (core/vocr_ocr.h VJO_VOCR_CACHE_TEXT:
+ * 2,944 B of .bss before): worker data/bss 36,424 -> 31,968 B debug and 36,408 -> 31,952 B normal, 9 -> 8 data pages,
+ * text 180,544 -> 180,448 B and 171,596 -> 171,516 B: 221,184 -> 217,088 B and 208,896 -> 204,800 B of pages, one page
+ * fewer in every game that is ON [measured: tools/check_memory_ledger.py's module rows, both builds, main a4ab7f49 and
+ * this change, tools/fast_gate.sh's vitasdk image]. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 221184u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 208896u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
@@ -848,10 +854,17 @@
  * vita-vn-ocr's published pick without a change here (game_ocr/main.c refuses a larger block; core/vocr_ocr.c
  * checks the sum against this on 32-bit builds). The pin's 52,176 B (v0.3.10-textspot8.1) take 57,344 B. */
 #define VJO_BUDGET_GAME_SPOT 516096u
+/* API 26: the text-presence gate's weights (game_ocr/main.c gate_alloc, "VjoGameVocrGate"; core/vocr_ocr.h
+ * VjoVocrGateResident), USER_RW only, resident like the LM while the game is the active one and its jobs ask for the
+ * gate (ocr_text_gate = on; off by default), given back with the others: the pinned file's 1,540 B
+ * (VJO_VOCR_GATE_BYTES), page-rounded. #418: they were 1,560 B of the worker's .bss, in every game whether the gate
+ * was on or off; the block is taken in the room beyond the job's reserve and the blocks its memory check counted. */
+#define VJO_BUDGET_GAME_GATE 4096u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
                             VJO_BUDGET_GAME_LINE_OR_FRAME + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \
-                            VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SC3 + VJO_BUDGET_GAME_SPOT)
+                            VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SC3 + VJO_BUDGET_GAME_SPOT + \
+                            VJO_BUDGET_GAME_GATE)
 /* The recognizer ceiling: weights <= 2,502,656 B, the owner's int8 ceiling for the Large tier
  * (2026-10-14 18:09Z: Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB; 2,500,000 B page-rounded;
  * 1,601,536 B, Normal's 1.6 MB, before VOCR5's Large), and a full-screen workspace of at most

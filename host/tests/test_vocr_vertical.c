@@ -32,6 +32,7 @@
 #include "vocr_ocr.h"
 #ifndef VJO_TEST_OFF_ONLY
 #include "vocr_vertical.h"
+#include "cache_replay.h" /* #418: every cache operation replayed through the old layout (main installs it) */
 #endif
 #include "../../core/fbgrey.h"
 #include <bearssl_hash.h>
@@ -243,6 +244,12 @@ static int lm_release(void *ud) { (void)ud; free(lm_mem); lm_mem = NULL; return 
 static VjoVocrResident res = {res_alloc, res_release, NULL, {NULL}, NULL, 0, 0, 0};
 static VjoVocrResident cres = {cres_alloc, cres_release, NULL, {NULL}, NULL, 0, 0, 0}; /* a cascade's */
 static VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, {NULL}, NULL, 0, 0, 0};
+#ifndef VJO_TEST_OFF_ONLY
+/* #418: the gate's weights in a block the caller gives (the worker's VjoGameVocrGate): here a static one */
+static unsigned char gate_block[VJO_VOCR_GATE_BYTES] __attribute__((aligned(16)));
+static void *gate_alloc(void *ud, size_t n) { (void)ud; return n <= sizeof(gate_block) ? gate_block : NULL; }
+static int gate_release(void *ud) { (void)ud; return 0; }
+#endif
 
 /* What the line callback saw, in order. */
 #define MAXL VJO_VOCR_MAX_LINES
@@ -351,7 +358,7 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
     static VjoVocrGateResident gate_res; /* its weights: from the models' directory when a gate test put them there
                                            * (put_gate_file); without them the gate cannot decide */
     if (o->gate) {
-        memset(&gate_res, 0, sizeof gate_res);
+        gate_res = (VjoVocrGateResident){gate_alloc, gate_release, NULL, {NULL}, NULL, 0, 0, 0};
         pol.gate = 1;
         pol.gate_res = &gate_res;
     }
@@ -1345,5 +1352,8 @@ TEST_LIST = {
 int main(int argc, char **argv)
 {
     if (!vjo_test_tmpdir("vocr-vertical")) return 2;
+#ifndef VJO_TEST_OFF_ONLY
+    cache_replay_install(); /* each test (a child of acutest's) checks its jobs' cache against the old layout */
+#endif
     return acutest_main(argc, argv);
 }

@@ -186,6 +186,10 @@ static int gate_or_absent(void *user, const char *path, VjoFile *out)
     return -1;
 }
 static void *heap_alloc(void *ud, size_t n) { (void)ud; return malloc(n); }
+/* #418: the gate's weights in a block the caller gives (the worker's VjoGameVocrGate): here a static one */
+static unsigned char gate_block[VJO_VOCR_GATE_BYTES] __attribute__((aligned(16)));
+static void *gate_alloc(void *ud, size_t n) { (void)ud; return n <= sizeof(gate_block) ? gate_block : NULL; }
+static int gate_release(void *ud) { (void)ud; return 0; }
 
 static int policy_job(unsigned w, unsigned h, int check, unsigned fix, int gate, VjoVocrStats *st)
 {
@@ -206,7 +210,7 @@ static int policy_job(unsigned w, unsigned h, int check, unsigned fix, int gate,
     pol.vertical_check = check;
     pol.line_fix = fix;
     if (gate) {
-        memset(&gate_res, 0, sizeof(gate_res));
+        gate_res = (VjoVocrGateResident){gate_alloc, gate_release, NULL, {NULL}, NULL, 0, 0, 0};
         pol.gate = 1;
         pol.gate_res = &gate_res;
     }

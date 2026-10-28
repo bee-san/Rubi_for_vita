@@ -17,6 +17,7 @@ static unsigned test_cascade_conf; /* 0: the default; 1001: every line is doubtf
 #include "../../game_ocr/main.c"
 #include "test_tier_pins.h"
 #include "vocr_models.h" /* vjo_vocr_tier_need: the Rubi app's table (tools/model_tiers.json "need_bytes") */
+#include "cache_replay.h" /* #418: every cache operation replayed through the old layout (setup installs it) */
 
 static unsigned char workspace[2*1024*1024] __attribute__((aligned(64)));
 static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
@@ -32,6 +33,9 @@ static int lm_live; static unsigned lm_block, lm_allocations, lm_frees, lm_opens
 #endif
 static unsigned gate_opens; /* API 26: opens of the gate's weights */
 static int open_gate_missing; /* API 26: the gate's file is not on the card */
+/* #418: the gate's block (game_ocr/main.c gate_alloc, "VjoGameVocrGate"), USER_RW only, at most one */
+static unsigned char gate_memory[4096] __attribute__((aligned(64)));
+static int gate_live, refuse_gate; static unsigned gate_block, gate_allocs, gate_frees;
 static unsigned char cascade_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int cascade_live; static unsigned cascade_block, cascade_allocations, cascade_frees, cascade_opens;
 /* the block of a line taller than a strip (game_ocr/main.c line_buffer, "VjoGameVocrLine"): a job of columns takes
@@ -130,6 +134,13 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
         if (alloc_failure) return -1;
         lm_live = 1; lm_block = size; live_bytes += size; return 12;
     }
+    if (!strcmp(name, "VjoGameVocrGate")) { /* #418: the gate's weights, at most one block, USER only */
+        TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW);
+        TEST_CHECK(!gate_live && size <= sizeof(gate_memory));
+        gate_allocs++;
+        if (alloc_failure || refuse_gate) return (int)0x80024302u;
+        gate_live = 1; gate_block = size; live_bytes += size; return 16;
+    }
     if (!strcmp(name, "VjoGameVocrWeights")) { /* resident verified weights, at most one block, USER only */
         TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW);
         TEST_CHECK(!weights_live && size <= sizeof(weights_memory));
@@ -160,6 +171,7 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
     if (uid == 13) { TEST_CHECK(cascade_live); *base = cascade_memory; return 0; }
     if (uid == 14) { TEST_CHECK(line_live); *base = line_memory; return 0; }
     if (uid == 15) { TEST_CHECK(frame_live); *base = frame_memory; return 0; }
+    if (uid == 16) { TEST_CHECK(gate_live); *base = gate_memory; return 0; }
     TEST_CHECK(uid == 9 && memory_live); *base = base_failure ? NULL : workspace; return base_failure ? -1 : 0;
 }
 int sceKernelFreeMemBlock(SceUID uid)
@@ -181,6 +193,10 @@ int sceKernelFreeMemBlock(SceUID uid)
     if (uid == 14) {
         TEST_CHECK(line_live); if (free_failure) return -1;
         line_live = 0; line_frees++; live_bytes -= line_block; return 0;
+    }
+    if (uid == 16) {
+        TEST_CHECK(gate_live); if (free_failure) return -1;
+        gate_live = 0; gate_frees++; live_bytes -= gate_block; return 0;
     }
     TEST_CHECK(uid == 9 && memory_live); if (free_failure) return -1;
     memory_live = 0; frees++; live_bytes -= job_block; return 0;
@@ -434,7 +450,9 @@ static VjoGameOcrRequest setup(void)
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
     lm_res.lm = NULL; lm_res.data = NULL; lm_res.capacity = 0; lm_res.size = lm_res.stamp = 0; lm_blk.uid = -1;
     lm_live = 0; lm_allocations = lm_frees = lm_opens = last_which = 0;
-    gate_opens = 0; memset(&gate_res, 0, sizeof(gate_res));
+    gate_opens = 0; gate_live = refuse_gate = 0; gate_block = gate_allocs = gate_frees = 0;
+    gate_res.verified = NULL; gate_res.data = NULL; gate_res.capacity = 0; gate_res.size = gate_res.stamp = 0;
+    gate_blk.uid = -1; gate_blk.held = 0;
     cascade_res.model = NULL; cascade_res.data = NULL; cascade_res.capacity = 0; cascade_res.size = cascade_res.stamp = 0;
     cascade_blk.uid = -1; cascade_live = 0; cascade_allocations = cascade_frees = cascade_opens = 0;
     test_cascade_conf = 0;
@@ -465,6 +483,7 @@ static VjoGameOcrRequest setup(void)
     hook_owns_workspace = 0; vjo_vocr_unstick();
     for (unsigned k = 0; k <= VJO_VOCR_HELPERS_MAX; k++) { helper_uid[k] = -1; helper_job[k].fn = NULL; }
     memset(&line_cache, 0, sizeof(line_cache));
+    cache_replay_install();
     helper_threads = helper_live = helper_starts = 0; helper_create_failure = helper_join_failure = 0; n_waits = 0;
     helper_deferred = 0; memset(deferred, 0, sizeof(deferred));
     arm_mhz = 333; arm_sets = arm_set_last = 0; arm_gets = arm_game_at = 0; arm_game_mhz = 0;
@@ -478,12 +497,19 @@ static VjoGameOcrRequest setup(void)
     snprintf(model_path, sizeof(model_path), "%s/%s", r.model_dir, r.model);
     return r;
 }
-/* setup(), keeping the gate's resident weights (as the worker does between jobs) */
+/* setup(), keeping the gate's resident weights and their block (as the worker does between jobs) */
 static VjoGameOcrRequest setup_keeping_the_gate(void)
 {
     VjoVocrGateResident keep = gate_res;
+    BlockState keep_blk = gate_blk;
+    const int live = gate_live;
+    const unsigned block = gate_block;
     VjoGameOcrRequest r = setup();
     gate_res = keep;
+    gate_blk = keep_blk;
+    gate_live = live;
+    gate_block = block;
+    live_bytes += live ? block : 0u;
     return r;
 }
 static void line(void)
@@ -951,6 +977,95 @@ static void the_gate_runs_in_the_worker(void)
     open_gate_missing = 0;
 }
 
+/* #418: the gate's weights are a block of their own (1,560 B of the worker's .bss before, in every game, the gate on
+ * or off): taken at the first job that asks for the gate, 4,096 B of USER_RW (its ALLOC step's item VJO_GITEM_GATE;
+ * the spotter's ledger item counts it, GL_GATE), kept between such jobs (no read, no ALLOC), given back by a job that
+ * does not ask for it (its FREE step), with the other resident blocks, when its file goes, and by a game that is no
+ * longer the active one. It is taken before the job's weights, so never from the room the job's check counted for
+ * them: without 4 KiB more the job reads as without the gate (rc VJO_E_OOM), the game asked for nothing. */
+static const VjoGameOcrStep *item_step(const VjoGameOcrResult *out, unsigned id, unsigned item)
+{
+    for (unsigned i = 0; i < out->n_steps; i++)
+        if (out->step[i].id == id && out->step[i].arg == item) return &out->step[i];
+    return NULL;
+}
+static void the_gate_s_weights_are_a_block_of_their_own(void)
+{
+    VjoGameOcrRequest r;
+    VjoGameOcrResult out;
+    const VjoGameOcrStep *g, *a;
+    uint32_t need;
+    if (!VJO_VOCR_GATE_TEST_DIR[0]) { TEST_SKIP("no gate weights (cmake/VocrGate.cmake)"); return; }
+    /* the first job with the gate: its block taken, the weights read into it */
+    r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out));
+    a = item_step(&out, VJO_GSTEP_ALLOC, VJO_GITEM_GATE);
+    g = gate_step(&out);
+    TEST_ASSERT(a != NULL && g != NULL);
+    TEST_CHECK(a->kind == VJO_GAME_OCR_MEM_USER && a->rc == 16 && a->bytes == VJO_BUDGET_GAME_GATE);
+    TEST_CHECK(g->arg == 1 && (g->bytes & VJO_GLM_READ) && gate_live && gate_allocs == 1 && gate_block == 4096u);
+    TEST_CHECK(gate_res.verified && gate_res.data == gate_memory && held_bytes(&gate_res) == VJO_BUDGET_GAME_GATE);
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_GATE) == VJO_BUDGET_GAME_GATE);
+    TEST_CHECK(blocks_kept() == 1u + !!held_bytes(&resident)); /* verified: its FREE step keeps no slot */
+    /* the next job with the gate: kept, not read again, no step for its block */
+    r = setup_keeping_the_gate(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out));
+    g = gate_step(&out);
+    TEST_CHECK(g && g->arg == 1 && !(g->bytes & VJO_GLM_READ) && gate_live && !gate_allocs && !gate_frees);
+    TEST_CHECK(!item_step(&out, VJO_GSTEP_ALLOC, VJO_GITEM_GATE) && !item_step(&out, VJO_GSTEP_FREE, VJO_GITEM_GATE));
+    /* a job without the gate: the block goes back, its FREE step logged, as the LM's does with the LM off */
+    r = setup_keeping_the_gate(); stripes();
+    vjo_game_ocr_run_request(&r, &out);
+    a = item_step(&out, VJO_GSTEP_FREE, VJO_GITEM_GATE);
+    TEST_CHECK(a && !a->rc && a->bytes == VJO_BUDGET_GAME_GATE && !gate_live && gate_frees == 1 && !gate_step(&out));
+    TEST_CHECK(!gate_res.verified && !gate_res.data && gate_blk.uid < 0 &&
+               !vjo_ledger_current(&g_game_ledger, GL_GATE));
+    /* given back with the other resident blocks (a job that does not fit, the worker's stop) */
+    r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && gate_live);
+    TEST_CHECK(!drop_resident() && !gate_live && gate_frees == 1 && !gate_res.verified && gate_blk.uid < 0);
+    /* its file gone: given back (memory is held only for the verified file on the card) */
+    r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && gate_live);
+    r = setup_keeping_the_gate(); stripes(); r.speed = VJO_GAME_OCR_S_GATE; open_gate_missing = 1;
+    vjo_game_ocr_run_request(&r, &out);
+    g = gate_step(&out);
+    TEST_CHECK(g && !g->arg && g->rc == VJO_E_OCR_MODEL && !gate_live && gate_frees == 1 && !gate_res.verified);
+    open_gate_missing = 0;
+    /* a game no longer the active one gets it back from the worker's loop (ocr-first) */
+    r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && gate_live);
+    quit_on_delay = 1;
+    inactive_since = now_wide() - INACTIVE_DROP_US;
+    worker_main(0, NULL); /* vjoOcrRegister: not the active game */
+    quit_on_delay = 0;
+    quitting = 0;
+    TEST_CHECK(!gate_live && gate_frees == 1 && !gate_res.verified && !blocked);
+    /* the room: the job's check passed with 2 KiB to spare beside its weights, still to come: the gate is refused
+     * before the game is asked (no ALLOC step), the job reads as without it, its weights as before */
+    r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE; refuse_gate = 1;
+    vjo_game_ocr_run_request(&r, &out);
+    need = out.need_workspace + out.need_weights; /* the job's check (the gate's block is not in it) */
+    TEST_ASSERT(need > 0 && out.need_weights > 0 && gate_allocs == 1 && !gate_live);
+    g = gate_step(&out);
+    TEST_CHECK(g && g->rc == VJO_E_OOM && !g->arg); /* refused by the game: the job read as without the gate */
+    r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    available = (int)(GAME_RESERVE + need + 2048u);
+    vjo_game_ocr_run_request(&r, &out);
+    g = gate_step(&out);
+    TEST_CHECK_(g && g->rc == VJO_E_OOM && !gate_allocs && !item_step(&out, VJO_GSTEP_ALLOC, VJO_GITEM_GATE) &&
+                    out.need_workspace + out.need_weights == need,
+                "2 KiB to spare: gate rc %d, its allocations %u", g ? (int)g->rc : 0, gate_allocs);
+    /* 4 KiB more: taken */
+    r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    available = (int)(GAME_RESERVE + need + 2048u + VJO_BUDGET_GAME_GATE);
+    vjo_game_ocr_run_request(&r, &out);
+    g = gate_step(&out);
+    TEST_CHECK_(g && !g->rc && g->arg == 1 && gate_allocs == 1 && gate_live,
+                "6 KiB to spare: gate rc %d, allocations %u", g ? (int)g->rc : 0, gate_allocs);
+    TEST_CHECK(!drop_resident() && !gate_live);
+}
+
 /* API 20: the job's policy rides in the request's flags. A wait of 150 ms
  * (15 x 10 ms) first, at 60 frames a second, on a still screen: the job reads
  * the region until it held still, records the wait as a step, and only then
@@ -1183,6 +1298,46 @@ static void a_nocache_job_recognizes_and_caches_nothing(void)
     TEST_CHECK(keys == 0);
     r.speed = 0;
     TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && out.frames > 0); /* recognized again, then cached */
+}
+
+/* #418: the worker's line cache keeps a line's greedy text after its shown text, only where it is another: every
+ * job of this file replays its cache operations through the old layout (cache_replay.h, installed by setup) and
+ * checks that both hold the same after each. Here the worker's sequence with the release weights (those of
+ * a_nocache_job_recognizes_and_caches_nothing, then the LM and the cascade, the self-test's NOCACHE and the weights
+ * read again), whose hits and misses main's cache gives too. */
+static void the_worker_s_cache_replayed_through_the_old_layout(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    static const unsigned want[][2] = {{0, 1}, {1, 1}, {0, 1}, {1, 1}, {1, 2}, {2, 2}, {0, 1}};
+    unsigned seq[7][2], n = 0;
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_SKIP("no release weights"); return; }
+    line();
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && out.recognized == 1); /* cold */
+    seq[n][0] = line_cache.hits; seq[n++][1] = line_cache.misses;
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && !out.frames); /* the same screen: from the cache */
+    seq[n][0] = line_cache.hits; seq[n++][1] = line_cache.misses;
+    r.speed = VJO_GAME_OCR_S_NOCACHE; /* the self-test's: emptied, unused */
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out));
+    r.speed = 0;
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && out.frames > 0); /* recognized again, then kept */
+    seq[n][0] = line_cache.hits; seq[n++][1] = line_cache.misses;
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && !out.frames);
+    seq[n][0] = line_cache.hits; seq[n++][1] = line_cache.misses;
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT; /* the LM: another cache variant */
+    vjo_game_ocr_run_request(&r, &out);
+    seq[n][0] = line_cache.hits; seq[n++][1] = line_cache.misses;
+    vjo_game_ocr_run_request(&r, &out);
+    seq[n][0] = line_cache.hits; seq[n++][1] = line_cache.misses;
+    TEST_CHECK(!drop_resident()); /* the weights read again: the cache emptied */
+    vjo_game_ocr_run_request(&r, &out);
+    seq[n][0] = line_cache.hits; seq[n++][1] = line_cache.misses;
+    for (unsigned i = 0; i < n; i++)
+        TEST_CHECK_(seq[i][0] == want[i][0] && seq[i][1] == want[i][1], "job %u: %u hits, %u misses (main's: %u, %u)",
+                    i + 1u, seq[i][0], seq[i][1], want[i][0], want[i][1]);
+    TEST_CHECK_(!replay.mismatches && !replay.left_out && replay.lookups > 0,
+                "replayed: %u lookups, %u hits, %u entries offered, %u synced, %u left out, %u differed",
+                replay.lookups, replay.hits, replay.puts, replay.synced, replay.left_out, replay.mismatches);
+    r.flags = 0;
 }
 
 /* ocr_boost_clock: when the game sets another clock while a job recognizes, the job leaves
@@ -4042,6 +4197,8 @@ TEST_LIST = {
      on_tall_region_after_a_bad_vertical_file_reads_rows},
     {"the request's flags become the job's policy", request_flags_become_the_policy},
     {"API 26: the text-presence gate in the worker: its file, its step, a wait first on one strip", the_gate_runs_in_the_worker},
+    {"#418: the gate's weights a block of their own: taken, kept, given back; never the weights' room",
+     the_gate_s_weights_are_a_block_of_their_own},
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
     {"the returned text is normalised, the recognizer's own kept after it", returned_text_is_normalised_and_kept},
     {"a retry to an empty box returns nothing of the first try", a_retry_to_an_empty_box_returns_nothing},
@@ -4089,6 +4246,8 @@ TEST_LIST = {
      a_stuck_helper_keeps_its_memory_until_stop},
     {"API 22: the clock stays where the game set it during a job", the_clock_stays_where_the_game_set_it},
     {"API 22: a job with VJO_GAME_OCR_S_NOCACHE recognizes and caches nothing", a_nocache_job_recognizes_and_caches_nothing},
+    {"#418: the worker's line cache, replayed through the old layout: the same hits, misses and entries",
+     the_worker_s_cache_replayed_through_the_old_layout},
     {"API 22: helpers with the LM and the cascade give the serial job's text and recognizer text",
      helpers_with_the_lm_and_cascade_give_the_serial_text},
     {NULL, NULL}

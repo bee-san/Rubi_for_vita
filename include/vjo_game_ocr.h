@@ -335,7 +335,9 @@ enum {
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
                             line (core/vocr_ocr.h vjo_vocr_warm) */
     VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc, bytes their CTC frames; API 42: kind the share of
-                            those frames the head gate skipped, percent (0 without it) */
+                            those frames the head gate skipped, percent (0 without it); sum the lines left out for
+                            their size: taller than the line block allows (core/vocr_ocr.h tall_skipped), and
+                            (#418) << 8 too long for the line cache (cache_long) */
     VJO_GSTEP_FALLBACK,  /* API 19 only: the fallback model runs, arg 1 = forced (now the fallback's CHECK) */
     VJO_GSTEP_FB,        /* the frame: kind 1 = the kernel's, 3 = sceDisplayGetFrameBuf's; bytes = pitch,
                             arg = width, sum = pixel format, rc the query's */
@@ -446,7 +448,8 @@ enum {
 #define VJO_GITEM_SC3 9u       /* "VjoGameSc3": an SC3 hook's charset, from the first job until the worker stops */
 #define VJO_GITEM_SPOT 10u     /* "VjoGameVocrSpot": the text spotter's weights and their parsed form (API 54) */
 #define VJO_GITEM_FRAME 11u    /* "VjoGameVocrFrame": the region from one frame, a paused job's (API 55) */
-#define VJO_GITEM_COUNT 12u
+#define VJO_GITEM_GATE 12u     /* "VjoGameVocrGate": the text-presence gate's weights (API 26; a block since #418) */
+#define VJO_GITEM_COUNT 13u
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */
