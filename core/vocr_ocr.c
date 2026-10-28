@@ -1047,36 +1047,15 @@ static int resident_lm(const VjoPlatform *p, const char *dir, const VjoVocrLm *l
     return resident_file(p, dir, lm, lm->name, lm->bytes, lm->sha256, lm->bytes, r, im, &st->lm_loaded, &st->lm_cached);
 }
 
-/* API 26: the text-presence gate's verified weights in r->data, as resident_weights does for the recognizer:
- * the file is opened in every job that uses the gate, read and hashed again only when its size or stamp
- * changed or nothing verified is held. */
+/* API 26: the text-presence gate's verified weights in r->data (resident_file, its pin the pinned SHA-256): the
+ * file is opened in every job that uses the gate, read and hashed again only when its size or stamp changed or
+ * nothing verified is held. */
 static int resident_gate(const VjoPlatform *p, const char *dir, VjoVocrGateResident *r, const VjoGreySource *im,
                          VjoVocrStats *st)
 {
-    char path[256];
-    VjoFile file;
-    int rc;
-    if (join_path(path, sizeof(path), dir, VJO_VOCR_GATE_NAME) < 0) return VJO_E_OCR_MODEL;
-    memset(&file, 0, sizeof(file));
-    if (!p->file_open || p->file_open(p->ud, path, &file) < 0) return cancelled(im) ? VJO_E_CANCELLED : VJO_E_OCR_MODEL;
-    if (file.size != VJO_VOCR_GATE_BYTES || !file.read || !file.close) {
-        if (file.close) file.close(file.ctx);
-        r->verified = 0;
-        return VJO_E_OCR_MODEL;
-    }
-    if (r->verified && file.stamp && file.stamp == r->stamp && file.size == r->size) {
-        file.close(file.ctx);
-        return VJO_OK;
-    }
-    r->verified = 0;
-    rc = read_verified(&file, VJO_VOCR_GATE_BYTES, gate_sha256, r->data, im);
-    file.close(file.ctx);
-    if (rc) return rc;
-    r->verified = 1;
-    r->size = file.size;
-    r->stamp = file.stamp;
-    st->gate_read = 1;
-    return VJO_OK;
+    unsigned kept = 0;
+    return resident_file(p, dir, gate_sha256, VJO_VOCR_GATE_NAME, VJO_VOCR_GATE_BYTES, gate_sha256,
+                         VJO_VOCR_GATE_BYTES, r, im, &st->gate_read, &kept);
 }
 
 /* ---- API 54: the text spotter's weights ---- */
@@ -1488,11 +1467,14 @@ static VjoVocrCacheLine *cache_find(VjoVocrCache *c, const VjoVocrModel *m, uint
     return NULL;
 }
 
-static void cache_put(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key, const char *text, size_t len,
-                      const char *greedy, size_t greedy_len, unsigned frames, uint16_t flags, size_t need)
+/* 1 kept; 0 left out: its texts do not fit an entry (VJO_VOCR_CACHE_TEXT). greedy: text itself where nothing changed
+ * the line, else its greedy text, kept after the shown text's NUL. */
+static int cache_put(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key, const char *text, size_t len,
+                     const char *greedy, size_t greedy_len, unsigned frames, uint16_t flags, size_t need)
 {
     VjoVocrCacheLine *e = cache_find(c, m, key);
-    if (len >= VJO_VOCR_CACHE_TEXT || greedy_len >= VJO_VOCR_CACHE_TEXT || need >= 0xFFFFu) return;
+    const size_t at = greedy != text ? len + 1u : 0u;
+    if (at + greedy_len >= VJO_VOCR_CACHE_TEXT || need >= 0xFFFFu) return 0;
     if (!e) { /* an empty entry, else the least recently used */
         e = &c->line[0];
         for (unsigned i = 1; i < VJO_VOCR_CACHE_LINES; i++)
@@ -1506,12 +1488,33 @@ static void cache_put(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key, cons
     e->flags = flags;
     e->greedy_len = (uint16_t)greedy_len;
     e->need = (uint16_t)need;
-    e->pad = 0;
+    e->greedy_at = (uint16_t)at;
     memcpy(e->text, text, len);
     e->text[len] = '\0';
-    memcpy(e->greedy, greedy, greedy_len);
-    e->greedy[greedy_len] = '\0';
+    if (at) {
+        memcpy(e->text + at, greedy, greedy_len);
+        e->text[at + greedy_len] = '\0';
+    }
+    return 1;
 }
+
+#ifndef __vita__
+/* Host builds only: the cache's hook and its own put and lookup (core/vocr_ocr.h, host/tests/cache_replay.h). */
+VjoVocrCacheTrace vjo_vocr_cache_trace;
+#define CACHE_TRACE(after, c, m, key, t, n, g, gn, frames, flags, need) \
+    do { if (vjo_vocr_cache_trace) vjo_vocr_cache_trace(after, c, m, key, t, n, g, gn, frames, flags, need); } while (0)
+int vjo_vocr_test_cache_put(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key, const char *text, size_t len,
+                            const char *greedy, size_t greedy_len, unsigned frames, uint16_t flags, size_t need)
+{
+    return cache_put(c, m, key, text, len, greedy, greedy_len, frames, flags, need);
+}
+VjoVocrCacheLine *vjo_vocr_test_cache_find(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key)
+{
+    return cache_find(c, m, key);
+}
+#else
+#define CACHE_TRACE(after, c, m, key, t, n, g, gn, frames, flags, need) ((void)0)
+#endif
 
 /* ---- API 22: the line slots and the queue ---- */
 
@@ -2046,6 +2049,7 @@ static int place(Lines *L)
     }
     if (e->kind == LN_HIT) {
         const VjoVocrCacheLine *h = e->hit;
+        const char *greedy = h->text + h->greedy_at;
         if (start + h->need + 1 > L->cap) {
             if (start + h->greedy_len + 1 > L->cap) return VJO_E_TOO_LARGE; /* as its vocr_run would */
             return RETRY_NOCACHE;
@@ -2055,7 +2059,7 @@ static int place(Lines *L)
         st->cached++;
         if (pol->line) {
             VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 0,
-                                    h->text, 0, h->greedy, h->flags};
+                                    h->text, 0, greedy, h->flags};
             pol->line(pol->ud, &info);
         }
         if (!h->len) {
@@ -2067,7 +2071,7 @@ static int place(Lines *L)
         if (pol->raw && pol->raw_cap) {
             size_t rstart = L->rused ? L->rused + 1 : 0;
             if (rstart + h->greedy_len < pol->raw_cap) {
-                memcpy(pol->raw + rstart, h->greedy, (size_t)h->greedy_len + 1);
+                memcpy(pol->raw + rstart, greedy, (size_t)h->greedy_len + 1);
                 if (rstart) pol->raw[L->rused] = '\n';
                 L->rused = rstart + h->greedy_len;
             }
@@ -2615,10 +2619,12 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 VjoVocrCacheLine *hit;
                 cur.key = line_key(pixels, stride, pw, ph, ln->dark, pol->cache_variant);
                 st->key_us += clock_us(p) - k0;
+                CACHE_TRACE(0, L->cache, mi, cur.key, NULL, 0, NULL, 0, 0, 0, 0);
                 hit = cache_find(L->cache, mi, cur.key);
                 if (hit) {
                     hit->used = ++L->cache->tick;
                     L->cache->hits++;
+                    CACHE_TRACE(1, L->cache, mi, cur.key, NULL, 0, NULL, 0, 0, 0, 0);
                     cur.kind = LN_HIT;
                     cur.hit = hit;
                     cur.key = 0; /* already there */
@@ -2627,6 +2633,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                     continue;
                 }
                 L->cache->misses++;
+                CACHE_TRACE(1, L->cache, mi, cur.key, NULL, 0, NULL, 0, 0, 0, 0);
             }
             cur.kind = LN_SLOT;
             if (!busy_on && pol->busy) {
@@ -2717,8 +2724,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         for (unsigned k = 0; k < L->n_put; k++) {
             const CachePut *c = &L->put[k];
             const char *g = c->roff == NO_RAW ? text + c->off : pol->raw + c->roff;
-            cache_put(L->cache, mi, c->key, text + c->off, c->len, g, c->roff == NO_RAW ? c->len : c->glen,
-                      c->frames, c->flags, c->need);
+            const size_t gn = c->roff == NO_RAW ? c->len : c->glen;
+            CACHE_TRACE(0, L->cache, mi, c->key, text + c->off, c->len, g, gn, c->frames, c->flags, c->need);
+            st->cache_long += (unsigned)!cache_put(L->cache, mi, c->key, text + c->off, c->len, g, gn, c->frames,
+                                                   c->flags, c->need);
+            CACHE_TRACE(1, L->cache, mi, c->key, text + c->off, c->len, g, gn, c->frames, c->flags, c->need);
         }
     return VJO_OK;
 fail:

@@ -133,7 +133,9 @@ about one line in five again (vita-vn-ocr #82), not every line as here.
 
 ## The line cache
 
-`VjoVocrCache`, 8 lines in the worker (6,160 B of .bss): the key is a 64-bit FNV-1a of the line's grey rows, its
+`VjoVocrCache`, 8 lines in the worker (3,216 B of .bss since #418; 6,160 B before, each entry's greedy text in a
+buffer of its own: now after the shown text, where it is another one,
+[memory-ledger.md](memory-ledger.md#the-workers-data-page-the-gates-weights-and-the-line-caches-greedy-texts-418-no-api-change)): the key is a 64-bit FNV-1a of the line's grey rows, its
 size, its polarity and the job's `cache_variant` (the LM tier, the cascade and its ceiling, the refinement); entries
 of another model never match, and a job that reads the weights from the file again empties it. A hit gives the
 line's shown text, its recognizer text and its `VjoVocrLineStat.flags` (its confidence, LM, cascade). A line is kept

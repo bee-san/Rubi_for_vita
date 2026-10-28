@@ -116,9 +116,20 @@ static void test_budget_table_is_consistent(void)
                                         VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE);
     TEST_CHECK(VJO_VOCR_SPOT_BYTES <= VJO_VOCR_SPOT_MAX_BYTES && VJO_VOCR_SPOT_MAX_BYTES == 512000u &&
                VJO_VOCR_SPOT_ARENA_MAX == 262144u);
+    /* #418: the text-presence gate's weights, a block of their own (they were 1,560 B of the worker's .bss in every
+     * game): the pinned 1,540 B file, page-rounded, counted in the game job's worst case too; the job's limit does
+     * not grow: 11,022,336 + 4,096 = 11,026,432 B (API 55's frame block in it), under 11,214,848 B (headroom
+     * 192,512 -> 188,416 B) */
+    TEST_CHECK(VJO_VOCR_GATE_BYTES == 1540u && VJO_BUDGET_GAME_GATE == VJO_LEDGER_PAGE &&
+               VJO_BUDGET_GAME_GATE == (VJO_VOCR_GATE_BYTES + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE);
     TEST_CHECK(VJO_WORST_GAME_JOB == VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE +
                                      VJO_BUDGET_GAME_LINE_OR_FRAME + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE +
-                                     VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SC3 + VJO_BUDGET_GAME_SPOT);
+                                     VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SC3 + VJO_BUDGET_GAME_SPOT +
+                                     VJO_BUDGET_GAME_GATE);
+    TEST_CHECK_(VJO_WORST_GAME_JOB == 11026432u && VJO_LIMIT_GAME_JOB == 11214848u &&
+                    VJO_WORST_GAME_JOB <= VJO_LIMIT_GAME_JOB,
+                "the game job's worst case %u B, its limit %u B", (unsigned)VJO_WORST_GAME_JOB,
+                (unsigned)VJO_LIMIT_GAME_JOB);
 }
 
 #ifdef VJO_WITH_VOCR

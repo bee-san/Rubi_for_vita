@@ -111,6 +111,11 @@ enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, G
 /* API 55: the frame block is the tall line's ledger item: a job holds one of the two, never both (the worst case
  * counts VJO_BUDGET_GAME_LINE_OR_FRAME), so the ledger keeps its twelve items in every module (#355's review H1) */
 #define GL_FRAME GL_LINE
+/* #418: the text-presence gate's block shares the spotter's item, the finder's weights (one more item would grow every
+ * module's VjoLedger, VJO_LEDGER_MAX_ITEMS, and with it the Shell's code past its last page), as a probe's strip
+ * shares the capture's and the frame block the tall line's; its step-log item (VJO_GITEM_GATE), its name and its
+ * budget (VJO_BUDGET_GAME_GATE) are its own. */
+#define GL_GATE GL_SPOT
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
     [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
@@ -134,11 +139,11 @@ static void ledger_init(void)
     vjo_ledger_add(&g_game_ledger, GL_MODULE, VJO_BUDGET_GAME_MODULE_PAGES);
 }
 
-/* A block kept between jobs (#418: one allocator for them all): the weights', the LM's, the cascade model's and
- * (API 54) the text spotter's, each the ud of its core/vocr_ocr.h VjoVocrResident (resident_alloc,
- * resident_release), and an SC3 charset's (hooks_sc3_load). Its uid and bytes held are in the data segment (*_blk,
- * as the four blocks' and the charset's were), its constants beside the code (*_desc: its ledger item and step-log
- * name, its sceKernelAllocMemBlock name, the most bytes it may be asked for), so the data pages hold nothing more. */
+/* A block kept between jobs (#418: one allocator for them all): the weights', the LM's, the cascade model's, (API
+ * 54) the text spotter's and (API 26) the text-presence gate's, each the ud of its core/vocr_ocr.h VjoVocrResident
+ * (resident_alloc, resident_release), and an SC3 charset's (hooks_sc3_load). Its uid and bytes held are in the data
+ * segment (*_blk, as the four blocks' and the charset's were), its constants beside the code (*_desc: its ledger
+ * item and step-log name, its sceKernelAllocMemBlock name, the most bytes it may be asked for). */
 typedef struct {
     SceUID uid;
     uint32_t held;
@@ -150,6 +155,7 @@ typedef struct {
     uint32_t max;
 } ResidentBlock;
 static BlockState weights_blk = {-1, 0}, lm_blk = {-1, 0}, cascade_blk = {-1, 0}, spot_blk = {-1, 0}, sc3_blk = {-1, 0};
+static BlockState gate_blk = {-1, 0};
 static const ResidentBlock weights_desc = {&weights_blk, GL_WEIGHTS, VJO_GITEM_WEIGHTS, "VjoGameVocrWeights",
                                            VJO_VOCR_MAX_BYTES};
 static const ResidentBlock lm_desc = {&lm_blk, GL_LM, VJO_GITEM_LM, "VjoGameVocrLM", VJO_VOCR_LM_MAX_BYTES};
@@ -157,6 +163,8 @@ static const ResidentBlock cascade_desc = {&cascade_blk, GL_CASCADE, VJO_GITEM_C
                                            VJO_VOCR_MAX_BYTES};
 static const ResidentBlock spot_desc = {&spot_blk, GL_SPOT, VJO_GITEM_SPOT, "VjoGameVocrSpot", VJO_BUDGET_GAME_SPOT};
 static const ResidentBlock sc3_desc = {&sc3_blk, GL_SC3, VJO_GITEM_SC3, "VjoGameSc3", VJO_BUDGET_GAME_SC3};
+static const ResidentBlock gate_desc = {&gate_blk, GL_GATE, VJO_GITEM_GATE, "VjoGameVocrGate", VJO_VOCR_GATE_BYTES};
+typedef char vjo_gate_budget_check[PAGE_ROUND(VJO_VOCR_GATE_BYTES) <= VJO_BUDGET_GAME_GATE ? 1 : -1];
 
 /* ---- the job's step log (VjoGameOcrResult.step) ---- */
 static VjoGameOcrResult *log_to;   /* the result being filled, or NULL */
@@ -368,8 +376,11 @@ static VjoVocrLmResident lm_res = {resident_alloc, resident_release, (void *)&lm
 static VjoVocrResident cascade_res = {resident_alloc, resident_release, (void *)&cascade_desc, {NULL}, NULL, 0, 0,
                                       0};
 /* API 26: the text-presence gate's weights (VJO_VOCR_GATE_BYTES), read from the card once and kept while its
- * file is unchanged (core/vocr_ocr.h); in .bss, where the worker's data pages have room. */
-static VjoVocrGateResident gate_res;
+ * file is unchanged (core/vocr_ocr.h): #418, a block of their own (GL_GATE, gate_alloc), held like the LM while
+ * the game is the active one and its jobs ask for the gate (in .bss before, a page of every game's whether the gate
+ * was on or off). */
+static void *gate_alloc(void *ud, size_t bytes);
+static VjoVocrGateResident gate_res = {gate_alloc, resident_release, (void *)&gate_desc, {NULL}, NULL, 0, 0, 0};
 /* API 54: the text spotter's weights and their parsed form (core/vocr_ocr.h VjoVocrSpotResident), 52-450 KB: a
  * block of their own (GL_SPOT), never a static array, kept like the LM while the game is the active one and its
  * jobs ask for the spotter. */
@@ -878,6 +889,16 @@ static int resident_release(void *ud)
     return 0;
 }
 
+/* API 26: the gate's block, which a job takes before its weights, LM, cascade model and helpers' stacks
+ * (core/vocr_ocr.c run_job: the gate decides before any line is read), so only in the room beyond what its memory
+ * check counted for them (job_to_come, set for each job's core call) and the job's reserve: refused, the job reads
+ * as without the gate (stats->gate_rc VJO_E_OOM), never with a smaller model. */
+static uint32_t job_to_come;
+static void *gate_alloc(void *ud, size_t bytes)
+{
+    return free_user_after_reserve() < (int64_t)PAGE_ROUND(bytes) + job_to_come ? NULL : resident_alloc(ud, bytes);
+}
+
 /* Releases r's verified bytes and its block, and a block whose base lookup failed; a no-op (0) when it holds none. */
 static int drop_one(VjoVocrResident *r)
 {
@@ -885,13 +906,15 @@ static int drop_one(VjoVocrResident *r)
     return resident_release(r->ud);
 }
 
-/* Everything kept between jobs: the weights, the LM, the cascade's model and (API 54) the spotter's weights. */
+/* Everything kept between jobs: the weights, the LM, the cascade's model, (API 54) the spotter's weights and (API 26)
+ * the gate's. */
 static int drop_resident(void)
 {
     int rc = drop_one(&resident);
     rc |= drop_one(&lm_res);
     rc |= drop_one(&spot_res);
-    return drop_one(&cascade_res) || rc ? -1 : 0;
+    rc |= drop_one(&cascade_res);
+    return drop_one(&gate_res) || rc ? -1 : 0;
 }
 
 /* r's block while it holds verified contents, else 0: the weights', the LM's and the cascade model's page-rounded
@@ -908,7 +931,7 @@ static uint32_t held_bytes(const VjoVocrResident *r)
 static unsigned blocks_kept(void)
 {
     return !!held_bytes(&resident) + !!held_bytes(&lm_res) + !!held_bytes(&cascade_res) + (sc3_blk.uid >= 0) +
-           !!held_bytes(&spot_res);
+           !!held_bytes(&spot_res) + !!held_bytes(&gate_res);
 }
 
 /* The job workspace's bytes after the model's own, with the LM (lm) and the
@@ -1052,6 +1075,7 @@ static int cleanup(void)
     if (!lm_res.lm && drop_one(&lm_res)) rc = VJO_E_OCR_UNAVAILABLE;
     if (!cascade_res.model && drop_one(&cascade_res)) rc = VJO_E_OCR_UNAVAILABLE;
     if (!spot_res.verified && drop_one(&spot_res)) rc = VJO_E_OCR_UNAVAILABLE;
+    if (!gate_res.verified && drop_one(&gate_res)) rc = VJO_E_OCR_UNAVAILABLE;
     return rc;
 }
 
@@ -2133,6 +2157,8 @@ again:
     unsigned spot_refine = want_spot && (r->speed & VJO_GAME_OCR_S_SPOT_REFINE) ? VJO_VOCR_REFINE_ALL : 0u;
     size_t spot_bytes = 0;
     if (!want_spot && drop_one(&spot_res)) { rc = VJO_E_OCR_UNAVAILABLE; goto done; } /* a no-op: it holds nothing */
+    /* API 26: the gate's block is kept while the jobs ask for the gate (#418) */
+    if (!(r->speed & VJO_GAME_OCR_S_GATE) && drop_one(&gate_res)) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if (want_spot && !vertical) {
         VjoPlatform spot_platform = {.file_open = file_open, .now_us = now_us};
         VjoGreySource spot_cancel = {&capture, r->width, r->height, strip_source, cancelled, line_buffer, NULL};
@@ -2456,6 +2482,7 @@ retry_smaller:
     open_cascade = casc != NULL;
     job_model = use; /* #385's audit F5: the blocks the core may still take (line_buffer) */
     job_lm = lm;
+    job_to_come = out->need_weights + use_helpers * VJO_BUDGET_GAME_HELPER_STACK; /* #418: before them, the gate's */
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
@@ -2587,8 +2614,8 @@ retry_smaller:
         step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT,
                  stats.warmed, 0, held_bytes(&resident), 0, stats.load_us, 1);
     if (stats.lines)
-        step_add(VJO_GSTEP_RECOGNIZE, head_gated_percent(&stats), stats.recognized, rc, stats.frames, stats.tall_skipped,
-                 stats.recognize_us, 0);
+        step_add(VJO_GSTEP_RECOGNIZE, head_gated_percent(&stats), stats.recognized, rc, stats.frames,
+                 stats.tall_skipped | stats.cache_long << 8, stats.recognize_us, 0);
     if (lm && (stats.lines || stats.lm_loaded || (stats.warmed && stats.lm_rc))) { /* also the warm-up's read */
         unsigned low = 0;
         for (unsigned i = 0; i < stats.recognized && i < VJO_VOCR_MAX_LINES; i++)
@@ -2863,7 +2890,8 @@ static int worker_main(SceSize args, void *argp)
                 }
             } else if (gone &&
                        (resident.data || weights_blk.uid >= 0 || lm_res.data || lm_blk.uid >= 0 || cascade_res.data ||
-                        cascade_blk.uid >= 0 || spot_res.data || spot_blk.uid >= 0) &&
+                        cascade_blk.uid >= 0 || spot_res.data || spot_blk.uid >= 0 || gate_res.data ||
+                        gate_blk.uid >= 0) &&
                        drop_resident()) {
                 /* Not the active game for INACTIVE_DROP_US of its running time (behind
                  * another app, its title disabled): the weights go back to it. */

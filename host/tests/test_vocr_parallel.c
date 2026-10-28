@@ -32,6 +32,7 @@
 #include "vocr_lm.h"
 #include "vocr_ocr.h"
 #include "../../core/fbgrey.h"
+#include "cache_replay.h" /* #418: every cache operation replayed through the old layout (setup installs it) */
 #include <bearssl_hash.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -362,6 +363,7 @@ static void setup(void)
     cancel_now = 0;
     cancel_after = tear_at = 0;
     draw(LINES, 0);
+    cache_replay_install();
 }
 
 /* the same job: rc, text, greedy text, frames, every line's result in line order */
@@ -649,6 +651,103 @@ static void test_cache_with_lm_and_cascade(void)
     pool_done(&pl);
 }
 
+/* #418: the line cache keeps a line's greedy text after its shown text, only where it is another (the LM or the
+ * cascade changed the line): every test of this file replays its jobs' cache operations through the old layout,
+ * the greedy text in a buffer of its own, and checks after each that both hold the same (cache_replay.h, installed
+ * by setup). Here a sequence of every kind of job and its counts, which main's cache gives too (the same sequence's
+ * cache.hits and cache.misses there): cold, again, one line changed, the LM and the cascade (changed lines, kept
+ * with their greedy texts), another variant, the weights read again (emptied). */
+static void test_the_cache_replayed_through_the_old_layout(void)
+{
+    static VjoVocrCache cache;
+    static Run a;
+    static const unsigned want[][2] = {{0, 5}, {5, 5}, {9, 6}, {9, 11}, {14, 11}, {14, 16}, {19, 16}, {0, 5}};
+    unsigned seq[8][2], n = 0, kept_greedy = 0;
+    Pool pl;
+    Opt o = {0};
+    setup();
+    memset(&cache, 0, sizeof cache);
+    pool_init(&pl, P_THREADS);
+    o.helpers = 2;
+    o.cache = &cache;
+    run(&a, &pl, &o); /* cold: every line looked up and missed, then kept */
+    seq[n][0] = cache.hits; seq[n++][1] = cache.misses;
+    run(&a, &pl, &o); /* the same screen: every line a hit */
+    seq[n][0] = cache.hits; seq[n++][1] = cache.misses;
+    draw(2, 3); /* one line changed: it alone misses */
+    run(&a, &pl, &o);
+    seq[n][0] = cache.hits; seq[n++][1] = cache.misses;
+    o.lm = o.cascade = 1; /* the LM and the cascade: another variant, every line misses, then hits */
+    o.variant = 5;
+    run(&a, &pl, &o);
+    seq[n][0] = cache.hits; seq[n++][1] = cache.misses;
+    run(&a, &pl, &o);
+    seq[n][0] = cache.hits; seq[n++][1] = cache.misses;
+    for (unsigned i = 0; i < VJO_VOCR_CACHE_LINES; i++) kept_greedy += cache.line[i].key && cache.line[i].greedy_at;
+    o.variant = 6; /* yet another: misses, its lines replace the least recently used */
+    run(&a, &pl, &o);
+    seq[n][0] = cache.hits; seq[n++][1] = cache.misses;
+    run(&a, &pl, &o);
+    seq[n][0] = cache.hits; seq[n++][1] = cache.misses;
+    vjo_vocr_resident_drop(&res); /* the weights read again: the cache emptied, every line misses */
+    o.lm = o.cascade = 0;
+    o.variant = 0;
+    run(&a, &pl, &o);
+    seq[n][0] = cache.hits; seq[n++][1] = cache.misses;
+    pool_done(&pl);
+    for (unsigned i = 0; i < n; i++)
+        TEST_CHECK_(seq[i][0] == want[i][0] && seq[i][1] == want[i][1], "job %u: %u hits, %u misses (main's: %u, %u)",
+                    i + 1u, seq[i][0], seq[i][1], want[i][0], want[i][1]);
+    TEST_CHECK_(!replay.mismatches && !replay.left_out && replay.lookups == 8u * LINES && replay.hits == 19u &&
+                    replay.puts == 21u && kept_greedy > 0,
+                "replayed: %u lookups, %u hits, %u entries offered, %u synced, %u left out, %u differed; %u entries "
+                "with another greedy text",
+                replay.lookups, replay.hits, replay.puts, replay.synced, replay.left_out, replay.mismatches,
+                kept_greedy);
+}
+
+/* #418: the cache's rule for a line's texts, through its own put and lookup and the old layout's: a shown text under
+ * VJO_VOCR_CACHE_TEXT is kept with its greedy text when that is the same text (no copy) and when another fits after it
+ * (the old layout kept both while each fit its own buffer); another that does not fit is left out, the one
+ * difference; a shown text of VJO_VOCR_CACHE_TEXT bytes or more never was kept. Hits give the old layout's texts. */
+static void test_the_cache_keeps_a_greedy_text_after_the_shown_one(void)
+{
+    static VjoVocrCache c;
+    static OldCache old;
+    static char t[VJO_VOCR_CACHE_TEXT + 8], g[VJO_VOCR_CACHE_TEXT + 8];
+    static const struct { unsigned len, glen; int other, kept, old_kept; } cases[] = {
+        {0, 0, 0, 1, 1}, {367, 367, 0, 1, 1}, {368, 368, 0, 0, 0}, {120, 90, 1, 1, 1}, {200, 166, 1, 1, 1},
+        {200, 167, 1, 0, 1}, {366, 0, 1, 1, 1}, {367, 0, 1, 0, 1}, {0, 366, 1, 1, 1}, {0, 367, 1, 0, 1},
+        {300, 300, 1, 0, 1}, {367, 368, 1, 0, 0},
+    };
+    const VjoVocrModel *m = vjo_vocr_model(M1);
+    TEST_ASSERT(m != NULL);
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const unsigned len = cases[i].len, glen = cases[i].other ? cases[i].glen : cases[i].len;
+        const uint64_t key = 0x1000u + i;
+        memset(&c, 0, sizeof c);
+        memset(&old, 0, sizeof old);
+        memset(t, 'a' + (int)(i % 20u), len);
+        t[len] = '\0';
+        memset(g, 'A' + (int)(i % 20u), glen);
+        g[glen] = '\0';
+        const char *greedy = cases[i].other ? g : t;
+        const int kept = vjo_vocr_test_cache_put(&c, m, key, t, len, greedy, glen, 7u, 0x8123u, len + 4u);
+        old_cache_put(&old, m, key, t, len, greedy, glen, 7u, 0x8123u, len + 4u);
+        const VjoVocrCacheLine *e = vjo_vocr_test_cache_find(&c, m, key);
+        const OldCacheLine *o = old_cache_find(&old, m, key);
+        TEST_CHECK_(kept == cases[i].kept && !!e == cases[i].kept && !!o == cases[i].old_kept,
+                    "texts of %u and %u B (%s): kept %d (%d), the old layout %d", len, glen,
+                    cases[i].other ? "another greedy" : "the same", kept, cases[i].kept, !!o);
+        if (e && o) {
+            TEST_CHECK(e->len == o->len && e->greedy_len == o->greedy_len && e->flags == o->flags &&
+                       e->frames == o->frames && e->need == o->need && !strcmp(e->text, o->text) &&
+                       !strcmp(e->text + e->greedy_at, o->greedy));
+            TEST_CHECK(e->greedy_at == (cases[i].other ? len + 1u : 0u));
+        }
+    }
+}
+
 /* Cancelled while helpers run (strips 11-17 land after the finder, with lines on helpers):
  * every helper joined before the job returns, and nothing from it in the cache. */
 static void test_cancel_with_helpers_running(void)
@@ -880,6 +979,8 @@ TEST_LIST = {
     {"a_hit_whose_longest_reading_does_not_fit", test_a_hit_whose_longest_reading_does_not_fit},
     {"cache", test_cache},
     {"cache_with_lm_and_cascade", test_cache_with_lm_and_cascade},
+    {"the_cache_replayed_through_the_old_layout", test_the_cache_replayed_through_the_old_layout},
+    {"the_cache_keeps_a_greedy_text_after_the_shown_one", test_the_cache_keeps_a_greedy_text_after_the_shown_one},
     {"cancel_with_helpers_running", test_cancel_with_helpers_running},
     {"failed_join", test_failed_join},
     {"the_game_pool_after_a_timed_out_join", test_the_game_pool_after_a_timed_out_join},
