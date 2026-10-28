@@ -67,6 +67,7 @@ IMPORTS = {(0xBE43BB07, 0x7205BFDB): "memcpy", (0xBE43BB07, 0x85B924B7): "strcpy
 # own: its outcome follows on the same line, except after taiHEN's refusal (" tai CODE"), whose " refused: tai" is
 # the next line; a refused site's bytes are the line after its refusal (" bytes " and nothing past segment 0).
 HEADER = re.compile(r"^(?P<title>[^:\s]{0,9}): text source (?P<mode>\d+)(?P<sites_off>, sites off)?$")
+PROFILE = re.compile(r"^profile: (?:loaded current title|unavailable: CALL/OCR fallback) \(-?\d+ bytes\)$")
 NOTHING = re.compile(r"^nothing: (?P<why>.+)$")
 PSP_TEXT = re.compile(r"^the PSP emulator's process: no hooks; PSP text (?P<psp_text>.+)$")  # PR #318's form of it
 SITES_OFF = "sites off (hook_sites = off): no table site"
@@ -220,6 +221,9 @@ def parse(text, strict=True):
         m = PSP_TEXT.match(line)
         if m:
             log["nothing"], log["psp_text"] = "the PSP emulator's process", m.group("psp_text")
+            continue
+        if PROFILE.fullmatch(line):
+            log["profile"] = line
             continue
         if line == SITES_OFF:
             log["sites_off"] = True

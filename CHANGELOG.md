@@ -11,6 +11,13 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- Native Vita hooks load only the current game's profile from an indexed disk archive, including its
+  filters and version/signature checks. The worker uses 12 KiB fewer loaded pages in both builds
+  (measured from the packaged binaries); CALL discovery and OCR remain available if a profile is missing
+  or invalid. Full updates include the archive. API 56; console startup timing is unmeasured.
+
 ### Added
 
 - **Native text hooks for six more games, from the psandvita hook farm** (psandvita #1; proven in the Vita3K

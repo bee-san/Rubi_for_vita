@@ -5,6 +5,7 @@
 
 #include "hook_luna.h" /* VJO_RF_*: a verified entry's filter */
 #include "hook_text.h"
+#include "hook_profile.h"
 #include "port.h"      /* VJO_DATA_TABLE: the verified entries' table */
 
 const char *vjo_place_reason(int reason)
@@ -160,6 +161,7 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
  * (include/vjo_ledger_budget.h; docs/memory-ledger.md, "Tables in the data segment"). Its title strings stay
  * read-only. The hook farm's 20 rows of 2026-10-27 filled that page: some of Rubi's filters went back to read-only
  * data for them (core/hook_luna.c). */
+#ifndef VJO_EXTERNAL_HOOK_PROFILES
 static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, VJO_RF_PCSG00415, 0, 0},
@@ -421,6 +423,21 @@ unsigned vjo_place_verified_all(const VjoPlaceVerified **out)
     return VERIFIED_N;
 }
 
+#else
+unsigned vjo_place_verified(const char *title_id, const VjoPlaceVerified **out)
+{
+    const VjoHookProfile *p = vjo_hook_profile_current();
+    int match = p && title_id && !strcmp(title_id, (const char *)p->raw + 8);
+    *out = match && p->nv ? p->verified : NULL;
+    return match ? p->nv : 0;
+}
+unsigned vjo_place_verified_all(const VjoPlaceVerified **out)
+{
+    const VjoHookProfile *p = vjo_hook_profile_current();
+    *out = p ? p->verified : NULL;
+    return p ? p->nv : 0;
+}
+#endif
 int vjo_place_title_verified(const char *title_id)
 {
     const VjoPlaceVerified *v;

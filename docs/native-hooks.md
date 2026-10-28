@@ -1257,11 +1257,46 @@ module stays loaded, so no code a game thread may still run in is unloaded. The 
 few instructions the in-flight count does not (the observer's assembly around its C call, a CALL
 hook's prologue and epilogue): a thread there when the hooks were released has left after it.
 
+## Current-game profiles (API 56)
+
+The game worker loads only the current Vita game's hook profile. The complete catalogue stays in
+`ux0:data/VitaJPOverlay/hooks/profiles.vjhp`: a sorted index on disk, followed by one blob per title.
+The kernel file worker binary-searches the index and reads the matching blob into its existing staging
+buffer. The startup syscall copies that blob to the game before any native hook is installed. No disk
+read, allocation or extra thread runs when a hook captures text.
+
+A profile carries the title's Luna sites, Rubi verified entries, versions, instruction signatures,
+filter programs, capture postprocessors and their transitive dependencies. The shared capture code,
+decoder and bounded filter interpreter stay compiled into the worker. The Rubi app and host tools
+retain the catalogue for Games tags, generation and checks; the separate debug-only PSP probe is unchanged.
+
+`tools/hook_profiles.py` builds the archive from the same C definitions the host tests use. The current
+archive has 208 titles, 40,730 bytes, and a largest profile of 533 bytes [measured: exporter output].
+The worker's file buffer is bounded at 1,024 bytes, plus bounded decoded site records, all included in
+its module pages. Title, format, source-definition revision, length, checksum, program and string
+bounds must match before any profile is published. Existing APP_VER/NID/instruction checks still decide
+whether a site may be hooked. A missing, old, oversized or corrupt profile leaves CALL discovery and
+OCR available. OCR-only mode, sites off, safe boot and the PSP emulator do not read a native profile.
+
+The startup broker is separate from claimed OCR jobs. It retains no user pointer, owns the existing
+file slot for at most a two-second startup wait, and drains late I/O and failed closes before that slot
+can be reused. Stale OCR cancellation cannot close a different process's startup file.
+
+Install the full update to receive the archive. A plugins-only update that leaves an older archive
+falls back to CALL/OCR until matching data are installed. SC3 character tables remain separate files.
+
+Host checks compare every profile's records and filter output with the built-in catalogue, exercise
+malformed data, and run the external-profile engine through the farm's actual dialogue excerpts and
+SC3 capture path. Console startup and cold-card timing remain unmeasured.
+
 ## Memory
 
-All static: no allocation, in a hook or anywhere in the engine. `param.sfo` is read once at the start
+The engine and its current-title profile are static: no allocation in a hook or anywhere in the engine. `param.sfo` is read once at the start
 into the CALL slots' storage before any hook exists, then zeroed. The worker's module pages, in every
 game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
+
+The following rows record the original engine and job-path builds; the current profile build is
+recorded in [the memory ledger](memory-ledger.md).
 
 | Build | Text segment | Data segment | Module pages |
 | --- | --- | --- | --- |

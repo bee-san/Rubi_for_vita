@@ -35,6 +35,10 @@ int ksceDisplayGetPrimaryHead(void) { return 0; }
 VjoKernelState g;
 unsigned syscall_depth;
 static SceUID caller;
+static unsigned profile_source, profile_io_delay;
+static int expect_profile;
+static uint8_t profile_fixture[128];
+int vjoGetTextSource(void) { return (int)profile_source; }
 static int module_missing, module_id, copy_in_fail, copy_out_fail;
 static unsigned locks, allocations;
 static VjoGameOcrResult message;
@@ -199,9 +203,17 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
         return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
     }
     TEST_ASSERT(uid == g.mevf && bits == MEV_DONE && !locks && syscall_depth == 1);
-    TEST_CHECK(wait == (SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT) && timeout && *timeout <= 50000);
+    TEST_CHECK(wait == (SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT) && timeout &&
+               *timeout <= (expect_profile ? 2000000u : 50000u));
     waits++;
     if (!done_pending && wait_runs_worker) {
+        if (profile_io_delay) {
+            if (profile_io_delay > *timeout) {
+                profile_io_delay -= *timeout; model_clock += *timeout;
+                return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
+            }
+            model_clock += profile_io_delay; profile_io_delay = 0;
+        }
         unsigned depth = syscall_depth; syscall_depth = 0; model_tick(); syscall_depth = depth;
     }
     if (done_pending) { done_pending = 0; if (out) *out = MEV_DONE; return 0; }
@@ -393,6 +405,7 @@ SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
     char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,
                                  expect_lm ? expect_lm : expect_fallback ? request.fallback : request.model);
     if (expect_sc3) snprintf(expected, sizeof(expected), "%s%s.sc3", VJO_GAME_OCR_SC3_DIR, expect_sc3);
+    if (expect_profile) snprintf(expected, sizeof(expected), "%s", VJO_PROFILE_DB_PATH);
     TEST_CHECK(!strcmp(path, expected) && flags == SCE_O_RDONLY);
     model_opens++; interrupt_io();
     if (open_error) return open_error;
@@ -425,7 +438,8 @@ int ksceIoPread(SceUID fd, void *out, SceSize bytes, SceOff offset)
     if (read_error) return read_error;
     if (eof) return 0;
     if (short_read && bytes > 37) bytes = 37;
-    for (unsigned i=0; i<bytes; i++) ((unsigned char *)out)[i] = (unsigned char)((offset+i)%251);
+    if (expect_profile) memcpy(out, profile_fixture + offset, bytes);
+    else for (unsigned i=0; i<bytes; i++) ((unsigned char *)out)[i] = (unsigned char)((offset+i)%251);
     return (int)bytes;
 }
 int ksceIoClose(SceUID fd)
@@ -533,6 +547,7 @@ static void shot_fs_reset(void);
 static void setup(void)
 {
     memset(&g, 0, sizeof(g));
+    profile_source = profile_io_delay = 0; expect_profile = 0;
     game_ocr_init();
     buffers_kstrip_free();
     g.lock = 1; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
@@ -3162,7 +3177,82 @@ static void pause_refuses_a_stride_past_the_widest_row(void)
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
 }
 
+static void startup_profile_fixture(void)
+{
+    setup();
+    caller = 7; profile_source = VJO_TEXT_SOURCE_AUTO; sc3_title = "PCSG00415";
+    expect_profile = 1; expected_model_size = 48; wait_runs_worker = 1;
+    memset(profile_fixture, 0, sizeof(profile_fixture));
+    memcpy(profile_fixture, "vjohkdb1", 8); profile_fixture[8] = 1;
+    memcpy(profile_fixture + 16, "PCSG00415", 9); profile_fixture[28] = 36; profile_fixture[32] = 12;
+    memcpy(profile_fixture + 36, "current game", 12);
+}
+static void startup_profile_before_any_job(void)
+{
+    uint8_t out[VJO_PROFILE_BYTES];
+    startup_profile_fixture();
+    TEST_CHECK(!valid && !claimed && !pending);
+    profile_io_delay = 100000; /* a cold card taking more than the model syscall's 50ms window */
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == 12);
+    TEST_CHECK(!memcmp(out, "current game", 12));
+    TEST_CHECK(model_opens == 1 && model_closes == 1 && !model_io.seq && !file_live && !allocations);
+    TEST_CHECK(model_clock >= 1100000 && !profile_io_delay);
+}
+static void startup_profile_permissions_and_bad_files(void)
+{
+    uint8_t out[VJO_PROFILE_BYTES];
+    static const unsigned words[] = {VJO_TEXT_SOURCE_OCR, VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES,
+                                     VJO_TEXT_SOURCE_COUNT, 0x80000001u};
+    for (unsigned i = 0; i < sizeof(words) / sizeof(words[0]); i++) {
+        startup_profile_fixture(); profile_source = words[i];
+        TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == VJO_ERR_PERM && !model_opens && !model_io.seq);
+    }
+    startup_profile_fixture();
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out) - 1) == VJO_ERR_ARG && !model_opens);
+    startup_profile_fixture(); sc3_title = "PCSG99999";
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == 0 && !model_io.seq && !file_live);
+    startup_profile_fixture(); open_error = (int)0x80010002u;
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == open_error && !model_io.seq);
+    startup_profile_fixture(); profile_fixture[28] = 0; /* points into the index */
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == VJO_ERR_FORMAT && !file_live && !model_io.seq);
+    startup_profile_fixture(); eof = 1;
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == VJO_ERR_FORMAT && !file_live && !model_io.seq);
+    startup_profile_fixture(); copy_out_fail = 1;
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == VJO_ERR_COPY && !file_live && !model_io.seq);
+}
+static void startup_profile_timeout_and_close_are_drained(void)
+{
+    uint8_t out[VJO_PROFILE_BYTES];
+    startup_profile_fixture(); wait_runs_worker = 0; memset(out, 0xCC, sizeof(out));
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == VJO_ERR_TIMEOUT);
+    TEST_CHECK(out[0] == 0xCC && model_io.orphan && model_io.closing && !model_opens);
+    model_tick(); TEST_CHECK(!model_io.seq && !model_opens && !file_live);
+    startup_profile_fixture(); close_error = -123;
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == close_error);
+    TEST_CHECK(file_live && model_io.orphan && model_io.closing);
+    close_error = 0; model_tick(); TEST_CHECK(!model_io.seq && !file_live);
+    startup_profile_fixture();
+    model_io.seq = 77; model_io.pid = 19; model_io.which = VJO_GAME_OCR_OPEN_MODEL;
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == VJO_ERR_TIMEOUT);
+    TEST_CHECK(model_io.seq == 77 && model_io.pid == 19 && !model_io.closing && !model_io.orphan);
+}
+static void startup_profile_is_not_a_stale_requests_file(void)
+{
+    uint8_t out[VJO_PROFILE_BYTES];
+    startup_profile_fixture();
+    TEST_CHECK(profile_locked(caller, 0, sizeof(out), 0, out) == VJO_ERR_BUSY);
+    valid = claimed = 1; request_pid = 19; request.seq = 77; request_shell = 3; request_epoch = 0;
+    model_tick();
+    TEST_CHECK(cancelled && !model_io.closing && !model_io.orphan);
+    TEST_CHECK(vjoOcrHookProfile(out, sizeof(out)) == 12);
+    TEST_CHECK(!memcmp(out, "current game", 12) && !model_io.seq);
+}
+
 TEST_LIST = {
+    {"hook profile: startup before a claimed job; cold card over 50ms", startup_profile_before_any_job},
+    {"hook profile: permissions, bounds, missing and malformed archive", startup_profile_permissions_and_bad_files},
+    {"hook profile: timeout and failed close drain; another owner is untouched", startup_profile_timeout_and_close_are_drained},
+    {"hook profile: stale OCR cancellation cannot close a new game's profile", startup_profile_is_not_a_stale_requests_file},
     {"API 55: the pause copies the whole region in one display call and publishes it", pause_copies_the_region_in_one_display_call},
     {"API 55: the pause refuses any other shape, a job without it and a game with no display call", pause_refuses_other_shapes_and_games},
     {"API 55: the pause stops at its cap; the job then reads strip by strip", pause_stops_at_its_cap},

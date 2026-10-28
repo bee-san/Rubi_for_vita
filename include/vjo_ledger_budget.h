@@ -46,13 +46,17 @@
  * audit's follow-up on main 3f864a3a, tools/fast_gate.sh's vitasdk image]. The normal build's check is exact
  * (--exact): its budget must equal its pages.
  * How each change moved them: its own section of docs/memory-ledger-history.md, and before #418 that file's "Budget history".
- * Each verified hook row takes 40 B of the data room (core/hook_place.c's verified[], VJO_DATA_TABLE): once it is
+ * Before current-game disk profiles, each verified hook row took 40 B of the data room (core/hook_place.c's verified[], VJO_DATA_TABLE): once it is
  * gone the next row takes a page in both builds, unless a table moves to read-only data first or the budget is raised
  * (audit-rubi-merge-394 N5). */
+/* Current-game disk profiles remove the full catalogue/program data from the worker.
+ * Measured with the pinned VitaSDK: debug 168,264 + 28,840 -> 204,800 B;
+ * normal 159,156 + 28,824 -> 192,512 B, 12,288 B fewer pages in each build.
+ * The current title's bounded profile is included in these module pages. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
-#else
 #define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
+#else
+#define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

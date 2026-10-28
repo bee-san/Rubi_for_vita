@@ -78,7 +78,7 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/triggers.c
   ${ROOT}/kernel/loader.c
   ${ROOT}/kernel/text_source.c # API 31: the text source and the loader's ON processes (docs/native-hooks.md)
-  ${ROOT}/core/games.c)
+  ${ROOT}/core/games.c ${ROOT}/core/hook_profile_file.c)
 target_compile_options(VitaJPOverlay_Kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99 -fno-builtin
   -mgeneral-regs-only)
 # core/port.h: the kernel's snprintf is SceSysclibForDriver's (core/games.c).
@@ -311,6 +311,8 @@ if(VJO_WITH_VOCR)
     ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
     ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
     ${ROOT}/core/hook_sc3.c ${ROOT}/core/sfo.c)
+  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_profile.c)
+  target_compile_definitions(VitaJPOverlay_OCR PRIVATE VJO_EXTERNAL_HOOK_PROFILES=1)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
   # For size, as the worker's control code is: 1,992 B of text and rodata at -Os (2,640 B at -O2; measured,
@@ -643,6 +645,7 @@ endif()
 # ux0:data/VitaJPOverlay/), so extracting an update over ur0 never overwrites
 # the user's settings.
 set(STAGE ${CMAKE_CURRENT_BINARY_DIR}/release)
+set(VJO_HOOK_PROFILE_GENERATOR ${ROOT}/tools/hook_profiles.py)
 set(VJO_PLAINTEXT_SOURCE "${ROOT}/.refs/plaintext-dicts" CACHE PATH "Frozen private dictionary checkout")
 add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E rm -rf ${STAGE}
@@ -672,6 +675,8 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt ${STAGE}/ux0/data/VitaJPOverlay/
   # The SC3 hooks' charsets (docs/native-hooks.md "SC3 text"), which the game worker reads through the kernel's broker
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay/hooks
+  COMMAND ${Python3_EXECUTABLE} ${VJO_HOOK_PROFILE_GENERATOR}
+    --output ${STAGE}/ux0/data/VitaJPOverlay/hooks/profiles.vjhp
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/sc3-charsets/PCSG00146.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00352.sc3
     ${ROOT}/third_party/sc3-charsets/PCSG00555.sc3 ${STAGE}/ux0/data/VitaJPOverlay/hooks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${ROOT}/docs/ocr-history.md ${STAGE}/docs/

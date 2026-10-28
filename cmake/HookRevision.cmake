@@ -2,6 +2,8 @@
 # Derived from content, so a table update cannot accidentally retain an old manual revision number.
 function(vjo_hook_revision root)
   set(inputs
+    tools/hook_profiles.c tools/hook_profiles.py
+    core/hook_profile.c core/hook_profile.h core/hook_profile_file.c core/hook_profile_file.h core/hook_ops.h
     core/hook_luna.c core/hook_luna.h core/hook_luna_table.inc core/hook_luna_psp.inc
     core/hook_text.c core/hook_text.h core/hook_cp932.inc core/hook_re.c core/hook_re.h
     core/hook_place.c core/hook_place.h core/hook_select.c core/hook_select.h
