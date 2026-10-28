@@ -8,34 +8,34 @@
 #include <string.h>
 #include <time.h>
 
-#include "../../core/hook_place.h"
+#include "../../core/fbgrey.h" /* vjo_fnv1a: the slots' hash */
 #include "../../core/hook_stream.h"
 
 static void test_offer_identical_new(void)
 {
     static VjoStreamSlot s;
-    static VjoStreamSlot out;
+    static VjoStreamSnap out;
     VjoStreamClock c = {0, 0, 0, 0};
     memset(&s, 0, sizeof(s));
-    TEST_CHECK(vjo_stream_read(&s, &out) == 0); /* no text yet */
+    TEST_CHECK(vjo_stream_read(&s, 1u, 0u, &out) == 0); /* no text yet */
     TEST_CHECK(vjo_stream_offer(&s, &c, (const uint8_t *)"abcd", 4, 3) == 1);
     TEST_CHECK(s.seq == 1 && s.hits == 1 && s.n == 4 && s.encoding == 3);
-    TEST_CHECK(s.hash == vjo_place_hash((const uint8_t *)"abcd", 4));
+    TEST_CHECK(s.hash == vjo_fnv1a(VJO_FNV_INIT, (const uint8_t *)"abcd", 4));
     TEST_CHECK(vjo_stream_offer(&s, &c, (const uint8_t *)"abcd", 4, 3) == 0);
     TEST_CHECK(s.seq == 1 && s.hits == 2);
     TEST_CHECK(vjo_stream_offer(&s, &c, (const uint8_t *)"abcd", 4, 1) == 1); /* another encoding is new */
     TEST_CHECK(s.seq == 2 && s.hits == 3);
     TEST_CHECK(vjo_stream_offer(&s, &c, (const uint8_t *)"abcde", 5, 1) == 1);
     TEST_CHECK(s.seq == 3 && c.clock == 3 && c.dropped == 0);
-    TEST_CHECK(vjo_stream_read(&s, &out) == 1);
-    TEST_CHECK(out.seq == 3 && out.hits == 4 && out.n == 5 && !memcmp(out.raw, "abcde", 5) && out.lock == 0);
+    TEST_CHECK(vjo_stream_read(&s, 1u, 0u, &out) == 1);
+    TEST_CHECK(out.seq == 3 && out.hits == 4 && out.n == 5 && !memcmp(out.raw, "abcde", 5) && out.encoding == 1);
     TEST_CHECK(s.lock == 0);
 }
 
 static void test_bounds_busy(void)
 {
     static VjoStreamSlot s;
-    static VjoStreamSlot out;
+    static VjoStreamSnap out;
     static uint8_t big[VJO_STREAM_RAW + 1];
     VjoStreamClock c = {0, 0, 0, 0};
     memset(&s, 0, sizeof(s));
@@ -47,9 +47,9 @@ static void test_bounds_busy(void)
     TEST_CHECK(vjo_stream_try_lock(&s) == 1); /* the job holds it: a game thread's hit is skipped */
     TEST_CHECK(vjo_stream_try_lock(&s) == 0);
     TEST_CHECK(vjo_stream_offer(&s, &c, (const uint8_t *)"zzzz", 4, 1) == -1 && c.dropped == 3);
-    TEST_CHECK(vjo_stream_read(&s, &out) == 0); /* and the job skips a slot a game thread holds */
+    TEST_CHECK(vjo_stream_read(&s, 1u, 0u, &out) == 0); /* and the job skips a slot a game thread holds */
     vjo_stream_unlock(&s);
-    TEST_CHECK(vjo_stream_read(&s, &out) == 1 && out.n == VJO_STREAM_RAW);
+    TEST_CHECK(vjo_stream_read(&s, 1u, 0u, &out) == 1 && out.n == VJO_STREAM_RAW);
 }
 
 /* Clock 0 is "never": a wrapped clock skips it. */
@@ -86,7 +86,8 @@ static int offer_from(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, u
  * text become the new caller's; a kept slot is never taken; the counts. */
 static void test_caller_replacement(void)
 {
-    static VjoStreamSlot slots[3], out;
+    static VjoStreamSlot slots[3];
+    static VjoStreamSnap out;
     VjoStreamClock c = {0, 0, 0, 0};
     memset(slots, 0, sizeof(slots));
     TEST_CHECK(offer_from(slots, 3, &c, 0, "abcd") == -1 && c.dropped == 1 && !c.call_dropped); /* no key */
@@ -100,7 +101,7 @@ static void test_caller_replacement(void)
     /* D: every slot is held, B's (seq 2) is the least recently written */
     TEST_CHECK(offer_from(slots, 3, &c, 0xD0u, "dddd") == 1 && c.call_replaced == 1);
     TEST_CHECK(slots[1].key == 0xD0u && slots[1].seq == 5 && slots[1].hits == 1 && !memcmp(slots[1].raw, "dddd", 4));
-    TEST_CHECK(vjo_stream_read(&slots[1], &out) == 1 && out.key == 0xD0u && !memcmp(out.raw, "dddd", 4));
+    TEST_CHECK(vjo_stream_read(&slots[1], 1u, 0u, &out) == 1 && out.key == 0xD0u && !memcmp(out.raw, "dddd", 4));
     TEST_CHECK(slots[1].lock == 0);
     /* D keeps writing into its slot; B, whose slot it was, now needs one: C's (seq 3) is the oldest */
     TEST_CHECK(offer_from(slots, 3, &c, 0xD0u, "ddd2") == 1 && slots[1].seq == 6 && c.call_replaced == 1);
@@ -296,7 +297,7 @@ static VjoStreamClock race_clock;
 static unsigned race_had_text;        /* atomic: a bit per caller whose text has been stored */
 static unsigned race_hits[RACERS][5]; /* each caller's hits dropped, identical, stored, made, other results */
 static unsigned race_reads, race_tries, race_wrong;
-static VjoStreamSlot race_first_wrong; /* the first read with another caller's text */
+static VjoStreamSnap race_first_wrong; /* the first read with another caller's text */
 static unsigned race_watch_had[2];     /* the job's reads without the lock: the slot had text (seq not 0) */
 static unsigned race_watch_reads, race_watch_empty; /* those reads, and those of a slot that had text with seq 0 */
 
@@ -319,7 +320,7 @@ static void *racer(void *arg)
 }
 
 /* The text is its key's caller's, whole. */
-static int race_text_ok(const VjoStreamSlot *s)
+static int race_text_ok(const VjoStreamSnap *s)
 {
     if (s->key < 0x100u || s->key >= 0x100u + RACERS || s->n != 8) return 0;
     for (unsigned b = 0; b < 8; b++)
@@ -355,7 +356,7 @@ static void race_counters(void)
 static void test_replacement_race(void)
 {
     pthread_t t[RACERS];
-    static VjoStreamSlot out;
+    static VjoStreamSnap out;
     unsigned stored = 0, dropped = 0, other = 0, replaced, shown = 0;
     memset(race_slots, 0, sizeof(race_slots));
     memset(&race_clock, 0, sizeof(race_clock));
@@ -374,7 +375,7 @@ static void test_replacement_race(void)
             if (!seq && race_watch_had[k]) race_watch_empty++;
             if (seq && n == 8) race_watch_had[k] = 1;
             race_tries++;
-            if (!vjo_stream_read(&race_slots[k], &out)) continue;
+            if (!vjo_stream_read(&race_slots[k], 1u, 0u, &out)) continue;
             race_reads++;
             if (!race_text_ok(&out) && !race_wrong++) race_first_wrong = out;
         }
@@ -451,10 +452,10 @@ static void shared_counters(void)
                  results[w][3], results[w][2], results[w][1], results[w][0], results[w][4]);
 }
 
-/* The text is whole: every byte the first's, the length from it, the hash its own. */
-static int shared_text_ok(const VjoStreamSlot *s)
+/* The text is whole: every byte the first's, the length from it (the job's copy has no hash: it reads none). */
+static int shared_text_ok(const VjoStreamSnap *s)
 {
-    if (s->n < 5 || s->n > 54 || s->n != 4u + s->raw[0] || s->hash != vjo_place_hash(s->raw, s->n)) return 0;
+    if (s->n < 5 || s->n > 54 || s->n != 4u + s->raw[0]) return 0;
     for (unsigned k = 1; k < s->n; k++)
         if (s->raw[k] != s->raw[0]) return 0;
     return 1;
@@ -463,7 +464,7 @@ static int shared_text_ok(const VjoStreamSlot *s)
 static void test_concurrent(void)
 {
     pthread_t t[WRITERS];
-    static VjoStreamSlot out;
+    static VjoStreamSnap out;
     unsigned stored = 0, same = 0, dropped = 0, other = 0, shown = 0;
     memset(shared, 0, sizeof(shared));
     memset(&shared_clock, 0, sizeof(shared_clock));
@@ -473,7 +474,7 @@ static void test_concurrent(void)
     for (unsigned pass = 1; race_job(pass, shared_reads[0] && shared_reads[1] && shared_reads[2], WRITERS); pass++)
         for (unsigned k = 0; k < 3; k++) {
             shared_tries++;
-            if (!vjo_stream_read(&shared[k], &out)) continue;
+            if (!vjo_stream_read(&shared[k], 1u, 0u, &out)) continue;
             shared_reads[k]++;
             if (!shared_text_ok(&out)) shared_torn++;
         }

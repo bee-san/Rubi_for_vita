@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../../core/fbgrey.h"
 #include "../../core/hook_luna.h"
 #include "../../core/hook_place.h"
 #include "../../core/hook_text.h"
@@ -419,8 +420,9 @@ static void test_reasons(void)
     TEST_CHECK(!strcmp(vjo_place_reason(VJO_PLACE_WINDOW), "window"));
     TEST_CHECK(!strcmp(vjo_place_reason(VJO_PLACE_TAI), "tai"));
     TEST_CHECK(!strcmp(vjo_place_reason(-1), "?") && !strcmp(vjo_place_reason(VJO_PLACE_COUNT), "?"));
-    TEST_CHECK(vjo_place_hash((const uint8_t *)"", 0) == 2166136261u);
-    TEST_CHECK(vjo_place_hash((const uint8_t *)"a", 1) == 0xE40C292Cu);
+    /* the streams' hash (core/hook_stream.c store), the tree's one FNV-1a since #418: its reference values */
+    TEST_CHECK(vjo_fnv1a(VJO_FNV_INIT, (const uint8_t *)"", 0) == 2166136261u);
+    TEST_CHECK(vjo_fnv1a(VJO_FNV_INIT, (const uint8_t *)"a", 1) == 0xE40C292Cu);
 }
 
 TEST_LIST = {

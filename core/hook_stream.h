@@ -18,7 +18,7 @@ typedef struct {
     uint32_t kind;     /* VJO_HOOK_KIND_* */
     uint32_t seq;      /* the streams' clock at this slot's last new text; 0: never had text (once it has, never 0) */
     uint32_t hits;     /* hits stored or identical, since the game started (since its caller took it) */
-    uint32_t hash;     /* FNV-1a of raw[0..n) */
+    uint32_t hash;     /* FNV-1a of raw[0..n) (core/fbgrey.h vjo_fnv1a) */
     uint32_t encoding; /* VJO_HOOK_ENC_* of raw */
     uint32_t n;        /* bytes in raw */
     uint32_t kept;     /* 1: a CALL slot no other caller may take (vjo_stream_keep) */
@@ -71,7 +71,25 @@ int vjo_stream_offer_caller(VjoStreamSlot *slots, unsigned count, VjoStreamClock
  * audit-b, F3). */
 void vjo_stream_keep(VjoStreamSlot *s);
 
-/* Job time: copies the slot under its try-lock. 1 copied; 0 empty (no text yet) or busy. */
-int vjo_stream_read(VjoStreamSlot *s, VjoStreamSlot *out);
+/* VjoStreamSlot.kind of a table site (game_ocr/hooks.h VJO_HOOK_KIND_SITE): its key is its segment-0 offset + 1. */
+#define VJO_STREAM_KIND_SITE 1u
+
+/* A slot's text as the job copies it (vjo_stream_read; game_ocr/hooks.h VjoHookSnap). */
+typedef struct {
+    uint32_t id;       /* the stream's number (vjo_stream_read's id) */
+    uint32_t kind;     /* the slot's VJO_HOOK_KIND_* */
+    uint32_t seq;      /* changes at each new text (an identical copy does not change it) */
+    uint32_t hits;     /* hits so far, identical copies included */
+    uint32_t key;      /* a site's segment-0 offset; a caller's return address minus call_base */
+    uint32_t encoding; /* VJO_HOOK_ENC_* of raw */
+    uint32_t n;        /* bytes in raw */
+    const void *site;  /* a table site's VjoLunaSite, or NULL */
+    uint8_t raw[VJO_STREAM_RAW];
+} VjoStreamSnap;
+
+/* Job time (#418: the worker's one copy of a stream, game_ocr/hooks.c vjo_hooks_snap): stream id's slot s copied
+ * under its try-lock, its text with memcpy (the job's thread, not the hook path), its key the stream's (a site's
+ * offset, a caller's return address minus call_base). 1 copied; 0 empty (no text yet) or busy. */
+int vjo_stream_read(VjoStreamSlot *s, uint32_t id, uint32_t call_base, VjoStreamSnap *out);
 
 #endif

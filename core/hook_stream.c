@@ -1,7 +1,9 @@
 /* The native hooks' stream slots (core/hook_stream.h). Pure C. */
 #include "hook_stream.h"
 
-#include "hook_place.h"
+#include <string.h> /* memcpy, job time only: the worker's libc_shim, sceClibMemcpy */
+
+#include "fbgrey.h" /* vjo_fnv1a, the tree's one FNV-1a (#418) */
 
 /* A test's seam (host/tests/test_hook_stream_seams.c): another thread's step at a point of replace() (scan: before slot
  * i's loads; chosen: the scan chose slot i, before its try-lock; taking: slot i's lock held and every check passed,
@@ -26,7 +28,7 @@ static void copy_bytes(uint8_t *dst, const uint8_t *src, unsigned n)
  * check for this caller's slot elsewhere). */
 static int store(VjoStreamSlot *s, VjoStreamClock *c, const uint8_t *src, unsigned n, unsigned encoding, int fresh)
 {
-    uint32_t h = vjo_place_hash(src, n), seq;
+    uint32_t h = vjo_fnv1a(VJO_FNV_INIT, src, n), seq;
     s->hits++;
     if (!fresh && s->seq && s->n == n && s->hash == h && s->encoding == encoding) {
         return 0;
@@ -158,24 +160,24 @@ void vjo_stream_keep(VjoStreamSlot *s)
     __atomic_store_n(&s->kept, 1u, __ATOMIC_RELEASE);
 }
 
-int vjo_stream_read(VjoStreamSlot *s, VjoStreamSlot *out)
+int vjo_stream_read(VjoStreamSlot *s, uint32_t id, uint32_t call_base, VjoStreamSnap *out)
 {
+    uint32_t key;
     if (!vjo_stream_try_lock(s)) return 0;
     if (!s->seq || !s->n || s->n > VJO_STREAM_RAW) {
         vjo_stream_unlock(s);
         return 0;
     }
-    out->lock = 0;
-    out->key = __atomic_load_n(&s->key, __ATOMIC_RELAXED);
+    key = __atomic_load_n(&s->key, __ATOMIC_RELAXED);
+    out->id = id;
     out->kind = s->kind;
     out->seq = s->seq;
     out->hits = s->hits;
-    out->hash = s->hash;
+    out->key = s->kind == VJO_STREAM_KIND_SITE ? key - 1u : key - call_base;
     out->encoding = s->encoding;
     out->n = s->n;
-    out->kept = __atomic_load_n(&s->kept, __ATOMIC_RELAXED);
     out->site = s->site;
-    copy_bytes(out->raw, s->raw, s->n);
+    memcpy(out->raw, s->raw, s->n);
     vjo_stream_unlock(s);
     return 1;
 }

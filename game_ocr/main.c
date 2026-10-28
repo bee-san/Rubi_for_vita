@@ -2799,7 +2799,7 @@ static int inactive_long(int registered)
 #endif
 static uint32_t hooks_watch(void)
 {
-    uint32_t want = hk.luna_seen, best = 0, best_id = 0, bytes = 0, pace, h = 2166136261u;
+    uint32_t want = hk.luna_seen, best = 0, best_id = 0, bytes = 0, pace, h;
     /* lt: the learned source is trusted (vjo_hook_select_trusted's rule for it) */
     int trusted = 0, lt = hk.trust_on && hk.sel.interval >= VJO_HOOK_TRUST_INTERVAL && hk.sel.strong && !hk.sel.misses;
     uint64_t now;
@@ -2842,7 +2842,7 @@ static uint32_t hooks_watch(void)
          * stream a game thread is writing is read at the next round */
         if (!vjo_hooks_snap(best_id, &hk.snap)) return pace;
         len = vjo_hooks_text(&hk.snap, hk.pool, HOOK_TEXT_CAP);
-        for (size_t i = 0; i < len; i++) h = (h ^ (unsigned char)hk.pool[i]) * 16777619u;
+        h = vjo_fnv1a(VJO_FNV_INIT, (const unsigned char *)hk.pool, (unsigned)len);
         if (len && (h != hk.watch_hash || len != hk.watch_len)) {
             if (vjoOcrHookLine(best, bytes | VJO_HOOK_LINE_TRUSTED) < 0) return pace; /* a job in the way */
             hk.watch_hash = h;
