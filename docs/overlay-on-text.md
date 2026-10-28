@@ -130,7 +130,7 @@ refuses a block that does not tile its characters in order, points outside the s
 ## Memory
 
 Measured on the packaged modules of both builds, main `e2100e0` against this change (VitaSDK in the fast gate's
-container; [memory-ledger](memory-ledger.md#the-overlay-on-the-games-text-api-46-309)):
+container; [memory-ledger](memory-ledger-history.md#the-overlay-on-the-games-text-api-46-309)):
 
 - **SceShell: the module's pages are unchanged** (163,840 B normal, exact; 176,128 B debug). The overlay's copy of
   the cursor's text (4,096 B) moved from the Shell's data pages into the open page's UI block, where the char map

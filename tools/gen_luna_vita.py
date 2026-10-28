@@ -765,8 +765,9 @@ def render_doc():
     out.append("")
     out.append(f"core/hook_place.c's verified table (`vjo_place_verified`): {len(rubi)} title IDs, "
                f"{sum(r['luna'] != 'no' for r in rubi)} of them games of Luna's table, "
-               f"{sum(r['luna'] == 'its site' for r in rubi)} at the address of one of Luna's sites there (Rubi's "
-               "placement check refuses Luna's site; the entry's signature unlocks it, with Rubi's text clean-up). "
+               f"{sum(r['luna'] == 'its site' for r in rubi)} at the address of one of Luna's sites there (where "
+               "Rubi's placement check refuses Luna's site, the entry's signature unlocks it; at one it accepts, the "
+               "entry pins the game's bytes and gives the text Rubi's clean-up). "
                "Each was proven in Vita3K, by the psandvita hook farm's pages (CLANNAD's by the PR #16 profile); "
                "Console: what a console run showed. Site: the offset in the module the NID names, with the "
                "signature's length; Version: the game version (param.sfo's APP_VER) the entry is tried in.")

@@ -45,7 +45,7 @@ CODECS = {"cp932": "cp932", "utf-8": "utf-8", "utf-16le": "utf-16-le"}
 # dropped the code instead, the glyph count of the farm's own boxes shows the name drawn (PCSG00469 page 80:
 # 14 glyphs, 私――九楼撫子は小学６年生。).
 DEFAULT_NAMES = {"PCSG00380": ["北條", "紗希"], "PCSG00448": ["片岡", "ユエ"], "PCSG00469": ["撫子"],
-                 "PCSG00509": ["鈴"], "PCSG00853": ["花宮", "かずは", "カズハ"]}
+                 "PCSG00509": ["鈴"], "PCSG00769": ["榊", "水緒"], "PCSG00853": ["花宮", "かずは", "カズハ"]}
 WS = " \t\r\n\u3000"
 
 
@@ -238,6 +238,9 @@ def c_bytes(raw):
 
 
 ENC_NAMES = {"cp932": "VJO_HOOK_ENC_CP932", "utf-8": "VJO_HOOK_ENC_UTF8", "utf-16le": "VJO_HOOK_ENC_UTF16LE"}
+# A cell record's layout, its count's and cells' offsets (core/hook_place.h): foaf4's page record (PCSG00380, PCSG00914)
+# and its page-build record (PCSG00769)
+CELL_LAYOUTS = {(0x14, 0x20): "VJO_PLACE_READ_CELLS", (0x20, 0x2E): "VJO_PLACE_READ_CELLS_B"}
 # The mode of the farm's records whose note says to check it by disassembly (their recorded thumb flag is not the
 # code's), decided from the 16 bytes the record holds with LLVM 18.1.8's llvm-mc (`--disassemble`, `-triple
 # thumbv7-none-eabi` and `armv7-none-eabi`): title -> (those bytes, 1 Thumb or 0 ARM). audit-rubi-audit-fix-hooks A-F1:
@@ -287,10 +290,14 @@ def farm_site(hook):
         data = reader.pop("data_offset", None)
         if reader:
             raise SystemExit("%s: a reader Rubi has no read for: %s" % (hook.get("title"), sorted(reader)))
-        if length is not None:  # a count of 16-bit cells, then the cells (VJO_PLACE_READ_CELLS)
+        if length is not None:  # a count of 16-bit cells, then the cells (VJO_PLACE_READ_CELLS, _CELLS_B)
             if (length.get("width"), length.get("scale"), length.get("unit")) != (4, 2, "bytes") or pointers:
                 raise SystemExit("%s: a length reader Rubi has no read for: %r" % (hook.get("title"), length))
-            read, count_off, data_off = "VJO_PLACE_READ_CELLS", int(length["offset"]), int(data or 0)
+            count_off, data_off = int(length["offset"]), int(data or 0)
+            read = CELL_LAYOUTS.get((count_off, data_off))
+            if not read:
+                raise SystemExit("%s: a cell record (count at +0x%X, cells at +0x%X) Rubi has no read for" % (
+                    hook.get("title"), count_off, data_off))
         elif pointers == [0]:  # the string's pointer there (VJO_PLACE_READ_DEREF)
             read = "VJO_PLACE_READ_DEREF"
         elif pointers or data:

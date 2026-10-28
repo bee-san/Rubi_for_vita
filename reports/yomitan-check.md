@@ -115,7 +115,7 @@ the contracted progressive てん (してんの, 言ってん: 9 taps) shows `-n
 rules read an elongated て (見てー, 聴かせてー) as `-tai` (audit of #320). File reads per lookup on the 50 committed
 lines are unchanged (6.12 first word, 5.50 word by word, 5.53 letter by letter; `dict_lookup_bench.py`),
 so the console estimate is too. The table grows from 569 rules to 724 and the Shell's pages do not:
-the table is packed ([memory ledger](../docs/memory-ledger.md#yomitans-deinflection-rules-a-packed-table)).
+the table is packed ([memory ledger](../docs/memory-ledger-history.md#yomitans-deinflection-rules-a-packed-table)).
 
 ## #321: what remained
 
@@ -168,7 +168,7 @@ taps, 3,962 shown entries change: 3,494 better, 465 the same, 3 worse (below). B
   話をして, `-te` only (SudachiPy: the same; #321's audit).
 
 The Shell's pages are unchanged; the rule table moved to the data segment
-([memory ledger](../docs/memory-ledger.md#lookups-321)).
+([memory ledger](../docs/memory-ledger-history.md#lookups-321)).
 
 ## What remains
 

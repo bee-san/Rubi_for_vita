@@ -441,7 +441,7 @@ Luna recorded these before its `addr_offset` (f237a9f4, 2026-05-20), at Vita3K's
 
 ## Rubi's own entries
 
-core/hook_place.c's verified table (`vjo_place_verified`): 56 title IDs, 30 of them games of Luna's table, 18 at the address of one of Luna's sites there (Rubi's placement check refuses Luna's site; the entry's signature unlocks it, with Rubi's text clean-up). Each was proven in Vita3K, by the psandvita hook farm's pages (CLANNAD's by the PR #16 profile); Console: what a console run showed. Site: the offset in the module the NID names, with the signature's length; Version: the game version (param.sfo's APP_VER) the entry is tried in.
+core/hook_place.c's verified table (`vjo_place_verified`): 62 title IDs, 36 of them games of Luna's table, 20 at the address of one of Luna's sites there (where Rubi's placement check refuses Luna's site, the entry's signature unlocks it; at one it accepts, the entry pins the game's bytes and gives the text Rubi's clean-up). Each was proven in Vita3K, by the psandvita hook farm's pages (CLANNAD's by the PR #16 profile); Console: what a console run showed. Site: the offset in the module the NID names, with the signature's length; Version: the game version (param.sfo's APP_VER) the entry is tried in.
 
 | Title ID | Region | Game | Site | Encoding | Version | In Luna's table | Console |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -475,6 +475,8 @@ core/hook_place.c's verified table (`vjo_place_verified`): 56 title IDs, 30 of t
 | PCSG01221 | JP | 紅色天井艶妖綺譚 二藍 | segment 0 + 0x3B554 (Thumb), r4; module NID 0x1A9CF884, 16-byte signature | CP932 | 01.00 | its site | not yet |
 | PCSG00505 | JP | 大図書館の羊飼い -Library Party- | segment 0 + 0x2DB24 (Thumb), r0; module NID 0x13ED670B, 8-byte signature | CP932 | 01.00 | its site | not yet |
 | PCSG01065 | JP | 学園CLUB ～ヒミツのナイトクラブ～ | segment 0 + 0x25854 (Thumb), r1; module NID 0x81440C76, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00766 | JP | ニル・アドミラリの天秤 帝都幻惑綺譚 | segment 0 + 0x6F862 (Thumb), r0; module NID 0x35A8C840, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG01282 | JP | 死神と少女 | segment 0 + 0xB00E (Thumb), r1; module NID 0xFB4D2C38, 16-byte signature | CP932 | 01.00 | its site | not yet |
 | PCSG00020 | JP | 極限脱出ＡＤＶ 善人シボウデス | segment 0 + 0x1AC998 (Thumb), r1; module NID 0xF98BA0BA, 16-byte signature | UTF-8 | 01.00 | another site | not yet |
 | PCSG00883 | JP | ZERO ESCAPE ９時間９人９の扉 善人シボウデス ダブルパック | segment 0 + 0x1EBCB8 (Thumb), r1; module NID 0x158B09F2, 10-byte signature | UTF-8 | 01.00 | no | not yet |
 | PCSG00380 | JP | 真 流行り神 | segment 0 + 0x4DE9E (Thumb), pc; module NID 0x9A11E118, 16-byte signature | CP932 | 01.00 | no | not yet |
@@ -491,6 +493,10 @@ core/hook_place.c's verified table (`vjo_place_verified`): 56 title IDs, 30 of t
 | PCSG00817 | JP | EVE burst error R | segment 0 + 0x19132 (Thumb), r0; module NID 0x2DBAE009, 16-byte signature | CP932 | 01.00 | no | not yet |
 | PCSG00876 | JP | 7'scarlet | segment 0 + 0x12B60 (Thumb), r6; module NID 0x16FEB862, 16-byte signature | UTF-8 | 01.00 | no | not yet |
 | PCSG01194 | JP | 参千世界遊戯 ～Re Multi Universe Myself～ | segment 0 + 0x56E24 (Thumb), r0; module NID 0xECD30306, 16-byte signature | CP932 | 01.00 | its site | not yet |
+| PCSG00139 | JP | フォトカノ Kiss | segment 0 + 0x1608D4 (Thumb), r4; module NID 0x1695A771, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG00370 | JP | デュラララ!! 3way standoff -alley- V | segment 0 + 0x4FBD8 (Thumb), r3; module NID 0x89BB8C3B, 16-byte signature | CP932 | 01.00 | another site | not yet |
+| PCSG01127 | JP | 千の刃濤、桃花染の皇姫 | segment 0 + 0x18ED10 (ARM), r6; module NID 0x6AB76A0D, 16-byte signature | UTF-8 | 01.00 | another site | not yet |
+| PCSG00769 | JP | 逢魔が刻～かくりよの縁～ | segment 0 + 0x31306 (Thumb), r6; module NID 0xD597D1CA, 16-byte signature | CP932 | 01.00 | another site | not yet |
 | PCSG00602 | JP | 忍び、恋うつつ ― 雪月花恋絵巻 ― | segment 0 + 0xB242 (Thumb), r2; module NID 0x711785A4, 16-byte signature | CP932 | 01.00 | no | not yet |
 | PCSG00629 | JP | 薄桜鬼 真改　風ノ章 | segment 0 + 0x19B2C (Thumb), r4; module NID 0xBE150EF7, 16-byte signature | CP932 | 01.00 | no | not yet |
 | PCSG00755 | JP | BROTHERS CONFLICT　Precious Baby | segment 0 + 0xE62C (Thumb), r2; module NID 0xEBEDA5FC, 16-byte signature | CP932 | 01.00 | another site | not yet |

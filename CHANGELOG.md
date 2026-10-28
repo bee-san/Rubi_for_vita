@@ -33,7 +33,7 @@ been reported.
   or patched in the PSP game and no PSP plugin is added. Proven in the PPSSPP emulator only, **not run on a
   console** ([native-hooks.md](docs/native-hooks.md#psp-text-adrenaline), #240).
 - The debug build's game worker takes one more page (4,096 B) in each game that is ON, for the probe and PSP
-  text; the normal build's keeps its pages, and so do both Shells ([memory ledger](docs/memory-ledger.md#psp-text-and-the-psp-probe-format-4)).
+  text; the normal build's keeps its pages, and so do both Shells ([memory ledger](docs/memory-ledger-history.md#psp-text-and-the-psp-probe-format-4)).
   A Vita game's remembered hook (`hooks.cache`) is learned again once after this build: the hook engine's files
   changed, so their revision did.
 - **The PSP probe (debug build) stopped before reading anything on the console** (#248): the view of PSP RAM has no
@@ -60,12 +60,26 @@ been reported.
   ([details](docs/text-stability.md#animated-icons-and-moving-pictures-353)). No new block or allocation: the line
   checksums take the row states' place in the job's capture block (its size unchanged). The watch's code takes the
   worker one page more, 4 KiB in each game that is ON, in both builds: 196,608 B of module pages (204,800 B in the
-  debug build) ([ledger](docs/memory-ledger.md#the-line-watch-353)).
+  debug build) ([ledger](docs/memory-ledger-history.md#the-line-watch-353)).
 - The log says when text was recognized but never shown: the third job in a row whose screen changed under every read
   logs (both builds) `ocr: screen changed under 3 jobs in a row; N line(s) not shown` (the overlay says why it waits:
   #358, above). The debug build's `gstep job settle` says what the line watch did (its kind), and
   `tools/analyse_selftest.py --collect` sums it. (test/combined: draft #359, not merged)
 
+- **Native text hooks for six more games, from the psandvita hook farm** (psandvita #1; proven in the Vita3K
+  emulator only, not on a console): **フォトカノ Kiss** (`PCSG00139`), **デュラララ!! 3way standoff -alley- V**
+  (`PCSG00370`), **ニル・アドミラリの天秤 帝都幻惑綺譚** (`PCSG00766`), **逢魔が刻～かくりよの縁～** (`PCSG00769`),
+  **千の刃濤、桃花染の皇姫** (`PCSG01127`) and **死神と少女** (`PCSG01282`). Each is a verified entry, tried only when the
+  game's code bytes, module NID and `APP_VER` 01.00 match what the farm proved, with the text clean-up the farm's
+  pages call for; on every approved page of the farm's bucket (405 in all) the popup's text is the text the farm
+  verified against the screen (two of 逢魔が刻's show the default player name 榊 水緒, which the farm's text leaves
+  out). フォトカノ Kiss and デュラララ!! had no hook that could install on a console; ニル・アドミラリの天秤 and
+  死神と少女 had LunaTranslator's site, whose text lost its line breaks (and kept 死神と少女's `\d` click waits).
+  逢魔が刻 reads foaf4's page-build record (`VJO_PLACE_READ_CELLS_B`, the cells of 真 流行り神's page record at
+  other offsets). The farm's other verified hooks of that batch had their entries already (11) or cannot be placed
+  (Un:BIRTHDAY SONG `PCSG00912`, 天涯ニ舞ウ、粋ナ花 `PCSG01180`: a branch in the bytes the hook would overwrite).
+  To check on a console: start one of them with the debug build; `hooks.log` shows `verified +<offset> ... hooked`.
+  ([details](docs/native-hooks.md#farm-checks))
 - **Pause the game to read** (API 55, #348, #355; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR &
   lookup page, **OFF by default**): each reading copies the text box from one frame at once, inside that frame's
   display call, which the game waits in for as long, and the OCR reads that still copy. A spinning icon or an animated
@@ -414,7 +428,7 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
 ### Changed
 
 - The debug build's game worker takes one more page (4,096 B) in each game that is ON, for the probe and PSP
-  text; the normal build's keeps its pages, and so do both Shells ([memory ledger](docs/memory-ledger.md#psp-text-and-the-psp-probe-format-4)).
+  text; the normal build's keeps its pages, and so do both Shells ([memory ledger](docs/memory-ledger-history.md#psp-text-and-the-psp-probe-format-4)).
   A Vita game's remembered hook (`hooks.cache`) is learned again once after this build: the hook engine's files
   changed, so their revision did.
 - **OCR: faster reads with vita-vn-ocr's head gate and two-level head** (API 42; `config.ini`
@@ -432,7 +446,7 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   as before ([details](docs/vita-vn-ocr.md#head-gate-and-two-level-head-api-42)). Memory: the game worker takes
   two pages (8,192 B) more in each game that is ON, in both builds; Normal's and Large's weights blocks are a page
   larger, the largest job's workspace two; the Shell's pages are unchanged
-  ([measured](docs/memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
+  ([measured](docs/memory-ledger-history.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
   An update leaves 0.9.7's `VOCR5_S_w8.vocr`, `VOCR5_N_w8.vocr` and `VOCR5_L_w8.vocr` (4,479,120 B) in
   `ux0:data/VitaJPOverlay/ocr/`: nothing reads them any more, so they may be deleted. The plugins of this
   release must all be installed together (API 50, below).
@@ -818,7 +832,7 @@ the normal build only.
   source (test.7's △ source picker stays out). The Shell's pages are unchanged in both builds: the
   header's 2,048 B of ranges moved from its permanent data into the overlay's existing 20,480 B text
   block, which now needs 20,064 B of it, and cold strings into the data space freed
-  ([measured](docs/memory-ledger.md#hidden-triangle-line-diagnostics)).
+  ([measured](docs/memory-ledger-history.md#hidden-triangle-line-diagnostics)).
 
 ### Fixed
 
@@ -856,7 +870,7 @@ the normal build only.
 - The plugins use API 36 ([#247]): an OCR job's request carries that choice (`VJO_GAME_OCR_S_DROP_BORDERS`, bit 16
   of its `speed` word), and the debug build's `gstep job norm` step counts the lines dropped as its `kind`
   (`tools/analyse_selftest.py` says so). The game worker does the work; no module's pages change
-  ([measured](docs/memory-ledger.md#border-lines-dropped-api-36)).
+  ([measured](docs/memory-ledger-history.md#border-lines-dropped-api-36)).
 
 ### On the console
 
@@ -1008,7 +1022,7 @@ The normal build omits the debug traces and on-device self-test; the overlay kee
 - The combined build retains the native-hook worker's 167,936 B debug / 159,744 B normal module
   pages. Compact highlight ranges and fixed tables in existing data-page space keep the Shell at
   176,128 B debug / 163,840 B normal, with the existing PAF reserve unchanged
-  ([binary measurements](docs/memory-ledger.md#combined-enhancement-test-build-local-api-33)).
+  ([binary measurements](docs/memory-ledger-history.md#combined-enhancement-test-build-local-api-33)).
 - The popup shows dialogue without hook numbers or source-status controls. Source diagnostics stay
   in the logs, and ordinary text reads select their source automatically.
 - The README shows the promo film ([#206]) and says what the console runs showed ([#204]); its build

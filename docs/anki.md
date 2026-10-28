@@ -351,7 +351,7 @@ normal Shell and 824 B to the debug one:
 That design does not fit: moving cold strings to the data segment, as #303, #307 and #385 did, cannot pay
 for it (the data segments had 336 B and 160 B of room), and every cold Shell file is already built `-Os`. So,
 as #314 planned, it does not merge, and the duplicate and known tags at export (above) stand alone
-([memory ledger](memory-ledger.md#duplicate-aware-mining-314-the-rubi-app-only)).
+([memory ledger](memory-ledger-history.md#duplicate-aware-mining-314-the-rubi-app-only)).
 
 A smaller split is possible and is neither built nor measured: the Rubi app keeps the markers, named by the
 dictionary entry's own spelling and reading (no fold, no key in the Shell), and the Shell only stats the

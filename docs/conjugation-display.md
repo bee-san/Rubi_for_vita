@@ -35,4 +35,4 @@ The `local_cursor` host suite exercises formats 1–3, exact forms, irregular ve
 chained/long conjugations, dictionary switching, cache reuse, fallback readings, and repeated words
 whose vocabulary is shared but whose conjugation differs. The generator consistency test covers
 both the rule reason IDs and display labels. Both Vita builds retain their existing module pages
-([memory measurements](memory-ledger.md#dictionary-conjugation-display)).
+([memory measurements](memory-ledger-history.md#dictionary-conjugation-display)).

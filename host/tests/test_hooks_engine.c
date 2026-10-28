@@ -1690,6 +1690,10 @@ static void test_verified_deref_and_filter(void)
  * its cells from +0x20. Written here as numbers, not VJO_PLACE_CELLS_*, so a change of those fails. */
 #define REC_COUNT 0x14u
 #define REC_CELLS 0x20u
+/* foaf4's page-build record as the farm read it (PCSG00769's reader-config.json): its count at +0x20, its cells from
+ * +0x2E (VJO_PLACE_READ_CELLS_B), as numbers too */
+#define BUILD_COUNT 0x20u
+#define BUILD_CELLS 0x2Eu
 
 /* A verified entry that names its APP_VER (VjoPlaceVerified.app_ver) is refused in another version, as
  * VJO_PLACE_VERSION before its bytes are read; a param.sfo without a readable APP_VER leaves it to its NID and
@@ -1808,9 +1812,12 @@ static const FarmSite *farm_entry(const char *title, const VjoPlaceVerified **en
     else
         TEST_CHECK_(v->reg == fs->reg && (uint32_t)v->padding == fs->padding, "%s: r%u + %d, the farm's r%u + %u",
                     title, (unsigned)v->reg, (int)v->padding, fs->reg, (unsigned)fs->padding);
-    TEST_CHECK_(v->read != VJO_PLACE_READ_CELLS ||
-                    (fs->count_off == VJO_PLACE_CELLS_COUNT && fs->data_off == VJO_PLACE_CELLS_DATA),
-                "%s: the record's count at +0x%X and cells at +0x%X", title, fs->count_off, fs->data_off);
+    {
+        uint32_t count_at = 0, cells_at = 0;
+        TEST_CHECK_(!vjo_place_cells_layout(v->read, &count_at, &cells_at) ||
+                        (fs->count_off == count_at && fs->data_off == cells_at),
+                    "%s: the record's count at +0x%X and cells at +0x%X", title, fs->count_off, fs->data_off);
+    }
     *entry = v;
     return fs;
 }
@@ -1893,7 +1900,8 @@ static void test_farm_excerpts(void)
         at = fs->padding >= FARM_SEG0 ? fs->padding : a32(data) + 0x100u;
         if (fs->padding < FARM_SEG0) frame[fs->reg] = at - fs->padding;
         p = (uint8_t *)(uintptr_t)at;
-        if (fs->read == VJO_PLACE_READ_CELLS) { /* the farm read the record's count of cells, then the cells */
+        if (fs->read == VJO_PLACE_READ_CELLS || fs->read == VJO_PLACE_READ_CELLS_B) { /* the farm read the record's
+                                                                                          * count of cells, then them */
             uint32_t count = row->n / 2u;
             memcpy(p + fs->count_off, &count, 4);
             memcpy(p + fs->data_off, row->raw, row->n);
@@ -2143,6 +2151,51 @@ static void test_verified_cells(void)
     memcpy(data + 0x200 + REC_COUNT, &count, 4);
     vjo_hooks_observe(0, frame);
     TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2);
+}
+
+/* VJO_PLACE_READ_CELLS_B: the same cells in foaf4's page-build record (PCSG00769), its count at +0x20 and its cells from
+ * +0x2E (BUILD_COUNT, BUILD_CELLS), not the page record's +0x14 and +0x20: a record whose +0x14 holds another count
+ * (read the page record's way it would give one control byte, the low byte of the count at +0x20) gives its own text;
+ * the bounds are the page record's. */
+static void test_verified_build_cells(void)
+{
+    /* 「あ」 then a line break and い as cells; a stale cell after them that the count leaves out */
+    static const uint8_t cells[] = {0x81, 0x75, 0x82, 0xA0, 0x81, 0x76, 0x0A, 0x00, 0x82, 0xA2, 0x82, 0xA4};
+    VjoPlaceVerified v;
+    uint32_t frame[16], count = 5, three = 3, rec;
+    VjoHookSnap s;
+    char text[64];
+    reset();
+    put_site(0x100, 1, NULL);
+    v = verified_entry(0x100, mod.nid, 6, 0);
+    v.read = VJO_PLACE_READ_CELLS_B;
+    rec = a32(data) + 0x200;
+    t_ver = &v;
+    t_nver = 1;
+    add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_ASSERT(n_sites == 1 && site_info[0].ver == &v);
+    memcpy(data + 0x200 + REC_COUNT, &three, 4);
+    memcpy(data + 0x200 + BUILD_COUNT, &count, 4);
+    memcpy(data + 0x200 + BUILD_CELLS, cells, sizeof cells);
+    memset(frame, 0, sizeof frame);
+    frame[6] = rec; /* the register: the record */
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.n == 9 && !memcmp(s.raw, "\x81\x75\x82\xA0\x81\x76\x0A\x82\xA2", 9));
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) > 0 && !strcmp(text, "「あ」\nい"));
+    TEST_MSG("got [%s]", text);
+    /* its cells past the block's end (the count read, 32 cells not), or a count of 0: no hit */
+    frame[6] = a32(data) + DATA_SIZE - 0x40u;
+    count = 32;
+    memcpy(data + DATA_SIZE - 0x40u + BUILD_COUNT, &count, 4);
+    vjo_hooks_observe(0, frame);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 1);
+    count = 0;
+    frame[6] = rec;
+    memcpy(data + 0x200 + BUILD_COUNT, &count, 4);
+    vjo_hooks_observe(0, frame);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 1);
 }
 
 /* ---- MAGES SC3 sites on the farm's own pages (tools/sc3_charset.py --fixtures) ---- */
@@ -2406,6 +2459,7 @@ TEST_LIST = {
     {"a verified entry: deref, its own filter in place of a Luna site's", test_verified_deref_and_filter},
     {"a verified entry's APP_VER: only that version, read without Luna sites", test_verified_version},
     {"a verified entry's page record of cells; r15 only with segment 0 at 0x81000000", test_verified_cells},
+    {"a verified entry's page-build record of cells: its own count and cells offsets", test_verified_build_cells},
     {"SC3 sites: the string through its end token, the pinned charset, the farm's text", test_sc3_sites},
     {"the farm's excerpts through each verified entry, in the game as the farm recorded its hook", test_farm_excerpts},
     {"TIME TRAVELERS: Luna's sites at their own addresses in a segment 0 at 0x81000000", test_luna_own_address},

@@ -257,8 +257,8 @@ static void test_verified_table(void)
         TEST_CHECK_((v->encoding == VJO_HOOK_ENC_CP932_A0) ==
                         (v->filter == VJO_RF_PCSG00540 || v->filter == VJO_RF_PCSG00628), "%s: CP932_A0 and its filter",
                     v->title);
-        TEST_CHECK_(v->read != VJO_PLACE_READ_CELLS || v->encoding == VJO_HOOK_ENC_CP932, "%s: cells are CP932",
-                    v->title);
+        TEST_CHECK_((v->read != VJO_PLACE_READ_CELLS && v->read != VJO_PLACE_READ_CELLS_B) ||
+                        v->encoding == VJO_HOOK_ENC_CP932, "%s: cells are CP932", v->title);
         /* an SC3 string is read through its end token and decoded with its game's charset, nothing else */
         TEST_CHECK_((v->read == VJO_PLACE_READ_SC3) == (v->encoding == VJO_HOOK_ENC_SC3) &&
                         (v->encoding != VJO_HOOK_ENC_SC3 || !v->filter), "%s: SC3 read, encoding, no filter", v->title);
@@ -268,8 +268,8 @@ static void test_verified_table(void)
         TEST_CHECK_(v->thumb <= 1 && !(v->off & (v->thumb ? 1u : 3u)), "%s +%X alignment", v->title, (unsigned)v->off);
         TEST_CHECK_(v->sig_len <= 16 && v->sig_len >= vjo_place_patch_bytes(0x81000000u + v->off, v->thumb),
                     "%s +%X: %u recorded bytes", v->title, (unsigned)v->off, v->sig_len);
-        TEST_CHECK_(v->read <= VJO_PLACE_READ_SC3 && vjo_luna_filter_known(v->filter), "%s +%X: filter 0x%02X", v->title,
-                    (unsigned)v->off, v->filter);
+        TEST_CHECK_(v->read <= VJO_PLACE_READ_CELLS_B && vjo_luna_filter_known(v->filter), "%s +%X: filter 0x%02X",
+                    v->title, (unsigned)v->off, v->filter);
         TEST_CHECK_(vjo_place_verified(v->title, &first) >= 1 && first <= v && v < first + vjo_place_verified(v->title, &first),
                     "%s: its entries are contiguous", v->title);
         for (unsigned j = i + 1; j < n; j++)
