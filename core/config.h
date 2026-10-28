@@ -45,6 +45,7 @@ typedef struct {
     int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */
     int highlight_mode;       /* VJO_HIGHLIGHT_*: match span or selected character */
     int frequency_badge;      /* 0/1: the popup shows the entry's frequency rank ("#1234") */
+    int overlay_on_text;      /* 0/1, API 46: the overlay is drawn on the game's own text (docs/overlay-on-text.md) */
     int font_size_ja;         /* 8..40: header, headwords, readings */
     int font_size_en;         /* 8..40: meanings, rank, messages */
     int toggle_button;        /* enum VjoTrigger */

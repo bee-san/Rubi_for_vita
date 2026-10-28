@@ -108,6 +108,11 @@ const char *vjo_config_default_text(void)
            "; frequent word; unranked: not in the frequency list its dictionary carries.\n"
            "frequency_badge = on\n"
            "\n"
+           "; The overlay on the game's own text (testing): the word at the cursor is marked\n"
+           "; where the game shows it, a tap on the game's text looks a word up, and the\n"
+           "; popup sits beside the word: on | off (docs/overlay-on-text.md)\n"
+           "overlay_on_text = off\n"
+           "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"
            "font_size_ja = 18\n"
            "font_size_en = 14\n"
@@ -539,6 +544,7 @@ static const struct {
     {"ocr_text_gate", offsetof(VjoConfig, ocr_text_gate)},
     {"ocr_spotter_refine", offsetof(VjoConfig, ocr_spotter_refine)}, /* API 54 */
     {"ocr_pause", offsetof(VjoConfig, ocr_pause)},                  /* API 55, off by default */
+    {"overlay_on_text", offsetof(VjoConfig, overlay_on_text)},      /* API 46 (draft #326), off by default */
     {"ocr_skip_blank_lines", offsetof(VjoConfig, ocr_skip_blank_lines)},
     {"ocr_boost_clock", offsetof(VjoConfig, ocr_boost_clock)},
     {"ocr_wait_hint", offsetof(VjoConfig, ocr_wait_hint)},          /* #358 */

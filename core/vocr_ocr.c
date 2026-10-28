@@ -24,8 +24,13 @@
 #include "vocr_textgate.h"
 #include "vocr_vertical.h"
 #include "vocr_textspot6.h"
+#include "vocr_charbox.h"
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
+/* API 46: VjoVocrChars.scratch holds one line's vocr_charbox entries and, after them, a line's frames' classes. */
+#define CHARS_BEST_OFF (VJO_VOCR_CHARS_LINE * sizeof(vocr_charbox))
+typedef char vjo_vocr_chars_scratch_fits[sizeof(((VjoVocrChars *)0)->scratch) >= CHARS_BEST_OFF + 2u * VJO_VOCR_LM_FRAMES &&
+                                         CHARS_BEST_OFF % 4u == 0 && VJO_VOCR_CHARS_LINE <= VOCR_CHARBOX_MAX ? 1 : -1];
 typedef char vjo_vocr_refine_matches_runtime[VJO_VOCR_REFINE_ALL == VOCR_REFINE_DEFAULT ? 1 : -1];
 typedef char vjo_vocr_gate_mode_matches_runtime[VJO_VOCR_GATE_MODE == VOCR_TEXTGATE_BOXES &&
                                                 VJO_VOCR_GATE_K <= VOCR_TEXTGATE_MAX_K ? 1 : -1];
@@ -2151,6 +2156,8 @@ static int read_again(const vocr_extra *ex, unsigned contexts, int two, const ch
  * if the job succeeds. ex: its run's extras (the top-K); greedy_copy: a copy of
  * its greedy text that outlives this call (a slot's), or NULL (it is kept in the
  * LM extras, as the serial job does); run_us: its run. */
+static void line_chars(const Lines *L, const Pending *e, const vocr_image *img, const vocr_extra *ex);
+
 static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_image *img, vocr_extra *ex,
                        char *greedy_copy, uint32_t run_us, uint32_t cpu_us, unsigned slot)
 {
@@ -2167,6 +2174,7 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
     size_t n, gn = strlen(text + start), need = gn;
     uint32_t roff = NO_RAW;
     int rc, lm_done = 0, casc_done = 0, counted = 0;
+    if (pol->chars) line_chars(L, e, img, ex); /* API 46: the run's own frames, before the re-decode edits them */
     if (l->lm) {
         flags = line_conf(ex, text + start);
         if (gn < LM_LINE_TEXT) { /* a class a frame, 4 bytes at most: always; kept for the log */
@@ -2378,6 +2386,73 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
     return VJO_OK;
 }
 
+/* API 46 (VjoVocrPolicy.chars): where each model's CTC fires (vita-vn-ocr eval/charboxes_cal.json, #114): a
+ * shift and an offset per character group, resized px x 16, from training-side lines only, measured on VOCR5's
+ * v0.3.0 blobs (VOCR5_S_w8.vocr, VOCR5_N_w8.vocr, VOCR5_L_w8.vocr). The pinned ones carry the same recognizers
+ * (include/vjo_vocr_sizes.h, API 42: v0.3.0's bytes, then the gate; Normal's and Large's head rows reordered), so
+ * their frames fire where v0.3.0's do but for the rare frames the gate or the two-level head reads otherwise; the
+ * places' accuracy with them is docs/overlay-on-text.md's, measured. Other models: none (the frame centres as
+ * they are). */
+static const vocr_charbox_cal *model_cal(const VjoVocrModel *mi)
+{
+    static const vocr_charbox_cal cal[3] = {{-110, {0, 32, 72, 39, -11, -1, 0, 18}},
+                                            {0, {0, -45, -32, 48, -23, -4, 0, -6}},
+                                            {-36, {0, -12, 4, 38, -16, -10, 0, 8}}};
+    /* test/combined: main's #373 and #420 made the three sizes VOCR6-S, VOCR6-N and VOCR6-L (v0.4.1-vocr6.2), VOCR5-S's,
+     * VOCR5-N's and VOCR5-L's checkpoints fine-tuned again: their rows keep VOCR5's calibration, unmeasured with VOCR6
+     * (the overlay's measured accuracy, docs/overlay-on-text.md, is VOCR5's) */
+    static const char *const names[3] = {VJO_VOCR6_S_NAME, VJO_VOCR6_N_NAME, VJO_VOCR6_L_NAME};
+    for (unsigned i = 0; mi && i < 3; i++)
+        if (!strcmp(mi->name, names[i])) return &cal[i];
+    return NULL;
+}
+
+/* The code point of a class's UTF-8 text, 0xFFFD for a class of several (or none). */
+static uint32_t class_cp(const vocr_model *m, unsigned c)
+{
+    unsigned n;
+    const unsigned char *s = (const unsigned char *)vocr_class_text(m, c, &n);
+    if (n == 1 && s[0] < 0x80) return s[0];
+    if (n == 2 && (s[0] & 0xE0) == 0xC0) return (uint32_t)(s[0] & 0x1F) << 6 | (s[1] & 0x3Fu);
+    if (n == 3 && (s[0] & 0xF0) == 0xE0) return (uint32_t)(s[0] & 0x0F) << 12 | (uint32_t)(s[1] & 0x3F) << 6 | (s[2] & 0x3Fu);
+    if (n == 4 && (s[0] & 0xF8) == 0xF0)
+        return (uint32_t)(s[0] & 0x07) << 18 | (uint32_t)(s[1] & 0x3F) << 12 | (uint32_t)(s[2] & 0x3F) << 6 | (s[3] & 0x3Fu);
+    return 0xFFFDu;
+}
+
+/* API 46: a recognized line's greedy characters and their cells (region px along the line) into pol->chars, from
+ * the frames' classes of its run (the top-K's top-1, or vocr_extra.best) and the model's calibration. The cells are
+ * a find without VOCR_CHARBOX_INK: they hit-test a tap best (vita-vn-ocr docs/char-boxes.md "Hit-test": 0.14% of
+ * taps on a wrong cell or none, against 0.75% with INK's cells, which inside a …… can hold one dot) and read no
+ * pixel (about 10-27 K instructions a line, against about 0.5 M with INK's profile; qemu-arm counts). A line with
+ * no character, or beyond the job's room, gets nothing. */
+static void line_chars(const Lines *L, const Pending *e, const vocr_image *img, const vocr_extra *ex)
+{
+    VjoVocrChars *c = L->pol->chars;
+    vocr_charbox *box = (vocr_charbox *)(void *)c->scratch;
+    const uint16_t *cls = ex->topk ? ex->topk_class : ex->best;
+    unsigned n = 0, room = VJO_VOCR_CHARS_MAX - c->n_chars;
+    VjoVocrCharLine *ln;
+    if (!cls || !ex->frames || ex->frames > ex->cap_frames || c->n_lines >= VJO_VOCR_MAX_LINES || !room) return;
+    if (vocr_charbox_find(L->model, cls, ex->topk ? ex->topk : 1u, ex->frames, img->width, img->height, 0u,
+                          model_cal(L->mi), NULL, NULL, box, room < VJO_VOCR_CHARS_LINE ? room : VJO_VOCR_CHARS_LINE,
+                          &n) != VOCR_OK || !n)
+        return;
+    ln = &c->line[c->n_lines++];
+    ln->x = e->x;
+    ln->y = e->y;
+    ln->w = e->w;
+    ln->h = e->h;
+    ln->first = (uint16_t)c->n_chars;
+    ln->count = (uint16_t)n;
+    for (unsigned k = 0; k < n; k++, c->n_chars++) { /* 1/16 px: the cell's pixels it touches */
+        uint32_t u = class_cp(L->model, box[k].cls);
+        c->cp[c->n_chars] = (uint16_t)(u > 0xFFFFu ? 0xFFFDu : u);
+        c->a[c->n_chars] = (uint16_t)(e->x + (unsigned)box[k].x0 / VOCR_CHARBOX_Q);
+        c->b[c->n_chars] = (uint16_t)(e->x + ((unsigned)box[k].x1 + VOCR_CHARBOX_Q - 1u) / VOCR_CHARBOX_Q);
+    }
+}
+
 /* Places the line at the head of the queue into the text, exactly as the serial
  * job does when that line's turn comes. Its run is over. */
 static int place(Lines *L)
@@ -2514,7 +2589,7 @@ static int slot_init(Slot *sl, const vocr_model *model, size_t avail, int head_g
 /* A line's extras for vocr_run: the cancel callback, and with the LM extras the
  * top K of every frame (for the decoder and the line's confidence). */
 static void line_extra(vocr_extra *ex, int (*cancel)(void *), void *user, int topk, float *tv, uint16_t *tc,
-                       float *bl)
+                       float *bl, uint16_t *best)
 {
     memset(ex, 0, sizeof(*ex));
     ex->cancel = cancel;
@@ -2524,6 +2599,9 @@ static void line_extra(vocr_extra *ex, int (*cancel)(void *), void *user, int to
         ex->topk_logit = tv;
         ex->topk_class = tc;
         ex->blank_logit = bl;
+        ex->cap_frames = VJO_VOCR_LM_FRAMES;
+    } else if (best) { /* API 46: the frames' classes, for the characters' places (no top-K to read them from) */
+        ex->best = best;
         ex->cap_frames = VJO_VOCR_LM_FRAMES;
     }
 }
@@ -2607,6 +2685,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
     text[0] = '\0';
     if (pol->raw && pol->raw_cap) pol->raw[0] = '\0';
+    if (pol->chars) pol->chars->n_lines = pol->chars->n_chars = 0; /* API 46: this try's lines only */
     st->lines = st->truncated = st->dark = st->frames = st->recognized = 0;
     st->blank = st->lm_lines = st->lm_changed = 0;
     st->lm_us = 0;
@@ -2791,7 +2870,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     L->pol = pol;
     L->l = l;
     L->st = st;
-    L->cache = nocache ? NULL : pol->cache;
+    L->cache = nocache || pol->chars ? NULL : pol->cache; /* API 46: an entry keeps no places */
     L->x0 = x0;
     L->c0 = c0;
     lm_layout(&L->x);
@@ -3047,7 +3126,9 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 const unsigned k2 = (unsigned)(sl - L->slot);
                 if ((rc = slot_init(sl, model, S_ARENA(mi), pol->head_gate, pol->two_level)) != VJO_OK) goto fail;
                 slot_line(sl, pixels, stride, pw, ph, ln->dark);
-                line_extra(&sl->extra, slot_cancel, sl, l->lm, sl->topk_logit, sl->topk_class, sl->blank);
+                /* API 46: without the LM its top-K's class buffer is idle: the frames' classes go there */
+                line_extra(&sl->extra, slot_cancel, sl, l->lm, sl->topk_logit, sl->topk_class, sl->blank,
+                           pol->chars ? sl->topk_class : NULL);
                 sl->busy = 1;
                 __atomic_store_n(&sl->done, 0, __ATOMIC_RELEASE);
                 cur.slot = (uint8_t)k2;
@@ -3082,7 +3163,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 img.stride = stride;
                 img.format = VOCR_GREY8 | (ln->dark ? VOCR_INVERT : 0);
                 line_extra(&extra, run_cancel, (void *)im, l->lm, (float *)(void *)(x0 + L->x.topk_logit),
-                           (uint16_t *)(void *)(x0 + L->x.topk_class), (float *)(void *)(x0 + L->x.blank));
+                           (uint16_t *)(void *)(x0 + L->x.topk_class), (float *)(void *)(x0 + L->x.blank),
+                           pol->chars ? (uint16_t *)(void *)((char *)pol->chars->scratch + CHARS_BEST_OFF) : NULL);
                 line_t0 = clock_us(p);
                 rc = vocr_run(ctx, &img, text + start, cap - start, &extra);
                 if (rc != VOCR_OK) { rc = run_error(rc); goto fail; }
@@ -3098,7 +3180,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 uint64_t c0t = pool->thread_us ? pool->thread_us(pool->ud) : 0;
                 sl = &L->slot[0];
                 slot_line(sl, pixels, stride, pw, ph, ln->dark);
-                line_extra(&sl->extra, run_cancel, (void *)im, l->lm, sl->topk_logit, sl->topk_class, sl->blank);
+                line_extra(&sl->extra, run_cancel, (void *)im, l->lm, sl->topk_logit, sl->topk_class, sl->blank,
+                           pol->chars ? sl->topk_class : NULL);
                 r0 = clock_us(p);
                 sl->rc = vocr_run(ctx, &sl->img, sl->text, VJO_OCR_TEXT_CAP, &sl->extra);
                 sl->us = clock_us(p) - r0;

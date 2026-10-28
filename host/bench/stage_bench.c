@@ -720,7 +720,8 @@ static const char nondefault_config[] =
     "ocr_wait_hint = off\n"
     "ocr_finder = spotter\n"
     "ocr_spotter_refine = on\n"
-    "ocr_pause = on\n";
+    "ocr_pause = on\n"
+    "overlay_on_text = on\n"; /* API 46 (draft #326) */
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {

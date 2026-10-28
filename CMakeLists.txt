@@ -52,7 +52,8 @@ set(CORE_SRC
   core/anki.c core/anki_queue.c core/local_dict.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c core/word_key.c core/sentence_reading.c
-  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c)
+  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c
+  core/charmap.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
@@ -194,6 +195,15 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-ledger-tests vjo_vocr)
 endif()
 add_test(NAME ledger COMMAND vjo-ledger-tests)
+# API 46, the char map (core/charmap.c, core/charmap_build.c; docs/overlay-on-text.md): the worker's writer against
+# the Shell's sentence, the hand-over, the transforms, hits, spans and the popup's place.
+if(VJO_WITH_VOCR)
+  add_executable(vjo-charmap-tests host/tests/test_charmap.c)
+  target_include_directories(vjo-charmap-tests PRIVATE third_party/acutest/include)
+  target_compile_options(vjo-charmap-tests PRIVATE -Wall -Wextra)
+  target_link_libraries(vjo-charmap-tests vjo_vocr vjo_host)
+  add_test(NAME charmap COMMAND vjo-charmap-tests)
+endif()
 # Boot-safety guard: the record (core) and the real kernel-side code with the
 # ur0 file and the clock replaced, boot after simulated boot.
 vjo_suite(boot_guard SOURCES host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c
@@ -793,7 +803,7 @@ if(VJO_WITH_VOCR)
   # spy runtime: the resident-weights lifecycle runs without release files (CI).
   vjo_suite(game_resident_weights TARGET vjo-game-resident-tests
     SOURCES host/tests/test_game_resident.c core/vocr_ocr.c core/textnorm.c core/region_suggest.c
-    host/tests/hooks_none.c INCLUDES host/tests/game_stubs host/tests
+    core/charmap_build.c host/tests/hooks_none.c INCLUDES host/tests/game_stubs host/tests
     DEFINES VJO_VOCR_TEST_MODELS="test_resident_models.h" vocr_find_lines_rows=test_vocr_find_lines_rows
     vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run UNUSED
@@ -802,7 +812,7 @@ if(VJO_WITH_VOCR)
   # their own, kept and given back, and GRAD whenever it cannot run; the real spotter on the committed random blob,
   # spies for the recognizer and GRAD (host/tests/test_game_spot.c).
   vjo_suite(game_spot SOURCES host/tests/test_game_spot.c core/vocr_ocr.c core/textnorm.c core/region_suggest.c
-    host/tests/hooks_none.c INCLUDES host/tests/game_stubs host/tests
+    core/charmap_build.c host/tests/hooks_none.c INCLUDES host/tests/game_stubs host/tests
     DEFINES VJO_VOCR_TEST_MODELS="test_spot_models.h" VJO_VOCR_SPOT_TEST="test_spot_pins.h"
     VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" vocr_find_lines_rows=test_vocr_find_lines_rows
     vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows vocr_load=test_vocr_load
@@ -812,7 +822,7 @@ if(VJO_WITH_VOCR)
   # a fake of game_ocr/hooks.h: a stream answers with the first capture pass only, or replaces OCR's agreeing
   # text; nothing installed is OCR as before.
   vjo_suite(game_hooks SOURCES host/tests/test_game_hooks.c core/vocr_ocr.c core/textnorm.c core/region_suggest.c
-    INCLUDES host/tests/game_stubs host/tests
+    core/charmap_build.c INCLUDES host/tests/game_stubs host/tests
     DEFINES VJO_VOCR_TEST_MODELS="test_resident_models.h" vocr_find_lines_rows=test_vocr_find_lines_rows
     vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run UNUSED
