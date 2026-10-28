@@ -11,13 +11,17 @@ State the Shell wrote and nothing read. **No block, thread, stack or allocation;
 
 - **The Triangle view's line source** (`VjoLineDebug`, `shell/shell.h`): the view's snapshot keeps `origin`, the one
   field the overlay shows ("This line came in through: …", `shell/overlay.cpp`); its ten other fields (the hook's
-  stream, flags, score, streams, mode, installed and refused counts, the scene, the capture and the model) were
-  written at each accepted text and read only by host tests since #291 replaced the detailed view (44 B: "Hidden
-  Triangle line diagnostics", the section of this file that added them): 4 B in `g_view` and in the line-history
-  visit's copy (`HistoryVisit`, inside its unchanged 16,384 B block), and `line_debug_accept` one store.
+  stream, flags, score, streams, mode, installed and refused counts, the scene, the capture and the model) were written
+  at each accepted text and read only by host tests since #291 replaced the detailed view (44 B: "Hidden Triangle line
+  diagnostics", the section of this file that added them): 4 B in `g_view` and in the line-history visit's copy
+  (`HistoryVisit`, 236 → 196 B, inside its unchanged 16,384 B block), and `line_debug_accept` one store. The visit's
+  earlier lines get the 40 B (`history_open` gives them the rest of the block: 16,148 → 16,188 B), so a visit whose
+  lines filled them can keep one more earlier line [measured: `sizeof` with `arm-vita-eabi-gcc`, and `vjo_history_scan`
+  over one history.csv window at both sizes on the host, audit-rubi-cleanup-1: 4 earlier lines → 5 in its boundary
+  case].
 - **`VjoErr.dict`** (`core/platform.h`): set to `VJO_DICT_LOCAL`, the only dictionary, in six places and read in none
   (the per-dictionary error texts went with jpdb.io, jiten.moe and the Hachidori relay): 4 B less in each `VjoErr`, two
-  of them in the Shell's `.bss` (`cache_data`), one in the Rubi app's.
+  of them in the Shell's `.bss` (`cache_data`) and two in the Rubi app's (`settings/lookup.c`'s `data` and `none`).
 - **The text source's names** (`hook_note`'s hooks line in `shell/worker.c`): `config.c`'s table, which
   `text_source` is parsed with (now `vjo_text_source_names`, in the data segment as before), instead of a second
   copy of it (12 B of the code segment's rodata).
@@ -33,10 +37,10 @@ ELF with `arm-vita-eabi-size -A`), main `41678d6` against this change:
 
 The Shell's code is 192 B (debug) and 96 B (normal) smaller, its data/bss 48 B: room left in the last pages, the normal
 Shell's code 380 B (284 before) and data 480 B (432), the debug Shell's 420 B (228) and 416 B (368). In the app (its own
-process, not SceShell's; `config.c` built `-O2`, without LTO): `parse` +42 B, `entry_at` +6 B, `local_lookup_begin` -4
-B, `vjo_local_read_page` -4 B, `lookup_pages` -12 B: +28 B of its functions [`arm-vita-eabi-nm -S`], +64 B (normal) and
-0 B (debug) of its `.text` with their alignment; its `.data` and `.rodata` the same. These are binary and host
-measurements; nothing of it has run on a console.
+process, not SceShell's; `config.c` built `-Os`, as `vita/CMakeLists.txt` builds it in every module, without LTO):
+`parse` +42 B, `entry_at` +6 B, `local_lookup_begin` -4 B, `vjo_local_read_page` -4 B, `lookup_pages` -12 B: +28 B of
+its functions [`arm-vita-eabi-nm -S`], +64 B (normal) and 0 B (debug) of its `.text` with their alignment; its `.data`
+and `.rodata` the same. These are binary and host measurements; nothing of it has run on a console.
 
 ## Cleanup P1: the subtitle strip's text without its arena (#418; no API change)
 
@@ -62,9 +66,12 @@ this change:
   attribute, 98,124 and 85,828 B of text]. Room left in the last pages: the normal Shell's code 284 B (252 before) and
   data 432 B (128), the debug Shell's 228 B (196) and 368 B (64).
 - **The paf thread's stack:** the text is converted where it is kept, never on the stack: `vjo_strip_frame` (with
-  `strip_render` in it) 128 B before and 128 B after; the conversion's chain from it 192 → 240 B, the 48 B frame of
-  `vjo_styled_units`, which LTO inlines into the strip's code in the packaged Shell [`-fstack-usage`, the normal Shell's
-  flags without LTO].
+  `strip_render` in it) 128 B before and 128 B after; the conversion's chain from it to `vjo_styled_add` 192 → 240 B
+  (212 → 260 B with `vjo_utf8_next`'s 20 B leaf), the 48 B frame of `vjo_styled_units` [`-fstack-usage`, the normal
+  Shell's flags without LTO]. In the packaged Shell, LTO puts `vjo_styled_units` and the strip into the overlay's
+  `frame`, whose frame is 288 B (normal) and 296 B (debug) before and after, and `vjo_styled_puts` and `vjo_styled_add`
+  are called from it as before: no packaged frame grows [measured: the prologues of `frame` in both builds' Shells,
+  `arm-vita-eabi-objdump -d`, main `8b18f99` and this change].
 - **The same units:** `wrap_fix`'s `strip_units_are_the_styled_text` compares `vjo_styled_units` with the arena's
   `vjo_styled_puts` (every unit, the count, the NUL, the cut at a whole character, nothing written after the NUL) on
   edge cases (a surrogate pair at the cap, CR, cut and overlong sequences, the longest strip texts) and 4,000 random
@@ -73,7 +80,8 @@ this change:
   texts, 46 of them longer than the strip's 4,096 units, all identical. Both fail when the cap is one unit more, or
   when one unit after the NUL is written (tried).
 - **The model** (`tools/shell_budget_model.py`, the debug build's budgets): SceShell's peak pages from us 217,088 →
-  208,896 B; at the worst step of the 2026-10-11 v0.7.4 sample, 344,064 → 352,256 B of headroom.
+  208,896 B; at the worst step of the 2026-10-11 v0.7.4 sample, 344,064 → 352,256 B of headroom (est.: the model ranks
+  builds, docs/offline-testing.md).
 - These are binary and host measurements; nothing of it has run on a console.
 
 ## The worker's data page: the gate's weights and the line cache's greedy texts (#418, no API change)

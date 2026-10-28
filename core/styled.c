@@ -11,7 +11,7 @@ int vjo_font_px(int font_size)
 }
 
 /* Not inlined: the overlay calls it twice (its header and its body). Once the strip no longer called it
- * (vjo_styled_units), LTO put a copy in each call: 32 B (debug) and 48 B (normal) more of the Shell's code than
+ * (vjo_styled_units), LTO put a copy in each call: 48 B (debug) and 96 B (normal) more of the Shell's code than
  * one copy (measured, docs/memory-ledger.md "Cleanup P1"). */
 __attribute__((noinline)) int vjo_styled_init(VjoStyled *s, VjoArena *a, uint32_t cap_units, int cap_spans)
 {
