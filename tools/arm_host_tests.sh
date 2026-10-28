@@ -100,7 +100,7 @@ TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle ker
 TESTS+=(touch_hold text_rows text_join linebreak history_lines history_read streak hook_select hook_cache stick_cursor
         cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe hooks_engine)
-TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
+TESTS+=(kernel_text_source hook_titles) # API 31's plumbing (hooks/api)
 CMAKE_VOCR=(-DVJO_WITH_VOCR=OFF)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   # API 54: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT): VJO_VOCR_SPOT_SOURCE_DIR,

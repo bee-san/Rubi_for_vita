@@ -162,13 +162,10 @@ vjo_suite(kernel_input SOURCES host/tests/test_kernel_input.c kernel/triggers.c 
 # loader started the worker in as ON reads it (any other OCR), OCR until set and in a safe boot.
 vjo_suite(kernel_text_source SOURCES host/tests/test_kernel_text_source.c INCLUDES host/tests/vita_stubs
   DEFINES VJO_HOST=1)
-# API 31: text-source config helpers and diagnostic pick/label utilities; the Games tag reads Rubi's
-# verified entries from the worker's own table (core/hook_place.c) and knows Luna's games (core/hook_luna.c), as the
-# Vita app's build does (vita/CMakeLists.txt).
-target_sources(vjo_core PRIVATE core/hook_pick.c core/hook_titles.c core/hook_place.c core/hook_luna.c core/hook_re.c
-  core/hook_text.c)
+# API 31: the Rubi app's Games tag, which reads Rubi's verified entries from the worker's own table
+# (core/hook_place.c) and knows Luna's games (core/hook_luna.c), as the Vita app's build does (vita/CMakeLists.txt).
+target_sources(vjo_core PRIVATE core/hook_titles.c core/hook_place.c core/hook_luna.c core/hook_re.c core/hook_text.c)
 set_property(SOURCE core/hook_titles.c APPEND PROPERTY COMPILE_DEFINITIONS VJO_HOOK_LUNA=1)
-vjo_suite(hook_pick SOURCES host/tests/test_hook_pick.c core/hook_pick.c DEFINES VJO_HOST=1)
 # API 31: the Rubi app's Games tag (core/hook_titles.c), through the host core.
 vjo_suite(hook_titles SOURCES host/tests/test_hook_titles.c DEFINES VJO_HOOK_LUNA=1 LIBS vjo_core)
 # #104: the process event hook releases the game's input block in the same event
