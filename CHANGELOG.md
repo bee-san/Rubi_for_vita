@@ -11,6 +11,26 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- **Pause the game to read** (API 55, #348, #355; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR &
+  lookup page, **OFF by default**): each reading copies the text box from one frame at once, inside that frame's
+  display call, which the game waits in for as long, and the OCR reads that still copy. A spinning icon or an animated
+  background in the box can no longer make the job give up with the screen changed under it and show nothing. On the
+  host, through the real job and line finder, an 852 × 135 box with a spinner of 20 shades read strip by strip failed
+  after 2.15 s and 129 frames; paused it reached the recognizer at the first frame (`host/pause_bench.c`). With the
+  release models, a 917 × 126 box with a spinner read strip by strip ended `VJO_E_SCREEN_CHANGED` after 72 display
+  calls; paused, one display call of 126 rows and its 3 lines read (`test_alloc_sim.c`). The game's wait per reading
+  is an estimated 2.4-6.4 ms for a dialogue box and 10.8-29.0 ms for a whole screen at 333 MHz (draw a text box
+  first), at most 100 ms: a copy that reaches it turns pausing off for that game until it next starts, and a kernel
+  watchdog turns it off until the next boot if a copy ever runs past 200 ms with its game in front. No game thread is
+  suspended, and nothing waits for another thread. In PSP games (Adrenaline) it does nothing. The job holds one block
+  of the region's size more (at most 524,288 B, only when it fits; the memory ledger counts it in place of a tall
+  line's block), and the OCR worker one page more in each game that is ON, 4,096 B, whether the setting is on or off;
+  SceShell's and the kernel's pages are unchanged. While it is OFF in a Vita game, the open overlay's hint for text
+  that keeps changing (#358, in 0.10.0) ends "Or turn on Pause the game to read in the Rubi app." With it OFF, every
+  reading is the same as before, step for step. Not run on a console ([details](docs/game-pause.md)).
+
 ### Fixed
 
 - **The reading streak's seed and line** (#501's audit; [details](docs/ocr-history.md#streak)). When the overlay's
