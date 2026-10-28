@@ -171,7 +171,7 @@ been reported.
     the record's SHA-256); a stop at each of its writes leaves the card whole or not there
     (`host/tests/test_anki_restart.py`), and Anki imports its cards (`host/tests/test_apkg.py`).
   - **No setting:** nothing that users see today changes; the page is new. The tab bar lays itself out from its
-    labels (six tabs).
+    labels (five tabs).
   - **Memory:** the app's own, static: about 430 KiB (a 64 KiB lookup block as the Shell's, a 128 KiB card arena, a
     64 KiB history window; [vita-memory.md](docs/vita-memory.md#54-the-rubi-app-a-system-application)). A font's
     glyph atlas holds about 500 characters (an estimate) and drops new ones once full, so the app now measures text
@@ -229,49 +229,22 @@ been reported.
   protocol's commit, not 1.84; the default stays ON), `tools/sentence_readings/compare.py` checks a part read
   unit's readings where they lie and draws Yomitan's sample itself; tests for a record's own readings, the
   dictionaries closed after an export, the progress, and unreadable dictionaries tried once.
-- **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
-  △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
-  games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the
-  **Last 14 days** as bars; **This year** as a heatmap of characters a day; **All games**; and a row per game, the one
-  read last first, with today, in all, its cards mined and cards per 10,000 characters, and the last day read.
-  **Daily goal**: Off (the default), 2,000 to 50,000 characters or 15 to 120 minutes a day, in the app's own
-  `app.ini`; a day at the goal counts for the streak, or with no goal any day with reading. No sessions. The count
-  runs on its own thread and is kept in `stats_cache.bin`, so the next one reads only what was added; a replaced or
-  shorter `history.csv`, another time zone or `reading_time`, or a damaged cache counts it again. 20 MB of history
-  took 40 ms on a computer [measured on the host]; the Vita's time is unmeasured. The tab bar lays itself out from its
-  labels for the fifth tab. Only the app changes: the Shell, the game worker, the kernel and the RCO are byte-identical
-  to main's in both builds. Not run on a console yet.
-- A Cards page in the Rubi app (#315): **Cards: N queued** on the Anki page lists the queued cards newest first,
-  with their word, reading, game and date, a camera for a card with a picture and a mark for a word mined before
-  (the export's duplicate);
-  Left/Right show the exported cards instead, read only. A card opens with its sentence (the word marked), the first
-  lines of its definition and its picture. A queued card can be deleted (into `anki_queue/deleted/`, which Triangle
-  empties), its sentence fixed with the keyboard (the word found again in the new text) or its picture dropped.
-  Before, a card saved by mistake or with an OCR mistake reached Anki as it was, unless its files were deleted in
-  VitaShell.
-  - **Safe at every step:** a changed card is a new card (its ID is its record's checksum); an intent file
-    (`deleted/<old>.fix`) is committed first, the new picture and record next, the old card retired last. Before
-    the page lists the queue and before an export, a stop's intent is finished or undone, so the export has the old
-    card or the new one, never both and never neither; a record never names a picture that is not there. Tested on
-    the host with a failure at each storage call and a stop between each two steps in a fresh process, and an
-    edited card imported by Anki 26.09.3 with its new sentence and its picture.
-  - **Memory, in the app only** (the Shell, the game worker and the kernel are unchanged): 311,484 B of static
-    memory (the list's 2,000-row table, two card views, the keyboard's buffers, the held cards' list) and a picture
-    texture of at most 442,368 B while a card is open; libjpeg's decoder adds about 290 KB of code [measured: the
-    ELF] and at most 32,592 B of heap for a screenshot [measured, host].
-  - **Its audit's follow-up** (audit-rubi-rm5): a change that cannot be finished holds only its card: the export
-    leaves that card queued and says so (`… 1 stays queued: a change of it did not finish`) and the page marks it
-    (before, one unreadable intent stopped every export); a change whose new record is there is reported as made,
-    even when the memory card did not confirm it. A fixed card is not deleted or fixed again before its change is
-    settled, and two changes in a row are settled in their order (a second fix had made the export take two cards).
-    A sentence fixed back to what it was keeps its card when that change fails. A card both queued and exported is
-    read only, and deleting a card keeps the picture an exported record names. The word is found again past its 64th
-    occurrence. The duplicate mark is the export's: a word mined before, queued or exported, its earliest card not
-    marked. Cancel while the words are read stops the list, and deleting the only card of a later part of the list
-    goes back to the newer part. `test_card_picture.c` runs in the fast gate and CI's host job now (libjpeg's headers,
-    `VJO_REQUIRE_JPEG`), new tests kill the audit's surviving mutants, and the fast gate's `/tmp` is capped at 2 GiB a
-    lane. 4,288 B more code and 4,128 B more static memory [measured: the debug build's ELF].
-  - Not run on a console yet.
+- **The reading streak, in the overlay's Triangle view** ([details](docs/ocr-history.md#streak)). The Stats tab is
+  gone (below); its streak is now the last line of △'s view, under the two blocks, for all games:
+  `Streak: current 3 days · longest 12` ("1 day" for one). A day counts when `history.csv` gets a line with at least
+  one character that day (the `characters` column's rule: a Japanese letter, an ASCII letter or a digit), on the
+  Vita's local calendar day, so only **Read text: Automatically** counts (Only when I press L + R keeps no history).
+  Current is the days in a row that end today, or yesterday while today has no line yet, else 0; longest is the most
+  days in a row. A clock or time zone moved back by hours or a day changes nothing; moved back further, the streak
+  starts again at 1, and the longest stays. The record is a 16-byte file, `ux0:data/VitaJPOverlay/reading-streak.bin`:
+  the overlay adds each line's day to it as it records the line, writing the file only when it changes (a day's first
+  line), and reads it as △ opens. The overlay never scans `history.csv` for it; in SceShell it costs 480 B of the
+  normal Shell's code (512 B in the debug build) and 8 B of its `.bss`, within the code pages #428 and #440 freed, no
+  allocation and no budget raised [measured: the build's module rows]. The first time the Rubi app opens after the
+  update, a thread of its own reads
+  `history.csv` once and replays its days through the same rules, so a streak read before the update carries over (an
+  app closed before it ends seeds again at its next start). Host tests: a day's rollover, gaps, a time-zone change,
+  first use and the seed, a clock set back. Not run on a console yet.
 
 - **A text box suggested on first use** (#358; API 52; [first-box.md](docs/first-box.md)). A game with no box of its
   own is read on its whole screen, picture and buttons included, which first-time users took for recognition that did
@@ -382,6 +355,18 @@ been reported.
   against the frames the games drew (8 to 100 a title); through Rubi's own path the hook's text is the farm's on 603 of
   the 608 single-hit pages, the other 5 differ in how a one-cell `!?` or `!!` is written
   ([details](docs/native-hooks.md#farm-checks)).
+
+### Removed
+
+- **The Rubi app's Stats tab and the Anki page's Cards page**, which only test builds had (the Stats tab
+  v0.9.8-test.4 to test.6: #312, #384, #403; the Cards page test.5 and test.6: #315, #392, #417). The owner
+  (2026-10-28): "Okay remove goals. Remove the entire stats section. Keep streak, but put that into the Overlay. Just
+  longest vs current streak kinda thing. Remove anki card management." The streak is now in the overlay's Triangle
+  view (above). With them go the **Daily goal** (an `app.ini` that still has `stats_daily_goal` keeps working: the key
+  is ignored, and the app's next save of `app.ini` drops it), `stats_cache.bin` (no longer written; the app removes a
+  leftover one once) and `anki_queue/deleted/` (no longer read or written: what a test build left there is harmless
+  and can be deleted by hand). Card mining, the export, Duplicates and Known words are as they were. The tabs are
+  Games, OCR & lookup, Anki, Look up and Install.
 
 ### Fixed
 
@@ -669,8 +654,8 @@ been reported.
   entries stacked below the word (the right stick scrolls to them; #289), and the guide said △'s totals were
   across games, where △ shows today and the total of the game being played (the roadmap #310's "found along the
   way"). Docs only.
-- Docs: [the roadmap](docs/roadmap.md), what is left to build, ranked, and the top five of it now built (#311-#315);
-  it was issue #310. Docs only.
+- Docs: [the roadmap](docs/roadmap.md), what is left to build, ranked, and which of its top five (#311-#315) are
+  built; it was issue #310. Docs only.
 
 ### Changed
 
@@ -768,6 +753,9 @@ been reported.
   there by name, not as test failures) and gives its build the gate's checked weights. The game worker's tests cover
   the tall-line block (`VjoGameVocrLine`) where only the models reached it, and without them (CI): auto's columns
   try gives it back before the rows' try, a job of columns at its end, and a refused one leaves the columns out.
+- Building and testing (no change to the app or the plugins): the fast gate's `/tmp`, in memory, is capped at 2 GiB
+  a lane (#417), so a runaway suite fails instead of filling the machine's memory (the largest lane's peak was
+  143,616 KiB [measured, 2026-10-27]).
 
 ## [0.9.8] - 2026-10-27
 

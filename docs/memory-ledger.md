@@ -5,6 +5,31 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## The reading streak in the overlay (no API change)
+
+The owner (2026-10-28) removed the Rubi app's Stats tab and its Cards page and moved the streak into the overlay's
+Triangle view ([ocr-history.md](ocr-history.md#streak)). The Shell gains the streak's record (`shell/history.c`
+`vjo_history_streak`: a 16-byte file read when a line is recorded and when the view asks, written on a day's first
+line) and the view's line; nothing is allocated, no thread or PAF block is added, and the Shell's imports are the
+ones it had (`sceRtc*`, `sceIo*`). Measured with `tools/check_memory_ledger.py`'s module rows, both builds, main
+`52eb948` (#428 and #440 in it) against this change:
+
+| Shell | main `52eb948` | this change |
+|---|---:|---:|
+| normal | 85,316 + 77,664 B | 85,796 + 77,672 B (+480 code, +8 data) |
+| debug | 97,604 + 77,752 B | 98,116 + 77,760 B (+512 code, +8 data) |
+
+Both in the pages they had (163,840 and 176,128 B, no budget raised): 220 and 188 B of code room left, 152 and 64 B
+of data room. The kernel's and the game worker's SELFs are byte-identical to main's in both builds. By symbol in the
+normal build (`arm-vita-eabi-nm -S`): `vjo_history_streak` 328 B, `render` +64 B (the line), `net_main` +48 B (the
+call after an append: the writer is inlined there), `vjo_history_total_step` +12 B (the call on a view's request),
+the line's format 44 B of rodata, and LTO's other moves −16 B; `total` 264 → 272 B of `.bss` (the streak shown, in
+what was padding, and the writer's update count). Of the 480 B, the update when a line is recorded is 144 B (120 B in
+the debug build) and the view's line, with the record's read and the clock, 336 B (384 B) [measured: a build without
+the update, `arm-vita-eabi-size`]. The update stays in the Shell: the game worker cannot write `ux0:data` itself (its
+files go through the kernel's syscalls) and does not know which lines `history.csv` records (the Shell's writer
+decides, `vjo_history_append`). The Rubi app's seed is the app's own memory ([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)).
+
 ## A press and the stable-text wait: #413's audit (#441) and #441's audit (no API change)
 
 Two conditions in the Shell's `shell/worker.c`, no block, thread, buffer or string: #441's (a press's retries wait

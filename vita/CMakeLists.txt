@@ -143,7 +143,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
   ${ROOT}/core/json.c
   ${ROOT}/core/textfilter.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/entries.c
-  ${ROOT}/core/history_lines.c
+  ${ROOT}/core/history_lines.c ${ROOT}/core/streak.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
@@ -185,7 +185,7 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
   ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/hook_pick.c
-  ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c
+  ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c ${ROOT}/core/streak.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -418,20 +418,17 @@ include(${ROOT}/cmake/SettingsPNG.cmake)
 # made from the queue's records (core/anki_queue.c) with core/anki.c's fields, and the readings over their
 # sentences from the local dictionaries (#311: core/sentence_reading.c, its files through settings/app_platform.c,
 # the Look up page's, below). No network.
-# The Cards page (#315, settings/cards_page.c): the queue's cards listed, one deleted, its sentence fixed or its
-# picture dropped (settings/cards.c), its picture decoded by the SDK's libjpeg (settings/card_picture.c).
 set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
-  ${ROOT}/settings/cards.c ${ROOT}/settings/cards_page.c ${ROOT}/settings/card_picture.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/word_key.c
   ${ROOT}/core/sentence_reading.c) # #311: readings over a card's sentence
-# The Stats tab (settings/stats_page.c, #312): history.csv counted with the Triangle view's own reading-time rule
-# (core/history_lines.c's vjo_reading_time_add, the Shell's; of it the link keeps what the tab calls), per game and
-# per day (core/stats.c) and the record reader (core/history_read.c); the goal is app.ini's (settings/app_prefs.c).
-set(VJO_SETTINGS_STATS_SRC
-  ${ROOT}/settings/stats_page.c ${ROOT}/core/stats.c ${ROOT}/core/history_read.c
+# The overlay's reading streak, seeded once from history.csv (settings/streak_seed.c: core/streak.c's rule, the seed's
+# windows in core/streak_scan.c), with the record reader (core/history_read.c, the Look up page's too) and the Shell's
+# character count (core/history_lines.c's vjo_line_characters; of it the link keeps what the app calls).
+set(VJO_SETTINGS_HISTORY_SRC
+  ${ROOT}/settings/streak_seed.c ${ROOT}/core/streak.c ${ROOT}/core/streak_scan.c ${ROOT}/core/history_read.c
   ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c ${ROOT}/core/text_rows.c)
 # The Look up page (#313, settings/lookup_page.c): typed search and earlier lines (history.csv: core/history_read.c,
 # above), looked up with the overlay's own code (core/client.c, local_dict.c, text_rows.c) through the app's sceIo
@@ -449,7 +446,7 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/core/regions.c # #358: Suggest a text box, region.ini's line for every game (settings/preferences.c)
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
-  ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_STATS_SRC} ${VJO_SETTINGS_LOOKUP_SRC})
+  ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_HISTORY_SRC} ${VJO_SETTINGS_LOOKUP_SRC})
 # API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, the worker's verified table
 # itself (core/hook_place.c: of it only vjo_place_title_verified, vjo_place_verified and the table stay
 # linked), and the games of Luna's

@@ -20,7 +20,7 @@
 #include "preferences.h"
 #include "psp.h"
 #include "search.h"
-#include "stats_page.h"
+#include "streak_seed.h"
 #include "text_layout.h"
 #include "../core/hook_titles.h"
 #include "../core/local_dict.h"
@@ -337,11 +337,10 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 #define VJO_APP_VERSION "v" VJO_VERSION_STRING
 #endif
 
-/* The page tabs, left to right; Select goes to the next (docs/one-vpk-install.md has the Install page, #312 the
- * Stats page, #313 the Look up page). A new page is an entry here and a label in tab_label: the tab bar lays itself
- * out (tab_layout). */
-enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_LOOKUP, PAGE_STATS, PAGE_INSTALL, PAGES };
-static const char *const tab_label[PAGES] = {"Games", "OCR & lookup", "Anki", "Look up", "Stats", "Install"};
+/* The page tabs, left to right; Select goes to the next (docs/one-vpk-install.md has the Install page, #313 the
+ * Look up page). A new page is an entry here and a label in tab_label: the tab bar lays itself out (tab_layout). */
+enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_LOOKUP, PAGE_INSTALL, PAGES };
+static const char *const tab_label[PAGES] = {"Games", "OCR & lookup", "Anki", "Look up", "Install"};
 /* The tab bar, from x 24 to 936 under the title row: tabs TAB_GAP apart, at the most TAB_PX pixels of label.
  * While every label fits an equal share (912 / PAGES, less the gap), the tabs are equal (four were 220 px at a
  * pitch of 228). Else each tab is its label's width with TAB_PAD each side, the room left shared out equally; and
@@ -478,12 +477,9 @@ static void read_buttons(void)
 }
 
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
-                                  WHITE, DIM, ACCENT, OFF, CARD, &buttons, text_width};
+                                  WHITE, DIM, ACCENT, OFF, CARD, &buttons};
 
 static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
-/* #312: the Stats page (settings/stats_page.c), drawn with these helpers */
-static const VjoStatsUi stats_ui = {text, text_width, wrapped_text, focus_card, badge, footer_at, header, rect,
-                                    WHITE, DIM, ACCENT, OFF, CARD, SELECTED, &buttons};
 static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }
 static const VjoInstallDraw install_ui = {text, text_width, rect, focus_card, badge, hints_row, header,
                                           WHITE, DIM, ACCENT, OFF, SELECTED, &buttons};
@@ -1664,12 +1660,11 @@ static void show_page(int p)
     if (page == PAGE_LOOKUP && p != PAGE_LOOKUP) vjo_lookup_page_leave(); /* its dictionaries' files closed */
     if (p == PAGE_ANKI) vjo_anki_page_show(&scratch);
     if (p == PAGE_LOOKUP) vjo_lookup_page_show(&scratch);
-    if (p == PAGE_STATS) vjo_stats_page_show(&scratch);
     if (p == PAGE_INSTALL) vjo_install_page_show();
 }
 
-/* Cancel is the page's own, not the app's exit: the Anki page's while a job runs or its Cards page is open (#315:
- * Cancel stops the job or goes back to the Anki page), the Look up page's from an earlier line (back to the list). */
+/* Cancel is the page's own, not the app's exit: the Anki page's while a job runs (Cancel stops it), the Look up page's
+ * from an earlier line (back to the list). */
 static int page_holds_cancel(void)
 {
     return (page == PAGE_ANKI && vjo_anki_page_holds_cancel()) || (page == PAGE_LOOKUP && vjo_lookup_page_holds_cancel());
@@ -1758,6 +1753,7 @@ int main(void)
     load_preferences();
     vjo_log_enable(preferences.log_file);
     log_start();
+    vjo_streak_seed_start(); /* the overlay's reading streak, seeded once from history.csv (settings/streak_seed.h) */
     if (line_fix_load || line_fix.count)
         vjo_log("games: ocr_line_fix.ini %s: %d game%s with a line finder of their own",
                 line_fix_load < 0 ? "unreadable, not changed" : !line_fix_load ? "read" :
@@ -1842,8 +1838,8 @@ int main(void)
             show_page(next); /* (it reads the page being left: Look up closes its dictionaries) */
             page = next;
         }
-        if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_STATS || page == PAGE_INSTALL) {
-            /* anki_page.c, lookup_page.c, stats_page.c and install_page.c read their own buttons and touches */
+        if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_INSTALL) {
+            /* anki_page.c, lookup_page.c and install_page.c read their own buttons and touches */
         } else if (page == PAGE_OCR) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
@@ -1903,7 +1899,7 @@ int main(void)
                 if (game_view >= 0) close_game_page(); /* #333: a tab leaves a game's page; the Games tab, for its list */
                 page = tab;
             }
-            else if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_STATS || page == PAGE_INSTALL) {
+            else if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_INSTALL) {
                 touch_x = x;
                 touch_y = y;
             }
@@ -1960,16 +1956,7 @@ int main(void)
             vita2d_swap_buffers();
         } else if (page == PAGE_ANKI) {
             vjo_anki_page_stick(stick);
-            if (vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch)) {
-                /* the Cards page's keyboard ran (#315): its closing button and touch are no new press */
-                previous = UINT32_MAX;
-                touched = 1;
-                repeat_at = sceKernelGetProcessTimeWide() + 350000;
-                vjo_stick_latch(&stick_state);
-            }
-        } else if (page == PAGE_STATS) {
-            vjo_stats_page_stick(stick);
-            vjo_stats_page_frame(&stats_ui, pressed, touch_x, touch_y, &scratch);
+            vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch);
         } else if (page == PAGE_LOOKUP) {
             VjoLookupInput in = {pressed, pad.buttons, pad.lx, pad.ly, pad.rx, pad.ry, now, touch_x, touch_y, stick};
             if (vjo_lookup_page_frame(&lookup_ui, &in)) {
@@ -1987,7 +1974,7 @@ int main(void)
         sceDisplayWaitVblankStart();
     }
     vjo_anki_page_quit();
-    vjo_stats_page_quit();
+    vjo_streak_seed_quit();
     vjo_lookup_page_quit();
     vjo_install_page_quit();
     vita2d_wait_rendering_done();

@@ -251,16 +251,12 @@ echo "fast gate: $(git rev-parse --short HEAD)${DIRTY:+ + local changes} against
 # ---- host: build and every suite, both builds
 anki='export VJO_ANKI_PYTHON=/opt/anki/bin/python VJO_REQUIRE_ANKI=1'
 [ "$ENGINE" != none ] || anki='[ -z "${VJO_ANKI_PYTHON:-}" ] || export VJO_REQUIRE_ANKI=1'
-# the card picture's decoder test: the image has libjpeg's headers, so without them the configure fails; with
-# CONTAINER_ENGINE=none it is built where this machine has them
-jpeg=-DVJO_REQUIRE_JPEG=ON
-[ "$ENGINE" != none ] || jpeg=
 for v in debug normal; do
   dbg=$([ $v = debug ] && echo ON || echo OFF)
   select=$([ $v = normal ] && echo "-LE variant_free" || true)
   run_lane host-$v host "
 cmake -S . -B $(q "$OUT/host-$v") -G Ninja -DVJO_DEBUG=$dbg -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
-  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") $jpeg
+  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS")
 cmake --build $(q "$OUT/host-$v") -j$JOBS
 $anki
 ctest --test-dir $(q "$OUT/host-$v") -j$JOBS --output-on-failure $select" &
@@ -279,7 +275,7 @@ if ! seen=\$(python3 tools/prepare_ocr.py --backend vocr-tests --check --output 
 fi
 cmake -S . -B $(q "$OUT/models-debug") -G Ninja -DVJO_DEBUG=ON -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
   -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") -DVJO_VOCR_MODEL_DIR=$(q "$MODEL_DIR") \\
-  -DVJO_VOCR_GATE_BLOB=$(q "$MODEL_DIR/textgate_p8_c8_w8.vtd") $jpeg
+  -DVJO_VOCR_GATE_BLOB=$(q "$MODEL_DIR/textgate_p8_c8_w8.vtd")
 cmake --build $(q "$OUT/models-debug") -j$JOBS
 $anki
 ctest --test-dir $(q "$OUT/models-debug") -j$JOBS --output-on-failure -LE variant_free" &

@@ -25,8 +25,25 @@ static int native(int rc) { return rc < 0 ? -errno : rc; }
 /* SCE_O_APPEND as only a position at the open (the end then; each write where the position is), not POSIX's O_APPEND,
  * which writes each at the end: the console's is not measured (audit-rubi-audit-fix-hooks B-F1). reset() leaves it. */
 static int append_at_open;
+/* The reading streak's record (core/streak.h), read by its own open (shell/history.c vjo_history_streak) and written
+ * through vjo_file_write: a file of its own in the test's directory, its calls counted apart from history.csv's. */
+static int streak_fd = -1, streak_opens, streak_open_error, streak_read_error, streak_writes;
+static void (*on_streak_read)(void); /* once, after a read of the record: VjoNet's append, beside the control thread's */
+static const char *streak_file(void)
+{
+    static char p[PATH_MAX + 32];
+    snprintf(p, sizeof(p), "%s/reading-streak.bin", directory);
+    return p;
+}
 int sceIoOpen(const char *file, int flags, unsigned mode)
 {
+    if (strstr(file, "/reading-streak.bin")) {
+        TEST_CHECK(!strcmp(file, "ux0:data/VitaJPOverlay/reading-streak.bin") && flags == SCE_O_RDONLY);
+        streak_opens++;
+        if (streak_open_error) return streak_open_error;
+        int fd = open(streak_file(), O_RDONLY);
+        return fd < 0 && errno == ENOENT ? (int)0x80010002 : (streak_fd = native(fd));
+    }
     TEST_CHECK(!strcmp(file, "ux0:data/VitaJPOverlay/history.csv"));
     if (flags == SCE_O_RDONLY) { /* line history's reader */
         read_opens++;
@@ -54,6 +71,13 @@ static void (*on_read)(void);
 static off_t read_eof_at; /* nonzero: the file ends there for the reader (an append rolled back) */
 int sceIoRead(int fd, void *p, size_t n)
 {
+    if (fd == streak_fd) {
+        int got = streak_read_error ? streak_read_error : native((int)read(fd, p, n));
+        void (*hook)(void) = on_streak_read;
+        on_streak_read = NULL;
+        if (hook) hook();
+        return got;
+    }
     if (on_read) on_read();
     reads++;
     TEST_CHECK(n > 0 && n <= VJO_HISTORY_WINDOW + 1);
@@ -81,6 +105,7 @@ int sceIoSyncByFd(int fd, int flags)
 }
 int sceIoClose(int fd)
 {
+    if (fd == streak_fd) streak_fd = -1;
     int rc = native(close(fd));
     return close_error ? -74 : rc;
 }
@@ -92,6 +117,37 @@ int sceIoChstat(const char *file, SceIoStat *st, int flags)
     TEST_CHECK(flags == SCE_CST_SIZE);
     if (on_chstat) on_chstat(st->st_size);
     return rollback_error ? -75 : native(truncate(path, st->st_size));
+}
+
+/* The Vita's clock (the streak's day): local time, as the console's time zone has it, on day clock_day (days since
+ * 1970-01-01) at clock_s seconds; rtc_error: the clock cannot be read. */
+#include <psp2/rtc.h>
+static int32_t clock_day = 20389; /* 2025-10-28 */
+static int clock_s = 12 * 3600, rtc_error;
+static int64_t days_from_civil(int64_t y, unsigned m, unsigned d)
+{
+    y -= m <= 2;
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    unsigned yoe = (unsigned)(y - era * 400), doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    return era * 146097 + (int64_t)(yoe * 365 + yoe / 4 - yoe / 100 + doy) - 719468;
+}
+int sceRtcGetCurrentClockLocalTime(SceDateTime *t)
+{
+    if (rtc_error) return rtc_error;
+    int64_t z = clock_day + 719468, era = (z >= 0 ? z : z - 146096) / 146097;
+    unsigned doe = (unsigned)(z - era * 146097), yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100), mp = (5 * doy + 2) / 153;
+    unsigned d = doy - (153 * mp + 2) / 5 + 1, m = mp < 10 ? mp + 3 : mp - 9;
+    *t = (SceDateTime){(unsigned short)(yoe + era * 400 + (m <= 2)), (unsigned short)m, (unsigned short)d,
+                       (unsigned short)(clock_s / 3600), (unsigned short)(clock_s / 60 % 60), (unsigned short)(clock_s % 60), 0};
+    return 0;
+}
+int sceRtcGetTick(const SceDateTime *t, SceRtcTick *tick)
+{
+    int64_t days = days_from_civil(t->year, t->month, t->day) + 719162; /* SceRtcTick: from 0001-01-01 */
+    tick->tick = (uint64_t)days * 86400000000ull + ((uint64_t)t->hour * 3600 + t->minute * 60 + t->second) * 1000000ull +
+                 t->microsecond;
+    return 0;
 }
 
 int vjoNotifyShell(void); /* the kernel's (include/vjo_api.h declares it for the Vita build only) */
@@ -141,6 +197,13 @@ char *vjo_file_read(VjoArena *a, const char *file, size_t *len)
 int vjo_file_write(const char *file, const void *data, size_t len)
 {
     TEST_CHECK(strstr(file, "ux0:data/VitaJPOverlay/") == file);
+    if (strstr(file, "/reading-streak.bin")) { /* the streak's (vjo_history_streak), counted apart */
+        FILE *f = fopen(streak_file(), "wb");
+        TEST_ASSERT(f && fwrite(data, 1, len, f) == len && len == 16);
+        fclose(f);
+        streak_writes++;
+        return 0;
+    }
     total_writes++;
     if (total_write_error) return -1;
     FILE *f = fopen(cache_file(file), "wb");
@@ -167,6 +230,12 @@ static void reset(void)
     memset(&context, 0, sizeof(context));
     memset(&total, 0, sizeof(total)); /* the Shell's start: the total not read yet */
     unlink(total_file());
+    unlink(streak_file());
+    streak_fd = -1;
+    streak_opens = streak_open_error = streak_read_error = streak_writes = rtc_error = 0;
+    on_streak_read = NULL;
+    clock_day = 20389;
+    clock_s = 12 * 3600;
     on_read = NULL;
     on_chstat = NULL;
     notifies = total_reads = total_writes = total_write_error = 0;
@@ -2008,7 +2077,194 @@ static void test_reading_time_fixtures(void)
     }
 }
 
+/* ---- the reading streak (core/streak.h): the writer adds a line's day, the Triangle view reads it ---- */
+
+static VjoStreak streak_record(void)
+{
+    VjoStreak s;
+    memset(&s, 0, sizeof(s));
+    FILE *f = fopen(streak_file(), "rb");
+    TEST_ASSERT(f && fread(&s, 1, sizeof(s), f) == sizeof(s));
+    fclose(f);
+    return s;
+}
+static void streak_put(const VjoStreak *s)
+{
+    FILE *f = fopen(streak_file(), "wb");
+    TEST_ASSERT(f && fwrite(s, sizeof(*s), 1, f) == 1);
+    fclose(f);
+}
+/* The Triangle view's streak line, as the overlay draws it (under the view lock). */
+static const char *streak_line(void)
+{
+    static char line[96];
+    vjo_view_lock();
+    vjo_history_streak_text(line, sizeof(line));
+    vjo_view_unlock();
+    return line;
+}
+
+/* A line with a character adds its day, once a day: the record is read at each such line and written only when its
+ * day is new; the next day one more, a gap a new streak, the longest kept; a line with none is no reading. */
+static void test_streak_a_day_a_line(void)
+{
+    char text[40];
+    reset();
+    VjoHistoryRecord r = record("一日目");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    VjoStreak s = streak_record();
+    TEST_CHECK(vjo_streak_valid(&s) && s.day == clock_day && s.current == 1 && s.longest == 1 && !s.seeded);
+    TEST_CHECK(streak_opens == 1 && streak_writes == 1 && total_writes == 0);
+    r = record("同じ日の二行目");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    TEST_CHECK(streak_opens == 2 && streak_writes == 1); /* read, but the day is counted already: no write */
+    for (int d = 1; d <= 3; d++) { /* the next three days */
+        clock_day++;
+        snprintf(text, sizeof(text), "%d日目", d + 1);
+        r = record(text);
+        TEST_ASSERT(vjo_history_append(&r) == 1);
+    }
+    s = streak_record();
+    TEST_CHECK(s.day == 20392 && s.current == 4 && s.longest == 4 && streak_writes == 4);
+    clock_day += 2; /* a day with nothing read between */
+    r = record("また読む");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    s = streak_record();
+    TEST_CHECK(s.day == 20394 && s.current == 1 && s.longest == 4);
+    /* no character (punctuation only), the same text again (no record), a failed append: the record not even read */
+    unsigned opens_before = streak_opens;
+    clock_day++;
+    r = record("……！？");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    r = record("……！？");
+    TEST_ASSERT(vjo_history_append(&r) == 0);
+    open_error = 1;
+    r = record("失敗した行");
+    TEST_CHECK(vjo_history_append(&r) < 0);
+    open_error = 0;
+    TEST_CHECK(streak_opens == opens_before && streak_record().day == 20394);
+    /* the clock set back by days (a clock that was in the future put right): a new streak from today */
+    clock_day = 20300;
+    r = record("時計を直した");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    s = streak_record();
+    TEST_CHECK(s.day == 20300 && s.current == 1 && s.longest == 4);
+}
+
+/* The Triangle view: its last line from the record as it is when the view asks (the Rubi app may have seeded it
+ * since), the current streak as of today; "day" for one; 0 days once it ended; none yet. */
+static void test_streak_in_the_triangle_view(void)
+{
+    VjoStreak s;
+    reset();
+    context = (VjoReadingScope){"vita-PCSG00415", 0, UINT64_MAX, 0, 0, 0};
+    count_total(); /* no record yet */
+    TEST_CHECK(streak_opens == 1 && !strcmp(streak_line(), "\n\nStreak: current 0 days · longest 0"));
+    VjoHistoryRecord r = record("一日目");
+    TEST_ASSERT(vjo_history_append(&r) == 1); /* the writer's update sets the view's streak too */
+    TEST_CHECK_(!strcmp(streak_line(), "\n\nStreak: current 1 day · longest 1"), "%s", streak_line());
+    /* the app seeds the record meanwhile: the next Triangle press reads it, and redraws */
+    vjo_streak_init(&s);
+    for (int d = 20380; d <= 20388; d++)
+        vjo_streak_add(&s, d);
+    vjo_streak_add(&s, clock_day);
+    s.seeded = VJO_STREAK_SEEDED;
+    streak_put(&s);
+    unsigned version = g_view.version;
+    count_total();
+    TEST_CHECK_(!strcmp(streak_line(), "\n\nStreak: current 10 days · longest 10"), "%s", streak_line());
+    TEST_CHECK(g_view.version != version);
+    /* tomorrow before a line: still going; the day after: ended, the longest kept */
+    clock_day++;
+    count_total();
+    TEST_CHECK(!strcmp(streak_line(), "\n\nStreak: current 10 days · longest 10"));
+    clock_day++;
+    count_total();
+    TEST_CHECK_(!strcmp(streak_line(), "\n\nStreak: current 0 days · longest 10"), "%s", streak_line());
+    /* a line now starts it again, and the record keeps the app's seed mark */
+    r = record("また読む");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    TEST_CHECK(!strcmp(streak_line(), "\n\nStreak: current 1 day · longest 10"));
+    s = streak_record();
+    TEST_CHECK(s.seeded == VJO_STREAK_SEEDED && s.current == 1 && s.longest == 10);
+}
+
+/* VjoNet's append while the control thread reads the record for the view (each its own thread on the console): the
+ * view keeps the writer's newer streak, whichever of the two takes the view lock last. */
+static void a_line_appended(void)
+{
+    VjoHistoryRecord r = record("今日の最初の行");
+    TEST_CHECK(vjo_history_append(&r) == 1);
+}
+static void test_streak_a_view_read_beside_the_writer(void)
+{
+    VjoStreak s;
+    reset();
+    context = (VjoReadingScope){"vita-PCSG00415", 0, UINT64_MAX, 0, 0, 0};
+    vjo_streak_init(&s);
+    vjo_streak_add(&s, clock_day - 2);
+    vjo_streak_add(&s, clock_day - 1);
+    streak_put(&s);
+    /* the view reads yesterday's record (2 days); before it takes the lock, today's first line is recorded (3 days) */
+    on_streak_read = a_line_appended;
+    count_total();
+    TEST_CHECK(streak_writes == 1 && streak_record().current == 3);
+    TEST_CHECK_(!strcmp(streak_line(), "\n\nStreak: current 3 days · longest 3"), "%s", streak_line());
+    /* the next read alone sets it as the file has it */
+    count_total();
+    TEST_CHECK(!strcmp(streak_line(), "\n\nStreak: current 3 days · longest 3"));
+}
+
+/* A record that cannot be read now is never written over; a damaged one, or one of another layout, is replaced; the
+ * clock that cannot be read adds nothing. */
+static void test_streak_failures(void)
+{
+    VjoStreak s;
+    reset();
+    vjo_streak_init(&s);
+    for (int d = 20380; d < 20389; d++)
+        vjo_streak_add(&s, d);
+    streak_put(&s);
+    streak_open_error = -71; /* the memory card busy */
+    VjoHistoryRecord r = record("一行");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    streak_open_error = 0;
+    streak_read_error = -76;
+    r = record("二行");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    streak_read_error = 0;
+    TEST_CHECK(streak_writes == 0 && streak_record().current == 9);
+    r = record("三行"); /* readable again: today added to the 9 days before it */
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    TEST_CHECK(streak_record().current == 10 && streak_writes == 1);
+    /* the clock cannot be read: no day, nothing written */
+    rtc_error = -1;
+    clock_day++;
+    r = record("四行");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    rtc_error = 0;
+    TEST_CHECK(streak_writes == 1 && streak_record().current == 10);
+    /* damaged (its magic) or short: a new record from today */
+    s.magic = 0;
+    streak_put(&s);
+    r = record("五行");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    s = streak_record();
+    TEST_CHECK(vjo_streak_valid(&s) && s.day == clock_day && s.current == 1 && s.longest == 1);
+    FILE *f = fopen(streak_file(), "wb");
+    TEST_ASSERT(f && fputs("RSR1", f) >= 0);
+    fclose(f);
+    clock_day++;
+    r = record("六行");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    TEST_CHECK(streak_record().current == 1);
+}
+
 TEST_LIST = {
+    {"streak: a line's day, once a day; the next day, a gap, the clock set back", test_streak_a_day_a_line},
+    {"streak: the Triangle view's line, the record as it is now", test_streak_in_the_triangle_view},
+    {"streak: a record not readable now is kept; damaged ones replaced; no clock", test_streak_failures},
+    {"streak: a view's read beside the writer's update keeps the writer's", test_streak_a_view_read_beside_the_writer},
     {"scoped reading stats (15s)", test_scoped_reading_stats},
     {"scoped reading stats (adaptive)", test_scoped_reading_stats_adaptive},
     {"reading time 15s: AFK cutoff, speed, restarts and replacement", test_reading_time_and_speed},

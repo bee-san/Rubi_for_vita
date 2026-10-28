@@ -5,9 +5,7 @@ The overlay's saves (the real Shell Anki thread and queue storage,
 vjo-shell-anki-tests --restart-step) stop at each storage boundary of a
 save; the Rubi app's exports (settings/anki_export.c and its package
 writer, vjo-apkg-tests --restart-step) stop at each boundary of writing,
-verifying and clearing; the Rubi app's Cards page (#315, settings/cards.c,
-vjo-apkg-tests --restart-step fix|drop|delete) stops at each step of a Fix
-sentence, a Drop picture and a Delete. After every stop a fresh process finds
+verifying and clearing. After every stop a fresh process finds
 every card either still queued or in a complete package (and archived), never
 lost, never half-written, and a later export takes the rest. These check process
 crashes and disk recovery, not electrical power loss on physical
@@ -350,104 +348,6 @@ class OrphanScreenshotRestartTests(Storage):
         self.assertEqual((everything["rc"], everything["cards"]), (0, 5))
         self.assertEqual(self.loose(), [])
         self.check_nothing_lost(ids)
-
-
-class CardsRestartTests(Storage):
-    """#315: the Cards page's Fix sentence, Drop picture and Delete stopped at each of their storage steps, in a
-    fresh process (the queue's card with a picture whose ID is the smallest). Then an export straight away,
-    whose recovery runs first, and one 10 minutes later, whose sweep removes the pictures no card names. Each
-    time: no card is lost, the export packages each card once (the old card or the new one, never both), no
-    record names a missing picture, no intent is left, and a change stopped after its new record is finished
-    (the old card in anki_queue/deleted/), one stopped before it undone."""
-
-    STEPS = {
-        "fix": ("intent_tmp", "intent", "picture_tmp", "picture", "record_tmp", "record", "record_synced",
-                "retired_json", "retired_jpg", "intent_removed"),
-        "drop": ("intent_tmp", "intent", "record_tmp", "record", "record_synced", "retired_json", "retired_jpg",
-                 "intent_removed"),
-        "delete": ("retired_json", "retired_jpg"),
-    }
-
-    def deleted(self):
-        return self.queue / "deleted"
-
-    def outcome(self, action):
-        """The change made without a stop, in a copy of the memory card: its old and new IDs."""
-        here = self.root
-        copy = here.parent / (here.name + "-whole")
-        shutil.copytree(here, copy)
-        self.use(copy)
-        try:
-            done = self.run_step(APP, action)
-        finally:
-            self.use(here)
-        self.assertEqual(done["rc"], 0, done)
-        return done
-
-    def age_all(self, seconds=2 * 3600):
-        t = time.time() - seconds
-        for d in (self.queue, self.archive):
-            if d.exists():
-                for p in d.iterdir():
-                    if p.is_file():
-                        os.utime(p, (t, t))
-
-    def no_record_names_a_missing_picture(self):
-        for d in (self.queue, self.archive):
-            for card in self.records(d):
-                if json.loads((d / f"{card}.json").read_text("utf-8"))["picture"]:
-                    self.assertTrue((self.queue / f"{card}.jpg").exists() or (self.archive / f"{card}.jpg").exists(),
-                                    f"{d.name}/{card}.json names a picture that is not there")
-
-    def loose(self):
-        names = {p.name for p in self.queue.iterdir() if p.is_file()}
-        archived = set(self.records(self.archive))
-        return sorted(n for n in names if n.endswith((".jpg", ".jpg.tmp", ".json.tmp"))
-                      and n[:32] + ".json" not in names and n[:32] not in archived)
-
-    def test_every_stop_point(self):
-        for action, points in self.STEPS.items():
-            for point in points:
-                with self.subTest(action=action, checkpoint=point):
-                    self.use(Path(self.temp.name) / f"{action}-{point}")
-                    ids = self.run_step(APP, "queue")["ids"]
-                    whole = self.outcome(action)
-                    old, new = whole["old"], whole["new"]
-                    others = set(ids) - {old}
-                    self.assertIn(old, ids)
-                    self.assertNotEqual(old, new) if action != "delete" else None
-                    self.run_step(APP, action, crash=point)
-                    # never neither: the other cards are there, and the old card or the new one
-                    queued = set(self.records(self.queue))
-                    self.assertLessEqual(others, queued)
-                    if action != "delete":
-                        self.assertTrue(old in queued or new in queued)
-                    self.no_record_names_a_missing_picture()
-                    # an export straight away: its recovery first, then each card once
-                    done = self.run_step(APP, "export")
-                    self.assertEqual(done["rc"], 0, done)
-                    finished = action == "delete" or points.index(point) >= points.index("record")
-                    kept = set() if action == "delete" else {new if finished else old}
-                    self.assertEqual(done["cards"], len(others | kept), done)
-                    guids = self.package_guids()
-                    self.assertEqual(sorted(guids), sorted(guid_of(i) for i in others | kept))
-                    self.assertEqual(set(self.records(self.archive)), others | kept)
-                    self.assertEqual(self.records(self.queue), [])
-                    self.assertFalse(self.deleted().exists() and list(self.deleted().glob("*.fix*")), "an intent left")
-                    self.assertEqual(finished, (self.deleted() / f"{old}.json").exists())
-                    self.no_record_names_a_missing_picture()
-                    # 10 minutes later: the sweep leaves no picture no card names; every card again, each once
-                    self.age_all()
-                    everything = self.run_step(APP, "export-all")
-                    self.assertEqual((everything["rc"], everything["cards"]), (0, len(others | kept)), everything)
-                    self.assertEqual(self.loose(), [])
-                    self.no_record_names_a_missing_picture()
-                    # the fixed card kept its picture; the dropped one has none
-                    for card in kept:
-                        record = json.loads((self.archive / f"{card}.json").read_text("utf-8"))
-                        self.assertEqual(record["picture"], not (action == "drop" and finished))
-                        if action == "fix" and finished:
-                            self.assertTrue(record["sentence"].startswith("直した："))
 
 
 if __name__ == "__main__":

@@ -1736,14 +1736,14 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
     TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
 }
 
-/* The tab bar, laid out from its labels since the fifth tab (#312's Stats, #313's Look up): six tabs
+/* The tab bar, laid out from its labels since the fifth tab (#313's Look up; #312's Stats came and went): five tabs
  * from x 24 to at most 936, in order, TAB_GAP apart, each at least its label's width with 10 px each side (the stub's
  * labels do not fit an equal share), each label centred in its tab on the old baseline and never cut, the page's own
  * filled. A touch on a tab shows its page; one in the gap between two tabs does nothing. */
 #define TAB_Y 52
 #define TAB_H 48
-#define TABS 6
-static const char *const TAB_LABELS[TABS] = {"Games", "OCR & lookup", "Anki", "Look up", "Stats", "Install"};
+#define TABS 5
+static const char *const TAB_LABELS[TABS] = {"Games", "OCR & lookup", "Anki", "Look up", "Install"};
 typedef struct { int n, x[TABS], w[TABS]; } Tabs;
 static Tabs tabs_of(int f, int active)
 {
@@ -1782,21 +1782,21 @@ static void test_the_tab_bar(void)
     in[n++] = (Input){0, 0, 0, 0};
     TEST_ASSERT(run(in, n) >= 2);
     Tabs t = tabs_of(0, 0);
-    static const int order[] = {1, 3, 4, 5, 0, 4}; /* OCR & lookup, Look up, Stats, Install, Games, Stats */
+    static const int order[] = {1, 3, 4, 0, 3}; /* OCR & lookup, Look up, Install, Games, Look up */
     n = 0;
-    for (int k = 0; k < 6; k++) {
+    for (int k = 0; k < 5; k++) {
         in[n++] = (Input){0, 1, t.x[order[k]] + t.w[order[k]] / 2, TAB_Y + 20};
         in[n++] = (Input){0, 0, 0, 0};
     }
-    in[n++] = (Input){0, 1, t.x[1] + t.w[1] + 4, TAB_Y + 20}; /* frame 12: the gap after OCR & lookup: nothing */
+    in[n++] = (Input){0, 1, t.x[1] + t.w[1] + 4, TAB_Y + 20}; /* frame 10: the gap after OCR & lookup: nothing */
     in[n++] = (Input){0, 0, 0, 0};
-    in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}; /* frame 14: Select from Stats: Install */
+    in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}; /* frame 12: Select from Look up: Install */
     in[n++] = (Input){0, 0, 0, 0};
     TEST_ASSERT(run(in, n) >= n);
-    for (int k = 0; k < 6; k++)
+    for (int k = 0; k < 5; k++)
         tabs_of(2 * k, order[k]);
+    tabs_of(10, 3);
     tabs_of(12, 4);
-    tabs_of(14, 5);
 }
 
 /* libvita2d's glyph atlas keeps every glyph a font drew or measured and drops new ones once it is full: main.c draws
@@ -1868,7 +1868,7 @@ static void test_full_glyph_atlases_get_empty_ones(void)
 static void test_the_look_up_page_s_wiring(void)
 {
     card(NULL);
-    /* shown, left by Select (to Stats), shown by its tab, left by a tab (Games) */
+    /* shown, left by Select (to Install), shown by its tab, left by a tab (Games) */
     {
         Input in[2 * 8];
         int n = 0;

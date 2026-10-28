@@ -1,8 +1,8 @@
 # Roadmap
 
 What is left to build in Rubi, ranked. This was issue [#310](https://github.com/bee-san/Rubi_for_vita/issues/310)
-(2026-10-26); its top five plans are built ([below](#built-the-top-five)) and the issue is closed, so the ranking
-of what remains lives here. The list draws on four sources:
+(2026-10-26); its top five plans were built ([below](#built-the-top-five); two of them since removed by the owner)
+and the issue is closed, so the ranking of what remains lives here. The list draws on four sources:
 
 - Rubi's issues and their history;
 - [GameSentenceMiner](https://github.com/bpwhelan/GameSentenceMiner/tree/5190b613f5ff2c70bfe505377b297854aacf6b27)
@@ -41,16 +41,18 @@ Two rules apply to app features:
 
 ## Built: the top five
 
-All in the Rubi app (none of them in the Shell, the game worker or the kernel), in Rubi 0.10.0, measured on the host,
-not run on a console yet.
+All in the Rubi app (none of them in the Shell, the game worker or the kernel), measured on the host, not run on a
+console yet. Items 1, 3 and 4 are in Rubi 0.10.0; items 2 and 5 were in test builds only and were removed by the
+owner's decision (2026-10-28): "Remove the entire stats section. Keep streak, but put that into the Overlay. [...]
+Remove anki card management."
 
 | # | What | Issue | Merged in |
 |---|---|---|---|
 | 1 | Richer Anki cards at export: sentence readings, card type, game tag | #311 | #407 |
-| 2 | A Stats page: all games, days, heatmap, streak, daily goal | #312 | #384, #403 |
+| 2 | A Stats page: all games, days, heatmap, streak, daily goal. **Removed** (the owner, 2026-10-28); the streak moved to the overlay's Triangle view ([streak](ocr-history.md#streak)) | #312 | #384, #403 |
 | 3 | Look up and mine later: typed search, and a game's earlier lines | #313 | #391, #405 |
 | 4 | Duplicate-aware mining: tags at export (stage A) and known words (stage C) | #314 | #381, #390, #393, #404 |
-| 5 | A Cards page: list, delete, fix the sentence, drop the picture before export | #315 | #392 |
+| 5 | A Cards page: list, delete, fix the sentence, drop the picture before export. **Removed** (the owner, 2026-10-28) | #315 | #392, #417 |
 
 #314's stage B, a mark in the overlay's popup for a word you already mined, is **not built**: a minimal version needs
 about 840 B more code in the normal Shell than its pages have ([anki.md](anki.md#not-in-the-popup)). Whether it gets
@@ -130,7 +132,8 @@ A first install has never run on a console (README).
 
 **The owner's:** sessions; audio capture. **Removed or cancelled by the owner:** all network code (AnkiConnect,
 Google Lens, the online dictionaries, the Hachidori relay, and sync in Rubi: #220 moved it to Anki for Vita); key
-remapping and the ○/× buttons.
+remapping and the ○/× buttons; the Rubi app's Stats tab with its daily goal, and its Cards page (card management),
+both on 2026-10-28.
 
 **Not recommended:**
 

@@ -1,5 +1,5 @@
-/* The Rubi app's history.csv reader (core/history_read.c: the Look up page's earlier lines, #313, and the Stats
- * page, #312) against the Shell's own (core/history_lines.c), which keeps its rules private and must not change.
+/* The Rubi app's history.csv reader (core/history_read.c: the Look up page's earlier lines, #313, and the reading
+ * streak's seed) against the Shell's own (core/history_lines.c), which keeps its rules private and must not change.
  * On random files written as shell/history.c writes them, with the damage a power loss leaves (a record cut, zeros,
  * the next boot's record run on from it) and with the times the Shell refuses, read whole and in windows: both find
  * the same records, the same lines and times, and give the same totals and reading time (the Triangle view's);

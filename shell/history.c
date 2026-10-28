@@ -1,6 +1,7 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/clib.h>
+#include <psp2/rtc.h> /* the streak's day */
 #if VJO_DEBUG
 #include <psp2/kernel/processmgr.h> /* the total's count time, in its log line */
 #endif
@@ -8,6 +9,7 @@
 #include "history.h"
 #include "shell.h"
 #include "../core/port.h"
+#include "../core/streak.h"
 #include "../core/textnorm.h"
 
 static const char HISTORY_PATH[] VJO_DATA_TABLE(reading_history_path) = VJO_DATA_DIR "/history.csv";
@@ -61,6 +63,8 @@ enum { TOTAL_UNREAD, TOTAL_COUNTING, TOTAL_KNOWN, TOTAL_FAILED };
 static struct {
     VjoReadingScope scope, scan_scope;
     int requested;
+    uint32_t streak; /* the Triangle view's streak (vjo_history_streak): the current streak as of the day it was read,
+                      * and the longest in the high 16 bits (in what was the padding before saved_us) */
     uint64_t saved_us;
     VjoReadingTime time, scan_time; /* committed prefix and the count in progress */
     uint64_t chars, found;            /* chars: the lines' in [0, covered); found: the count's in [covered, at) */
@@ -69,6 +73,7 @@ static struct {
     uint32_t seq, top_seq;            /* seq: odd while the writer appends a record; top_seq: when top was read */
     int state, read, clean;           /* TOTAL_*; read: history_total.bin was read; clean: no append ran as top
                                        * was read */
+    uint32_t streak_seq;              /* the writer's updates of `streak` (vjo_history_streak) */
 #if VJO_DEBUG
     uint32_t windows, bytes; /* the count's windows and bytes read, and when it started: its log line */
     int64_t started;
@@ -297,6 +302,8 @@ int vjo_history_append(const VjoHistoryRecord *r)
     }
     __sync_synchronize();
     total.seq++;
+    if (rc == 1 && chars)
+        vjo_history_streak(1); /* the reading streak: this line's day (core/streak.h) */
     return rc;
 }
 
@@ -323,13 +330,56 @@ int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filte
 
 /* ---- the total (docs/ocr-history.md#total-characters-read) ---- */
 
-/* One bounded cache per game, with the full UUID also checked inside the file. */
-static const char *cache_path(char *buf, size_t cap)
+/* One bounded cache per game, with the full UUID also checked inside the file; the streak's is reading-streak.bin
+ * (core/streak.h VJO_STREAK_FILE), which no game's ID makes. */
+static const char *cache_path(char *buf, size_t cap, const char *name)
 {
     static const char format[] VJO_DATA_TABLE(history_cache_path) = VJO_DATA_DIR "/reading-%s.bin";
-    if (!total.scope.uuid[0]) return TOTAL_PATH;
-    sceClibSnprintf(buf, cap, format, total.scope.uuid);
+    if (!name[0]) return TOTAL_PATH;
+    sceClibSnprintf(buf, cap, format, name);
     return buf;
+}
+
+/* The reading streak (core/streak.h), today's day on the Vita's clock: days since 1970-01-01 of its local time. */
+static int32_t streak_today(void)
+{
+    SceDateTime date;
+    SceRtcTick tick;
+    if (sceRtcGetCurrentClockLocalTime(&date) < 0 || sceRtcGetTick(&date, &tick) < 0)
+        return VJO_STREAK_NONE;
+    return (int32_t)(tick.tick / VJO_STREAK_DAY_US) - 719162; /* (SceRtcTick counts from 0001-01-01) */
+}
+
+__attribute__((noinline)) void vjo_history_streak(int add)
+{
+    char path[64];
+    VjoStreak s;
+    uint32_t seq = total.streak_seq; /* the writer's updates before this read (the writer's own thread: VjoNet) */
+    int32_t today = streak_today();
+    SceUID fd = sceIoOpen(cache_path(path, sizeof(path), VJO_STREAK_NAME), SCE_O_RDONLY, 0);
+    int n = fd < 0 ? fd : sceIoRead(fd, &s, sizeof(s));
+    if (fd >= 0)
+        sceIoClose(fd);
+    if (n < 0 && n != (int)0x80010002)
+        return; /* there, but not readable now: never written over (the next line tries again) */
+    if (n != (int)sizeof(s) || s.magic != VJO_STREAK_MAGIC)
+        vjo_streak_init(&s); /* none yet, or not one this writes: a new record (core/streak.c's rules take any fields) */
+    if (add && vjo_streak_add(&s, today))
+        vjo_file_write(path, &s, sizeof(s));
+    vjo_view_lock();
+    if (add || seq == total.streak_seq) { /* a view's read, made while the writer wrote, never undoes the writer's */
+        total.streak = vjo_streak_current(&s, today) | (uint32_t)s.longest << 16;
+        total.streak_seq += (uint32_t)add;
+        g_view.version++;
+    }
+    vjo_view_unlock();
+}
+
+void vjo_history_streak_text(char *buf, size_t cap)
+{
+    uint32_t current = total.streak & 0xFFFFu;
+    sceClibSnprintf(buf, cap, "\n\nStreak: current %u day%s · longest %u", (unsigned)current, current == 1 ? "" : "s",
+                    (unsigned)(total.streak >> 16));
 }
 
 static void total_save(uint64_t chars, uint32_t covered, const VjoReadingTime *time, const VjoReadingScope *scope)
@@ -337,7 +387,7 @@ static void total_save(uint64_t chars, uint32_t covered, const VjoReadingTime *t
     TotalFile f = {chars, covered, 0, *time, *scope};
     char path[80];
     f.check = total_file_check(&f);
-    if (vjo_file_write(cache_path(path, sizeof(path)), &f, sizeof(f)) >= 0) {
+    if (vjo_file_write(cache_path(path, sizeof(path), total.scope.uuid), &f, sizeof(f)) >= 0) {
         total.saved = covered;
         total.saved_us = time->last_us;
     }
@@ -426,6 +476,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
     vjo_view_unlock();
     if (requested) {
         VjoReadingScope context = {0};
+        vjo_history_streak(0); /* the view's streak, as the file has it now (the Rubi app may have seeded it) */
         if (!vjo_history_context(&context)) { vjo_history_total_stop(); total_set(TOTAL_FAILED); return 0; }
         if (sceClibStrcmp(context.uuid, total.scope.uuid) || context.start_us != total.scope.start_us ||
              context.end_us != total.scope.end_us) {
@@ -453,7 +504,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
     if (!total.read) { /* the first count since the Shell started: from the total history_total.bin keeps */
         size_t len = 0;
         char path[80];
-        const char *bytes = vjo_file_read(scratch, cache_path(path, sizeof(path)), &len);
+        const char *bytes = vjo_file_read(scratch, cache_path(path, sizeof(path), total.scope.uuid), &len);
         TotalFile f;
         if (bytes && len == sizeof(f)) {
             sceClibMemcpy(&f, bytes, sizeof(f)); /* (the scratch's alignment is its array's) */

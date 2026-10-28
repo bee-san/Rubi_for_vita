@@ -40,7 +40,7 @@ void vita2d_free_texture(vita2d_texture *texture);
 unsigned int vita2d_texture_get_width(const vita2d_texture *texture);
 unsigned int vita2d_texture_get_height(const vita2d_texture *texture);
 void vita2d_draw_texture_scale(const vita2d_texture *texture, float x, float y, float x_scale, float y_scale);
-/* #315: the Cards page's picture, an empty texture its pixels are copied into (the SDK's value). */
+/* An empty texture (settings/vita2d_textures.c wraps its creation), and its pixels (the SDK's value). */
 #define SCE_GXM_TEXTURE_FORMAT_U8U8U8_BGR 0x98000000u
 vita2d_texture *vita2d_create_empty_texture_format(unsigned int w, unsigned int h, unsigned int format);
 void *vita2d_texture_get_datap(const vita2d_texture *texture);

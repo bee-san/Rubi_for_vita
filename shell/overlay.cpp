@@ -506,6 +506,8 @@ static void render(int new_content)
                     vjo_styled_puts(&body, detail, VJO_RGB_DIM, en);
                 }
             }
+            vjo_history_streak_text(info, sizeof(info)); /* all games' (core/streak.h) */
+            vjo_styled_puts(&body, info, VJO_RGB_DIM, en);
         } else {
         if (s_history) { /* where the text is in this game's line history */
             /* (▲ only when there is a line before it: the oldest kept has none) */

@@ -13,7 +13,7 @@ priority, a worker off CPU3) built and packaged. This reads, without dependencie
   to settings/sysapp.c's sceUserMainThreadPriority and sceUserMainThreadCpuAffinityMask, read in
   the SELF's own (decompressed) segments;
 - the linked ELF: newlib's heap (_newlib_heap_size_user, else newlib's 128 MiB), which with the
-  SELF's segments and libvita2d's fixed allocations (and the Cards page's picture texture) must fit
+  SELF's segments and libvita2d's fixed allocations (FIXED: fonts, icons, the threads' stacks) must fit
   the budget; and every call of
   sceKernelCreateThread made from settings/sysapp.c's wrapper (the link's --wrap), which puts
   each thread on CPU3, and none of sceKernelChangeThreadCpuAffinityMask;
@@ -55,13 +55,11 @@ MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # shader patcher, index and clear buffers, parameter buffer and pool; at most 5 icon textures of
 # 256 KiB (settings/icons.h); 512 x 512 glyph atlases, four at most (settings/main.c, #313): the drawing font's and
 # the measuring font's, the drawing font a frame replaced (freed once the GPU is done with it) and, for a moment, a new
-# measuring font (the one it replaces, never drawn with, is freed at once); the main thread's default 256 KiB stack and
-# the Anki, Install and Stats workers' 64 KiB each (settings/anki_page.c, install_page.c, stats_page.c #312; the Stats
-# tab's tables are in the segments: its counts, its cache's work memory and its rows, about 2 MiB; so are the Look up
-# tab's, #313); the Cards page's picture (#315), one texture of at most 512 x 288 RGB (settings/card_picture.h
-# VJO_CARD_PICTURE_W/_H, three bytes a pixel; its list and card views are in the segments, libjpeg's work in the heap).
+# measuring font (the one it replaces, never drawn with, is freed at once); the main thread's default 256 KiB stack,
+# the Anki and Install workers' 64 KiB each (settings/anki_page.c, install_page.c; the Look up tab's tables, #313, are in
+# the segments) and the streak seed's 16 KiB (settings/streak_seed.c, once: its 64 KiB window is in the segments).
 FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024, "glyph_atlas": 4 * 512 * 512,
-         "stacks": 256 * 1024 + 3 * 64 * 1024, "card_picture": 512 * 288 * 3}
+         "stacks": 256 * 1024 + 2 * 64 * 1024 + 16 * 1024}
 # libvita2d's glyph atlas texture and the wrapper it is made through (settings/vita2d_textures.c).
 ATLAS_FUNCTION = "texture_atlas_create"
 TEXTURE_FUNCTION = "vita2d_create_empty_texture_format"

@@ -451,8 +451,8 @@ static void test_anki_field_bytes_do_not_depend_on_the_arena(void)
 }
 
 /* #314's word key (core/word_key.h): the SHA-256 of spelling TAB reading, folded, its first 64 bits. The vectors are
- * Python's hashlib on the folded strings (hashlib.sha256("猫\tねこ".encode()).hexdigest()[:16]): the Rubi app, its
- * Cards page and any later reader of the key must agree with them. */
+ * Python's hashlib on the folded strings (hashlib.sha256("猫\tねこ".encode()).hexdigest()[:16]): the Rubi app's
+ * export and any later reader of the key must agree with them. */
 static void test_word_key(void)
 {
     static const struct { const char *spelling, *reading, *hex; } vec[] = {

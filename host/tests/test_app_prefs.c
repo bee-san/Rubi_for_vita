@@ -194,6 +194,41 @@ static void test_a_save_keeps_every_other_line(void)
     TEST_CHECK(get(BAK) == NULL);
 }
 
+/* The Stats tab's Daily goal (stats_daily_goal, #312), which the owner removed with the tab (2026-10-28): a file of a
+ * test build that still has it loads as any other (the key is no setting now), and the next save drops its lines,
+ * every other line kept as it was, the BOM too when it is the first line's. */
+static void test_a_removed_setting_is_ignored_then_dropped(void)
+{
+    static const char before[] =
+        "\xEF\xBB\xBF" "stats_daily_goal = 10000_characters\r\n"
+        "; my notes\n"
+        "anki_duplicates = keep\n"
+        "  STATS_Daily_Goal=30_minutes ; again\n"
+        "# stats_daily_goal = off (a comment stays)\n"
+        "stats_daily_goals = 1\n"
+        "last line without a newline";
+    static const char after[] =
+        "\xEF\xBB\xBF" "; my notes\n"
+        "anki_duplicates = skip\n"
+        "# stats_daily_goal = off (a comment stays)\n"
+        "stats_daily_goals = 1\n"
+        "last line without a newline";
+    VjoAppPrefs p;
+    fresh();
+    put(APP, before);
+    TEST_CHECK(load(&p) == 0 && p.anki_duplicates == VJO_DUPLICATES_KEEP);
+    TEST_CHECK(vjo_app_prefs_get(&p, "stats_daily_goal") == -1 && vjo_app_prefs_value("stats_daily_goal", 0) == NULL);
+    TEST_CHECK(save1("stats_daily_goal", 0) == -1 && writes == 0); /* no setting to save */
+    TEST_CHECK(save1("anki_duplicates", VJO_DUPLICATES_SKIP) == 0);
+    TEST_CHECK_(strcmp(get(APP), after) == 0, "%s", get(APP));
+    TEST_CHECK(strcmp(get(BAK), before) == 0);
+    TEST_CHECK(load(&p) == 0 && p.anki_duplicates == VJO_DUPLICATES_SKIP);
+    /* a file with nothing but the removed line: the save leaves the new line alone */
+    put(APP, "stats_daily_goal = off\n");
+    TEST_CHECK(save1("anki_card_type", 1) == 0);
+    TEST_CHECK_(strcmp(get(APP), "anki_card_type = sentence\n") == 0, "%s", get(APP));
+}
+
 static void test_a_save_refuses_what_the_table_has_not_got(void)
 {
     const char *keys[3] = {"anki_duplicates", "anki_duplicates", "no_such_key"};
@@ -272,6 +307,7 @@ TEST_LIST = {
     {"lines_read_as_config_ini_reads_them", test_lines_read_as_config_ini_reads_them},
     {"every_row_saves_and_loads_each_value", test_every_row_saves_and_loads_each_value},
     {"a_save_keeps_every_other_line", test_a_save_keeps_every_other_line},
+    {"a_removed_setting_is_ignored_then_dropped", test_a_removed_setting_is_ignored_then_dropped},
     {"a_save_refuses_what_the_table_has_not_got", test_a_save_refuses_what_the_table_has_not_got},
     {"failures_leave_the_file_as_it_was", test_failures_leave_the_file_as_it_was},
     {"a_save_stopped_between_its_renames", test_a_save_stopped_between_its_renames},

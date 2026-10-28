@@ -36,7 +36,8 @@ static const char *path;
 static int native(int rc) { return rc < 0 ? -errno : rc; }
 int sceIoOpen(const char *file, int flags, unsigned mode)
 {
-    (void)file;
+    if (strstr(file, "/reading-")) /* the streak's record (core/streak.h): none here, and none is kept */
+        return (int)0x80010002;
     int fd = open(path, flags, mode);
     return fd < 0 && errno == ENOENT ? (int)0x80010002 : native(fd); /* no file: the SDK's error */
 }
@@ -53,6 +54,20 @@ int sceIoChstat(const char *file, SceIoStat *st, int flags)
 {
     (void)file; (void)flags;
     return native(truncate(path, st->st_size));
+}
+
+/* The Vita's clock, for the streak's day (shell/history.c): a fixed day; its record is not kept (vjo_file_write). */
+#include <psp2/rtc.h>
+int sceRtcGetCurrentClockLocalTime(SceDateTime *t)
+{
+    *t = (SceDateTime){2026, 10, 28, 12, 0, 0, 0};
+    return 0;
+}
+int sceRtcGetTick(const SceDateTime *t, SceRtcTick *tick)
+{
+    (void)t;
+    tick->tick = 62135596800000000ull + 1793188800ull * 1000000ull; /* 2026-10-28 12:00 */
+    return 0;
 }
 
 int vjoNotifyShell(void); /* the kernel's (include/vjo_api.h declares it for the Vita build only) */
