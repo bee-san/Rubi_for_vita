@@ -1,7 +1,9 @@
 /* Which text a job shows: OCR's or a native hook stream's (core/hook_select.h, docs/native-hooks.md).
  * Plain C, no allocation, no platform calls. The comparison works on at most CMP_MAX characters of each
  * text, in a form where the same words read the same (folded widths, no spaces or punctuation), and
- * keeps its scratch on the stack: two code point arrays and one row of the edit distance, 2,562 B. */
+ * keeps its scratch on the stack: two code point arrays and one row of the edit distance, 2,562 B, in
+ * frames of 2,736 B at most at the game worker's flags (vjo_hook_select_after, then score_of or
+ * prefix_score, then within: docs/memory-ledger.md). */
 #include "hook_select.h"
 
 #include "../include/vjo_game_ocr.h" /* VJO_HOOK_PICK_*, VJO_HOOK_R_*, VJO_HOOK_STREAMS */
@@ -152,8 +154,11 @@ static unsigned score_of(const uint32_t *o, unsigned m, unsigned mf, const char 
 
 /* #413's audit F2: OCR's text o (m characters kept, mf in all) against the beginning of h, h's first m characters, as
  * score_of scores h (n <= m <= mf): a line still typing out (a press reads at once since #413) shows its beginning.
- * For texts score_of compares (both of VJO_HOOK_MIN_CHARS or more); with h no longer than o it is score_of's. */
-static unsigned prefix_score(const uint32_t *o, unsigned m, unsigned mf, const char *h, size_t hn)
+ * For texts score_of compares (both of VJO_HOOK_MIN_CHARS or more); with h no longer than o it is score_of's. Never
+ * inlined (#491's audit F3): inlined, its array sat in vjo_hook_select_after's frame beside score_of's call, and the
+ * comparison's deepest frames took 3,760 B instead of 2,736 B. */
+static __attribute__((noinline)) unsigned prefix_score(const uint32_t *o, unsigned m, unsigned mf, const char *h,
+                                                        size_t hn)
 {
     uint32_t hc[CMP_MAX];
     unsigned nf, n = cmp_form(h, hn, hc, &nf), d;

@@ -774,10 +774,12 @@ and the worst case, 20 streams of 256 characters against 256, 1.3 million cells,
 
 Since #413 a press reads at once, without the stable-text wait, so its OCR may read a line still typing out, the first
 part of the line a hook already holds whole. The whole-line similarity scores that as a disagreement (the stream's
-characters OCR has not seen yet count as unmatched: 8 of 21 characters read score 333, 16 score 777), and two in a
-row unlocked a correct stream, one took its trust (#413's audit, its probe P4). Now OCR's text that agrees with the
-locked stream's first characters, as many as OCR read, is no evidence either way in a job read without the wait (the
-request has no settle time: `vjo_hook_select_after`'s `unsettled`): the job shows OCR's text, as for a text too short
+characters OCR has not seen yet count as unmatched: 8 of 21 characters read score 333, 16 score 777): one at a check
+cost a correct stream its interval (a check every eighth line again from its next agreement, so trust came later), and
+two in a row unlocked it (#413's audit, its probe P4). A trusted stream was not at risk: with `hook_trust = on` its
+jobs run no OCR, so it is never compared. Now OCR's text that agrees with the locked stream's first characters, as
+many as OCR read, is no evidence either way in a job read without the wait (the request has no settle time:
+`vjo_hook_select_after`'s `unsettled`): the job shows OCR's text, as for a text too short
 to compare, and nothing of the selection changes. Any other text is a disagreement as before: the line before or
 after (the backlog, a line prepared ahead), a page of which the stream holds one line, a stale stream, the middle of
 the line (`host/tests/test_hook_select.c` `a_wrong_stream_still_disagrees`). A read with the wait (a background read,
@@ -788,6 +790,16 @@ the stream's whole line, and why it is taken **once until the stream agrees agai
 stream the screen keeps showing only the start of disagrees from its second such read, and two unlock it, as before.
 Without that limit, on the pool's one game whose pages collect their lines (PCSG00648), a stream a page ahead of the
 screen was taken for a line typing out at every press and trusted (134 trusted answers of another page's text, below).
+With `ocr_settle_ms = 0` no job waits (the Shell sends no settle time), so every read gets the rule, background reads,
+refreshes and the subtitle strip's included, as Only when I press's reads do (#491's audit N1).
+
+Repeated presses on one line still typing out can still unlock a correct stream, as each reads more of it: at a due
+check, presses that read 6, 10 and 12 of its 18 characters are no evidence, a miss and an unlock; 6 and then 14 are no
+evidence and an agreement [measured: #491's audit, its host probe AP-SAME-LINE]. Before the rule two such presses
+unlocked it. It takes a slow line and repeated presses with Only when I press; in Automatically, the open overlay's
+refresh reads the line with the wait first. A second exemption while the stream holds the text the first was taken for
+would keep such presses no evidence and leave a page ahead as it is (each page is a new text): not built or measured,
+the owner's call (#491's audit N3).
 
 On the hooked page pool's 29 Vita sessions (the [trusted-hook bench](#why-four-agreements-measured)'s, 300 pages each;
 OCR's reads of every page with main's models, the background job's policy, against the pages' verified hook lines)
@@ -822,6 +834,11 @@ OCR's reads of every page with main's models, the background job's policy, again
   cannot tell from a line typing out, shows another page's text in 146 jobs against main's 103 (PCSG00648 and one more
   session), none of them trusted. Before the once-until-it-agrees limit it earned trust there: 179 such answers, 134
   of them trusted.
+
+These figures come from #491's own scripts, which are not in the repo (#491's audit N4): the comparison alone and the
+simulation are host programs that run `core/hook_select.c` over the bench's OCR reads, and the actual worker's rows
+drive `host/hook_trust_bench.c` (its `call` and `lag` kinds and `press` are in the repo) with, for a page ahead, each
+page's stream holding the next page's line, which `tools/hook_trust_bench.py` does not write.
 
 ## Trusted hooks (API 43)
 
@@ -1339,6 +1356,22 @@ Hardware is paused; these are for the test issue (#230):
     disagreement had followed). Then `hook_trust = on`: after one close agreement at 32 the source's jobs say `flags 0x10A`, and
     from the next start at once (no confirmation). A line the hook gives in parts (step 14): one `history.csv`
     record, with its first part's ID and time.
+19. #491, a line typing out (#491's audit F4; the debug build, CLANNAD). With the defaults the rule is not reached: a
+    verified site or a trusted caller answers every press without OCR, and a locked caller every line between its
+    checks. So: `hook_trust = off` (the Rubi app's **Trusted hooks replace OCR** OFF) and **Read text: Only when I press
+    L + R**. Press on finished lines until `log.txt`'s job lines say `game vocr source: hook N, flags 0x0A` (`0x1A` for
+    a site), then close the game and start it again: the learned source then needs one confirmation. On each of the
+    next two dialogue lines press L + R once while the line is still typing out, with four or more of its characters
+    and under two thirds of it shown (fewer are no evidence, more agree, before #491 too), and press on nothing in
+    between: the overlay shows the line so far, and both job lines say `ocr 0, flags 0x00`, **neither with `0x20`
+    (UNLOCK)**; before #491 the second press unlocked the stream. An exempted press's flags are a miss's (`0x00`), so
+    that missing `0x20` is what tells the two apart. Then press on the next line once it has finished: `flags 0x03`
+    (AGREED | LOCKED; `0x13` for a site; before #491 `0x01`, learning again), then `0x0A` (`0x1A`) on the lines after
+    it. Ignore a `0x40` bit (every CALL slot taken) in any of them. A read without the wait tears while the line types
+    on, so the press has to catch it holding still (a pause in its typing); one that tore is tried again with the wait
+    (`job dropped: the screen changed under it` before its job line) and shows the whole line, which agrees, after
+    which the lines are the hook's without OCR: close the game, start it again and try again. Derived from the code
+    and host probes, not run on a console.
 
 ## PSP probe (debug build)
 

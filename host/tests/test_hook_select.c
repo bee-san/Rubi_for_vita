@@ -1074,7 +1074,50 @@ static void a_wrong_stream_still_disagrees(void)
     }
 }
 
+/* #491's audit F2: a read with the wait that saw only the line's start (a typewriter pause) is a miss; a press's read
+ * of the same text of the same line after it is a duplicate, which neither compares nor takes the press's one
+ * exemption (the fresh guard), so the next line's start read by a press is still no evidence (not the second miss).
+ * And an unlock forgets the exemption: the stream learned again is exempted afresh. */
+static void a_duplicate_takes_no_exemption(void)
+{
+    char part[160];
+    VjoHookCand c;
+    unsigned score;
+    uint32_t flags;
+    VjoHookSelect st = learn();
+    st.unchecked = st.interval - 1u;
+    reading(&c, 3);
+    utf8_prefix(part, sizeof(part), c.text, 7);
+    TEST_CHECK(after(&st, part, &c, &score, &flags, 0) == 0 && st.misses == 1 && !st.typing); /* with the wait */
+    TEST_CHECK(after(&st, part, &c, &score, &flags, 1) == 0 && st.misses == 1 && !st.typing); /* the duplicate */
+    reading(&c, 4);
+    utf8_prefix(part, sizeof(part), c.text, 7);
+    TEST_CHECK(after(&st, part, &c, &score, &flags, 1) == 0);
+    TEST_CHECK_(st.misses == 1 && st.typing && st.locked == 9 && !(flags & VJO_HOOK_R_UNLOCK), "misses %u, flags 0x%x",
+                st.misses, flags);
+    /* exempted, then two misses unlock it; learned again, its first line typing out is exempted again */
+    st = learn();
+    st.unchecked = st.interval - 1u;
+    reading(&c, 5);
+    utf8_prefix(part, sizeof(part), c.text, 7);
+    TEST_CHECK(after(&st, part, &c, &score, &flags, 1) == 0 && st.typing);
+    TEST_CHECK(after(&st, LINE2, &c, &score, &flags, 1) == 0 && st.misses == 1);
+    reading(&c, 6);
+    TEST_CHECK(after(&st, LINE3, &c, &score, &flags, 1) == 0 && (flags & VJO_HOOK_R_UNLOCK) && !st.interval);
+    for (unsigned line = 7; line <= 8; line++) {
+        reading(&c, line);
+        TEST_CHECK(after(&st, c.text, &c, &score, &flags, 0) == 9);
+    }
+    TEST_ASSERT(st.interval == 8 && st.locked == 9);
+    st.unchecked = st.interval - 1u;
+    reading(&c, 9);
+    utf8_prefix(part, sizeof(part), c.text, 7);
+    TEST_CHECK(after(&st, part, &c, &score, &flags, 1) == 0);
+    TEST_CHECK_(!st.misses && st.typing, "relearned: misses %u", st.misses);
+}
+
 TEST_LIST = {
+    {"a_duplicate_takes_no_exemption", a_duplicate_takes_no_exemption},
     {"a_line_typing_out_is_no_disagreement", a_line_typing_out_is_no_disagreement},
     {"a_wrong_stream_still_disagrees", a_wrong_stream_still_disagrees},
     {"trusted_sites_answer_without_ocr", trusted_sites_answer_without_ocr},

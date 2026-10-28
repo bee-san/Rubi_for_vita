@@ -1801,7 +1801,53 @@ static void line_fix_follows_the_request(void)
     }
 }
 
+/* #413's audit F2 in the worker (#491's audit F1): a job whose request has no settle time (a press since #413) may
+ * read a line still typing out, and its text agreeing with the start of the locked caller's line only is no evidence
+ * (no miss; the check stays due, and the whole line then counts); a request with the wait (the background read's:
+ * 150 ms within 2 s, on a settled screen or, SETTLE_FIRST, an unsettled one; or the wait alone, its limit the
+ * default) compares it as before: one miss. So the worker's no-wait test (game_ocr/main.c, vjo_hook_select_after's
+ * unsettled) is pinned: wired to 0, to 1 or to another field of the request, a case fails. */
+static int run_flags(uint32_t flags, VjoGameOcrResult *out)
+{
+    VjoGameOcrRequest r = request(VJO_HOOK_PICK_AUTO);
+    r.flags = flags;
+    vjo_game_ocr_cache_clear();
+    rows_calls = 0;
+    int rc = vjo_game_ocr_run_request(&r, out);
+    TEST_CHECK(!job_live && !capture_live && !file_open_now && !model_owned && !out->cleanup_status);
+    return rc;
+}
+static void a_press_reads_a_line_typing_out(void)
+{
+    static const uint32_t wait = 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    /* a press; the background read's on a settled screen, and on an unsettled one; the wait with the default limit */
+    static const uint32_t flags[4] = {0, wait, wait | VJO_GAME_OCR_F_SETTLE_FIRST, 15u << VJO_GAME_OCR_SETTLE_SHIFT};
+    VjoGameOcrResult out;
+    for (unsigned q = 0; q < 4; q++) {
+        reset();
+        stream(9, VJO_HOOK_KIND_CALL, 5, LINE1); spy_text = OCR1;
+        TEST_ASSERT(run_flags(wait, &out) == 0 && out.text_from == 9);
+        stream(9, VJO_HOOK_KIND_CALL, 6, LINE2); spy_text = OCR2;
+        TEST_ASSERT(run_flags(wait, &out) == 0 && hk.sel.locked == 9 && hk.sel.interval == 8);
+        hk.sel.unchecked = hk.sel.interval - 1u; /* the next new line is the scheduled check */
+        stream(9, VJO_HOOK_KIND_CALL, 7, LINE3); spy_text = "だったら今夜の"; /* its start, 7 of 23 */
+        TEST_ASSERT(run_flags(flags[q], &out) == 0);
+        TEST_CHECK_(!out.text_from && !strcmp(out.text, spy_text) && !(out.hook_flags & VJO_HOOK_R_UNLOCK),
+                    "request 0x%08x: text_from %u, flags 0x%x", (unsigned)flags[q], out.text_from, out.hook_flags);
+        if (!q) {
+            TEST_CHECK_(!hk.sel.misses && !hk.sel.confirm && hk.sel.typing, "press: misses %u", hk.sel.misses);
+            spy_text = OCR3; /* the same line, typed out: it agrees, and the check counts */
+            TEST_ASSERT(run_flags(0, &out) == 0);
+            TEST_CHECK(out.text_from == 9 && !hk.sel.misses && hk.sel.interval == 16 && !hk.sel.typing);
+        } else {
+            TEST_CHECK_(hk.sel.misses == 1 && hk.sel.confirm && !hk.sel.typing, "request 0x%08x: misses %u",
+                        (unsigned)flags[q], hk.sel.misses);
+        }
+    }
+}
+
 TEST_LIST = {
+    {"a_press_reads_a_line_typing_out", a_press_reads_a_line_typing_out},
     {"an SC3 site's charset: read once, kept until the stop; refused, missing, short or no memory: given back",
      sc3_charset_loads_once},
     {"#368's audit: a charset read that timed out is tried again, as an open is; another failed read is not",

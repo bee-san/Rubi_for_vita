@@ -1554,7 +1554,8 @@ static size_t helpers_need(const char *model, size_t block, unsigned helpers)
  * and vjo_hook_select_after may replace its text with an agreeing stream's. With nothing installed
  * a job does none of this. The snapshot is static, in the worker's data pages (never on its stack):
  * one stream's copy, the texts as the job began (HOOK_POOL_BYTES, each at most HOOK_TEXT_CAP) and the
- * candidates; the comparison's scratch, 2,562 B of arrays, is on the stack only while it compares. */
+ * candidates; the comparison's scratch, 2,562 B of arrays in frames of 2,736 B at most (core/hook_select.c), is on
+ * the stack only while it compares. */
 #define HOOK_POOL_BYTES 2048u
 /* A stream's text for the comparison: 512 raw bytes (VJO_HOOK_RAW_BYTES) of double-byte CP932 or 256
  * UTF-16 units whole, as UTF-8 (768 B); a text cut by it or by a full pool compares as what it holds
