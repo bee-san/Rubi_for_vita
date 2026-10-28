@@ -1054,7 +1054,7 @@ def render_app(a):
         have = installed or ("an app from before the version stamps"
                              + (f", eboot.bin {a['eboot_sha256'][:16]}" if a["eboot_sha256"] else ""))
         return (f"  Rubi app: NOT the plugins' (installed: {have}; the plugins came with {plugins}){via}: what the "
-                "app showed and saved (its engine card, Anki page, config.ini values) was another build's; install "
+                "app showed and saved (its Model size card, Anki page, config.ini values) was another build's; install "
                 "ux0:data/Rubi.vpk in VitaShell" + by_path)
     if a["state"] == "not installed" and a.get("source") == "shell":
         return (f"  Rubi app: not installed: the Shell's check at a game start of this boot found neither its "

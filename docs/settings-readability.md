@@ -480,7 +480,7 @@ Up/Down select the size row and the three cards (four rows); on the size row
 Left/Right choose the next smaller or larger size and Enter goes round them; a
 touch on a size chooses it, the row's title, the gaps and the status line only
 focus it. The focus bar at the card's left edge is beside the selected row only.
-The status line names the chosen size's model from its pinned metadata (`settings/engine.c`:
+The status line names the chosen size's model from its pinned metadata (`settings/model_size.c`:
 `Large: most accurate. VOCR6-L found.`, or `VOCR6-L missing. Reinstall the package.`), so the
 generation shown follows the size: VOCR6 for all three of this package's sizes (`Small: fastest. VOCR6-S found.`; a
 size that keeps an earlier generation's model shows that one's, as Small's VOCR5-S did in the test builds v0.9.8-test.4
