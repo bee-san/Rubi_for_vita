@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void vjo_log(const char *fmt, ...); /* the app's log.txt lines (settings/applog.c) */
+#include "applog.h"
 
 #define DATA_DIR "ux0:data/VitaJPOverlay"
 #define QUEUE_DIR VJO_QUEUE_DIR

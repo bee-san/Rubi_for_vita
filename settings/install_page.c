@@ -1,6 +1,6 @@
 #include "install_page.h"
 #include "install.h"
-#include "anki_page.h" /* vjo_log */
+#include "applog.h"
 #include "../include/vjo_api.h"
 #include <psp2/ctrl.h>
 #include <psp2/kernel/cpu.h>

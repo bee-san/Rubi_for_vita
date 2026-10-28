@@ -9,10 +9,8 @@
 #include "../core/history_read.h"
 #include "../core/textfilter.h"
 #include "../core/utf.h"
-
-void vjo_log(const char *fmt, ...); /* the app's log.txt lines (settings/applog.c) */
-
-#define MISSING ((int)0x80010002u) /* ENOENT: nothing recorded yet */
+#include "app_io.h"
+#include "applog.h"
 
 static char window[VJO_LOOKUP_WINDOW + 1];     /* a window, the byte before it first */
 static uint8_t filter_mem[16u * 1024u];        /* a line's filtered copy (a line has at most 4,095 bytes) */
@@ -95,7 +93,7 @@ void vjo_lookup_history_open(int filter)
     stop = size > VJO_LOOKUP_SCAN_MAX ? size - VJO_LOOKUP_SCAN_MAX : 0;
     restart_lines(); /* (want kept: the game chosen, when the file still has it) */
     if (end < 0) {
-        state = (int)end == MISSING ? VJO_LOOKUP_HISTORY_NONE : VJO_LOOKUP_HISTORY_FAILED;
+        state = (int)end == VJO_APP_MISSING ? VJO_LOOKUP_HISTORY_NONE : VJO_LOOKUP_HISTORY_FAILED;
         if (state == VJO_LOOKUP_HISTORY_FAILED)
             vjo_log("look up: %s cannot be read 0x%08X", VJO_LOOKUP_HISTORY_PATH, (unsigned)end);
     }

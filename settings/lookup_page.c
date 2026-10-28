@@ -7,8 +7,9 @@
 #include <string.h>
 #include <vita2d.h>
 
-#include "anki_page.h" /* vjo_log */
+#include "app_io.h" /* VJO_APP_RTC_UNIX_EPOCH */
 #include "app_queue.h"
+#include "applog.h"
 #include "lookup.h"
 #include "lookup_history.h"
 #include "preferences.h"
@@ -505,7 +506,7 @@ static void line_time(uint64_t us, char *out, size_t cap)
     SceDateTime t;
     out[0] = '\0';
     memset(&t, 0, sizeof(t));
-    utc.tick = 62135596800000000ull + us;
+    utc.tick = VJO_APP_RTC_UNIX_EPOCH + us;
     if (us && sceRtcConvertUtcToLocalTime(&utc, &local) >= 0 && sceRtcSetTick(&t, &local) >= 0 && t.year)
         snprintf(out, cap, "%02u-%02u %02u:%02u", t.month, t.day, t.hour, t.minute);
 }

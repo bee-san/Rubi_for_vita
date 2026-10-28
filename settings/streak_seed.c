@@ -8,7 +8,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "anki_page.h" /* vjo_log */
+#include "app_io.h"
+#include "applog.h"
 #include "../core/streak_scan.h"
 
 #define DATA_DIR "ux0:data/VitaJPOverlay"
@@ -16,8 +17,6 @@
 #define STREAK_TEMP STREAK_PATH ".new" /* (not the Shell's .tmp: shell/files.c vjo_file_write) */
 #define HISTORY_PATH DATA_DIR "/history.csv"
 #define STATS_CACHE_PATH DATA_DIR "/stats_cache.bin" /* the Stats tab's (0.9.8's test builds): read by nothing now */
-#define MISSING ((int)0x80010002u)
-#define RTC_UNIX_EPOCH 62135596800000000ull /* SceRtcTick's microseconds from 0001-01-01 to 1970-01-01 */
 #define WINDOW (64 * 1024)                  /* history.csv is read 64 KiB (and the byte before) at a time */
 #define SEED_STACK (16 * 1024)
 
@@ -30,7 +29,8 @@ static int32_t local_offset(void)
 {
     SceRtcTick utc, local;
     int64_t d;
-    if (sceRtcGetCurrentTick(&utc) < 0 || utc.tick < RTC_UNIX_EPOCH || sceRtcConvertUtcToLocalTime(&utc, &local) < 0)
+    if (sceRtcGetCurrentTick(&utc) < 0 || utc.tick < VJO_APP_RTC_UNIX_EPOCH ||
+        sceRtcConvertUtcToLocalTime(&utc, &local) < 0)
         return 0;
     d = (int64_t)(local.tick - utc.tick);
     return (int32_t)((d >= 0 ? d + 30000000 : d - 30000000) / 60000000);
@@ -88,7 +88,7 @@ static int count_history(VjoStreak *s, int32_t tz, uint64_t *bytes)
     int rc = 0;
     *bytes = 0;
     if (fd < 0)
-        return fd == MISSING ? 0 : fd; /* none: nothing read yet (Read text: Only when I press L + R keeps none) */
+        return fd == VJO_APP_MISSING ? 0 : fd; /* none: nothing read yet (Read text: Only when I press L + R keeps none) */
     end = sceIoLseek(fd, 0, SCE_SEEK_END);
     if (end < 0) {
         sceIoClose(fd);

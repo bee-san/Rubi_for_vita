@@ -39,7 +39,7 @@
  * Every answer libvita2d takes and can draw with goes to it unchanged: beside a game nothing
  * changes but one log.txt append, the hand-over's line, in both builds. */
 #include "sysapp_gfx.h"
-#include "anki_page.h" /* vjo_log: log.txt */
+#include "applog.h"
 #include <psp2/gxm.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>

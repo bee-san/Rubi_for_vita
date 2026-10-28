@@ -15,11 +15,10 @@
 #include "../core/local_dict.h"
 #include "../core/sentence_reading.h"
 #include "../core/utf.h"
+#include "app_io.h"
 #include "app_platform.h"
+#include "applog.h"
 
-void vjo_log(const char *fmt, ...); /* the app's log.txt lines (settings/applog.c) */
-
-#define MISSING ((int)0x80010002u) /* ENOENT */
 #define JPEG_MAGIC "\xFF\xD8\xFF"
 
 static int io_fail(const char *call, const char *path, int rc)
@@ -119,9 +118,9 @@ static char *read_file(VjoArena *a, const char *path, size_t max, size_t *len, i
     if (error)
         *error = VJO_E_LOCAL_IO;
     if (fd < 0) {
-        if (error && fd == MISSING)
-            *error = MISSING;
-        if (!(quiet_missing && fd == MISSING))
+        if (error && fd == VJO_APP_MISSING)
+            *error = VJO_APP_MISSING;
+        if (!(quiet_missing && fd == VJO_APP_MISSING))
             io_fail("open", path, fd);
         return NULL;
     }
@@ -189,7 +188,7 @@ static const uint8_t *read_jpeg(VjoArena *a, int archive, const char *hex, size_
             return p;
         if (p)
             vjo_log("anki export: %s: missing JPEG start or end marker", path);
-        else if (error != MISSING && error != VJO_E_PARSE)
+        else if (error != VJO_APP_MISSING && error != VJO_E_PARSE)
             retry = 1;
         vjo_arena_release(a, mark);
     }
@@ -329,30 +328,11 @@ static void word_sort(VjoWord *w, int n, int by_id)
     }
 }
 
-/* The next n bytes of fd into p, read again after a short read: 0, or -1. */
-static int read_all(SceUID fd, void *p, size_t n)
-{
-    size_t done = 0;
-    while (done < n) {
-        int k = sceIoRead(fd, (char *)p + done, (SceSize)(n - done));
-        if (k <= 0)
-            return -1;
-        done += (size_t)k;
-    }
-    return 0;
-}
-
-/* n bytes of p to fd, written again after a short write: 0, or -1 (logged). */
+/* n bytes of p to fd (settings/app_io.h): 0, or -1 (logged, under the words cache's temporary name). */
 static int write_all(SceUID fd, const void *p, size_t n)
 {
-    size_t done = 0;
-    while (done < n) {
-        int k = sceIoWrite(fd, (const char *)p + done, (SceSize)(n - done));
-        if (k <= 0)
-            return io_fail("write", WORDS_TEMP, k);
-        done += (size_t)k;
-    }
-    return 0;
+    int k = 0;
+    return vjo_app_write_all(fd, p, n, &k) < 0 ? io_fail("write", WORDS_TEMP, k) : 0;
 }
 
 /* Entries [at, at + m) of w in the file's form, into buf. */
@@ -380,12 +360,12 @@ static int words_load(VjoArena *a, VjoWord **out)
     const char *why = NULL;
     *out = NULL;
     if (fd < 0) {
-        if (fd != MISSING)
+        if (fd != VJO_APP_MISSING)
             io_fail("open", WORDS_PATH, fd);
         return 0;
     }
     size = sceIoLseek(fd, 0, SCE_SEEK_END);
-    if (size < WORDS_HEAD || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0 || read_all(fd, head, WORDS_HEAD) < 0 ||
+    if (size < WORDS_HEAD || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0 || vjo_app_read_exact(fd, head, WORDS_HEAD) < 0 ||
         memcmp(head, WORDS_MAGIC, 8))
         why = "not a cache of this build's";
     else if ((n = (uint32_t)be_get(head + 8, 4), (uint64_t)size != WORDS_HEAD + (uint64_t)n * WORDS_ENTRY))
@@ -397,7 +377,7 @@ static int words_load(VjoArena *a, VjoWord **out)
     }
     for (uint32_t done = 0; !why && done < n;) {
         uint32_t k = n - done < WORDS_CHUNK ? n - done : WORDS_CHUNK;
-        if (read_all(fd, buf, (size_t)k * WORDS_ENTRY) < 0) {
+        if (vjo_app_read_exact(fd, buf, (size_t)k * WORDS_ENTRY) < 0) {
             why = "a read failed";
             break;
         }
@@ -793,7 +773,7 @@ static int known_save(const uint64_t *k, int n)
 static SceUID known_open(void)
 {
     SceUID fd = sceIoOpen(VJO_KNOWN_INDEX, SCE_O_RDONLY, 0);
-    return fd == MISSING ? sceIoOpen(KNOWN_BACKUP, SCE_O_RDONLY, 0) : fd;
+    return fd == VJO_APP_MISSING ? sceIoOpen(KNOWN_BACKUP, SCE_O_RDONLY, 0) : fd;
 }
 
 typedef struct {
@@ -831,7 +811,7 @@ int vjo_known_import(VjoArena *a, const VjoExportUi *ui, VjoKnownResult *r, char
     memset(r, 0, sizeof(*r));
     msg[0] = '\0';
     if ((fd = sceIoOpen(VJO_KNOWN_PATH, SCE_O_RDONLY, 0)) < 0) {
-        if (fd != MISSING) {
+        if (fd != VJO_APP_MISSING) {
             io_fail("open", VJO_KNOWN_PATH, fd);
             snprintf(msg, cap, "Cannot read known_words.txt (see log.txt). The known words are as they were.");
             return r->rc = VJO_E_LOCAL_IO;
@@ -926,7 +906,7 @@ static int known_head(SceUID fd, uint8_t head[16])
 {
     SceOff size = sceIoLseek(fd, 0, SCE_SEEK_END);
     uint32_t n;
-    if (size < 16 || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0 || read_all(fd, head, 16) < 0 || memcmp(head, KNOWN_MAGIC, 8))
+    if (size < 16 || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0 || vjo_app_read_exact(fd, head, 16) < 0 || memcmp(head, KNOWN_MAGIC, 8))
         return -1;
     n = (uint32_t)be_get(head + 8, 4);
     return n <= VJO_KNOWN_MAX && (uint64_t)size == 16 + (uint64_t)n * 8 ? (int)n : -1;
@@ -945,7 +925,7 @@ int vjo_known_count(void)
     n = known_head(fd, head);
     for (int i = 0; n > 0 && i < n;) {
         int m = n - i < (int)(sizeof(buf) / 8) ? n - i : (int)(sizeof(buf) / 8);
-        if (read_all(fd, buf, (size_t)m * 8) < 0) {
+        if (vjo_app_read_exact(fd, buf, (size_t)m * 8) < 0) {
             n = -1;
             break;
         }
@@ -973,9 +953,9 @@ static int known_load(VjoArena *a, uint64_t **out)
     int n, rc = 0;
     *out = NULL;
     if (fd < 0) {
-        if (fd != MISSING)
+        if (fd != VJO_APP_MISSING)
             io_fail("open", VJO_KNOWN_INDEX, fd);
-        return fd == MISSING ? 0 : -1;
+        return fd == VJO_APP_MISSING ? 0 : -1;
     }
     if ((n = known_head(fd, head)) < 0)
         rc = -1;
@@ -983,7 +963,7 @@ static int known_load(VjoArena *a, uint64_t **out)
         rc = -2;
     for (int i = 0; !rc && i < n;) {
         int m = n - i < (int)(sizeof(buf) / 8) ? n - i : (int)(sizeof(buf) / 8);
-        if (read_all(fd, buf, (size_t)m * 8) < 0) {
+        if (vjo_app_read_exact(fd, buf, (size_t)m * 8) < 0) {
             rc = -1;
             break;
         }
@@ -1482,7 +1462,7 @@ static int present(const char *path)
     int rc;
     memset(&st, 0, sizeof(st));
     rc = sceIoGetstat(path, &st);
-    return rc >= 0 ? 1 : rc == MISSING ? 0 : -1;
+    return rc >= 0 ? 1 : rc == VJO_APP_MISSING ? 0 : -1;
 }
 
 /* Some record may name this ID: queued, exported (a card's JPEG copy can stay beside its archived
@@ -1677,8 +1657,8 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
     memset(&t, 0, sizeof(t));
     sceRtcGetCurrentClockLocalTime(&t);
     memset(&clock, 0, sizeof(clock));
-    clock.now = sceRtcGetCurrentTick(&tick) >= 0 && tick.tick > 62135596800000000ull
-                    ? (int64_t)((tick.tick - 62135596800000000ull) / 1000000u)
+    clock.now = sceRtcGetCurrentTick(&tick) >= 0 && tick.tick > VJO_APP_RTC_UNIX_EPOCH
+                    ? (int64_t)((tick.tick - VJO_APP_RTC_UNIX_EPOCH) / 1000000u)
                     : 0;
     clock.year = t.year;
     clock.month = t.month;
