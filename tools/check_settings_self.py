@@ -34,7 +34,8 @@ import json
 from pathlib import Path
 import struct
 import sys
-import zlib
+
+import vita_self  # tools/vita_self.py: the SELF's headers, control infos and segments
 
 ATTRIBUTE = 0x0E              # a system application (vita/CMakeLists.txt ATTRIBUTE)
 BUDGET_KIB = 0xC800           # 50 MiB (MEMSIZE)
@@ -82,48 +83,17 @@ def unpack(fmt, data, offset, what):
 
 def read_self(data):
     """The SELF's control info 6, its process parameters' two thread values, its segments' sizes."""
-    require(data[:4] == b"SCE\0", "not a SELF (no SCE header)")
-    elf_offset, phdr_offset = unpack("<QQ", data, 0x40, "SCE header")
-    seginfo_offset, = unpack("<Q", data, 0x58, "SCE header")
-    control_offset, control_size = unpack("<QQ", data, 0x68, "SCE header")
-    control, offset = {}, control_offset
-    while offset < control_offset + control_size:
-        kind, size, more, _ = unpack("<4I", data, offset, "control info")
-        require(16 <= size and offset + size <= control_offset + control_size,
-                f"control info at 0x{offset:x}: size {size}")
-        control[kind] = data[offset + 16:offset + size]
-        offset += size
-        if not more:
-            break
-    require(6 in control and len(control[6]) >= 16, "no control info 6 (the boot parameters)")
-    is_used, attribute, phycont_kib, total_kib = struct.unpack_from("<4I", control[6], 0)
-
-    require(data[elf_offset:elf_offset + 6] == b"\x7fELF\x01\x01", "no little-endian ELF32 header in the SELF")
-    entry, = unpack("<I", data, elf_offset + 24, "ELF header")
-    phentsize, phnum = unpack("<HH", data, elf_offset + 42, "ELF header")
-    require(phentsize == 32 and 1 <= phnum <= 16, "bad program headers")
-    segments = []
-    for index in range(phnum):
-        kind, _, vaddr, _, filesz, memsz, _, _ = unpack("<8I", data, phdr_offset + 32 * index, "program header")
-        offset, length, compression, encryption = unpack("<4Q", data, seginfo_offset + 32 * index, "segment info")
-        require(encryption == 2, f"segment {index} is encrypted")
-        require(compression in (1, 2), f"segment {index}: compression {compression}")
-        require(offset + length <= len(data), f"segment {index} runs past the SELF's end")
-        blob = data[offset:offset + length]
-        if compression == 2:
-            try:
-                blob = zlib.decompressobj().decompress(blob)  # vita-make-fself pads after the stream
-            except zlib.error as error:
-                raise Invalid(f"segment {index}: {error}") from None
-        else:
-            blob = blob[:filesz]
-        require(len(blob) == filesz, f"segment {index}: {len(blob)} bytes, the program header says {filesz}")
-        segments.append((kind, vaddr, memsz, blob))
-
-    loaded = [s for s in segments if s[0] == 1]
-    seg, at = entry >> 30, entry & 0x3FFFFFFF
-    require(seg < len(segments) and segments[seg][0] == 1, "e_entry names no loaded segment (no module info)")
-    blob = segments[seg][3]
+    try:
+        sce = vita_self.read(data)
+    except vita_self.Invalid as error:
+        raise Invalid(str(error)) from None
+    require(6 in sce.control and len(sce.control[6]) >= 16, "no control info 6 (the boot parameters)")
+    is_used, attribute, phycont_kib, total_kib = struct.unpack_from("<4I", sce.control[6], 0)
+    loaded = [s for s in sce.segments if s.kind == vita_self.PT_LOAD]
+    seg, at = sce.entry >> 30, sce.entry & 0x3FFFFFFF
+    require(seg < len(sce.segments) and sce.segments[seg].kind == vita_self.PT_LOAD,
+            "e_entry names no loaded segment (no module info)")
+    blob = sce.segments[seg].data
     size, magic, version = unpack("<I4sI", blob, at + MODULE_INFO_SIZE, "process parameters")
     require(magic == b"PSP2" and (size, version) in ((0x34, 6), (0x30, 5)),
             "no process parameters after the module info")
@@ -132,16 +102,16 @@ def read_self(data):
     def value(pointer, symbol):
         require(pointer, f"the process parameters have no {symbol}: vita-elf-create found no such symbol "
                          "(settings/sysapp.c, the link's --undefined)")
-        for _, vaddr, memsz, image in loaded:
-            if vaddr <= pointer and pointer + 4 <= vaddr + memsz:
-                where = pointer - vaddr
-                return struct.unpack_from("<I", image, where)[0] if where + 4 <= len(image) else 0
+        for s in loaded:
+            if s.vaddr <= pointer and pointer + 4 <= s.vaddr + s.memsz:
+                where = pointer - s.vaddr
+                return struct.unpack_from("<I", s.data, where)[0] if where + 4 <= len(s.data) else 0
         raise Invalid(f"{symbol}: pointer 0x{pointer:08x} is outside the SELF's segments")
 
     return {"is_used": is_used, "attribute": attribute, "phycont_kib": phycont_kib, "total_kib": total_kib,
             "priority": value(words[5], "sceUserMainThreadPriority"),
             "cpu_mask": value(words[10], "sceUserMainThreadCpuAffinityMask"),
-            "segments": sum(s[2] for s in loaded)}
+            "segments": sum(s.memsz for s in loaded)}
 
 
 def read_elf(data):
