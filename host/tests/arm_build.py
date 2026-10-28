@@ -69,8 +69,11 @@ def main(argv=None):
     plans = {}
     for name in a.tests:
         prog = tests.get(name, [None])[0]
-        if not prog or Path(prog).parent != cfg:
-            sys.exit(f"{tag} {name}: not a test that runs one of this build's programs")
+        if not prog:
+            sys.exit(f"{tag} {name}: the host build (CMakeLists.txt) has no test of that name: take it out of "
+                     "tools/arm_host_tests.sh's TESTS when the suite is gone, or name it as ctest does")
+        if Path(prog).parent != cfg:
+            sys.exit(f"{tag} {name}: its test runs {prog}, not one of the host build's programs")
         target = Path(prog).name
         link = shlex.split((cfg / "CMakeFiles" / f"{target}.dir" / "link.txt").read_text())
         i = link.index("-o")
