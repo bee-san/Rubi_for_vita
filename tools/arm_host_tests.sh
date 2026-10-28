@@ -4,9 +4,10 @@
 # ARM toolchain and run under qemu-arm user mode. The x86_64 host suites
 # cannot see 32-bit width or ARM atomics bugs; this lane can. It is not a
 # Vita: no firmware, no SceShell, no taiHEN, no memory budgets
-# (docs/offline-testing.md). Suites that need the vocr runtime, BearSSL or
-# the full core library are left to the host job and to vita-vn-ocr's own
-# ARM parity lane.
+# (docs/offline-testing.md). The suites are the host build's own, chosen by
+# name (TESTS below): host/tests/arm_build.py builds each from the host
+# CMakeLists.txt's configuration, its units' compile lines and its link line,
+# with the ARM compiler, so the two lanes cannot list different sources.
 #
 #   ARM_CC=arm-linux-gnueabihf-gcc QEMU=qemu-arm-static tools/arm_host_tests.sh [build-dir]
 #
@@ -34,7 +35,7 @@
 #
 # Ubuntu: apt-get install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 # qemu-user-static (the cross gcc alone has no ARM libc headers or static
-# libc). The defaults below are those package names; the fleet box sets both
+# libc), and CMake and a host C/C++ compiler for the configuration. The defaults below are those package names; the fleet box sets both
 # variables to its own toolchain, which bundles a sysroot. With
 # VJO_VOCR_SOURCE_DIR the cross gcc must be GCC 14 or later: the pinned
 # runtime's NEON kernels (vita-vn-ocr #85) use vld1q_*_x2, which the 32-bit
@@ -49,10 +50,6 @@ OUT=${1:-build/arm-tests}
 mkdir -p "$OUT"
 # VJO_DEBUG=0: the normal build's suites (docs/release-variants.md); the default, 1, the debug build's.
 VJO_DEBUG=${VJO_DEBUG:-1}
-# -D_FILE_OFFSET_BITS=64: a 32-bit readdir() or stat() fails with EOVERFLOW on a file system whose
-# directory cookies or inode numbers pass 2^32 (XFS: the taicfg fixtures' readdir under qemu-arm)
-FLAGS=(-O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wno-unused-parameter
-       -I third_party/acutest/include -I host/tests/vita_stubs -I core -I include -DVJO_HOST=1 -DVJO_DEBUG="$VJO_DEBUG")
 QEMU_ARGS=(-cpu cortex-a9)
 # qemu-arm needs the dynamic loader's directory only for dynamic binaries;
 # everything here is static.
@@ -94,154 +91,32 @@ steps_done() { # every step bg started, its log printed in order; 1 if any faile
   STEPS=()
   return $failed
 }
-compile() { # compile NAME SOURCES...: one suite for the A9 (the compiler's status)
-  local name=$1; shift
-  "$ARM_CC" "${FLAGS[@]}" -o "$OUT/$name" "$@" || return
-  file "$OUT/$name" 2>/dev/null | sed -E 's/, (BuildID|for GNU|with debug_info|not stripped).*//' || true
-}
-build() { bg "build-$1" compile "$@"; } # build NAME SOURCES...
-
-build boot_guard host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c
-build ledger host/tests/test_ledger.c core/ledger.c
-build fbgrey host/tests/test_fbgrey.c
-build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c core/region_select.c
-build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
-# #104: the process event hook's input release (LDREX/STREX exchange) and the page's touch hold.
-build kernel_lifecycle host/tests/test_kernel_lifecycle.c kernel/foreground.c
-build touch_hold host/tests/test_touch_hold.c
-build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
-# #138: the worker loader's question to the kernel worker (a 32-bit seqlock and
-# tagged answer) and the Shell's games.ini rules, on the Vita's word size.
-build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c vita/games_storage.c core/games.c \
-  core/arena.c kernel/ledger.c core/ledger.c
-# the self-test's memory routes: the debug build's only
-[ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
-build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
-# #358: the box suggested on first use (core/region_suggest.c: its 32-bit normalization, the kana count's UTF-8)
-build region_suggest host/tests/test_region_suggest.c core/region_suggest.c core/regions.c core/arena.c
-# API 31: the kernel's text source (its word and the loader's process table, their atomics) and the Shell's
-# triangle cycle and label, the Rubi app's Games tag (Rubi's own entries; Luna's table where
-# hooks/luna-port's file is in the tree).
-build kernel_text_source host/tests/test_kernel_text_source.c
-build hook_pick host/tests/test_hook_pick.c core/hook_pick.c
-if [ -f core/hook_luna.c ]; then
-  build hook_titles -DVJO_HOOK_LUNA=1 host/tests/test_hook_titles.c core/hook_titles.c core/hook_place.c core/hook_luna.c \
-    core/hook_re.c core/hook_text.c
-else
-  build hook_titles host/tests/test_hook_titles.c core/hook_titles.c core/hook_place.c
-fi
-# API 32: the Anki screenshot's black bars (core/shottrim.c, the game worker's): 32-bit size_t and offsets.
-build shot_trim host/tests/test_shot_trim.c core/shottrim.c
-# The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
-build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
-# The recognized text's lines as one running text (core/textjoin.h): byte offsets, 32-bit size_t.
-build text_join host/tests/test_textjoin.c core/textjoin.c core/utf.c
-# Where the overlay's own wrapping may break a line (core/linebreak.h).
-build linebreak host/tests/test_linebreak.c core/linebreak.c core/utf.c
-# Native hooks: which text a job shows (core/hook_select.h), as the game worker runs it on the A9.
-build hook_select host/tests/test_hook_select.c core/hook_select.c
-# Persisted learning has a fixed byte layout, independent of pointer/size_t width.
-build hook_cache host/tests/test_hook_cache.c core/hook_cache.c
-# Line history (docs/line-history.md): history.csv's records read back from a window, 32-bit size_t.
-build history_lines host/tests/test_history_lines.c core/history_lines.c core/textfilter.c core/utf.c core/arena.c \
-  core/text_rows.c
-# The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
-build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
-# The Rubi app's history.csv reader (core/history_read.c) against the Shell's, on random files: 32-bit size_t,
-# the Vita's unsigned char.
-build history_read host/tests/test_history_read.c core/history_read.c core/history_lines.c core/textfilter.c core/utf.c \
-  core/arena.c core/text_rows.c
-# The Rubi app's Stats tab counts (core/stats.c, #312): 32-bit size_t in its windows, its cache's layout and the
-# Shell's count it equals, on the Vita's CPU.
-build stats -DVJO_FIXTURES="\"$PWD/host/fixtures\"" host/tests/test_stats.c core/stats.c core/history_read.c \
-  core/history_lines.c core/textfilter.c core/utf.c core/arena.c core/text_rows.c
-# The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
-build cursor_nav host/tests/test_cursor_nav.c core/text_rows.c core/text_hit.c core/utf.c
-# The Rubi app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
-build settings_layout host/tests/test_settings_layout.c settings/text_layout.c core/linebreak.c settings/icons.c settings/letter.c core/utf.c
-# taiHEN's own parser (third_party/taihen-parser, built as taiHEN builds it), the config.txt editor's check
-TP=(-I third_party/taihen-parser/include third_party/taihen-parser/src/lexer.c third_party/taihen-parser/src/parser.c)
-build psp -DNO_CTYPE -DNO_STRING host/tests/test_psp.c core/pspbubble.c core/psptarget.c core/taicfg.c core/games.c core/sfo.c "${TP[@]}"
-# The one-VPK install's config.txt editor (core/taicfg.c) on its fixtures and corpus, on the Vita's word size.
-build taicfg -DNO_CTYPE -DNO_STRING -DVJO_SOURCE_DIR="\"$PWD\"" host/tests/test_taicfg.c core/taicfg.c "${TP[@]}"
-# The Shell's logger (shell/log_vita.c) on an in-memory file system: batched appends, 32-bit sizes.
-# Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
-bg build-shell_log "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
-# The reading history's writer (shell/history.c) and its characters column (core/reading_chars.h) on
-# the Vita's word size: 32-bit size_t, the append offsets past 4 GiB; the reading time on its timelines
-# (host/fixtures/reading_time).
-build shell_history -DVJO_FIXTURES="\"$PWD/host/fixtures\"" host/tests/test_shell_history.c core/utf.c \
-  core/text_rows.c core/textnorm.c core/history_lines.c core/arena.c core/textfilter.c
-
-# The Shell's integer division (shell/divide.c), here the program's own (it replaces libgcc's in the link,
-# as in the Vita Shell): on the Vita's CPU, with CLZ and Thumb-2.
-build shell_divide host/tests/test_shell_divide.c
-
-# The Rubi app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
-# picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.
-BS=third_party/bearssl/src
-APKG=(host/tests/test_apkg.c settings/app_queue.c settings/cards.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c
-      core/textjoin.c core/anki_queue.c core/json.c
-      core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c core/word_key.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
-      "$BS/codec/dec32be.c" "$BS/codec/enc32be.c" core/sentence_reading.c core/local_dict.c settings/app_platform.c
-      core/config.c core/games.c) # (#311's readings test makes a VjoConfig; config.c reads games.c's finder names)
-build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
-# The native hooks (core/hook_text.c, hook_re.c, hook_luna.c): the decoders, the regex VM's 16-bit
-# positions and 32-bit longs, LunaTranslator's table and its ports on the Vita's word size.
-build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c core/utf.c core/text_rows.c "$BS/hash/sha2small.c" \
-  "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
-build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c core/textnorm.c
-# The debug build's PSP probe (core/psp_probe.c): its reads' bounds in 32-bit arithmetic.
-build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
-# The hook engine (game_ocr/hooks.c, audit-hooks F4): its game addresses are 32-bit, as here. Its own stubs
-# (taiHEN, modulemgr, io: host/tests/hooks_stubs, then game_stubs) instead of vita_stubs.
-bg build-hooks_engine "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
-  -I third_party/acutest/include -I host/tests -I host/tests/hooks_stubs -I host/tests/game_stubs -DVJO_HOST=1 \
-  -I third_party/bearssl/inc -I "$BS" \
-  -DVJO_DEBUG="$VJO_DEBUG" -DVJO_SOURCE_DIR="\"$PWD\"" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c \
-  core/hook_place.c core/hook_stream.c core/hook_luna.c core/hook_re.c core/hook_text.c core/hook_sc3.c core/sfo.c \
-  "$BS/hash/sha2small.c" "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
-# MAGES' SC3 text (core/hook_sc3.c): the span and the decoder in 32-bit arithmetic, on the committed charsets.
-build hook_sc3 -I host/tests -I third_party/bearssl/inc -I "$BS" -DVJO_SOURCE_DIR="\"$PWD\"" \
-  host/tests/test_hook_sc3.c core/hook_sc3.c core/hook_place.c core/hook_luna.c core/hook_re.c core/hook_text.c \
-  "$BS/hash/sha2small.c" "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
-# #366: the CALL slots' replacement, one interleaving at a time (its seams), with the A9's atomics and its clock's
-# serial order in 32-bit arithmetic.
-build hook_stream_seams host/tests/test_hook_stream_seams.c core/hook_place.c
-
+# The suites (ctest's names). Their programs are the host build's: the host CMakeLists.txt configured here (not built),
+# each unit compiled with its own compile line for the A9 and each program linked as the host links it
+# (host/tests/arm_build.py), so a source added to a suite there is in its ARM program too.
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select
        region_suggest)
-[ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak history_lines history_read stats hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
+[ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo) # the self-test's memory routes: the debug build's only
+TESTS+=(touch_hold text_rows text_join linebreak history_lines history_read stats hook_select hook_cache stick_cursor
+        cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
+CMAKE_VOCR=(-DVJO_WITH_VOCR=OFF)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
-  RT=$VJO_VOCR_SOURCE_DIR/runtime
-  # API 54: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT); core/vocr_ocr.c
-  # links it. VJO_VOCR_SPOT_SOURCE_DIR, else the recognizer's checkout when it holds it.
-  SPOT_RT=${VJO_VOCR_SPOT_SOURCE_DIR:-$VJO_VOCR_SOURCE_DIR}/runtime
-  MODEL_DEF=()
-  [ -n "${VJO_VOCR_MODEL_DIR:-}" ] && MODEL_DEF=(-DVJO_VOCR_MODEL_DIR="\"$VJO_VOCR_MODEL_DIR\"")
-  capture_parity() {
-    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c &&
-    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_capture.o" kernel/capture.c &&
-    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_scene.o" kernel/scene.c &&
-    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_suggest.o" core/region_suggest.c && # #358: the kana count (VJO_HOST)
-    "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
-      "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I "$SPOT_RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
-      -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
-      "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$OUT/parity_suggest.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
-      "$RT/vocr_lines_rows.c" "$RT/vocr_lines_fix.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
-      "$RT/vocr_vertical.c" "$SPOT_RT/vocr_textspot6.c" \
-      third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
-      third_party/bearssl/src/codec/enc32be.c -lm
-  }
-  bg build-capture_parity capture_parity
+  # API 54: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT): VJO_VOCR_SPOT_SOURCE_DIR,
+  # else the recognizer's checkout when it holds it
+  CMAKE_VOCR=(-DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" -DVJO_VOCR_SPOT_SOURCE_DIR="${VJO_VOCR_SPOT_SOURCE_DIR:-$VJO_VOCR_SOURCE_DIR}")
+  [ -z "${VJO_VOCR_MODEL_DIR:-}" ] || CMAKE_VOCR+=(-DVJO_VOCR_MODEL_DIR="$VJO_VOCR_MODEL_DIR")
   TESTS+=(capture_parity)
 fi
-
-bg build-apkg_host "${HOST_CC:-cc}" -O2 -Wall -Wextra -Wno-unused-parameter -I third_party/acutest/include -I host/tests/vita_stubs -I core \
-  -I include -I third_party/bearssl/inc -I "$BS" -DVJO_HOST=1 -o "$OUT/apkg_host" "${APKG[@]}"
+CONFIG=$OUT/host-config
+cmake -S . -B "$CONFIG" -G "Unix Makefiles" -DVJO_DEBUG="$([ "$VJO_DEBUG" = 0 ] && echo OFF || echo ON)" "${CMAKE_VOCR[@]}" \
+  > "$OUT/host-config.log" 2>&1 || { cat "$OUT/host-config.log"; echo "arm: the host build's configuration FAILED"; exit 1; }
+bg build-suites python3 host/tests/arm_build.py "$CONFIG" "$OUT" --cc "$ARM_CC" --jobs "$ARM_JOBS" "${TESTS[@]}"
+steps_done build || exit 1
+# then this machine's copies of what the A9's must equal: the Rubi app's .apkg export from the same lines (HOST_CC),
+# and the dictionary lookup
+bg build-apkg_host python3 host/tests/arm_build.py "$CONFIG" "$OUT/host" --cc "${HOST_CC:-cc}" --native --jobs "$ARM_JOBS" apkg
 if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
   WL=(host/tests/word_lookup_parity.c core/local_dict.c core/textjoin.c core/utf.c core/arena.c)
   WL_FLAGS=(-O2 -std=gnu99 -Wall -Wextra -Wno-unused-parameter -D_FILE_OFFSET_BITS=64 -I core -I include -DVJO_HOST=1)
@@ -256,7 +131,7 @@ steps_done build || exit 1
 apkg_write() {
   rm -rf "$OUT/apkg.arm" "$OUT/apkg.host" && mkdir -p "$OUT/apkg.arm" "$OUT/apkg.host"
   if TMPDIR=$(tmp_of apkg_write) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/apkg" --write "$OUT/apkg.arm" > "$OUT/apkg_write.log" 2>&1 &&
-     TMPDIR=$(tmp_of apkg_write) "$OUT/apkg_host" --write "$OUT/apkg.host" >> "$OUT/apkg_write.log" 2>&1 &&
+     TMPDIR=$(tmp_of apkg_write) "$OUT/host/apkg" --write "$OUT/apkg.host" >> "$OUT/apkg_write.log" 2>&1 &&
      diff -r "$OUT/apkg.arm" "$OUT/apkg.host" > /dev/null; then
     echo "arm apkg packages: $(ls "$OUT/apkg.arm" | grep -c '\.apkg$') .apkg files, identical to the host's"
   else
