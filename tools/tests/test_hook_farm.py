@@ -112,6 +112,13 @@ class HookFarm(unittest.TestCase):
                            "length": {"offset": 20, "width": 4, "scale": 2, "unit": "bytes"}})
         self.assertEqual(hook_farm.farm_site(rec)[2:9], (1, 4, 0x819DBFF0, "VJO_HOOK_ENC_CP932",
                                                          "VJO_PLACE_READ_CELLS", 20, 32))
+        # PCSG00769's page-build record (psandvita #1): its count at +0x20, its cells from +0x2E
+        rec = dict(RECORD_628, title="PCSG00769", register=6, padding=0, segment0_offset="0x31306",
+                   reader={"schema": "vn-hook-reader/1", "encoding": "cp932", "data_offset": 46,
+                           "length": {"offset": 32, "width": 4, "scale": 2, "unit": "bytes"}})
+        self.assertEqual(hook_farm.farm_site(rec)[2:9], (1, 6, 0, "VJO_HOOK_ENC_CP932", "VJO_PLACE_READ_CELLS_B", 32, 46))
+        with self.assertRaises(SystemExit):  # a layout neither read has
+            hook_farm.farm_site(dict(rec, reader=dict(rec["reader"], data_offset=44)))
         rec = dict(RECORD_628, reader={"schema": "vn-hook-reader/1", "pointer_offsets": [0]})
         self.assertEqual(hook_farm.farm_site(rec)[2:7], (1, 5, 0, "VJO_HOOK_ENC_CP932", "VJO_PLACE_READ_DEREF"))
         # a record that says to check its mode by disassembly: the mode decided from exactly its bytes, else a stop

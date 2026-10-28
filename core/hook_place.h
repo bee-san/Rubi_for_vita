@@ -87,8 +87,8 @@ typedef struct {
      * clean-up still runs first). */
     uint8_t filter;
     /* How the text is read at the register's value + padding (VJO_PLACE_READ_*): the string there, through a
-     * 32-bit pointer there (one more read, as Luna's DATA_INDIRECT), a page record of 16-bit cells, or an SC3
-     * string through its end token. */
+     * 32-bit pointer there (one more read, as Luna's DATA_INDIRECT), a page record of 16-bit cells (one of two
+     * layouts), or an SC3 string through its end token. */
     uint8_t read;
     /* The game version the entry was proven in, its param.sfo APP_VER as game_ocr/hooks.c reads it ("01.00" ->
      * 0x0100): another version refuses the entry; an APP_VER that cannot be read leaves it to the module NID and
@@ -112,6 +112,22 @@ typedef struct {
  * past the 0x00 bytes it holds (line breaks, glyphs' low bytes), at most VJO_HOOK_RAW_BYTES and none past the memory
  * block; a string whose end is not among them gives no text (vjo_sc3_span). */
 #define VJO_PLACE_READ_SC3 3u
+/* The same cells in Nippon Ichi's foaf4 page-build record (PCSG00769's, which the engine copies to the page it shows):
+ * its 32-bit count at + VJO_PLACE_CELLS_B_COUNT, the cells from + VJO_PLACE_CELLS_B_DATA, read as
+ * VJO_PLACE_READ_CELLS reads its record's. */
+#define VJO_PLACE_READ_CELLS_B 4u
+#define VJO_PLACE_CELLS_B_COUNT 0x20u
+#define VJO_PLACE_CELLS_B_DATA 0x2Eu
+
+/* A read of cells (VJO_PLACE_READ_CELLS or VJO_PLACE_READ_CELLS_B): 1 and its record's count and cells offsets in
+ * *count and *data; else 0. */
+static inline int vjo_place_cells_layout(unsigned read, uint32_t *count, uint32_t *data)
+{
+    if (read != VJO_PLACE_READ_CELLS && read != VJO_PLACE_READ_CELLS_B) return 0;
+    *count = read == VJO_PLACE_READ_CELLS ? VJO_PLACE_CELLS_COUNT : VJO_PLACE_CELLS_B_COUNT;
+    *data = read == VJO_PLACE_READ_CELLS ? VJO_PLACE_CELLS_DATA : VJO_PLACE_CELLS_B_DATA;
+    return 1;
+}
 
 /* The CP932 bytes of n cells at p, in place (they never grow): each cell's low byte, then its high byte
  * unless 0; a cell whose low byte is 0 ends the text. Returns the bytes. */

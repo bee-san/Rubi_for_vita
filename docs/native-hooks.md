@@ -198,6 +198,21 @@ Two lists name them:
       (Luna's at its address, FPCSG00852, drops the `^` the game draws as a line break: 19 of the 22 farm pages hold
       one); 22 farm pages (2026-10-27)
 
+  - LunaTranslator sites that the placement check accepts (a function's entry, its patch on the allow-list), which the
+    psandvita farm's hook farm proved at the same address and register (psandvita #1; proven in Vita3K only): the entry
+    pins the game's bytes and `APP_VER` there, and gives the text Rubi's filter in place of Luna's, whose text is not
+    what the game draws. Where the bytes differ (another build, or for PCSG00766's `movw`/`movt` an eboot loaded
+    elsewhere than 0x81000000) the entry is refused as `signature` and Luna's site is tried as before:
+    - PCSG00766 ニル・アドミラリの天秤 帝都幻惑綺譚, NID 0x35A8C840, +0x6F862, Thumb, r0, CP932, filter `RF_PCSG00766`
+      (Luna's, PCSG00766, drops every `#n` and leaves the speaker glued to the line: 3 of the 31 farm pages as drawn);
+      the entry of IF:Lib GAME-ENGINE 3.00's message-tag parser, the page after the `#Name` expander; patch (12 bytes):
+      `push.w {r4-r11, lr}; sub sp, #0xc; movw r1, #0x2294; movt r1, #0x811c`; 31 farm pages
+    - PCSG01282 死神と少女, NID 0xFB4D2C38, +0xB00E, Thumb, r1, CP932, filter `RF_PCSG01282` (Luna's, FPCSG01282, turns
+      runs of line feeds into a space and drops a trailing digit, so the two-character codes the site's text holds pass
+      it: the popup kept each `\d`, 12 of the 16 single-hit farm pages as drawn and none of the 14 NVL pages); the entry
+      of Takuyo's SCR message layout function (one hit a click); patch (12 bytes): `push.w {r4-r11, lr}; vpush {s16,
+      s17}; sub sp, #0xe4; strd r1, r0, [sp, #0x48]`; 31 farm pages
+
   - Other engines from the psandvita Vita3K farm, Rubi's own sites (proven in Vita3K only; patched bytes checked as above):
     - PCSG00450 キャプテン・アース Mind Labyrinth, NID 0x28CB1B14, +0x6AB56, Thumb, r1 + 32 (deref), UTF-16LE, filter `RF_PCSG00450`; 78 farm pages
     - PCSG00509 POSSESSION MAGENTA, NID 0xA11A6741, +0x12C76, Thumb, r0, CP932, filter `RF_PCSG00509`; 1299 farm pages
@@ -230,6 +245,31 @@ Two lists name them:
       (one hit a message, the speaker's `【name】` in it as drawn; its `\x03`, a reveal pause, and `\x01`, the click wait
       that ends a message, are controls `vjo_hook_clean` drops), and スキとスキとでサンカク恋愛 ENTERGRAM's `text` command
       (its argument, one hit a page; the speaker's `【name】` is the `name` command, not hooked).
+    - From the hook farm's runs of 2026-10-26/27 (psandvita #1). The first three are the farm's relocations (runs
+      `paired-vita-<title>-reloc-20261027`) of a verified hook whose patch held a branch or was decoded in the wrong
+      mode, to a site whose 8 patched bytes its export checked on the dumped segment 0 (no branch, PC use or IT, and
+      no branch in segment 0 into them; `scripts/rubi_export.py --report` said EXPORT):
+      - PCSG00139 フォトカノ Kiss, NID 0x1695A771 (`GMV_Rom`), +0x1608D4, Thumb, r4, CP932, filter none; 105 farm pages.
+        Dingo's message-window setter, right after it copies the final page to its window (the player's name already
+        in it, one hit a page; the speaker's name is another hit, which no entry hooks). The farm's first site,
+        0x81160986 r2, is a `bl`. Patch: `ldrsb.w lr, [r7, #0x61c]; cmp.w lr, #0x31`. Luna's 0x81161B0E for the title
+        is another site (the script opcode's copy before the name's substitution).
+      - PCSG00370 デュラララ!! 3way standoff -alley- V, NID 0x89BB8C3B (`drrr_ap`), +0x4FBD8, Thumb, r3, CP932, filter
+        `RF_PCSG00370`; 101 farm pages. The message opcode's fall-through after its `cbz` (r3 is the page, copied
+        from r0 at Luna's 0x80053BD0, whose patch holds that `cbz`; one hit a page). Patch: `ldr r1, [r0]; adds r2,
+        r5, #0; ldr.w r7, [r1, #0x26c]`.
+      - PCSG01127 千の刃濤、桃花染の皇姫, NID 0x6AB76A0D (`Artemis`), +0x18ED10, ARM, r6, UTF-8, filter none; 100 farm
+        pages (38 in its first run). The Artemis engine's `print` tag handler, an ARM eboot (the farm's first export read
+        the bytes as Thumb): r6 is the tag's text chunk before `addText`. A narration page is one hit; a spoken page
+        is its `【name】`, then its body, cut at each ruby word, whose base is another call (`addRuby`, which no entry
+        hooks), so the popup shows the page's last chunk. Patch: `ldr r0, [r1, #0x58]; mov r1, r6`. Luna's 0x802D44D4
+        for the title is no text code in this build (the farm's notes).
+      - PCSG00769 逢魔が刻～かくりよの縁～, NID 0xD597D1CA (`foaf4_PSVita_Release_Packa`), +0x31306, Thumb, r6, the cells
+        of foaf4's page-build record (`VJO_PLACE_READ_CELLS_B`), CP932, filter `RF_PCSG00769`; 37 farm pages. The
+        engine's page commit, after its busy check (r6 the record, a static; one hit a page). Patch (12 bytes): `ldr
+        r0, [r6, #0x8]; str.w r0, [r4, #0xee0]; ldr r0, [r6, #0x18]; str.w r0, [r4, #0xef0]`. **Unchecked:** a branch
+        elsewhere in segment 0 into the middle of them (the farm's export stopped at the reader it then lacked). Luna's
+        0x8003CA08 for the title fires only at a line's end (the farm's notes).
 
     Of the hook farm's 20, only 三国恋戦記 and DIABOLIK LOVERS LIMITED V EDITION are fixed-address executables; the
     others are relocatable (the farm's dumped ELF headers: `ET_SCE_RELEXEC`). In 7 of them (PCSG00382, PCSG00428,
@@ -316,7 +356,7 @@ Two lists name them:
   NID and bytes, which pin the build anyway (an update changes the eboot, and so its NID); a Luna site that
   names its version is refused then, having neither. The gate's one cost: a patch that changes only the game's
   data and raises its `APP_VER`, with the eboot byte for byte the same, refuses an entry that would still work
-  (#316's audit N6; no such patch is known for these games). 51 of the 56 entries name 01.00; CLANNAD's, POSSESSION
+  (#316's audit N6; no such patch is known for these games). 57 of the 62 entries name 01.00; CLANNAD's, POSSESSION
   MAGENTA's, 忠臣蔵46+1 V's, 剣が君 for V's and 月に寄りそう乙女の作法's name none (the farm did not record it), so
   their NID and bytes alone decide. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
@@ -328,7 +368,8 @@ Two lists name them:
   4-byte read, as Luna's `DATA_INDIRECT` (`VJO_PLACE_READ_DEREF`; an unreadable pointer gives no text), or a
   page record of 16-bit cells (`VJO_PLACE_READ_CELLS`: a 32-bit count at +0x14, the cells from +0x20, each
   a character's first CP932 byte and its second one or 0; exactly that many cells are read, at most 256,
-  none past the record, and `vjo_place_cells` makes them CP932 bytes), or an SC3 string through its end token
+  none past the record, and `vjo_place_cells` makes them CP932 bytes; `VJO_PLACE_READ_CELLS_B` reads foaf4's
+  page-build record the same way, its count at +0x20 and its cells from +0x2E), or an SC3 string through its end token
   (`VJO_PLACE_READ_SC3`, [SC3 text](#sc3-text)). The register may be r15, the site's
   own address: the padding is then a static's distance from the site, and the entry is tried only with segment
   0 at 0x81000000 (`relocated` otherwise: PCSG00380 above). The host test `verified: every entry
@@ -417,6 +458,10 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00415` | CLANNAD | `＊Ａ` (CP932 81 96 82 60) and `＊Ｂ` (81 96 82 61), the script's name variables for the protagonist's family and given name, to 岡崎 and 朋也 (CLANNAD has no name entry) | not the farm's: a console's `history.csv` (Rubi 0.9.8, the verified site's stream): 16 of 1,347 hook lines, e.g. `「ありゃ、＊Ａ、どこいくんだよっ」` where OCR read 岡崎, `「俺はＤ組の＊Ａ＊Ｂ」` |
 | `PCSG00020`, `PCSG00883` | 極限脱出ＡＤＶ 善人シボウデス (and the Double Pack's) | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
+| `PCSG00769` | 逢魔が刻～かくりよの縁～ | `㌫` `㍊` to the defaults of its name entry, 榊 and 水緒; then `FOAF4`: `PCSG00380`'s array from its third op (the dash pieces, the trim, not its names) | pages 14 and 22 (`㊤㊥…㊦` drawn as one `―` each; 7 of its 37 pages); pages 27 and 16 (`「大丈夫、㌫さん？」` and `「―――㍊！！！」`, 10 glyphs each: the farm's text leaves the codes out) |
+| `PCSG00370` | デュラララ!! 3way standoff -alley- V | drops the `▼` (0x81A5) that ends every page, a click wait not drawn; keeps the line breaks, the `　` that indents a continued line and the `＞` that opens a monologue (Luna's filter for the title drops all four) | all 101 pages of its relocation run; page 2 (`＞不思議な街だったなあ、池袋。\n　活気があって…。▼`) |
+| `PCSG00766` | ニル・アドミラリの天秤 帝都幻惑綺譚 | the speaker glued before `#Pos` on a line of its own (the nameplate); then `IFENGINE` | page 2 (`久世ヒタキ#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]「今、…`, 久世ヒタキ over the line); page 29 (`#Ruby[睨,にら]`); all 31 pages |
+| `PCSG01282` | 死神と少女 | drops the two-character `\d` (a click wait); the two-character `\n` to a line break; trims | page 6 (`\n陽が沈み、…色。\d`, an NVL page's first hit); 55 `\d` codes in the hits its 31 pages hold |
 | `PCSG00700` | 蒼の彼方のフォーリズム | `<a>(X)` to X (a spoken line opens `<a>(｢)`); `<ruby>(n,reading)` and `<ruby2>(..)` dropped, leaving the base; any other `<tag>` dropped (the eboot's tag table also names `f`, `c`, `parallel`); half-width kana to hiragana | Vita3K: 31 of the first 60 pages; console: `<ruby>(2,しとう)四島市` drawn 四島市 (the other tags in no page seen) |
 | `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
 | `PCSG00853` | ピリオドキューブ | `#Name[1]` 花宮, `#Name[2]` かずは, `#Name[3]` カズハ, then `IFENGINE` | samples 78, 120, 259, 371, 464, 492 |
@@ -468,7 +513,7 @@ Rubi's entries on them:
   game of that record (a main module with the farm's NID and the farm's bytes at the farm's offset, segment 0
   at 0x81000000 as in the farm's Vita3K, the farm's `APP_VER`), puts the hit's bytes where the farm's register
   and padding point, and runs Rubi's entry: it must hook the farm's offset in the farm's mode, and the
-  observer, the stream and `vjo_hooks_text` must give the farm's text: 78 excerpts of 33 titles, short lines
+  observer, the stream and `vjo_hooks_text` must give the farm's text: 102 excerpts of 41 titles, short lines
   only, never a script; each field of Rubi's entry is checked against the record by name (#316's audit F3:
   the test had installed Rubi's own NID, bytes, register and padding, so 4 of the audit's 30 mutations of
   them passed; all 4 fail it now, and so do a mode, an SC3 entry's NID and PCSG00620's padding changed). The
@@ -481,9 +526,11 @@ Rubi's entries on them:
   an entry's filter on text that no farm hit holds. PCSG00713's entry has none, and none of its 2,738 farm hits
   holds a character any of Rubi's filters change [measured: the bucket's hits, counted], so a filter there would
   change no farm text and the test cannot see one (A-N2).
-  The excerpts and the 37 records were generated from a folder of the bucket's pages for the 14 titles below, the
-  three SC3 titles and the hook farm's 20 of 2026-10-27 (PCSG00272 gives no excerpt, only its record: each of its
-  pages also holds its speaker site's hit); the 14 titles' 50 excerpts and the other 17 records come out as before.
+  The excerpts and the 45 records were generated from a folder of the bucket's pages for the 14 titles below, the
+  three SC3 titles, the hook farm's 20 of 2026-10-27 and the 8 of psandvita #1 below (PCSG00272 gives no excerpt, only
+  its record: each of its pages also holds its speaker site's hit; PCSG00883 is not in the bucket); the 78 excerpts and
+  37 records before psandvita #1's come out byte for byte as before (the folder links the 17 titles of the bucket's
+  local mirror there, the others the bucket's current copy).
 
 Single-hit pages of the bucket of 2026-10-26 (04:36Z) whose text is the farm's, as shown, with main's
 filters before this change and Rubi's now [measured: `tools/hook_farm.py check` on the host]:
@@ -556,6 +603,38 @@ the farm writes it ⁉ and ‼ and Rubi, as Luna, `!?` and `!!` (the overlay's f
 and PCSG00476's 3, where the farm's text kept the hook's ゞ although its reviewer read `!?` on the screen. The 29
 joined pages that differ (STCM2's lines, one hit a line) differ by a continuation line's leading `　` only, which
 each hit's trim drops; the popup shows the page's last line.
+
+psandvita #1's hooks (merged into the farm's repository as `c7df47d`, 2026-10-28): its 19 runtime-verified Vita
+hooks. Eleven had an entry already, each the farm's record field for field (NID, offset, mode, register, padding,
+encoding, bytes, `APP_VER`); six are new here; two cannot be placed (below). The pages are the bucket's copy of
+2026-10-28 (a page's hits at the entry's site, against the farm's text without the line its second site's hit made,
+as above; "single-hit" counts the pages with one hit there) [measured: `tools/hook_farm.py`'s checker on the host]:
+
+| Title | Pages | Single-hit, as shown | Hits joined, as shown | Filter | Entry |
+| --- | ---: | ---: | --- | --- | --- |
+| PCSG00139 | 105 | 78 of 78 | 27 of 27 | none | new (the farm's relocation) |
+| PCSG00370 | 101 | 101 of 101 | | `PCSG00370` | new (the farm's relocation) |
+| PCSG00766 | 31 | 31 of 31 | | `PCSG00766` | new, at Luna's site |
+| PCSG00769 | 37 | 37 of 37 (2 by the default name) | | `PCSG00769` | new |
+| PCSG01127 | 100 | 60 of 60 | 40 of 40 | none | new (the farm's relocation, ARM) |
+| PCSG01282 | 31 | 17 of 17 | 14 of 14 | `PCSG01282` | new, at Luna's site |
+| PCSG00020 | 51 | 39 of 39 | 12 of 12 | `PCSG00020` | #356 |
+| PCSG00183 | 12 | 12 of 12 | | `PROTOTYPE` | #394 |
+| PCSG00428 | 100 | 100 of 100 | | `IFENGINE` | #394 |
+| PCSG00472 | 20 | 18 of 20 | | `PCSG00472` | #394 (the one-cell glyph, as above) |
+| PCSG00505 | 100 | 100 of 100 | | Luna's (none) | #394 |
+| PCSG00530 | 8 | 8 of 8 | | `IFENGINE` | #394 |
+| PCSG00629 | 20 | 9 of 9 | 10 of 11 | `IFENGINE` | #394 (a continuation line's `　`, as above) |
+| PCSG00706 | 42 | 42 of 42 | | `BR_NEWLINE` | #394 |
+| PCSG01194 | 30 | 30 of 30 | | `PCSG01194` | #296 |
+
+PCSG00272 (#394) is the farm's record too; its speaker hit is the name before the game expands it (`#Name[2]`), so
+this check cannot take its line out of the farm's text (#394's figure above, 60 of 60, took it out by hand).
+PCSG00883 (#362) has no pages in the bucket. With Luna's filter at their sites, as Rubi read them before, PCSG00766's
+pages are 3 of 31 as drawn and PCSG01282's 12 of 16 single-hit pages and none of its 14 NVL pages. Not placeable,
+and so not added: PCSG00912 Un:BIRTHDAY SONG (its 12 patched bytes hold a `blx`, and its text is a fixed address, not a
+register's) and PCSG01180 天涯ニ舞ウ、粋ナ花 (a `bl` starts in its 12 patched bytes; its text is also a 16-bit length,
+then bytes with no end, a read Rubi does not have): the farm's relocation jobs are their way in.
 
 ### SC3 text
 

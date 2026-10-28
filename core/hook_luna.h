@@ -157,6 +157,11 @@ enum {
     VJO_RF_AOZORA_RUBY,             /* ｜base《reading》 ruby, and a kanji's bare 《reading》: the base */
     VJO_RF_CARET_NEWLINE,           /* ^ is a line break */
     VJO_RF_PCSG01250,               /* スキとスキとでサンカク恋愛: /ruby:base&reading/, #n, layout codes */
+    VJO_RF_PCSG00370,               /* デュラララ!! 3way standoff -alley- V: the ▼ that ends a page */
+    VJO_RF_PCSG00766,               /* ニル・アドミラリの天秤: the speaker before #Pos on a line of its own, then IFENGINE */
+    VJO_RF_PCSG01282,               /* 死神と少女: \d click waits dropped, \n line breaks */
+    VJO_RF_FOAF4,                   /* Nippon Ichi's foaf4: ㊤㊥㊦ dash pieces (PCSG00380's ops but its names) */
+    VJO_RF_PCSG00769,               /* 逢魔が刻～かくりよの縁～: ㌫ ㍊ as the default 榊 水緒, then FOAF4 */
     VJO_RF_END
 };
 

@@ -1,8 +1,8 @@
 /* Rubi's text for hook bytes a farm recorded (tools/hook_farm.py check): each stdin line
  *   TITLE <tab> OFFSET <tab> APP_VER <tab> RAW [<tab> FARM]
  * (the verified entry's segment-0 offset and the game's APP_VER, both hex; RAW the bytes the farm read at
- * the entry's register, hex: a cell record's cells for VJO_PLACE_READ_CELLS, an SC3 string's bytes (through its end
- * token, or more) for VJO_PLACE_READ_SC3; FARM, hex of UTF-8, the farm's
+ * the entry's register, hex: a cell record's cells for VJO_PLACE_READ_CELLS or VJO_PLACE_READ_CELLS_B, an SC3 string's
+ * bytes (through its end token, or more) for VJO_PLACE_READ_SC3; FARM, hex of UTF-8, the farm's
  * text) gives one stdout line
  *   STATUS <tab> TEXT <tab> SHOWN <tab> FARM_SHOWN
  * with TEXT (hex of UTF-8) what the game worker would show for that hit: the capture as game_ocr/hooks.c
@@ -82,6 +82,7 @@ int main(void)
         const VjoPlaceVerified *ver = NULL, *all;
         const VjoLunaSite *sites, *same;
         unsigned nv, nl, unit, appv, off, n, cut = 0;
+        uint32_t count_at, cells_at;
         size_t m, len;
         for (unsigned i = 0; i < 5 && p; i++) {
             f[i] = p;
@@ -103,7 +104,8 @@ int main(void)
         if (ver->read == VJO_PLACE_READ_SC3) { /* site_hit: the string through its end token, within RAW_BYTES */
             n = vjo_sc3_span(mem, m < RAW_BYTES ? (unsigned)m : RAW_BYTES);
             if (!n && m > RAW_BYTES) cut = 1;
-        } else if (ver->read == VJO_PLACE_READ_CELLS) { /* the farm read the record's count of cells: these */
+        } else if (vjo_place_cells_layout(ver->read, &count_at, &cells_at)) { /* the farm read the record's count of
+                                                                                * cells: these */
             unsigned cells = (unsigned)(m / 2u);
             if (cells > RAW_BYTES / 2u) cells = RAW_BYTES / 2u, cut = 1;
             n = vjo_place_cells(mem, cells);
