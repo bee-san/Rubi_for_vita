@@ -2773,6 +2773,260 @@ static int write_packages(const char *dir)
     return 0;
 }
 
+/* ---------------- #418 (P10): core/heap.h is the old heaps, step for step ---------------- */
+
+/* The four heaps as they were before core/heap.h (settings/anki_export.c word_down/word_sort, key_down/key_set and
+ * heap_down, core/apkg.c sift/vjo_apkg_sort), verbatim but for their names: the reference each new caller must
+ * match, ties and all. */
+static int ref_word_less(const VjoWord *x, const VjoWord *y, int by_id)
+{
+    if (by_id)
+        return x->id < y->id;
+    if (x->key != y->key)
+        return x->key < y->key;
+    return x->time != y->time ? x->time < y->time : x->id < y->id;
+}
+
+static void ref_word_down(VjoWord *w, int n, int i, int by_id)
+{
+    for (;;) {
+        int k = 2 * i + 1;
+        VjoWord t;
+        if (k >= n)
+            return;
+        if (k + 1 < n && ref_word_less(&w[k], &w[k + 1], by_id))
+            k++;
+        if (!ref_word_less(&w[i], &w[k], by_id))
+            return;
+        t = w[i];
+        w[i] = w[k];
+        w[k] = t;
+        i = k;
+    }
+}
+
+static void ref_word_sort(VjoWord *w, int n, int by_id)
+{
+    for (int i = n / 2 - 1; i >= 0; i--)
+        ref_word_down(w, n, i, by_id);
+    for (int end = n - 1; end > 0; end--) {
+        VjoWord t = w[0];
+        w[0] = w[end];
+        w[end] = t;
+        ref_word_down(w, end, 0, by_id);
+    }
+}
+
+static void ref_key_down(uint64_t *k, int n, int i)
+{
+    for (;;) {
+        int c = 2 * i + 1;
+        uint64_t t;
+        if (c >= n)
+            return;
+        if (c + 1 < n && k[c] < k[c + 1])
+            c++;
+        if (k[i] >= k[c])
+            return;
+        t = k[i];
+        k[i] = k[c];
+        k[c] = t;
+        i = c;
+    }
+}
+
+static int ref_key_set(uint64_t *k, int n)
+{
+    int m = 0;
+    for (int i = n / 2 - 1; i >= 0; i--)
+        ref_key_down(k, n, i);
+    for (int end = n - 1; end > 0; end--) {
+        uint64_t t = k[0];
+        k[0] = k[end];
+        k[end] = t;
+        ref_key_down(k, end, 0);
+    }
+    for (int i = 0; i < n; i++)
+        if (!m || k[m - 1] != k[i])
+            k[m++] = k[i];
+    return m;
+}
+
+static void ref_heap_down(VjoApkgCard *c, int n, int i)
+{
+    for (;;) {
+        int k = 2 * i + 1;
+        VjoApkgCard t;
+        if (k >= n)
+            return;
+        if (k + 1 < n && newer(&c[k + 1], &c[k]))
+            k++;
+        if (!newer(&c[k], &c[i]))
+            return;
+        t = c[i];
+        c[i] = c[k];
+        c[k] = t;
+        i = k;
+    }
+}
+
+static int ref_card_cmp(const VjoApkgCard *x, const VjoApkgCard *y)
+{
+    if (x->time != y->time)
+        return x->time < y->time ? -1 : 1;
+    return memcmp(x->id, y->id, sizeof(x->id));
+}
+
+static void ref_sift(VjoApkgCard *c, int root, int n)
+{
+    for (;;) {
+        int child = 2 * root + 1;
+        VjoApkgCard t;
+        if (child >= n)
+            return;
+        if (child + 1 < n && ref_card_cmp(&c[child], &c[child + 1]) < 0)
+            child++;
+        if (ref_card_cmp(&c[root], &c[child]) >= 0)
+            return;
+        t = c[root];
+        c[root] = c[child];
+        c[child] = t;
+        root = child;
+    }
+}
+
+static void ref_apkg_sort(VjoApkgCard *cards, int n)
+{
+    for (int i = n / 2 - 1; i >= 0; i--)
+        ref_sift(cards, i, n);
+    for (int end = n - 1; end > 0; end--) {
+        VjoApkgCard t = cards[0];
+        cards[0] = cards[end];
+        cards[end] = t;
+        ref_sift(cards, 0, end);
+    }
+}
+
+static uint32_t heap_rng;
+static uint32_t heap_next(void)
+{
+    heap_rng ^= heap_rng << 13;
+    heap_rng ^= heap_rng >> 17;
+    heap_rng ^= heap_rng << 5;
+    return heap_rng;
+}
+
+/* Element i's sort fields for a pattern (span: their values' range, small for many ties; 0: the full range) */
+static uint32_t heap_value(int pattern, int i, int n, uint32_t span)
+{
+    uint32_t v;
+    switch (pattern) {
+    case 0: v = 0; break;                                       /* all equal */
+    case 1: v = (uint32_t)i; break;                             /* ascending */
+    case 2: v = (uint32_t)(n - i); break;                       /* descending */
+    case 3: v = (uint32_t)(i < n / 2 ? i : n - i); break;       /* organ pipe */
+    default: v = heap_next(); break;                            /* random */
+    }
+    return span ? v % span : v;
+}
+
+#define HEAP_MAX 3000
+static VjoWord heap_w[2][HEAP_MAX];
+static uint64_t heap_k[2][HEAP_MAX];
+static VjoApkgCard heap_c[2][HEAP_MAX];
+static VjoWord heap_wa[HEAP_MAX], heap_wb[HEAP_MAX];
+static VjoApkgCard heap_ca[HEAP_MAX];
+
+static int same_cards(const VjoApkgCard *a, const VjoApkgCard *b, int n)
+{
+    for (int i = 0; i < n; i++)
+        if (memcmp(a[i].id, b[i].id, 16) || a[i].time != b[i].time || a[i].exported != b[i].exported ||
+            a[i].picture != b[i].picture || a[i].skipped != b[i].skipped ||
+            a[i].missing_picture != b[i].missing_picture || a[i].flags != b[i].flags)
+            return 0;
+    return 1;
+}
+
+static void test_heap_order_is_the_old_heaps(void)
+{
+    static const int sizes[] = {0, 1, 2, 3, 4, 5, 7, 8, 9, 16, 17, 31, 100, 257, 1000, HEAP_MAX};
+    static const uint32_t spans[] = {2, 3, 7, 0};
+    int cases = 0;
+    heap_rng = 418;
+    for (unsigned z = 0; z < sizeof(sizes) / sizeof(sizes[0]); z++)
+        for (int pattern = 0; pattern < 5; pattern++)
+            for (unsigned sp = 0; sp < sizeof(spans) / sizeof(spans[0]); sp++) {
+                int n = sizes[z], m0, m1;
+                uint32_t span = spans[sp];
+                for (int i = 0; i < n; i++) { /* each element tagged (flags, the key, the game): ties must stay apart */
+                    /* key, id, time, flags (the flags tell ties apart) */
+                    VjoWord w = {heap_value(pattern, i, n, span), heap_value(pattern, n - 1 - i, n, span),
+                                 heap_value(pattern, i, n, span ? span + 1 : 0), (uint32_t)i};
+                    VjoApkgCard c;
+                    memset(&c, 0, sizeof(c));
+                    c.time = heap_value(pattern, i, n, span);
+                    c.id[0] = (uint8_t)heap_value(pattern, n - 1 - i, n, span ? span : 256);
+                    c.id[15] = (uint8_t)heap_value(4, i, n, span ? span : 256);
+                    c.exported = (uint8_t)(i & 1);
+                    c.picture = (uint8_t)(i >> 1 & 1);
+                    c.flags = (uint8_t)i;
+                    c.missing_picture = (uint8_t)(i >> 8);
+                    heap_w[0][i] = heap_w[1][i] = w;
+                    heap_k[0][i] = heap_k[1][i] = (uint64_t)heap_value(pattern, i, n, span) << 32 |
+                                                  heap_value(4, i, n, span);
+                    heap_c[0][i] = heap_c[1][i] = c;
+                }
+                for (int by_id = 0; by_id <= 1; by_id++) { /* settings/anki_export.c word_sort, both orders */
+                    memcpy(heap_wa, heap_w[0], sizeof(VjoWord) * (size_t)n);
+                    memcpy(heap_wb, heap_w[1], sizeof(VjoWord) * (size_t)n);
+                    ref_word_sort(heap_wa, n, by_id);
+                    word_sort(heap_wb, n, by_id);
+                    TEST_CHECK_(!memcmp(heap_wa, heap_wb, sizeof(VjoWord) * (size_t)n),
+                                "word_sort by_id %d: n %d, pattern %d, span %u", by_id, n, pattern, (unsigned)span);
+                }
+                m0 = ref_key_set(heap_k[0], n); /* key_set: the sorted, distinct keys */
+                m1 = key_set(heap_k[1], n);
+                TEST_CHECK_(m0 == m1 && !memcmp(heap_k[0], heap_k[1], sizeof(uint64_t) * (size_t)m0),
+                            "key_set: n %d, pattern %d, span %u", n, pattern, (unsigned)span);
+                memcpy(heap_c[1], heap_c[0], sizeof(VjoApkgCard) * (size_t)n); /* core/apkg.c vjo_apkg_sort */
+                memcpy(heap_ca, heap_c[0], sizeof(VjoApkgCard) * (size_t)n);
+                ref_apkg_sort(heap_ca, n);
+                vjo_apkg_sort(heap_c[1], n);
+                TEST_CHECK_(same_cards(heap_ca, heap_c[1], n), "vjo_apkg_sort: n %d, pattern %d, span %u", n, pattern,
+                            (unsigned)span);
+                /* the bounded heap, as its list fills it: the first cap elements, the heap made, then each later one
+                 * in place of the top when it wins (settings/anki_export.c list_card) */
+                for (int cap = 1; cap <= 9 && cap <= (n ? n : 1); cap += 4) {
+                    VjoApkgCard ca[2][9];
+                    int k = 0;
+                    for (int i = 0; i < n; i++) {
+                        if (k < cap) {
+                            ca[0][k] = ca[1][k] = heap_c[0][i];
+                            if (++k == cap) {
+                                for (int j = k / 2 - 1; j >= 0; j--)
+                                    ref_heap_down(ca[0], k, j);
+                                vjo_heap_make(ca[1], k, sizeof(VjoApkgCard), newest_on_top, NULL);
+                            }
+                            continue;
+                        }
+                        if (newer(&ca[0][0], &heap_c[0][i])) {
+                            ca[0][0] = heap_c[0][i];
+                            ref_heap_down(ca[0], k, 0);
+                        }
+                        if (newer(&ca[1][0], &heap_c[0][i])) {
+                            ca[1][0] = heap_c[0][i];
+                            vjo_heap_down(ca[1], k, 0, sizeof(VjoApkgCard), newest_on_top, NULL);
+                        }
+                    }
+                    TEST_CHECK_(same_cards(ca[0], ca[1], k), "the export's list heap: n %d, cap %d, pattern %d", n, cap,
+                                pattern);
+                }
+                cases++;
+            }
+    TEST_MSG("%d cases", cases);
+    TEST_CHECK(cases == 16 * 5 * 4);
+}
+
 TEST_LIST = {
     {"sqlite_records_and_varints", test_sqlite_records_and_varints},
     {"zip_crc_and_reader", test_zip_crc_and_reader},
@@ -2821,6 +3075,7 @@ TEST_LIST = {
     {"an_uncheckable_record_keeps_its_picture", test_an_uncheckable_record_keeps_its_picture},
     {"the_age_bound_is_exact_across_dates", test_the_age_bound_is_exact_across_dates},
     {"large_queue", test_large_queue},
+    {"heap_order_is_the_old_heaps", test_heap_order_is_the_old_heaps},
     {NULL, NULL},
 };
 
