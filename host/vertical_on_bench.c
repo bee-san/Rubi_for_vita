@@ -27,9 +27,10 @@
  *    frames it reads again) and the vertical model (columns). By default 2,610, 5,040 and 1,700: measured for rows,
  *    estimated for columns. 0.8.0-test.4's console logs measured VOCR5-N (VOCR6-N's shape) at 2.61 ms a frame and VOCR5-L
  *    (VOCR6-L's) at 4.98-5.10 ms, at 444 MHz, the clock a job raises by default, each a job's recognition time over
- *    its frames with the LM's decoding and the default two helpers (docs/guide.md); VOCR5-V's is VOCR5-S's estimate at
- *    444 MHz (docs/vita-vn-ocr.md). The bench recognizes one line at a time (the line callback turns the helpers off,
- *    core/vocr_ocr.c), each charged so. So the icon moves while a line is recognized, as on the console. Before #385's
+ *    its frames with the LM's decoding and the default two helpers (docs/guide.md); the vertical model's (VOCR6-V,
+ *    VOCR5-V's shape) is VOCR5-S's estimate at 444 MHz (docs/vita-vn-ocr.md). The bench recognizes one line at a
+ *    time (the line callback turns the helpers off, core/vocr_ocr.c), each charged so. So the icon moves while a line
+ *    is recognized, as on the console. Before #385's
  *    audit F1 the bench charged 3 times each line's time on this clock, which does not move while a line is
  *    recognized: nothing (--frame-us 0,0,0 is that bench); before #411's audit F1 the first line of a core attempt
  *    after one that tore with a line read went uncharged. The finder's time counts nothing. The times are estimates:

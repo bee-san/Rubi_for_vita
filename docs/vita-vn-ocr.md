@@ -185,7 +185,8 @@ CRC and the first 16 bytes of the checkpoint's SHA-256 (vita-vn-ocr
 `train/export.py`). The generation therefore comes with the pin, from the
 vita-vn-ocr release that published the file (VOCR1: v0.2.0; VOCR3:
 v0.2.5-vocr3.1; VOCR4: v0.2.5-vocr4.1; VOCR5: v0.3.0, its gated blobs' pre-releases and v0.3.2-vertical.1; VOCR6:
-v0.4.0-vocr6.1 and v0.4.1-vocr6.2, whose file names carry the set's `.2`, `VOCR6.2_N_w8g2.vocr`), and is kept in three
+v0.4.0-vocr6.1, v0.4.1-vocr6.2, whose file names carry the set's `.2`, `VOCR6.2_N_w8g2.vocr`, and the vertical
+model's v0.4.2-vertical6.1), and is kept in three
 places
 that the tests compare:
 
@@ -1373,9 +1374,15 @@ pages), and on new synthetic columns. The package ships it beside the size model
 vita-vn-ocr #159 measured it through this job (`ocr_vertical = on`, tight regions; host; three seeds of its recipe;
 a pre-registered rule): on the game's held-out hooked pages 7.92 % → 4.64 % CER against VOCR5-V (−3.28 [−4.48, −2.14],
 with an LM built without those pages), and on vita-vn-ocr #103's development regions of other games VN 17.58 % →
-16.13 % (−1.45 [−2.25, −0.58]) and manga 4.18 % → 3.69 % (−0.49 [−1.14, −0.06]). #103's held-out vertical test set,
-read once: VN 7.26 % → 7.05 % (−0.20 [−0.69, +0.24], level), manga 2.88 % → 2.74 %. The figures below are VOCR5-V's,
-measured before VOCR6-V.
+16.13 % (−1.45 [−2.25, −0.58]) and manga 4.18 % → 3.69 % (−0.49 [−1.14, −0.06]). The shipped blob is that recipe's
+seed 1 trained again with those held-out pages and their guard pages folded in, as VOCR6 was: it has no held-out read
+of them, and on the development regions it reads VN 16.13 % and manga 3.91 % (against its seed-1 sibling −0.22
+[−0.76, +0.15] and +0.20 [−0.07, +0.53], neither resolved). #103's held-out vertical test set, read once with it: VN
+7.26 % → 7.05 % (−0.20 [−0.69, +0.24], level), manga 2.88 % → 2.74 % (−0.14 [−0.49, 0.00], level). Yunohana
+SpRING! is one of its pages (30 characters) and is seen (VOCR6-V trained on the game's hooked pages, and the 1 MB LM
+holds their text): without it, VN 7.35 % → 7.14 % (−0.21 [−0.71, +0.23]). The figures below are VOCR5-V's, measured
+before VOCR6-V; their 4.51 % on Yunohana's tight regions is all 863 pages, the frozen finder and ctclm.2's 1 MB LM,
+where #159's 7.92 % is the 35 held-out pages with `ocr_line_fix = on` and an LM built without them.
 
 **Measured through Rubi's job** (host, x86-64: `vjo-page-ocr`, the game worker's job in `core/vocr_ocr.c` on each
 region with the weights kept, on config.ini's defaults: Normal size, the 1 MB LM (ctclm.2's `vocr_lm_o3_1000k.vlm`, the
@@ -1437,18 +1444,18 @@ column whose crop holds more than the rotation buffer (wider than 105 px at the 
 counted (`VjoVocrStats.rotate_skipped`, the bytes of the log's `find` step). auto's job that reads columns holds the
 row job's blocks first, for the finder's pass only, and frees them before the column job allocates its own.
 
-**Time (estimates; nothing ran on a console).** Per CTC frame VOCR5-V costs what VOCR5-S does: about 2.2 ms at 333
-MHz and 1.7 ms at 444 MHz (VOCR5-S's box estimate, calibrated to VOCR3-H15's 4.94 ms a frame in v0.8.0-test.1's logs;
-the console also measured up to 5.22 ms, about 6 % more). The capture costs more than for rows, as a column spans
-every strip of the region and each strip read waits for the game's next frame. On the box drawn once (114 or 126 × 476
-px, its two places, 2-3 columns), `on`'s job read a median of 27 strips (33 at the 90th percentile) and recognized 73 CTC frames:
-about 0.45 s of capture at 60 fps (0.9 s at 30) and 0.16 s of recognition at 333 MHz. auto's reads the region twice
-more first, for the row finder: 49 strips (56), about 0.8 s at 60 fps. Horizontal dialogue boxes read 5 strips
-(median, the same with auto). On a whole screen of columns `on` read 64 strips. Since API 53 `on` checks the rows first
-in a region wider than tall, and reads the columns once: 60 strips (66) on a whole screen; since #385's audit it reads a
-region at least as tall as wide as columns at once, as before, with the columns read once: 23 strips (23) on the box
-drawn once on #385's audit's sample, where API 53 read 45 (47) ([on's rule](#ons-rule-api-53-379)). Draw the text box
-around the text.
+**Time (estimates; nothing ran on a console).** Per CTC frame the vertical model (VOCR6-V, VOCR5-V's shape) costs what
+VOCR5-S does: about 2.2 ms at 333 MHz and 1.7 ms at 444 MHz (VOCR5-S's box estimate, calibrated to VOCR3-H15's 4.94 ms a
+frame in v0.8.0-test.1's logs; the console also measured up to 5.22 ms, about 6 % more). The capture costs more than for
+rows, as a column spans every strip of the region and each strip read waits for the game's next frame. On the box drawn
+once (114 or 126 × 476 px, its two places, 2-3 columns), `on`'s job read a median of 27 strips (33 at the 90th
+percentile) and recognized 73 CTC frames: about 0.45 s of capture at 60 fps (0.9 s at 30) and 0.16 s of recognition at
+333 MHz. auto's reads the region twice more first, for the row finder: 49 strips (56), about 0.8 s at 60 fps. Horizontal
+dialogue boxes read 5 strips (median, the same with auto). On a whole screen of columns `on` read 64 strips. Since API
+53 `on` checks the rows first in a region wider than tall, and reads the columns once: 60 strips (66) on a whole screen;
+since #385's audit it reads a region at least as tall as wide as columns at once, as before, with the columns read once:
+23 strips (23) on the box drawn once on #385's audit's sample, where API 53 read 45 (47) ([on's
+rule](#ons-rule-api-53-379)). Draw the text box around the text.
 
 **Off and auto are today's job** (`host/tests/test_vocr_vertical.c`; and on's, where its rows are lines of text, API 53):
 jobs of rows on a 5-line region and on #194's
@@ -2144,7 +2151,7 @@ the recognizers `VOCR6.2_N_w8g2.vocr`, `VOCR6.2_S_w8.vocr` and
 v0.4.2-vertical6.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
 (release v0.3.7-lm6.2)<!-- end of the names -->.
-`core/vocr_models.c` gives each recognizer its generation (VOCR6; VOCR5 for the vertical model; VOCR3, VOCR4, or
+`core/vocr_models.c` gives each recognizer its generation (VOCR6, the vertical model's too; VOCR3, VOCR4, or
 VOCR1 for v0.2.0's), the name of the local engine in the Rubi app.
 
 The v0.2.0 weights are the int8 assets of the vita-vn-ocr
