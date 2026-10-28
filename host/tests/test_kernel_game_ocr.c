@@ -2958,34 +2958,58 @@ static void pause_every_other_end_returns_the_display_call(void)
     TEST_CHECK(hook_frames == 1 && !in_hook && rows.state == ROWS_IDLE && !rows.in_call && !locks && !syscall_depth);
     TEST_CHECK(!rows.frame_start);
 }
-/* The watchdog (the kernel worker's rows tick): a frame copy still running past PAUSE_WATCHDOG_US, twice its cap,
- * which the copy's own cap should never allow, turns the pause off until the kernel restarts: every later frame copy
- * is refused (UNSUPPORTED) and jobs read strip by strip. A copy that is only slow, an ordinary strip's copy and an
- * idle state never trip it. The stalled copy's rows call gives it up as any other (BUSY), and the tick returns the
- * state to IDLE once it ends. */
+/* The kernel worker's rows tick, every 16 ms for `us` (the watchdog counts the time between its looks). */
+static void ticks_for(uint32_t us)
+{
+    for (uint32_t t = 0; t < us; t += 16000u) {
+        model_clock += 16000u;
+        game_ocr_rows_tick();
+    }
+}
+/* The watchdog (the kernel worker's rows tick): a frame copy it has seen running for longer than PAUSE_WATCHDOG_US,
+ * twice its cap, which the copy's own cap should never allow, turns the pause off until the kernel restarts: every
+ * later frame copy is refused (UNSUPPORTED) and jobs read strip by strip. A copy that is only slow, an ordinary strip's
+ * copy and an idle state never trip it. Only the time the game is in front counts (#355's review M1): a suspended
+ * game (the PS button, a crash dump) holds its display thread, and a copy in it, as long as the suspension lasts, and
+ * a look after a gap (the kernel worker itself did not run: standby) counts nothing. The stalled copy's rows call gives
+ * it up as any other (BUSY), and the tick returns the state to IDLE once it ends. */
 static void pause_watchdog_turns_pausing_off(void)
 {
     setup(); uint32_t seq = submit(); take(seq);
     unsigned k0 = klogs;
     /* an ordinary strip copying for seconds: not the watchdog's (it is the abandoned-copy path's) */
     rows.state = ROWS_COPYING; rows.pid = 7; rows.job.frame = 0; rows.frame_start = (uint32_t)model_clock | 1u;
-    model_clock += 10u * PAUSE_WATCHDOG_US;
-    game_ocr_rows_tick();
+    ticks_for(10u * PAUSE_WATCHDOG_US);
     TEST_CHECK(!pause_off);
     /* a copy of 150 ms, past the cap and the chunk after it (the longest a capped copy runs): no, the threshold is
      * 200 ms (the audit's F3d) */
     rows.job.frame = 1; rows.frame_start = (uint32_t)model_clock | 1u;
-    model_clock += 150000u;
+    ticks_for(150000u);
+    TEST_CHECK(!pause_off && klogs == k0 && PAUSE_WATCHDOG_US == 200000u && PAUSE_WATCHDOG_GAP_US == 100000u);
+    /* review M1: the game suspended while a copy runs in its display thread (the foreground's events: game_active 0,
+     * then another foreground pid), for seconds: not counted; in front again, the copy ends: never tripped */
+    rows.frame_start = (uint32_t)model_clock | 1u;
+    ticks_for(48000u);
+    g.game_active = 0;
+    ticks_for(10u * PAUSE_WATCHDOG_US);
+    g.game_pid = 9;
+    ticks_for(10u * PAUSE_WATCHDOG_US);
+    g.game_pid = 7; g.game_active = VJO_GAME;
+    ticks_for(48000u);
+    TEST_CHECK(!pause_off && klogs == k0);
+    /* review M1: one look after the kernel worker did not run for seconds (standby) counts nothing */
+    rows.frame_start = (uint32_t)model_clock | 1u;
+    ticks_for(16000u);
+    model_clock += 30000000u;
     game_ocr_rows_tick();
-    TEST_CHECK(!pause_off && klogs == k0 && PAUSE_WATCHDOG_US == 200000u);
-    /* a frame copy within twice its cap: no */
+    ticks_for(150000u);
+    TEST_CHECK(!pause_off && klogs == k0);
+    /* a frame copy seen within twice its cap: no */
     rows.job.frame = 1; rows.frame_start = (uint32_t)model_clock | 1u;
-    model_clock += PAUSE_WATCHDOG_US - 1000u;
-    game_ocr_rows_tick();
+    ticks_for(PAUSE_WATCHDOG_US - 16000u);
     TEST_CHECK(!pause_off && klogs == k0);
     /* past it: off, logged once */
-    model_clock += 2000u;
-    game_ocr_rows_tick();
+    ticks_for(32000u);
     TEST_CHECK(pause_off && klogs == k0 + 1 && strstr(last_klog, "ocr pause") != NULL);
     game_ocr_rows_tick();
     TEST_CHECK(klogs == k0 + 1);
@@ -3001,13 +3025,13 @@ static void pause_watchdog_turns_pausing_off(void)
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
     /* a copy that stalls in the game's display call: its call gives it up (BUSY, abandoned), the tick turns the pause
      * off, and once the copy ends the state is IDLE again */
-    setup(); TEST_CHECK(!pause_off); /* the module's start: on again */
+    setup(); TEST_CHECK(!pause_off && !wd_held); /* the module's start: on again */
     seq = submit_paused(0); take(seq);
     stall_copy = 1;
     TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_BUSY);
     TEST_CHECK(rows.state == ROWS_COPYING && rows.abandoned && rows.job.frame && rows.frame_start);
     TEST_CHECK(!pause_off);
-    game_ocr_rows_tick();
+    ticks_for(PAUSE_WATCHDOG_US + 32000u); /* the kernel worker's looks while the copy stalls, the game in front */
     TEST_CHECK(pause_off && strstr(last_klog, "ocr pause") != NULL);
     rows.state = ROWS_DONE; rows.frame_start = 0; /* the copy ends */
     game_ocr_rows_tick();

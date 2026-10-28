@@ -26,6 +26,7 @@ static unsigned char frame_mem_block[64*1024] __attribute__((aligned(64)));
 static int frame_live, frame_alloc_failure, frame_refuse, frame_busy_armed, frame_gone_first;
 static unsigned frame_block, frame_allocs, frame_calls, strip_calls, spin; /* spin: a spinner moves at each frame */
 static int frame_cancel; /* the Shell cancels while the copy waits for its frame */
+static int frame_cancel_cut; /* review M2: the job cancelled while its copy ran (a game suspended in its display call) */
 static unsigned frame_refuse_us; /* a refused copy's time in the game's display call (the cap's: past 100 ms) */
 static unsigned capture_block, capture_allocs;
 static int64_t available;
@@ -179,6 +180,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
         info->armed = 1;
         if (frame_cancel) { cancel_now = 1; info->armed = 0; return VJO_ERR_CANCELLED; }
         if (frame_busy_armed) return VJO_ERR_BUSY; /* its copy outlived the call */
+        if (frame_cancel_cut) cancel_now = 1; /* the kernel invalidated the job as its game left the front */
         if (frame_refuse) { info->armed = frame_refuse != VJO_ERR_UNSUPPORTED; info->copy_us = frame_refuse_us; return frame_refuse; }
         clock_value += 16667u;
         spinner_moves();
@@ -315,7 +317,7 @@ static void reset(void)
     memset(&pz, 0, sizeof(pz));
     frame_live = frame_alloc_failure = frame_refuse = frame_busy_armed = frame_gone_first = frame_cancel = 0;
     frame_block = frame_allocs = frame_calls = strip_calls = spin = 0;
-    frame_refuse_us = 0; pause_capped = 0;
+    frame_refuse_us = 0; pause_capped = 0; frame_cancel_cut = 0; psp_title = 0;
 }
 static int run_with(const char *name, const char *fallback, VjoGameOcrResult *out)
 {
@@ -1005,6 +1007,67 @@ static void a_copy_that_reaches_the_cap_turns_the_pause_off_for_the_game(void)
                 "capped: kind %u rc 0x%08X sum %u bytes %u us %u", ps ? ps->kind : 9u, ps ? (unsigned)ps->rc : 0u,
                 ps ? ps->sum : 9u, ps ? ps->bytes : 9u, ps ? ps->us : 9u);
 }
+/* #355's review M3: a press's job asks for no stable-text wait since #413 (the Shell's job_cfg.ocr_settle_ms = 0: no
+ * VJO_GAME_OCR_SETTLE_* bits). Paused, it reads the frame the game shows at the press, at once and once: one copy, no
+ * strip, no tear, no wait step. A line still typing out is read as far as it has typed (strip by strip, its rows'
+ * change between two reads tears the job, and the Shell's retry waits: docs/game-pause.md, "Risks that remain"). */
+static void a_paused_press_reads_the_frame_at_the_press(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset(); spin = 1;
+    r = paused(1);
+    r.flags &= ~(0xFFFFu << VJO_GAME_OCR_SETTLE_SHIFT); /* bits 16-31: the wait and its budget, none */
+    current = r;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
+    TEST_CHECK(frame_calls == 1 && !strip_calls && !out.tears && out.captures == 1 && !frame_live);
+    TEST_CHECK(step_index(&out, VJO_GSTEP_SETTLE, 0) < 0);
+    const VjoGameOcrStep *ps = pause_step(&out);
+    TEST_CHECK(ps && ps->kind == 1 && !ps->rc && ps->us == 1234);
+}
+/* #355's review M2: a copy cut at the cap in a job cancelled meanwhile is no cap: a game suspended (the PS button)
+ * while its display thread copies holds the copy, and its time, for as long as it is suspended, and the suspension
+ * cancels the job. The job ends cancelled with its block given back, and the next job is paused again. */
+static void a_cancelled_jobs_cut_copy_is_no_cap(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset();
+    frame_refuse = VJO_ERR_TIMEOUT; frame_refuse_us = 30000000u; frame_cancel_cut = 1; /* 30 s: suspended */
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_CANCELLED && frame_calls == 1 && !frame_live);
+    TEST_CHECK(!pause_capped && !blocked && !out.cleanup_status);
+    frame_refuse = 0; frame_refuse_us = 0; frame_cancel_cut = 0; cancel_now = 0;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫") && frame_calls == 2);
+    const VjoGameOcrStep *ps = pause_step(&out);
+    TEST_CHECK(ps && ps->kind == 1 && !ps->rc);
+}
+/* #355's review H2: in the PSP emulator's process (a PSP game under Adrenaline: psp_title), whose frames the kernel
+ * samples from its pad calls (VJO_GAME_STATIC_FB, no display call to wait in), the pause is a no-op: the job takes
+ * no frame block (its memory check counts none, so it costs no helper), asks for no copy and logs no pause step: it
+ * reads exactly as with the setting off. */
+static void the_pause_is_a_no_op_in_a_psp_game(void)
+{
+    VjoGameOcrResult off, on;
+    VjoGameOcrRequest r;
+    reset(); psp_title = 1;
+    r = paused(0);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &off) == VJO_OK && !strcmp(off.text, "猫"));
+    const unsigned strips_off = strip_calls;
+    reset(); psp_title = 1;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &on) == VJO_OK && !strcmp(on.text, "猫"));
+    TEST_CHECK(!frame_allocs && !frame_calls && !pause_step(&on) && strip_calls == strips_off && strips_off >= 1);
+    TEST_CHECK(on.need_workspace == off.need_workspace && on.need_workspace == job_of("FL10_w8.vocr"));
+    TEST_CHECK_(on.n_steps == off.n_steps && on.captures == off.captures && on.tears == off.tears,
+                "steps %u/%u, captures %u/%u", on.n_steps, off.n_steps, on.captures, off.captures);
+    for (unsigned i = 0; i < on.n_steps && i < off.n_steps; i++)
+        TEST_CHECK_(on.step[i].id == off.step[i].id && on.step[i].kind == off.step[i].kind &&
+                    on.step[i].arg == off.step[i].arg && on.step[i].rc == off.step[i].rc &&
+                    on.step[i].bytes == off.step[i].bytes, "step %u: %u/%u", i, on.step[i].id, off.step[i].id);
+    psp_title = 0;
+}
 /* The audit's F1: the frame block takes free memory only. Another model's weights resident (FL10), a job of H15 with
  * two helpers, and free memory where H15's job has room for its frame block or its helpers, not both: without the
  * pause both helpers fit, and FL10 stays until H15 is read; with it, the same, with fewer helpers. (Before, the
@@ -1051,6 +1114,9 @@ TEST_LIST = {
     {"API 55, #324: weights refused after the check: the smaller model's try copies its own frame",
      weights_refused_after_the_check_the_smaller_models_try_copies_its_own_frame},
     {"API 55: a copy that reaches the cap turns the pause off for the game", a_copy_that_reaches_the_cap_turns_the_pause_off_for_the_game},
+    {"API 55, review M3: a paused press (no wait since #413) reads the frame at the press", a_paused_press_reads_the_frame_at_the_press},
+    {"API 55, review M2: a cancelled job's cut copy is no cap", a_cancelled_jobs_cut_copy_is_no_cap},
+    {"API 55, review H2: the pause is a no-op in a PSP game", the_pause_is_a_no_op_in_a_psp_game},
     {"API 55: the frame block never makes the job give back another model's weights",
      the_frame_block_never_makes_the_job_give_back_another_models_weights},
     {"a job without lines warms the weights; the forced fallback keeps the model", a_job_without_lines_warms_the_weights},

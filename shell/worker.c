@@ -1183,14 +1183,14 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
     /* API 47: vertical text (ocr_vertical off, on or auto: the field's own values), in the user's jobs; the
      * self-test's stages read rows */
-    if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_vertical << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    if (stage < 0) /* API 55: and ocr_pause (0/1, off by default): the pause for the frame (docs/game-pause.md) */
+        request.speed |= (uint32_t)job_cfg.ocr_vertical << VJO_GAME_OCR_S_VERTICAL_SHIFT |
+                         (uint32_t)job_cfg.ocr_pause << VJO_GAME_OCR_S_PAUSE_SHIFT;
     /* API 50: the line finder's fixes (ocr_line_fix = on, the default; junk adds the frame-strip rule, all also
      * the touching-rows split), in the user's jobs (the self-test's stages read as before) */
     if (job_cfg.ocr_line_fix && stage < 0)
         request.speed |= VJO_GAME_OCR_S_LINE_FIX | (job_cfg.ocr_line_fix >= 2 ? VJO_GAME_OCR_S_LINE_JUNK : 0u) |
                          (job_cfg.ocr_line_fix == 3 ? VJO_GAME_OCR_S_LINE_VALLEY : 0u);
-    /* API 55: ocr_pause (off by default) pauses the game for its frame in the user's jobs (docs/game-pause.md) */
-    if (job_cfg.ocr_pause && stage < 0) request.speed |= VJO_GAME_OCR_S_PAUSE;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
     int64_t t0 = now_us();
@@ -1780,17 +1780,9 @@ static int net_busy(void)
  * helps. A region drawn with □ helps only where it can leave the moving thing out (an icon beside the text), not an
  * icon inside a line, a picture behind the text or text still typing: so the fix is said as a condition (audit F1).
  * Not an error: the tries go on, and a read shows its text. In the data segment (the normal Shell's code room). */
-#define WAIT_HINT_TEXT                                                                                                 \
-    "Recognizing… Something in the region keeps moving (an animated icon? text still typing?). If a region around "   \
-    "just the text leaves it out, press □ to draw one."
-static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) = WAIT_HINT_TEXT;
-/* API 55: the same, and the pause (docs/game-pause.md), while ocr_pause is off in a game it works in: it reads the
- * region from one frame, which an animated icon cannot change. Never in the PSP emulator's process (game_static_fb),
- * where the kernel refuses it. */
-static const char WAIT_HINT_PAUSE[] VJO_DATA_TABLE(WAIT_HINT_PAUSE) =
-    WAIT_HINT_TEXT " Or turn on Pause the game to read in the Rubi app.";
-/* API 55: the active game is the PSP emulator's (VJO_GAME_STATIC_FB, activate_game): no pause, so no WAIT_HINT_PAUSE */
-static int game_static_fb;
+static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) =
+    "Recognizing… Something in the region keeps moving (an animated icon? text still typing?). If a region around "
+    "just the text leaves it out, press □ to draw one.";
 /* the overlay's and the strip's status while a job runs, in the data segment too (#358: its code room back) */
 static const char RECOGNIZING[] VJO_DATA_TABLE(RECOGNIZING) = "Recognizing…";
 
@@ -1804,10 +1796,8 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     if (job_running)
         return;
     job_prepare = 0;
-    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT; API 55: and the pause, while it is off) */
-    status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER
-                 ? cfg.ocr_pause || game_static_fb ? WAIT_HINT : WAIT_HINT_PAUSE
-                 : RECOGNIZING;
+    /* the open overlay's "Recognizing…", or why it still is (#358, WAIT_HINT) */
+    status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER ? WAIT_HINT : RECOGNIZING;
     if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
          * after all capture/model/inference allocations have been freed. #379: not
@@ -2962,7 +2952,6 @@ static void activate_game(SceUID pid, const VjoGameId *id)
 {
     const char *tid = id->key;
     int mode = id->mode;
-    game_static_fb = mode == VJO_GAME_STATIC_FB; /* API 55: WAIT_HINT_PAUSE's game */
     if (pid != hook_pid) { /* API 31: log this game session's installation counts again. */
         hook_pid = pid;
         hook_logged[0] = 0;

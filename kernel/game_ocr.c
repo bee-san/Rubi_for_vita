@@ -109,6 +109,13 @@ static struct {
  * (VJO_ERR_UNSUPPORTED) and jobs read strip by strip, as without ocr_pause. */
 static int pause_off;
 #define PAUSE_WATCHDOG_US (2u * VJO_GAME_OCR_PAUSE_MAX_US)
+/* The watchdog's count: the frame copy it is timing (its frame_start), the time it has seen that copy running with
+ * its game in front, and its last look. Only that time counts (#355's review M1): a game suspended (the PS button, a
+ * crash dump) while its display thread is in a copy holds that thread, and the copy, for as long as the suspension
+ * lasts, and a look after a longer gap than PAUSE_WATCHDOG_GAP_US (the kernel worker did not run: standby) counts
+ * nothing; neither is a stalled row read. */
+static uint32_t wd_copy, wd_held, wd_look;
+#define PAUSE_WATCHDOG_GAP_US 100000u
 /* A frame has to come within this; cancellation is checked every slice. */
 #define ROWS_WAIT_US 1500000u
 #define ROWS_SLICE_US 50000u
@@ -201,6 +208,7 @@ void game_ocr_init(void)
     model_reset_locked();
     memset(&rows, 0, sizeof(rows));
     pause_off = 0;
+    wd_copy = wd_held = wd_look = 0;
 }
 
 /* A job is queued or claimed, or a model or rows call is in flight: the state
@@ -1494,8 +1502,15 @@ void game_ocr_rows_tick(void)
      * boot), so every later job reads strip by strip, as without the pause. The state first: a COPYING seen here
      * has its frame_start, written before the hook's claim. */
     if (!pause_off && __atomic_load_n(&rows.state, __ATOMIC_ACQUIRE) == ROWS_COPYING && rows.job.frame) {
-        uint32_t s = __atomic_load_n(&rows.frame_start, __ATOMIC_RELAXED);
-        if (s && (uint32_t)ksceKernelGetSystemTimeWide() - s > PAUSE_WATCHDOG_US) {
+        uint32_t s = __atomic_load_n(&rows.frame_start, __ATOMIC_RELAXED), now = (uint32_t)ksceKernelGetSystemTimeWide();
+        /* the time since the last look (or, at the first look at this copy, since it started), if it is the game's
+         * in front and the worker kept its pace (review M1) */
+        uint32_t since = now - (s != wd_copy ? s : wd_look);
+        if (s != wd_copy) wd_held = 0;
+        wd_copy = s;
+        wd_look = now;
+        if (since <= PAUSE_WATCHDOG_GAP_US && rows.pid == g.game_pid && g.game_active) wd_held += since;
+        if (s && wd_held > PAUSE_WATCHDOG_US) {
             pause_off = 1;
             klog("ocr pause: a frame copy has held the game's display call over %u ms; no more pauses until the next "
                  "boot", PAUSE_WATCHDOG_US / 1000u);

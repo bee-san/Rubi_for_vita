@@ -945,7 +945,6 @@ static void reset(void)
 {
     /* API 31: no game session's hook state, no hook fields in the results */
     hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
-    game_static_fb = 0; /* API 55: a native game (WAIT_HINT_PAUSE) until a test starts the PSP emulator's */
 #ifdef VJO_WITH_VOCR
     memset(fake_hook, 0, sizeof(fake_hook));
     fake_suggest_rows = 0; /* #358: no box suggested */
@@ -2788,8 +2787,7 @@ static void test_psp_launch_uses_its_identity(void)
         state.game_pid = 77;
         on_game_start();
         classify_pending();
-        TEST_CHECK_(pending_pid == 0 && active_mode == VJO_GAME_STATIC_FB && enabled_psp == 1 && game_static_fb, "%s",
-                    games[i].key);
+        TEST_CHECK_(pending_pid == 0 && active_mode == VJO_GAME_STATIC_FB && enabled_psp == 1, "%s", games[i].key);
         TEST_CHECK_(!strcmp(title_id, games[i].key) && !strcmp(anki_tid, games[i].tid) && anki_psp == 1, "%s", games[i].key);
         /* No description: the name comes from the title's app parameters, as for a Vita game. */
         TEST_CHECK_(!strcmp(anki_game, games[i].name[0] ? games[i].name : "Title of PSPEMU006"), "%s", anki_game);
@@ -2815,7 +2813,6 @@ static void test_psp_launch_uses_its_identity(void)
     on_game_start();
     classify_pending();
     TEST_CHECK(active_mode == VJO_GAME && enabled_psp == 0 && !strcmp(title_id, "PCSG00415") && !anki_psp);
-    TEST_CHECK(!game_static_fb); /* API 55: a Vita game is paused for its frame when asked (WAIT_HINT_PAUSE) */
     identify_rc = -1;
     reset();
     state.game_pid = 80;
@@ -4898,9 +4895,7 @@ static void check_waiting(const char *status)
  * until that try ends, and the overlay's own next try says why. A try cancelled after it showed its sentence keeps
  * it; a torn try cancelled after the game answered counts for no screen. ocr_wait_hint = off says "Recognizing…" all
  * along; a region drawn as it asks, or a new game, starts over; a refresh's torn reads leave the shown text alone;
- * the subtitle strip never says why, with the overlay open or closed. API 55: with ocr_pause off (the default) in a
- * game the pause works in, the hint also names it (WAIT_HINT_PAUSE); with it on, or in a PSP game (which the kernel
- * never pauses), it does not. */
+ * the subtitle strip never says why, with the overlay open or closed. */
 static void test_open_overlay_says_why_it_waits(void)
 {
     /* still trying; the cause (an icon, or text still typing); the fix as a condition (audit F1: □ cannot leave out an
@@ -4908,9 +4903,6 @@ static void test_open_overlay_says_why_it_waits(void)
     TEST_CHECK(strstr(WAIT_HINT, "Recognizing…") == WAIT_HINT && strstr(WAIT_HINT, "keeps moving") &&
                strstr(WAIT_HINT, "typing") && strstr(WAIT_HINT, "If a region around just the text leaves it out") &&
                strstr(WAIT_HINT, "□") && strlen(WAIT_HINT) < sizeof(g_view.status));
-    TEST_CHECK(!strncmp(WAIT_HINT_PAUSE, WAIT_HINT, strlen(WAIT_HINT)) &&
-               !strcmp(WAIT_HINT_PAUSE + strlen(WAIT_HINT), " Or turn on Pause the game to read in the Rubi app.") &&
-               strlen(WAIT_HINT_PAUSE) < sizeof(g_view.status)); /* the same, and the pause; it fits the status */
 
     /* Three torn reads after the press, then one that reads its screen. */
     cursor_setup();
@@ -4927,19 +4919,37 @@ static void test_open_overlay_says_why_it_waits(void)
     check_waiting("Recognizing…");
     test_now += 250000; control_tick(0);
     TEST_ASSERT(job_running); /* the third try, after two in a row: why */
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     TEST_CHECK(DLOGGED("job start (the screen changed during the last one)"));
     finish_current_job(); /* the third torn: 500 ms; the hint stays meanwhile */
     TEST_CHECK(!job_running && open_retry);
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     test_now += 500000; control_tick(0);
     TEST_ASSERT(job_running);
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     finish_current_job(); /* it reads its screen: the text and its word replace the hint */
     check_current_definition("cat", 0);
     TEST_CHECK(!g_view.status[0] && !screen_changed_streak);
     check_quiet();
     close_overlay(); mem_free();
+
+    /* API 55 (#355's review H1/L1): the hint is the same with ocr_pause on or off, and never names the pause: off (the
+     * default) changes nothing the overlay says, and the Shell has no room for a second hint (docs/game-pause.md) */
+    TEST_CHECK(!strstr(WAIT_HINT, "Pause") && !strstr(WAIT_HINT, "pause"));
+    cursor_setup();
+    cfg.ocr_pause = loaded.ocr_pause = 1; /* the overlay's opening loads the settings */
+    fake_screen_changes = 3;
+    open_overlay(); finish_current_job(); finish_current_job();
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running);
+    check_waiting(WAIT_HINT);
+    finish_current_job();
+    test_now += 500000; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
+    cfg.ocr_pause = loaded.ocr_pause = 0;
 
     /* One torn read, then a read: never the hint. */
     cursor_setup();
@@ -4965,9 +4975,9 @@ static void test_open_overlay_says_why_it_waits(void)
     check_quiet();
     open_overlay();
     TEST_ASSERT(job_running);
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     finish_current_job(); /* torn: 500 ms */
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     test_now += 500000; control_tick(0);
     TEST_ASSERT(job_running);
     finish_current_job();
@@ -4981,10 +4991,10 @@ static void test_open_overlay_says_why_it_waits(void)
     open_overlay(); finish_current_job(); finish_current_job();
     test_now += 250000; control_tick(0);
     TEST_ASSERT(job_running);
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     finish_current_job_cancelled(1); /* its sentence shown, then cancelled for a newer screen */
     TEST_ASSERT(job_running && !view_job_text);
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     finish_current_job();
     check_current_definition("cat", 0);
     close_overlay(); mem_free();
@@ -5007,7 +5017,7 @@ static void test_open_overlay_says_why_it_waits(void)
     check_waiting("Recognizing…");
     test_now += 500000; control_tick(0);
     TEST_ASSERT(job_running);
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     finish_current_job();
     check_current_definition("cat", 0);
     close_overlay(); mem_free();
@@ -5058,25 +5068,6 @@ static void test_open_overlay_says_why_it_waits(void)
     check_current_definition("cat", 0);
     close_overlay(); mem_free();
 
-    /* API 55: ocr_pause on, or a PSP game (the emulator's process, never paused) with it off: the hint without the
-     * pause's clause. */
-    for (int psp = 0; psp < 2; psp++) {
-        cursor_setup();
-        if (psp) game_static_fb = 1;
-        else cfg.ocr_pause = loaded.ocr_pause = 1; /* the overlay's opening loads the settings */
-        fake_screen_changes = 3;
-        open_overlay(); finish_current_job(); finish_current_job();
-        test_now += 250000; control_tick(0);
-        TEST_ASSERT(job_running);
-        check_waiting(WAIT_HINT);
-        finish_current_job();
-        test_now += 500000; control_tick(0);
-        TEST_ASSERT(job_running);
-        finish_current_job();
-        check_current_definition("cat", 0);
-        close_overlay(); mem_free();
-    }
-
     /* The region drawn as the hint asks (□, a box, Enter) starts over: the old region's try, cancelled, counts for
      * no region, and the next press says "Recognizing…" again, with no retry pace held over. */
     cursor_setup();
@@ -5084,7 +5075,7 @@ static void test_open_overlay_says_why_it_waits(void)
     open_overlay(); finish_current_job(); finish_current_job();
     test_now += 250000; control_tick(0);
     TEST_ASSERT(job_running);
-    check_waiting(WAIT_HINT_PAUSE);
+    check_waiting(WAIT_HINT);
     VjoRect drawn = {10, 10, 200, 60};
     vjo_post_command(VJO_CMD_SET_REGION, &drawn); control_tick(0); /* saved: the overlay closes, the try cancelled */
     TEST_CHECK(ov == OV_CLOSED && job_running && job_cancelled && !screen_changed_streak && !screen_retry_until);
@@ -5161,7 +5152,7 @@ static void test_torn_tries_leave_the_waiting_view_alone(void)
     finish_current_job(); /* torn 2: 250 ms; the third try says why, once */
     test_now += 250000; control_tick(0);
     TEST_ASSERT(job_running);
-    check_waiting(WAIT_HINT_PAUSE); /* API 55: ocr_pause off (the default) in a Vita game */
+    check_waiting(WAIT_HINT);
     TEST_CHECK_(g_view.version != version, "the hint: version +%u", g_view.version - version);
     version = g_view.version;
     seq = g_view.list_seq;
@@ -5171,7 +5162,7 @@ static void test_torn_tries_leave_the_waiting_view_alone(void)
         TEST_CHECK(!job_running && open_retry);
         test_now += waits[i] * 1000; control_tick(0);
         TEST_ASSERT(job_running);
-        check_waiting(WAIT_HINT_PAUSE);
+        check_waiting(WAIT_HINT);
         TEST_CHECK_(g_view.version == version && g_view.list_seq == seq, "try %d: version +%u, list +%u", i + 4,
                     g_view.version - version, g_view.list_seq - seq);
     }

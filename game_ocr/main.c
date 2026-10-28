@@ -114,21 +114,23 @@ static void *line_base;
  * fields (workspace_bytes, resident_bytes, capture_bytes, the step log) rather
  * than printed here. */
 enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_HELPERS, GL_SHOT,
-       GL_SC3, GL_SPOT, GL_FRAME, GL_COUNT };
+       GL_SC3, GL_SPOT, GL_COUNT };
+/* API 55: the frame block is the tall line's ledger item: a job holds one of the two, never both (the worst case
+ * counts VJO_BUDGET_GAME_LINE_OR_FRAME), so the ledger keeps its twelve items in every module (#355's review H1) */
+#define GL_FRAME GL_LINE
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
     [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
     [GL_WEIGHTS] = {"VjoGameVocrWeights", VJO_LEDGER_POOL_GAME},
     [GL_WORKSPACE] = {"VjoGameVocr workspace", VJO_LEDGER_POOL_GAME},
     [GL_CAPTURE] = {"VjoGameVocrCapture", VJO_LEDGER_POOL_GAME},
-    [GL_LINE] = {"VjoGameVocrLine", VJO_LEDGER_POOL_GAME},
+    [GL_LINE] = {"VjoGameVocrLine", VJO_LEDGER_POOL_GAME}, /* and API 55's VjoGameVocrFrame (GL_FRAME) */
     [GL_LM] = {"VjoGameVocrLM", VJO_LEDGER_POOL_GAME},
     [GL_CASCADE] = {"VjoGameVocrCascade", VJO_LEDGER_POOL_GAME},
     [GL_HELPERS] = {"VjoGameVocrHelper stacks+TLS", VJO_LEDGER_POOL_GAME},
     [GL_SHOT] = {"VjoGameShot", VJO_LEDGER_POOL_GAME},
     [GL_SC3] = {"VjoGameSc3", VJO_LEDGER_POOL_GAME},
     [GL_SPOT] = {"VjoGameVocrSpot", VJO_LEDGER_POOL_GAME},
-    [GL_FRAME] = {"VjoGameVocrFrame", VJO_LEDGER_POOL_GAME},
 };
 typedef char vjo_game_ledger_items_fit[GL_COUNT <= VJO_LEDGER_MAX_ITEMS ? 1 : -1];
 VjoLedger g_game_ledger;
@@ -520,8 +522,10 @@ static int pause_copy(Capture *c)
         break;
     }
     pz.us = c->last.copy_us;
-    /* the cap: no more copies in this game (a frame that never came is TIMEOUT too, with no wait) */
-    if (rc == VJO_ERR_TIMEOUT && pz.us >= VJO_GAME_OCR_PAUSE_MAX_US) pause_capped = 1;
+    /* the cap: no more copies in this game (a frame that never came is TIMEOUT too, with no wait). Not in a job
+     * cancelled meanwhile (#355's review M2): a game suspended during its copy (the PS button) holds the copy, and
+     * the copy's time with it, for as long as it is suspended, and the suspension cancels the job */
+    if (rc == VJO_ERR_TIMEOUT && pz.us >= VJO_GAME_OCR_PAUSE_MAX_US && !cancelled(NULL)) pause_capped = 1;
     if (rc == (int)r->height) {
         pz.frozen = 1;
         pause_frames++;
@@ -2389,7 +2393,10 @@ retry_smaller:
      * released (so it never makes the job give back another model's weights); asked for before the helpers, so a game
      * short of memory may read its lines one after the other for it, never with a smaller model, LM or cascade. */
     uint32_t frame_need = 0;
-    if (fits && (r->speed & VJO_GAME_OCR_S_PAUSE)) {
+    /* never in the PSP emulator's process (#355's review H2): its frames come from its pad calls, with no display
+     * call to wait in (the kernel refuses the copy: VJO_GAME_STATIC_FB), so the pause is a no-op there: no block, no
+     * copy, no step, the job read as without it */
+    if (fits && (r->speed & VJO_GAME_OCR_S_PAUSE) && !psp_title) {
         pz.asked = 1;
         frame_need = pause_capped ? 0 : PAGE_ROUND((uint32_t)r->width * r->height);
         if (pause_capped) {

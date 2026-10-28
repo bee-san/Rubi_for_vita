@@ -176,7 +176,8 @@
  * has nothing to wait for. A game the kernel cannot pause (VJO_GAME_STATIC_FB, or the watchdog turned it off), a frame
  * block that does not fit beside the job, or a copy that fails reads as before, strip by strip. Not bits 24-27
  * (VOCR6's spotter finder, draft #326's text overlay: VJO_GAME_OCR_S_CHARS 0x2000000) nor 17 (closed draft #271). */
-#define VJO_GAME_OCR_S_PAUSE 0x40000000u
+#define VJO_GAME_OCR_S_PAUSE_SHIFT 30u /* the Shell shifts ocr_pause (0/1) into it */
+#define VJO_GAME_OCR_S_PAUSE (1u << VJO_GAME_OCR_S_PAUSE_SHIFT) /* 0x40000000 */
 #define VJO_GAME_OCR_S_ALL 0x75FD001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
