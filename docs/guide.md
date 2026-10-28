@@ -979,7 +979,7 @@ The in-game overlay keeps its existing colours.
 
 The choice is `colour_scheme = mint | sakura | paper` in `ux0:data/VitaJPOverlay/app.ini`. A missing or unknown
 value uses Mint. An unreadable file is kept, the choices say **Unavailable**, and Start retries after the file is
-repaired. [Preview screenshots and how to recreate them](colour-schemes/README.md).
+repaired. [Preview screenshots and how to recreate them](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/README.md).
 
 ### Removed features
 
