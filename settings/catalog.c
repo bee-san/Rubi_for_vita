@@ -1,5 +1,5 @@
 #include "catalog.h"
-#include "anki_page.h" /* vjo_log: log.txt */
+#include "applog.h"
 #include "letter.h"
 #include "psp.h"
 #include "../core/psptarget.h" /* VJO_PSP_SFO_MAX */

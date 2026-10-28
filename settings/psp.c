@@ -1,5 +1,6 @@
 #include "psp.h"
-#include "anki_page.h" /* vjo_log: log.txt */
+#include "app_io.h"
+#include "applog.h"
 #include "../core/pspbubble.h"
 #include "../core/psptarget.h"
 #include "../core/sfo.h"
@@ -37,22 +38,11 @@ static int file_exists(const char *path)
     return sceIoGetstat(path, &st) >= 0;
 }
 
-static int write_all(SceUID fd, const void *data, size_t len)
-{
-    size_t used = 0;
-    while (used < len) {
-        int n = sceIoWrite(fd, (const char *)data + used, len - used);
-        if (n <= 0) return -1;
-        used += (size_t)n;
-    }
-    return 0;
-}
-
 static int write_file(const char *path, const void *data, size_t len)
 {
     SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (fd < 0) return -1;
-    int rc = write_all(fd, data, len);
+    int rc = vjo_app_write_all(fd, data, len, NULL);
     return sceIoClose(fd) < 0 ? -1 : rc;
 }
 
@@ -62,12 +52,7 @@ static int target_read(void *ctx, uint64_t off, void *buf, size_t n)
 {
     SceUID fd = *(SceUID *)ctx;
     if (sceIoLseek(fd, (SceOff)off, SCE_SEEK_SET) != (SceOff)off) return -1;
-    for (size_t used = 0; used < n;) {
-        int got = sceIoRead(fd, (char *)buf + used, n - used);
-        if (got <= 0) return -1;
-        used += (size_t)got;
-    }
-    return 0;
+    return vjo_app_read_exact(fd, buf, n);
 }
 
 #ifdef VJO_PSP_DEFLATE

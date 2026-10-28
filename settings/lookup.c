@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "app_io.h" /* VJO_APP_RTC_UNIX_EPOCH */
 #include "app_platform.h"
 #include "app_queue.h"
 #include "../core/anki.h"
@@ -208,7 +209,7 @@ static int local_date(uint64_t utc_us, VjoAnkiDate *d)
     SceRtcTick utc, local;
     SceDateTime t;
     memset(&t, 0, sizeof(t));
-    utc.tick = 62135596800000000ull + utc_us; /* microseconds since 0001-01-01 */
+    utc.tick = VJO_APP_RTC_UNIX_EPOCH + utc_us; /* microseconds since 0001-01-01 */
     if (sceRtcConvertUtcToLocalTime(&utc, &local) < 0 || sceRtcSetTick(&t, &local) < 0 || !t.year)
         return 0;
     *d = (VjoAnkiDate){t.year, t.month, t.day, t.hour, t.minute};
@@ -262,8 +263,8 @@ int vjo_lookup_note(const VjoLookupSource *src, VjoAnkiNote *note, char *misc, s
     vjo_anki_misc_info(misc, misc_cap, note->game, dated ? &when : NULL);
     note->misc = misc;
     /* when it is saved, to the minute (shell/anki.c card_facts): the same card saved again within it is that card */
-    note->unix_time = sceRtcGetCurrentTick(&tick) >= 0 && tick.tick > 62135596800000000ull
-        ? (int64_t)((tick.tick - 62135596800000000ull) / 60000000ull) * 60 : 0;
+    note->unix_time = sceRtcGetCurrentTick(&tick) >= 0 && tick.tick > VJO_APP_RTC_UNIX_EPOCH
+        ? (int64_t)((tick.tick - VJO_APP_RTC_UNIX_EPOCH) / 60000000ull) * 60 : 0;
     /* the other dictionaries' entries for the word, as the overlay's card keeps them, while the record fits */
     if (l->n_more > 0 && (g = vjo_arena_zalloc(&card, sizeof(*g) * VJO_ANKI_MAX_MORE))) {
         note->more = g;
