@@ -91,6 +91,11 @@ PACKAGING=$(printf '%s\n' "$SCOPE" | sed -n 's/^packaging=//p')
 case $E2E in auto) [ "$PACKAGING" = true ] && E2E=on || E2E=off ;; esac
 REV=$(git rev-parse HEAD)
 DIRTY=$(git status --porcelain --untracked-files=normal | head -1)
+# The tree's release version: OUT's builds are reused, and a CMake cache keeps the VJO_VERSION of its first configure
+# (a CACHE STRING), so after a version bump the Vita lanes would build, package and check the old one. Each lane passes
+# this one (tools/tests/test_fast_gate.py).
+VERSION=$(sed -n 's/^set(VJO_VERSION "\([^"]*\)" CACHE STRING .*$/\1/p' vita/CMakeLists.txt)
+[ -n "$VERSION" ] || die "no set(VJO_VERSION \"...\" CACHE STRING ...) line in vita/CMakeLists.txt"
 
 # ---- the pinned private inputs
 VOCR_PIN=$(sed -n 's/^set(VJO_VOCR_COMMIT \([0-9a-f]\{40\}\))$/\1/p' cmake/VocrOCR.cmake)
@@ -312,8 +317,8 @@ for v in debug normal; do
   [ "$ENGINE" != none ] || path="export PATH=$(q "$ROOT/.refs/toolchain/psp2cxml-tool/mbuild"):\$PATH"
   B=$OUT/vita-$v
   run_lane vita-$v vita "$path
-cmake -S vita -B $(q "$B") -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=$dbg -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
-  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS")
+cmake -S vita -B $(q "$B") -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=$dbg -DVJO_VERSION=$(q "$VERSION") \\
+  -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS")
 cmake --build $(q "$B") -j$JOBS
 $release
 python3 tools/check_memory_ledger.py --variant $v --kernel $(q "$B/VitaJPOverlay_Kernel.skprx") \\
