@@ -3,9 +3,7 @@
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
-#include <psp2/kernel/cpu.h>
 #include <psp2/kernel/processmgr.h>
-#include <psp2/kernel/threadmgr.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,13 +11,12 @@
 
 #include "anki_export.h"
 #include "app_prefs.h"
+#include "app_worker.h"
 #include "preferences.h"
 #include "../core/lapis.h"
 #include "../core/stick_scroll.h"
 /* As in main.c: no vita2d_fini in the system application. */
 #pragma GCC poison vita2d_fini
-
-#define WORKER_STACK (64 * 1024)
 
 /* Ten rows (API 23 added Screenshots, API 32 their black bars, #311 Card type, Game tag and Sentence readings,
  * #314 Duplicates and Known words), then the 3-line status box,
@@ -81,8 +78,8 @@ static int note_error;
 
 /* The worker (lock): one job at a time, an export or the known words' import. They both use export_mem, as
  * count_mined does on the main thread, which therefore runs only while no job does. */
-static SceUID lock = -1, worker = -1;
-static int all, running, finished, cancelled;
+static VjoAppWorker worker = VJO_APP_WORKER_INIT("VjoAnkiPage");
+static int all;
 static VjoAppPrefs job_app;     /* the app's settings the export follows, as the page had them at its start */
 static VjoConfig job_dicts;     /* #311: config.ini's dictionaries for its sentence readings, the same */
 static int job_dicts_known;     /* config.ini could be read (else the export looks nothing up) */
@@ -99,19 +96,15 @@ static void count_mined(void);
 static void set_progress(void *ud, const char *msg)
 {
     (void)ud;
-    sceKernelLockMutex(lock, 1, NULL);
+    vjo_app_worker_lock(&worker);
     snprintf(progress, sizeof(progress), "%s", msg);
-    sceKernelUnlockMutex(lock, 1);
+    vjo_app_worker_unlock(&worker);
 }
 
 static int stopped(void *ud)
 {
-    int c;
     (void)ud;
-    sceKernelLockMutex(lock, 1, NULL);
-    c = cancelled;
-    sceKernelUnlockMutex(lock, 1);
-    return c;
+    return vjo_app_worker_stopped(&worker);
 }
 
 static int worker_main(SceSize args, void *argp)
@@ -126,10 +119,10 @@ static int worker_main(SceSize args, void *argp)
     size_t n;
     (void)args;
     (void)argp;
-    sceKernelLockMutex(lock, 1, NULL);
+    vjo_app_worker_lock(&worker);
     what = all;
     prefs = job_app;
-    sceKernelUnlockMutex(lock, 1);
+    vjo_app_worker_unlock(&worker);
     vjo_arena_init(&arena, export_mem, sizeof(export_mem));
     t0 = sceKernelGetProcessTimeWide();
     if (what == JOB_KNOWN) { /* #314 stage C */
@@ -138,12 +131,12 @@ static int worker_main(SceSize args, void *argp)
         vjo_log("anki: known words import rc=%d: %d words, %d keys, %d not words, %d over, arena peak %u, %u ms", k.rc,
                 k.words, k.keys, k.skipped, k.over, (unsigned)arena.peak,
                 (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u));
-        sceKernelLockMutex(lock, 1, NULL);
+        vjo_app_worker_lock(&worker);
         snprintf(result, sizeof(result), "%s", msg);
         result_error = k.rc != 0 || k.skipped || k.over;
         progress[0] = '\0';
-        finished = 1;
-        sceKernelUnlockMutex(lock, 1);
+        worker.finished = 1;
+        vjo_app_worker_unlock(&worker);
         return 0;
     }
     /* (job_dicts: written before the thread starts, read only here) */
@@ -155,7 +148,7 @@ static int worker_main(SceSize args, void *argp)
             r.swept, (unsigned)r.bytes, (unsigned)arena.peak, r.missing_picture, r.duplicates,
             vjo_app_prefs_value("anki_duplicates", prefs.anki_duplicates), r.unchecked ? ", not checked" : "", r.known,
             r.known_unchecked ? ", known not checked" : "", (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u));
-    sceKernelLockMutex(lock, 1, NULL);
+    vjo_app_worker_lock(&worker);
     n = (size_t)snprintf(result, sizeof(result), "%s", msg);
     if (r.rc == 0 && r.cards && n < sizeof(result))
         snprintf(result + n, sizeof(result) - n, " Copy it from %s/ by VitaShell's FTP or USB (or the SD2Vita "
@@ -163,42 +156,31 @@ static int worker_main(SceSize args, void *argp)
     result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture || r.unchecked ||
                    r.known_unchecked;
     progress[0] = '\0';
-    finished = 1;
-    sceKernelUnlockMutex(lock, 1);
+    worker.finished = 1;
+    vjo_app_worker_unlock(&worker);
     return 0;
 }
 
-/* job (JOB_*) on the worker, its progress line first. 0, or <0: the SDK's error (-1: a job runs). */
+/* job (JOB_*) on the worker (settings/app_worker.h), its progress line first. 0, or <0: the SDK's error (-1: a job
+ * runs). */
 static int launch(int job, const char *first)
 {
     int rc;
-    if (running)
+    if (worker.running)
         return -1;
-    if (lock < 0 && (lock = sceKernelCreateMutex("VjoAnkiPage", 0, 0, NULL)) < 0)
-        return lock;
+    if ((rc = vjo_app_worker_prepare(&worker)) < 0)
+        return rc;
     all = job;
     job_app = app;
-    finished = cancelled = 0;
     snprintf(progress, sizeof(progress), "%s", first);
-    /* CPU3 at a system priority, as the main thread (settings/sysapp.c). */
-    worker = sceKernelCreateThread("VjoAnkiExport", worker_main, 0x10000100, WORKER_STACK, 0, SCE_KERNEL_CPU_MASK_SYSTEM,
-                                   NULL);
-    rc = worker < 0 ? worker : sceKernelStartThread(worker, 0, NULL);
-    if (rc < 0) {
-        if (worker >= 0)
-            sceKernelDeleteThread(worker);
-        worker = -1;
-        return rc;
-    }
-    running = 1;
-    return 0;
+    return vjo_app_worker_start(&worker, "VjoAnkiExport", worker_main);
 }
 
 /* job: JOB_QUEUED, JOB_ALL or JOB_KNOWN */
 static void start(int job)
 {
     int rc;
-    if (running)
+    if (worker.running)
         return;
     job_dicts = cfg; /* (#311: no job runs, so none reads them now) */
     job_dicts_known = writable;
@@ -214,30 +196,11 @@ static void start(int job)
 /* The worker is done: join it; after an export or an import the cards are counted again. */
 static void reap(void)
 {
-    int done;
-    if (!running)
+    if (!vjo_app_worker_reap(&worker))
         return;
-    sceKernelLockMutex(lock, 1, NULL);
-    done = finished;
-    sceKernelUnlockMutex(lock, 1);
-    if (!done)
-        return;
-    sceKernelWaitThreadEnd(worker, NULL, NULL);
-    sceKernelDeleteThread(worker);
-    worker = -1;
-    running = 0;
     vjo_export_count(&counts);
     known_n = vjo_known_count();
     count_mined(); /* (Skip leaves the duplicates queued) */
-}
-
-static void cancel(void)
-{
-    if (!running)
-        return;
-    sceKernelLockMutex(lock, 1, NULL);
-    cancelled = 1;
-    sceKernelUnlockMutex(lock, 1);
 }
 
 /* #314: the queue's cards whose word an earlier card has, for the export row (in the export's memory: no export
@@ -276,11 +239,11 @@ static void save(int mining, int screenshot, int trim, VjoArena *scratch)
 void vjo_anki_page_show(VjoArena *scratch)
 {
     /* (the log switch is the worker's too: it changes only while no export runs) */
-    if (!running)
+    if (!worker.running)
         vjo_log_enable(0);
     writable = vjo_preferences_load(&cfg, scratch) >= 0;
     app_writable = vjo_app_prefs_load(&app, scratch) >= 0;
-    if (!running) {
+    if (!worker.running) {
         vjo_log_enable(cfg.log_file);
         vjo_export_count(&counts);
         known_n = vjo_known_count();
@@ -328,12 +291,12 @@ static const char *switch_key(int row)
 
 int vjo_anki_page_busy(void)
 {
-    return running;
+    return worker.running;
 }
 
 int vjo_anki_page_holds_cancel(void)
 {
-    return running;
+    return worker.running;
 }
 
 /* A settings row's switch: the first three rows', as config.ini has it; Game tag's and Sentence readings', as
@@ -349,7 +312,7 @@ static int row_on(int row)
 
 static void activate(int row, VjoArena *scratch)
 {
-    if (running)
+    if (worker.running)
         return;
     if (row < ROW_CARD_TYPE)
         save(row == ROW_MINING ? !cfg.anki_mining : cfg.anki_mining,
@@ -472,7 +435,7 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     int stick = stick_move, busy, err = 0, total;
     stick_move = 0;
     reap();
-    busy = running; /* an export or the import runs */
+    busy = worker.running; /* an export or the import runs */
     if (pressed & SCE_CTRL_UP)
         selected = (selected + ROWS - 1) % ROWS;
     if (pressed & SCE_CTRL_DOWN)
@@ -491,7 +454,7 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == ROW_DUPES && !busy)
         set_duplicates(app.anki_duplicates + (pressed & SCE_CTRL_RIGHT ? 1 : -1), scratch);
     if ((pressed & ui->buttons->cancel) && busy)
-        cancel();
+        vjo_app_worker_cancel(&worker);
     /* A touch on a row in view chooses it and acts as Enter does; on a row cut at the room's bottom it only
      * chooses it (which scrolls it into view). */
     if (touch_y >= VIEW_Y && touch_y < VIEW_END && touch_x >= 24 && touch_x < 936)
@@ -512,12 +475,12 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
                 break;
             }
     busy_text[0] = last[0] = '\0';
-    if (lock >= 0) {
-        sceKernelLockMutex(lock, 1, NULL);
+    if (worker.lock >= 0) {
+        vjo_app_worker_lock(&worker);
         snprintf(busy_text, sizeof(busy_text), "%s", busy ? progress : "");
         snprintf(last, sizeof(last), "%s", result);
         err = result_error;
-        sceKernelUnlockMutex(lock, 1);
+        vjo_app_worker_unlock(&worker);
     }
     total = counts.queued >= 0 && counts.exported >= 0 ? counts.queued + counts.exported : -1;
 
@@ -562,11 +525,7 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
 
 void vjo_anki_page_quit(void)
 {
-    if (running) { /* an export or an import stops between two steps */
-        cancel();
-        sceKernelWaitThreadEnd(worker, NULL, NULL);
-        sceKernelDeleteThread(worker);
-        worker = -1;
-        running = 0;
-    }
+    /* an export or an import stops between two steps */
+    vjo_app_worker_cancel(&worker);
+    vjo_app_worker_join(&worker);
 }
