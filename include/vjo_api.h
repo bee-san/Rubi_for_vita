@@ -132,8 +132,13 @@
  * VJO_VOCR_SPOT_NAME), a new step kind (spot) and block (VJO_GITEM_SPOT); the Shell sets the bits from config.ini
  * ocr_finder (spotter by default) and ocr_spotter_refine. Sizes and layouts are unchanged. API 45 was this change's
  * number while it waited (draft branch feat/vocr6-spotter-finder), then 52 and 53, which #369 and #385 took (merged
- * first); main's numbers only grow, so it is 54. */
-#define VJO_API_VERSION 54
+ * first); main's numbers only grow, so it is 54.
+ * 55: the pause for the frame (config.ini ocr_pause, off by default; #348, docs/game-pause.md): VjoGameOcrRequest.speed
+ * bit 30 (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region copied from one frame in one
+ * display call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block (VJO_GITEM_FRAME), which the job
+ * reads from; the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. This is #355's: it waited as a draft
+ * as 51 and then 52, which #354 and #369 took (merged first), so it is 55. */
+#define VJO_API_VERSION 55
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

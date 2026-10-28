@@ -42,6 +42,7 @@
   names_first=2
   ocr_finder=1
   ocr_spotter_refine=0
+  ocr_pause=0
   n_warnings=0
 = host/tests/fixtures/config-old-app-test2.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 anki_mining=1
 = host/tests/fixtures/config-test3-owner.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 vocr_tier=3 vocr_tier_explicit=1 anki_mining=1

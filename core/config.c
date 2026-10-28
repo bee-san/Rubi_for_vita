@@ -64,6 +64,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_vertical = VJO_VERTICAL_DEFAULT; /* docs/vita-vn-ocr.md, "Vertical text" */
     c->ocr_wait_hint = 1; /* the open overlay says why it waits (docs/text-stability.md, #358) */
     c->names_first = VJO_NAMES_DEFAULT; /* docs/local-dictionaries.md, "Names and words" (#321) */
+    c->ocr_pause = 0; /* the game is not paused for its frame unless ocr_pause = on (docs/game-pause.md) */
 }
 
 const char *vjo_config_default_text(void)
@@ -177,6 +178,10 @@ const char *vjo_config_default_text(void)
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
            "ocr_boost_clock = on\n"
+           "; vocr: pause the game a moment for each reading (the Rubi app's Pause the game to\n"
+           "; read): the text box is copied from one frame, so an animated icon cannot change\n"
+           "; it while it is read: on | off\n"
+           "ocr_pause = off\n"
            "; vocr: vertical text (manga, vertical dialogue): auto reads the region's columns,\n"
            "; right to left, with the vertical model where its rows look like vertical text |\n"
            "; on reads columns, but rows where they are lines of text | off reads rows\n"
@@ -503,14 +508,11 @@ static const char head_gate_name[] VJO_DATA_TABLE(config_head_gate_name) = "gate
 static const char head_two_name[] VJO_DATA_TABLE(config_head_two_name) = "two_level";
 /* API 47's key, in the data segment: the normal Shell's code room (docs/memory-ledger.md, "Vertical text"). */
 static const char vertical_key[] VJO_DATA_TABLE(config_vertical_key) = "ocr_vertical";
-/* #358's key, in the data segment too (docs/memory-ledger.md, "Why the overlay waits"). */
-static const char wait_hint_key[] VJO_DATA_TABLE(config_wait_hint_key) = "ocr_wait_hint";
 /* #321's key, in the data segment too (docs/memory-ledger.md, "Lookups: #321"). */
 static const char names_key[] VJO_DATA_TABLE(config_names_key) = "names_first";
 /* API 54: the spotter's keys and the finder's names, in the data segment as the keys above (the Shell's code pages
  * keep their room) */
 static const char finder_key[] VJO_DATA_TABLE(config_finder_key) = "ocr_finder";
-static const char spot_refine_key[] VJO_DATA_TABLE(config_spot_refine_key) = "ocr_spotter_refine";
 static const char finder_grad[] VJO_DATA_TABLE(config_finder_grad) = "grad";
 static const char finder_spotter[] VJO_DATA_TABLE(config_finder_spotter) = "spotter";
 const char *const vjo_finder_names[] VJO_DATA_TABLE(config_finders_1) = {finder_grad, finder_spotter, NULL};
@@ -519,10 +521,42 @@ const char *const vjo_finder_names[] VJO_DATA_TABLE(config_finders_1) = {finder_
  * settings that parsed off/on by hand read it through set_choice, the same values and warning: the Shell's code
  * pages keep room for the spotter's settings (docs/memory-ledger.md, "The spotter finder"). */
 static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", NULL};
+/* #355's review H1: the off/on settings with no rule of their own (an unknown value keeps the field, with
+ * set_choice's warning), one table and one loop in place of a branch each, and #358's and API 54's keys read-only
+ * data again: SceShell's code room for API 55's ocr_pause (144 B of the normal Shell's code and 32 B of its data,
+ * 152 B and 40 B of the debug one's on main efbee95 [measured: tools/check_memory_ledger.py's module rows, #355's
+ * head with and without this table, both builds]; docs/memory-ledger.md, "The pause for the frame"). The keys' order
+ * is their branches' was; each key is matched whole (vjo_ieq), so none can take another's. */
+static const struct {
+    const char *key;
+    uint16_t offset;
+} switches[] = {
+    {"japanese_only_selection", offsetof(VjoConfig, japanese_only_selection)},
+    {"frequency_badge", offsetof(VjoConfig, frequency_badge)},
+    {"ocr_text_gate", offsetof(VjoConfig, ocr_text_gate)},
+    {"ocr_spotter_refine", offsetof(VjoConfig, ocr_spotter_refine)}, /* API 54 */
+    {"ocr_pause", offsetof(VjoConfig, ocr_pause)},                  /* API 55, off by default */
+    {"ocr_skip_blank_lines", offsetof(VjoConfig, ocr_skip_blank_lines)},
+    {"ocr_boost_clock", offsetof(VjoConfig, ocr_boost_clock)},
+    {"ocr_wait_hint", offsetof(VjoConfig, ocr_wait_hint)},          /* #358 */
+    {"log_file", offsetof(VjoConfig, log_file)},
+    {"anki_mining", offsetof(VjoConfig, anki_mining)},
+    {"anki_screenshot", offsetof(VjoConfig, anki_screenshot)},
+    {"anki_screenshot_trim_bars", offsetof(VjoConfig, anki_screenshot_trim_bars)},
+};
+
+static int *switch_field(VjoConfig *c, const char *key)
+{
+    for (size_t i = 0; i < sizeof(switches) / sizeof(switches[0]); i++)
+        if (vjo_ieq(key, switches[i].key))
+            return (int *)((char *)c + switches[i].offset);
+    return NULL;
+}
 
 static void set_kv(VjoConfig *c, const char *key, const char *val)
 {
     const StrSetting *ss;
+    int *sw;
     if (vjo_ieq(key, "dictionary")) {
         /* the local dictionaries are the only ones: a removed one's value (jpdb, jiten, hachidori) loads as local
          * without a warning (#418), any other value but local warns */
@@ -535,14 +569,12 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->non_japanese_filter = VJO_FILTER_NONE;
         else
             warn(c, "%s: invalid value", key);
-    } else if (vjo_ieq(key, "japanese_only_selection")) {
-        set_choice(c, key, val, &c->japanese_only_selection, off_on);
+    } else if ((sw = switch_field(c, key)) != NULL) {
+        set_choice(c, key, val, sw, off_on);
     } else if (vjo_ieq(key, "highlight_mode")) {
         if (vjo_ieq(val, "word")) c->highlight_mode = VJO_HIGHLIGHT_WORD;
         else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
         else warn(c, "%s: invalid value", key);
-    } else if (vjo_ieq(key, "frequency_badge")) {
-        set_choice(c, key, val, &c->frequency_badge, off_on);
     } else if (vjo_ieq(key, "local_dictionary_results")) {
         int v;
         if (parse_int(val, &v) == 0 && v >= 1 && v <= VJO_LOCAL_MAX_DICTS)
@@ -604,9 +636,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_refine_lines")) {
         static const char *const modes[] VJO_DATA_TABLE(config_modes_1) = {"off", "on", "psp", NULL};
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
-    } else if (vjo_ieq(key, "ocr_text_gate") || vjo_ieq(key, spot_refine_key)) {
-        /* ocr_text_gate or (API 54) ocr_spotter_refine: their fifth letters differ, in either case */
-        set_choice(c, key, val, (key[4] | 0x20) == 's' ? &c->ocr_spotter_refine : &c->ocr_text_gate, off_on);
     } else if (vjo_ieq(key, head_key)) {
         /* each value's index is its VJO_HEAD_* bits */
         static const char *const heads[] VJO_DATA_TABLE(config_heads_1) = {"off", head_gate_name, head_two_name, "on",
@@ -617,14 +646,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         set_choice(c, key, val, &c->ocr_line_fix, vjo_line_finder_names + 1);
     } else if (vjo_ieq(key, finder_key)) { /* API 54 */
         set_choice(c, key, val, &c->ocr_finder, vjo_finder_names);
-    } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
-        set_choice(c, key, val, &c->ocr_skip_blank_lines, off_on);
     } else if (vjo_ieq(key, "ocr_threads")) {
         static const char *const threads[] VJO_DATA_TABLE(config_threads_1) = {"1", "2", "3", NULL}; /* stored as the helpers: 0-2 */
         set_choice(c, key, val, &c->ocr_helpers, threads);
-    } else if (vjo_ieq(key, "ocr_boost_clock") || vjo_ieq(key, wait_hint_key)) {
-        /* ocr_boost_clock or (#358) ocr_wait_hint: their fifth letters differ, in either case */
-        set_choice(c, key, val, (key[4] | 0x20) == 'w' ? &c->ocr_wait_hint : &c->ocr_boost_clock, off_on);
     } else if (vjo_ieq(key, vertical_key) || vjo_ieq(key, names_key)) {
         /* VJO_VERTICAL_* and (#321) VJO_NAMES_*, the same values: ocr_vertical or names_first by the first letter */
         static const char *const modes[] VJO_DATA_TABLE(config_vertical_1) = {"off", "on", "auto", NULL};
@@ -646,13 +670,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             warn(c, "%s: invalid value (%s)", key, ss->expected);
             dst[0] = '\0';
         }
-    } else if (vjo_ieq(key, "log_file")) {
-        set_choice(c, key, val, &c->log_file, off_on);
-    } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot") ||
-               vjo_ieq(key, "anki_screenshot_trim_bars")) {
-        int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining
-                   : vjo_ieq(key, "anki_screenshot") ? &c->anki_screenshot : &c->anki_screenshot_trim_bars;
-        set_choice(c, key, val, dst, off_on);
     } else {
         char name[VJO_CONFIG_WARN_KEY + 1];
         warn(c, "unknown setting '%s'", warn_name(name, key));

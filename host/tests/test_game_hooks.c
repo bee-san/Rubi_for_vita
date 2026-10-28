@@ -22,6 +22,10 @@ static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((al
 static unsigned char capture_mem_block[64*1024] __attribute__((aligned(64)));
 static unsigned char lm_memory[VJO_VOCR_LM1_BYTES + 4096] __attribute__((aligned(64))); /* a resident LM's block */
 static int lm_live; static unsigned lm_block;
+/* API 55, the pause: the worker's frame block (VjoGameVocrFrame) and the kernel's frame copies into it */
+static unsigned char frame_mem_block[64*1024] __attribute__((aligned(64)));
+static int frame_live;
+static unsigned frame_block, frame_copies;
 static unsigned char pixels[W*H*4];
 static int capture_live, job_live, weights_live, shot_allocs, probe_allocs;
 static unsigned capture_block, capture_allocs, job_block, weights_block, live_bytes;
@@ -215,6 +219,11 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
     if (!strcmp(name, "VjoGameShot")) { shot_allocs++; return -1; }
     if (!strcmp(name, "VjoGameVocrProbe")) { probe_allocs++; return -1; }
     TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW);
+    if (!strcmp(name, "VjoGameVocrFrame")) { /* API 55 */
+        TEST_CHECK(!frame_live && size <= sizeof(frame_mem_block));
+        frame_live = 1; frame_block = size; live_bytes += size;
+        return 14;
+    }
     if (!strcmp(name, "VjoGameSc3")) {
         sc3_allocs++;
         sc3_double += sc3_live != 0;
@@ -244,6 +253,7 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
 {
     if (uid == 11) { TEST_CHECK(capture_live); *base = capture_mem_block; return 0; }
+    if (uid == 14) { TEST_CHECK(frame_live); *base = frame_mem_block; return 0; }
     if (uid == 12) { TEST_CHECK(sc3_live); if (sc3_base_fail) return -1; *base = sc3_mem; return 0; }
     if (uid == 13) { TEST_CHECK(lm_live); *base = lm_memory; return 0; }
     TEST_CHECK(uid == 10 ? weights_live : uid == 9 && job_live);
@@ -252,6 +262,7 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
 }
 int sceKernelFreeMemBlock(SceUID uid)
 {
+    if (uid == 14) { TEST_CHECK(frame_live); frame_live = 0; live_bytes -= frame_block; return 0; }
     if (uid == 11) {
         TEST_CHECK(capture_live);
         if (fail_capture_free) { fail_capture_free--; return -1; }
@@ -297,6 +308,20 @@ static unsigned hook_publishes;
 static int hook_publish_rc;
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
+    if (req->flags & VJO_ROWS_FRAME) { /* API 55: the whole region from one frame, into the frame block */
+        TEST_CHECK(req->seq == 12 && !req->y && req->n == H && req->dst_stride == W && frame_live &&
+                   dst == (void *)frame_mem_block && req->flags == (VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_FRAME));
+        frame_copies++;
+        for (unsigned r = 0; r < H; r++)
+            for (unsigned x = 0; x < W; x++) {
+                const unsigned char *p = pixels + (r * W + x) * 4;
+                ((unsigned char *)dst)[r * W + x] = (unsigned char)((77u*p[0] + 150u*p[1] + 29u*p[2]) >> 8);
+            }
+        info->armed = 1;
+        info->fb_width = W; info->fb_height = H; info->fb_pitch = W;
+        info->copy_us = 777; /* the game's wait in its display call */
+        return (int)H;
+    }
     if (req->flags & VJO_ROWS_HOOK) {
         TEST_CHECK(req->seq == 12 && req->size == sizeof(*req) && req->flags == VJO_ROWS_HOOK && !req->n && !req->y &&
                    !dst && !req->dst_stride && req->mode == VJO_GAME_OCR_SRC_HOOK && info && !capture_live);
@@ -427,6 +452,8 @@ static void reset(void)
     capture_live = job_live = weights_live = 0; capture_block = capture_allocs = 0; live_bytes = 0;
     shot_allocs = probe_allocs = 0;
     available = 64*1024*1024; clock_value = 0; free_mib = 0;
+    frame_live = 0; frame_block = frame_copies = 0; /* API 55, and the worker's frame state */
+    frame_uid = -1; frame_base = NULL; frame_bytes_held = 0; memset(&pz, 0, sizeof(pz)); pause_capped = 0;
     file_open_now = cancel_now = rows_error = 0;
     opens = finds = runs = 0; rows_calls = 0; hook_publishes = 0; hook_publish_rc = 0;
     spy_text = "猫";
@@ -1361,6 +1388,36 @@ static void verified_site_answers_when_its_weights_are_refused(void)
     }
 }
 
+/* #355's audit N7: the same path with the pause (ocr_pause = on). The try took its frame block with its check, and its
+ * weights were refused before its first pass (the core reads its weights first), so no frame was copied and the game
+ * never waited; the verified site's answer then ends the job early (#500's path). Its pause step is still logged, before
+ * the try's blocks go back (UNUSED: asked and held, never copied; us 1, no wait), as on every other path, and the frame
+ * block goes back with them. Before, that path logged no pause step at all. */
+static void verified_site_after_refused_weights_logs_the_pause(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    free_mib = 1;
+    available = 2 * 1024 * 1024;
+    fake_verified = 1u;
+    stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
+    spy_text = OCR1;
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_PAUSE, &out) == 0);
+    TEST_CHECK_(!strcmp(out.text, LINE1) && out.text_from == 1 && !runs, "%s from %u, %u runs", out.text,
+                (unsigned)out.text_from, runs);
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+    TEST_CHECK(!frame_copies && frame_block && !frame_live && !weights_live &&
+               vjo_ledger_current(&g_game_ledger, GL_FRAME) == 0);
+    unsigned pauses = 0;
+    const VjoGameOcrStep *ps = NULL;
+    for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        if (out.step[i].id == VJO_GSTEP_PAUSE) { pauses++; ps = &out.step[i]; }
+    TEST_CHECK_(pauses == 1 && ps && !ps->kind && !ps->arg && !ps->rc && ps->bytes == frame_block && ps->us == 1 &&
+                    ps->sum == (VJO_GPAUSE_UNUSED | VJO_GAME_OCR_MEM_USER << 8),
+                "%u pause steps; kind %u rows %u rc %d bytes %u us %u sum 0x%X", pauses, ps ? ps->kind : 9u,
+                ps ? ps->arg : 0u, ps ? (int)ps->rc : 0, ps ? ps->bytes : 0u, ps ? ps->us : 0u, ps ? ps->sum : 0u);
+}
+
 /* ---- API 43: trusted hooks (VJO_GAME_OCR_S_TRUST) through the worker's job path ---- */
 
 /* A Rubi verified site answers from its first line without OCR: no model opened, no line found or recognized,
@@ -1994,6 +2051,7 @@ TEST_LIST = {
     {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
     {"#280's audit F1: a verified site answers when the weights are refused after the check (アマツツミ's 2 MiB, "
      "whole MiB)", verified_site_answers_when_its_weights_are_refused},
+    {"API 55, #355's audit N7: that path with the pause logs the pause step", verified_site_after_refused_weights_logs_the_pause},
     {"Luna: no initial, periodic or repeated OCR and no generic cache IO", luna_never_loads_ocr_or_generic_learning},
     {"Luna: preserve generic learning and resume it when unavailable", luna_preserves_generic_state_and_falls_back_when_unavailable},
     {"Luna: pool saturation, newest script, stable ties and sequence wrap", luna_survives_pool_saturation_and_uses_newest_script},

@@ -188,6 +188,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns, but rows where the box plainly holds lines of text) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | | **Suggest a text box**: a game without a box of its own is offered the one Rubi finds around its dialogue, once each time it starts or resumes ([details](docs/first-box.md)) | ON |
+| | **Pause the game to read**: each reading copies the text box from one frame at once, the game waiting a moment (an estimated 2-6 ms for a drawn text box, 11-29 ms for the whole screen: draw a box with □ first), so a spinning icon in it can't stop the read; nothing in a PSP game (on `main`, not in 0.10.0; [details](docs/game-pause.md)) | OFF |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -268,6 +269,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | The app's Look up tab: typed search, a game's earlier lines, cards from them | not run on a console yet; measured on the host ([details](docs/guide.md#look-up)) |
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |
+| ❓ | Pause the game to read (on `main`, not in 0.10.0) | not run on a console yet; the game's wait per reading is an estimate ([details](docs/game-pause.md)) |
 | ❓ | Characters read, characters/hour, active time and the streak (△ in the overlay) | not run on a console yet; the streak tested on the host ([details](docs/ocr-history.md#total-characters-read), [the streak](docs/ocr-history.md#streak)) |
 | ❓ | Default OFF on the Games page | not run on a console since [#149](https://github.com/bee-san/Rubi_for_vita/pull/149) made it turn every game OFF (0.8.0-test.4) |
 | ❓ | A game's own line finder (its page in the Rubi app) | not run on a console yet ([details](docs/guide.md#a-games-own-page)) |
@@ -317,7 +319,7 @@ the home screen (SceShell) or another system app. Before each reading it checks 
 game has free, leaves the game a reserve of 1 MiB, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
 Rubi's OCR worker from its start: 240 KiB of its memory (204 KiB of module pages, 36 KiB of stack and
-TLS: the normal build's figures; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
+TLS: the normal build's figures in 0.10.0; `main` takes 4 KiB more since the pause; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).
 

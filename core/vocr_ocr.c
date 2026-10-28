@@ -69,13 +69,14 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #endif
 #define VJO_VOCR_COLUMNS (VJO_VOCR_FINDER_COLUMNS | VJO_VOCR_COLUMN_FLAGS)
 
-/* The pinned models (#379: in the data segment, VJO_DATA_TABLE, whose last page had room: the worker's code pages are
- * full; the table stays const). */
+/* The pinned models: read-only data again (#355's review H1: API 55's pause takes the worker one code page more, with
+ * room for this table, and its statics need the data segment's last page, which this table's 480 B had taken since
+ * #379, when the worker's code pages were full; docs/memory-ledger.md, "The pause for the frame"). */
 #ifdef VJO_VOCR_TEST_MODELS
 /* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
 #include VJO_VOCR_TEST_MODELS
 #else
-static const VjoVocrModel models[] VJO_DATA_TABLE(vocr_models) = {
+static const VjoVocrModel models[] = {
     /* The three tiers (include/vjo_vocr_sizes.h), VOCR6-S, VOCR6-N and VOCR6-L (vita-vn-ocr #125, docs/vocr6.md
      * "The follow-up", v0.4.1-vocr6.2), the arena each plans with ocr_head_gate's default, on, and the paths its
      * blob has (run_opts): Small's blob is plain, v0.3.0's VOCR5-S arena (no gate, no two-level head: the same with
@@ -684,6 +685,9 @@ typedef struct {
     uint32_t settle_left;   /* the job's waiting budget left */
     vocr_textgate_state *gate; /* the gate reading this try's rows, or NULL (VjoVocrPolicy.gate) */
     unsigned gate_next;     /* the next row it takes */
+    /* API 55: the source froze the region at the first pass (VjoGreySource.frozen): every read since and to come
+     * returns the same rows, so nothing is waited for or read again to see a change */
+    int frozen;
     int err;
 } Stream;
 
@@ -768,6 +772,13 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
         s->err = got < 0 ? got : VJO_E_SOURCE;
         return -1;
     }
+    /* API 55: the first pass's first strip came from a region the source froze (the pause): it is the region now,
+     * whatever a wait read before it (those rows' states are forgotten, so a spinner that moved since is no tear) */
+    if (first && !y && !s->frozen && s->src->frozen && s->src->frozen(s->src->ud)) {
+        bits_clear(s);
+        s->frozen = 1;
+        s->st->frozen = 1;
+    }
     if (flags == VJO_STRIP_FIRST && !first) s->retract = 0;
     if (first) {
         if (!y && !s->held) s->pass_from = t0;
@@ -823,7 +834,8 @@ static int stream_pass(Stream *s)
 
 static int settle_on(const Stream *s)
 {
-    return s->pol->settle_us && s->p->now_us && s->settle_left;
+    /* a frozen region (API 55) cannot change: nothing is left to wait for */
+    return s->pol->settle_us && s->p->now_us && s->settle_left && !s->frozen;
 }
 
 /* Spends us of the job's waiting budget; over: it ran out before the rows held
@@ -1329,6 +1341,17 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *s
         }
         *stride = s->w;
         return s->strip + (size_t)(ln->y - s->y0) * s->w + ln->x;
+    }
+    if (s->frozen) {
+        /* API 55: the frozen region holds it whole, the same bytes a copy of the region gave API 18's recognizer */
+        const unsigned char *f = s->src->frozen(s->src->ud);
+        s->st->tall++;
+        if (!f) {
+            s->err = VJO_E_SOURCE;
+            return NULL;
+        }
+        *stride = s->w;
+        return f + (size_t)ln->y * s->w + ln->x;
     }
     {
         size_t bytes = (size_t)ln->w * ln->h;
@@ -2433,8 +2456,9 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
      * that changed while it was read is seen (the strips of a taller region are
      * all read twice by the finder's two passes already; the spotter's, API 54,
      * once, and its boxes' rows again for their dark flags: every line's rows are
-     * read again, each checked, when it is recognized). */
-    if (s->strip_rows >= im->height && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
+     * read again, each checked, when it is recognized; a frozen region, API 55,
+     * cannot change, so it is not). */
+    if (s->strip_rows >= im->height && !s->frozen && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
     /* #194's probe is GRAD's: the spotter's boxes are read as it gave them (API 54) */
     if (pol->short_lines && !cols && !st->spot_ran && !set.truncated && probe_short_lines(s, &set) < 0)
         return stream_error(s, VJO_E_SOURCE);
@@ -2527,6 +2551,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
      * to fetch; gblock: fetched. */
     VocrLine gbox;
     const unsigned char *gblock = NULL;
+    size_t gstride = 0; /* gblock's own stride: the line buffer's (gbox.w) or, frozen (API 55), the region's (#355's B1) */
     const unsigned gather_n = cols ? gather_box(s, &set, &gbox) : 0u;
     unsigned gather = gather_n;
     /* API 54: the spotter's boxes are refined by its own policy (ocr_spotter_refine), GRAD's by the job's */
@@ -2544,8 +2569,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         }
     fetch:
         if (gblock) { /* its part of the rectangle */
-            box_pixels = gblock + (size_t)(box->y - gbox.y) * gbox.w + (box->x - gbox.x);
-            box_stride = gbox.w;
+            box_pixels = gblock + (size_t)(box->y - gbox.y) * gstride + (box->x - gbox.x);
+            box_stride = gstride;
             st->tall += box->h > s->strip_rows;
         } else {
             box_pixels = line_pixels(s, gather ? &gbox : box, &box_stride);
@@ -2553,6 +2578,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 st->tall--;
                 gather = 0;
                 gblock = box_pixels;
+                gstride = box_stride;
                 st->gathered = gblock ? gather_n : 0u;
                 if (!gblock) st->tall_skipped--; /* refused: column by column, this one first */
                 goto fetch;

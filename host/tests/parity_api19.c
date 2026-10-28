@@ -28,7 +28,7 @@ static int api19_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, siz
 {
     const Api19Capture *c = ud;
     ParityRowsJob job = {c->x, c->y, c->w, c->h, c->f->fb_w, c->f->fb_h, y, n, (uint32_t)stride,
-                         (uintptr_t)dst, NULL, 0, 0};
+                         (uintptr_t)dst, NULL, 0, 0, 0};
     (void)flags;
     return parity_grey_rows((uintptr_t)c->f->pixels, c->f->pitch, c->f->fmt, c->f->fb_w, c->f->fb_h, &job);
 }
@@ -111,7 +111,7 @@ int parity_api19(const ParityFrame *f, const char *model, ParityRun *out)
     res.size = mi->bytes;
     res.stamp = 1;
     {
-        VjoGreySource src = {&cap, cap.w, cap.h, api19_strip, NULL, api19_line};
+        VjoGreySource src = {&cap, cap.w, cap.h, api19_strip, NULL, api19_line, NULL};
         current = out;
         out->rc = vjo_vocr_ocr_resident(&p, "ux0:data/VitaJPOverlay/ocr", model, &src, &res, ws, bytes, block,
                                         cap_bytes, text, sizeof(text), &st);

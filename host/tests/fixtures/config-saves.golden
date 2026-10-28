@@ -45,18 +45,18 @@
     +88 anki_screenshot = off\n
     +89 anki_screenshot_trim_bars = on\n
 = docs/config.example.ini
-  preferences: 6585 bytes, fnv1a ccbe746729e9bb8a
-  anki_keys: 6585 bytes, fnv1a 15cb57bb638904da
-    -132 anki_mining = off\n
-    +132 anki_mining = on\n
-    -134 anki_screenshot = on\n
-    +134 anki_screenshot = off\n
-  clean: 6585 bytes, fnv1a ccbe746729e9bb8a
-  app_ini: 6585 bytes, fnv1a 15cb57bb638904da
-    -132 anki_mining = off\n
-    +132 anki_mining = on\n
-    -134 anki_screenshot = on\n
-    +134 anki_screenshot = off\n
+  preferences: 6798 bytes, fnv1a fba5102d2cd46590
+  anki_keys: 6798 bytes, fnv1a df8693d40a48c560
+    -136 anki_mining = off\n
+    +136 anki_mining = on\n
+    -138 anki_screenshot = on\n
+    +138 anki_screenshot = off\n
+  clean: 6798 bytes, fnv1a fba5102d2cd46590
+  app_ini: 6798 bytes, fnv1a df8693d40a48c560
+    -136 anki_mining = off\n
+    +136 anki_mining = on\n
+    -138 anki_screenshot = on\n
+    +138 anki_screenshot = off\n
 = each record's saves where they differ from keeping its lines and appending the save's own (the four preferences with its values, the Anki keys; nothing for the clean copy)
 > vocr_tier\r= large | preferences: -1 vocr_tier\r= large\n +1 vocr_tier = large\n -5 vocr_tier = large\n
 > vocr_tier \r= large | preferences: -1 vocr_tier \r= large\n +1 vocr_tier = large\n -5 vocr_tier = large\n

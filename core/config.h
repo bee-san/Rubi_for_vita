@@ -149,6 +149,11 @@ typedef struct {
      * Last, as above. */
     int ocr_finder;           /* VJO_FINDER_* */
     int ocr_spotter_refine;   /* 0/1 */
+    /* The pause for the frame (API 55, #348; docs/game-pause.md): 1 (ocr_pause = on) has each of the user's jobs copy
+     * its region from one frame, in that frame's display call, which the game waits in for as long (at most
+     * VJO_GAME_OCR_PAUSE_MAX_US), and read every row from that copy; 0 (off, the default) reads strip by strip, as
+     * before. The Shell sends it as VJO_GAME_OCR_S_PAUSE in each job's speed word. Last, as above. */
+    int ocr_pause;            /* 0/1, off by default */
 } VjoConfig;
 
 /* names_first's values, in ocr_vertical's order (off, on, auto: config.c parses both with one table), and its
