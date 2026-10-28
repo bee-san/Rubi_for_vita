@@ -683,20 +683,23 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay/hooks
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/sc3-charsets/PCSG00146.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00352.sc3
     ${ROOT}/third_party/sc3-charsets/PCSG00555.sc3 ${STAGE}/ux0/data/VitaJPOverlay/hooks/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${ROOT}/docs/ocr-history.md ${STAGE}/docs/
-  # Keep the guide's feature and recovery links usable in the downloaded ZIP.
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${ROOT}/docs/ocr-history.md ${STAGE}/docs/
+  # Keep the guide's feature and recovery links usable in the downloaded ZIP: every document README.md and the guide
+  # link and every document those link, but the history (docs/history/, docs/memory-ledger-history.md), which stays
+  # on GitHub (tools/tests/test_zip_docs.py).
   COMMAND ${CMAKE_COMMAND} -E copy
     ${ROOT}/docs/line-history.md ${ROOT}/docs/native-hooks.md ${ROOT}/docs/hook-titles.md
-    ${ROOT}/docs/hook-requests.md
-    ${ROOT}/docs/text-detector.md ${ROOT}/docs/memory-ledger.md ${ROOT}/docs/boot-safety.md
+    ${ROOT}/docs/hook-requests.md ${ROOT}/docs/first-box.md ${ROOT}/docs/roadmap.md ${ROOT}/docs/reading-time.md
+    ${ROOT}/docs/memory-ledger.md ${ROOT}/docs/boot-safety.md
     ${ROOT}/docs/worker-loading.md ${ROOT}/docs/ingame-capture.md ${ROOT}/docs/performance.md
     ${ROOT}/docs/auto-vs-press.md ${ROOT}/docs/first-ocr.md ${ROOT}/docs/ocr-speed.md
     ${ROOT}/docs/offline-testing.md ${ROOT}/docs/one-vpk-install.md ${ROOT}/docs/rename-rubi.md
     ${ROOT}/docs/self-test.md ${ROOT}/docs/text-stability.md ${ROOT}/docs/vita-memory.md
     ${ROOT}/docs/config.example.ini ${STAGE}/docs/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/img/line-history-host.png ${STAGE}/docs/img/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/refine-20261015.json ${STAGE}/docs/benchmarks/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/refine-20261015.json
+    ${ROOT}/docs/benchmarks/settings-gamelist-20261015.md ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/LunaTranslator/README.md
     ${ROOT}/third_party/LunaTranslator/LICENSE ${STAGE}/third_party/LunaTranslator/
