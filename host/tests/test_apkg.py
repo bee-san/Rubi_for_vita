@@ -34,6 +34,8 @@ import tempfile
 import unittest
 import zipfile
 
+from testlib import guid_of
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 LAPIS = ROOT / "third_party" / "lapis"
 FIELDS = [
@@ -42,18 +44,6 @@ FIELDS = [
     "Glossary", "Hint", "IsWordAndSentenceCard", "IsClickCard", "IsSentenceCard", "IsAudioCard",
     "PitchPosition", "PitchCategories", "Frequency", "FreqSort", "MiscInfo",
 ]
-BASE91 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&()*+,-./:;<=>?@[]^_`{|}~"
-
-
-def guid_of(queue_id):
-    """genanki's guid_for: base91 of a 64-bit number, here the queue ID's first 64 bits."""
-    v = int(queue_id[:16], 16)
-    out = ""
-    while True:
-        out = BASE91[v % 91] + out
-        v //= 91
-        if not v:
-            return out
 
 
 def anki_checksum(text):
