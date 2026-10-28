@@ -25,7 +25,7 @@ extern "C" {
 #include "textjoin.h"
 #include "utf.h"
 }
-#include "../../shell/word_navigation.h"
+#include "word_navigation.h"
 #include "layout_double.h"
 
 #ifndef VJO_WORD_FIXTURES

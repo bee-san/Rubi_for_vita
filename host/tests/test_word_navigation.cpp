@@ -1,6 +1,6 @@
 #include <cstring>
 #include "acutest.h"
-#include "../../shell/word_navigation.h"
+#include "word_navigation.h"
 #include "layout_double.h"
 
 static void matched_source_and_back(void)

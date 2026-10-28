@@ -1,9 +1,12 @@
+/* The host tests' word navigation: core/text_rows.h's word step with C++ defaults, and the L/R tap rule
+ * the overlay's dictionary pages had until #289 (the overlay itself calls vjo_text_row_key). Moved here
+ * from shell/, which included it for nothing (cleanup P1, #418). */
 #ifndef VJO_WORD_NAVIGATION_H
 #define VJO_WORD_NAVIGATION_H
 
 extern "C" {
-#include "../core/text_rows.h"
-#include "../core/utf.h"
+#include "../../core/text_rows.h"
+#include "../../core/utf.h"
 }
 
 /* Store positions, not definitions or dictionary pointers. Right skips the
