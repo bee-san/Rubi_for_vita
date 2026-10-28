@@ -12,7 +12,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import gen_luna_vita as gen  # noqa: E402
 
-CLANNAD = "PCSG00415"  # its own row in the README's table
+CLANNAD = "PCSG00415"  # its own row in the README's table; its console run is its CALL source's, no entry's
+# What core/hook_place.c's comment on an entry says when the entry ran on a console (once what says it did not is cut)
+RAN = re.compile(r"(?i)proven on a console|console-tested|on a console \(|on the owner's (?:vita|console)")
+NOT_RAN = re.compile(r"(?i)\bnot (?:yet |run |been run |tested )*on a console")
 PATTERNS = {
     "luna_titles": r"\*\*(\d+) Vita title IDs from LunaTranslator's table\*\*",
     "luna_sites": r"using (\d+) ported hook sites",
@@ -35,6 +38,12 @@ def counts():
             "rubi_in_luna": sum(r["luna"] != "no" for r in more),
             "rubi_at_luna_site": sum(r["luna"] == "its site" for r in more),
             "total": len(luna_titles | {r["title"] for r in rubi})}
+
+
+def console_sources(source=None):
+    """The titles whose comment in core/hook_place.c says their entry ran on a console."""
+    said = gen.rubi_comments(source if source is not None else (ROOT / "core/hook_place.c").read_text(encoding="utf-8"))
+    return {t for t, text in said.items() if RAN.search(NOT_RAN.sub("", text))}
 
 
 def stated(text):
@@ -65,13 +74,17 @@ class DocsHookCounts(unittest.TestCase):
     def test_the_console_column_is_the_sources(self):
         """tools/gen_luna_vita.py's RUBI_CONSOLE (the doc's Console column) and core/hook_place.c's comments agree: a
         title whose comment says it ran on a console is in it, and a title in it has a comment that speaks of one."""
-        said = gen.rubi_comments((ROOT / "core/hook_place.c").read_text(encoding="utf-8"))
-        ran = re.compile(r"(?i)proven on a console|console-tested|on a console \(|on the owner's (?:vita|console)")
-        self.assertEqual({t for t, text in said.items() if ran.search(text)} - set(gen.RUBI_CONSOLE), set(),
-                         "core/hook_place.c says these ran on a console: add them to RUBI_CONSOLE")
-        for title in gen.RUBI_CONSOLE:
-            self.assertRegex(said.get(title, ""), r"(?i)console", title)
-        self.assertIn("PCSG01198", {t for t, text in said.items() if ran.search(text)})  # the rule finds one
+        self.assertEqual(console_sources(), set(gen.RUBI_CONSOLE) - {CLANNAD},
+                         "RUBI_CONSOLE and core/hook_place.c's comments differ on which entries ran on a console")
+        self.assertIn("PCSG01198", console_sources())  # the rule finds one
+
+    def test_a_changed_console_statement_is_found(self):
+        source = (ROOT / "core/hook_place.c").read_text(encoding="utf-8")
+        tested = "one hit a page; console-tested (PCH-2000"
+        self.assertEqual(source.count(tested), 1)  # 蒼の彼方のフォーリズム's
+        untested = source.replace(tested, "one hit a page; not yet on a console (PCH")
+        self.assertNotIn("PCSG00700", console_sources(untested))
+        self.assertIn("PCSG00007", console_sources(source.replace("562 farm pages", "562 pages, proven on a console")))
 
     def test_a_stale_number_is_found(self):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
