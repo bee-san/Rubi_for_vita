@@ -64,16 +64,24 @@ class Refuses(unittest.TestCase):
         cut = patched(data, SEGINFO_AT + 8, "<Q", whole - 4)  # the stream without its adler32 trailer
         stored = good(compress=False)
         s_offset, s_length, _, _ = struct.unpack_from("<4Q", stored, SEGINFO_AT)
+        control_at, = struct.unpack_from("<Q", data, 0x68)  # the first control info (its type, size, more, pad)
         cases = (
             (b"\x7fELF" + data[4:], "not a SELF (no SCE header)"),
             (data[:0x50], "SCE header: truncated at 0x58"),
             (patched(data, 0x68, "<Q", len(data) - 8), "control info: truncated"),
             (patched(data, 0x68 + 0x08, "<Q", 8), "control info at 0x"),
             (patched(data, elf, "<4s", b"\x7fELG"), "no little-endian ELF32 header in the SELF"),
+            # the ELF class and byte order too, not only \x7fELF (audit-rubi-cleanup-8-b F2)
+            (patched(data, elf + 4, "<B", 2), "no little-endian ELF32 header in the SELF"),  # ELF64
+            (patched(data, elf + 5, "<B", 2), "no little-endian ELF32 header in the SELF"),  # big-endian
+            # a control info shorter than its own 16-byte header, its end inside the block
+            (patched(data, control_at + 4, "<I", 8), f"control info at 0x{control_at:x}: size 8"),
             (patched(data, elf + 44, "<H", 0), "bad program headers"),
             (patched(data, elf + 42, "<H", 40), "bad program headers"),
             (patched(data, 0x48, "<Q", len(data) - 8), "program header: truncated"),
             (patched(data, SEGINFO_AT + 24, "<Q", 1), "segment 0 is encrypted"),
+            (patched(data, SEGINFO_AT + 24, "<Q", 0), "segment 0 is encrypted"),  # only 2 is fself's plain
+            (patched(data, SEGINFO_AT + 24, "<Q", 3), "segment 0 is encrypted"),
             (patched(data, SEGINFO_AT + 16, "<Q", 3), "segment 0: compression 3"),
             (patched(data, SEGINFO_AT, "<Q", len(data)), "segment 0 runs past the SELF's end"),
             (patched(data, offset, "<I", 0xFFFFFFFF), "segment 0: Error -3"),
@@ -83,8 +91,8 @@ class Refuses(unittest.TestCase):
             (patched(stored, SEGINFO_AT + 8, "<Q", s_length - 16), "segment 0: 1784 bytes stored, the program header"),
         )
         self.assertEqual(s_offset, SEGMENTS_AT)
-        for blob, message in cases:
-            with self.subTest(message=message):
+        for case, (blob, message) in enumerate(cases):
+            with self.subTest(case=case, message=message):
                 self.refused(blob, message)
 
     def test_headers_only_still_refuses_bad_headers(self):

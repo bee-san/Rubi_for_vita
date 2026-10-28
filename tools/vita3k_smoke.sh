@@ -14,12 +14,14 @@
 #   env VITASDK              VitaSDK (to build the app)
 #   env VJO_VOCR_SOURCE_DIR  vita-vn-ocr checkout at the pinned commit
 #   env VJO_VOCR_SPOT_SOURCE_DIR  vita-vn-ocr checkout at the text spotter's pin (cmake/VocrOCR.cmake
-#                            VJO_VOCR_SPOT_COMMIT), when VJO_VOCR_SOURCE_DIR lacks its files
+#                            VJO_VOCR_SPOT_COMMIT), when VJO_VOCR_SOURCE_DIR lacks its files (else
+#                            .refs/vita-vn-ocr-spot)
 #   env VJO_VOCR_MODEL_DIR   directory with H15_w8.vocr, FL10_w8.vocr and the three model sizes'
 #                            recognizers (tools/model_tiers.json "model")
 #   env VITA3K               an extracted Vita3K build (vita-vn-ocr vita/scripts/fetch_vita3k.sh),
 #                            with app/usr/bin/Vita3K and, if the host glibc is older, compat/
 #   env TIMEOUT              seconds (default 900)
+# The app is built first, with VitaSDK and the runtimes alone; the run needs the rest.
 # Prints one line, "vita3k smoke: PASS|FAIL|SKIPPED <why>"; exit 0 for PASS or SKIPPED, 1 for FAIL.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -28,14 +30,14 @@ skip() { echo "vita3k smoke: SKIPPED $*"; exit 0; }
 fail() { echo "vita3k smoke: FAIL $*"; exit 1; }
 [ -n "${VITASDK:-}" ] && [ -x "$VITASDK/bin/arm-vita-eabi-gcc" ] || skip "(no VitaSDK: set VITASDK)"
 [ -n "${VJO_VOCR_SOURCE_DIR:-}" ] && [ -f "$VJO_VOCR_SOURCE_DIR/runtime/vocr_lines_rows.c" ] || skip "(no vita-vn-ocr runtime: set VJO_VOCR_SOURCE_DIR)"
-[ -f "${VJO_VOCR_MODEL_DIR:-}/H15_w8.vocr" ] && [ -f "$VJO_VOCR_MODEL_DIR/FL10_w8.vocr" ] || skip "(no release weights: set VJO_VOCR_MODEL_DIR)"
-sizes=$(sed -n 's/.*"model": "\([^"]*\)".*/\1/p' "$root/tools/model_tiers.json")
-[ "$(echo "$sizes" | wc -w)" -eq 3 ] || fail "(tools/model_tiers.json: expected three model sizes, read: $sizes)"
-for m in $sizes; do [ -f "$VJO_VOCR_MODEL_DIR/$m" ] || skip "(no $m, a model size's recognizer, in VJO_VOCR_MODEL_DIR)"; done
-V=${VITA3K:-}
-[ -n "$V" ] && [ -x "$V/app/usr/bin/Vita3K" ] || skip "(no Vita3K build: set VITA3K)"
-command -v xvfb-run > /dev/null || skip "(xvfb-run is not installed)"
-
+# the text spotter's runtime (tools/vita3k_smoke/CMakeLists.txt's candidates, as cmake/VocrOCR.cmake's)
+spot_ok=
+for d in "${VJO_VOCR_SPOT_SOURCE_DIR:-}" "$VJO_VOCR_SOURCE_DIR" "$root/.refs/vita-vn-ocr-spot"; do
+  [ -n "$d" ] && [ -f "$d/runtime/vocr_textspot6.c" ] && { spot_ok=1; break; }
+done
+[ -n "$spot_ok" ] || skip "(no text spotter runtime: set VJO_VOCR_SPOT_SOURCE_DIR, cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT)"
+# the app first: it builds wherever VitaSDK and the runtime are (tools/preflight.sh runs this with VITASDK alone), so
+# a worker change that breaks it fails here, not only where Vita3K is (audit-rubi-cleanup-8-b F4)
 # one directory per build (VJO_DEBUG=0: the normal one), so both can be checked at once in one tree
 build=$root/build/vita3k-smoke$([ "${VJO_DEBUG:-1}" = 0 ] && echo -normal)
 # VJO_DEBUG=0: the normal build's game worker (docs/release-variants.md)
@@ -43,6 +45,15 @@ cmake -S "$root/tools/vita3k_smoke" -B "$build" -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR
   -DVJO_VOCR_SPOT_SOURCE_DIR="${VJO_VOCR_SPOT_SOURCE_DIR:-}" \
   -DVJO_DEBUG="$([ "${VJO_DEBUG:-1}" = 0 ] && echo OFF || echo ON)" > "$build.config.log" 2>&1 \
   && cmake --build "$build" -j4 > "$build.build.log" 2>&1 || fail "(the app did not build: $build.build.log)"
+built="the app built ($build/vjo_smoke.vpk); "
+[ -f "${VJO_VOCR_MODEL_DIR:-}/H15_w8.vocr" ] && [ -f "$VJO_VOCR_MODEL_DIR/FL10_w8.vocr" ] || skip "(${built}no release weights: set VJO_VOCR_MODEL_DIR)"
+sizes=$(sed -n 's/.*"model": "\([^"]*\)".*/\1/p' "$root/tools/model_tiers.json")
+[ "$(echo "$sizes" | wc -w)" -eq 3 ] || fail "(tools/model_tiers.json: expected three model sizes, read: $sizes)"
+for m in $sizes; do [ -f "$VJO_VOCR_MODEL_DIR/$m" ] || skip "(${built}no $m, a model size's recognizer, in VJO_VOCR_MODEL_DIR)"; done
+V=${VITA3K:-}
+[ -n "$V" ] && [ -x "$V/app/usr/bin/Vita3K" ] || skip "(${built}no Vita3K build: set VITA3K)"
+command -v xvfb-run > /dev/null || skip "(${built}xvfb-run is not installed)"
+
 mkdir -p "$out"
 sbx=$(mktemp -d "${TMPDIR:-/tmp}/vjo-vita3k.XXXXXX")
 trap 'rm -rf "$sbx"' EXIT

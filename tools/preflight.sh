@@ -252,15 +252,20 @@ if [ -n "${ARM_CC:-}" ] && [ -n "${QEMU:-}" ]; then
 else
   skip "ARM lane (qemu-arm)" "ARM_CC/QEMU unset"
 fi
-if [ -n "${VITA3K:-}" ]; then
-  v3=$(VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR bash tools/vita3k_smoke.sh "$BUILD-vita3k" 2>&1 | tail -1)
+if [ -n "${VITA3K:-}" ] || [ -n "${VITASDK:-}" ]; then
+  # with VITASDK alone the smoke app is built, and the run is skipped (tools/vita3k_smoke.sh); the text spotter's
+  # runtime: VJO_VOCR_SPOT_SOURCE_DIR, else the one the Vita build above found or fetched (cmake/VocrOCR.cmake)
+  spot=${VJO_VOCR_SPOT_SOURCE_DIR:-}
+  [ -n "$spot" ] || [ ! -f "$BUILD-vita/vita-vn-ocr-spot/runtime/vocr_textspot6.c" ] || spot=$root/$BUILD-vita/vita-vn-ocr-spot
+  v3=$(VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR VJO_VOCR_SPOT_SOURCE_DIR=$spot bash tools/vita3k_smoke.sh "$BUILD-vita3k" \
+       2>&1 | tail -1)
   case $v3 in
     *": PASS"*) pass "Vita3K smoke (not evidence)" "${v3#vita3k smoke: PASS }" ;;
     *": SKIPPED"*) skip "Vita3K smoke (not evidence)" "${v3#vita3k smoke: SKIPPED }" ;;
     *) fail "Vita3K smoke (not evidence)" "${v3#vita3k smoke: }" ;;
   esac
 else
-  skip "Vita3K smoke (not evidence)" "VITA3K unset"
+  skip "Vita3K smoke (not evidence)" "VITA3K and VITASDK unset"
 fi
 if [ -n "${VITA3K:-}" ] && [ -n "${VITA3K_FIRMWARE:-}" ] && [ -n "${VITA3K_FONTS:-}" ]; then
   vpk=; [ -f "$BUILD-vita/Rubi.vpk" ] && vpk=$root/$BUILD-vita/Rubi.vpk
