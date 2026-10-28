@@ -12,8 +12,10 @@
 /* g is ux0:app/<g->id> with its own title read: if it is a bubble (its
  * data/boot.bin has the ABB magic, or it has a data/boot.inf) or Adrenaline
  * (PSPEMU*), sets its kind, reads its target's title and disc ID, writes the
- * Shell's description and logs what it found. Others are left as they are. */
-void vjo_psp_scan_app(VjoInstalledGame *g);
+ * Shell's description and logs what it found. Others are left as they are.
+ * sfo (cap bytes, VJO_PSP_SFO_MAX) holds the target's PARAM.SFO while it is
+ * read: the catalog scan's own buffer (settings/catalog.c), free between titles. */
+void vjo_psp_scan_app(VjoInstalledGame *g, unsigned char *sfo, size_t cap);
 /* Removes the descriptions of IDs that are no bubble's in games[0, count),
  * the whole catalog (not when it was truncated). */
 void vjo_psp_prune(const VjoInstalledGame *games, int count);
