@@ -855,15 +855,20 @@
  * before the check, and the blocks a job takes after its check keep it too (game_ocr/main.c job_reserve: the weights,
  * the LM, the cascade's model, a tall line over one column's bound), and an Anki screenshot's check keeps it
  * (VJO_GAME_RESERVE). The
- * three tier names stay for the shared model table (tools/model_tiers.json "reserve_bytes", core/vocr_models.c). */
-#define VJO_GAME_RESERVE_SMALL (1u * 1024u * 1024u)
-#define VJO_GAME_RESERVE_NORMAL (1u * 1024u * 1024u)
-#define VJO_GAME_RESERVE_LARGE (1u * 1024u * 1024u)
+ * three tier names stay for the shared model table (tools/model_tiers.json "reserve_bytes", core/vocr_models.c).
+ * TEST DRAFT (owner, 2026-10-28: "make a build that tests 512kb"): 512 KiB instead of #280's 1 MiB, for every size
+ * and wherever these constants are kept (a request by name, the blocks after the check, the spotter's load, an Anki
+ * screenshot's check); a console test build carries it, main keeps 1 MiB (this branch is never merged as it is).
+ * 512 KiB is an estimate, untested on a console. VJO_GAME_RESERVE_HOOK_ONLY below stays 1 MiB (#273's, not #280's). */
+#define VJO_GAME_RESERVE_SMALL (512u * 1024u)
+#define VJO_GAME_RESERVE_NORMAL (512u * 1024u)
+#define VJO_GAME_RESERVE_LARGE (512u * 1024u)
 #define VJO_GAME_RESERVE VJO_GAME_RESERVE_SMALL    /* kept free in the game before either block (game_ocr/main.c) */
 /* The capture pass of a job a Rubi verified table site answers after OCR was refused for memory
  * (game_ocr/main.c, core/hook_select.h vjo_hook_select_no_memory): one strip's block (at most
  * VJO_VOCR_STRIP_BYTES, 56 KiB), freed with the job, beside this reserve, the same 1 MiB as OCR's since PR #280
- * (smaller than OCR's 4 MiB before it). A game with too little room for any OCR job, or whose last model's weights
+ * (smaller than OCR's 4 MiB before it; larger than OCR's 512 KiB in the 512 KiB test draft, where it is unchanged:
+ * no code compares the two). A game with too little room for any OCR job, or whose last model's weights
  * are refused after its check passed (#280's audit F1: アマツツミ, PCSG01198, 2 MiB measured on a console, 2026-10-23,
  * passes Small's check at 1 MiB, and on a console that reports free memory in whole MiB its weights can then be
  * refused, while less than 2 MiB and the job's blocks is really free), can still show its hook's text when this

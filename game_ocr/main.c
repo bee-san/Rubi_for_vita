@@ -946,6 +946,7 @@ static size_t extra_job_bytes(const VjoVocrModel *m, const VjoVocrLm *lm, const 
 }
 
 /* The reserve a job of model tier `tier` keeps (include/vjo_ledger_budget.h): since PR #280 the same fixed 1 MiB
+ * (512 KiB in the 512 KiB test draft, the same constants)
  * for every tier, the cascade's included, and for a request by name (tier 0, GAME_RESERVE); from API 21 until then
  * the largest tier the job held, the cascade's (the next tier up) when it had one: 4, 8 or 16 MiB. The tier
  * constants stay for the shared model table; the job's blocks are counted separately beside the reserve. */

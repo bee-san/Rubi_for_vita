@@ -825,7 +825,7 @@ if(VJO_WITH_VOCR)
   # text; nothing installed is OCR as before.
   vjo_suite(game_hooks SOURCES host/tests/test_game_hooks.c core/vocr_ocr.c core/textnorm.c core/region_suggest.c
     core/charmap_build.c INCLUDES host/tests/game_stubs host/tests
-    DEFINES VJO_VOCR_TEST_MODELS="test_resident_models.h" vocr_find_lines_rows=test_vocr_find_lines_rows
+    DEFINES VJO_VOCR_TEST_MODELS="test_hook_models.h" vocr_find_lines_rows=test_vocr_find_lines_rows
     vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run UNUSED
     LIBS vjo_vocr_rt vjo_host)
