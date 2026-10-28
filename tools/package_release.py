@@ -313,11 +313,11 @@ def write_package(base, output, models, assets, conversion, version, source_revi
     # 4.0 data among them) and their terms: that attribution ships with them too, as ocr/MODEL-ATTRIBUTION.md.
     attribution = models / VOCR_MODEL_ATTRIBUTION
     if not attribution.is_file():
-        raise ValueError("The model sizes' " + VOCR_MODEL_ATTRIBUTION + " is missing (release " + VOCR_MODEL_ATTRIBUTION_TAG
+        raise ValueError("VOCR5's " + VOCR_MODEL_ATTRIBUTION + " is missing (release " + VOCR_MODEL_ATTRIBUTION_TAG
                          + "'s ATTRIBUTION.md: tools/prepare_ocr.py --backend vocr-tiers)")
     _, size, sha = VOCR_MODEL_ATTRIBUTION_PIN[VOCR_MODEL_ATTRIBUTION]
     if attribution.stat().st_size != size or digest(attribution) != sha:
-        raise ValueError("The model sizes' " + VOCR_MODEL_ATTRIBUTION + " checksum failed: not release "
+        raise ValueError("VOCR5's " + VOCR_MODEL_ATTRIBUTION + " checksum failed: not release "
                          + VOCR_MODEL_ATTRIBUTION_TAG + "'s ATTRIBUTION.md")
     assets[DATA + "ocr/" + VOCR_MODEL_ATTRIBUTION] = attribution
     # VOCR6's release (the three sizes' recognizers) names what they were fine-tuned on beyond VOCR5's data (the

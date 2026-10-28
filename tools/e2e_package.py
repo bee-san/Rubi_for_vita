@@ -285,7 +285,8 @@ class E2E:
         _, size, sha = release.VOCR_MODEL_ATTRIBUTION_PIN[release.VOCR_MODEL_ATTRIBUTION]
         path = ocr / release.VOCR_MODEL_ATTRIBUTION
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
-              f"{release.VOCR_MODEL_ATTRIBUTION} is the model sizes' pinned attribution ({release.VOCR_MODEL_ATTRIBUTION_TAG})")
+              f"{release.VOCR_MODEL_ATTRIBUTION} is VOCR5's pinned attribution, the model sizes' base "
+              f"({release.VOCR_MODEL_ATTRIBUTION_TAG})")
         _, size, sha = release.VOCR6_ATTRIBUTION_PIN[release.VOCR6_ATTRIBUTION]
         path = ocr / release.VOCR6_ATTRIBUTION
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,

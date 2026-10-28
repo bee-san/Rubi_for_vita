@@ -357,8 +357,8 @@ Vita too, grows as you read and is never deleted by itself; **Only when I press 
 
 Rubi reads text with VOCR, small recognizers that [vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr)
 trains for visual-novel dialogue boxes, and decodes each line with a language model. On `main`, all three sizes are
-VOCR6, retrained on the owner's hooked PS Vita and PSP games (better on those games, level on others, measured on a
-computer). Its accuracy on
+VOCR6, retrained on the owner's hooked PS Vita and PSP games (better on those games; on others level, Small a little
+worse in point; measured on a computer). Its accuracy on
 a console is not measured yet; the host measurements are in [docs/vita-vn-ocr.md](docs/vita-vn-ocr.md).
 
 ### Can I use my own dictionaries?

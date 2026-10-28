@@ -163,7 +163,8 @@ VOCR_VERTICAL_MODEL = 'VOCR5_V_w8.vocr'
 VOCR_VERTICAL_ATTRIBUTION = 'VERTICAL-ATTRIBUTION.md'
 VOCR_VERTICAL_ATTRIBUTION_PIN = {VOCR_VERTICAL_ATTRIBUTION: (VOCR5V_BASE + 'ATTRIBUTION.md', 3323,
     '0f644c6dce8c24abb9ac56ecbb684ab7cd1f1950cad0aae15eafadba04bcbcd9')}
-# The model sizes' attribution: v0.3.6-head2level.1's ATTRIBUTION.md (in its SHA256SUMS; v0.3.0's, which it
+# VOCR5's attribution (the checkpoints every model size starts from; no size's blob comes from VOCR5's release any
+# more): v0.3.6-head2level.1's ATTRIBUTION.md (in its SHA256SUMS; v0.3.0's, which it
 # extends with the head gate's and the two-level head's fits), the licences of what the VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
 # their terms (non-commercial use only). The package ships it beside the weights as
 # ocr/MODEL-ATTRIBUTION.md, and it is kept under that name in a models directory too: the LMs' release

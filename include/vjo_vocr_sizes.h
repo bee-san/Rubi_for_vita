@@ -78,8 +78,8 @@
  * request allows that fits the game's free memory beside that tier's reserve
  * (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*), else the next smaller one;
  * the confidence cascade reads doubtful lines again with the next tier up, when
- * that fits too. The tiers may come from different generations (0.10.0's test builds
- * had Small VOCR5-S beside VOCR6's Normal and Large): each blob carries its own generation
+ * that fits too. The tiers may come from different generations (the test builds v0.9.8-test.4
+ * and test.5 had Small VOCR5-S beside VOCR6's Normal and Large): each blob carries its own generation
  * in the pins (core/vocr_models.c, tools/prepare_ocr.py VOCR_GENERATION). A later set's three
  * blobs (or an earlier one's, for a tier whose new candidate did not beat it) replace these
  * through the pins: these six lines, the model's pins where every model is pinned

@@ -2465,30 +2465,31 @@ static void test_the_head_gate(void)
      * gate skips part of the synthetic lines' frames, within the pinned arena (the job plans it with the gate);
      * without it nothing is skipped */
     static const char *const gated_files[] = {VJO_VOCR6_N_NAME};
-    const VjoVocrModel *n5 = vjo_vocr_model(VJO_VOCR6_N_NAME);
-    if (!n5 || !have_files(dir, gated_files, 1)) {
+    const VjoVocrModel *n6 = vjo_vocr_model(VJO_VOCR6_N_NAME);
+    if (!n6 || !have_files(dir, gated_files, 1)) {
         TEST_MSG("no %s in VJO_VOCR_MODEL_DIR: the real gated blob's check skipped", VJO_VOCR6_N_NAME);
         return;
     }
-    ws_bytes = vjo_vocr_job_bytes(n5->name, W, H);
+    ws_bytes = vjo_vocr_job_bytes(n6->name, W, H);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident nres = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
-    nres.ud = &nres;
-    VjoVocrPolicy g5 = {.raw = raw, .raw_cap = sizeof(raw), .head_gate = 1}, p5 = {.raw = raw, .raw_cap = sizeof(raw)};
-#define RUN5(pol) vjo_vocr_ocr_policy(&p, dir, n5->name, &im, &nres, ws, ws_bytes, capture, \
+    VjoVocrResident gres = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
+    gres.ud = &gres;
+    VjoVocrPolicy gate_on = {.raw = raw, .raw_cap = sizeof(raw), .head_gate = 1},
+                  gate_off = {.raw = raw, .raw_cap = sizeof(raw)};
+#define RUN6(pol) vjo_vocr_ocr_policy(&p, dir, n6->name, &im, &gres, ws, ws_bytes, capture, \
                                       vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
     reset();
     scr.three_lines = 1;
-    TEST_ASSERT(RUN5(&p5) == VJO_OK);
+    TEST_ASSERT(RUN6(&gate_off) == VJO_OK);
     memcpy(t_off, text, sizeof(t_off));
     TEST_CHECK(!st.head_gated && st.frames > 0);
     reset();
     scr.three_lines = 1;
-    TEST_ASSERT(RUN5(&g5) == VJO_OK);
+    TEST_ASSERT(RUN6(&gate_on) == VJO_OK);
     TEST_CHECK(st.head_gated > 0 && st.head_gated < st.frames);
     TEST_MSG("VOCR6-N gated: %u of %u frames skipped; '%s' / '%s'", st.head_gated, st.frames, text, t_off);
-#undef RUN5
-    TEST_CHECK(!vjo_vocr_resident_drop(&nres));
+#undef RUN6
+    TEST_CHECK(!vjo_vocr_resident_drop(&gres));
     free(ws);
 }
 

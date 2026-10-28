@@ -210,7 +210,8 @@ and `core/vocr_ocr.c`'s layout code give the jobs) [measured on the host build, 
 
   The debug worker keeps its 16 B of the last text page, the normal one 772 B; the normal Shell keeps 20 B of its last
   text page (28 B before).
-- **The one-VPK payload** keeps its 24 files: `VOCR6-ATTRIBUTION.md` is v0.4.1-vocr6.2's (4,442 B, 4,222 B before) and
+- **The one-VPK payload** keeps its 26 files (24 and, since API 54, the spotter's two): `VOCR6-ATTRIBUTION.md` is
+  v0.4.1-vocr6.2's (4,442 B, 4,222 B before) and
   the three recognizers are the new set's (4,484,880 B, 4,484,880 B before: Small 1,792 B smaller, Normal 1,792 B
   larger). No block, thread or allocation site is new. Nothing of it has run on a console.
 

@@ -55,6 +55,18 @@ typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage)
 /* API 54: the spotter's pinned name, as every name the broker opens, fits a request's model field (the copy below) */
 typedef char vjo_spot_name_check[sizeof(VJO_VOCR_SPOT_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
                                  sizeof(VJO_VOCR_GATE_NAME) <= VJO_GAME_OCR_MODEL_BYTES ? 1 : -1];
+/* ... and so do the model sizes', the vertical model's, the cascade's and the LMs' (the copy below; a size's name is
+ * also the Shell's request.model, shell/worker.c, whose snprintf would cut a longer one, which this broker would then
+ * refuse): a pin set's longer names (v0.4.1-vocr6.2's VOCR6.2_* take 18-21 B with the NUL) fail here first. */
+typedef char vjo_model_names_check[sizeof(VJO_VOCR_TIER1_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                   sizeof(VJO_VOCR_TIER2_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                   sizeof(VJO_VOCR_TIER3_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                   sizeof(VJO_VOCR_VERTICAL_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                   sizeof(VJO_VOCR_CASCADE_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                   sizeof(VJO_VOCR_LM1_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                   sizeof(VJO_VOCR_LM2_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                   sizeof(VJO_VOCR_LM3_NAME) <= VJO_GAME_OCR_MODEL_BYTES &&
+                                   sizeof(VJO_VOCR_LM4_NAME) <= VJO_GAME_OCR_MODEL_BYTES ? 1 : -1];
 /* exFAT's first file extension while a game ran took 20.9 s on the console;
  * overwriting reserved space took 6 ms. Keep one maximum-sized spare on disk,
  * prepared while the broker is idle. No image or extra buffer is kept here. */

@@ -145,15 +145,14 @@ Small, H15 Normal, F20 and W20 Large, unless a `vocr_tier` line says otherwise;
 `vocr_fallback_model` is no longer read. The app's next save writes `vocr_tier`
 and drops both lines; `tools/migrate_config.py` (the installer) does the same.
 `install-vita.sh` sets no size, so an update keeps the user's choice, and its
-size's file is now this package's (VOCR6's: no file name of the older shapes, so a `vocr_model` never names one).
-The sizes' blobs before this set are pinned nowhere any more, not even by name: 0.9.8's `VOCR5_S_w8g.vocr`,
-`VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (v0.3.6-head2level.1, 4,488,464 B) and the 0.10.0 test builds'
-`VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (v0.4.0-vocr6.1, 3,663,296 B). No installer (the Rubi app's Install,
-`install-vita.sh`) removes a model file it does not ship, so an update leaves them on the card, unused, and they can be
-deleted (in `ux0:data/VitaJPOverlay/ocr/`). VOCR3's `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr`,
-VOCR4's `VOCR4_W20_w8.vocr` and v0.2.0's `H15_w8.vocr`, `FL10_w8.vocr` and
-`F20_w8.vocr` stay pinned for the host tools (a request by name) but are no longer
-shipped; an update leaves the files of an earlier package on the card, unused, and
+size's file is now this package's (VOCR6's: no file name of the older shapes, so a `vocr_model` never names one). The
+sizes' blobs before this set are pinned nowhere any more, not even by name: 0.9.8's `VOCR5_S_w8g.vocr`,
+`VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (v0.3.6-head2level.1, 4,488,464 B) and the test builds v0.9.8-test.4's and
+test.5's `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (v0.4.0-vocr6.1, 3,663,296 B). No installer (the Rubi app's
+Install, `install-vita.sh`) removes a model file it does not ship, so an update leaves them on the card, unused, and
+they can be deleted (in `ux0:data/VitaJPOverlay/ocr/`). VOCR3's `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr`, VOCR4's
+`VOCR4_W20_w8.vocr` and v0.2.0's `H15_w8.vocr`, `FL10_w8.vocr` and `F20_w8.vocr` stay pinned for the host tools (a
+request by name) but are no longer shipped; an update leaves the files of an earlier package on the card, unused, and
 they can be deleted.
 
 ## The engine's name: the model generation
@@ -161,7 +160,8 @@ they can be deleted.
 The Rubi app has no engine button since Google Lens's removal: the OCR card's
 last line names the chosen size and its model, and the model's name carries its
 generation (`Normal: default, balanced. VOCR6-N found.`): **VOCR6** for all three of this package's sizes
-(`Small: fastest. VOCR6-S found.`), each size its own model's (0.10.0's test builds had VOCR5 for Small beside
+(`Small: fastest. VOCR6-S found.`), each size its own model's (the test builds v0.9.8-test.4 and test.5 had VOCR5 for
+Small beside
 VOCR6's Normal and Large; VOCR5 for all three in 0.8.0 to 0.9.8; VOCR3 for Small and Normal and VOCR4 for Large before
 it). When
 the chosen size's file is not there at its release size the line says so (`VOCR6-L
@@ -193,17 +193,15 @@ that the tests compare:
 - `package-manifest.json` in the release zip: `generation` (and `tier`, a size's
   model) for every shipped model, and `defaults.ocr_engine` for the default size's.
 
-A later generation needs no app change: pin its files where every model is
-pinned (`core/vocr_ocr.c`: SHA-256 and arena; `kernel/game_ocr.c`: size;
-`core/vocr_models.c`: generation, shape and estimates; `tools/prepare_ocr.py`: the
-release assets and `VOCR_GENERATION`; the tests fail while one of them is
-missing), make them the sizes (`include/vjo_vocr_sizes.h` VJO_VOCR_TIERn_NAME and
-`tools/model_tiers.json` "model"), and the app shows its name, as it showed VOCR6's beside VOCR5's in 0.10.0's test
-builds (each size named by its own model), and `host/tests/test_settings_app.c` also builds the app against a made-up
-table (VOCR6 for Small and Normal, VOCR5 kept for Large). The weights blocks hold the Large size's model
-(`VJO_VOCR_MAX_BYTES`, the ledger's weights and cascade budgets page-rounded): a
-larger Large raises those, which the memory ledger's check and `host/tests/test_ledger.c`
-hold to the owner's 2.5 MB ceiling (`VJO_LIMIT_GAME_WEIGHTS`).
+A later generation needs no app change: pin its files where every model is pinned (`core/vocr_ocr.c`: SHA-256 and arena;
+`kernel/game_ocr.c`: size; `core/vocr_models.c`: generation, shape and estimates; `tools/prepare_ocr.py`: the release
+assets and `VOCR_GENERATION`; the tests fail while one of them is missing), make them the sizes
+(`include/vjo_vocr_sizes.h` VJO_VOCR_TIERn_NAME and `tools/model_tiers.json` "model"), and the app shows its name, as it
+showed VOCR6's beside VOCR5's in the test builds v0.9.8-test.4 and test.5 (each size named by its own model), and
+`host/tests/test_settings_app.c` also builds the app against a made-up table (VOCR6 for Small and Normal, VOCR5 kept for
+Large). The weights blocks hold the Large size's model (`VJO_VOCR_MAX_BYTES`, the ledger's weights and cascade budgets
+page-rounded): a larger Large raises those, which the memory ledger's check and `host/tests/test_ledger.c` hold to the
+owner's 2.5 MB ceiling (`VJO_LIMIT_GAME_WEIGHTS`).
 
 The VOCR2 trial (`ocr_backend = vocr2`, a separately trained FL10-sized
 `VOCR2_FL10_w8.vocr` with the native textbox finder, opt-in in 0.7.12 to
@@ -1581,11 +1579,12 @@ So in this package:
 `vocr_has_two_level`), so a blob without a gate section never plans one, and the re-read rule's "frames skipped" is
 then the two-level head's level-1-only frames alone. On the development whole-dialogue frames, Normal's gate skips
 48.7 % and its escape fires on 12.6 % of the frames the gate keeps (6.5 % of all); Large's escape, which runs on every
-frame, fires on 7.2 %. That saves an estimated 144 and 194 ms a nominal box at 333 MHz (108 and 155 ms at 444 MHz;
+frame, fires on 7.2 %. That saves an estimated 145 and 194 ms a nominal box at 333 MHz (108 and 155 ms at 444 MHz;
 1,591,488 → 1,109,943 and 3,402,720 → 2,947,560 multiply-adds a frame at those shares) [estimates, vita-vn-ocr #157].
 On #109's counter set (the driver's check, [Counters](#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109)
 above) Normal's paths read 27 of 3,969 lines worse than its plain blob with the re-read, Large's 1. (v0.4.0-vocr6.1's
-VOCR6-N and VOCR6-L, Normal and Large in 0.10.0's test builds, had the two-level head and no gate: #146's rule
+VOCR6-N and VOCR6-L, Normal and Large in the test builds v0.9.8-test.4 and test.5, had the two-level head and no gate:
+#146's rule
 rejected the gate on them.) The figures in the bullets below are VOCR5's (API 42's blobs); the follow-up set's are
 above.
 
@@ -1620,8 +1619,9 @@ above.
   by the clock ratio, −24 / −50 ms on the measured basis, vita-vn-ocr `docs/head2level.md`'s 444 MHz column). The
   gate's 444 MHz figures are by the clock ratio too.
   Both from qemu instruction counts of the Vita build calibrated to VOCR3-H15's measured console rate. The sizes' times
-  in the Rubi app (`tools/model_tiers.json`) subtract them: 0.51 / 0.72 / 1.82 s at 333 MHz (0.63 / 0.92 / 2.08 s with
-  `ocr_head_gate = off`). No console has run either.
+  the Rubi app showed with VOCR5 (`tools/model_tiers.json` then) subtracted them: 0.51 / 0.72 / 1.82 s at 333 MHz
+  (0.63 / 0.92 / 2.08 s with `ocr_head_gate = off`); this package's are in [Model
+  sizes](#model-sizes-small-normal-large-api-21). No console has run either.
 - **The counter re-read.** [Counters](#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109) look at the top-K of
   blank frames beside a numeral they suspect and before a line's first bracket, and a skipped frame offers only the
   blank there; and the escape can miss a small ヵ or ヶ, a rare row, which then reads as the full-size カ or ケ. So a
@@ -1640,28 +1640,28 @@ above.
   of them lines cut 2-10 px into their first character, which the finder's 3 px margin avoids (Large: 2 of its 18 at
   the ink edge), and the two-level head 3 and 1 lines more.
 - **Off is today's output.** With `ocr_head_gate = off` every recognizer reads with the full head on every frame.
-  Small's blob is v0.3.0's bytes and its section, so its output is v0.3.0's. Normal's and Large's give every class
-  v0.3.0's logit bit for bit, the same class text at another class number, and the greedy text, the top-K, the LM
-  decode and the counter re-decode map classes by text, so their text is v0.3.0's **except on exact ties**, which
-  every decoder breaks by class number: of two classes' logits (the first maximum, the top-K's order and its last
-  place, which the beam follows) or of the counter re-decode's integer numeral costs (vita-vn-ocr
+  With API 42's VOCR5 blobs, Small's was v0.3.0's bytes and its section, so its output was v0.3.0's; Normal's and
+  Large's gave every class v0.3.0's logit bit for bit, the same class text at another class number, and the greedy
+  text, the top-K, the LM decode and the counter re-decode map classes by text, so their text was v0.3.0's **except on
+  exact ties**, which every decoder breaks by class number: of two classes' logits (the first maximum, the top-K's
+  order and its last place, which the beam follows) or of the counter re-decode's integer numeral costs (vita-vn-ocr
   `runtime/vocr_post.c`: two numerals within 1/1024 nat of each other cost the same, and the frequency order puts 361
   of the 666 pairs of its 37 numerals the other way round: audit-vocr6-rubi-gate F2 built such a line). None occurred
   on real lines: on the 759 line boxes of the development regions below (27,556 frames a size) every top-8 logit, its
   classes' texts and order, the confidence, the counter re-decode and the beam + 1000k LM's text were v0.3.0's at
   every size, with no exact tie and no counter context [measured by audit-vocr6-rubi-gate on the host].
-  `host/tests/test_vocr.c` `the_off_path_reads_the_plain_blobs_logits_bit_for_bit` checks every logit of synthetic lines
-  against the blobs each size's was made from: VOCR6's plain Normal and Large, which v0.4.1-vocr6.2 publishes beside
-  the blobs with their sections (`VOCR6.2_N_w8.vocr`, `VOCR6.2_L_w8.vocr`), so VOCR6's `off` is its plain blobs'
-  output in the same way; Small's pinned blob is the plain one, held plain (no section: every `ocr_head_gate` reads it
-  alike). The paragraph above is VOCR5's (API 42's v0.3.0 blobs).
   The game worker's whole job (`vjo-ocr` in its worker form: blank lines skipped, the beam + 1000k LM, the counter
   re-decode, the cascade at confidence 700, the refinement on PSP regions), run on the 358 regions of vita-vn-ocr's
   linefind development manifests whose screenshots are on the build host (192 Vita, 166 PSP; no protected set), gave
   main's text, CTC frames and every count at every size with `off` [measured on the host: main `4bc2604` with
-  v0.3.0's blobs against this change; only the cascade's file name differs]. With `on` the text of 43 / 24 / 21 of
-  those regions changes (Small / Normal / Large) and the gate skips 63.2 / 62.6 / 60.8 % of the jobs' frames; the
+  v0.3.0's blobs against API 42's change; only the cascade's file name differed]. With `on` the text of 43 / 24 / 21
+  of those regions changed (Small / Normal / Large) and the gate skipped 63.2 / 62.6 / 60.8 % of the jobs' frames; the
   regions carry no reference text, so this says nothing of accuracy (vita-vn-ocr's scores above do).
+  This package's blobs, v0.4.1-vocr6.2's: `host/tests/test_vocr.c` `the_off_path_reads_the_plain_blobs_logits_bit_for_bit`
+  checks every logit of synthetic lines against the blobs each size's was made from, VOCR6's plain Normal and Large,
+  which the release publishes beside the blobs with their sections (`VOCR6.2_N_w8.vocr`, `VOCR6.2_L_w8.vocr`), so
+  VOCR6's `off` is its plain blobs' output in the same way; Small's pinned blob is the plain one, held plain (no
+  section: every `ocr_head_gate` reads it alike).
 - **Memory** (measured: both Vita builds, [memory-ledger.md](memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
   The game worker takes two text pages more in each game that is ON (180,224 / 188,416 B in the normal / debug
   build, 8,192 B more each): the runtime's two paths (`vocr.o` +5,037 B) and the job's re-read. The Shell's pages
@@ -1725,8 +1725,9 @@ VOCR6-L) updated:
    page-rounded), the workspace (`host/tests/test_ledger.c`'s largest job, page-rounded), the worker's pages if the
    runtime grows, and `VJO_LIMIT_GAME_JOB`, each raise justified ([memory-ledger.md](memory-ledger.md)). A pin set adds
    no Shell code, but the sizes' file names are Shell strings: the follow-up set's are 4 B longer in all, and the
-   normal Shell keeps 20 B of its last text page (85,996 of 86,016 B [measured: the normal Vita builds of this set
-   and of main `b55c5f5` before it, 28 B there]); longer names can cost the Shell a page.
+   normal Shell kept 20 B of its last text page with them (85,996 of 86,016 B [measured: the normal Vita builds of
+   this set and of main `b55c5f5` before it, 28 B there]); since #441 it keeps 4 B (86,012 B [measured: main
+   `824e1b4`'s Release run artifacts]), so a set whose names are 5 B longer in all costs the Shell a page.
 8. The docs that name the files, their sizes or blocks: this file's size table, models and attribution, [OCR
    speed](ocr-speed.md), the guide's sizes and its names' list, [memory-ledger.md](memory-ledger.md),
    [vita-memory.md](vita-memory.md), [offline-testing.md](offline-testing.md),
@@ -1977,7 +1978,8 @@ VOCR6-L (`VOCR6.2_L_w8_2l.vocr`).**
 All three are vita-vn-ocr's VOCR6 recognizers (#125; `docs/vocr6.md` "The follow-up: stages 4c and 4d" and
 `eval/vocr6_protocol.json` there), the follow-up set published as the
 [v0.4.1-vocr6.2 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.4.1-vocr6.2) (#157, merged as
-`c933e15`). They replace VOCR5-S and v0.4.0-vocr6.1's VOCR6-N and VOCR6-L, the sizes of 0.10.0's test builds.
+`c933e15`). They replace VOCR5-S and v0.4.0-vocr6.1's VOCR6-N and VOCR6-L, the sizes of the test builds v0.9.8-test.4
+and test.5.
 - **What they are.** VOCR5-S's, VOCR5-N's and VOCR5-L's shapes, each started from its VOCR5 checkpoint (seed 1 of
   VOCR5's recipe) and fine-tuned on the owner's hooked PS Vita and PSP corpus (exact game text on native frames, 49
   titles), the line finder's own crops of those pages, VOCR5's real pools and its synthetic replay, with the held-out
@@ -2001,14 +2003,15 @@ All three are vita-vn-ocr's VOCR6 recognizers (#125; `docs/vocr6.md` "The follow
     cascading into the new VOCR6-N) it reads the development score +0.041 [−0.016, +0.099] against VOCR5-S, not
     resolved. Without a gate it is an estimated 0.11 s a box slower than VOCR5-S with its gate.
 - **Measured on the host** (dialogue CER, the int8 blobs through the C runtime on Rubi 892cfb9's line path as the
-  final reads model it: the GRAD finder with its COLGAP fix and the short-line probe, the 1 MB LM at 600 / 2500 / BOS,
-  the cascade S → N → L, `core/textnorm.c` and the line filter; differences in points with 95 % cluster-bootstrap
-  intervals; read once for this set, after every choice; vita-vn-ocr `docs/vocr6.md` "The follow-up" and
+  final reads model it: the GRAD finder with its COLGAP fix and the short-line probe, the 1 MB LM at 600 / 2500 / BOS
+  (on hval its screening build, h64_1000k, which holds no hval or guard text), the cascade S → N → L,
+  `core/textnorm.c` and the line filter; differences in points with 95 % cluster-bootstrap intervals; read once for
+  this set, after every choice; vita-vn-ocr `docs/vocr6.md` "The follow-up" and
   `eval/vocr6_final_test_followup_20261027.json`):
 
   | set | VOCR5-S | VOCR6-S | VOCR5-N | VOCR6-N | VOCR5-L | VOCR6-L |
   |---|---:|---:|---:|---:|---:|---:|
-  | the hooked games' hval pages, held out (mean of 3 seeds of the recipe) | 1.177 % | **1.049 %** (−0.128 [−0.189, −0.074]) | 1.008 % | **0.936 %** (−0.072 [−0.111, −0.038]) | 0.990 % | **0.917 %** (−0.073 [−0.118, −0.036]) |
+  | the hooked games' hval pages, held out (mean of 3 seeds; Normal and Large: v0.4.0's 15,000-step recipe†) | 1.177 % | **1.049 %** (−0.128 [−0.189, −0.074]) | 1.008 % | **0.936 %** (−0.072 [−0.111, −0.038]) | 0.990 % | **0.917 %** (−0.073 [−0.118, −0.036]) |
   | other games: VOCR5's development score, each set as it ships | 1.674 | 1.549 | 1.482 | 1.389 | 1.439 | 1.396 |
   | CLANNAD, 2,052 dialogue lines\* | 0.73 % | **0.47 %** (−0.26 [−0.35, −0.18]) | 0.66 % | **0.33 %** (−0.33 [−0.41, −0.24]) | 0.60 % | **0.31 %** (−0.29 [−0.37, −0.21]) |
   | CLANNAD, 1,837 pages through Rubi's finder\* | 5.84 % | 5.75 % (−0.09 [−0.28, +0.10]) | 5.94 % | 5.81 % (−0.13 [−0.31, +0.05]) | 6.19 % | **5.67 %** (−0.52 [−0.71, −0.32]) |
@@ -2017,8 +2020,12 @@ All three are vita-vn-ocr's VOCR6 recognizers (#125; `docs/vocr6.md` "The follow
   | Dance with Devils (the hooked test title), 1,152 clean lines | 0.27 % | **0.21 %** | 0.26 % | **0.19 %** | 0.22 % | **0.19 %** |
 
   In bold: resolved (the interval excludes 0). The development scores are each set's as it ships, not resolved
-  against VOCR5 (the registered comparisons are above); the hval rows are the recipes' held-out seeds, and the shipped
-  blobs then trained on hval too. Against v0.4.0-vocr6.1, the set 0.10.0's test builds pinned (the same units):
+  against VOCR5 (the registered comparisons are above). † The hval row is three held-out seeds of a recipe, and the
+  shipped blobs then trained on hval too: Small's are its shipped recipe's (stage 4d's half learning rate, 15,000
+  steps); Normal's and Large's are stage 4a's, the 15,000-step recipe of v0.4.0-vocr6.1. Their shipped blobs (stage 4c,
+  45,000 steps) are one seed with hval folded in, so they have no held-out hval read of their own: the longer
+  schedule's held-out evidence is stage 3's pair (hval pages −0.043 [−0.077, −0.014]), and their own hval reads (0.88 /
+  0.87 %) are not held out. Against v0.4.0-vocr6.1, the set v0.9.8-test.4 and test.5 pinned (the same units):
   - CLANNAD's lines read better: Small −0.21 [−0.30, −0.12] and Normal −0.10 [−0.17, −0.04] (resolved), Large −0.05
     [−0.10, +0.01] (not resolved).
   - CLANNAD's pages through the GRAD finder read **worse at Normal and Large**, +0.33 [+0.19, +0.48] and +0.27 [+0.13,
@@ -2026,15 +2033,19 @@ All three are vita-vn-ocr's VOCR6 recognizers (#125; `docs/vocr6.md` "The follow
     cascading into its VOCR6-N read them +0.32 worse than VOCR5; that loss is gone).
   - vita-test + psp-test's fixed lines: Small better, −0.23 [−0.46, −0.04]; Normal and Large level, −0.13 [−0.26,
     +0.00] and −0.02 [−0.14, +0.11].
-  - PSP alone (psp-test's fixed lines) is not better: Small +0.04, Normal +0.09, Large −0.04 points, none resolved.
-- **Which path a number is from.** Every number above is the GRAD finder's path of Rubi 892cfb9, the final reads'
-  model of it. Rubi's default finder is now the textspot8 spotter (`ocr_finder = spotter`, API 54, [The spotter
-  finder](#the-spotter-finder-api-54)), whose own test read (vita-vn-ocr `eval/textspot8_test_20261027.json`) used
-  v0.4.0-vocr6.1's VOCR6-N cascading into its VOCR6-L; this set has not been read through the spotter.
+
+  PSP alone (psp-test's fixed lines) is not better than VOCR5: Small +0.04 [−0.28, +0.43], Normal +0.09 [−0.19, +0.28],
+  Large −0.04 [−0.24, +0.14] points on Rubi's path, none resolved; on vita-vn-ocr's path (a), VOCR5's locked path
+  with beam 8 and ctclm.2's 1 MB LM, Normal's is resolved worse, +0.26 [+0.04, +0.51] (v0.4.0-vocr6.1's: +0.30).
+- **Which path a number is from.** Every number above but path (a)'s is the GRAD finder's path of Rubi 892cfb9, the
+  final reads' model of it. Rubi's default finder is now the textspot8 spotter (`ocr_finder = spotter`, API 54, [The spotter
+  finder](#the-spotter-finder-api-54)), whose test reads (vita-vn-ocr `eval/textspot8_test_20261027.json`) used
+  VOCR5-N; only its development guard read v0.4.0-vocr6.1's VOCR6-N → L (the 0.99 % in that section's table). This
+  set has not been read through the spotter.
 - **The remaining error is the line finder's,** about 75-85 % of other games' whole dialogue (2.47 / 2.37 / 2.39 % for
   Small / Normal / Large on #119's development units, against those games' fixed lines at 0.40-0.68 %). The owner's
-  < 1 % target is met on the hooked games' held-out pages at Normal and Large (0.94 % / 0.92 %), not at Small
-  (1.05 %) nor on other games' whole dialogue.
+  < 1 % target is met on the hooked games' held-out pages at Normal and Large (0.94 % / 0.92 %, the 15,000-step
+  recipe's seeds†), not at Small (1.05 %) nor on other games' whole dialogue.
 - **Seen flags and disclosures** (every test-set number above carries them):
   - \*Every VOCR6 model has seen CLANNAD's glyph raster: two hooked train titles, Grisaia Spinout (PCSG00620) and Little
     Busters! (PCSG00007), draw dialogue in a font whose 32 px glyphs are CLANNAD's own raster, re-quantised (1,234
@@ -2053,7 +2064,8 @@ All three are vita-vn-ocr's VOCR6 recognizers (#125; `docs/vocr6.md` "The follow
 
 **Before them** the sizes were VOCR5-S, VOCR5-N and VOCR5-L (`VOCR5_S_w8g.vocr`, `VOCR5_N_w8g2.vocr`,
 `VOCR5_L_w8g2.vocr`: vita-vn-ocr's v0.3.0 recognizers with their head gate and Normal's and Large's two-level head,
-v0.3.6-head2level.1) from API 42 to 0.9.8, and in 0.10.0's test builds VOCR5-S beside v0.4.0-vocr6.1's VOCR6-N and
+v0.3.6-head2level.1) from API 42 to 0.9.8, and in the test builds v0.9.8-test.4 and test.5 VOCR5-S beside
+v0.4.0-vocr6.1's VOCR6-N and
 VOCR6-L (`VOCR6_N_w8_2l.vocr`, `VOCR6_L_w8_2l.vocr`, the two-level head and no gate). vita-vn-ocr's `docs/vocr5.md` and
 `docs/vocr6.md` have their scores. None of them is pinned any more.
 
