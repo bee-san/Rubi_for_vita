@@ -3,8 +3,8 @@ and beside README.md, with what tools/prepare_plaintext.py and tools/prepare_vnd
 pins and licences).
 
 - Every file README.md or docs/guide.md links (in docs/, outside the history) is in the zip, so the guide's
-  feature and recovery links work in the downloaded zip, and so is every Markdown document that a document of the zip
-  links, but those of GITHUB_ONLY (its measurement records, docs/benchmarks/*.json and images, may stay on GitHub).
+  feature and recovery links work in the downloaded zip, and so is every Markdown document and image that a document
+  of the zip links, but those of GITHUB_ONLY (its measurement records, docs/benchmarks/*.json, may stay on GitHub).
 - No history record is: docs/history/ and docs/memory-ledger-history.md stay on GitHub (a zip document's link to one
   works there, not in the zip).
 - Every file the zip takes from docs/ exists, and is linked or named by README.md or by another document of the zip,
@@ -34,7 +34,9 @@ TOP = ("README.md", "CHANGELOG.md")
 CARRIED = ("third_party/README.md", "third_party/LunaTranslator/README.md", "compat/adrenaline_vsh/README.md")
 # What a zip document may link that the zip does not carry, a reader's GitHub copy: the history, the developers' rules,
 # reports and code-side records (#418's audit, F13).
-GITHUB_ONLY = ("docs/history/", "docs/memory-ledger-history.md", "AGENTS.md", "reports/", "host/", "settings/assets/")
+GITHUB_ONLY = ("docs/history/", "docs/memory-ledger-history.md", "AGENTS.md", "reports/", "host/", "settings/assets/",
+               "docs/promo/")  # (the promo's media are linked through a CDN, docs/promo/README.md: not the zip's)
+SHOWN = (".md", ".png", ".jpg", ".jpeg", ".gif", ".svg")  # documents, and the images a document shows
 
 
 def history(path):
@@ -105,7 +107,8 @@ def problems(cmake=None, root=ROOT):
     for doc in sorted(f for f in zipped if f.endswith(".md") and f not in ENTRY and (root / f).is_file()):
         linked, _ = targets(doc, root)
         out += [f"{f}: {doc} links it, but the zip lacks it" for f in sorted(linked)
-                if f.endswith(".md") and not f.startswith(GITHUB_ONLY) and (root / f).is_file() and f not in zipped]
+                if f.lower().endswith(SHOWN) and not f.startswith(GITHUB_ONLY) and (root / f).is_file()
+                and f not in zipped]
     reached = set()
     for doc in sorted(f for f in zipped if f.endswith(".md") and (root / f).is_file()):
         linked, named = targets(doc, root)
@@ -131,6 +134,10 @@ class ZipDocs(unittest.TestCase):
         line = "${ROOT}/docs/anki.md "
         self.assertEqual(cmake.count(line), 1)
         self.assertIn("docs/anki.md: README.md links it, but the zip lacks it", problems(cmake.replace(line, "")))
+        image = " ${ROOT}/docs/img/conjugation-after-chain-host.png"
+        self.assertEqual(cmake.count(image), 1)
+        self.assertIn("docs/img/conjugation-after-chain-host.png: docs/conjugation-display.md links it, but the zip "
+                      "lacks it", problems(cmake.replace(image, "")))
         tar = "README.md CHANGELOG.md LICENSE"
         self.assertEqual(cmake.count(tar), 1)
         self.assertIn("CHANGELOG.md: copied beside README.md, but not in the zip's tar list",

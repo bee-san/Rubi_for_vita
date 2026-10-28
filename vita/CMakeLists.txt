@@ -697,7 +697,11 @@ add_custom_target(release
     ${ROOT}/docs/offline-testing.md ${ROOT}/docs/one-vpk-install.md ${ROOT}/docs/rename-rubi.md
     ${ROOT}/docs/self-test.md ${ROOT}/docs/text-stability.md ${ROOT}/docs/vita-memory.md
     ${ROOT}/docs/config.example.ini ${STAGE}/docs/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/img/line-history-host.png ${STAGE}/docs/img/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/img/line-history-host.png
+    ${ROOT}/docs/img/conjugation-before-polite-host.png ${ROOT}/docs/img/conjugation-after-polite-host.png
+    ${ROOT}/docs/img/conjugation-after-chain-host.png ${ROOT}/docs/img/conjugation-after-exact-host.png
+    ${STAGE}/docs/img/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/settings-dictionaries-vita3k.png ${STAGE}/docs/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/refine-20261015.json
     ${ROOT}/docs/benchmarks/settings-gamelist-20261015.md ${STAGE}/docs/benchmarks/
