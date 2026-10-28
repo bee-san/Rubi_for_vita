@@ -2436,8 +2436,9 @@ retry_smaller:
      * weights are then refused once the job's blocks are taken: no OCR can run in this game now, as when the check
      * fails, so a Rubi verified site's newest text answers unconfirmed here too (with the 4 MiB reserve before #280
      * the check failed there). This try's blocks and the resident ones go back to the game first, as on that path;
-     * its captures and finder time stay the job's, and its blocks' steps leave the log (steps_drop_blocks). */
-    if (rc == VJO_E_OOM && !stats.stuck && hk.installed && !cancelled(NULL)) {
+     * its captures and finder time stay the job's, and its blocks' steps leave the log (steps_drop_blocks). Never while
+     * a block may still be written (a stuck helper, a capture the display hook may still own: blocked). */
+    if (rc == VJO_E_OOM && !stats.stuck && !blocked && hk.installed && !cancelled(NULL)) {
         uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
         if (id) {
             const size_t workspace = stats.workspace;
