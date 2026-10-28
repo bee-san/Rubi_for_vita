@@ -126,9 +126,8 @@ the analyser reports such a route as failed, never its zeros as figures.
 
 ## What the analyser says
 
-`tools/analyse_selftest.py` (tests: `tools/tests/test_analyse_selftest.py`, with #74's own report
-as `tools/tests/fixtures/selftest-74-report.txt`, and v2 reports written by the real
-`shell/selftest.c` on the host, `host/tests/selftest_writer.c`) prints two tables. The first is
+`tools/analyse_selftest.py` (tests: `tools/tests/test_analyse_selftest.py`, on v2 reports written by
+the real `shell/selftest.c` on the host, `host/tests/selftest_writer.c`) prints two tables. The first is
 the run and its OCR, PASS, FAIL or NOTEXT; these rows alone decide the verdict:
 
 ```
@@ -191,9 +190,8 @@ or `WARN (rows)`) and the verdict: `PASS` (it names any diagnostics that warned)
 `INCOMPLETE: stage '<name>' began and never wrote its record` (or `INCOMPLETE: the stages were
 still waiting for text in your region`). A stop
 is the run's failure in whichever stage it happens, the probe included, and never a WARN. An API
-18 (`selftest v1`) report gets the same table for its steps (`boot`, `ok`, `game`, `ocr`, `done`),
-with its memory routes as diagnostics; for #74 it says `ocr FAIL: never reached: the capture
-failed 5 time(s) (no memory)` and names the 2,088,960 B kernel buffer.
+18 (`selftest v1`) report, as #74's, is not read (exit 2): the analyser in the zip of the build that
+wrote it reads it.
 
 Exit status follows the verdict: 0 for PASS (diagnostic WARNs included), 1 for FAIL, NO TEXT or
 INCOMPLETE, 2 for a file that is not a report. `--json` gives `ocr_result` (`PASS`, `FAIL`,

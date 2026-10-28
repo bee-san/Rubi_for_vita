@@ -28,8 +28,8 @@ v2 reports (API 19, `selftest v2`): boot, ok, game, then the stages one OCR job
 runs on the first settled screen with text in the region (fallback, textbox,
 fullscreen, probe, textbox2), then done. Each screen without text before it
 closes the fallback stage's begin with a `stage fallback wait` record (at most
-VJO_SELFTEST_WAITS, then the stages run anyway). v1 reports (API 18, `selftest v1`, as #74 sent) get the
-same table for their steps (boot, ok, game, ocr, done).
+VJO_SELFTEST_WAITS, then the stages run anyway). A v1 report (API 18, `selftest v1`) is not read: the
+analyser in the zip of the build that wrote it is that report's.
 
 After the diagnostics come each stage's memory headroom (free USER, plus another
 model's weights it released, minus the reserve and what the job needed) and the
@@ -61,12 +61,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 KD_TOTAL = 36 * 1024 * 1024          # ScePhyMemPartKD on retail firmware (wiki Memory_budget)
-SHELL_TOTAL = 50 * 1024 * 1024       # ScePhyMemPartShell
-SHELL_LOW = 512 * 1024               # SceShell free main below this: a firmware thread's next page can fail (#59)
 PAF_RESERVE = 1536 * 1024            # shell/memory.cpp RESERVE: below it every PAF request is refused
-FULL_FRAME = 960 * 544 * 4           # API 18's kernel capture block at the largest region
 CAPTURE_LIMIT = 64 * 1024            # API 19: a region's capture block (one strip and its row checksums)
-STEPS_V1 = ("boot", "ok", "game", "ocr", "done")
 STAGES = ("fallback", "textbox", "fullscreen", "probe", "textbox2")  # shell/selftest.c's order
 REGION_STAGES = ("fallback", "textbox", "textbox2")  # the user's region: a row there with no line is NOTEXT
 ROWS_V2 = ("boot", "ok", "game") + STAGES + ("done",)
@@ -677,193 +673,14 @@ def diagnostics(out):
     out["diagnostics_result"] = "WARN" if out["warnings"] else "INCOMPLETE" if unreached else "PASS"
 
 
-# ---------------------------------------------------------------- v1 (API 18)
-
-def analyse_v1(records):
-    out = {"version": 1, "api": records[0]["fields"].get("api"), "steps": [], "samples": {}, "game": None,
-           "ocr": None, "fails": [], "findings": [], "rows": [], "routes": [], "verdict": None}
-    for r in records:
-        k, w, f = r["kind"], r["words"], r["fields"]
-        if k == "boot":
-            out["boot"] = f
-        elif k == "config":
-            out["config"] = f
-        elif k == "step":
-            step = w[0] if w else "?"
-            for word in w[1:]:  # the ocr step's bare "WxH"
-                m = re.fullmatch(r"(\d+)x(\d+)", word)
-                if m:
-                    f["width"], f["height"] = int(m.group(1)), int(m.group(2))
-            out["steps"].append({"step": step, **f})
-            if step == "game":
-                out["game"] = f
-            elif step == "ocr":
-                out["ocr"] = dict(f)
-        elif k in ("mem", "ledger", "kernel") and w:
-            out["samples"].setdefault(w[0], {})[k] = {**f, "words": w[1:]}
-        elif k == "game":
-            out["ocr"] = {**(out["ocr"] or {}), **f}
-        elif k == "fail":
-            out["fails"].append({"what": w[0] if w else "?", **f})
-    steps = [s["step"] for s in out["steps"]]
-    progress = [s for s in steps if s in STEPS_V1]
-    out["reached"] = progress[-1] if progress else None
-    findings, rows = out["findings"], out["rows"]
-
-    def row(name, ok, detail):
-        rows.append({"row": name, "result": ok, "detail": detail, "kind": "ocr"})
-
-    boot = out.get("boot")
-    if boot:
-        if boot.get("mode") == 1:
-            findings.append("This was a SAFE boot: the previous boot did not complete, the plugins stayed inert. "
-                            "The report has only the boot sample; reboot once more to test normally.")
-        if boot.get("failures", 0):
-            findings.append(f"{boot['failures']} normal boot(s) in a row had failed before this one.")
-        if boot.get("write", 0) & 0x80000000:
-            findings.append(f"boot.txt was not writable (0x{boot['write']:08X}): the boot guard cannot remember this boot.")
-    if "boot" in steps:
-        row("boot", "FAIL" if boot and boot.get("mode") == 1 else "PASS",
-            "SAFE boot" if boot and boot.get("mode") == 1 else f"normal boot (seq {boot.get('seq') if boot else '?'})")
-    else:
-        row("boot", None, "no boot step")
-    row("ok", "PASS" if "ok" in steps else None, "stable minute" if "ok" in steps else "not reached")
-    g = out["game"]
-    if g is None:
-        row("game", None, "not reached")
-    elif g.get("enabled") == 0:
-        row("game", "FAIL", f"{g.get('title')} is disabled in games.ini: no OCR ran")
-        findings.append(f"The game {g.get('title')} is disabled in games.ini: no OCR ran. Enable it in the Rubi app "
-                        f"(Overlay or JP Overlay Settings in older builds) and run again.")
-    else:
-        row("game", "PASS", f"{g.get('title')} enabled, region {g.get('region')}")
-
-    captures = [fl for fl in out["fails"] if fl["what"] == "capture"]
-    counts = {}
-    for fl in out["fails"]:
-        key = (fl["what"], u32(fl.get("rc", 0)))
-        counts[key] = counts.get(key, 0) + 1
-    for (what, rc), n in counts.items():
-        findings.append(f"{what} failed{f' {n} times' if n > 1 else ''}: {NATIVE.get(rc, hex(rc))}"
-                        + (" — the kernel could not allocate the capture block in ScePhyMemPartKD." if what == "capture" and rc == 0xBFFFFFFE else ""))
-    if captures and all(u32(c.get("rc", 0)) == 0xBFFFFFFE for c in captures):
-        findings.append(f"The capture failed {len(captures)} time(s) with no memory: API 18 asks the kernel for a "
-                        f"{FULL_FRAME:,} B capture buffer at the full screen, and its pool refused it (#74 measured "
-                        f"0x80024302, NO_FREE_PHYSICAL_PAGE, each time). API 19 takes no kernel buffer for OCR: the game "
-                        f"reads its own screen in strips.")
-        if "done" not in steps:
-            findings.append("API 18's self-test never finished after a failed capture: it stayed armed and kept forcing "
-                            "the full-screen region, so a smaller region could not be tried in this run (fixed in API 19).")
-    o = out["ocr"]
-    if o is not None:
-        rc = o.get("rc", 0)
-        name = RC_NAMES.get(rc, str(rc))
-        if rc == 0:
-            findings.append(f"OCR ran in the game at {o.get('width', '?')}x{o.get('height', '?')} with {o.get('model')}"
-                            + (" (the fallback model)" if o.get("fallback") else "")
-                            + f": {o.get('recognized', 0)} line(s) recognized, {o.get('recognize_ms', '?')} ms recognizing.")
-        else:
-            findings.append(f"The OCR job failed: {name} (rc {rc}).")
-        fu = o.get("free_user")
-        if isinstance(fu, int) and o.get("reserve") is not None:
-            need = o.get("need_workspace", 0) + o.get("need_weights", 0) + o.get("reserve", 0) - o.get("release", 0)
-            verdict = "passed" if fu >= need else "refused"
-            findings.append(f"The game had {fu:,} B of USER free; the job needed {need:,} B "
-                            f"(workspace {o.get('need_workspace', 0):,} + weights {o.get('need_weights', 0):,} + reserve "
-                            f"{o.get('reserve', 0):,}): check {verdict}.")
-            if fu < need and rc == -103:
-                findings.append("Out of memory in the GAME, not in SceShell: a smaller model or a tighter region fits; "
-                                "this title cannot run the configured one.")
-        if o.get("io", 0):
-            io = o["io"] & 0xFFFFFFFF
-            findings.append(f"Model I/O error 0x{io:08X}" + (" (ENODEV: the game cannot see ux0; the kernel broker should have been used)" if io == 0x80010013 else "")
-                            + (" (ENOENT: the model file is missing)" if io == 0x80010002 else ""))
-        if o.get("cleanup", 0):
-            findings.append("The game worker could not free its memory after the job (cleanup_status set): it blocks further jobs.")
-        if o.get("capture_rc", 0):
-            findings.append(f"The capture reported 0x{o['capture_rc'] & 0xFFFFFFFF:08X}: {NATIVE.get(o['capture_rc'] & 0xFFFFFFFF, '?')}.")
-        row("ocr", "PASS" if rc == 0 else "FAIL", f"{RC_NAMES.get(rc, rc)} at {o.get('width', '?')}x{o.get('height', '?')}")
-    elif captures:
-        row("ocr", "FAIL", f"never reached: the capture failed {len(captures)} time(s) "
-                           f"({NATIVE.get(u32(captures[0].get('rc', 0)), hex(u32(captures[0].get('rc', 0))))})")
-    else:
-        row("ocr", None, "not reached")
-    row("done", "PASS" if "done" in steps else None, "reached" if "done" in steps else "not reached")
-
-    for step in dict.fromkeys(s for s in steps):
-        s = out["samples"].get(step)
-        if not s:
-            continue
-        mem, kern = s.get("mem", {}), s.get("kernel", {})
-        cells = {}
-        main = mem.get("shell_main")
-        if mem:
-            if u32(mem.get("rc", 0)):
-                cells["user"] = ("WARN", native(mem.get("rc")))
-                findings.append(f"At {step}: sceKernelGetFreeMemorySize failed ({native(mem.get('rc'))}).")
-            elif isinstance(main, int) and main < 0:
-                cells["user"] = ("PASS", f"main {main} (under the margin: 0 B free above it)")
-            else:
-                cells["user"] = ("PASS", f"main {main:,} B")
-                if isinstance(main, int) and main < SHELL_LOW:
-                    findings.append(f"At {step}: SceShell's partition had only {main:,} B free (user view). This is the "
-                                    f"headroom a firmware thread needs for its next page; #59's crash happened in this state.")
-        paf = mem.get("paf_free")
-        if isinstance(paf, int) and 0 < paf < PAF_RESERVE:
-            findings.append(f"At {step}: the PAF heap had {paf:,} B free, under the {PAF_RESERVE:,} B reserve: every "
-                            f"Shell result allocation is refused (dictionary results, Anki).")
-        if kern and kern.get("words") and kern["words"][0] == "unavailable":
-            cells["kernel"] = ("WARN", f"sample unavailable {native(kern.get('rc', 0))}")
-            findings.append(f"At {step}: the kernel memory sample was unavailable (rc 0x{u32(kern.get('rc', 0)):08X}).")
-        elif kern:
-            if u32(kern.get("kd_rc", 0)) == 0:
-                cells["block kernel"] = ("PASS", f"{kern.get('kd_free', 0):,} of {kern.get('kd_total', 0):,} B free")
-                if kern.get("kd_total") != KD_TOTAL:
-                    findings.append(f"At {step}: the kernel module's partition reads {kern.get('kd_total', 0):,} B total, "
-                                    f"not the 36 MiB of ScePhyMemPartKD: treat kd_free as unconfirmed.")
-            else:
-                cells["block kernel"] = ("WARN", native(kern.get("kd_rc")))
-            if u32(kern.get("shell_rc", 0)) == 0:
-                cells["block shell"] = ("PASS", f"{kern.get('shell_free', 0):,} of {kern.get('shell_total', 0):,} B free")
-                if kern.get("shell_total") not in (None, SHELL_TOTAL):
-                    findings.append(f"At {step}: the Shell's partition reads {kern['shell_total']:,} B total, not 50 MiB.")
-            else:
-                cells["block shell"] = ("WARN", native(kern.get("shell_rc")))
-        out["routes"].append({"step": step, "cells": cells})
-    bad_routes = {name for r in out["routes"] for name, (ok, _) in r["cells"].items() if ok == "WARN"}
-    for name in sorted(bad_routes):
-        rcs = sorted({c[1] for r in out["routes"] for n, c in r["cells"].items() if n == name and c[0] == "WARN"})
-        findings.append(f"The {name} memory route failed at every step it was tried ({', '.join(rcs)}): its zero "
-                        f"figures are not measurements.")
-
-    # v1 has no diagnostic rows: its memory routes are its diagnostics
-    out["warnings"] = [f"{name} route" for name in sorted(bad_routes)]
-    out["diagnostics_result"] = "WARN" if bad_routes else "PASS"
-    failed = [r["row"] for r in rows if r["result"] == "FAIL"]
-    out["ocr_result"] = "PASS" if "done" in steps and not failed else "FAIL" if failed or out["reached"] is None \
-        else "INCOMPLETE"
-    if "done" in steps and not failed:
-        out["verdict"] = "PASS: boot, game start and an OCR job completed; see the figures above."
-    elif failed:
-        out["verdict"] = f"FAIL: {', '.join(failed)} failed; see the rows above."
-    elif out["reached"] is None:
-        out["verdict"] = "FAIL: the Shell plugin never wrote a step: it did not start (see status.txt and kernel.txt)."
-    else:
-        nxt = {"boot": "the stable minute (ok)", "ok": "a game start", "game": "an OCR result (the first settled text "
-               "screen)", "ocr": "done"}.get(out["reached"], "done")
-        out["verdict"] = (f"INCOMPLETE: the run reached '{out['reached']}' and never wrote {nxt}. "
-                          + ("If the Vita crashed or hung there, the step after it is where to look." if out["reached"] != "boot"
-                             else "Either the console was off within the first minute, or it hung or crashed before it."))
-    return out
-
-
 def analyse(text):
     load_rc_names()
     records = parse(text)
     if not records or records[0]["kind"] != "selftest":
         raise ValueError("not a self-test report (first line must start with 'selftest')")
     if records[0]["words"][:1] == ["v1"]:
-        return analyse_v1(records)
+        raise ValueError("a v1 self-test report (API 18): this analyser reads v2 reports (API 19 and later); "
+                         "the analyser in the zip of the build that wrote it reads this one")
     return analyse_v2(records)
 
 

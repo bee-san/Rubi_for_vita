@@ -19,7 +19,7 @@
 #                        (docs/release-variants.md). Every build here is made as that build, and a
 #                        check of a debug-only feature (the self-test's) says N/A for the normal one.
 # A check whose input is missing prints SKIP; GO needs every check that ran to pass and the
-# required ones (host suites, #74 replay, simulator, parity, Vita build) to have run.
+# required ones (host suites, simulator, parity, Vita build) to have run.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -77,19 +77,13 @@ else
   skip "word lookup (bundled dict)" "VJO_PLAINTEXT_SOURCE unset (no plaintext.vjdict)"
 fi
 
-# 2. #74 replayed: its report and logs through the analyser and the tests built on them
-r74=$("$PY" tools/analyse_selftest.py tools/tests/fixtures/selftest-74-report.txt 2>&1)
-if [ $? -eq 1 ] && grep -q "never reached: the capture failed 5 time(s)" <<<"$r74" && grep -q "2,088,960 B capture buffer" <<<"$r74"; then
-  pass "#74 replay (API 18)" "report: boot/ok/game PASS, ocr FAIL: 5 kernel capture refusals of 2,088,960 B; KD/SceShell queries 0x80020001"
-else
-  fail "#74 replay (API 18)" "the analyser no longer reproduces #74's failure"
-fi
-# with the real writer, so the fixtures are checked to be what shell/selftest.c writes (the debug
-# build's: the normal build has no self-test, and its analyser tests run on the fixtures alone)
+# 2. the self-test analyser and its tests, with the real writer, so the fixtures are checked to be what
+# shell/selftest.c writes (the debug build's: the normal build has no self-test, and its analyser tests run on
+# the fixtures alone)
 writer=; [ "$VARIANT" = debug ] && writer=$BUILD/vjo-selftest-writer
 if VJO_SELFTEST_WRITER=$writer "$PY" -m unittest tools.tests.test_analyse_selftest \
      > "$log/analyser.log" 2>&1; then
-  pass "self-test analyser" "$(grep -o 'Ran [0-9]* tests' "$log/analyser.log")$(grep -o ' (skipped=[0-9]*)' "$log/analyser.log"): v1 (#74 fixture), v2 PASS/FAIL/INCOMPLETE, diagnostics PASS/WARN${writer:+, the real writer}"
+  pass "self-test analyser" "$(grep -o 'Ran [0-9]* tests' "$log/analyser.log")$(grep -o ' (skipped=[0-9]*)' "$log/analyser.log"): v2 PASS/FAIL/INCOMPLETE, diagnostics PASS/WARN${writer:+, the real writer}"
 else
   fail "self-test analyser" "$log/analyser.log"
 fi
