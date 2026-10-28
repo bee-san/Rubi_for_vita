@@ -77,7 +77,7 @@ class LocalDictionaryTest(unittest.TestCase):
     def test_local_is_the_only_dictionary(self):
         # The removed dictionaries are no --dict choice: the online ones (jpdb.io, jiten.moe) and the
         # Hachidori relay on a computer; --hachidori is no option any more. A config.ini that chose one
-        # loads as local with one warning and looks words up in the local files.
+        # loads as local, without a warning (#418), and looks words up in the local files.
         self.build([term("猫", "ねこ", ["cat"])])
         for args in (["--dict", "jpdb"], ["--dict", "jiten"], ["--dict", "hachidori"], ["--dict", "relay"],
                      ["--hachidori", "127.0.0.1:19633"]):
@@ -91,7 +91,7 @@ class LocalDictionaryTest(unittest.TestCase):
                                  "--local-dicts", "main.vjdict", "--text", "猫", "--nav"],
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stderr, "config: dictionary: the Hachidori relay was removed; using local\n")
+        self.assertEqual(result.stderr, "")  # a removed setting is ignored without a warning (#418)
         self.assertIn("cat", result.stdout)
         self.assertIn("【猫】", result.stdout)
 

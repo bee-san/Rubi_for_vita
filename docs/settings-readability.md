@@ -491,8 +491,8 @@ drives it: every size's edges and gaps by touch, Down/Left/Right/Enter/Up, the
 saved `vocr_tier` (an older `vocr_model` line dropped on the first save), no
 frame naming an engine or Google Lens, each size's file missing (the chosen size's
 model reported missing, no other model named), and no frame naming a fallback. A saved `ocr_backend` line (`vocr`, or a removed engine: `lens`, `vocr2`,
-`meiki`, `ncnn`) loads as the local engine, a removed one with a config warning,
-and the next save drops the line. `host/tests/test_settings_app.c`
+`meiki`, `ncnn`) loads as the local engine, without a warning, and the next save
+drops the line. `host/tests/test_settings_app.c`
 runs the actual input/draw loop with a scripted controller, touch screen and
 vita2d, and real files: the size buttons, their edges and the gaps (focus only),
 Left, Right and Enter, the removed values, missing and wrong-sized models, an

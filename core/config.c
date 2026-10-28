@@ -269,15 +269,12 @@ static int parse_int(const char *s, int *out)
     return 0;
 }
 
-/* A dictionary value of a removed service: its name, for the config
- * warning, or NULL: jpdb.io and jiten.moe, the online dictionaries, and the
- * Hachidori relay on a computer. Such a file loads as local; the Rubi
- * app's next save (vjo_config_removed_line) and the installer
- * (tools/migrate_config.py REPLACED_VALUES) write local. */
-static const char *removed_dictionary(const char *v)
+/* A dictionary value of a removed service: jpdb.io and jiten.moe, the online dictionaries, and the Hachidori relay
+ * on a computer. The parser takes it without a warning, as local (the local dictionaries are the only ones); the Rubi
+ * app's next save (vjo_config_removed_line) and the installer (tools/migrate_config.py REPLACED_VALUES) write local. */
+static int removed_dictionary(const char *v)
 {
-    return vjo_ieq(v, "jpdb") ? "jpdb.io" : vjo_ieq(v, "jiten") ? "jiten.moe"
-         : vjo_ieq(v, "hachidori") ? "the Hachidori relay" : NULL;
+    return vjo_ieq(v, "jpdb") || vjo_ieq(v, "jiten") || vjo_ieq(v, "hachidori");
 }
 
 /* config.ini's removed settings, the one list (core/config.h vjo_config_removed): each entry is its kind, then its
@@ -296,14 +293,17 @@ static const char removed_keys[] =
      * exports the cards as an .apkg. The installer removes them and says so; the app's next save drops them. */
     REMOVED("a", "anki_deck") REMOVED("a", "anki_note_type") REMOVED("a", "anki_tags") REMOVED("a", "anki_host")
     REMOVED("a", "anki_audio_url") REMOVED("A", "anki_field_")
-    /* The engine choice (VOCR is the only engine) and the UDP log's computer (the log went with the network) */
+    /* The engine choice (VOCR is the only engine) and the UDP log's computer (the log went with the network): every
+     * save drops their line */
     REMOVED("e", "ocr_backend") REMOVED("e", "log_host")
-    /* Older settings, ignored without a warning (the relay's hachidori_host too); the install drops them */
+    /* Older settings (the relay's hachidori_host too): the saves keep their line, the install drops it */
     REMOVED("o", "frequency_filter") REMOVED("o", "font_size") REMOVED("o", "hw_jpeg") REMOVED("o", "combo_delay_ms")
     REMOVED("o", "hachidori_host")
-    /* The model and its fallback, which one model size replaced (vocr_tier, API 21) */
+    /* The model and its fallback, which one model size replaced (vocr_tier, API 21): the four-preference save drops
+     * them; an older build's vocr_model still sets the size (set_kv) */
     REMOVED("m", "vocr_fallback_model") REMOVED("t", "vocr_model")
-    /* The dictionary choice: the local dictionaries are the only ones */
+    /* The dictionary choice: the local dictionaries are the only ones; the parser still reads the line (another
+     * value than local or a removed dictionary's warns), and a removed dictionary's line is saved as local */
     REMOVED("d", "dictionary");
 #undef REMOVED
 
@@ -356,23 +356,6 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
         }
     }
     return VJO_LINE_KEEP;
-}
-
-/* An ocr_backend value of a removed engine: why it no longer runs (the config
- * warning), or NULL. The setting itself is gone (VOCR is the only engine): the
- * Rubi app's next save and the installer (tools/migrate_config.py) drop the line. */
-static const char *removed_engine(const char *v)
-{
-    static const char *const removed[][2] VJO_DATA_TABLE(config_removed_1) = {
-        {"lens", "Google Lens was removed (the overlay is offline)"}, /* the upstream's engine, removed 2026-10-15 */
-        {"vocr2", "VOCR2 was removed"},  /* the experimental trial, v0.7.12 to v0.8.0-test.1 */
-        {"meiki", "Meiki was removed"},  /* the manual single-line trial, v0.7.6 to v0.7.12 */
-        {"ncnn", "ncnn runs only in host tools"}, /* vjo-ocr --backend ncnn; never on the Vita */
-    };
-    for (size_t i = 0; i < sizeof(removed) / sizeof(removed[0]); i++)
-        if (vjo_ieq(v, removed[i][0]))
-            return removed[i][1];
-    return NULL;
 }
 
 /* An older build's vocr_model: a plain file name ending in .vocr, as those
@@ -540,22 +523,11 @@ static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", 
 static void set_kv(VjoConfig *c, const char *key, const char *val)
 {
     const StrSetting *ss;
-    int kind = removed_kind(key, strlen(key));
-    /* removed settings without a warning (the relay's hachidori_host too: dictionary = hachidori's warning is the
-     * relay's one line) */
-    if (kind == VJO_REMOVED_OLDER || kind == VJO_REMOVED_MODEL)
-        return;
     if (vjo_ieq(key, "dictionary")) {
-        /* the local dictionaries are the only ones: c->dictionary stays VJO_DICT_LOCAL */
-        const char *removed = removed_dictionary(val);
-        if (removed)
-            warn(c, "%s: %s was removed; using local", key, removed);
-        else if (!vjo_ieq(val, "local"))
+        /* the local dictionaries are the only ones: a removed one's value (jpdb, jiten, hachidori) loads as local
+         * without a warning (#418), any other value but local warns */
+        if (!vjo_ieq(val, "local") && !removed_dictionary(val))
             warn(c, "%s: invalid value", key);
-    } else if (vjo_ieq(key, "log_host")) {
-        /* the UDP log was removed with the network (core/config.h): said once when one was set */
-        if (val[0])
-            warn(c, "%s: the UDP log was removed (the overlay is offline); log.txt stays", key);
     } else if (vjo_ieq(key, "non_japanese_filter")) {
         if (vjo_ieq(val, "lines"))
             c->non_japanese_filter = VJO_FILTER_LINES;
@@ -598,13 +570,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const rules[] VJO_DATA_TABLE(config_reading_time_1) = {"adaptive", "15s", NULL}; /* VJO_READING_* */
         c->reading_time = 0; /* an unknown value: adaptive, with the warning */
         set_choice(c, key, val, &c->reading_time, rules);
-    } else if (vjo_ieq(key, "ocr_backend")) {
-        /* The removed engine choice (core/config.h): vocr is the only engine. */
-        const char *removed = removed_engine(val);
-        if (removed)
-            warn(c, "%s: %s; using vocr", key, removed);
-        else if (!vjo_ieq(val, "vocr"))
-            warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "vocr_tier")) {
         int t = vjo_vocr_tier_parse(val);
         if (t) {
@@ -613,11 +578,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         } else
             warn(c, "%s: invalid value (small, normal or large)", key);
     } else if (vjo_ieq(key, "vocr_model")) {
-        /* An older build's model choice: its tier, unless a vocr_tier line says otherwise. */
+        /* An older build's model choice (removed, core/config.c's list): its tier, unless a vocr_tier line says
+         * otherwise; any other value is ignored without a warning, as every removed setting is. */
         int t = valid_vocr_model(val) ? vjo_vocr_tier_of_model(val) : 0;
-        if (!t)
-            warn(c, "%s: not a model of this build; using vocr_tier", key);
-        else if (!c->vocr_tier_explicit)
+        if (t && !c->vocr_tier_explicit)
             c->vocr_tier = t;
     } else if (vjo_ieq(key, "ocr_settle_ms")) {
         set_ms(c, key, val, &c->ocr_settle_ms, 0, 1000);
@@ -718,14 +682,16 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         if (s == n || line[s] == ';' || line[s] == '#')
             continue;
         {
-            /* An API key's line or a removed Anki setting's, whatever follows its name ('=', a space, a URL that can
-             * hold a key, a value too long), is ignored before anything of it could reach a warning. */
+            /* A removed setting's line (core/config.c's list), whatever follows its name ('=', a space, an API key, a
+             * URL that can hold a key, a value too long), is ignored before anything of it could reach a warning; but
+             * the two whose value still means something are read as any line is: an older build's vocr_model still
+             * sets the model size, and dictionary is still checked (set_kv). */
             size_t w = s;
             int kind;
             while (w < n && line[w] != '=' && !is_space(line[w]))
                 w++;
             kind = removed_kind(line + s, w - s);
-            if (kind == VJO_REMOVED_SECRET || kind == VJO_REMOVED_ANKI)
+            if (kind && kind != VJO_REMOVED_TIER && kind != VJO_REMOVED_DICTIONARY)
                 continue;
         }
         {

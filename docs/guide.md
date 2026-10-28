@@ -50,8 +50,8 @@ sizes' models; a choice applies when you next open the overlay.
 
 Google Lens, the [upstream's](https://github.com/Dartv/vita-jp-overlay) online
 engine, has been removed: recognition never uses the network. A saved
-`ocr_backend` line is ignored (`lens` with a config warning in `log.txt` and the
-overlay), and the Rubi app's next save and the installer delete it. The last
+`ocr_backend` line is ignored, without a warning, and the Rubi app's next save
+and the installer delete it. The last
 build with Google Lens is the tag `archive/online-last` (branch `archive/online`).
 
 The engine's name comes from the pinned metadata of the model it runs
@@ -68,9 +68,9 @@ generation. v0.2.0's models are generation VOCR1.
 
 The experimental VOCR2 trial (a separately trained FL10-sized model with a
 textbox finder, opt-in in 0.7.12 to v0.8.0-test.1; its promotion guard failed)
-has been removed. A saved `ocr_backend = vocr2` now loads as the local engine
-with a config warning, and the app's next save and the installer delete the
-line; so does `ncnn`, which only the host tools run. The no-longer-used
+has been removed. A saved `ocr_backend = vocr2` now loads as the local engine,
+and the app's next save and the installer delete the line; so does `ncnn`,
+which only the host tools run. The no-longer-used
 `ux0:data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr` can be deleted. The
 [`0.7.12` release](https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.7.12)
 contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; it also
@@ -742,10 +742,10 @@ the plugins do not know or cannot use is listed in red in the open overlay and
 logged in `log.txt` once, and again only when the set of such lines changes
 (test.2's log had 76 lines from 8 of them, #101). A warning names the setting, or
 a line without `=` by its number, and never quotes a value, which can be a key or
-an address. A removed engine
-(`ocr_backend = lens`, `vocr2`, `meiki`, `ncnn`) runs the local engine with a
-config warning, and the app's next save and the installer delete the line (any
-`ocr_backend` line: VOCR is the only engine). The installer, the package's own copy and the Rubi
+an address. A removed feature's setting (any `ocr_backend` line: VOCR is the
+only engine; `log_host`; the online dictionaries' and AnkiConnect's settings) is
+ignored without a warning, and the app's next save and the installer delete or
+rewrite its line. The installer, the package's own copy and the Rubi
 app write the file; the Shell plugin never does, and with no file it runs on
 these defaults:
 
@@ -1011,7 +1011,7 @@ request and have no cloud fallback: the local dictionaries are the only ones.
 The online dictionaries jpdb.io and jiten.moe, which needed an API key, have
 been removed (the local Jitendex and every other Yomitan dictionary still
 work, converted as above). A saved `dictionary = jpdb` or `jiten` now loads
-as `local` with a config warning in `log.txt` and the overlay; the installer
+as `local`; the installer
 (`tools/migrate_config.py`) and the Rubi app's next save write `local` and
 delete the `jpdb_api_key`, `jiten_api_key` and older `api_key` lines (the
 app's save leaves none in `config.ini.bak` either; the installer names each
@@ -1021,7 +1021,7 @@ those two services gave, went with them.
 The Hachidori relay, which looked words up in the Hachidori app on a computer
 on your local network (`dictionary = hachidori`, `hachidori_host`), has been
 removed from the overlay too; the Hachidori app itself is unaffected. A saved
-`dictionary = hachidori` now loads as `local` with one config warning, and the
+`dictionary = hachidori` now loads as `local`, and the
 Rubi app's next save and the installer write `local`; `hachidori_host` is
 ignored, and the installer drops it.
 

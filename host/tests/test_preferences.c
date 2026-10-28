@@ -206,9 +206,10 @@ static void test_model_tier_patch_parse_and_legacy_models(void)
         {"vocr_model = F20_w8.vocr\n", VJO_VOCR_TIER_LARGE, 0},
         {"vocr_model = VOCR4_W20_w8.vocr\n", VJO_VOCR_TIER_LARGE, 0},
         {"vocr_model = VOCR3_W20_w8.vocr\n", VJO_VOCR_TIER_LARGE, 0},
-        {"vocr_model = unknown_w8.vocr\n", VJO_VOCR_TIER_NORMAL, 1},
-        {"vocr_model = ../H15_w8.vocr\n", VJO_VOCR_TIER_NORMAL, 1},
-        {"vocr_model = H15_w8.bin\n", VJO_VOCR_TIER_NORMAL, 1},
+        /* another name gives no size, without a warning (a removed setting, #418) */
+        {"vocr_model = unknown_w8.vocr\n", VJO_VOCR_TIER_NORMAL, 0},
+        {"vocr_model = ../H15_w8.vocr\n", VJO_VOCR_TIER_NORMAL, 0},
+        {"vocr_model = H15_w8.bin\n", VJO_VOCR_TIER_NORMAL, 0},
         /* a vocr_tier line wins over a vocr_model one, before or after it */
         {"vocr_tier = small\nvocr_model = VOCR4_W20_w8.vocr\n", VJO_VOCR_TIER_SMALL, 0},
         {"vocr_model = VOCR4_W20_w8.vocr\nvocr_tier = small\n", VJO_VOCR_TIER_SMALL, 0},
@@ -812,8 +813,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         unsigned char shell_mem[24 * 1024]; VjoArena shell;
         reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 &&
-                   !strcmp(cfg.warnings[0], "dictionary: jpdb.io was removed; using local"));
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0); /* removed settings: silent (#418) */
         TEST_ASSERT(app_save(save, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
@@ -964,12 +964,11 @@ static void test_removed_relay_rewritten_by_saves(void)
         unsigned char shell_mem[24 * 1024]; VjoArena shell;
         reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 &&
-                   !strcmp(cfg.warnings[0], "Dictionary: the Hachidori relay was removed; using local"));
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0); /* removed settings: silent (#418) */
         TEST_MSG("%d warnings, first: %s", cfg.n_warnings, cfg.n_warnings ? cfg.warnings[0] : "");
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell);
-        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 && shell.used == 0);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && shell.used == 0);
         renames = 0;
         TEST_ASSERT(app_save(save, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0 && renames == 2); /* one publication */
@@ -991,19 +990,13 @@ static void test_removed_relay_rewritten_by_saves(void)
 }
 /* The engine is no setting any more (VOCR is the only one; Google Lens was
  * removed, the overlay is offline). A config.ini that chose one loads as VOCR,
- * in the app and in the Shell: vocr says nothing, a removed engine (Google
- * Lens, the VOCR2 and Meiki trials, the host tools' ncnn) says so; and the
- * app's next save drops the line, keeping every other one. */
+ * in the app and in the Shell, without a warning whatever it names (vocr, Google
+ * Lens, the VOCR2 and Meiki trials, the host tools' ncnn: a removed setting,
+ * #418); and the app's next save drops the line, keeping every other one. */
 static void test_engine_choice_loads_as_vocr_and_saves_drop_it(void)
 {
     static const struct { const char *value, *warning; } engines[] = {
-        {"vocr", NULL},
-        {"VOCR", NULL},
-        {"lens", "ocr_backend: Google Lens was removed (the overlay is offline); using vocr"},
-        {"Lens", "ocr_backend: Google Lens was removed (the overlay is offline); using vocr"},
-        {"vocr2", "ocr_backend: VOCR2 was removed; using vocr"},
-        {"meiki", "ocr_backend: Meiki was removed; using vocr"},
-        {"NCNN", "ocr_backend: ncnn runs only in host tools; using vocr"},
+        {"vocr", NULL}, {"VOCR", NULL}, {"lens", NULL}, {"Lens", NULL}, {"vocr2", NULL}, {"meiki", NULL}, {"NCNN", NULL},
     };
     for (unsigned i = 0; i < sizeof(engines) / sizeof(engines[0]); i++) {
         char legacy[256];
@@ -1049,8 +1042,9 @@ static size_t read_fixture(const char *name, char *out, size_t cap)
 
 /* #101: test.1's Rubi app saved its four preferences over test.2's
  * config.ini (host/tests/fixtures/config-old-app-test2.ini: ocr_backend =
- * vocr2). Today's Shell and app read it as the local engine with one warning
- * and no unknown setting (its vocr_model gives the Normal size), and the app's
+ * vocr2). Today's Shell and app read it as the local engine without a warning
+ * (#418: removed settings are silent) and no unknown setting (its vocr_model
+ * gives the Normal size), and the app's
  * next save drops the engine line (VOCR is the only engine since Google Lens's
  * removal) and the two model lines, writes vocr_tier, rewrites the lines of
  * removed features as core/config.c vjo_config_removed_line says (the online
@@ -1067,15 +1061,14 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
     vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
     VjoConfig cfg;
     vjo_config_load(&cfg, &shell);
-    TEST_CHECK(cfg.n_warnings == 1);
-    TEST_CHECK(!strcmp(cfg.warnings[0], "ocr_backend: VOCR2 was removed; using vocr"));
+    TEST_CHECK(cfg.n_warnings == 0);
     TEST_MSG("%d warnings, first '%s'", cfg.n_warnings, cfg.n_warnings ? cfg.warnings[0] : "");
     TEST_CHECK(cfg.anki_mining && cfg.highlight_mode == VJO_HIGHLIGHT_WORD && cfg.japanese_only_selection);
     TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && !cfg.vocr_tier_explicit); /* from vocr_model = VOCR3_H15 */
     TEST_CHECK(cfg.ocr_lm == 2 && cfg.ocr_cascade_ms == 2000 && cfg.ocr_refine_lines == 2);
     TEST_CHECK(shell.used == 0 && handles == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.n_warnings == 1);
+    TEST_CHECK(cfg.n_warnings == 0);
     /* the app's next save: the engine line (a removed setting) and the two model lines gone and vocr_tier
      * added (API 21), the lines of removed features dropped or replaced as core/config.c
      * vjo_config_removed_line says (since #117 the online dictionaries' empty key lines); every other line kept */

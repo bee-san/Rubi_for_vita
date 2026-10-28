@@ -1147,7 +1147,8 @@ static void test_config_cache(void)
     strcpy(loaded.local_dictionary_dir, "ux0:data/other");
     apply_config();
     TEST_CHECK(!cache_ok);
-    /* the removed Hachidori relay's choice loads as local: the same pipeline, the cache kept */
+    /* the removed Hachidori relay's choice loads as local, without a warning (#418): the same pipeline, the cache
+     * kept */
     {
         const char *old = "dictionary = hachidori\nhachidori_host = 192.168.1.2\n"
                           "local_dictionary_dir = ux0:data/other\n"
@@ -1155,7 +1156,7 @@ static void test_config_cache(void)
         VjoConfig c;
         vjo_config_defaults(&c);
         vjo_config_parse(&c, old, strlen(old));
-        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 1);
+        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 0);
         cache_ok = 1;
         loaded = c;
         apply_config();
@@ -1216,7 +1217,7 @@ static void test_removed_relay_opens_as_local(void)
         snprintf(ini, sizeof(ini), "dictionary = hachidori\nhachidori_host = %s\n", hosts[i]);
         vjo_config_defaults(&loaded);
         vjo_config_parse(&loaded, ini, strlen(ini));
-        TEST_CHECK(loaded.dictionary == VJO_DICT_LOCAL && loaded.n_warnings == 1);
+        TEST_CHECK(loaded.dictionary == VJO_DICT_LOCAL && loaded.n_warnings == 0); /* silent (#418) */
         cfg = loaded;
         open_overlay();
         TEST_CHECK_(g_view.open && !g_view.status_is_error && !strstr(g_view.status, "achidori"),
@@ -1254,9 +1255,10 @@ static void test_ocr_config_migration(void)
     vjo_config_defaults(&c);
     TEST_CHECK(c.text_source == VJO_SOURCE_AUTO); /* API 31: no line, automatic */
     vjo_config_parse(&c, old, sizeof(old)-1);
-    /* API 31: hooks is a text source again, without a warning; the removed engine falls back to VOCR with one. */
+    /* API 31: hooks is a text source again, without a warning; the removed engine falls back to VOCR, without one
+     * too (#418). */
     TEST_CHECK(c.text_source == VJO_SOURCE_HOOKS && c.dictionary == VJO_DICT_LOCAL);
-    TEST_CHECK(c.n_warnings == 1);
+    TEST_CHECK(c.n_warnings == 0);
     /* the three values in any case, the kernel's numbers; anything else is automatic, with a warning */
     static const struct { const char *text; int source, warnings; } cases[] = {
         {"text_source = auto\n", VJO_SOURCE_AUTO, 0}, {"text_source = OCR\n", VJO_SOURCE_OCR, 0},
@@ -1715,22 +1717,19 @@ static void test_no_worker_says_restart_the_game(void)
 
 /* A config.ini that still chooses a removed engine (Google Lens, the VOCR2
  * trial, ncnn) runs the local engine: the configured size with the smaller
- * ones, in the game, with no screenshot and no connection. */
+ * ones, in the game, with no screenshot and no connection; the line is
+ * ignored without a warning (#418). */
 static void test_removed_engine_choice_runs_the_local_engine(void)
 {
     static const char *const ini[] = {"ocr_backend = lens\n", "ocr_backend = vocr2\n", "ocr_backend = ncnn\n"};
-    static const char *const warning[] = {
-        "config warning: ocr_backend: Google Lens was removed (the overlay is offline); using vocr",
-        "config warning: ocr_backend: VOCR2 was removed; using vocr",
-        "config warning: ocr_backend: ncnn runs only in host tools; using vocr"};
     for (unsigned i = 0; i < 3; i++) {
         reset();
         vjo_config_defaults(&loaded);
         vjo_config_parse(&loaded, ini[i], strlen(ini[i]));
         apply_config();
-        TEST_CHECK(cfg.n_warnings == 1);
+        TEST_CHECK(cfg.n_warnings == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && background_wanted());
-        TEST_CHECK_(logged(warning[i]) != NULL, "%s", warning[i]);
+        TEST_CHECK_(logged("config warning") == NULL, "%s", ini[i]);
         int rc = run_vocr_job();
 #ifdef VJO_WITH_VOCR
         TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
@@ -1793,7 +1792,7 @@ static void test_vocr_config(void)
     TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_SMALL && c.n_warnings == 0);
     vjo_config_defaults(&c);
     vjo_config_parse(&c, bad, sizeof(bad) - 1);
-    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.n_warnings == 3); /* each kept the default */
+    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.n_warnings == 0); /* the default, silently (#418) */
     const char fallbacks[] = "vocr_fallback_model = none\nvocr_fallback_model = ../x.vocr\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, fallbacks, sizeof(fallbacks) - 1); /* no longer read: the tiers fall back */
@@ -1802,7 +1801,7 @@ static void test_vocr_config(void)
     const char old_ini[] = "ocr_backend = VoCr2\nvocr_model = H15_w8.vocr\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, old_ini, sizeof(old_ini) - 1);
-    TEST_CHECK(c.n_warnings == 1 && c.vocr_tier == VJO_VOCR_TIER_NORMAL);
+    TEST_CHECK(c.n_warnings == 0 && c.vocr_tier == VJO_VOCR_TIER_NORMAL);
 }
 
 static void test_vocr_model_change_invalidates_cache(void)
@@ -2699,7 +2698,7 @@ static void test_subtitles_are_ocr_only(void)
     subtitles = 1;
     TEST_CHECK(!want_lookup()); /* local dictionary: OCR only while the overlay is closed */
     /* a removed dictionary in config.ini (the online ones, the Hachidori relay) loads as
-     * local: still OCR only */
+     * local, without a warning (#418): still OCR only */
     static const char *const olds[] = {
         "dictionary = jiten\njiten_api_key = test-key\nocr_mode = on_press\n",
         "dictionary = hachidori\nhachidori_host = 192.168.1.2\nocr_mode = on_press\n",
@@ -2708,7 +2707,7 @@ static void test_subtitles_are_ocr_only(void)
         VjoConfig c;
         vjo_config_defaults(&c);
         vjo_config_parse(&c, olds[i], strlen(olds[i]));
-        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 1);
+        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 0);
         cfg = loaded = c;
         TEST_CHECK(!want_lookup());
     }
@@ -8743,7 +8742,7 @@ static void test_every_job_post_finds_job_running(void)
  * the warnings each time it opens. */
 static void test_config_warnings_are_logged_once_per_change(void)
 {
-    static const char stale[] = "ocr_backend = vocr2\nmeiki_layout = auto\nocr_settle_ms = 150\n";
+    static const char stale[] = "font_size_ja = 99\nmeiki_layout = auto\nocr_settle_ms = 150\n";
     reset();
     vjo_config_defaults(&loaded);
     vjo_config_parse(&loaded, stale, strlen(stale));
@@ -8758,22 +8757,22 @@ static void test_config_warnings_are_logged_once_per_change(void)
         set_subtitles(0);
     }
     TEST_CHECK_(config_warning_logs == 2, "%u config warning lines", config_warning_logs);
-    TEST_CHECK(warnings_logged("ocr_backend: VOCR2 was removed; using vocr") == 1);
+    TEST_CHECK(warnings_logged("font_size_ja: invalid value (8-40)") == 1);
     TEST_CHECK(warnings_logged("unknown setting 'meiki_layout'") == 1);
     /* the file changes: its new set is logged once */
     vjo_config_defaults(&loaded);
-    vjo_config_parse(&loaded, "ocr_backend = vocr2\n", 20);
+    vjo_config_parse(&loaded, "font_size_ja = 99\n", 18);
     apply_config();
     apply_config();
-    TEST_CHECK(config_warning_logs == 3 && warnings_logged("ocr_backend: VOCR2 was removed; using vocr") == 2);
+    TEST_CHECK(config_warning_logs == 3 && warnings_logged("font_size_ja: invalid value (8-40)") == 2);
     /* another warning in its place, the same count: a new set, logged once */
     vjo_config_defaults(&loaded);
-    vjo_config_parse(&loaded, "ocr_backend = meiki\n", 20);
+    vjo_config_parse(&loaded, "font_size_en = 99\n", 18);
     TEST_ASSERT(loaded.n_warnings == 1);
     apply_config();
     apply_config();
-    TEST_CHECK(config_warning_logs == 4 && warnings_logged("ocr_backend: Meiki was removed; using vocr") == 1);
-    /* repaired (the app's next save drops the engine line): nothing more is logged or shown */
+    TEST_CHECK(config_warning_logs == 4 && warnings_logged("font_size_en: invalid value (8-40)") == 1);
+    /* repaired (the line fixed): nothing more is logged or shown */
     vjo_config_defaults(&loaded);
     apply_config();
     open_overlay();

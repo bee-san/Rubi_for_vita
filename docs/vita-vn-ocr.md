@@ -210,8 +210,8 @@ The VOCR2 trial (`ocr_backend = vocr2`, a separately trained FL10-sized
 `VOCR2_FL10_w8.vocr` with the native textbox finder, opt-in in 0.7.12 to
 v0.8.0-test.1) has been removed: its strict per-title promotion guard failed
 ([its results](benchmarks/vocr2-candidate-20261012.json)). A saved
-`ocr_backend = vocr2`, `meiki` or `ncnn` (or `lens`) loads as the local engine,
-with a config warning in `log.txt`; the app's next save and the installer delete
+`ocr_backend = vocr2`, `meiki` or `ncnn` (or `lens`) loads as the local engine;
+the app's next save and the installer delete
 the line, as they do any `ocr_backend` line (the engine is no setting). The kernel no
 longer opens `VOCR2_FL10_w8.vocr`; the file may be deleted.
 

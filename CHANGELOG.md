@@ -13,6 +13,16 @@ been reported.
 
 ### Changed
 
+- **A removed feature's setting is ignored without a warning** (#418, cleanup package P2). A `config.ini` line of a
+  setting that an earlier build removed (`ocr_backend`: Google Lens, the VOCR2 and Meiki trials, ncnn; `log_host`, the
+  UDP log's computer; `dictionary = jpdb`, `jiten` or `hachidori`; an older `vocr_model` whose name gives no size)
+  gave one warning line in the open overlay and `log.txt`, naming what was removed; now it is ignored silently, as
+  the removed API keys, AnkiConnect's settings and `frequency_filter`, `font_size`, `hw_jpeg`, `combo_delay_ms` and
+  `hachidori_host` already were. Only a file from before 0.8.0 holds such a line, and the Rubi app's next save and
+  the installer remove or rewrite it, as before. Every other setting reads as before, with the same warnings; a
+  `vocr_model` that names a size still sets it, and a `dictionary` line with any other value than `local` or a removed
+  dictionary's still warns, as does a `dictionary` or `vocr_model` line without `=`. The Shell's code is smaller by it
+  (measured: in the PR).
 - **All three model sizes are VOCR6** (vita-vn-ocr #125 and #157, pre-release v0.4.1-vocr6.2): VOCR6-S replaces
   VOCR5-S as Small, and VOCR6-N and VOCR6-L replace v0.4.0-vocr6.1's as Normal (the default) and Large
   (`VOCR6.2_S_w8.vocr`, 819,792 B; `VOCR6.2_N_w8g2.vocr`, 1,189,408 B; `VOCR6.2_L_w8_2l.vocr`, 2,475,680 B). Each is
