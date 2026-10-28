@@ -865,23 +865,31 @@ add_test(NAME app_prefs COMMAND vjo-app-prefs-tests)
 # boundary: the OCR card's Model size, its status line naming the size's model;
 # then the same app with a later package's model table (generation VOCR6 for
 # two sizes, VOCR5 kept for Large), which it names unchanged.
-foreach(_vjo_variant IN ITEMS app vocr6)
-  set(_vjo_target vjo-settings-${_vjo_variant}-tests)
-  add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
-    settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
-    settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
-    vita/buttons_vita.c host/tests/settings_stubs/stats_page_stub.c
-    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
-    host/tests/settings_stubs/lookup_page_stub.c)
+# The Rubi app's sources the four harnesses that drive settings/main.c compile alike (the two suites here, the Games
+# page's suite and its bench below): object libraries, each unit compiled once. What the harnesses define besides
+# reaches only their own units: VJO_VOCR_MODEL_INFO_TEST core/vocr_models.c and test_settings_app.c, VJO_SETTINGS_BENCH
+# test_settings_games.c, VJO_TEST_ZLIB settings/psp.c and the Games page's suite (vjo_settings_catalog, below).
+add_library(vjo_settings_app OBJECT settings/engine.c settings/preferences.c settings/icons.c settings/text_layout.c
+  settings/letter.c settings/app_check.c settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
+  vita/games_storage.c vita/buttons_vita.c host/tests/settings_stubs/stats_page_stub.c
+  host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
+  host/tests/settings_stubs/lookup_page_stub.c)
+add_library(vjo_settings_main OBJECT settings/main.c)
+set_source_files_properties(settings/main.c PROPERTIES COMPILE_DEFINITIONS main=vjo_settings_main)
+foreach(_vjo_target IN ITEMS vjo_settings_app vjo_settings_main vjo-settings-app-tests vjo-settings-vocr6-tests)
+  if(NOT TARGET ${_vjo_target})
+    add_executable(${_vjo_target} host/tests/test_settings_app.c)
+    target_link_libraries(${_vjo_target} vjo_settings_main vjo_settings_app)
+    string(REGEX REPLACE "^vjo-settings-(.*)-tests$" "settings_\\1" _vjo_test ${_vjo_target})
+    add_test(NAME ${_vjo_test} COMMAND ${_vjo_target})
+  endif()
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_link_libraries(${_vjo_target} vjo_host)
   # Their own sceKernelGetThreadId (settings/applog.c's batch owner), not host_stubs.h's inline 0.
   target_compile_definitions(${_vjo_target} PRIVATE VJO_TEST_THREAD_INFO_STUBS=1)
-  add_test(NAME settings_${_vjo_variant} COMMAND ${_vjo_target})
 endforeach()
-set_source_files_properties(settings/main.c PROPERTIES COMPILE_DEFINITIONS main=vjo_settings_main)
 # The later package's metadata replaces this build's (core/vocr_models.c, compiled in).
 target_sources(vjo-settings-vocr6-tests PRIVATE core/vocr_models.c)
 target_compile_definitions(vjo-settings-vocr6-tests PRIVATE VJO_VOCR_MODEL_INFO_TEST="test_vocr6_models.h")
@@ -903,20 +911,12 @@ add_test(NAME settings_layout COMMAND vjo-settings-layout-tests)
 # change's "before" measurement used main 7ed16d8's).
 find_package(ZLIB QUIET)
 set(VJO_SETTINGS_BENCH_MAIN ${CMAKE_SOURCE_DIR}/settings/main.c CACHE FILEPATH "settings/main.c for vjo-settings-bench")
-set_source_files_properties(${VJO_SETTINGS_BENCH_MAIN} PROPERTIES COMPILE_DEFINITIONS main=vjo_settings_main)
-foreach(_vjo_games IN ITEMS tests bench)
-  set(_vjo_target vjo-settings-games-${_vjo_games})
-  set(_vjo_main settings/main.c)
-  if(_vjo_games STREQUAL bench)
-    set(_vjo_target vjo-settings-bench)
-    set(_vjo_main ${VJO_SETTINGS_BENCH_MAIN})
+add_library(vjo_settings_catalog OBJECT settings/catalog.c settings/psp.c)
+foreach(_vjo_target IN ITEMS vjo_settings_catalog vjo-settings-games-tests vjo-settings-bench)
+  if(NOT TARGET ${_vjo_target})
+    add_executable(${_vjo_target} host/tests/test_settings_games.c)
+    target_link_libraries(${_vjo_target} vjo_settings_catalog vjo_settings_app)
   endif()
-  add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/psp.c settings/engine.c
-    settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
-    settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
-    vita/buttons_vita.c host/tests/settings_stubs/stats_page_stub.c
-    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
-    host/tests/settings_stubs/lookup_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -928,6 +928,13 @@ foreach(_vjo_games IN ITEMS tests bench)
   # As the app suites above: the harness's own sceKernelGetThreadId.
   target_compile_definitions(${_vjo_target} PRIVATE VJO_TEST_THREAD_INFO_STUBS=1)
 endforeach()
+target_link_libraries(vjo-settings-games-tests vjo_settings_main)
+if(VJO_SETTINGS_BENCH_MAIN STREQUAL ${CMAKE_SOURCE_DIR}/settings/main.c)
+  target_link_libraries(vjo-settings-bench vjo_settings_main)
+else()
+  set_source_files_properties(${VJO_SETTINGS_BENCH_MAIN} PROPERTIES COMPILE_DEFINITIONS main=vjo_settings_main)
+  target_sources(vjo-settings-bench PRIVATE ${VJO_SETTINGS_BENCH_MAIN})
+endif()
 target_compile_definitions(vjo-settings-bench PRIVATE VJO_SETTINGS_BENCH=1)
 # A main.c from elsewhere finds its headers in settings/.
 target_include_directories(vjo-settings-bench PRIVATE settings)
