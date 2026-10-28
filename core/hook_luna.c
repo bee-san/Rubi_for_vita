@@ -742,7 +742,7 @@ static const LunaOp r_PCSG00628[] = {
  * name, drawn as the defaults 北條 and 紗希 (page 37: 6 glyphs for 北條紗希も、, page 158: 26 for its line); the
  * \x04 button-icon codes are controls vjo_hook_clean drops; a page's last hit ends with a line break.
  * 逢魔が刻～かくりよの縁～ PCSG00769 (the same engine's page-build record, VJO_PLACE_READ_CELLS_B) draws ㊤㊥㊦ so too
- * (farm page 14: 「㊤㊥㊥㊥㊥㊥㊦！！！」 drawn 「―――――――！！！」; 7 of its 37 pages hold them), and each page ends with a
+ * (farm page 14: 「㊤㊥㊥㊥㊥㊥㊦！！！」 drawn 「―――――――！！！」; 6 of its 37 pages hold them), and each page ends with a
  * line break; its ㌫ and ㍊ are the player's names too, drawn as the defaults of its name entry, 榊 and 水緒 (page 27:
  * 「大丈夫、㌫さん？」 is 10 glyphs, page 16: 「―――㍊！！！」 10; the farm's text leaves the codes out): its filter,
  * PCSG00769, writes them, then FOAF4, this array from its third op (one array, its replacements independent of one
@@ -814,9 +814,15 @@ static const LunaOp r_PCSG00766[] VJO_DATA_TABLE(rubi_PCSG00766) = {
  * site): a literal \n (backslash, n) is a line break and \d a click wait, not drawn (farm page 6: \n陽が沈み、…色。\d);
  * an NVL page adds one hit a click, each led by its line breaks. Luna's FPCSG01282 at the site turns runs of line feeds
  * into a space and drops a trailing digit (regexes for a line feed and \d, not these two-character codes), so with it
- * the popup kept each \d: 12 of the farm's 16 single-hit pages as drawn, none of its 14 NVL pages. */
+ * the popup kept each \d: 12 of the farm's 16 single-hit pages as drawn, none of its 14 NVL pages. The engine's other
+ * codes are not drawn either, and the farm's rule for the title drops them (its hook_text.clean; in none of the 72 hits
+ * of its pages, by its survey of the script's message records, SCRDATA.ARC op 0x5a): \u (NVL continue, 92 records),
+ * @mRRGGBB..@0 (a colour, 476), #STAND\<file>.bmp N# (a sprite change, 73) and $word$ (emphasis, 62: a $ is dropped,
+ * as Luna's filter and the farm's drop it). The colour's six hex digits are \w six times: core/hook_re.c has no {n}
+ * and at most four classes (audit-psandvita-1 F1). An escaped backslash (\\, in no hit) is not read apart. */
 static const LunaOp r_PCSG01282[] VJO_DATA_TABLE(rubi_PCSG01282) = {
-    REP("\\d", ""), REP("\\n", "\n"), SPECIAL(OP_TRIM), END};
+    SUB("#STAND\\\\[^#]*#", ""), SUB("@m\\w\\w\\w\\w\\w\\w", ""), DEL("@0"), DEL("\\u"), DEL("$"), REP("\\d", ""),
+    REP("\\n", "\n"), SPECIAL(OP_TRIM), END};
 
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* read-only data (above) */
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,

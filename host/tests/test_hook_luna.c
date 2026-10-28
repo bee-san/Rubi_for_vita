@@ -1110,6 +1110,8 @@ static void rubi_filters(void)
             "＞不思議な街だったなあ、池袋。\n　活気があって、刺激があって……。");
     rubi_to(VJO_RF_PCSG00370, VJO_HOOK_ENC_CP932, "正臣？▼", "正臣？");
     rubi_to(VJO_RF_PCSG00370, VJO_HOOK_ENC_CP932, "紀田君!?\nいつの間に？▼", "紀田君!?\nいつの間に？");
+    /* written to the rule (in none of the farm's 101 hits, each of which ends with its one ▼): a ▼ elsewhere goes too */
+    rubi_to(VJO_RF_PCSG00370, VJO_HOOK_ENC_CP932, "一行目▼\n二行目▼", "一行目\n二行目");
     /* PCSG00766 (paired-vita-pcsg00766-20261023): pages 3 and 2 (the speaker before the tags, on a line of its own), page
      * 29 (narration: no speaker; its ruby's base) */
     rubi_to(VJO_RF_PCSG00766, VJO_HOOK_ENC_CP932, "久世ツグミ#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]「……ああ」#n",
@@ -1120,11 +1122,16 @@ static void rubi_filters(void)
     rubi_to(VJO_RF_PCSG00766, VJO_HOOK_ENC_CP932,
             "#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]私は弟をたしなめるように、軽く#Ruby[睨,にら]んだ。#n",
             "私は弟をたしなめるように、軽く睨んだ。");
-    /* PCSG01282 (paired-vita-pcsg01282-20261023): page 6's two hits (an NVL page, one hit a click, each led by its \n
-     * codes, each ending in a \d click wait), page 1 */
+    /* written to the rule (in none of its 31 hits): a #Pos after a line break or later in the page is no speaker's */
+    rubi_to(VJO_RF_PCSG00766, VJO_HOOK_ENC_CP932, "一行目#n二行目#Pos[0,42]三行目#n", "一行目\n二行目三行目");
+    /* PCSG01282 (paired-vita-pcsg01282-20261023): NVL page 6's two hits (one a click; its first is page 5's one hit too),
+     * page 1; then the engine's other codes, which the farm's rule drops (its survey of the script; in none of its 72
+     * hits): written to the rule */
     rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "\\n陽が沈み、夜が来るまでの一瞬の空の色。\\d", "陽が沈み、夜が来るまでの一瞬の空の色。");
     rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "\\n\\nそれは深く、深く。\\d", "それは深く、深く。");
     rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "貴方のお名前は？", "貴方のお名前は？");
+    rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "#STAND\\TOW01A_N.bmp 3#「台詞」\\d", "「台詞」");
+    rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "@m3F3F3F灰色@0の$強調$。\\u\\d", "灰色の強調。");
     /* PCSG00769 (paired-vita-pcsg00769-20261023, foaf4 cells as CP932): page 22's dash pieces and the page's last line
      * break; pages 16 and 27, where the farm's text leaves the player's name codes out and its glyph counts (10 each) show
      * the default names drawn */

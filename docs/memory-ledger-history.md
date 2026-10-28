@@ -28,6 +28,11 @@ strings, the filters' index and the new patterns are read-only data. Measured wi
   With the four filters' ops in read-only data instead, the normal worker's code page would have 180 B left.
 - The kernel's and the Shell's rows are unchanged. No block, thread or allocation; no budget raised. None of it is
   measured on a console.
+- Its audit's follow-up (audit-psandvita-1 F1: `RF_PCSG01282` drops five more of the engine's codes, two patterns and
+  three literals): `.data` 5,668 → 5,728 B (debug) and 5,660 → 5,720 B (normal), `.rodata` 33,816 → 33,848 B and
+  29,256 → 29,288 B, `.text` unchanged; module rows debug 180,640 + 32,368 → 180,672 + 32,424 B, normal 171,708 + 32,352
+  → 171,740 + 32,408 B, the same pages (room left: normal 292 B of code, 360 B of data; debug 3,648 B and 344 B) [the
+  same measurements, main `3f864a3a` and the follow-up].
 
 ## Cleanup P1: dead Shell state (#418; no API change)
 
