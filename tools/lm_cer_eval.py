@@ -37,8 +37,9 @@ SETTINGS = {"vocr_lm_o3_500k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_1000k.vlm":
             "vocr_lm_o3_1000k.vlm": (500, 3500, LM_EOS), "vocr_lm_o3_4000k.vlm": (500, 3500, LM_EOS)}
 BETA = {name: beta for name, (_, beta, _) in SETTINGS.items()}
 # a job model's own settings for an LM, where they differ from its tier's (core/vocr_ocr.c lm_retuned: vita-vn-ocr
-# #151, VOCR6-N with the 2000k LM); the worker's decoder and its cascade's take them
-MODEL_SETTINGS = {("VOCR6_N_w8_2l.vocr", "vocr_lm_o3_2000k.vlm"): (400, 1500, LM_BOS | LM_EOS)}
+# #151, VOCR6-N with the 2000k LM, measured on v0.4.0-vocr6.1's and kept for v0.4.1-vocr6.2's); the worker's decoder
+# and its cascade's take them
+MODEL_SETTINGS = {("VOCR6.2_N_w8g2.vocr", "vocr_lm_o3_2000k.vlm"): (400, 1500, LM_BOS | LM_EOS)}
 
 
 def settings(model, lm):

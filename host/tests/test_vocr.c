@@ -195,10 +195,12 @@ static void test_model_metadata_matches_the_pins(void)
         TEST_CHECK_(m != NULL && m->bytes == all[i].bytes, "%s", all[i].name);
         TEST_CHECK_(m && !strncmp(m->generation, "VOCR", 4) && m->generation[4] >= '1' && m->generation[4] <= '9' &&
                     m->shape[0], "%s", all[i].name);
-        /* a file named VOCRn_... belongs to generation VOCRn */
+        /* a file named VOCRn_... belongs to generation VOCRn, as does VOCRn.m_... (a set of it: VOCR6.2_N_w8g2.vocr) */
         if (m && !strncmp(all[i].name, "VOCR", 4)) {
-            size_t g = strlen(m->generation);
-            TEST_CHECK_(!strncmp(all[i].name, m->generation, g) && all[i].name[g] == '_', "%s", all[i].name);
+            size_t g = strlen(m->generation), k = g;
+            if (all[i].name[k] == '.' && all[i].name[k + 1] >= '0' && all[i].name[k + 1] <= '9')
+                for (k++; all[i].name[k] >= '0' && all[i].name[k] <= '9'; k++) {}
+            TEST_CHECK_(!strncmp(all[i].name, m->generation, g) && all[i].name[k] == '_', "%s", all[i].name);
         }
     }
     for (unsigned i = 0; i < infos; i++) TEST_CHECK_(vjo_vocr_model(info[i].name) != NULL, "%s", info[i].name);
@@ -572,18 +574,20 @@ static void *read_blob(const char *path, size_t *bytes)
 }
 
 /* API 42, the off path (ocr_head_gate = off): each size's pinned blob, read with the head gate and the two-level
- * head off, gives every logit of the blob it was made from bit for bit. Small's blob is v0.3.0's VOCR5-S bytes and a
- * VOCG section; Normal's and Large's (VOCR6's _w8_2l) are VOCR6's plain blobs (v0.4.0-vocr6.1 publishes both) with
- * their head rows and vocabulary permuted together and a VOC2 trailer, so their class j is the plain blob's class
- * perm[j], the same class text, with the same logit. So the greedy text (and the top-K, the LM decode and the
- * counter re-decode, which map classes by text) are the plain blob's except on exact ties, which the decoders break
- * by class number: of two logits (the frames whose largest logit is tied are counted) or of the counter re-decode's
- * integer numeral costs (audit-vocr6-rubi-gate F2). Synthetic lines, every width class; needs the references in
- * VJO_VOCR_MODEL_DIR (refs[]: tools/prepare_ocr.py OFF_PATH_REFERENCES, not pinned: skipped without them). */
+ * head off, gives every logit of the blob it was made from bit for bit. v0.4.1-vocr6.2 publishes the plain blobs
+ * beside the ones with their sections: Normal's (_w8g2) is VOCR6.2_N_w8.vocr with its head rows and vocabulary
+ * permuted together, a VOCG gate section and a VOC2 trailer, Large's (_w8_2l) VOCR6.2_L_w8.vocr permuted with a VOC2
+ * trailer, so their class j is the plain blob's class perm[j], the same class text, with the same logit. So the
+ * greedy text (and the top-K, the LM decode and the counter re-decode, which map classes by text) are the plain
+ * blob's except on exact ties, which the decoders break by class number: of two logits (the frames whose largest
+ * logit is tied are counted) or of the counter re-decode's integer numeral costs (audit-vocr6-rubi-gate F2).
+ * Small's pinned blob is the plain one (refs[0] NULL: vita-vn-ocr's gate rule kept no section for it): it is held
+ * plain, so ocr_head_gate changes nothing for Small, its arena the same with the paths on or off. Synthetic lines,
+ * every width class; needs the references in VJO_VOCR_MODEL_DIR (refs[]: tools/prepare_ocr.py OFF_PATH_REFERENCES,
+ * not pinned: skipped without them). */
 static void test_off_path_reads_the_plain_blobs(void)
 {
-    static const char *const refs[3] = {"v0.3.0/VOCR5_S_w8.vocr", "v0.4.0-vocr6.1/VOCR6_N_w8.vocr",
-                                        "v0.4.0-vocr6.1/VOCR6_L_w8.vocr"};
+    static const char *const refs[3] = {NULL, "v0.4.1-vocr6.2/VOCR6.2_N_w8.vocr", "v0.4.1-vocr6.2/VOCR6.2_L_w8.vocr"};
     static const char *const pinned[3] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME};
     static const unsigned widths[] = {96, 233, 400, 640, 777, 1000};
     const char *dir = VJO_VOCR_MODEL_DIR;
@@ -601,8 +605,22 @@ static void test_off_path_reads_the_plain_blobs(void)
         vocr_ctx co, cn;
         void *ao = NULL, *an = NULL;
         unsigned *perm, moved = 0, ties = 0, frames_all = 0, bad = 0;
-        snprintf(po, sizeof(po), "%s/%s", dir, refs[t]);
         snprintf(pn, sizeof(pn), "%s/%s", dir, pinned[t]);
+        if (!refs[t]) { /* a plain pinned blob: no section, so no off path of its own */
+            const VjoVocrModel *pin = vjo_vocr_model(pinned[t]);
+            if (!(new_blob = read_blob(pn, &bn))) continue;
+            TEST_ASSERT(pin && vocr_load(&mn, new_blob, bn) == VOCR_OK);
+            TEST_CHECK_(!vocr_has_gate(&mn) && !vocr_has_two_level(&mn), "%s has a speed section", pinned[t]);
+            memset(&o, 0, sizeof(o));
+            o.mode = VOCR_MODE_W8I; /* the job's options with any ocr_head_gate (core/vocr_ocr.c run_opts) */
+            const size_t off = vocr_arena_bytes(&mn, &o);
+            TEST_CHECK_(off == pin->arena_bytes, "%s: arena %zu, pinned %u", pinned[t], off, pin->arena_bytes);
+            printf("off path: %s: plain (no head gate, no two-level head), arena %zu B\n", pinned[t], off);
+            free(new_blob);
+            tiers++;
+            continue;
+        }
+        snprintf(po, sizeof(po), "%s/%s", dir, refs[t]);
         old_blob = read_blob(po, &bo);
         new_blob = read_blob(pn, &bn);
         if (!old_blob || !new_blob) {
@@ -612,8 +630,8 @@ static void test_off_path_reads_the_plain_blobs(void)
         }
         TEST_ASSERT(vocr_load(&mo, old_blob, bo) == VOCR_OK && vocr_load(&mn, new_blob, bn) == VOCR_OK);
         TEST_CHECK(!vocr_has_gate(&mo) && !vocr_has_two_level(&mo));
-        /* Small keeps the gate alone; VOCR6's Normal and Large the two-level head alone (no gate: vita-vn-ocr #146) */
-        TEST_CHECK(vocr_has_gate(&mn) == (t == 0) && vocr_has_two_level(&mn) == (t > 0));
+        /* Normal has the head gate and the two-level head, Large the two-level head alone (vita-vn-ocr #157's fits) */
+        TEST_CHECK(vocr_has_gate(&mn) == (t == 1) && vocr_has_two_level(&mn) == (t > 0));
         TEST_ASSERT(mo.n_classes == mn.n_classes && mo.height == mn.height && mo.stride == mn.stride);
         /* each new class's class in the plain blob: the same text (class 0, the blank, stays) */
         TEST_ASSERT((perm = malloc(mn.n_classes * sizeof(*perm))) != NULL);
@@ -629,7 +647,7 @@ static void test_off_path_reads_the_plain_blobs(void)
             if (perm[j] == ~0u) perm[j] = 0;
             moved += perm[j] != j;
         }
-        TEST_CHECK(perm[0] == 0 && (t == 0 ? moved == 0 : moved > 0));
+        TEST_CHECK(perm[0] == 0 && moved > 0);
         memset(&o, 0, sizeof(o));
         o.mode = VOCR_MODE_W8I; /* head_gate VOCR_HEAD_GATE_OFF, two_level 0: the job with ocr_head_gate = off */
         TEST_CHECK(vocr_arena_bytes(&mo, &o) == vocr_arena_bytes(&mn, &o)); /* the plain blob's arena */
@@ -695,12 +713,12 @@ static void test_off_path_reads_the_plain_blobs(void)
         free(new_blob);
         tiers++;
     }
-    if (!tiers) TEST_SKIP("no off-path references (v0.3.0/, v0.4.0-vocr6.1/) in VJO_VOCR_MODEL_DIR");
+    if (!tiers) TEST_SKIP("no pinned blobs or off-path references (v0.4.1-vocr6.2/) in VJO_VOCR_MODEL_DIR");
 }
 
 /* The device default is the Normal size (test_tier_pins.h: VOCR6-N, bee-san/vita-vn-ocr
- * v0.4.0-vocr6.1's VOCR6_N_w8_2l.vocr: VOCR6_N_w8.vocr with its two-level head), Small
- * VOCR5-S and Large VOCR6-L; each within its size's ceilings
+ * v0.4.1-vocr6.2's VOCR6.2_N_w8g2.vocr: VOCR6.2_N_w8.vocr with its head gate and two-level head), Small
+ * VOCR6-S and Large VOCR6-L; each within its size's ceilings
  * (the owner's int8 weights, 2026-10-14 18:09Z: Small < 1 MB, Normal <= 1.6 MB, Large
  * <= 2.5 MB; the arenas of vita-vn-ocr docs/model-tiers.md 1.3: 128 KiB, 256 KiB,
  * 1.25 MiB), and a larger size larger. VOCR3's and v0.2.0's models stay accepted
@@ -773,7 +791,9 @@ static void test_default_model_and_ceiling(void)
 /* vocr6-final-lm (vita-vn-ocr #151): a job decodes with its LM tier's settings (core/vocr_ocr.c lms[]: ctclm.2's
  * 500k and 2000k at LM weight 0.5, bonus 3 nats, the end-of-line term; VOCR6's 1000k and 4000k at 0.6, 2.5 nats, the
  * start-of-line context), for every pinned model, but a job on VOCR6-N with the 2000k LM: LM weight 0.4, bonus 1.5
- * nats, both line flags. A model or LM this build does not pin gets the tier's. No release file needed. */
+ * nats, both line flags (measured on v0.4.0-vocr6.1's VOCR6-N, kept for v0.4.1-vocr6.2's: the row names the Normal
+ * size's blob, VJO_VOCR6_N_NAME). A model or LM this build does not pin gets the tier's: the plain blob of the
+ * Normal size, and v0.4.0-vocr6.1's VOCR6-N, not pinned any more. No release file needed. */
 static void test_lm_settings_per_job_model(void)
 {
     static const int tier_alpha[] = {0, 500, 600, 500, 600}, tier_beta[] = {0, 3000, 2500, 3000, 2500};
@@ -798,8 +818,12 @@ static void test_lm_settings_per_job_model(void)
             retuned += own;
         }
         /* a name no table pins, or none: the tier's */
-        vjo_vocr_lm_settings("VOCR6_N_w8.vocr", lm, &alpha, &beta, &flags);
-        TEST_CHECK(alpha == lm->alpha && beta == lm->beta && flags == lm->flags);
+        static const char *const unpinned[] = {"VOCR6_N_w8.vocr", "VOCR6.2_N_w8.vocr", "VOCR6_N_w8_2l.vocr"};
+        for (unsigned u = 0; u < sizeof(unpinned) / sizeof(unpinned[0]); u++) {
+            TEST_CHECK(!vjo_vocr_model(unpinned[u]));
+            vjo_vocr_lm_settings(unpinned[u], lm, &alpha, &beta, &flags);
+            TEST_CHECK_(alpha == lm->alpha && beta == lm->beta && flags == lm->flags, "%s", unpinned[u]);
+        }
         vjo_vocr_lm_settings(NULL, lm, &alpha, &beta, &flags);
         TEST_CHECK(alpha == lm->alpha && beta == lm->beta && flags == lm->flags);
     }
@@ -817,7 +841,7 @@ static void test_cascade_ratio_follows_the_weights(void)
     const char *s = VJO_VOCR_TIER1_NAME, *nn = VJO_VOCR_TIER2_NAME, *l = VJO_VOCR_TIER3_NAME;
     TEST_CHECK(vjo_vocr_cascade_ratio(nn, s) == (uint32_t)((uint64_t)VJO_VOCR_TIER2_BYTES * 256u / VJO_VOCR_TIER1_BYTES));
     TEST_CHECK(vjo_vocr_cascade_ratio(l, nn) == (uint32_t)((uint64_t)VJO_VOCR_TIER3_BYTES * 256u / VJO_VOCR_TIER2_BYTES));
-    /* a larger size reads slower (VOCR6-L beside VOCR6-N: 2.08x by weights; vita-vn-ocr #146's box estimates 2.37x);
+    /* a larger size reads slower (VOCR6-L beside VOCR6-N: 2.08x by weights; vita-vn-ocr #157's box estimates 2.43x);
      * a size that kept the model of the size below it is no cascade of it (game_ocr/main.c cascade_of) */
     TEST_CHECK(vjo_vocr_cascade_ratio(nn, s) > 256u);
     TEST_CHECK(!strcmp(l, nn) ? vjo_vocr_cascade_ratio(l, nn) == 256u : vjo_vocr_cascade_ratio(l, nn) > 256u);
@@ -837,7 +861,7 @@ static void test_vertical_model(void)
 #define A16(x) (((size_t)(x) + 15u) & ~(size_t)15u)
     static const unsigned sizes[][2] = {{960, 544}, {917, 125}, {480, 272}, {200, 300}, {64, 544}, {1, 1}};
     /* VOCR5-S as v0.3.0 shipped it, without API 42's head gate: VOCR5-V's starting point, the same shape (VOCR3-FL10's
-     * arena, 124,832 B); the gated Small blob's arena is 48 B more (its gate's frame indices) */
+     * arena, 124,832 B, which Small's plain VOCR6-S blob has too) */
     const VjoVocrModel *v = vjo_vocr_model(VJO_VOCR_VERTICAL_NAME), *s = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
     const VjoVocrModelInfo *vi = vjo_vocr_model_info(VJO_VOCR_VERTICAL_NAME);
     char label[24];

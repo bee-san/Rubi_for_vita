@@ -13,6 +13,44 @@ been reported.
 
 ### Changed
 
+- **All three model sizes are VOCR6** (vita-vn-ocr #125 and #157, pre-release v0.4.1-vocr6.2): VOCR6-S replaces
+  VOCR5-S as Small, and VOCR6-N and VOCR6-L replace v0.4.0-vocr6.1's as Normal (the default) and Large
+  (`VOCR6.2_S_w8.vocr`, 819,792 B; `VOCR6.2_N_w8g2.vocr`, 1,189,408 B; `VOCR6.2_L_w8_2l.vocr`, 2,475,680 B). Each is
+  VOCR5's shape fine-tuned again on the owner's hooked PS Vita and PSP games: Normal and Large three times as long,
+  Small at half the learning rate. Measured on a computer (dialogue CER through the GRAD finder's path of Rubi 892cfb9,
+  as vita-vn-ocr's final reads model it, with the 1 MB LM and the cascade; VOCR5 → VOCR6, 95 % intervals):
+  - the hooked games' held-out pages: Small 1.177 → 1.049 % (−0.128 points, −0.189 to −0.074), Normal 1.008 → 0.936 %
+    (−0.072, −0.111 to −0.038), Large 0.990 → 0.917 % (−0.073, −0.118 to −0.036), three seeds of each recipe (the
+    shipped blobs then trained on those pages too);
+  - other games: VOCR5's development score 1.674 → 1.549 (Small), 1.482 → 1.389 (Normal), 1.439 → 1.396 (Large),
+    none resolved. Small in the set as it ships reads it +0.041 (−0.016 to +0.099) against VOCR5-S: worse in point,
+    and its recipe was the second tried in its stage (the third at Small);
+  - read once, after every choice: CLANNAD's lines 0.73 → 0.47 %, 0.66 → 0.33 % and 0.60 → 0.31 % (each resolved);
+    vita-test + psp-test's fixed lines 0.68 → 0.58 %, 0.49 → 0.36 % and 0.47 → 0.40 %, whole dialogue 3.04 → 3.02 %,
+    2.83 → 2.70 % and 2.72 → 2.68 % (none resolved; PSP alone not better);
+  - against v0.4.0-vocr6.1, the set before this one: CLANNAD's lines better (Small −0.21 and Normal −0.10, resolved;
+    Large −0.05, not), CLANNAD's pages through the GRAD finder worse at Normal and Large (+0.33 and +0.27 points,
+    resolved; still better than VOCR5 or level) and better at Small (−0.41); vita-test + psp-test's fixed lines Small
+    better (−0.23, resolved), Normal and Large level;
+  - seen data: every VOCR6 model has seen CLANNAD's glyph raster (two hooked games, Grisaia Spinout and Little
+    Busters!), so CLANNAD's gain is not an unseen-game result; Little Busters! and planetarian (Key's box with
+    CLANNAD) and Collar x Malice (vita-test's Collar x Malice -Unlimited-) were trained on, and the 1 MB and 4 MB LMs
+    hold their text; 38 of the 49 hooked games were in VOCR5's pools already; the LMs' Jiten list holds CLANNAD's
+    script.
+
+  Rubi's default finder is now the text spotter, which this set has not been read through. Under `ocr_head_gate = on`
+  each blob runs what it carries: Small nothing (its blob is plain, so the setting changes nothing for Small), Normal
+  its head gate (ε = 1e-4) and two-level head, Large its two-level head. Estimated box times, one core at 333 / 444 MHz:
+  Small 0.63 / 0.50 s (about 0.11 s more than VOCR5-S with its gate), Normal 0.77 / 0.61 s, Large 1.88 / 1.47 s (the
+  app shows 0.6, 0.8 and 1.9 s). A Normal job with the 2 MB LM keeps VOCR6-N's own settings for it (vita-vn-ocr #151),
+  measured on v0.4.0-vocr6.1's VOCR6-N and not again on this one; every other size and LM tier keeps its tier's,
+  Small's included. Normal's weights block is a page larger again (1,191,936 B), Small's and Large's keep theirs, and
+  no budget changes: the module rows move by 16 B or less in both Vita builds, in the same pages (measured).
+  `ocr/VOCR6-ATTRIBUTION.md` is the new release's (non-commercial use only; trained on copyrighted game data, which is
+  not redistributed). An update leaves the sizes' old files in `ux0:data/VitaJPOverlay/ocr/`: 0.9.8's
+  `VOCR5_S_w8g.vocr`, `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (4,488,464 B), and a test build's
+  `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (3,663,296 B). Nothing reads them, so they may be deleted. Nothing of
+  VOCR6 has run on a console ([details](docs/vita-vn-ocr.md#models)).
 - Opening the overlay confirms that the text is ready: its OCR read skips the stability wait. On an unsettled
   screen, a running background read yields to a new read without the wait. Background reads and quiet refreshes
   keep their stability checks; completed results still reopen from the cache.
@@ -518,7 +556,8 @@ been reported.
 
 ### Changed
 
-- **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1): VOCR5-N's and VOCR5-L's shapes,
+- **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1; replaced before a release by the
+  follow-up set, all three sizes VOCR6, above): VOCR5-N's and VOCR5-L's shapes,
   fine-tuned again on the owner's hooked PS Vita and PSP games, replace VOCR5-N and VOCR5-L as the Normal (the default)
   and Large model sizes (`VOCR6_N_w8_2l.vocr`, 1,187,616 B; `VOCR6_L_w8_2l.vocr`, 2,475,680 B). Small stays VOCR5-S:
   VOCR6's Small read the hooked games better but other games a little worse (VOCR5's development score, +0.070

@@ -1,6 +1,6 @@
 selftest v2 api=54
 boot seq=2 mode=0 prev=0/0/0/0 failures=0 write=0x00000000
-config backend=2 model=VOCR6_N_w8_2l.vocr fallback=VOCR5_S_w8g.vocr tier=normal dictionary=3 anki=0
+config backend=2 model=VOCR6.2_N_w8g2.vocr fallback=VOCR6.2_S_w8.vocr tier=normal dictionary=3 anki=0
 step boot t=0
 mem boot rc=0x00000000 main=7340032 cdram=4194304 phycont=0 valid=1 paf_free=2346312
 ledger boot pages=0/0 paf=0/0
