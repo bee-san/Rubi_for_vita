@@ -6,8 +6,11 @@
  * paf started inside a word is started earlier, at a place core/linebreak.h
  * allows, and a word wider than the box keeps paf's break. The real layout is
  * the console's (its glyph widths); this is not a substitute for it. Also the
- * header's unit map and vjo_styled_insert's spans. */
+ * header's unit map, vjo_styled_insert's spans and the strip's own units
+ * (vjo_styled_units, the room for its breaks). */
 #include <string.h>
+#include <algorithm>
+#include <string>
 #include <vector>
 #include "acutest.h"
 #include "../../shell/wrap_fix.h"
@@ -253,10 +256,165 @@ static void styled_insert_keeps_the_spans(void)
     TEST_CHECK(!vjo_styled_insert(&st, 1, '\n') && st.len == 12);
 }
 
+/* The subtitle strip's text (shell/strip.cpp): VJO_STRIP_MAX (shell/shell.h), its bytes of UTF-8 and its
+ * units, in a buffer of VJO_STRIP_MAX + 1 + VJO_WRAP_BREAKS units, as strip.cpp's s_strip_u. */
+#define STRIP_MAX 4096u
+#define STRIP_UNITS (STRIP_MAX + 1 + VJO_WRAP_BREAKS)
+
+/* What the strip's text was until cleanup P1 (#418): the text styled in an arena of cap units and one span
+ * (vjo_styled_init, vjo_styled_puts), its units with their NUL, and truncated. */
+struct StyledRef {
+    std::vector<uint16_t> units;
+    int truncated;
+};
+static StyledRef styled_ref(const char *s, uint32_t cap)
+{
+    std::vector<uint8_t> mem((cap + 16) * sizeof(uint16_t) + 256);
+    VjoArena a;
+    VjoStyled st;
+    vjo_arena_init(&a, mem.data(), mem.size());
+    StyledRef r;
+    if (vjo_styled_init(&st, &a, cap, 1) != 0) {
+        TEST_CHECK_(0, "the reference's arena is too small for %u units", cap);
+        r.truncated = -1;
+        return r;
+    }
+    vjo_styled_puts(&st, s, VJO_RGB_TEXT, 27);
+    r.units.assign(st.text, st.text + st.len + 1);
+    r.truncated = st.truncated;
+    return r;
+}
+
+/* Whether n units end at a whole character of s, as vjo_utf8_next decodes it (CR has no unit). */
+static bool at_character_end(const std::string &s, uint32_t n)
+{
+    size_t i = 0;
+    uint32_t u = 0;
+    while (u < n && i < s.size()) {
+        uint32_t cp = vjo_utf8_next(s.c_str(), s.size(), &i);
+        if (cp != '\r')
+            u += (uint32_t)vjo_utf16_units(cp);
+    }
+    return u == n;
+}
+
+/* vjo_styled_units into the strip's buffer, against the styled text: the same units and NUL, the same
+ * count, the same cut (at a whole character: never half a surrogate pair), and nothing written after the
+ * NUL, so the breaks' room after it stays free. Returns 0 on a difference (said, with the case). */
+static int strip_units_match(const std::string &s, uint32_t cap, const char *what)
+{
+    std::vector<uint16_t> buf(cap + 1 + VJO_WRAP_BREAKS, 0xA5A5);
+    uint32_t n = vjo_styled_units(buf.data(), cap, s.c_str());
+    StyledRef ref = styled_ref(s.c_str(), cap), whole = styled_ref(s.c_str(), (uint32_t)s.size() * 2 + 2);
+    int ok = ref.truncated >= 0 && n + 1 == ref.units.size() && !memcmp(buf.data(), ref.units.data(), (n + 1) * 2);
+    for (size_t k = n + 1; ok && k < buf.size(); k++)
+        ok = buf[k] == 0xA5A5;
+    /* cut where the styled text says it is, after a whole character of the whole text's units */
+    ok = ok && ref.truncated == (n + 1 < whole.units.size()) && !whole.truncated &&
+         !memcmp(buf.data(), whole.units.data(), n * 2) && at_character_end(s, n);
+    if (!ok)
+        TEST_CHECK_(ok, "%s: %zu bytes, cap %u: %u units, the styled text %zu (truncated %d)", what, s.size(), cap, n,
+                    ref.units.size() - 1, ref.truncated);
+    return ok;
+}
+
+/* Random UTF-8, mostly not: valid sequences of every length (surrogates and U+110000.. too, which
+ * vjo_utf8_next decodes), overlong ones, lone and cut lead bytes, stray continuation bytes, CR, LF;
+ * never a NUL. */
+static uint32_t rng_state = 0x2545F491u;
+static uint32_t rng(void)
+{
+    rng_state ^= rng_state << 13;
+    rng_state ^= rng_state >> 17;
+    rng_state ^= rng_state << 5;
+    return rng_state;
+}
+static std::string random_utf8(size_t bytes)
+{
+    std::string s;
+    while (s.size() < bytes) {
+        uint32_t kind = rng() % 12, cp;
+        char enc[4];
+        switch (kind) {
+        case 0: s += (char)(0x20 + rng() % 0x5F); break;                     /* ASCII */
+        case 1: s += rng() & 1 ? '\r' : '\n'; break;
+        case 2: cp = 0x80 + rng() % 0x780; s.append(enc, (size_t)vjo_utf8_encode(cp, enc)); break;
+        case 3: case 4: cp = 0x800 + rng() % 0xF800; s.append(enc, (size_t)vjo_utf8_encode(cp, enc)); break;
+        case 5: case 6: cp = 0x10000 + rng() % 0x100000; s.append(enc, (size_t)vjo_utf8_encode(cp, enc)); break;
+        case 7: /* past U+10FFFF, to U+1FFFFF: a lead F4-F7 */
+            cp = 0x110000 + rng() % 0xF0000;
+            s += (char)(0xF0 | (cp >> 18)); s += (char)(0x80 | ((cp >> 12) & 0x3F));
+            s += (char)(0x80 | ((cp >> 6) & 0x3F)); s += (char)(0x80 | (cp & 0x3F));
+            break;
+        case 8: s += (char)(0xC0 | (rng() & 1)); s += (char)(0x80 | (rng() & 0x3F)); break; /* overlong */
+        case 9: s += (char)(0x80 + rng() % 0x40); break;                      /* a stray continuation */
+        case 10: s += (char)(0xC2 + rng() % 0x3E); break;                     /* a lead alone (or cut) */
+        default: s += (char)(1 + rng() % 0xFF); break;                       /* any byte but NUL */
+        }
+    }
+    return s;
+}
+
+static void strip_units_are_the_styled_text(void)
+{
+    std::vector<uint16_t> buf(STRIP_UNITS, 0xA5A5);
+    /* by hand: CR omitted, a pair for U+1F600, U+FFFD for each byte of a cut sequence */
+    TEST_CHECK(vjo_styled_units(buf.data(), STRIP_MAX, "") == 0 && buf[0] == 0 && buf[1] == 0xA5A5);
+    TEST_CHECK(vjo_styled_units(buf.data(), STRIP_MAX, "猫\r\n犬") == 3 && buf[0] == 0x732B && buf[1] == '\n' &&
+               buf[2] == 0x72AC && buf[3] == 0);
+    TEST_CHECK(vjo_styled_units(buf.data(), STRIP_MAX, "\xF0\x9F\x98\x80") == 2 && buf[0] == 0xD83D &&
+               buf[1] == 0xDE00 && buf[2] == 0);
+    TEST_CHECK(vjo_styled_units(buf.data(), STRIP_MAX, "a\xE3\x81") == 3 && buf[1] == 0xFFFD && buf[2] == 0xFFFD);
+    TEST_CHECK(vjo_styled_units(buf.data(), 1, "\xF0\x9F\x98\x80") == 0 && buf[0] == 0); /* no room for the pair */
+    /* at the cap: the pair that would pass it is left out whole */
+    std::string edge(STRIP_MAX - 1, 'a');
+    edge += "\xF0\x9F\x98\x80" "b";
+    std::fill(buf.begin(), buf.end(), 0xA5A5);
+    TEST_CHECK(vjo_styled_units(buf.data(), STRIP_MAX, edge.c_str()) == STRIP_MAX - 1 && buf[STRIP_MAX - 1] == 0);
+    for (size_t k = STRIP_MAX; k < buf.size(); k++)
+        TEST_CHECK_(buf[k] == 0xA5A5, "unit %zu written", k);
+    strip_units_match(edge, STRIP_MAX, "a pair at the cap");
+    edge.assign(STRIP_MAX - 2, 'a');
+    edge += "\xF0\x9F\x98\x80" "b";
+    TEST_CHECK(vjo_styled_units(buf.data(), STRIP_MAX, edge.c_str()) == STRIP_MAX && buf[STRIP_MAX - 1] == 0xDE00 &&
+               buf[STRIP_MAX] == 0);
+    strip_units_match(edge, STRIP_MAX, "a pair that ends at the cap");
+    /* the longest strip texts (VjoView.strip_text: VJO_STRIP_MAX bytes with its NUL) fit whole, the room
+     * for every break kept: all pairs, all one-byte, all three-byte */
+    std::string pairs, ones(STRIP_MAX - 1, 'x'), threes;
+    while (pairs.size() + 4 < STRIP_MAX) pairs += "\xF0\xA0\xAE\x9F"; /* 𠮟 */
+    while (threes.size() + 3 < STRIP_MAX) threes += "\xE3\x81\x82";   /* あ */
+    for (const std::string *t : {&pairs, &ones, &threes}) {
+        std::fill(buf.begin(), buf.end(), 0xA5A5);
+        uint32_t n = vjo_styled_units(buf.data(), STRIP_MAX, t->c_str());
+        TEST_CHECK(n <= t->size() && n < STRIP_MAX);
+        strip_units_match(*t, STRIP_MAX, "a longest strip text");
+    }
+    /* random UTF-8: the strip's cap, texts of every length up to past it, and small caps for many cuts */
+    int failures = 0, cuts = 0;
+    for (int i = 0; i < 4000 && failures < 8; i++) {
+        size_t bytes = i < 2000 ? rng() % (STRIP_MAX + 2048) : rng() % 96;
+        uint32_t cap = i < 2000 ? STRIP_MAX : rng() % 48;
+        std::string s = random_utf8(bytes);
+        if (!strip_units_match(s, cap, "random"))
+            failures++;
+        cuts += styled_ref(s.c_str(), cap).truncated == 1;
+        if (s.size() < STRIP_MAX) { /* any strip text fits whole */
+            std::fill(buf.begin(), buf.end(), 0xA5A5);
+            uint32_t n = vjo_styled_units(buf.data(), STRIP_MAX, s.c_str());
+            TEST_CHECK_(n <= s.size() && styled_ref(s.c_str(), STRIP_MAX).truncated == 0, "%zu bytes: %u units",
+                        s.size(), n);
+        }
+    }
+    TEST_CHECK(failures == 0);
+    TEST_CHECK_(cuts > 1000, "%d of the random texts cut", cuts);
+}
+
 TEST_LIST = {
     {"soft_lines_move_to_word_starts", soft_lines_move_to_word_starts},
     {"stale_or_missing_layouts_are_waited_for", stale_or_missing_layouts_are_waited_for},
     {"header_units_map_to_the_shown_ones", header_units_map_to_the_shown_ones},
     {"styled_insert_keeps_the_spans", styled_insert_keeps_the_spans},
+    {"strip_units_are_the_styled_text", strip_units_are_the_styled_text},
     {NULL, NULL},
 };

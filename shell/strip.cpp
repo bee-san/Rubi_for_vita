@@ -26,8 +26,6 @@ static uint16_t s_strip_u[VJO_STRIP_MAX + 1 + VJO_WRAP_BREAKS]; /* UTF-16 shown,
 static VjoWrap s_strip_wrap;
 static uint32_t s_strip_len, s_strip_rgb;
 static int s_strip_px;
-static uint8_t s_mem_buf[(VJO_STRIP_MAX + 16) * sizeof(uint16_t) + 256]; /* the styled text */
-static VjoArena s_mem;
 static unsigned s_text_seq; /* VjoView's, shown */
 static int s_fresh;        /* the page just opened: nothing shown yet */
 
@@ -42,16 +40,14 @@ static void strip_apply(uint32_t len)
 }
 
 /* A new strip_version: the text is laid out again only when it changed
- * (its seq, or how it is drawn). */
+ * (its seq, or how it is drawn). Its UTF-16 goes straight into s_strip_u:
+ * at most VJO_STRIP_MAX units and their NUL, which leaves the breaks'
+ * VJO_WRAP_BREAKS units of room after it (strip_fit). */
 static void strip_render(void)
 {
-    VjoStyled st;
     int ja, en, kind, busy, px, text_changed;
     uint32_t rgb;
     font_px(&ja, &en);
-    vjo_arena_init(&s_mem, s_mem_buf, sizeof(s_mem_buf));
-    if (vjo_styled_init(&st, &s_mem, VJO_STRIP_MAX, 1) < 0)
-        return;
     vjo_view_lock();
     kind = g_view.strip_kind;
     busy = g_view.strip_busy;
@@ -59,7 +55,7 @@ static void strip_render(void)
     rgb = kind == VJO_STRIP_SENTENCE ? VJO_RGB_TEXT : kind == VJO_STRIP_ERROR ? VJO_RGB_ERROR : VJO_RGB_DIM;
     text_changed = g_view.strip_text_seq != s_text_seq || px != s_strip_px || rgb != s_strip_rgb || s_fresh;
     if (text_changed)
-        vjo_styled_puts(&st, g_view.strip_text, rgb, px);
+        s_strip_len = vjo_styled_units(s_strip_u, VJO_STRIP_MAX, g_view.strip_text);
     s_fresh = 0;
     s_text_seq = g_view.strip_text_seq;
     vjo_view_unlock();
@@ -67,8 +63,6 @@ static void strip_render(void)
     if (text_changed) {
         s_strip_px = px;
         s_strip_rgb = rgb;
-        sceClibMemcpy(s_strip_u, st.text, st.len * sizeof(uint16_t));
-        s_strip_len = st.len;
         s_strip_cut_lines = 0;
         vjo_wrap_arm(&s_strip_wrap);
         if (s_strip_text)

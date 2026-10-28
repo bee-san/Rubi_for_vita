@@ -909,20 +909,13 @@ static void ultimate_dictionary_fixture_entries(void)
     }
 }
 
-/* Every entry of the bundled dictionary, as the popup body shows it when
- * everything else in the body is at its longest: nothing is truncated, the
- * room for the config warnings after it is kept, every kanji line is shown
- * whole and, when a definition has more than one line, so is its first (an
- * appended grammar summary, which the bundle puts first). Over-long ones are
- * clipped at the end of their definition and marked; the rest show their text
- * as written. Reads the file's index itself (format 3,
- * docs/local-dictionaries.md), every payload once. */
-static void every_bundled_entry_fits_the_popup(void)
+/* The bundled dictionary's file and the (offset, length) of each of its payloads, once each, in file
+ * order: read from its index itself (format 3, docs/local-dictionaries.md). */
+static void read_bundle(std::vector<uint8_t> &file, std::vector<std::pair<uint64_t, uint32_t>> &payloads)
 {
     std::string path = std::string(dict_dir) + "/plaintext.vjdict";
     FILE *f = fopen(path.c_str(), "rb");
     TEST_ASSERT(f != NULL);
-    std::vector<uint8_t> file;
     {
         uint8_t buf[1 << 16];
         size_t n;
@@ -935,7 +928,6 @@ static void every_bundled_entry_fits_the_popup(void)
     TEST_ASSERT(file.size() > 8192 && !memcmp(file.data(), "VJDICT3\0", 8));
     TEST_CHECK(!memcmp(file.data() + 192, kTitle, sizeof(kTitle)));
     uint64_t pages = u64(56);
-    std::vector<std::pair<uint64_t, uint32_t>> payloads;
     for (uint64_t page = 1; page <= pages; page++) {
         size_t o = (size_t)(page * 4096);
         TEST_ASSERT(!memcmp(file.data() + o, "VJHP", 4));
@@ -950,6 +942,22 @@ static void every_bundled_entry_fits_the_popup(void)
     }
     std::sort(payloads.begin(), payloads.end());
     payloads.erase(std::unique(payloads.begin(), payloads.end()), payloads.end());
+}
+
+/* Every entry of the bundled dictionary, as the popup body shows it when
+ * everything else in the body is at its longest: nothing is truncated, the
+ * room for the config warnings after it is kept, every kanji line is shown
+ * whole and, when a definition has more than one line, so is its first (an
+ * appended grammar summary, which the bundle puts first). Over-long ones are
+ * clipped at the end of their definition and marked; the rest show their text
+ * as written. Reads the file's index itself (read_bundle), every payload once. */
+static void every_bundled_entry_fits_the_popup(void)
+{
+    std::vector<uint8_t> file;
+    std::vector<std::pair<uint64_t, uint32_t>> payloads;
+    read_bundle(file, payloads);
+    auto u32 = [&](size_t o) { return (uint32_t)file[o] | (uint32_t)file[o + 1] << 8 | (uint32_t)file[o + 2] << 16 |
+                                      (uint32_t)file[o + 3] << 24; };
     static uint8_t mem[64 * 1024];
     unsigned long entries = 0, with_lines = 0, lines_shown = 0, clipped = 0, firsts_kept = 0, failures = 0;
     unsigned long typical_clipped = 0, misordered = 0;
@@ -1033,6 +1041,55 @@ static void every_bundled_entry_fits_the_popup(void)
            "%lu with the longest status and warnings (%lu of them keeping a first line of several whole); at most %d "
            "spans of %d\n", entries, with_lines, lines_shown, typical_clipped, clipped, firsts_kept, most_spans,
            VJO_BODY_SPANS);
+}
+
+/* The subtitle strip's text (shell/strip.cpp: vjo_styled_units into its own buffer, VJO_STRIP_MAX units and
+ * their NUL, then VJO_WRAP_BREAKS units of room for its breaks) is the styled text the strip had until cleanup
+ * P1 (#418: vjo_styled_init in an arena of VJO_STRIP_MAX units, vjo_styled_puts): the same units, count and
+ * cut, nothing written after the NUL. On every text of the bundle (each entry's spelling, reading and text,
+ * every line of it, with its kanji lines) and every real VOCR line. */
+static void strip_units_of_every_bundled_text(void)
+{
+    enum { STRIP_MAX = 4096, BREAKS = 16, UNITS = STRIP_MAX + 1 + BREAKS }; /* VJO_STRIP_MAX (shell/shell.h),
+                                                                             VJO_WRAP_BREAKS (shell/wrap_fix.h) */
+    std::vector<uint8_t> file;
+    std::vector<std::pair<uint64_t, uint32_t>> payloads;
+    read_bundle(file, payloads);
+    load();
+    static uint8_t mem[(STRIP_MAX + 16) * 2 + 256]; /* the strip's arena as it was */
+    static uint16_t buf[UNITS], canary[UNITS];
+    for (int k = 0; k < UNITS; k++) buf[k] = canary[k] = 0xA5A5;
+    unsigned long texts = 0, units = 0, cut = 0, failures = 0;
+    auto check = [&](const char *s) {
+        VjoArena a;
+        VjoStyled st;
+        vjo_arena_init(&a, mem, sizeof(mem));
+        TEST_ASSERT(vjo_styled_init(&st, &a, STRIP_MAX, 1) == 0);
+        vjo_styled_puts(&st, s, VJO_RGB_TEXT, 27);
+        uint32_t n = vjo_styled_units(buf, STRIP_MAX, s);
+        bool ok = n == st.len && !memcmp(buf, st.text, (n + 1) * sizeof(uint16_t)) &&
+                  !memcmp(buf + n + 1, canary, (UNITS - n - 1) * sizeof(uint16_t));
+        if (!ok && failures++ < 8)
+            TEST_CHECK_(ok, "%.40s (%zu bytes): %u units, the styled text %u (truncated %d)", s, strlen(s), n, st.len,
+                        st.truncated);
+        memcpy(buf, canary, (n + 1) * sizeof(uint16_t));
+        texts++;
+        units += n;
+        cut += st.truncated;
+    };
+    for (auto &pl : payloads) {
+        const char *payload = (const char *)file.data() + pl.first + 4; /* after the frequency word */
+        const char *spelling = payload, *reading = spelling + strlen(spelling) + 1, *text = reading + strlen(reading) + 1;
+        check(spelling);
+        check(reading);
+        check(text);
+    }
+    for (auto &l : lines)
+        check(l.text.c_str());
+    TEST_CHECK_(failures == 0, "%lu texts differ", failures);
+    TEST_CHECK(payloads.size() > 480000 && !lines.empty());
+    printf("\n  %lu texts (%zu entries, %zu real lines), %lu units, %lu longer than the strip's %d units\n", texts,
+           payloads.size(), lines.size(), units, cut, STRIP_MAX);
 }
 
 /* A real text box's lines, '\n' between them (the fixtures escape it). */
@@ -1134,6 +1191,7 @@ TEST_LIST = {
     {"the_stick_looks_up_from_each_character", the_stick_looks_up_from_each_character},
     {"ultimate_dictionary_fixture_entries", ultimate_dictionary_fixture_entries},
     {"every_bundled_entry_fits_the_popup", every_bundled_entry_fits_the_popup},
+    {"strip_units_of_every_bundled_text", strip_units_of_every_bundled_text},
     {"split_words_are_looked_up_whole", split_words_are_looked_up_whole},
     {"kept_breaks_stay_breaks", kept_breaks_stay_breaks},
     {NULL, NULL}};
