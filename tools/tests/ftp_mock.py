@@ -1,9 +1,10 @@
 """A small FTP server for the host tests, shaped like VitaShell's (ftpvita): anonymous login,
 the root lists the devices (`ux0:`, `ur0:`), paths are `/ux0:/data/...` or relative to the
 current directory, passive mode only (PASV and EPSV), LIST (no NLST), RETR, STOR, SIZE, DELE,
-MKD, RMD, CWD/CDUP/PWD. A device path maps onto ROOT/<device>/... (`ux0:` -> ROOT/ux0), so
-the real curl and Python's ftplib (what tools/install_ftp.sh and tools/collect_vita.py use)
-run against files the test can read and write.
+MKD, RMD, RNFR/RNTO (a rename that fails answers 550 and then 226, as libftpvita does),
+CWD/CDUP/PWD. A device path maps onto ROOT/<device>/... (`ux0:` -> ROOT/ux0), so the real curl
+and Python's ftplib (what tools/install_ftp.sh and tools/collect_vita.py use) run against files
+the test can read and write.
 
     with FtpMock(root) as ftp:          # ftp.port, ftp.log (the commands received)
         ...
@@ -22,8 +23,12 @@ from pathlib import Path
 class _Handler(socketserver.StreamRequestHandler):
     def setup(self):
         super().setup()
+        # one reply line per command: sent at once, not held for the client's delayed ACK (Nagle), which made every
+        # command of a short exchange wait about 40 ms on Linux
+        self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.cwd = "/"
         self.pasv = None
+        self.rename_from = None
 
     def finish(self):
         if self.pasv:  # an EPSV/PASV the client never used (curl, for a file that is not there)
@@ -163,7 +168,10 @@ class _Handler(socketserver.StreamRequestHandler):
                     self.reply("425 No data connection")
                     continue
                 self.reply("150 Opening Image mode data transfer.")
-                conn.sendall(local.read_bytes())
+                data = local.read_bytes()
+                if server.alter and cmd in server.alter:
+                    data = server.alter[cmd](str(local.relative_to(server.root)), data)
+                conn.sendall(data)
                 conn.close()
                 server.retrieved.append(str(local.relative_to(server.root)))
                 self.reply("226 Transfer complete.")
@@ -213,6 +221,24 @@ class _Handler(socketserver.StreamRequestHandler):
                     self.reply("226 Directory removed.")
                 except (OSError, AttributeError):
                     self.reply("550 Could not remove the directory.")
+            elif cmd == "RNFR":
+                _, local = self.resolve(arg)
+                if not (local and local.exists()):
+                    self.reply("550 The file doesn't exist.")
+                    continue
+                self.rename_from = local
+                self.reply("350 I need the destination name b0ss!")
+            elif cmd == "RNTO":
+                # libftpvita's cmd_RNTO_func: sceIoRename, which refuses an existing destination; a failure answers
+                # 550 and then, with no return after it, 226 too (tools/install_ftp.sh checks the file instead)
+                _, local = self.resolve(arg)
+                src, self.rename_from = self.rename_from, None
+                if src and src.exists() and local and local.parent.is_dir() and not local.exists():
+                    src.rename(local)
+                    server.stored.append(f"RNTO {src.relative_to(server.root)} {local.relative_to(server.root)}")
+                else:
+                    self.reply("550 Error renaming the file.")
+                self.reply("226 Rename completed.")
             elif cmd == "QUIT":
                 self.reply("221 Goodbye.")
                 return
@@ -238,10 +264,13 @@ class FtpMock:
     server closes the connection without a reply (a broken transfer).
     clock: the Vita's clock, a function giving its Unix time (LIST shows a file of another year with its year).
     pretend: {COMMAND: predicate(arg)} answers matching commands 226 and does nothing (a DELE that left the file).
-    drop_after: {"DELE": predicate(arg)} does the DELE, then closes the connection with no reply (its answer lost)."""
+    drop_after: {"DELE": predicate(arg)} does the DELE, then closes the connection with no reply (its answer lost).
+    alter: {"RETR": function(path, data)} sends what it returns instead of the file's bytes (a corrupted transfer);
+    path is the file's under ROOT (ux0/data/...).
+    Each can be set later, on .server."""
 
     def __init__(self, root, devices=("ux0", "ur0"), fail=None, drop=None, clock=time.time, pretend=None,
-                 drop_after=None):
+                 drop_after=None, alter=None):
         self.server = _Server(("127.0.0.1", 0), _Handler)
         self.server.root = Path(root)
         self.server.devices = devices
@@ -253,6 +282,7 @@ class FtpMock:
         self.server.clock = clock
         self.server.pretend = pretend or {}
         self.server.drop_after = drop_after or {}
+        self.server.alter = alter or {}
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
 
