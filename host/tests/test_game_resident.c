@@ -295,8 +295,8 @@ static VjoGameOcrRequest request_with(const char *name, const char *fallback)
 static VjoGameOcrRequest request(const char *name) { return request_with(name, ""); }
 static void reset(void)
 {
-    if (weights_live) { weights_free_failure = 0; TEST_CHECK(!drop_weights()); }
-    worker = workspace_uid = weights_uid = capture_uid = line_uid = -1;
+    if (weights_live) { weights_free_failure = 0; TEST_CHECK(!drop_one(&resident)); }
+    worker = workspace_uid = weights_blk.uid = capture_uid = line_uid = -1;
     capture_live = 0; capture_block = capture_allocs = 0;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
     model_owned = 0; model_seq = 0;

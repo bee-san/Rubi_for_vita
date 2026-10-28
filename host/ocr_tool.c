@@ -201,8 +201,8 @@ int main(int argc, char **argv)
                                 .counter_tau = counters ? VJO_VOCR_COUNTER_TAU : 0,
                                 .counter_open = counters ? VJO_VOCR_COUNTER_OPEN : 0, .head_gate = head_gate,
                                 .two_level = two_level, .line_fix = line_fix};
-        VjoVocrResident res = {resident_alloc, resident_release, NULL, NULL, NULL, 0, 0, 0};
-        VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, NULL, NULL, 0, 0, 0};
+        VjoVocrResident res = {resident_alloc, resident_release, NULL, {NULL}, NULL, 0, 0, 0};
+        VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, {NULL}, NULL, 0, 0, 0};
         FILE *lf = lines_path ? fopen(lines_path, "w") : NULL;
         size_t job = vjo_vocr_job_bytes(model, im.width, im.height) +
                      (refine ? vjo_vocr_refine_bytes(im.width, im.height) : 0);
@@ -213,7 +213,7 @@ int main(int argc, char **argv)
             return 2;
         }
         policy.lm_res = &lres;
-        VjoVocrResident cres = {cascade_alloc, cascade_release, NULL, NULL, NULL, 0, 0, 0};
+        VjoVocrResident cres = {cascade_alloc, cascade_release, NULL, {NULL}, NULL, 0, 0, 0};
         if (cascade_name) {
             if (!(policy.cascade = vjo_vocr_model(cascade_name))) {
                 fprintf(stderr, "unsupported cascade model %s\n", cascade_name);

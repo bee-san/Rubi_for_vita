@@ -360,10 +360,10 @@ int main(int argc, char **argv)
     su.lm = lm_tier ? vjo_vocr_lm_tier(lm_tier) : NULL;
     if (!su.model || !su.vertical || (lm_tier && !su.lm)) goto usage;
     posix_platform_init(&pp, &plat);
-    res = (VjoVocrResident){heap_alloc, res_release, &res, NULL, NULL, 0, 0, 0};
-    vres = (VjoVocrResident){heap_alloc, res_release, &vres, NULL, NULL, 0, 0, 0};
-    cres = (VjoVocrResident){heap_alloc, res_release, &cres, NULL, NULL, 0, 0, 0};
-    lres = (VjoVocrLmResident){heap_alloc, lres_release, &lres, NULL, NULL, 0, 0, 0};
+    res = (VjoVocrResident){heap_alloc, res_release, &res, {NULL}, NULL, 0, 0, 0};
+    vres = (VjoVocrResident){heap_alloc, res_release, &vres, {NULL}, NULL, 0, 0, 0};
+    cres = (VjoVocrResident){heap_alloc, res_release, &cres, {NULL}, NULL, 0, 0, 0};
+    lres = (VjoVocrLmResident){heap_alloc, lres_release, &lres, {NULL}, NULL, 0, 0, 0};
     while (fgets(line, sizeof(line), stdin)) {
         char id[256];
         unsigned w, h, psp = 0;

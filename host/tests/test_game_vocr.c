@@ -426,17 +426,18 @@ int vjoOcrModelClose(uint32_t seq)
 static VjoGameOcrRequest setup(void)
 {
     if (model) { fclose(model); model = NULL; }
-    worker = workspace_uid = weights_uid = capture_uid = line_uid = -1;
+    worker = workspace_uid = weights_blk.uid = capture_uid = line_uid = -1;
     capture_live = refuse_user = refuse_cdram = refuse_phycont = rows_error = hook_write_error = 0;
     lm_bad_size = cascade_bad_size = 0;
     busy_unarmed = busy_armed = allow_capture_held = 0; hook_owns_capture = 0;
     capture_block = capture_allocs = capture_frees = rows_calls = kstrip_calls = 0;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
-    lm_res.lm = NULL; lm_res.data = NULL; lm_res.capacity = 0; lm_res.size = lm_res.stamp = 0; lm_uid = -1;
+    lm_res.lm = NULL; lm_res.data = NULL; lm_res.capacity = 0; lm_res.size = lm_res.stamp = 0; lm_blk.uid = -1;
     lm_live = 0; lm_allocations = lm_frees = lm_opens = last_which = 0;
     gate_opens = 0; memset(&gate_res, 0, sizeof(gate_res));
     cascade_res.model = NULL; cascade_res.data = NULL; cascade_res.capacity = 0; cascade_res.size = cascade_res.stamp = 0;
-    cascade_uid = -1; cascade_live = 0; cascade_allocations = cascade_frees = cascade_opens = 0; test_cascade_conf = 0;
+    cascade_blk.uid = -1; cascade_live = 0; cascade_allocations = cascade_frees = cascade_opens = 0;
+    test_cascade_conf = 0;
     line_live = 0; line_allocs = line_frees = 0; line_block_max = 0;
     refuse_line = vertical_absent = 0; line_refused = line_asks = workspace_beside_line = 0;
     memset(tier_opens, 0, sizeof(tier_opens)); vertical_opens = 0; tiered = 0; job_reserve = GAME_RESERVE; drop_on_workspace = 0;
@@ -501,7 +502,7 @@ static void repeated_jobs_and_reserve(void)
     /* the ledger saw every block in and out, and its peak fits the budget */
     /* ... and the weights the first job warmed (ocr-first: it read no line) stay, read once */
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_WORKSPACE) == 0 &&
-               vjo_ledger_current(&g_game_ledger, GL_WEIGHTS) == resident_bytes());
+               vjo_ledger_current(&g_game_ledger, GL_WEIGHTS) == held_bytes(&resident));
     TEST_CHECK(!VJO_VOCR_MODEL_DIR[0] || (weights_live && weight_allocations == 1));
     TEST_CHECK(vjo_ledger_peak(&g_game_ledger, GL_WORKSPACE) > 0 && vjo_ledger_peak(&g_game_ledger, GL_WORKSPACE) <= VJO_BUDGET_GAME_WORKSPACE);
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_CAPTURE) == 0 && vjo_ledger_peak(&g_game_ledger, GL_CAPTURE) == 16384); /* 200x60: 12,000 B strip + 8 B and 3 bits per row */
@@ -1350,12 +1351,14 @@ static void memory_check_choices(void)
     TEST_CHECK(check_with_lm(&o, m, jb, cb, 2, 0, &casc, &lm) && !casc && !lm);
     /* the 1 MB LM resident and no LM chosen: the job gives it back, so its block counts as free */
     lm_res.lm = lm2;
-    lm_uid = 12;
+    lm_blk.uid = 12;
+    lm_blk.held = PAGE_ROUND(lm2->bytes); /* its block, as the worker holds it (resident_alloc) */
     o.free_user = (int32_t)(GAME_RESERVE + need_none - PAGE_ROUND(lm2->bytes) + 4096u);
     casc = NULL;
     TEST_CHECK(check_with_lm(&o, m, jb, cb, 0, 0, &casc, &lm) && !lm && o.release_bytes == PAGE_ROUND(lm2->bytes));
     lm_res.lm = NULL;
-    lm_uid = -1;
+    lm_blk.uid = -1;
+    lm_blk.held = 0;
 }
 
 /* The cascade step's fields, from the job's figures (include/vjo_game_ocr.h):
@@ -1392,10 +1395,11 @@ static void cleanup_gives_back_unverified_blocks(void)
     VjoGameOcrRequest r = setup();
     (void)r;
     available = 64 * 1024 * 1024;
-    TEST_ASSERT(cascade_alloc(NULL, VJO_VOCR_CASCADE_BYTES) != NULL && cascade_live && cascade_uid >= 0);
-    TEST_ASSERT(lm_alloc(NULL, vjo_vocr_lm_tier(2)->bytes) != NULL && lm_live && lm_uid >= 0);
+    TEST_ASSERT(resident_alloc((void *)&cascade_desc, VJO_VOCR_CASCADE_BYTES) != NULL && cascade_live &&
+                cascade_blk.uid >= 0);
+    TEST_ASSERT(resident_alloc((void *)&lm_desc, vjo_vocr_lm_tier(2)->bytes) != NULL && lm_live && lm_blk.uid >= 0);
     TEST_CHECK(blocks_held == 2 && !blocks_kept()); /* neither verified: both keep a slot of the log */
-    TEST_CHECK(cleanup() == 0 && !cascade_live && cascade_uid < 0 && !lm_live && lm_uid < 0);
+    TEST_CHECK(cleanup() == 0 && !cascade_live && cascade_blk.uid < 0 && !lm_live && lm_blk.uid < 0);
     TEST_CHECK(cascade_frees == 1 && lm_frees == 1 && !blocks_held);
 }
 
@@ -1414,22 +1418,27 @@ static void the_weights_blocks_hold_the_large_size_and_no_more(void)
     available = 64 * 1024 * 1024;
     job_reserve = VJO_GAME_RESERVE_LARGE;
     /* one byte more is refused, the game never asked */
-    TEST_CHECK(!weights_alloc(NULL, VJO_VOCR_MAX_BYTES + 1u) && !weights_live && weights_uid < 0);
-    TEST_CHECK(!cascade_alloc(NULL, VJO_VOCR_MAX_BYTES + 1u) && !cascade_live && cascade_uid < 0);
+    TEST_CHECK(!resident_alloc((void *)&weights_desc, VJO_VOCR_MAX_BYTES + 1u) && !weights_live && weights_blk.uid < 0);
+    TEST_CHECK(!resident_alloc((void *)&cascade_desc, VJO_VOCR_MAX_BYTES + 1u) && !cascade_live && cascade_blk.uid < 0);
     TEST_CHECK(!weight_allocations && !cascade_allocations);
     /* the Large size's blob: one page-rounded USER block each */
-    TEST_ASSERT(weights_alloc(NULL, VJO_VOCR_MAX_BYTES) != NULL && weights_live && weights_block == block);
-    TEST_CHECK(weights_block == VJO_BUDGET_GAME_WEIGHTS && weights_bytes_held == block);
-    TEST_CHECK(!weights_alloc(NULL, VJO_VOCR_TIER1_BYTES) && weight_allocations == 1); /* never two blocks */
-    TEST_ASSERT(cascade_alloc(NULL, VJO_VOCR_MAX_BYTES) != NULL && cascade_live && cascade_block == block);
+    TEST_ASSERT(resident_alloc((void *)&weights_desc, VJO_VOCR_MAX_BYTES) != NULL && weights_live &&
+                weights_block == block);
+    TEST_CHECK(weights_block == VJO_BUDGET_GAME_WEIGHTS && weights_blk.held == block);
+    /* never two blocks */
+    TEST_CHECK(!resident_alloc((void *)&weights_desc, VJO_VOCR_TIER1_BYTES) && weight_allocations == 1);
+    TEST_ASSERT(resident_alloc((void *)&cascade_desc, VJO_VOCR_MAX_BYTES) != NULL && cascade_live &&
+                cascade_block == block);
     TEST_CHECK(cascade_block == VJO_BUDGET_GAME_CASCADE);
-    TEST_CHECK(!weights_release(NULL) && !cascade_release(NULL) && !weights_live && !cascade_live);
+    TEST_CHECK(!resident_release((void *)&weights_desc) && !resident_release((void *)&cascade_desc) && !weights_live &&
+               !cascade_live);
     /* the reserve is kept: Large's block with exactly 1 MiB left over fits, a page less does not */
     available = (int)(VJO_GAME_RESERVE_LARGE + block);
-    TEST_ASSERT(weights_alloc(NULL, VJO_VOCR_MAX_BYTES) != NULL && weights_live);
-    TEST_CHECK(!weights_release(NULL));
+    TEST_ASSERT(resident_alloc((void *)&weights_desc, VJO_VOCR_MAX_BYTES) != NULL && weights_live);
+    TEST_CHECK(!resident_release((void *)&weights_desc));
     available = (int)(VJO_GAME_RESERVE_LARGE + block - 4096u);
-    TEST_CHECK(!weights_alloc(NULL, VJO_VOCR_MAX_BYTES) && !weights_live && weight_allocations == 2); /* not asked */
+    /* not asked */
+    TEST_CHECK(!resident_alloc((void *)&weights_desc, VJO_VOCR_MAX_BYTES) && !weights_live && weight_allocations == 2);
     job_reserve = GAME_RESERVE;
 }
 
@@ -1450,13 +1459,13 @@ static void an_inactive_game_gets_the_cascade_block_back(void)
     r.flags = 8u << VJO_GAME_OCR_CASCADE_SHIFT; /* ocr_lm = off, the cascade on */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(weights_live && cascade_live && !lm_live);
-    TEST_CHECK(!drop_weights() && !weights_live && cascade_live); /* say a later job's model failed to open */
+    TEST_CHECK(!drop_one(&resident) && !weights_live && cascade_live); /* say a later job's model failed to open */
     quit_on_delay = 1;
     inactive_since = now_wide() - INACTIVE_DROP_US; /* not the active game for that long (ocr-first) */
     worker_main(0, NULL); /* vjoOcrRegister: not the active game */
     quit_on_delay = 0;
     quitting = 0;
-    TEST_CHECK(!cascade_live && cascade_uid < 0 && !cascade_res.model && !blocked);
+    TEST_CHECK(!cascade_live && cascade_blk.uid < 0 && !cascade_res.model && !blocked);
     TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 

@@ -226,15 +226,18 @@ static unsigned runtime_lines(void)
 }
 static void reset(void)
 {
-    if (blocks[14].live || spot_res.data) TEST_CHECK(!drop_spot());
-    if (blocks[10].live || resident.data) TEST_CHECK(!drop_weights());
-    worker = workspace_uid = weights_uid = capture_uid = line_uid = lm_uid = cascade_uid = spot_uid = -1;
+    if (blocks[14].live || spot_res.data) TEST_CHECK(!drop_one(&spot_res));
+    if (blocks[10].live || resident.data) TEST_CHECK(!drop_one(&resident));
+    worker = workspace_uid = capture_uid = line_uid = -1;
+    weights_blk.uid = lm_blk.uid = cascade_blk.uid = spot_blk.uid = -1;
     memset(&resident, 0, sizeof(resident));
-    resident.alloc = weights_alloc;
-    resident.release = weights_release;
+    resident.alloc = resident_alloc;
+    resident.release = resident_release;
+    resident.ud = (void *)&weights_desc;
     memset(&spot_res, 0, sizeof(spot_res));
-    spot_res.alloc = spot_alloc;
-    spot_res.release = spot_release;
+    spot_res.alloc = resident_alloc;
+    spot_res.release = resident_release;
+    spot_res.ud = (void *)&spot_desc;
     model_owned = 0; model_seq = 0;
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = stat_error = 0;
     memset(blocks, 0, sizeof(blocks));

@@ -294,7 +294,7 @@ static void reset(void)
 {
     memset(&g, 0, sizeof(g));
     game_ocr_init();
-    worker = workspace_uid = weights_uid = capture_uid = line_uid = lm_uid = cascade_uid = shot_uid = -1;
+    worker = workspace_uid = weights_blk.uid = capture_uid = line_uid = lm_blk.uid = cascade_blk.uid = shot_uid = -1;
     model_owned = 0; model_seq = 0; quitting = active_seq = 0; worker_started = claim_outstanding = blocked = 0;
     io_error = 0; hook_owns_capture = 0; shot_bytes_held = 0;
     locks = syscall_depth = 0; clock_us = 1000000;

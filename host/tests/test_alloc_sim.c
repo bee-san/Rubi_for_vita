@@ -323,8 +323,8 @@ typedef struct {
 
 static void reset_worker(void)
 {
-    if (weights_uid >= 0 || resident.data) drop_weights();
-    worker = workspace_uid = weights_uid = capture_uid = line_uid = -1;
+    if (weights_blk.uid >= 0 || resident.data) drop_one(&resident);
+    worker = workspace_uid = weights_blk.uid = capture_uid = line_uid = -1;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0;
     model_owned = 0; model_seq = 0; quitting = active_seq = 0;
     worker_started = claim_outstanding = blocked = io_error = stat_error = hook_owns_capture = 0;
@@ -366,7 +366,7 @@ static Outcome run_case(const char *model, uint32_t flags, uint16_t rx, uint16_t
         if (last_out.step[i].id == VJO_GSTEP_ALLOC && last_out.step[i].rc < 0) o.refused_steps++;
     /* every block went back: nothing held after the job (weights stay resident) */
     TEST_CHECK(kd_taken == 0 && cdram_used == 0 && phycont_used == 0);
-    TEST_CHECK(user_used == (int64_t)(resident.data ? weights_bytes_held : 0));
+    TEST_CHECK(user_used == (int64_t)(resident.data ? weights_blk.held : 0));
     return o;
 }
 

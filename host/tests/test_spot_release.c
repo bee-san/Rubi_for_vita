@@ -90,7 +90,8 @@ static int load(VjoVocrSpotResident *res)
     res->release = blk_release;
     unsigned read = 0;
     int rc = vjo_vocr_spot_load(&platform, VJO_VOCR_MODEL_DIR, res, NULL, &read);
-    TEST_CHECK_(rc == VJO_OK && res->verified && read == 1, "load rc %d verified %d read %u", rc, res->verified, read);
+    TEST_CHECK_(rc == VJO_OK && res->verified && read == 1, "load rc %d verified %d read %u", rc, res->verified != NULL,
+                read);
     return rc == VJO_OK;
 }
 

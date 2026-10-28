@@ -555,7 +555,7 @@ static void test_the_line_callback_skips_nothing_with_the_check_off(void)
     posix_platform_init(&pp, &p);
     on.blank = 1; /* the same edges bound with the check on: every line is skipped */
     for (int check = 0; check < 2; check++) {
-        VjoVocrResident res = {test_alloc, test_release, NULL, NULL, NULL, 0, 0, 0};
+        VjoVocrResident res = {test_alloc, test_release, NULL, {NULL}, NULL, 0, 0, 0};
         reset();
         seen_lines = seen_blank = 0;
         int rc = vjo_vocr_ocr_policy(&p, dir, "FL10_w8.vocr", &im, &res, ws_mem, vjo_vocr_job_bytes("FL10_w8.vocr", W, H),
@@ -821,8 +821,8 @@ static void test_the_cascade_reads_doubtful_lines_again(void)
     ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
                vjo_vocr_cascade_job_bytes(w20->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res, wres = res;
-    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0}, cres = res, wres = res;
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
     res.ud = &res;
     cres.ud = &cres;
     wres.ud = &wres;
@@ -1114,7 +1114,7 @@ static void test_the_cascade_ceiling_counts_spent_reread_and_rest(void)
     ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
                vjo_vocr_cascade_job_bytes(w20->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res;
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0}, cres = res;
     res.ud = &res;
     cres.ud = &cres;
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -1177,8 +1177,8 @@ static void test_the_lm_paths(void)
     ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
                vjo_vocr_cascade_job_bytes(w20->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res;
-    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0}, cres = res;
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
     res.ud = &res;
     cres.ud = &cres;
     lres.ud = &lres;
@@ -1276,8 +1276,8 @@ static void test_the_retuned_lm_settings_reach_both_decoders(void)
     ws_bytes = vjo_vocr_job_bytes(l6->name, W, H) + vjo_vocr_lm_job_bytes(n6->name) +
                vjo_vocr_cascade_job_bytes(l6->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res;
-    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0}, cres = res;
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
     res.ud = &res;
     cres.ud = &cres;
     lres.ud = &lres;
@@ -1690,8 +1690,8 @@ static void test_refined_lines_are_read_and_decoded_in_place(void)
     TEST_ASSERT(fl10 && lm);
     posix_platform_init(&cascade_pp, &p);
     p.file_open = posix_open ? posix_open : p.file_open;
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
-    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
     res.ud = &res;
     lres.ud = &lres;
     VjoVocrPolicy pol = {.line = refine_record, .refine = VJO_VOCR_REFINE_ALL, .lm = lm, .lm_res = &lres};
@@ -2199,8 +2199,8 @@ static void test_the_counter_redecode(void)
     p.file_open = posix_open ? posix_open : p.file_open;
     ws_bytes = vjo_vocr_job_bytes(fl10->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
-    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
     res.ud = &res;
     lres.ud = &lres;
     VjoVocrPolicy on = {.lm = lmc, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
@@ -2304,8 +2304,8 @@ static void two_level_checks(VjoPlatform *p, const VjoVocrModel *m, int gated)
     unsigned char *ws = NULL;
     size_t ws_bytes = vjo_vocr_job_bytes(m->name, W, H) + vjo_vocr_lm_job_bytes(m->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
-    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
     res.ud = &res;
     lres.ud = &lres;
     VjoVocrPolicy two = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
@@ -2427,8 +2427,8 @@ static void test_the_head_gate(void)
     p.file_open = posix_open ? posix_open : p.file_open;
     ws_bytes = vjo_vocr_job_bytes(fl10->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
-    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
     res.ud = &res;
     lres.ud = &lres;
     VjoVocrPolicy gate = {.lm = lmc, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
@@ -2505,7 +2505,7 @@ static void test_the_head_gate(void)
     }
     ws_bytes = vjo_vocr_job_bytes(n6->name, W, H);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident gres = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident gres = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0};
     gres.ud = &gres;
     VjoVocrPolicy gate_on = {.raw = raw, .raw_cap = sizeof(raw), .head_gate = 1},
                   gate_off = {.raw = raw, .raw_cap = sizeof(raw)};
@@ -2553,7 +2553,7 @@ static void test_each_size_runs_the_paths_its_blob_has(void)
         TEST_ASSERT(m != NULL);
         ws_bytes = vjo_vocr_job_bytes(m->name, W, H);
         TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-        VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
+        VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0};
         res.ud = &res;
         VjoVocrPolicy on = {.raw = raw, .raw_cap = sizeof(raw), .head_gate = 1, .two_level = 1},
                       off = {.raw = raw, .raw_cap = sizeof(raw)};
@@ -2604,8 +2604,8 @@ static void test_the_cascade_rereads_a_gated_counter_line(void)
     ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
                vjo_vocr_cascade_job_bytes(w20->name);
     TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res;
-    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0}, cres = res;
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
     res.ud = &res;
     cres.ud = &cres;
     lres.ud = &lres;

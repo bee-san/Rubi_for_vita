@@ -85,9 +85,9 @@ int main(int argc, char **argv)
     VjoPlatform platform;
     PosixPlatform pp = {0};
     posix_platform_init(&pp, &platform);
-    VjoVocrResident res = {w_alloc, w_release, NULL, NULL, NULL, 0, 0, 0};
-    VjoVocrLmResident lres = {l_alloc, l_release, NULL, NULL, NULL, 0, 0, 0};
-    VjoVocrResident cres = {c_alloc, c_release, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrResident res = {w_alloc, w_release, NULL, {NULL}, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {l_alloc, l_release, NULL, {NULL}, NULL, 0, 0, 0};
+    VjoVocrResident cres = {c_alloc, c_release, NULL, {NULL}, NULL, 0, 0, 0};
     const VjoVocrLm *lm = vjo_vocr_lm_tier(2);
     const VjoVocrModel *casc = vjo_vocr_model(cascade_name);
     for (unsigned index = 0;; index++) {

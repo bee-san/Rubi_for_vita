@@ -432,15 +432,15 @@ static VjoGameOcrRequest request(uint32_t pick)
 }
 static void reset(void)
 {
-    if (weights_live) TEST_CHECK(!drop_weights());
-    if (lm_live || lm_res.data) TEST_CHECK(!drop_lm());
-    lm_res.lm = NULL; lm_res.data = NULL; lm_res.capacity = 0; lm_res.size = lm_res.stamp = 0; lm_uid = -1;
+    if (weights_live) TEST_CHECK(!drop_one(&resident));
+    if (lm_live || lm_res.data) TEST_CHECK(!drop_one(&lm_res));
+    lm_res.lm = NULL; lm_res.data = NULL; lm_res.capacity = 0; lm_res.size = lm_res.stamp = 0; lm_blk.uid = -1;
     spy_reads_rows = 0;
-    if (sc3_uid >= 0 && sc3_live) { /* an SC3 charset a test left: given back as the worker's stop does */
+    if (sc3_blk.uid >= 0 && sc3_live) { /* an SC3 charset a test left: given back as the worker's stop does */
         sc3_set_file = NULL;
-        TEST_CHECK(!game_memblock_free(GL_SC3, VJO_GITEM_SC3, sc3_uid, sc3_bytes_held));
+        TEST_CHECK(!game_memblock_free(GL_SC3, VJO_GITEM_SC3, sc3_blk.uid, sc3_blk.held));
     }
-    worker = workspace_uid = weights_uid = capture_uid = line_uid = -1;
+    worker = workspace_uid = weights_blk.uid = capture_uid = line_uid = -1;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
     model_owned = 0; quitting = active_seq = 0; blocked = 0;
     memset(&hk, 0, sizeof(hk));
@@ -464,7 +464,7 @@ static void reset(void)
     memset(saved_cache, 0, sizeof(saved_cache));
     memset(fake_build, 0xa7, sizeof(fake_build));
     memset(pixels, 0, sizeof(pixels));
-    sc3_uid = -1; sc3_bytes_held = 0; sc3_tries = 0;
+    sc3_blk.uid = -1; sc3_blk.held = 0; sc3_tries = 0;
     sc3_want = NULL; sc3_set_file = NULL; sc3_set_bytes = 0; sc3_sets = sc3_opens = 0; sc3_accept = 1; sc3_open_rc = 0;
     sc3_live = 0; sc3_block = 0; sc3_file_open = 0;
     sc3_read_busy = sc3_read_error = sc3_base_fail = 0; sc3_close_busy = sc3_free_fail = sc3_allocs = sc3_double = 0;
@@ -1347,7 +1347,7 @@ static void verified_site_answers_when_its_weights_are_refused(void)
         {
             const VjoVocrLm *lm1 = vjo_vocr_lm_tier(1);
             TEST_ASSERT(lm1 != NULL);
-            lm_res.data = lm_alloc(NULL, lm1->bytes); /* the earlier job's verified LM */
+            lm_res.data = resident_alloc((void *)&lm_desc, lm1->bytes); /* the earlier job's verified LM */
             TEST_ASSERT(lm_res.data != NULL && lm_live);
             lm_res.lm = lm1; lm_res.capacity = lm_res.size = lm1->bytes; lm_res.stamp = 1;
             available = 2 * 1024 * 1024 + (int64_t)lm_block; /* the check sees 2 MiB beside the LM */
@@ -1551,7 +1551,7 @@ static void trusted_answer_gives_back_the_weights(void)
     TEST_CHECK_(!fail_weights_free && hk.trusted_run == TRUST_DROP_ANSWERS + 1u, "injected %d, run %u",
                 fail_weights_free, hk.trusted_run);
     if (weights_live) { weights_live = 0; live_bytes -= weights_block; } /* the fixture's own release */
-    resident.data = NULL; resident.model = NULL; weights_uid = -1;
+    resident.data = NULL; resident.model = NULL; weights_blk.uid = -1;
 }
 
 /* A CALL caller agrees with OCR on lines 1 and 2 (its lock), 10 and 26 (the checks at 8 and 16) and is then
@@ -1786,7 +1786,7 @@ static void sc3_charset_loads_once(void)
     stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
     TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && !strcmp(out.text, LINE1));
     TEST_CHECK(sc3_opens == 1 && sc3_sets == 1 && sc3_set_file == sc3_mem && sc3_set_bytes == pin.bytes);
-    TEST_CHECK(sc3_live && sc3_block == 8192u && sc3_uid == 12 && !out.io_error);
+    TEST_CHECK(sc3_live && sc3_block == 8192u && sc3_blk.uid == 12 && !out.io_error);
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_SC3) == 8192u);
     for (unsigned i = 0; i < out.n_steps; i++) {
         allocs += out.step[i].id == VJO_GSTEP_ALLOC && out.step[i].arg == VJO_GITEM_SC3;
@@ -1798,10 +1798,10 @@ static void sc3_charset_loads_once(void)
     TEST_CHECK(sc3_opens == 1 && sc3_sets == 1 && sc3_live);
     /* #382/#387's audit N6: a stop whose free of the charset fails says so and keeps it recorded; the next frees it */
     sc3_free_fail = 1;
-    TEST_CHECK(vjo_game_ocr_worker_stop() == VJO_E_OCR_UNAVAILABLE && sc3_live && sc3_uid == 12 && !sc3_set_file);
+    TEST_CHECK(vjo_game_ocr_worker_stop() == VJO_E_OCR_UNAVAILABLE && sc3_live && sc3_blk.uid == 12 && !sc3_set_file);
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_SC3) == 8192u);
     /* the worker's stop gives it back, after the engine forgets it (each stop: so 3 sets in all) */
-    TEST_CHECK(vjo_game_ocr_worker_stop() == VJO_OK && !sc3_live && sc3_uid < 0 && sc3_sets == 3 && !sc3_set_file);
+    TEST_CHECK(vjo_game_ocr_worker_stop() == VJO_OK && !sc3_live && sc3_blk.uid < 0 && sc3_sets == 3 && !sc3_set_file);
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_SC3) == 0);
     /* refused by the engine (not the pinned file), missing (an error), short: the block goes back, no retry */
     for (unsigned k = 0; k < 3; k++) {
@@ -1811,7 +1811,7 @@ static void sc3_charset_loads_once(void)
         sc3_open_rc = k == 0 ? (int)pin.bytes : k == 1 ? (int)0x80010002u : (int)pin.bytes - 1;
         spy_text = OCR1;
         TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, OCR1) && !out.io_error);
-        TEST_CHECK_(sc3_opens == 1 && sc3_sets == (k == 0) && !sc3_live && sc3_uid < 0, "case %u", k);
+        TEST_CHECK_(sc3_opens == 1 && sc3_sets == (k == 0) && !sc3_live && sc3_blk.uid < 0, "case %u", k);
         TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && sc3_opens == 1);
     }
     /* a timed-out open: tried again at the next job, three tries in all */
@@ -1863,7 +1863,7 @@ static void sc3_timed_out_read_is_tried_again(void)
     sc3_read_busy = 1;
     spy_text = OCR1;
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, OCR1));
-    TEST_CHECK_(sc3_opens == 1 && !sc3_live && sc3_uid < 0 && !sc3_set_file && !out.io_error,
+    TEST_CHECK_(sc3_opens == 1 && !sc3_live && sc3_blk.uid < 0 && !sc3_set_file && !out.io_error,
                 "the timed-out read: %u opens, block %d, io_error 0x%08X", sc3_opens, sc3_live, (unsigned)out.io_error);
     sc3_read_busy = 0;
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
@@ -1938,7 +1938,7 @@ static void sc3_block_not_given_back_is_freed_before_another(void)
     sc3_free_fail = 1;
     spy_text = OCR1;
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !strcmp(out.text, OCR1));
-    TEST_CHECK(sc3_uid == 12 && sc3_live && sc3_allocs == 1 && !sc3_opens);
+    TEST_CHECK(sc3_blk.uid == 12 && sc3_live && sc3_allocs == 1 && !sc3_opens);
     sc3_base_fail = 0;
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
     TEST_CHECK_(!sc3_double && sc3_allocs == 2 && sc3_opens == 1 && sc3_live && sc3_set_file == sc3_mem,
@@ -1952,7 +1952,7 @@ static void sc3_block_not_given_back_is_freed_before_another(void)
     sc3_free_fail = 2;
     spy_text = OCR1;
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
-    TEST_CHECK(sc3_uid == 12 && sc3_live && sc3_opens == 1 && sc3_tries == 1);
+    TEST_CHECK(sc3_blk.uid == 12 && sc3_live && sc3_opens == 1 && sc3_tries == 1);
     TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
     TEST_CHECK_(sc3_allocs == 1 && sc3_opens == 1 && sc3_live && sc3_tries == 1, "free refused: %u blocks, %u opens",
                 sc3_allocs, sc3_opens);
