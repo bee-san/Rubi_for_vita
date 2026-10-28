@@ -6,39 +6,50 @@
 #define BACKUP VJO_GAMES_BACKUP
 #define TEMP VJO_GAMES_PATH ".tmp"
 
-static int exists(const char *path)
+int vjo_io_exists(const char *path)
 {
     SceIoStat st;
     return sceIoGetstat(path, &st) >= 0;
 }
 
-static int missing(const char *path)
+int vjo_io_missing(const char *path)
 {
     SceIoStat st;
     /* sceIo returns encoded Sce errno values, not newlib's errno. */
     return sceIoGetstat(path, &st) == (int)0x80010002u;
 }
+#define exists vjo_io_exists
+#define missing vjo_io_missing
+
+char *vjo_io_read_fd(int fd, VjoArena *a, size_t max, size_t *len)
+{
+    SceOff size = sceIoLseek(fd, 0, SCE_SEEK_END);
+    char *buf;
+    size_t used = 0;
+    if (size < 0 || (uint64_t)size > max || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0 ||
+        !(buf = vjo_arena_alloc(a, (size_t)size + 1)))
+        return NULL;
+    while (used < (size_t)size) {
+        int n = sceIoRead(fd, buf + used, (SceSize)((size_t)size - used));
+        if (n <= 0 || (size_t)n > (size_t)size - used) break;
+        used += (size_t)n;
+    }
+    if (used != (size_t)size)
+        return NULL;
+    buf[used] = '\0';
+    *len = used;
+    return buf;
+}
 
 /* path's rows: games.ini's (line_fix 0) or, #333, ocr_line_fix.ini's (1). */
 static int read_policy(const char *path, VjoGames *g, VjoArena *scratch, int line_fix)
 {
-    size_t mark = vjo_arena_mark(scratch);
+    size_t mark = vjo_arena_mark(scratch), used = 0;
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     int rc = -1;
     if (fd < 0) return -1;
-    SceOff size = sceIoLseek(fd, 0, SCE_SEEK_END);
-    if (size >= 0 && size <= VJO_GAMES_TEXT_MAX && sceIoLseek(fd, 0, SCE_SEEK_SET) >= 0) {
-        char *text = vjo_arena_alloc(scratch, (size_t)size + 1);
-        size_t used = 0;
-        if (text) {
-            while (used < (size_t)size) {
-                int n = sceIoRead(fd, text + used, (SceSize)size - used);
-                if (n <= 0) break;
-                used += (size_t)n;
-            }
-            if (used == (size_t)size && size > 0) rc = vjo_games_parse_kind(g, text, used, line_fix);
-        }
-    }
+    char *text = vjo_io_read_fd(fd, scratch, VJO_GAMES_TEXT_MAX, &used);
+    if (text && used > 0) rc = vjo_games_parse_kind(g, text, used, line_fix);
     sceIoClose(fd);
     vjo_arena_release(scratch, mark);
     return rc;
