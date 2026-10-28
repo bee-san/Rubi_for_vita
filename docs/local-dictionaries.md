@@ -648,7 +648,6 @@ cmake --build build/host
 ctest --test-dir build/host --output-on-failure
 ./build/host/vjo-cli --dict local --local-dir . --local-dicts main.vjdict \
   --text '猫は食べました。' --nav --stats
-python3 tools/benchmark_local_dictionary.py --entries 1000000
 ```
 
 CTest runs conversion, real disk lookup, deinflection, UTF-16 highlights,

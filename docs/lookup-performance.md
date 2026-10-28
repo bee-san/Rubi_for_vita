@@ -102,17 +102,12 @@ python3 tools/convert_dictionary.py build/lookup-benchmark/jitendex.zip \
   --format-version 1 -o build/lookup-benchmark/jitendex-v1.vjdict
 python3 tools/convert_dictionary.py build/lookup-benchmark/jitendex.zip \
   -o build/lookup-benchmark/jitendex-v2.vjdict
-python3 tools/compare_lookup_benchmarks.py \
-  --before .refs/lookup-before/build/host/vjo-local-bench \
-  --after build/host/vjo-local-bench \
-  --directory build/lookup-benchmark --runs 100
 ```
 
-The query set is in `tools/lookup_benchmark_cases.json`; `--cases` accepts
-another set. `--before-dicts` and `--after-dicts` accept comma-separated files
-for multi-dictionary comparisons. `tools/benchmark_local_dictionary.py` remains
-a reproducible synthetic size/memory stress test and now uses the timed driver
-instead of timing CLI process startup.
+The two builds' `vjo-local-bench` were then compared on the seven queries above by
+`tools/compare_lookup_benchmarks.py` (its query set `tools/lookup_benchmark_cases.json`), and the synthetic
+size/memory stress test was `tools/benchmark_local_dictionary.py`: both one-off scripts, removed in the tools
+cleanup of #418 (`git show 93e2bec:tools/compare_lookup_benchmarks.py` gives the comparison as it ran).
 
 ## Real recognized lines (2026-10-15)
 
@@ -233,16 +228,11 @@ lookup's p50 is within the noise of separate runs (33.3 µs on main, 28.9 µs on
 
 ## Dictionary pages
 
-`tools/benchmark_dictionary_pages.py` measures the selected-character lookup
-and each **Dictionaries shown** page against a baseline build, interleaving the
-builds in rounds. It fails unless the first entry is identical and a single
-result reads exactly as before. `vjo-local-bench DIR FILES TEXT RUNS CURSOR
+The selected-character lookup and each **Dictionaries shown** page were measured
+against a baseline build, the builds interleaved in rounds, by
+`tools/benchmark_dictionary_pages.py` (a one-off script, removed in the tools cleanup of #418;
+`git show 88d63da:tools/benchmark_dictionary_pages.py`): it failed unless the first entry was identical and a
+single result read exactly as before. `vjo-local-bench DIR FILES TEXT RUNS CURSOR
 RESULTS` prints the first lookup's residency and every other page's time, reads,
 files opened and arena peak. Results:
 [dictionary-pages-20261012.json](benchmarks/dictionary-pages-20261012.json).
-
-```sh
-python3 tools/benchmark_dictionary_pages.py --before .refs/main/build/host/vjo-local-bench \
-  --after build/host/vjo-local-bench --directory DIR \
-  --dicts jitendex.vjdict,jmdict.vjdict --runs 20 --rounds 5
-```
