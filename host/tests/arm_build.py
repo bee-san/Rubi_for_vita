@@ -7,8 +7,9 @@ CONFIG is the host build configured (cmake -G "Unix Makefiles"), not built. Each
 runs (CTestTestfile.cmake); each of its units is compiled with its own compile line (compile_commands.json): the host
 compiler replaced by ARM_CC, the lane's flags for the Vita's CPU added (-mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard,
 64-bit file offsets) and the host's -g and -DNDEBUG left out (assert() stays on, as the lane always had it). The program
-is linked as its link line links it: its objects, then each static library of the build archived for ARM from that
-library's own units, so the linker takes from them what the host's takes. The ARM sysroot has no zlib: a program
+is linked as its link line links it, from CONFIG: its objects, then each static library of the build archived for ARM
+from that library's own units, so the linker takes from them what the host's takes; but for the linker's dependency
+file a newer CMake has it write for the host build (-Wl,--dependency-file). The ARM sysroot has no zlib: a program
 the host links with it is built without (its units without VJO_TEST_ZLIB, as test_psp.c allows). The program is
 OUT/TEST, statically linked. With --native, the same with the host's compiler and nothing added (the lane's host-side
 copy of a program it compares with).
@@ -30,6 +31,9 @@ from pathlib import Path
 # inode numbers pass 2^32 (XFS: the taicfg fixtures' readdir under qemu-arm)
 ARM_FLAGS = ["-mcpu=cortex-a9", "-mfpu=neon", "-mfloat-abi=hard", "-D_FILE_OFFSET_BITS=64"]
 DROPPED = {"-g", "-DNDEBUG"}
+# a link flag naming the host build's own file: the linker's list of the link's inputs (CMake 3.29 on, with GNU ld:
+# -Wl,--dependency-file,CMakeFiles/<target>.dir/link.d), the host build's, not the ARM link's
+LINK_DROPPED = re.compile(r"^-Wl,--dependency-file[,=]")
 # host libraries the ARM sysroot does not have, and what their users define to use them
 HOST_ONLY = {"libz.so": "-DVJO_TEST_ZLIB=1", "libz.a": "-DVJO_TEST_ZLIB=1"}
 
@@ -65,8 +69,11 @@ def main(argv=None):
     plans = {}
     for name in a.tests:
         prog = tests.get(name, [None])[0]
-        if not prog or Path(prog).parent != cfg:
-            sys.exit(f"{tag} {name}: not a test that runs one of this build's programs")
+        if not prog:
+            sys.exit(f"{tag} {name}: the host build (CMakeLists.txt) has no test of that name: take it out of "
+                     "tools/arm_host_tests.sh's TESTS when the suite is gone, or name it as ctest does")
+        if Path(prog).parent != cfg:
+            sys.exit(f"{tag} {name}: its test runs {prog}, not one of the host build's programs")
         target = Path(prog).name
         link = shlex.split((cfg / "CMakeFiles" / f"{target}.dir" / "link.txt").read_text())
         i = link.index("-o")
@@ -130,7 +137,8 @@ def main(argv=None):
 
     archives, rc = {}, 0
     for name, (target, link_flags, objs, libs, drop) in plans.items():
-        line = [a.cc] + flags_of(link_flags, set()) + extra + ([] if a.native else ["-static"])
+        line = [a.cc] + [x for x in flags_of(link_flags, set()) if not LINK_DROPPED.match(x)] + extra
+        line += [] if a.native else ["-static"]
         line += [str(obj_path(key_of(o, drop))) for o in objs] + ["-o", str(out / name)]
         for lib in libs:
             name_ = is_archive(lib)
@@ -145,7 +153,8 @@ def main(argv=None):
                 subprocess.run([ar, "rcs", str(path)] + [str(obj_path(k)) for k in keys], check=True)
                 archives[keys] = str(path)
             line.append(archives[keys])
-        done = subprocess.run(line, capture_output=True, text=True)
+        # (from the configured build's directory, as CMake links: a relative path in its flags means the same)
+        done = subprocess.run(line, cwd=cfg, capture_output=True, text=True)
         if done.returncode:
             print(f"{tag} {name}: build FAILED\n{' '.join(line)}\n{done.stdout}{done.stderr}")
             rc = 1

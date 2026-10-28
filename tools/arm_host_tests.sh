@@ -111,7 +111,10 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   TESTS+=(capture_parity)
 fi
 CONFIG=$OUT/host-config
+# CMAKE_LINK_DEPENDS_USE_LINKER: the link lines as CI's newer CMake writes them (3.29 on: -Wl,--dependency-file, which
+# arm_build.py leaves out), here too (3.28 writes them so only when asked)
 cmake -S . -B "$CONFIG" -G "Unix Makefiles" -DVJO_DEBUG="$([ "$VJO_DEBUG" = 0 ] && echo OFF || echo ON)" "${CMAKE_VOCR[@]}" \
+  -DCMAKE_LINK_DEPENDS_USE_LINKER=ON \
   > "$OUT/host-config.log" 2>&1 || { cat "$OUT/host-config.log"; echo "arm: the host build's configuration FAILED"; exit 1; }
 bg build-suites python3 host/tests/arm_build.py "$CONFIG" "$OUT" --cc "$ARM_CC" --jobs "$ARM_JOBS" "${TESTS[@]}"
 steps_done build || exit 1
