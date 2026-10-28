@@ -648,23 +648,20 @@ static size_t ini_skip_bom(const char *s, size_t n)
 
 /* The setting a config.ini line sets, safe to show on the page and in log.txt: its name, never its value.
  * The name is the line's leading run of letters, digits and '_' (no setting's name has another character).
- * An API key's line is named by the key alone, whatever follows it: core/config.c removed_secret drops a
- * line that starts with one of these names, so the rest of such a line may be the key itself. 0 for a
- * line that names nothing (blank, a comment). */
+ * An API key's line is named by the key alone, whatever follows it: core/config.c drops a line that starts with
+ * one of those names (VJO_REMOVED_SECRET), so the rest of such a line may be the key itself. 0 for a line that
+ * names nothing (blank, a comment). */
 static size_t ini_line_name(const char *line, size_t n, char *out, size_t cap)
 {
-    static const char *const secrets[] = {"jpdb_api_key", "jiten_api_key", "api_key"}; /* removed_secret's */
     size_t b = vjo_config_line_start(line, n), e; /* where the parser reads a name: after spaces, CRs and BOMs */
-    for (size_t i = 0; i < sizeof(secrets) / sizeof(secrets[0]); i++) {
-        size_t len = strlen(secrets[i]);
-        if (n - b >= len && !strncasecmp(line + b, secrets[i], len)) {
-            snprintf(out, cap, "%s", secrets[i]);
-            return len;
-        }
-    }
     for (e = b; e < n; e++) {
         char c = line[e];
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) break;
+    }
+    const char *removed = vjo_config_removed(line + b, e - b);
+    if (removed && VJO_REMOVED_KIND(removed) == VJO_REMOVED_SECRET) {
+        snprintf(out, cap, "%s", removed + 1);
+        return strlen(removed + 1);
     }
     if (e == b || e - b >= cap) return 0;
     memcpy(out, line + b, e - b);
@@ -762,22 +759,23 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         return -1;
     }
     ini_new_len = n;
-    /* the removed settings the plugins and the app ignore without a warning go, as tools/migrate_config.py
-     * REMOVED drops them for install-vita.sh (the others, API keys, Anki's and the engine choice's, the
-     * app's own save above drops) */
+    /* the removed settings the plugins and the app ignore without a warning go (core/config.c's list,
+     * VJO_REMOVED_OLDER), as tools/migrate_config.py REMOVED drops them for install-vita.sh (the others, API keys,
+     * Anki's and the engine choice's, the app's own save above drops) */
     {
-        static const char *const gone[] = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms", "hachidori_host"};
         int w = 0;
         for (int pos = 0; pos < ini_new_len;) {
             int e = pos;
             while (e < ini_new_len && ini_new[e] != '\n') e++;
             if (e < ini_new_len) e++; /* the line with its end */
             int b = pos + (int)vjo_config_line_start(ini_new + pos, (size_t)(e - pos)); /* as the parser reads a name */
+            int v = b;
+            while (v < e && ini_new[v] != '=' && ini_new[v] != ' ' && ini_new[v] != '\t' && ini_new[v] != '\r' &&
+                   ini_new[v] != '\n')
+                v++;
+            const char *removed = vjo_config_removed(ini_new + b, (size_t)(v - b));
             int drop = 0;
-            for (unsigned g = 0; g < sizeof(gone) / sizeof(gone[0]) && !drop; g++) {
-                size_t len = strlen(gone[g]);
-                int v = b + (int)len;
-                if (v > e || strncasecmp(ini_new + b, gone[g], len)) continue;
+            if (removed && VJO_REMOVED_KIND(removed) == VJO_REMOVED_OLDER) {
                 while (v < e && (ini_new[v] == ' ' || ini_new[v] == '\t')) v++;
                 drop = v < e && ini_new[v] == '=';
             }

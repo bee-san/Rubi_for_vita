@@ -1,9 +1,11 @@
 """Run the installer's real config migration on configs saved by older releases."""
+import ast
 import contextlib
 import difflib
 import importlib.util
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -141,6 +143,48 @@ def golden_migration(module, folder, old_bytes, lines, first=None, sets=(), labe
 
 
 class MigrateConfig(unittest.TestCase):
+    def test_the_removed_settings_are_core_configs_list(self):
+        """#418: config.ini's removed settings are one list, core/config.c's removed_keys (core/config.h
+        vjo_config_removed), which the parser, the Rubi app's saves and its install read; the installer's copy here
+        (SECRETS, REMOVED, REMOVED_PREFIXES, REPLACED_VALUES' setting) and the other tools' copies of its API keys
+        are that list, kind by kind."""
+        source = (ROOT / "core/config.c").read_text(encoding="utf-8")
+        table = source[source.index("static const char removed_keys[] ="):]
+        table = table[:table.index(";\n")]
+        # every REMOVED( use is an entry this reads, whatever its spacing or characters (audit-rubi-cleanup-2 F2)
+        entries = re.findall(r'REMOVED\(\s*"([A-Za-z])"\s*,\s*"([^"]+)"\s*\)', table)
+        self.assertEqual(len(entries), table.count("REMOVED("), table)
+        self.assertGreater(len(entries), 15)
+        kinds = {}
+        for kind, name in entries:
+            kinds.setdefault(kind, []).append(name)
+        self.assertEqual(sorted(kinds), ["A", "S", "a", "d", "e", "m", "o", "t"], entries)
+        module = load_migrate()
+        self.assertEqual(module.SECRETS, tuple(kinds["S"]))
+        self.assertEqual(module.REMOVED_PREFIXES, tuple(kinds["A"]))
+        self.assertEqual(module.REMOVED, set(kinds["a"] + kinds["e"] + kinds["o"] + kinds["m"] + kinds["t"]))
+        self.assertEqual(set(module.REPLACED_VALUES), set(kinds["d"]))
+        for rel, name, want in (("tools/install_dictionary.py", "REMOVED_SECRETS", tuple(kinds["S"])),
+                                ("tools/collect_vita.py", "REMOVED_KEY", "(?:%s)" % "|".join(kinds["S"]))):
+            values = [ast.literal_eval(node.value) for node in ast.parse((ROOT / rel).read_text(encoding="utf-8")).body
+                      if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == name for t in node.targets)]
+            self.assertEqual(values, [want], rel)
+        # the reports' credential masks (a value shown only as set or empty) cover every API key and the audio URL
+        # (audit-rubi-cleanup-2 F8): package_release.py SECRET, install-vita.sh's secret, collect_vita.py
+        # CREDENTIAL and CREDENTIAL_NAME, analyse_selftest.py CREDENTIAL
+        masks = []
+        for rel, pattern in (("tools/package_release.py", r'^SECRET = re\.compile\((r"[^"]+")'),
+                             ("tools/install-vita.sh", r'^secret = re\.compile\((r"[^"]+")'),
+                             ("tools/collect_vita.py", r'^CREDENTIAL = re\.compile\((r"[^"]+")'),
+                             ("tools/collect_vita.py", r'^CREDENTIAL_NAME = (r"[^"]+")'),
+                             ("tools/analyse_selftest.py", r'^CREDENTIAL = re\.compile\((r"[^"]+")')):
+            found = re.findall(pattern, (ROOT / rel).read_text(encoding="utf-8"), re.M)
+            self.assertEqual(len(found), 1, (rel, pattern))
+            masks.append((rel, re.compile(ast.literal_eval(found[0]), re.I)))
+        for rel, mask in masks:
+            for key in kinds["S"] + ["anki_audio_url"]:
+                self.assertTrue(mask.search(key) or mask.fullmatch(key), (rel, key))
+
     def test_golden(self):
         """#418 (cleanup package P2): every migration of the fixtures, a missing file and each record of
         host/tests/fixtures/config-lines.txt, against host/tests/fixtures/config-migrate.golden: a change to the

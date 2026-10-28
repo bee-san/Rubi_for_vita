@@ -20,7 +20,7 @@ DATA_DIR = "/ux0:/data/VitaJPOverlay"
 DICT_DIR = DATA_DIR + "/dictionaries"
 # The API keys of jpdb.io and jiten.moe, the removed online dictionaries (api_key: jpdb's
 # older name): --enable drops every line that starts with one, as the overlay ignores them
-# (core/config.c removed_secret; no setting's name starts with one of them).
+# (core/config.c's list, VJO_REMOVED_SECRET; no setting's name starts with one of them).
 REMOVED_SECRETS = ("jpdb_api_key", "jiten_api_key", "api_key")
 
 
@@ -62,7 +62,7 @@ def config_with_local(text, names):
         # core/config.c vjo_config_line_start: a BOM-led copy of a setting is that setting (audit-pr185-b B1)
         body = name_start(line)
         if body.lower().startswith(REMOVED_SECRETS):
-            continue  # the removed online dictionaries' API keys (core/config.c removed_secret)
+            continue  # the removed online dictionaries' API keys (core/config.c's list)
         match = re.match(r"([a-zA-Z_]+)\s*=", body)
         key = match.group(1).lower() if match else None
         if key in values:

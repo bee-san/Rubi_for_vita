@@ -21,6 +21,9 @@ import re
 import sys
 
 RENAMED = {}
+# config.ini's removed settings: a copy of core/config.c's one list (removed_keys, core/config.h
+# vjo_config_removed), which tools/tests/test_migrate_config.py checks it against. REMOVED: the names of every kind but
+# the API keys' and the field mapping's prefix and the dictionary choice, dropped and reported by name.
 REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
            # Anki's field mapping, which one fixed note type replaced; with every anki_field_* key
            # (REMOVED_PREFIXES), as core/config.c ignores them.
@@ -41,7 +44,7 @@ REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
 REMOVED_PREFIXES = ("anki_field_",)
 # The removed online dictionaries' API keys (secrets; api_key: jpdb_api_key's older name): a key
 # that starts with one is dropped, and reported by that name only, as its line's text may hold the
-# key (core/config.c removed_secret; no setting's name starts with one of them).
+# key (core/config.c's list, VJO_REMOVED_SECRET; no setting's name starts with one of them).
 SECRETS = ("jpdb_api_key", "jiten_api_key", "api_key")
 # Why a removed setting went, printed beside it (the log line the installer shows).
 REMOVED_WHY = {"anki_host": "AnkiConnect was removed: the Rubi app exports the cards as an .apkg",

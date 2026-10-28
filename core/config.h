@@ -210,18 +210,6 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
  * without a file the Shell plugin runs on vjo_config_defaults, the same values. */
 const char *vjo_config_default_text(void);
 
-/* Changes only the app's four OCR/lookup preferences (vocr_tier,
- * japanese_only_selection, highlight_mode, local_dictionary_results), retaining
- * every other INI line verbatim but the vocr_model and vocr_fallback_model
- * lines of older builds, which vocr_tier replaces, and those of removed
- * features (vjo_config_removed_line: dropped or replaced). Duplicate owned
- * keys are collapsed. Input/output must not overlap. Returns output bytes (not
- * including NUL), or -1 for invalid choices, embedded NUL, or insufficient
- * capacity. */
-int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier,
-                                 int japanese_only, int highlight_mode,
-                                 int dictionary_results, char *out, size_t cap);
-
 /* The model tiers (include/vjo_vocr_sizes.h VJO_VOCR_TIER_*): a tier's
  * config.ini value ("small" | "normal" | "large", NULL outside 1..VJO_VOCR_TIERS),
  * the tier of a value (any case; 0 for none), the tier's pinned model file in
@@ -239,25 +227,34 @@ int vjo_vocr_tier_of_model(const char *name);
 size_t vjo_config_line_start(const char *line, size_t n);
 
 /* A config.ini line (n bytes, its newline included or not) of a removed
- * feature, which the Rubi app's saves rewrite as they patch the file:
- * VJO_LINE_DROP for the API keys of the removed online dictionaries (a line
- * whose first word starts with jpdb_api_key, jiten_api_key or api_key, jpdb's
- * older name, in any case, with or without '=') and for the removed Anki
- * settings (vjo_config_removed_anki_key: anki_audio_url's URL can hold a key),
- * which are secrets; VJO_LINE_DROP_SETTING for a removed setting's line, which
- * is not (the engine choice and the UDP log: an ocr_backend or log_host line,
- * whatever its value);
- * VJO_LINE_REPLACE with *replacement ("dictionary = local\n") for dictionary =
- * jpdb, jiten or hachidori, else VJO_LINE_KEEP. */
+ * feature, which the Rubi app's saves rewrite as they patch the file
+ * (vjo_config_removed's kinds, by the line's first word): VJO_LINE_DROP for
+ * the API keys of the removed online dictionaries and the removed Anki
+ * settings (anki_audio_url's URL can hold a key), which are secrets, whatever
+ * follows the name; VJO_LINE_DROP_SETTING for a removed setting's line with
+ * '=', which is not (the engine choice and the UDP log: an ocr_backend or
+ * log_host line, whatever its value); VJO_LINE_REPLACE with *replacement
+ * ("dictionary = local\n") for dictionary = jpdb, jiten or hachidori, else
+ * VJO_LINE_KEEP. */
 enum { VJO_LINE_KEEP = 0, VJO_LINE_DROP = 1, VJO_LINE_REPLACE = 2, VJO_LINE_DROP_SETTING = 3 };
 int vjo_config_removed_line(const char *line, size_t n, const char **replacement);
 
 const char *vjo_trigger_name(int trigger);
 
-/* A removed Anki setting (anki_host, anki_audio_url, the old field mapping):
- * 1 when key is one, which loads without a warning on every path (a line
- * without '=', a value too long). The installer and the Rubi app's next
- * save (vjo_config_removed_line) remove it from config.ini. */
-int vjo_config_removed_anki_key(const char *key);
+/* config.ini's removed settings, one list (core/config.c removed_keys) for the parser, the Rubi app's saves and
+ * install (settings/preferences.c, settings/install.c) and the installer from a computer (tools/migrate_config.py,
+ * whose copy tools/tests/test_migrate_config.py checks against it). vjo_config_removed gives the entry of the n
+ * bytes at s, a line's first word, in any case: its kind (VJO_REMOVED_KIND, below), then its name, a string; or
+ * NULL for a word that names none. A kind in upper case is a prefix: a word that starts with its name is it. */
+const char *vjo_config_removed(const char *s, size_t n);
+#define VJO_REMOVED_KIND(entry) ((entry)[0] | 0x20)
+#define VJO_REMOVED_SECRET 's'     /* the removed online dictionaries' API keys: a line that starts with one is never
+                                      shown or kept, and named by this name alone */
+#define VJO_REMOVED_ANKI 'a'       /* a removed Anki setting: its line goes whatever follows the name */
+#define VJO_REMOVED_SETTING 'e'    /* the engine choice and the UDP log's computer: dropped by every save */
+#define VJO_REMOVED_OLDER 'o'      /* an older setting: the saves keep its line, the install drops it */
+#define VJO_REMOVED_MODEL 'm'      /* vocr_fallback_model: dropped by the four-preference save (vocr_tier) */
+#define VJO_REMOVED_TIER 't'       /* vocr_model: as VJO_REMOVED_MODEL; the parser still reads its size */
+#define VJO_REMOVED_DICTIONARY 'd' /* dictionary: a removed dictionary's value is saved as local */
 
 #endif

@@ -365,8 +365,14 @@ static void test_anki_config(void)
     vjo_config_parse(&c, ini, strlen(ini));
     TEST_CHECK(c.n_warnings == 0 && c.anki_mining == 1);
     TEST_MSG("%d: %s", c.n_warnings, c.warnings[0]);
-    TEST_CHECK(vjo_config_removed_anki_key("anki_host") && vjo_config_removed_anki_key("Anki_Audio_URL") &&
-               vjo_config_removed_anki_key("anki_field_x") && !vjo_config_removed_anki_key("anki_mining"));
+    {
+        static const char *const anki[] = {"anki_host", "Anki_Audio_URL", "anki_field_x"}; /* core/config.c's list */
+        for (unsigned i = 0; i < sizeof(anki) / sizeof(anki[0]); i++) {
+            const char *r = vjo_config_removed(anki[i], strlen(anki[i]));
+            TEST_CHECK_(r && VJO_REMOVED_KIND(r) == VJO_REMOVED_ANKI, "%s", anki[i]);
+        }
+        TEST_CHECK(!vjo_config_removed("anki_mining", strlen("anki_mining")));
+    }
     /* also silent where a setting's line would warn: no '=' (the line would be logged, and an
      * audio URL can carry a key), a value too long for any setting, a line too long to read */
     {

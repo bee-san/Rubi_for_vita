@@ -61,6 +61,16 @@ int vjo_preferences_publish_text(const char *next, size_t len, VjoArena *scratch
  * break, over VJO_CONFIG_TEXT_MAX). */
 int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values,
                           int n, char *out, size_t cap);
+/* The app's four OCR/lookup preferences (vocr_tier, japanese_only_selection,
+ * highlight_mode, local_dictionary_results) patched as vjo_config_patch_keys
+ * patches its keys, but a key read as the parser reads it (a CR ends its name
+ * too), and the vocr_model and vocr_fallback_model lines of older builds,
+ * which vocr_tier replaces, dropped. Input/output must not overlap. Returns
+ * output bytes (not including NUL), or -1 for invalid choices, embedded NUL,
+ * or insufficient capacity. */
+int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier,
+                                 int japanese_only, int highlight_mode,
+                                 int dictionary_results, char *out, size_t cap);
 /* The same for another of the app's INI files (app.ini, settings/app_prefs.h): no config.ini rule
  * (vjo_config_removed_line) applies to its other lines, which are all kept verbatim. */
 int vjo_ini_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values, int n,
