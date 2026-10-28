@@ -34,7 +34,8 @@ NUMBERS = ("local_dictionary_results", "stick_lookup_ms", "font_size_ja", "font_
 # Settings that can hold a credential (an audio source URL can carry one). The manifest gives them only as
 # "set" or "", in its defaults and its install_settings: install_ftp.sh --collect copies both into the zip
 # the owner sends. install-vita.sh takes a set one's value from the package's config.ini, which holds it.
-# tools/install-vita.sh, migrate_config.py, collect_vita.py and analyse_selftest.py use the same pattern.
+# install_settings() (install-vita.sh's), migrate_config.py, collect_vita.py and analyse_selftest.py use the same
+# pattern.
 SECRET = re.compile(r"api_key$|^anki_audio_url$")
 APP_RECORD = DATA + "vjo_app.txt"  # the record of the Rubi app these plugins come with (core/app_stamp.h)
 APP_STAMP = re.compile(r"vjoapp1 api=\d{1,6} build=[0-9a-f]{16}")
@@ -221,6 +222,31 @@ def verify(root):
         if path.stat().st_size != expected["bytes"] or digest(path) != expected["sha256"]:
             raise ValueError("Package checksum failed: " + name)
     print(f"Verified {len(manifest['files'])} package files")
+
+
+def install_settings(root):
+    """install-vita.sh's package settings (the manifest's install_settings, applied after its own): a line
+    "KEY=VALUE<tab>SHOWN" for each that is a setting of the package's config template, with a one-line value. A
+    credential is only "set" or "" in the manifest: a set one's value is the template's (empty: left out), and it
+    is shown only as set or empty."""
+    text = (root / "config.ini").read_text(encoding="utf-8-sig", errors="replace")
+    keys = {m.group(1) for m in re.finditer(r"^(\w+)\s*=", text, re.M)}
+    values = {}
+    for m in re.finditer(r"^(\w+)[ \t]*=[ \t]*(.*?)[ \t\r]*$", text, re.M):
+        values.setdefault(m.group(1), m.group(2))
+    lines = []
+    manifest = json.loads((root / "package-manifest.json").read_text(encoding="utf-8"))
+    for key, value in manifest.get("install_settings", {}).items():
+        if not (key in keys and SETTING_KEY.fullmatch(key) and isinstance(value, str)):
+            continue
+        if SECRET.search(key) and value == "set":
+            value = values.get(key, "")
+            if not value:
+                continue
+        if one_line(value):
+            shown = ("set" if value else "empty") if SECRET.search(key) else value
+            lines.append(f"{key}={value}\t{key}={shown}")
+    return lines
 
 
 def package(base, output, models, dictionary=None, license_file=None, version="0.7.12", source_revision=None,
@@ -454,6 +480,9 @@ def main():
     parser.add_argument("--dictionary", type=Path)
     parser.add_argument("--license-file", type=Path)
     parser.add_argument("--verify", type=Path)
+    parser.add_argument("--install-settings", type=Path, metavar="DIRECTORY",
+                        help="An extracted package's own settings for install-vita.sh: KEY=VALUE, a tab and "
+                             "what to show, one line each")
     parser.add_argument("--version", default="0.7.12")
     parser.add_argument("--source-revision", help="Exact tested overlay commit for the package manifest")
     parser.add_argument("--variant", choices=VARIANTS,
@@ -465,11 +494,15 @@ def main():
     args = parser.parse_args()
     if args.verify:
         verify(args.verify)
+    elif args.install_settings:
+        for line in install_settings(args.install_settings):
+            print(line)
     elif all((args.base, args.output, args.models)):
         package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.source_revision,
                 dict(args.settings), args.variant)
     else:
-        parser.error("Provide --verify DIRECTORY, or base, --output and --models (dictionary is already in the base)")
+        parser.error("Provide --verify DIRECTORY, --install-settings DIRECTORY, or base, --output and --models "
+                     "(dictionary is already in the base)")
 
 
 if __name__ == "__main__":

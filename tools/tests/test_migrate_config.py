@@ -170,11 +170,14 @@ class MigrateConfig(unittest.TestCase):
                       if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == name for t in node.targets)]
             self.assertEqual(values, [want], rel)
         # the reports' credential masks (a value shown only as set or empty) cover every API key and the audio URL
-        # (audit-rubi-cleanup-2 F8): package_release.py SECRET, install-vita.sh's secret, collect_vita.py
+        # (audit-rubi-cleanup-2 F8): package_release.py SECRET (install-vita.sh's too: it reads its package settings
+        # from package_release.py --install-settings and keeps no mask of its own, #483), collect_vita.py
         # CREDENTIAL and CREDENTIAL_NAME, analyse_selftest.py CREDENTIAL
+        installer = (ROOT / "tools/install-vita.sh").read_text(encoding="utf-8")
+        self.assertIn('/tools/package_release.py" --install-settings "$PACKAGE"', installer)
+        self.assertNotRegex(installer, r"re\.compile\(")
         masks = []
         for rel, pattern in (("tools/package_release.py", r'^SECRET = re\.compile\((r"[^"]+")'),
-                             ("tools/install-vita.sh", r'^secret = re\.compile\((r"[^"]+")'),
                              ("tools/collect_vita.py", r'^CREDENTIAL = re\.compile\((r"[^"]+")'),
                              ("tools/collect_vita.py", r'^CREDENTIAL_NAME = (r"[^"]+")'),
                              ("tools/analyse_selftest.py", r'^CREDENTIAL = re\.compile\((r"[^"]+")')):
