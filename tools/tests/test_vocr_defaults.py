@@ -595,11 +595,15 @@ class RuntimePinEverywhere(unittest.TestCase):
         pin = re.search(r"^set\(VJO_VOCR_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
         # API 54: the text spotter's runtime is pinned apart (VJO_VOCR_SPOT_COMMIT) until the recognizer's pin holds it
         spot = re.search(r"^set\(VJO_VOCR_SPOT_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
+        # the jobs' private checkouts are one action's, which the host, ARM and Vita jobs use
         flow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-        refs = re.findall(r"repository: bee-san/vita-vn-ocr\n(?:\s+#.*\n)*\s+ref: ([0-9a-f]{40})", flow)
-        self.assertTrue(refs, "no vita-vn-ocr checkout found in release.yml")
+        self.assertEqual(flow.count("\n      - uses: ./.github/actions/pinned-sources\n"), 3)
+        action = (ROOT / ".github" / "actions" / "pinned-sources" / "action.yml").read_text(encoding="utf-8")
+        refs = re.findall(r"repository: bee-san/vita-vn-ocr\n(?:\s+#.*\n)*\s+ref: ([0-9a-f]{40})", action)
+        self.assertTrue(refs, "no vita-vn-ocr checkout found in .github/actions/pinned-sources/action.yml")
         self.assertEqual(set(refs), {pin, spot}, refs)
         self.assertEqual(refs.count(spot), refs.count(pin) if spot != pin else len(refs), refs)
+        self.assertNotIn("repository: bee-san/vita-vn-ocr", flow)  # no job checks it out on its own
         docs = (ROOT / "docs" / "vita-vn-ocr.md").read_text(encoding="utf-8")
         self.assertIn(f"git -C /path/to/vita-vn-ocr checkout {pin}", docs)
         self.assertIn(f"git -C /path/to/vita-vn-ocr-spot checkout {spot}", docs)

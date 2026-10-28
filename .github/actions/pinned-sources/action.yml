@@ -1,0 +1,53 @@
+# The pinned private sources every build job checks out beside the repository (.github/workflows/release.yml's host,
+# arm and vita jobs), at the paths tools/fast_gate.sh and CMake read them from (.refs/): the vita-vn-ocr runtime at
+# cmake/VocrOCR.cmake's VJO_VOCR_COMMIT, the text spotter's runtime at its VJO_VOCR_SPOT_COMMIT, and the frozen
+# dictionaries at docs/plaintext-dictionaries.json's revision. tools/tests/test_ci_pins.py, test_spot_pins.py and
+# test_vocr_defaults.py check these refs against those files. The job checks out the repository first.
+name: Pinned private sources
+description: The pinned OCR runtime, the text spotter's runtime and (when asked) the frozen dictionaries, in .refs/
+inputs:
+  vocr-key:
+    description: The deploy key of bee-san/vita-vn-ocr (secrets.VOCR_SOURCE_KEY; empty in a fork's pull request)
+    required: true
+  dictionaries:
+    description: "'true': also the frozen dictionaries (a fork's pull request has no key for them)"
+    required: true
+  dicts-key:
+    description: The deploy key of bee-san/plaintext-dicts (secrets.PLAINTEXT_DICTS_SOURCE_KEY)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check out the pinned private OCR runtime
+      uses: actions/checkout@v4
+      with:
+        repository: bee-san/vita-vn-ocr
+        # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #135's merge: #129's line finder fixes, #130's attention
+        # op (no pinned blob has one), #122's two-level head and #120's head gate, after #112's counter re-decode,
+        # #101's text-presence gate, #85, #83 and #82)
+        ref: f8a1856c1b21bf41af744c159b54ce8203408a89
+        ssh-key: ${{ inputs.vocr-key }}
+        persist-credentials: false
+        path: .refs/vita-vn-ocr
+    # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 54), pinned apart from the
+    # recognizer's files until the recognizer's pin holds them (then one commit pins both, and this step goes)
+    - name: Check out the text spotter's pinned runtime
+      uses: actions/checkout@v4
+      with:
+        repository: bee-san/vita-vn-ocr
+        ref: 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b52c
+        ssh-key: ${{ inputs.vocr-key }}
+        persist-credentials: false
+        path: .refs/vita-vn-ocr-spot
+    # Without it (a fork's pull request) CMake leaves out plaintext_dictionary and word_lookup
+    # reports itself skipped; every other test runs.
+    - name: Check out the frozen private dictionaries
+      if: ${{ inputs.dictionaries == 'true' }}
+      uses: actions/checkout@v4
+      with:
+        repository: bee-san/plaintext-dicts
+        ref: e9b6e767626bbf38da451fa3d6fa14292b63586b
+        ssh-key: ${{ inputs.dicts-key }}
+        persist-credentials: false
+        path: .refs/plaintext-dicts
+        sparse-checkout: processed

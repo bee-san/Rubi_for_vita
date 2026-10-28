@@ -127,39 +127,14 @@ jobs:
             debug: 'OFF'
     steps:
       - uses: actions/checkout@v4
-      - name: Check out the pinned private OCR runtime
-        uses: actions/checkout@v4
+      # the pinned OCR runtime, the text spotter's and the frozen dictionaries (.github/actions/pinned-sources);
+      # without the dictionaries (a fork's pull request) CMake leaves out plaintext_dictionary and word_lookup
+      # reports itself skipped; every other test runs
+      - uses: ./.github/actions/pinned-sources
         with:
-          repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #135's merge: #129's line finder fixes, #130's attention
-          # op (no pinned blob has one), #122's two-level head and #120's head gate, after #112's counter re-decode,
-          # #101's text-presence gate, #85, #83 and #82)
-          ref: f8a1856c1b21bf41af744c159b54ce8203408a89
-          ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/vita-vn-ocr
-      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 54), pinned apart from the
-      # recognizer's files until the recognizer's pin holds them (then one commit pins both, and this step goes)
-      - name: Check out the text spotter's pinned runtime
-        uses: actions/checkout@v4
-        with:
-          repository: bee-san/vita-vn-ocr
-          ref: 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b52c
-          ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/vita-vn-ocr-spot
-      # Without it (a fork's pull request) CMake leaves out plaintext_dictionary and word_lookup
-      # reports itself skipped; every other test runs.
-      - name: Check out the frozen private dictionaries
-        if: ${{ needs.changes.outputs.dicts != 'false' }}
-        uses: actions/checkout@v4
-        with:
-          repository: bee-san/plaintext-dicts
-          ref: e9b6e767626bbf38da451fa3d6fa14292b63586b
-          ssh-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/plaintext-dicts
-          sparse-checkout: processed
+          vocr-key: ${{ secrets.VOCR_SOURCE_KEY }}
+          dictionaries: ${{ needs.changes.outputs.dicts != 'false' }}
+          dicts-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
       # The .deb files of the packages below, kept by actions/cache (saved as soon as they are installed,
       # whatever the tests then do); bump the key's -vN when the list changes.
       - id: apt-cache
@@ -225,35 +200,12 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Check out the pinned private OCR runtime
-        uses: actions/checkout@v4
+      # the pinned OCR runtime, the text spotter's and the frozen dictionaries (.github/actions/pinned-sources)
+      - uses: ./.github/actions/pinned-sources
         with:
-          repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (as in the host job)
-          ref: f8a1856c1b21bf41af744c159b54ce8203408a89
-          ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/vita-vn-ocr
-      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 54), pinned apart from the
-      # recognizer's files until the recognizer's pin holds them (then one commit pins both, and this step goes)
-      - name: Check out the text spotter's pinned runtime
-        uses: actions/checkout@v4
-        with:
-          repository: bee-san/vita-vn-ocr
-          ref: 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b52c
-          ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/vita-vn-ocr-spot
-      - name: Check out the frozen private dictionaries
-        if: ${{ needs.changes.outputs.dicts != 'false' }}
-        uses: actions/checkout@v4
-        with:
-          repository: bee-san/plaintext-dicts
-          ref: e9b6e767626bbf38da451fa3d6fa14292b63586b
-          ssh-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/plaintext-dicts
-          sparse-checkout: processed
+          vocr-key: ${{ secrets.VOCR_SOURCE_KEY }}
+          dictionaries: ${{ needs.changes.outputs.dicts != 'false' }}
+          dicts-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
       # GCC 14: the pinned vita-vn-ocr runtime's NEON kernels (#85) use vld1q_*_x2, which GCC's
       # 32-bit ARM arm_neon.h has from GCC 14 on; Ubuntu 24.04's default cross gcc is 13.
       - id: apt-cache
@@ -322,37 +274,13 @@ jobs:
         with:
           path: .refs/apt-vita
           key: apt-vita-8227da1b-ssh-v3
-      - name: Check out the pinned private OCR runtime
-        uses: actions/checkout@v4
+      # the pinned OCR runtime, the text spotter's and the frozen dictionaries (.github/actions/pinned-sources);
+      # the dictionaries only for the release zip
+      - uses: ./.github/actions/pinned-sources
         with:
-          repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #135's merge: #129's line finder fixes, #130's attention
-          # op (no pinned blob has one), #122's two-level head and #120's head gate, after #112's counter re-decode,
-          # #101's text-presence gate, #85, #83 and #82)
-          ref: f8a1856c1b21bf41af744c159b54ce8203408a89
-          ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/vita-vn-ocr
-      # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 54), pinned apart from the
-      # recognizer's files until the recognizer's pin holds them (then one commit pins both, and this step goes)
-      - name: Check out the text spotter's pinned runtime
-        uses: actions/checkout@v4
-        with:
-          repository: bee-san/vita-vn-ocr
-          ref: 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b52c
-          ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/vita-vn-ocr-spot
-      - name: Check out the frozen private dictionaries
-        if: ${{ needs.changes.outputs.dicts != 'false' && needs.changes.outputs.packaging == 'true' }}
-        uses: actions/checkout@v4
-        with:
-          repository: bee-san/plaintext-dicts
-          ref: e9b6e767626bbf38da451fa3d6fa14292b63586b
-          ssh-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
-          persist-credentials: false
-          path: .refs/plaintext-dicts
-          sparse-checkout: processed
+          vocr-key: ${{ secrets.VOCR_SOURCE_KEY }}
+          dictionaries: ${{ needs.changes.outputs.dicts != 'false' && needs.changes.outputs.packaging == 'true' }}
+          dicts-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
       # tools/setup_toolchain.sh's result (what it adds to the image's SDK, psp2cxml-tool, the app's pinned
       # packages), kept for this image and these scripts; restored, the script runs again and finds every
       # step done (tools/ci_toolchain_cache.sh). It took 70-100 s of every vita job.

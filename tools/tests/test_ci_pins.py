@@ -54,10 +54,14 @@ class HostImage(unittest.TestCase):
 class Dictionary(unittest.TestCase):
     def test_ci_checks_out_the_pinned_dictionary_and_the_docs_name_it(self):
         """docs/plaintext-dictionaries.json's revision, which tools/fast_gate.sh and tools/prepare_plaintext.py read,
-        is the one the host, ARM and Vita jobs check out, and the one the guide and docs/local-dictionaries.md name."""
+        is the one the host, ARM and Vita jobs check out (.github/actions/pinned-sources, which they share), and the
+        one the guide and docs/local-dictionaries.md name."""
         revision = json.loads(read("docs/plaintext-dictionaries.json"))["revision"]
-        refs = re.findall(r"repository: bee-san/plaintext-dicts\n(?: +#.*\n)* +ref: ([0-9a-f]{40})\n", FLOW)
-        self.assertEqual(refs, [revision] * 3)
+        action = read(".github/actions/pinned-sources/action.yml")  # the host, ARM and Vita jobs' checkouts
+        refs = re.findall(r"repository: bee-san/plaintext-dicts\n(?: +#.*\n)* +ref: ([0-9a-f]{40})\n", action)
+        self.assertEqual(refs, [revision])
+        self.assertEqual(FLOW.count("\n      - uses: ./.github/actions/pinned-sources\n"), 3)
+        self.assertNotIn("repository: bee-san/plaintext-dicts", FLOW)  # no job checks it out on its own
         for doc in ("docs/guide.md", "docs/local-dictionaries.md"):
             with self.subTest(doc=doc):
                 self.assertIn(f"commit `{revision[:7]}`", read(doc))
