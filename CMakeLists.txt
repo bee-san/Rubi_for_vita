@@ -1040,13 +1040,6 @@ if(JPEG_FOUND)
   target_compile_definitions(vjo-card-picture-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
   add_test(NAME card_picture COMMAND vjo-card-picture-tests)
 endif()
-# The same engine on a memory card folder, for the one-VPK e2e (a real VPK extracted as VitaShell installs it).
-add_executable(vjo-install-e2e host/install_e2e.c settings/install.c settings/preferences.c)
-target_include_directories(vjo-install-e2e PRIVATE host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs
-  third_party/bearssl/inc)
-target_compile_definitions(vjo-install-e2e PRIVATE VJO_VERSION_STRING="0.8.0" VJO_KERNEL_LOADS_WORKER=1)
-target_compile_options(vjo-install-e2e PRIVATE -Wall -Wextra -Wno-unused-parameter)
-target_link_libraries(vjo-install-e2e vjo_host)
 add_executable(vjo-game-input-tests host/tests/test_game_input.c kernel/triggers.c)
 target_include_directories(vjo-game-input-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_link_libraries(vjo-game-input-tests vjo_host)
