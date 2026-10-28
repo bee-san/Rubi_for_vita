@@ -671,7 +671,9 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/compat/adrenaline_vsh ${STAGE}/compat/adrenaline_vsh
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/adrenaline_compat/adrenaline_vsh.suprx ${STAGE}/compat/
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/check_adrenaline_vsh.py ${STAGE}/tools/
+  # the bridge's budget check (compat/adrenaline_vsh/CMakeLists.txt runs ../../tools/check_adrenaline_vsh.py) and the
+  # SELF reader it, check_variant.py and package_vpk.py share
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/check_adrenaline_vsh.py ${ROOT}/tools/vita_self.py ${STAGE}/tools/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/docs/img
     ${STAGE}/third_party/LunaTranslator

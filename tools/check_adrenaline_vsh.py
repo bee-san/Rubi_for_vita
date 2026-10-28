@@ -6,27 +6,18 @@ measurement, not a console free-memory measurement.
 """
 import argparse
 import json
-import struct
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import vita_self  # noqa: E402  (tools/vita_self.py, beside this file in the package's tools/ too)
 
 LIMIT = 8192
 
 
 def check(path):
-    data = Path(path).read_bytes()
-    if data[:4] != b"SCE\0":
-        raise ValueError("not a Vita SELF")
-    elf, phdr = struct.unpack_from("<QQ", data, 0x40)
-    if data[elf:elf + 6] != b"\x7fELF\x01\x01":
-        raise ValueError("not a little-endian ELF32")
-    entry_size, count = struct.unpack_from("<HH", data, elf + 42)
-    if entry_size != 32 or not 1 <= count <= 16:
-        raise ValueError("invalid program headers")
-    segments = []
-    for i in range(count):
-        kind, _, _, _, _, memsz, _, _ = struct.unpack_from("<8I", data, phdr + i * 32)
-        if kind == 1:
-            segments.append((memsz + 4095) & ~4095)
+    sce = vita_self.read(Path(path).read_bytes(), headers_only=True)  # vita_self.Invalid is a ValueError
+    segments = [vita_self.page_round(s.memsz) for s in sce.segments if s.kind == vita_self.PT_LOAD]
     total = sum(segments)
     if not total or total > LIMIT:
         raise ValueError(f"Adrenaline Shell bridge uses {total} B of pages; limit {LIMIT} B")
@@ -39,5 +30,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         print(json.dumps(check(args.self)))
-    except (ValueError, struct.error) as error:
+    except ValueError as error:
         parser.exit(1, f"{error}\n")

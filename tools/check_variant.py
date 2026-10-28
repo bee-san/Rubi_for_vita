@@ -22,9 +22,7 @@ import argparse
 import functools
 import json
 import re
-import struct
 import sys
-import zlib
 from pathlib import Path
 
 # Strings of code the normal build compiles out (each from one debug-only call site or file).
@@ -62,24 +60,13 @@ APP_START = re.compile(rb"start: v([0-9A-Za-z.+~-]+)( debug)?; ")
 
 
 def segments(path):
-    """The loadable segments of a Vita SELF (fself), decompressed, as one byte string."""
-    data = Path(path).read_bytes()
-    if data[:4] != b"SCE\0":
-        raise ValueError(f"{path}: not a Vita SELF")
-    elf_offset, ph_offset = struct.unpack_from("<QQ", data, 0x40)
-    seginfo_offset, = struct.unpack_from("<Q", data, 0x58)
-    if data[elf_offset:elf_offset + 4] != b"\x7fELF":
-        raise ValueError(f"{path}: no ELF payload")
-    ph_size, ph_count = struct.unpack_from("<HH", data, elf_offset + 42)
-    out = []
-    for i in range(ph_count):
-        kind, = struct.unpack_from("<I", data, ph_offset + i * ph_size)
-        offset, size, compression, _ = struct.unpack_from("<4Q", data, seginfo_offset + i * 32)
-        if kind != 1:  # PT_LOAD only (not the relocations)
-            continue
-        blob = data[offset:offset + size]
-        out.append(zlib.decompress(blob) if compression == 2 else blob)
-    return b"".join(out)
+    """The loadable segments of a Vita SELF (fself), decompressed, as one byte string (not the relocations')."""
+    import vita_self  # noqa: PLC0415  (tools/vita_self.py, beside this file in the package's tools/ too)
+    try:
+        sce = vita_self.read(Path(path).read_bytes())
+    except vita_self.Invalid as error:
+        raise ValueError(f"{path}: {error}") from None
+    return b"".join(s.data for s in sce.segments if s.kind == vita_self.PT_LOAD)
 
 
 def app_version(blob):
