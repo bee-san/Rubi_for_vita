@@ -332,11 +332,15 @@ been reported.
   In 忍び、恋うつつ, 薄桜鬼 真改 and BROTHERS CONFLICT the game sets a page one line at a time, so the popup shows the
   page's last line. **Proven in the Vita3K emulator only, not run on a console**: 671 pages an AI reviewer approved
   against the frames the games drew (8 to 100 a title); through Rubi's own path the hook's text is the farm's on 603 of
-  the 608 single-hit pages, the other 5 differ in how a one-cell `!?` is written
+  the 608 single-hit pages, the other 5 differ in how a one-cell `!?` or `!!` is written
   ([details](docs/native-hooks.md#farm-checks)).
 
 ### Fixed
 
+- The hook farm's entries, #394's audit (no change to the game worker or any module): the engine test's check of
+  PCSG00505's 8-byte entry, that the farm's next 8 bytes are a `movw`/`movt` pair of one register, also refuses two `bl`s
+  and a pair of SP or PC (it took `bl; bl` for a pair); the filters' test vectors say which are the farm's approved hits;
+  the filter docs say what the farm's pages do not prove (`AOZORA_RUBY`'s bare form, `PCSG01250`'s `#n`).
 - Lookups: what the Yomitan check left (#321; [the report](reports/yomitan-check.md#321-what-remained)). Measured on
   its 64,579 taps of 5,000 hooked lines: 753 shown entries change, SudachiPy calls 661 better and none worse; on
   330,517 taps of 27,970 lines of the same games, 3,962 change, 3,494 better and 3 worse. Host only: not run on a

@@ -466,7 +466,9 @@
  * (464 B) and data/bss 36,720 -> 36,840 B (24 B) [measured: tools/check_memory_ledger.py's module rows and
  * arm-vita-eabi-size -A, both builds, main 665479d and this change, tools/fast_gate.sh's vitasdk image; on b55c5f5
  * 16 B less normal text and debug text 179,744 B]. The kernel's and the Shell's rows unchanged. No block, thread or
- * allocation. */
+ * allocation. The data segment's last page then has 32 B (normal) and 24 B (debug) left: the next verified row (40 B of
+ * verified[], VJO_DATA_TABLE) takes a page in both builds unless a table moves to read-only data first (code room
+ * 1,236 / 464 B) or the budget is raised (audit-rubi-merge-394 N5). */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
