@@ -21,7 +21,9 @@ int vjo_json_parse(VjoArena *a, const char *js, size_t len, VjoJson *out);
 int vjo_json_skip(const VjoJson *j, int i);
 /* Value token for `key` in object token obj, or -1. */
 int vjo_json_obj_get(const VjoJson *j, int obj, const char *key);
-/* k-th element token of array arr, or -1. */
+/* k-th element token of array arr, or -1. No caller (nor vjo_json_str_array's, below), but removing either moves
+ * the Shell's and the Rubi app's code (the import veneers' layout: #418 P6, rubi-cleanup-6's #465), so both stay
+ * until a change that moves those modules anyway. */
 int vjo_json_arr_get(const VjoJson *j, int arr, int k);
 int vjo_json_is_null(const VjoJson *j, int i);
 int vjo_json_is_type(const VjoJson *j, int i, jsmntype_t type);

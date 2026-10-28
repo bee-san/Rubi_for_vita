@@ -147,8 +147,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
-  ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c
-  ${ROOT}/core/hook_pick.c) # API 31: text-source config helpers
+  ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
@@ -183,7 +182,7 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/utf.c
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
-  ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/hook_pick.c
+  ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c
   ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c ${ROOT}/core/streak.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_VOCR)
@@ -213,7 +212,6 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/log_vita.c
   ${ROOT}/shell/files.c
-  ${ROOT}/vita/games_storage.c
   ${ROOT}/vita/buttons_vita.c
   ${ROOT}/shell/libc_shim.c
   ${ROOT}/shell/divide.c) # the Shell's integer division, in place of libgcc's (the Shell only)
