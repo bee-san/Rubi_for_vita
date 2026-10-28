@@ -38,13 +38,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "local_ocr.h" /* VJO_OCR_MAX_WIDTH/HEIGHT, VJO_OCR_TEXT_CAP */
 #include "platform.h"  /* VjoPlatform.file_open, now_us */
 #include "../include/vjo_vocr_sizes.h" /* VJO_VOCR_GATE_NAME, VJO_VOCR_GATE_BYTES */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define VJO_OCR_MAX_WIDTH 960  /* a region's (and a frame's) largest size: the Vita's screen */
+#define VJO_OCR_MAX_HEIGHT 544
+#define VJO_OCR_TEXT_CAP 4096  /* the bytes of a line's text buffer (vocr_run's cap) */
 
 #define VJO_VOCR_DEFAULT_MODEL "VOCR6.2_N_w8g2.vocr" /* the Normal tier's, VJO_VOCR_TIER2_NAME (include/vjo_vocr_sizes.h) */
 
