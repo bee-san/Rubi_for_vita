@@ -1637,8 +1637,8 @@ void game_ocr_model_tick(void)
                  (uint32_t)(ksceKernelGetSystemTimeWide() - opened) / 1000, rc);
         klog_d("ocr shot write: %u B at %u -> %d t=%u ms", bytes, offset, rc, klog_ms());
     } else if (operation == SHOT_SAVE) {
-        /* closed, then its name. #194: no sync here. test.4's two ksceIoSync("ux0:") held this thread,
-         * which also polls the overlay's pad, for over 15 s, and test.4.2's ksceIoSyncByFd turned the
+        /* closed, then its name. #194: no sync here. 0.8.0-test.4's two ksceIoSync("ux0:") held this thread,
+         * which also polls the overlay's pad, for over 15 s, and 0.8.0-test.4.2's ksceIoSyncByFd turned the
          * console off (the last line of its kernel.txt is the shot's write). The Shell's record that
          * names this file is committed with a sceIoSync("ux0:") after it (shell/anki_queue.c commit),
          * which syncs this file and its name too. */

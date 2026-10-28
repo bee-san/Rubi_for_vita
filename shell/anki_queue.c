@@ -106,9 +106,9 @@ static int commit(const char *path, const void *data, size_t len)
 }
 
 /* The card under this ID already: queued, exported, or found in Anki by an
- * earlier build's AnkiConnect send. A previous rename may be visible even though
- * its final mount sync failed: never acknowledge a retry until the directory is
- * durable. 0 when there is none. */
+ * earlier build (its <id>.duplicate.json; no build writes one now). A previous
+ * rename may be visible even though its final mount sync failed: never
+ * acknowledge a retry until the directory is durable. 0 when there is none. */
 static int find(const char *id)
 {
     /* In the data segment (VJO_DATA_TABLE, core/port.h): the normal Shell's code pages are full (36 B,

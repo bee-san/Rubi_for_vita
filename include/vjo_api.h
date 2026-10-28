@@ -7,143 +7,20 @@
 
 #include "vjo_build.h" /* VJO_DEBUG: the debug or the normal build (docs/release-variants.md) */
 
-/* 14: 32 KiB model reads that wait for the kernel worker, Open reports the
- * file's modification time, results report resident weights.
- * 15: results carry the memory check (free USER, needed bytes, reserve) and
- * each recognized line's crop, CTC frames and time.
- * 16: requests carry a fallback model, Open chooses the model or the fallback,
- * results report when the fallback ran.
- * 17: boot-safety guard: vjoBootInfo tells every plugin whether this boot is
- * a safe one (no hooks, the Shell and game plugins unload themselves),
- * vjoBootMark lets the Shell record the stages it reaches.
- * 18: vjoMemInfo, the self-test's kernel memory sample (exact free/total of
- * the kernel's and the caller's partitions, the kernel ledger).
- * 19: OCR captures in the game's process: the display hook copies grey rows of
- * the region straight into the game worker's buffer (vjoOcrCaptureRows); no
- * kernel capture buffer for OCR (vjoOcrReadRaw is gone). Requests carry the
- * region and flags, results the capture and a step log. vjoMemInfo reports each
- * memory query route's step and result, and the game worker may call it.
- * 20: the job's policy rides in VjoGameOcrRequest.flags (the stable-text wait,
- * its limit, waiting first, blank lines skipped); two new step kinds (settle,
- * blank). A job may publish its first pass, void it (a VJO_ROWS_SIG read from
- * row 0 it does not finish) and publish its retry's. Sizes are unchanged.
- * 21: model tiers (Small, Normal, Large; include/vjo_vocr_sizes.h). A request
- * may name the tiers its job may run (VjoGameOcrRequest.tiers, a new last
- * field) instead of a model and its fallback: the worker runs the largest that
- * fits beside that tier's reserve, and Open opens a tier's pinned model by its
- * tier (VJO_GAME_OCR_OPEN_TIER).
- * 22: VjoGameOcrRequest.speed (VJO_GAME_OCR_S_*: helper threads for parallel
- * lines, the 444 MHz clock while recognizing, no line cache), a word of its own
- * after flags; three new step kinds (parallel lines, the clock, the game's frame
- * pacing, which the kernel appends). The request grows by that word.
- * 23: the Anki screenshot. A request with VJO_GAME_OCR_F_SHOT (and the card's ID,
- * VjoGameOcrRequest.shot, a new last field) has the game worker read the whole frame
- * in colour (VJO_ROWS_RGBA), encode a JPEG in its own memory and write it through the
- * kernel's worker thread (vjoOcrShotWrite, vjoOcrShotSave) beside the card in the Anki
- * queue; results carry the shot's figures, two new step kinds (shot, save).
- * 24: the kernel's full-frame capture is gone: vjoRequestCapture and vjoReadRaw (its
- * last users, Google Lens's and the Shell's Anki JPEGs, were removed), the VjoCapture
- * buffer, VJO_CAPTURE_*, VJO_ALLOC_*, and VjoState's alloc_status, capture_result and
- * raw_stride (VjoMemInfo's capture_bytes). VjoState's capture fields are an OCR job's.
- * 25: vjoNotifyShell wakes the registered Shell's event wait after local input
- * or job completion; no new thread, event object or buffer.
- * 26: the text-presence gate: VjoGameOcrRequest.speed bit 4 (VJO_GAME_OCR_S_GATE), its weights' file
- * (VJO_GAME_OCR_OPEN_GATE, VJO_VOCR_GATE_NAME) in the kernel's broker for such a request, and a new step kind
- * (gate). Sizes are unchanged.
- * 27: vertical text (config.ini ocr_vertical, #213): VjoGameOcrRequest.flags bit 15 and
- * VJO_GAME_OCR_OPEN_VERTICAL. Reverted; main's builds from 4a7ddf8 to 297530c are API 27.
- * 28: API 26's interface again (vertical text left main, to come back as its own pull request): flags
- * bit 15 is unknown again and no Open is VJO_GAME_OCR_OPEN_VERTICAL. A new number, not 26: builds of
- * 27 exist, and a number names one interface only. Sizes are unchanged.
- * 31: native text hooks (docs/native-hooks.md). The Shell sets the text source from config.ini's
- * text_source (vjoSetTextSource, VJO_TEXT_SOURCE_*); the game worker reads it as it starts
- * (vjoGetTextSource) to decide which hooks it installs in its game. VjoGameOcrRequest.hook_pick (a new
- * last field) lets a job answer from a hook stream or from OCR only, and VjoGameOcrResult says where its
- * text came from (text_from and the hook_* fields, new, before text). Both structs grow. 29 and 30 are
- * taken by open drafts (#223 and #226: 29; #228: 30), so this is 31.
- * 32: an Anki screenshot may trim the frame's black bars (config.ini anki_screenshot_trim_bars,
- * docs/anki.md): VjoGameOcrRequest.speed bit 6 (VJO_GAME_OCR_S_TRIM), a shot's only speed bit, and a new
- * step kind (trim). Sizes are unchanged from API 28; drafts 29-31 have their own interfaces.
- * 33: combined test interface: API 31's enlarged hook request/result structs and text-source syscalls
- * with API 32's shot-trimming speed bit and step. A new number keeps existing API 31 and 32 builds from
- * exchanging requests with an interface that differs from theirs.
- * 34: optional worker-only bounded hook-learning cache through the existing file broker
- * (vjoOcrHookCache). Request/result layouts are unchanged; unavailable storage means fresh learning.
- * 36: VjoGameOcrRequest.speed bit 16 (VJO_GAME_OCR_S_DROP_BORDERS): the game worker drops a line made only
- * of a box's border read as text (core/textnorm.h; config.ini non_japanese_filter = lines, the default), and
- * its norm step's kind counts those lines. Sizes and layouts are unchanged. 35 and speed bit 7 are taken by
- * draft #245 (the debug build's PSP probe), so this is 36.
- * 41: the hook watch (docs/native-hooks.md, "A new line starts the read"): the game worker reports a new line
- * in the dialogue's hook stream between jobs (vjoOcrHookLine); the region gets a new scene at once, held
- * while the line draws, VjoState.quiet is set meanwhile and the Shell is woken with VJO_EV_REGION_QUIET, so
- * its background read starts when the game copies the line, not when the pixels settle. Sizes and layouts
- * are unchanged; the Shell's code is too. 37-40 are taken by drafts #271, #278, #281 and #282.
- * 42: vita-vn-ocr #117's speed work in the game worker's recognizers (docs/vita-vn-ocr.md, "Head gate" and
- * "Two-level head"): VjoGameOcrRequest.speed bit 18 (VJO_GAME_OCR_S_HEAD_GATE) skips the output head on the CTC
- * frames a blob's head gate calls blank, and bit 19 (VJO_GAME_OCR_S_TWO_LEVEL) runs a blob's two-level head; the
- * Shell sets them in the user's jobs from config.ini ocr_head_gate (on, the default: both; gate; two_level; off).
- * A line either skipped something of is read again with the full head where the counter re-decode needs it. The
- * model sizes' files are VOCR5_S_w8g.vocr, VOCR5_N_w8g2.vocr and VOCR5_L_w8g2.vocr; the recognize step's kind is
- * the share of frames the gate skipped, in percent. Sizes and layouts are unchanged. The interfaces of closed
- * drafts #281 (39) and #282 (40) have builds, so this is a new number.
- * 43: trusted hooks (docs/native-hooks.md, "Trusted hooks"): VjoGameOcrRequest.speed bit 20
- * (VJO_GAME_OCR_S_TRUST, config.ini hook_trust) lets a trusted source answer a job without OCR, its capture pass
- * beside VJO_GAME_RESERVE_HOOK_ONLY, and VjoGameOcrResult.hook_flags has VJO_HOOK_R_TRUSTED. Sizes and layouts
- * are unchanged.
- * 47: vertical text (config.ini ocr_vertical, vita-vn-ocr #99; docs/vita-vn-ocr.md "Vertical text"):
- * VjoGameOcrRequest.speed bits 28-29 (VJO_GAME_OCR_S_VERTICAL): 1 has the job read the region's columns, right
- * to left, with the vertical model (VJO_GAME_OCR_OPEN_VERTICAL, VJO_VOCR_VERTICAL_NAME), 2 read its rows unless
- * the line finder's rows look like vertical text, then its columns; a line read as a column carries
- * VJO_GAME_OCR_LINE_COLUMN in its flags. Sizes and layouts are unchanged. API 27 and draft #223's API 29 were the
- * same feature as flags bit 15, which stays undefined. 44-46 are taken by work in flight (VOCR6's line-finder
- * fixes, the spotter finder, draft #326's text overlay in test.17), as are speed bits 21-27, so this is 47.
- * 49: trusted hooks without waiting (docs/native-hooks.md, "No wait for a trusted line"): vjoOcrTake's wait for a
- * job is out->seq microseconds when the worker sets it lower than 100 ms; vjoOcrHookLine's bytes carry
- * VJO_HOOK_LINE_TRUSTED, which always wakes the Shell and makes the line's scene VjoState.hook_scene (a new field
- * at the end: the struct is 4 bytes longer); vjoOcrCaptureRows' VJO_ROWS_HOOK publishes a trusted answer's capture
- * as that scene without reading pixels. API numbers on main only grow: 47 is #335's (vertical text) and 48
- * #330's (the line finder).
- * 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
- * (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT, _JUNK, _VALLEY), VjoVocrPolicy.line_fix, config.ini ocr_line_fix.
- * Sizes and layouts are unchanged. This is #330: 47's and 49's notes kept 44 and then 48 for it, and it merged
- * after 49, so it is 50.
- * 51: a trusted answer needs no memory (docs/native-hooks.md, "No wait for a trusted line"): vjoOcrCaptureRows'
- * VJO_ROWS_HOOK also publishes the region's current scene once the region shows another than the trusted line's
- * (49 refused it with VJO_ERR_FORMAT, and the worker read the first pass: a strip beside VJO_GAME_RESERVE_HOOK_ONLY,
- * which a game with 1 MiB free refused, so the job failed although the hook had its text). FORMAT now means only
- * that the region has no screen yet. Sizes and layouts are unchanged.
- * 52: the text box suggested on first use (#358, core/region_suggest.h, docs/first-box.md): VjoGameOcrResult.
- * suggest_rows (a word before text: the result is 4 bytes longer), the band a successful job of rows on the whole
- * frame says the dialogue is in, as its rows at the screen's bottom. The request is unchanged. 51 is #354's (merged
- * first), so this is 52.
- * 53: vertical text ON prefers columns (#379; docs/vita-vn-ocr.md "Vertical text"): a request with
- * VJO_GAME_OCR_S_VERTICAL 1 reads the region's rows first, as 2 does, and its columns unless the rows look like
- * horizontal text (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON); with 1 or 2 a job of columns whose model cannot be
- * read or has no room (its memory check refuses it, or its weights after the check) reads the rows; the find step's
- * kinds 4 and 5 say so (a block refused after the check, the columns' capture or workspace, fails the job for memory,
- * as since API 47). A job of columns reads its columns' rows
- * once, the rectangle around them (VJO_VOCR_COLUMNS_BATCH), no longer once per column. The Shell leaves out a size whose model failed
- * with ON too. Sizes and layouts are unchanged. 52 is #369's (merged first), so this is 53. #385's audit (no new API:
- * the request and result are unchanged): with 1, a region at least as tall as wide is read as columns from the job's
- * first try, and a wider one with no row at all as rows (nothing to read).
- * 54: the text spotter as the game worker's line finder (vita-vn-ocr #149 textspot8, #128 textspot6;
- * docs/vita-vn-ocr.md "The spotter finder"): VjoGameOcrRequest.speed bit 24 (VJO_GAME_OCR_S_SPOT) and bit 26
- * (VJO_GAME_OCR_S_SPOT_REFINE), its weights' file in the kernel's broker for such a request (VJO_GAME_OCR_OPEN_SPOT,
- * VJO_VOCR_SPOT_NAME), a new step kind (spot) and block (VJO_GITEM_SPOT); the Shell sets the bits from config.ini
- * ocr_finder (spotter by default) and ocr_spotter_refine. Sizes and layouts are unchanged. API 45 was this change's
- * number while it waited (draft branch feat/vocr6-spotter-finder), then 52 and 53, which #369 and #385 took (merged
- * first); main's numbers only grow, so it is 54.
- * 46: the overlay on the game's text (docs/overlay-on-text.md, #309; closed draft #271's API 37, renumbered):
- * VjoGameOcrRequest.speed bit 25 (VJO_GAME_OCR_S_CHARS): the game worker writes where each character of the text
- * it returns is on the screen (core/charmap.h), after the text and its recognizer's copy in VjoGameOcrResult.text,
- * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
- * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
- * the text spotter, vertical text, trusted hooks). test/combined (draft #326, not merged): this build keeps main's 55.
- * 55: the pause for the frame (config.ini ocr_pause, off by default; #348, docs/game-pause.md): VjoGameOcrRequest.speed
- * bit 30 (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region copied from one frame in one
- * display call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block (VJO_GITEM_FRAME), which the job
- * reads from; the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. This is #355's: it waited as a draft
- * as 51 and then 52, which #354 and #369 took (merged first), so it is 55. */
+/* The interface's number. The kernel, the Shell and the game worker are one tree's: the Shell and the worker
+ * refuse a kernel whose vjoGetVersion() is another (shell/worker.c, game_ocr/main.c), so there is no compatibility
+ * path, and a change the three must agree on (a struct's layout, a syscall, a flag bit, a step kind, a value's
+ * meaning) takes the next number. A number names one interface only, so numbers only grow, past those that drafts
+ * or reverted changes used.
+ * 55: the pause for the frame (config.ini ocr_pause, off by default; #348, docs/game-pause.md):
+ * VjoGameOcrRequest.speed bit 30 (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region
+ * copied from one frame in one display call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block
+ * (VJO_GITEM_FRAME), which the job reads from; the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged.
+ * test/combined (the combined test build, never merged): draft #326's API 46 note, the overlay on the game's
+ * text: VjoGameOcrRequest.speed bit 25 (VJO_GAME_OCR_S_CHARS), the char map after the text in
+ * VjoGameOcrResult.text (core/charmap.h; docs/overlay-on-text.md); this build keeps main's 55.
+ * What each earlier number changed: 14 to 55 one by one in this comment as main f5d66795 has it (git show
+ * f5d66795:include/vjo_api.h), and CHANGELOG.md (the releases that changed it name it). */
 #define VJO_API_VERSION 55
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's

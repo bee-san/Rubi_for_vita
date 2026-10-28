@@ -308,7 +308,7 @@ static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
  * memory and has the kernel write it as <id>.jpg in the queue
  * (include/vjo_game_ocr.h VJO_GAME_OCR_F_SHOT): SceShell holds no pixel and no byte
  * of it, only the request and the job's result, in this job's arena. The game
- * worker's one job slot is the network thread's OCR jobs' too: the exchange runs
+ * worker's one job slot is the job thread's (VjoNet) OCR jobs' too: the exchange runs
  * under vjo_game_job_begin (worker.c), which has a quiet refresh in progress yield.
  * Closing before capture cancels it. Once its JPEG is frozen, the file can
  * finish in the background while the player has the game's input back. */

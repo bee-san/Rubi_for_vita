@@ -1,8 +1,6 @@
 /* The kernel's one pixel buffer: the capture ladder's last rung, one strip of a job's
- * rows (below). The full-frame capture buffer (VjoCapture, vjoRequestCapture and vjoReadRaw)
- * was removed in API 24: no Shell code had requested it since its JPEG users, Google
- * Lens and the Shell's Anki screenshot, were removed, and OCR (API 19) and the Anki
- * screenshot (API 23) read the screen in the game. */
+ * rows (below). OCR and the Anki screenshot read the screen in the game's process
+ * (include/vjo_game_ocr.h): the kernel keeps no copy of a frame. */
 #include <psp2kern/kernel/sysclib.h>
 #include <psp2kern/kernel/sysmem.h>
 

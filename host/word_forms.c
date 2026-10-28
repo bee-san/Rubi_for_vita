@@ -25,7 +25,6 @@ int main(int argc, char **argv)
         return 2;
     }
     vjo_config_defaults(&cfg);
-    cfg.dictionary = VJO_DICT_LOCAL;
     if (strlen(argv[1]) >= sizeof(cfg.local_dictionary_dir) || strlen(argv[2]) >= sizeof(cfg.local_dictionaries))
         return 2;
     strcpy(cfg.local_dictionary_dir, argv[1]);

@@ -1,5 +1,5 @@
-/* The Rubi app's OCR card (engine.h). */
-#include "engine.h"
+/* The Rubi app's OCR card, its Model size (model_size.h). */
+#include "model_size.h"
 
 #include <psp2/io/fcntl.h>
 #include <stdio.h>
@@ -25,7 +25,7 @@ static const VjoVocrModelInfo *tier_model(int tier)
     return t ? vjo_vocr_model_info(t->model) : NULL;
 }
 
-void vjo_engine_card(const VjoConfig *cfg, VjoEngineCard *card)
+void vjo_model_size_card(const VjoConfig *cfg, VjoModelSizeCard *card)
 {
     memset(card, 0, sizeof(*card));
     card->tier = cfg->vocr_tier >= 1 && cfg->vocr_tier <= (int)VJO_VOCR_TIERS ? cfg->vocr_tier
@@ -37,7 +37,7 @@ void vjo_engine_card(const VjoConfig *cfg, VjoEngineCard *card)
     }
 }
 
-int vjo_engine_status(const VjoEngineCard *card, char *out, size_t cap)
+int vjo_model_size_status(const VjoModelSizeCard *card, char *out, size_t cap)
 {
     const VjoVocrTierInfo *tier = vjo_vocr_tier_info((unsigned)card->tier);
     char model[24];
@@ -56,7 +56,7 @@ int vjo_engine_status(const VjoEngineCard *card, char *out, size_t cap)
     return 0;
 }
 
-int vjo_engine_tier_detail(int tier, char *out, size_t cap)
+int vjo_model_size_detail(int tier, char *out, size_t cap)
 {
     const VjoVocrModelInfo *m = tier_model(tier);
     /* tenths, rounded: ms to s, bytes to MB (10^6, as the tiers' ceilings are given) */

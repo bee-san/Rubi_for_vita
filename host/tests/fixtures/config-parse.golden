@@ -3,7 +3,6 @@
   local_dictionary_dir="ux0:data/VitaJPOverlay/dictionaries"
   local_dictionaries="plaintext.vjdict,vndb-names.vjdict"
   ocr_model_dir="ux0:data/VitaJPOverlay/ocr"
-  dictionary=3
   local_dictionary_results=2
   non_japanese_filter=1
   japanese_only_selection=0
@@ -17,7 +16,6 @@
   ocr_mode=0
   text_source=1
   vocr_tier=2
-  vocr_tier_explicit=0
   ocr_settle_ms=150
   ocr_settle_max_ms=2000
   ocr_skip_blank_lines=0
@@ -28,7 +26,6 @@
   anki_mining=0
   ocr_helpers=2
   ocr_boost_clock=1
-  ocr_settle_press_ms=1000
   anki_screenshot=1
   stick_lookup_ms=200
   ocr_text_gate=0
@@ -46,8 +43,8 @@
   ocr_pause=0
   n_warnings=0
 = host/tests/fixtures/config-old-app-test2.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 anki_mining=1
-= host/tests/fixtures/config-test3-owner.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 vocr_tier=3 vocr_tier_explicit=1 anki_mining=1
-= docs/config.example.ini => vocr_tier_explicit=1
+= host/tests/fixtures/config-test3-owner.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 vocr_tier=3 anki_mining=1
+= docs/config.example.ini =>
 > bogus = 1 => | w: unknown setting 'bogus'
 > bogus line => | w: ignored line 1 (no '=')
 > Bogus_Setting = 1 => | w: unknown setting 'Bogus_Setting'
@@ -74,8 +71,8 @@
 > \xEFfont_size_ja = 20 => | w: unknown setting '\xEFfont_size_ja'
 > \xEF\xBB\xBEfont_size_ja = 20 => | w: unknown setting '\xEF\xBB\xBEfont_size_ja'
 > font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12 => font_size_ja=20 font_size_en=12
-> vocr_tier\r= large => vocr_tier=3 vocr_tier_explicit=1
-> vocr_tier \r= large => vocr_tier=3 vocr_tier_explicit=1
+> vocr_tier\r= large => vocr_tier=3
+> vocr_tier \r= large => vocr_tier=3
 > highlight_mode\r=character => highlight_mode=1
 > japanese_only_selection \r = on => japanese_only_selection=1
 > local_dictionary_results\r\t= 3 => local_dictionary_results=3
@@ -182,10 +179,9 @@
 > ocr_mode = On_Press ; mine => ocr_mode=1
 > ocr_mode = press => | w: ocr_mode: invalid value
 > ocr_mode = => | w: ocr_mode: invalid value
-> vocr_tier = small => vocr_tier=1 vocr_tier_explicit=1
-> vocr_tier = normal => vocr_tier_explicit=1
-> vocr_tier = large => vocr_tier=3 vocr_tier_explicit=1
-> vocr_tier = Large => vocr_tier=3 vocr_tier_explicit=1
+> vocr_tier = small => vocr_tier=1
+> vocr_tier = large => vocr_tier=3
+> vocr_tier = Large => vocr_tier=3
 > vocr_tier = huge => | w: vocr_tier: invalid value (small, normal or large)
 > vocr_tier = => | w: vocr_tier: invalid value (small, normal or large)
 > ocr_settle_ms = 0 => ocr_settle_ms=0
@@ -197,16 +193,13 @@
 > ocr_settle_max_ms = 10000 => ocr_settle_max_ms=10000
 > ocr_settle_max_ms = 99 => | w: ocr_settle_max_ms: invalid value (ms, out of range)
 > ocr_settle_max_ms = 10001 => | w: ocr_settle_max_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = 0 => ocr_settle_press_ms=0
-> ocr_settle_press_ms = 100 => ocr_settle_press_ms=100
-> ocr_settle_press_ms = 10000 => ocr_settle_press_ms=10000
 > ocr_settle_press_ms = 1 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
 > ocr_settle_press_ms = 24 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
 > ocr_settle_press_ms = 99 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
 > ocr_settle_press_ms = 10001 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
 > ocr_settle_press_ms = -5 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
 > ocr_settle_press_ms = soon => | w: ocr_settle_press_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = 400\nocr_settle_press_ms = 99 => ocr_settle_press_ms=400 | w: ocr_settle_press_ms: invalid value (ms, out of range)
+> ocr_settle_press_ms = 400\nocr_settle_press_ms = 99 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
 > ocr_skip_blank_lines = on => ocr_skip_blank_lines=1
 > ocr_skip_blank_lines = maybe => | w: ocr_skip_blank_lines: invalid value
 > ocr_lm = off => ocr_lm=0
@@ -306,8 +299,8 @@
 > vocr_model => | w: ignored line 1 (no '=')
 > vocr_model FL10_w8.vocr => | w: ignored line 1 (no '=')
 > vocr_model x = 1 => | w: unknown setting 'vocr_model'
-> vocr_tier = large\nvocr_model = FL10_w8.vocr => vocr_tier=3 vocr_tier_explicit=1
-> vocr_model = FL10_w8.vocr\nvocr_tier = large => vocr_tier=3 vocr_tier_explicit=1
+> vocr_tier = large\nvocr_model = FL10_w8.vocr => vocr_tier=3
+> vocr_model = FL10_w8.vocr\nvocr_tier = large => vocr_tier=3
 > vocr_model = FL10_w8.vocr\nvocr_tier = huge => vocr_tier=1 | w: vocr_tier: invalid value (small, normal or large)
 > vocr_tier = huge\nvocr_model = W20_w8.vocr => vocr_tier=3 | w: vocr_tier: invalid value (small, normal or large)
 > vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr => vocr_tier=3
@@ -328,4 +321,4 @@
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
 > kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd] => | w: ignored line 1 (no '=')
-= 147 records parse as the defaults, with no warning
+= 151 records parse as the defaults, with no warning

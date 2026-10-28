@@ -652,6 +652,7 @@ vjo_suite(taicfg SOURCES host/tests/test_taicfg.c DEFINES VJO_SOURCE_DIR="${CMAK
 vjo_suite(shell_game SOURCES host/tests/test_shell_game.c shell/game.c vita/games_storage.c
   INCLUDES host/tests/vita_stubs DEFINES VJO_TEST_APPMGR_STUBS=1 UNUSED LIBS vjo_host)
 vjo_suite(preferences SOURCES host/tests/test_preferences.c settings/preferences.c shell/files.c
+  vita/games_storage.c # shell/files.c's reads are games_storage.c's (#418)
   INCLUDES host/tests/vita_stubs DEFINES VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" UNUSED LIBS vjo_host)
 # The Rubi app's own settings file, app.ini (settings/app_prefs.c): its lines as config.ini's, its saves through
 # config.ini's file layer (settings/preferences.c) without config.ini's removed-key rules, every row of its table.
@@ -665,7 +666,7 @@ vjo_suite(app_prefs SOURCES host/tests/test_app_prefs.c settings/app_prefs.c set
 # page's suite and its bench below): object libraries, each unit compiled once. What the harnesses define besides
 # reaches only their own units: VJO_VOCR_MODEL_INFO_TEST core/vocr_models.c and test_settings_app.c, VJO_SETTINGS_BENCH
 # test_settings_games.c, VJO_TEST_ZLIB settings/psp.c and the Games page's suite (vjo_settings_catalog, below).
-add_library(vjo_settings_app OBJECT settings/engine.c settings/preferences.c settings/icons.c settings/text_layout.c
+add_library(vjo_settings_app OBJECT settings/model_size.c settings/preferences.c settings/icons.c settings/text_layout.c
   settings/letter.c settings/app_check.c settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
   vita/games_storage.c vita/buttons_vita.c host/tests/settings_stubs/streak_seed_stub.c
   host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
@@ -736,7 +737,7 @@ vjo_suite(settings_search SOURCES host/tests/test_settings_search.c settings/sea
 # The one-VPK install (settings/install.c, install_page.c, core/payload.c, docs/one-vpk-install.md) on a
 # temporary memory card with a payload: fresh installs, updates, config.ini, faults at every write and
 # rename, the interrupted swap, uninstall, the manifest's rules, the page. The kernel loads the worker
-# (VJO_KERNEL_LOADS_WORKER: t3-worker-any-game's include/vjo_api.h; defined here for the test, which also
+# (VJO_KERNEL_LOADS_WORKER, 1 in include/vjo_api.h; defined here for the test, which also
 # checks the lines mode's refusal of another build's payload).
 vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/install.c settings/install_page.c
   settings/app_worker.c
@@ -752,7 +753,7 @@ vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/i
 # settings_stubs/anki_page_stub.c.
 vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
   settings/app_worker.c
-  settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c
+  settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c vita/games_storage.c
   INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs
   DEFINES VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS UNUSED LIBS vjo_host)
 # The Rubi app's seed of the overlay's reading streak (settings/streak_seed.c) on a temporary memory card: once (a

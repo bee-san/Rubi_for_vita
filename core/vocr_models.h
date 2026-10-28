@@ -15,7 +15,7 @@
  * The model tiers (API 21, include/vjo_vocr_sizes.h): Small, Normal and Large,
  * each a pinned model; tools/model_tiers.json is the same table. The Rubi
  * app offers them as its Model size and names the local OCR engine after the
- * generation of the model that runs (settings/engine.c): "VOCR6" for this
+ * generation of the model that runs (settings/model_size.c): "VOCR6" for this
  * package's three (the sizes may come from different generations: each names its
  * own), and a new generation's name as soon as its models are pinned
  * here, with no change to the app. Plain C without the OCR runtime: the app

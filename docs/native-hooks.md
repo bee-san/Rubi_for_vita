@@ -1223,24 +1223,24 @@ builds]. CPU time per hit, and any CPU3 load, are unmeasured; PCSG00380's site i
 
 ## Hidden line diagnostics
 
-With the overlay open, press **Triangle** to replace the dictionary body with diagnostics for the
-displayed text; press it again to return. The text and cursor remain visible, Up/Down still visit
-history, and the right stick scrolls the details. The toggle is absent from the normal hints and
-starts off each time the overlay opens, in both normal and debug builds. Its first line is the total
-characters read, characters/hour and total active reading time across every game's lines in
-`history.csv`, with a 15-second AFK cutoff (`counting…` until the background count completes:
-[ocr-history.md](ocr-history.md#total-characters-read)).
+With the overlay open, press **Triangle** to replace the dictionary body with the displayed text's
+source and reading statistics; press it again to return. The text and cursor remain visible, Up/Down
+still visit history, and the right stick scrolls the body. The toggle is absent from the normal
+hints and starts off each time the overlay opens, in both normal and debug builds.
 
-`Source` says **OCR** or **Hook** for the job that supplied that text. Hook details include its stream
-ID and table-site/CALL origin, agreement/lock/pin/no-OCR/unlock flags, similarity, available streams,
-the worker's applied mode, installed/refused hooks, model and capture identifiers. Similarity zero
-can mean no comparison, rather than a failed match. A hook-only answer says the OCR model did not run.
-Cursor lookups and refreshes that keep the same text preserve its original provenance. A replacement
-gets its own provenance; cancelled/dropped refreshes do not replace it.
+Its first line says which source supplied the text: "This line came in through: **hooking**" or
+**ocr**. Then come this game's reading counts, today and in total, and the reading streak
+([ocr-history.md](ocr-history.md#total-characters-read)). Cursor lookups and refreshes that keep the
+same text keep its source; a replacement brings its own; cancelled or dropped refreshes do not
+replace it. An earlier line shows the engine saved with it in `history.csv` (**Unknown** for old
+records without one), and returning to the current text restores the current text's source.
 
-Earlier lines show the engine saved in `history.csv`. Their detailed hook/capture information was
-not saved and is explicitly unavailable; old records without an engine say **Unknown**. Returning
-to the current text restores its full diagnostics.
+The view shows no hook numbers: the overlay keeps the source alone (cleanup P1, #418, removed the
+stream, flags, score, mode, counts and capture identifiers nothing showed since #291). The game's
+hook state is in `log.txt`: the hooks line (`hooks in …: text source …, … hooked, … refused`, when
+it changes; in the normal build only where a game hooked or refused something) and, in the debug
+build, a job's `game vocr source: …` line (its source, flags, score and streams) in a game with
+hooks installed.
 
 ## Logs
 

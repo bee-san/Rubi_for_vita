@@ -1,6 +1,6 @@
 /* Control thread (kernel events, overlay state, auto/on-press policy) and
- * network thread (a job of the game worker: vita-vn-ocr in the game; then the
- * dictionary). The overlay is offline: Google Lens was removed (2026-10-15). */
+ * job thread, VjoNet (a job of the game worker: vita-vn-ocr in the game; then
+ * the dictionary). */
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/processmgr.h>
@@ -35,9 +35,7 @@
 /* Result memory: one 64 KiB arena for the local dictionary's lookup, taken
  * after OCR and freed before the next job's OCR (the game holds the job's
  * memory meanwhile). OCR-only jobs use bounded static text. Control-thread
- * config/region/messages use separate scratch. Every job is local: Google
- * Lens and the Hachidori relay, the network paths (two 256 KiB arenas and a
- * connection pool), were removed. */
+ * config/region/messages use separate scratch. */
 #define LOCAL_RESULT_ARENA_SIZE (64 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
 typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 : -1];
@@ -67,7 +65,7 @@ VjoView g_view;
 static SceUID view_lock = -1;
 static SceUID cmd_lock = -1;
 static SceUID ctl_thread = -1, net_thread = -1;
-static int threads_started; /* bits: network=1, control=2 */
+static int threads_started; /* bits: job (VjoNet)=1, control=2 */
 static SceUID net_evf = -1;
 static volatile int running = 1;
 
@@ -100,7 +98,7 @@ static uint32_t job_cursor_byte, job_cursor_seq, job_text_generation;
 /* Dictionary paging at the cursor (local_dictionary_results > 1): the
  * requested page shares the cursor sequence. Page locators live at the start
  * of the single result arena (cache_data[0].pages); they are reused only for
- * the text generation and result limit that built them (network thread). */
+ * the text generation and result limit that built them (job thread). */
 static int local_page, job_page;
 static uint32_t pages_generation;
 static int pages_limit;
@@ -119,7 +117,7 @@ static HistoryVisit *history;
 static int history_step;
 
 static VjoConfig cfg;      /* control thread */
-static VjoConfig job_cfg;  /* snapshot used by the network thread */
+static VjoConfig job_cfg;  /* snapshot used by the job thread */
 static int anki_on;        /* vjo_anki_configure(&cfg): enter saves cards to the queue */
 static VjoPlatform plat;
 static int dict_close_pending; /* control thread: close after an in-flight lookup */
@@ -136,13 +134,13 @@ static int title_line_fix = -1;
 static uint32_t game_generation;
 static uint32_t job_generation;
 
-/* Control-thread state. The overlay and the network job are independent: an
+/* Control-thread state. The overlay and the job are independent: an
  * auto job runs while the overlay is closed, the overlay can open while a
  * job runs, and a result can be shown while the next job runs.
  *   overlay: OV_CLOSED, OV_OPEN, or OV_OPEN_OLD_JOB (opened while a job was
  *            already running: its result may be for an earlier screen, which
  *            is checked when it ends)
- *   job:     job_running (set here, finished via job_done from the network
+ *   job:     job_running (set here, finished via job_done from the job
  *            thread)
  *   subtitles: on/off (the strip shows each job's sentence while the
  *            overlay is closed)
@@ -197,7 +195,7 @@ static Backoff ocr_backoff, dict_backoff;
 static Backoff refresh_backoff;
 static int64_t job_started_us;
 
-/* network job */
+/* the job (job thread) */
 #define NET_EV_JOB  1u
 #define NET_EV_QUIT 2u
 static volatile int job_running;
@@ -220,12 +218,12 @@ static volatile int job_selftest;
 #define job_selftest 0 /* the normal build has no self-test (shell.h) */
 #endif
 /* The last OCR job that read text in the region: its capture, and the game it
- * was read in (0: the last job read none). Network thread; read once its job
+ * was read in (0: the last job read none). Job thread; read once its job
  * is done. */
 static uint32_t text_scene, text_seq, text_generation;
 static int64_t idle_since_us; /* the last job's end or the overlay's close */
 #if VJO_DEBUG
-static int64_t job_game_us;   /* the job's exchanges with the game worker (network thread) */
+static int64_t job_game_us;   /* the job's exchanges with the game worker (job thread) */
 #endif
 static int job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
@@ -238,23 +236,23 @@ static volatile uint32_t job_capture_scene, job_capture_seq;
  * is dropped. */
 static volatile int job_cancelled;
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
- * net thread only appends to the arena, so the control thread may read it */
+ * job thread only appends to the arena, so the control thread may read it */
 static volatile int job_text_ready;
-/* The network thread's log batch (shell/log_vita.c), its buffer on net_main's stack: no job's line
- * stands between its result and the control thread (owner 2026-10-16, test.3; #360 for the debug
- * build; docs/release-variants.md "No log append on the result path"). Network thread only. */
+/* The job thread's log batch (shell/log_vita.c), its buffer on net_main's stack: no job's line
+ * stands between its result and the control thread (owner 2026-10-16, 0.8.0-test.3; #360 for the debug
+ * build; docs/release-variants.md "No log append on the result path"). Job thread only. */
 #define NET_LOG_BYTES 2048 /* VJO_LOG_BATCH_LINES (24) lines of 85 B; a job's own: the normal build's none, or 1-5
                             * of 40-170 B; the debug build's 2-4 of a lookup (at most 255 B each), and an OCR
                             * job's text, 1-2 lines of at most 205 B a recognized line, its lookup's and done line */
 #if !VJO_DEBUG
-static VjoLogBatch net_log;  /* the network thread's batch; its buffer is on net_main's stack */
+static VjoLogBatch net_log;  /* the job thread's batch; its buffer is on net_main's stack */
 /* The normal build's lines of a job (its short log) never stand between a recognition and its result
- * (owner 2026-10-16, test.3; docs/release-variants.md): the network thread keeps a log batch open (its
+ * (owner 2026-10-16, 0.8.0-test.3; docs/release-variants.md): the job thread keeps a log batch open (its
  * buffer on net_main's stack), which holds every line it logs, and writes it, one append per file, once
  * its wait, timed while lines are held, ends after LOG_IDLE_US with no job and the control thread has
  * taken the result (net_main). Jobs started meanwhile keep them. Another thread's line, a configure that
  * changes log_file or a line the batch cannot take writes them at once, on that thread, in their order
- * (shell/log_vita.c). Network thread only. */
+ * (shell/log_vita.c). Job thread only. */
 #define LOG_IDLE_US 500000u
 /* At a job's wake: the batch opens unless it is open (its buf, set by the begin and cleared here when
  * it closes: only this thread closes it), so a job takes log_mutex for it only after a write. A begin
@@ -281,7 +279,7 @@ static void net_log_idle(void)
  * then net_job writes them at once, one append per file (and its done line with them): the same bytes in
  * the same order as line by line, within milliseconds. Before, its lookup line and its done line were an
  * append each (two while status.txt is under 64 KiB) before the result: 17 ms an append, and its done line
- * came 54 ms after the job's start against its lookup's 32 (medians, test.4's log.txt). The batch is never
+ * came 54 ms after the job's start against its lookup's 32 (medians, 0.8.0-test.4's log.txt). The batch is never
  * open across an exchange with the game worker. Another thread's line, a configure (the debug build's writes
  * an open batch) or a line the batch cannot take writes the held lines first, in their order
  * (shell/log_vita.c). A crash before the write loses the held lines: at most 24 lines or 2 KiB. The batch
@@ -600,7 +598,7 @@ static int mem_alloc(void)
     return 0;
 }
 
-/* Called by the idle control thread or by the network thread owning its job. */
+/* Called by the idle control thread or by the job thread owning its job. */
 static void mem_free(void)
 {
     vjo_local_session_close(plat.local_session);
@@ -634,7 +632,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.list_seq++;
 #if VJO_DEBUG
     /* the press-to-screen figure (lookup_shown.h): the lookup result shown is the single arena's, for the
-     * cursor its job looked up; its job published it at job_done_us (the network thread, before job_done) */
+     * cursor its job looked up; its job published it at job_done_us (the job thread, before job_done) */
     g_view.shown_seq = list == &cache_data[0].list ? job_cursor_seq : 0;
     g_view.done_us = job_done_us;
 #endif
@@ -686,7 +684,10 @@ static void view_show_cache(void)
     vjo_arena_release(&scratch, mark);
 }
 
-/* ---------------- network thread ---------------- */
+/* ---------------- job thread (VjoNet) ---------------- */
+/* It runs the jobs: an OCR exchange with the game worker, then the local dictionary's lookup. Its name,
+ * VjoNet, and the net_* identifiers date from when it also made network requests (the overlay has been
+ * offline since 2026-10-15); the logs ("VjoNet stack"), tools/analyse_selftest.py and the ledger name it so. */
 
 /* ---- OCR: vita-vn-ocr in the game worker ---- */
 
@@ -1550,7 +1551,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     return rc;
 }
 
-/* One job on the network thread, then its done line: with the time in exchanges with the game worker
+/* One job on the job thread, then its done line: with the time in exchanges with the game worker
  * and in the log's file appends meanwhile, every thread's, before this line (docs/first-ocr.md;
  * tools/analyse_timeline.py reads it); the rest is the Shell's own and the lookup. In the debug build
  * the job's own lines this thread holds (net_log_hold: a lookup's, an OCR job's text and lookup lines)
@@ -1581,7 +1582,7 @@ static void net_job(void)
                              : run_job(&results[idx], &cache_data[idx]);
     /* Snapshot mutable job/game facts before publishing job_done: the control
      * thread may immediately switch game or post another job after that. The
-     * network thread owns vocr_result until its next recognition, so history
+     * job thread owns vocr_result until its next recognition, so history
      * needs no retained text, allocation, queue or additional thread. */
     if (!job_cursor_only && !job_selftest && job_cfg.ocr_mode == VJO_OCR_AUTO &&
         !job_cancelled && job_generation == game_generation && vocr_result.rc == VJO_OK) {
@@ -1763,7 +1764,7 @@ static int net_main(SceSize args, void *argp)
     return 0;
 }
 
-/* The network thread is at work (its memory must stay). */
+/* The job thread is at work (its memory must stay). */
 static int net_busy(void)
 {
     __sync_synchronize();
@@ -1983,7 +1984,7 @@ static void apply_config(void)
     if (vjoSetTextSource((uint32_t)cfg.text_source | (cfg.hook_sites ? 0u : VJO_TEXT_SOURCE_NO_SITES)) < 0)
         vjo_log("kernel refused the text source");
     /* Logged when they change, not at every load (each overlay open, game
-     * start, subtitles on): test.2's log.txt had one line per load and key
+     * start, subtitles on): 0.8.0-test.2's log.txt had one line per load and key
      * (#101). The overlay still lists them each time it opens. */
     if (sceClibMemcmp(cfg.warnings, previous.warnings, sizeof(cfg.warnings)))
         for (int i = 0; i < cfg.n_warnings; i++)
@@ -2021,7 +2022,7 @@ static int game_active(void)
  * is never abandoned: it does not depend on the screen. */
 static int cancel_outdated_job(const VjoState *st)
 {
-    __sync_synchronize(); /* pairs with the network thread's barrier */
+    __sync_synchronize(); /* pairs with the job thread's barrier */
     if (!job_running || job_cursor_only || job_cancelled || !job_captured || !(st->stable || st->quiet) ||
         shows_screen(job_capture_scene, job_capture_seq, st))
         return 0;
@@ -2409,7 +2410,7 @@ static int restart_old_job(int has_lookup)
     return 1;
 }
 
-/* The network thread finished the job. A lookup's result is shown when it is
+/* The job thread finished the job. A lookup's result is shown when it is
  * for the text and cursor shown now; the screen no longer matters (#81
  * request 4). */
 static void on_cursor_done(void)
@@ -2500,7 +2501,7 @@ static void on_refresh_done(void)
     const char *what = "kept";
     int rc, cancelled = job_cancelled, replaced = 0;
     size_t mark = vjo_arena_mark(&scratch);
-    __sync_synchronize(); /* pairs with the network thread's barrier: its result is read after it */
+    __sync_synchronize(); /* pairs with the job thread's barrier: its result is read after it */
     rc = cache_data[1].err.rc;
     /* (one that yielded to a screenshot ended cancelled too: it is asked again) */
     cancelled |= rc == VJO_E_CANCELLED;
@@ -2605,7 +2606,7 @@ static void on_refresh_done(void)
 static void on_selftest_done(void)
 {
     VjoState st = {.size = sizeof(st)};
-    __sync_synchronize(); /* pairs with the network thread's barrier */
+    __sync_synchronize(); /* pairs with the job thread's barrier */
     job_running = job_done = job_text_ready = job_selftest = job_cancelled = 0;
     if (restart_old_job(0))
         return;
@@ -2618,7 +2619,7 @@ static void on_selftest_done(void)
 
 static void on_job_done(void)
 {
-    /* The network thread has published completion: no file read can race
+    /* The job thread has published completion: no file read can race
      * this close, even if the overlay was reopened while the job finished. */
     __sync_synchronize();
     if ((ov == OV_CLOSED && job_cfg.ocr_mode != VJO_OCR_AUTO) || dict_close_pending || job_cancelled)
@@ -2649,7 +2650,7 @@ static void on_job_done(void)
 #endif
     int idx = job_idx, ocr_failed;
     VjoOverlayData *d = &cache_data[idx];
-    __sync_synchronize(); /* pairs with the network thread's barrier */
+    __sync_synchronize(); /* pairs with the job thread's barrier */
     job_running = 0;
     job_done = 0;
     job_text_ready = 0;
@@ -2685,7 +2686,7 @@ static void on_job_done(void)
     screen_retry_until = 0;
     /* #358: the box this job on the whole screen suggests, for a game with no region of its own (the overlay offers it
      * once an activation): the newest screen's, none when its lines hold no dialogue (a box of an earlier screen is
-     * never offered for this one); the network thread is done with the result */
+     * never offered for this one); the job thread is done with the result */
     vjo_rsel_publish(&g_view.suggest, vocr_result.suggest_rows);
     ocr_failed = d->failed_stage == VJO_STAGE_OCR;
     backoff_note(&ocr_backoff, ocr_failed);
@@ -2755,11 +2756,11 @@ static int want_lookup(void)
            now_us() >= dict_backoff.until;
 }
 
-/* The network thread posted the job's sentence (before its lookup). */
+/* The job thread posted the job's sentence (before its lookup). */
 static void on_job_text(void)
 {
     const char *sentence;
-    __sync_synchronize(); /* pairs with the network thread's barrier */
+    __sync_synchronize(); /* pairs with the job thread's barrier */
     sentence = cache_data[job_idx].sentence;
     job_text_ready = 0;
     if (job_refresh || job_cancelled || job_generation != game_generation)
@@ -3065,7 +3066,7 @@ static void on_game_exit(void)
     if (subtitles)
         set_subtitles(0);
     clear_input_block_error();
-    /* Free memory unless the network thread still uses it. */
+    /* Free memory unless the job thread still uses it. */
     if (!net_busy())
         mem_free();
     title_id[0] = '\0';
@@ -3182,7 +3183,7 @@ static void background_open(void)
 }
 
 /* The self-test's stages run in a background job of their own, never in a
- * job the user waits for (test.2's first scans took 9-15 s beside them,
+ * job the user waits for (0.8.0-test.2's first scans took 9-15 s beside them,
  * docs/first-ocr.md): once the last job read text in the region, while its
  * screen is shown, the overlay is closed and nothing has run for
  * SELFTEST_IDLE_US. It shows
@@ -3228,7 +3229,7 @@ static void selftest_job_due(void)
     vjo_log("job start (self-test)");
     job_selftest = job_prepares = 1;
     job_refresh = job_lookup = job_cursor_only = job_cancelled = job_prepare = 0;
-    job_idx = 1; /* results[1], always empty (one arena since the network pipeline went): never the shown result's */
+    job_idx = 1; /* results[1], always empty (one arena): never the shown result's */
     job_cfg = cfg;
     job_generation = game_generation;
     job_done = job_text_ready = 0;

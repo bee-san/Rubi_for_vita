@@ -112,10 +112,10 @@ enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, G
 /* API 55: the frame block is the tall line's ledger item: a job holds one of the two, never both (the worst case
  * counts VJO_BUDGET_GAME_LINE_OR_FRAME), so the ledger keeps its twelve items in every module (#355's review H1) */
 #define GL_FRAME GL_LINE
-/* #418: the text-presence gate's block shares the spotter's item, the finder's weights (one more item would grow every
- * module's VjoLedger, VJO_LEDGER_MAX_ITEMS, and with it the Shell's code past its last page), as a probe's strip
- * shares the capture's and the frame block the tall line's; its step-log item (VJO_GITEM_GATE), its name and its
- * budget (VJO_BUDGET_GAME_GATE) are its own. */
+/* #418: the text-presence gate's block shares the spotter's item, the finder's weights, as a probe's strip shares the
+ * capture's and the frame block the tall line's: a 13th item (VJO_LEDGER_MAX_ITEMS) would add 8 B of .bss to every
+ * module's VjoLedger, SceShell's too, for an item the worker never logs; its step-log item (VJO_GITEM_GATE), its name
+ * and its budget (VJO_BUDGET_GAME_GATE) are its own. */
 #define GL_GATE GL_SPOT
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
@@ -367,6 +367,9 @@ typedef struct {
 } Candidate;
 #define CANDIDATES (VJO_VOCR_TIERS > 2u ? VJO_VOCR_TIERS : 2u)
 static VjoGameOcrResult pending_result; /* never put large results on thread stacks */
+/* #418's audit F1: 1 while the job's own memory check counted the gate's block (gate_room, below), which is then
+ * taken without a second look at the game's free memory; 0: no room for it, the job reads as without the gate */
+static int gate_room;
 static void *resident_alloc(void *ud, size_t bytes);
 static int resident_release(void *ud);
 /* Verified weights kept between jobs while this game is the active one. */
@@ -377,11 +380,10 @@ static VjoVocrLmResident lm_res = {resident_alloc, resident_release, (void *)&lm
 static VjoVocrResident cascade_res = {resident_alloc, resident_release, (void *)&cascade_desc, {NULL}, NULL, 0, 0,
                                       0};
 /* API 26: the text-presence gate's weights (VJO_VOCR_GATE_BYTES), read from the card once and kept while its
- * file is unchanged (core/vocr_ocr.h): #418, a block of their own (GL_GATE, gate_alloc), held like the LM while
- * the game is the active one and its jobs ask for the gate (in .bss before, a page of every game's whether the gate
- * was on or off). */
-static void *gate_alloc(void *ud, size_t bytes);
-static VjoVocrGateResident gate_res = {gate_alloc, resident_release, (void *)&gate_desc, {NULL}, NULL, 0, 0, 0};
+ * file is unchanged (core/vocr_ocr.h): #418, a block of their own (GL_GATE), held like the LM while the game is the
+ * active one and its jobs ask for the gate (in .bss before, a page of every game's whether the gate was on or off);
+ * while it is not held, a job that asks for the gate counts its page in the room its memory check left (gate_room). */
+static VjoVocrGateResident gate_res = {resident_alloc, resident_release, (void *)&gate_desc, {NULL}, NULL, 0, 0, 0};
 /* API 54: the text spotter's weights and their parsed form (core/vocr_ocr.h VjoVocrSpotResident), 52-450 KB: a
  * block of their own (GL_SPOT), never a static array, kept like the LM while the game is the active one and its
  * jobs ask for the spotter. */
@@ -867,7 +869,10 @@ static void *resident_alloc(void *ud, size_t bytes)
     void *base = NULL;
     SceUID leaked;
     if (b->uid >= 0 || !bytes || bytes > d->max) return NULL; /* never two blocks */
-    if (free_user_after_reserve() < (int64_t)rounded) return NULL;
+    /* #418's audit F1: the gate's block only where the job's memory check counted it (gate_room), and then without a
+     * second look at the game's free memory, as the job's workspace and capture blocks take none: the console reports
+     * it in whole MiB (#324), so a second look after the job's own blocks can see a whole MiB less than the check did */
+    if (d == &gate_desc ? !gate_room : free_user_after_reserve() < (int64_t)rounded) return NULL;
     b->uid = game_memblock_alloc(d->item, d->gitem, d->name, rounded, LADDER_USER, &base, &leaked, &b->held, &mem);
     if (b->uid < 0) {
         /* A block that cannot be released stays recorded; cleanup retries it. */
@@ -888,16 +893,6 @@ static int resident_release(void *ud)
     b->uid = -1;
     b->held = 0;
     return 0;
-}
-
-/* API 26: the gate's block, which a job takes before its weights, LM, cascade model and helpers' stacks
- * (core/vocr_ocr.c run_job: the gate decides before any line is read), so only in the room beyond what its memory
- * check counted for them (job_to_come, set for each job's core call) and the job's reserve: refused, the job reads
- * as without the gate (stats->gate_rc VJO_E_OOM), never with a smaller model. */
-static uint32_t job_to_come;
-static void *gate_alloc(void *ud, size_t bytes)
-{
-    return free_user_after_reserve() < (int64_t)PAGE_ROUND(bytes) + job_to_come ? NULL : resident_alloc(ud, bytes);
 }
 
 /* Releases r's verified bytes and its block, and a block whose base lookup failed; a no-op (0) when it holds none. */
@@ -2353,6 +2348,20 @@ retry_smaller:
         }
     }
     if (want_spot && !spot && drop_one(&spot_res)) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    /* #418's audit F1: the gate's block (API 26), when the job asks for the gate and does not hold it, in the room the
+     * check left, by the check's own rule and its own sample of the game's free memory, before the frame block and the
+     * helpers: its weights were static until #418, so the gate never waited for room, and counted here the block keeps
+     * every later decision (the frame block, the helpers, another model's weights kept) where 0.10.0's static page
+     * left it. Taken in the core without a second look (resident_alloc); without the room the job reads as without the
+     * gate (its step's rc VJO_E_OOM), never with a smaller model. A try of columns reads no gate, nor a job whose
+     * spotter finds the lines (core/vocr_ocr.c run_job: the gate is GRAD's). */
+    gate_room = 0;
+    if (fits && (r->speed & VJO_GAME_OCR_S_GATE) && !vertical && !spot && gate_blk.uid < 0 &&
+        (int64_t)out->free_user + out->release_bytes - (int64_t)out->reserve_bytes >=
+            (int64_t)out->need_workspace + out->need_weights + VJO_BUDGET_GAME_GATE) {
+        out->need_workspace += VJO_BUDGET_GAME_GATE;
+        gate_room = 1;
+    }
     /* Helpers (ocr_threads, API 22) only when they fit beside everything else the
      * check chose (the tier's model, its LM, the cascade), keeping the same reserve
      * as that check (out->reserve_bytes: 1 MiB for every tier since PR #280): one
@@ -2546,12 +2555,12 @@ retry_smaller:
     open_cascade = casc != NULL;
     job_model = use; /* #385's audit F5: the blocks the core may still take (line_buffer) */
     job_lm = lm;
-    job_to_come = out->need_weights + use_helpers * VJO_BUDGET_GAME_HELPER_STACK; /* #418: before them, the gate's */
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
     job_model = NULL;
     job_lm = NULL;
+    gate_room = 0; /* #418's audit F1: the room was this core call's */
     /* #324: the check passed, yet the model's weights could not be had: out of memory before any were read or
      * held (every job-level VJO_E_OOM comes before them: core/vocr_ocr.c's weights block, the finder's arena, the
      * workspace or the capture; an LM's or the cascade's only sets lm_rc / cascade_rc). resident_alloc checks the

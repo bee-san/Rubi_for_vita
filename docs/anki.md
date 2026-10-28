@@ -862,7 +862,7 @@ for the one worker thread that exports while the page keeps drawing. The sentenc
 static blocks, the lookups' scratch (`VJO_READINGS_SCRATCH`, 192 KiB: one lookup's 64 KiB result and 48 KiB
 scratch budgets, and the longest sentence's copies and readings, host test
 `a_longest_sentence_fits_its_scratch`) and the dictionaries' session (8 KiB), and the page a copy of
-`config.ini`'s settings for the export's dictionaries (1,376 B); a card's field itself is made in the export's
+`config.ini`'s settings for the export's dictionaries (1,364 B since #418's P2; 1,376 B before); a card's field itself is made in the export's
 arena, among its card's work. Their deepest call path takes 27,136 B of the worker's 64 KiB stack (41 %), from
 the thread's entry through the export, the package's writer and the readings (`parse` 2,960 B five times, then
 `part_overrules`, `word_rubies` and 65 frames of `fit`) [estimate: `-fstack-usage -fcallgraph-info=su` with the

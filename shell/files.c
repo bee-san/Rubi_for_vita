@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "../core/regions.h"
+#include "../vita/games_storage.h" /* vjo_io_read_fd, vjo_io_exists, vjo_io_missing (#418: one copy in the Shell) */
 #include "shell.h"
 
 #define MAX_FILE (64 * 1024)
@@ -12,30 +13,13 @@
 static char *file_read_limit(VjoArena *a, const char *path, size_t *len, size_t max)
 {
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
-    SceOff size;
+    size_t used = 0;
     char *buf;
     if (fd < 0)
         return NULL;
-    size = sceIoLseek(fd, 0, SCE_SEEK_END);
-    if (size < 0 || (uint64_t)size > max || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0) {
-        sceIoClose(fd);
+    buf = vjo_io_read_fd(fd, a, max, &used);
+    if (sceIoClose(fd) < 0 || !buf)
         return NULL;
-    }
-    buf = (char *)vjo_arena_alloc(a, (size_t)size + 1);
-    if (!buf) {
-        sceIoClose(fd);
-        return NULL;
-    }
-    size_t used = 0;
-    while (used < (size_t)size) {
-        int n = sceIoRead(fd, buf + used, (SceSize)((size_t)size - used));
-        if (n <= 0 || (size_t)n > (size_t)size - used) break;
-        used += (size_t)n;
-    }
-    int close_rc = sceIoClose(fd);
-    if (used != (size_t)size || close_rc < 0)
-        return NULL;
-    buf[used] = '\0';
     if (len)
         *len = used;
     return buf;
@@ -67,8 +51,7 @@ int vjo_file_write(const char *path, const void *data, size_t len)
 
 int vjo_file_exists(const char *path)
 {
-    SceIoStat st;
-    return sceIoGetstat(path, &st) >= 0;
+    return vjo_io_exists(path);
 }
 
 int vjo_file_line(const char *path, char *buf, int cap)
@@ -94,14 +77,13 @@ void vjo_config_load(VjoConfig *cfg, VjoArena *scratch)
 {
     size_t mark = vjo_arena_mark(scratch), len = 0;
     char *text = file_read_limit(scratch, VJO_CONFIG_PATH, &len, VJO_CONFIG_TEXT_MAX);
-    SceIoStat st;
     vjo_config_defaults(cfg);
     /* An interrupted settings publication may leave only the backup: it is
      * read, never altered. With neither file the defaults apply. SceShell
      * never writes config.ini: the installer, the package (its copy in
      * ux0/data/VitaJPOverlay) and the Rubi app do, so the commented
      * template (docs/memory-ledger.md) is not in the module. */
-    if (!text && sceIoGetstat(VJO_CONFIG_PATH, &st) == (int)0x80010002u) {
+    if (!text && vjo_io_missing(VJO_CONFIG_PATH)) {
         vjo_arena_release(scratch, mark);
         text = file_read_limit(scratch, VJO_CONFIG_PATH ".bak", &len, VJO_CONFIG_TEXT_MAX);
     }

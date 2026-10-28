@@ -242,7 +242,6 @@ int main(int argc, char **argv)
      * tools/dict_lookup_golden.tsv and docs/lookup-performance.md's figures were recorded with (OFF, the
      * default now, also stops on Latin letters, digits and punctuation) */
     cfg.japanese_only_selection = 1;
-    cfg.dictionary = VJO_DICT_LOCAL;
     if (strlen(argv[1]) >= sizeof(cfg.local_dictionary_dir) || strlen(argv[2]) >= sizeof(cfg.local_dictionaries))
         return 2;
     strcpy(cfg.local_dictionary_dir, argv[1]);
