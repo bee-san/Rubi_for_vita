@@ -377,7 +377,7 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         raise ValueError("The text-presence gate's " + VOCR_GATE_ATTRIBUTION + " checksum failed: not release "
                          + VOCR_GATE_TAG + "'s ATTRIBUTION.md")
     assets[DATA + "ocr/" + VOCR_GATE_ATTRIBUTION] = attribution
-    # The vertical model's release names what it carries (VOCR5-S's training data and terms, and its own
+    # The vertical model's release names what it carries (VOCR5-V's training data and terms, and VOCR6-V's own
     # vertical data): its ATTRIBUTION.md ships beside it as ocr/VERTICAL-ATTRIBUTION.md.
     attribution = models / VOCR_VERTICAL_ATTRIBUTION
     _, size, sha = VOCR_VERTICAL_ATTRIBUTION_PIN[VOCR_VERTICAL_ATTRIBUTION]

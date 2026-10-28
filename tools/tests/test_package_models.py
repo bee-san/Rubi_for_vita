@@ -40,7 +40,7 @@ class PackageModels(unittest.TestCase):
         vocr6_spec = ("https://fixture.invalid/VOCR6", len(self.vocr6), hashlib.sha256(self.vocr6).hexdigest())
         vocr6 = {name: vocr6_spec for name in prepare.VOCR6_ASSETS}
         self.vertical = b"tiny VOCR6-V asset fixture, not OCR weights"
-        vocr5v = {name: ("https://fixture.invalid/VOCR6V", len(self.vertical), hashlib.sha256(self.vertical).hexdigest())
+        vocr6v = {name: ("https://fixture.invalid/VOCR6V", len(self.vertical), hashlib.sha256(self.vertical).hexdigest())
                   for name in prepare.VOCR6V_ASSETS}
         self.attribution = b"CC BY-SA 4.0 fixture"
         att = {prepare.VOCR_LM_ATTRIBUTION: ("https://fixture.invalid/A", len(self.attribution),
@@ -76,7 +76,7 @@ class PackageModels(unittest.TestCase):
             self.enterContext(mock.patch.object(module, "VOCR_LM_ASSETS", lms))
             self.enterContext(mock.patch.object(module, "VOCR4_ASSETS", vocr4))
             self.enterContext(mock.patch.object(module, "VOCR6_ASSETS", vocr6))
-            self.enterContext(mock.patch.object(module, "VOCR6V_ASSETS", vocr5v))
+            self.enterContext(mock.patch.object(module, "VOCR6V_ASSETS", vocr6v))
         self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
                                           side_effect=AssertionError("No test network access")))
 
@@ -415,7 +415,7 @@ class PackageModels(unittest.TestCase):
         self.assertEqual(manifest["defaults"]["ocr_engine"], moved.get(generation[normal], generation[normal]))
         for name, g in generation.items():
             self.assertEqual(manifest["models"][name]["generation"], moved.get(g, g), name)
-        for name, g in vertical.items():  # its own release's (VOCR5, v0.3.2-vertical.1): the move does not reach it
+        for name, g in vertical.items():  # its own release's (VOCR6, v0.4.2-vertical6.1): the move does not reach it
             self.assertEqual(manifest["models"][name]["generation"], g, name)
         self.assertNotIn("VOCR9", json.dumps(manifest))  # VOCR3's release ships nothing
 
