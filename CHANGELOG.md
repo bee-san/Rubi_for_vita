@@ -13,6 +13,20 @@ been reported.
 
 ### Added
 
+- **Native text hooks for six more games, from the psandvita hook farm** (psandvita #1; proven in the Vita3K
+  emulator only, not on a console): **フォトカノ Kiss** (`PCSG00139`), **デュラララ!! 3way standoff -alley- V**
+  (`PCSG00370`), **ニル・アドミラリの天秤 帝都幻惑綺譚** (`PCSG00766`), **逢魔が刻～かくりよの縁～** (`PCSG00769`),
+  **千の刃濤、桃花染の皇姫** (`PCSG01127`) and **死神と少女** (`PCSG01282`). Each is a verified entry, tried only when the
+  game's code bytes, module NID and `APP_VER` 01.00 match what the farm proved, with the text clean-up the farm's
+  pages call for; on every approved page of the farm's bucket (405 in all) the popup's text is the text the farm
+  verified against the screen (two of 逢魔が刻's show the default player name 榊 水緒, which the farm's text leaves
+  out). フォトカノ Kiss and デュラララ!! had no hook that could install on a console; ニル・アドミラリの天秤 and
+  死神と少女 had LunaTranslator's site, whose text lost its line breaks (and kept 死神と少女's `\d` click waits).
+  逢魔が刻 reads foaf4's page-build record (`VJO_PLACE_READ_CELLS_B`, the cells of 真 流行り神's page record at
+  other offsets). The farm's other verified hooks of that batch had their entries already (11) or cannot be placed
+  (Un:BIRTHDAY SONG `PCSG00912`, 天涯ニ舞ウ、粋ナ花 `PCSG01180`: a branch in the bytes the hook would overwrite).
+  To check on a console: start one of them with the debug build; `hooks.log` shows `verified +<offset> ... hooked`.
+  ([details](docs/native-hooks.md#farm-checks))
 - **Pause the game to read** (API 55, #348, #355; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR &
   lookup page, **OFF by default**): each reading copies the text box from one frame at once, inside that frame's
   display call, which the game waits in for as long, and the OCR reads that still copy. A spinning icon or an animated

@@ -289,21 +289,20 @@ static void site_hit(unsigned i, const uint32_t *regs)
         return;
     }
     if (si->ver) {
-        uint32_t addr = regs[si->ver->reg & 15u] + (uint32_t)si->ver->padding, word;
+        uint32_t addr = regs[si->ver->reg & 15u] + (uint32_t)si->ver->padding, word, count_at = 0, cells_at = 0;
+        const int cells = vjo_place_cells_layout(si->ver->read, &count_at, &cells_at);
         uint8_t w[4];
         enc = si->ver->encoding;
         unit = enc == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
         /* the text's pointer there, or a cell record's count: one exact 4-byte read (none: no text) */
-        word = (si->ver->read == VJO_PLACE_READ_DEREF || si->ver->read == VJO_PLACE_READ_CELLS) &&
-                       read_game(NULL, addr + (si->ver->read == VJO_PLACE_READ_CELLS ? VJO_PLACE_CELLS_COUNT : 0u), w,
-                                 4, 0) == 4
+        word = (si->ver->read == VJO_PLACE_READ_DEREF || cells) && read_game(NULL, addr + count_at, w, 4, 0) == 4
                    ? (uint32_t)w[0] | (uint32_t)w[1] << 8 | (uint32_t)w[2] << 16 | (uint32_t)w[3] << 24
                    : 0u;
         if (si->ver->read == VJO_PLACE_READ_SC3) { /* to its end token: its 0x00 bytes are line breaks and glyphs */
             n = vjo_sc3_span(scratch, read_game(NULL, addr, scratch, sizeof(scratch), VJO_HOOK_READ_SPAN));
-        } else if (si->ver->read == VJO_PLACE_READ_CELLS) { /* exactly its cells, as CP932 bytes */
+        } else if (cells) { /* exactly its cells, as CP932 bytes */
             if (word > sizeof(scratch) / 2u) word = sizeof(scratch) / 2u;
-            n = word && read_game(NULL, addr + VJO_PLACE_CELLS_DATA, scratch, word * 2u, 0) == word * 2u
+            n = word && read_game(NULL, addr + cells_at, scratch, word * 2u, 0) == word * 2u
                     ? vjo_place_cells(scratch, word)
                     : 0u;
         } else {

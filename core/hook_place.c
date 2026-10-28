@@ -266,6 +266,17 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"PCSG01065", 0x81440C76u, 0x25854u, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
      {0x42, 0xF2, 0x40, 0x21, 0xC8, 0xF2, 0x22, 0x11, 0x08, 0x80, 0x42, 0xF2, 0x4C, 0x00, 0xC8, 0xF2}, VJO_RF_CARET_NEWLINE, 0,
      0x0100u},
+    /* LunaTranslator sites that the placement check accepts (a function's entry), which the psandvita farm's hook farm
+     * proved at the same address and register (psandvita #1, Vita3K only): the entry pins the game's bytes and APP_VER
+     * and gives its text Rubi's filter in place of Luna's, whose text differs from what the game draws */
+    /* PCSG00766 ニル・アドミラリの天秤 帝都幻惑綺譚 (APP_VER 01.00): Vita3K 0x8106f862, 31 farm pages (paired-vita-pcsg00766-20261023), the entry of IF:Lib GAME-ENGINE 3.00's message-tag parser (r0 = the page after the #Name expander, one hit a page); VJO_RF_PCSG00766 in place of Luna's filter, which drops the #n line breaks; patch (12): push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0xc; movw r1, #0x2294; movt r1, #0x811c; Luna's site here (r0, filter PCSG00766) */
+    {"PCSG00766", 0x35A8C840u, 0x6F862u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x83, 0xB0, 0x42, 0xF2, 0x94, 0x21, 0xC8, 0xF2, 0x1C, 0x11, 0x09, 0x68}, VJO_RF_PCSG00766, 0,
+     0x0100u},
+    /* PCSG01282 死神と少女 (APP_VER 01.00): Vita3K 0x8100b00e, 31 farm pages (paired-vita-pcsg01282-20261023), the entry of Takuyo's SCR message layout function (r1 = the message, one hit a click); VJO_RF_PCSG01282 in place of Luna's filter, which keeps the \d click waits; patch (12): push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; vpush {s16, s17}; sub sp, #0xe4; strd r1, r0, [sp, #0x48]; Luna's site here (r1, filter FPCSG01282) */
+    {"PCSG01282", 0xFB4D2C38u, 0xB00Eu, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x2D, 0xED, 0x02, 0x8A, 0xB9, 0xB0, 0xCD, 0xE9, 0x12, 0x10, 0x10, 0xF5}, VJO_RF_PCSG01282, 0,
+     0x0100u},
     /* Other engines (psandvita farm, Vita3K only): Rubi filters per title; PCSG00450 reads through the message's text pointer */
     /* PCSG00020 極限脱出ＡＤＶ 善人シボウデス (APP_VER 01.00): Vita3K 0x811ac998, 53 farm pages (paired-vita-pcsg00020-20261023),
      * Chunsoft's skp2v engine (Lua 5.1 + luabind): the entry of GUI.Message::setText (r1 = one click segment's text, UTF-8,
@@ -331,6 +342,21 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG01194 参千世界遊戯 ～Re Multi Universe Myself～ (APP_VER 01.00): Vita3K 0x81056e24, 30 farm pages (paired-vita-pcsg01194-20261023); patch: ldr r1, [r4, #0x4]; adds r1, r7, r1; str r0, [sp, #0xc]; adds r0, r1, #0x2; Luna's site here (r0, filter none) */
     {"PCSG01194", 0xECD30306u, 0x56E24u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
      {0x61, 0x68, 0x79, 0x18, 0x03, 0x90, 0x88, 0x1C, 0xD6, 0xF8, 0x20, 0x13, 0x00, 0xAA, 0x60, 0x60}, VJO_RF_PCSG01194, 0, 0x0100u},
+    /* From the hook farm's runs of 2026-10-26/27 (psandvita #1; the first three the farm's relocations of a hook whose
+     * patch held a branch, at a site whose window its export checked on the dumped segment 0) */
+    /* PCSG00139 フォトカノ Kiss (APP_VER 01.00): Vita3K 0x811608d4, 105 farm pages (paired-vita-pcsg00139-reloc-20261027), Dingo's message-window setter right after it copies the final page to win+0x630 (r4 = the page, the player's name in it, one hit a page; the speaker is another hit); the farm's first site, 0x81160986 r2, is a bl; patch: ldrsb.w lr, [r7, #0x61c]; cmp.w lr, #0x31 */
+    {"PCSG00139", 0x1695A771u, 0x1608D4u, 1, 4, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x97, 0xF9, 0x1C, 0xE6, 0xBE, 0xF1, 0x31, 0x0F, 0xD7, 0xF8, 0x28, 0x96, 0x9A, 0xF9, 0x16, 0x56}, 0, 0, 0x0100u},
+    /* PCSG00370 デュラララ!! 3way standoff -alley- V (APP_VER 01.00): Vita3K 0x8104fbd8, 101 farm pages (paired-vita-pcsg00370-reloc-20261027), the message opcode's fall-through after its cbz (r3 = the page, copied from r0 at Luna's 0x80053BD0, whose patch holds that cbz; one hit a page); VJO_RF_PCSG00370 drops the ▼ that ends each page; patch: ldr r1, [r0]; adds r2, r5, #0x0; ldr.w r7, [r1, #0x26c] */
+    {"PCSG00370", 0x89BB8C3Bu, 0x4FBD8u, 1, 3, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x01, 0x68, 0x2A, 0x1C, 0xD1, 0xF8, 0x6C, 0x72, 0x21, 0x1C, 0x00, 0x96, 0xB8, 0x47, 0x01, 0xE0}, VJO_RF_PCSG00370, 0, 0x0100u},
+    /* PCSG01127 千の刃濤、桃花染の皇姫 (APP_VER 01.00): Vita3K 0x8118ed10, 100 farm pages (paired-vita-pcsg01127-reloc-20261027; 38 in its first run), Artemis's print tag handler, an ARM eboot (r6 = the tag's text chunk before addText: a narration page is one hit, a spoken one its 【name】, then its body, cut at each ruby word, whose base is another call); Luna's 0x802D44D4 is no text code in this build; patch: ldr r0, [r1, #0x58]; mov r1, r6 */
+    {"PCSG01127", 0x6AB76A0Du, 0x18ED10u, 0, 6, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x58, 0x00, 0x91, 0xE5, 0x06, 0x10, 0xA0, 0xE1, 0x00, 0x30, 0x90, 0xE5, 0xEC, 0x30, 0x93, 0xE5}, 0, 0, 0x0100u},
+    /* PCSG00769 逢魔が刻～かくりよの縁～ (APP_VER 01.00): Vita3K 0x81031306, 37 farm pages (paired-vita-pcsg00769-20261023), foaf4's page commit (r6 = its page-build record, a static: VJO_PLACE_READ_CELLS_B; one hit a page); VJO_RF_PCSG00769 (the player's ㌫ ㍊ as the default 榊 水緒, the dash pieces); patch (12): ldr r0, [r6, #0x8]; str.w r0, [r4, #0xee0]; ldr r0, [r6, #0x18]; str.w r0, [r4, #0xef0]; a branch elsewhere in segment 0 into them unchecked (the farm's export stopped at its reader) */
+    {"PCSG00769", 0xD597D1CAu, 0x31306u, 1, 6, VJO_HOOK_ENC_CP932, 16, 0,
+     {0xB0, 0x68, 0xC4, 0xF8, 0xE0, 0x0E, 0xB0, 0x69, 0xC4, 0xF8, 0xF0, 0x0E, 0x30, 0x7F, 0x84, 0xF8}, VJO_RF_PCSG00769,
+     VJO_PLACE_READ_CELLS_B, 0x0100u},
     /* Otomate's STCM2 script VM, the message command's line after its in-place #Name expander (the player's name already
      * in it): the script keeps one string a line, so a page's lines are one hit each, within milliseconds, and the
      * stream's latest hit is the page's last line; #Color[n] tags (PCSG00602 event 31): VJO_RF_IFENGINE */

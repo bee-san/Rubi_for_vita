@@ -622,7 +622,10 @@ static const LunaOp *const vjo_luna_post[VJO_LH_COUNT] = {
  * page, the filters' index, PCSG00628's ops and escapes (#316's audit) and the five arrays that batch added or grew
  * (PROTOTYPE_NAMELINE with PROTOTYPE in it, PCSG00472 with IFENGINE, AOZORA_RUBY, CARET_NEWLINE, PCSG01250), 853 B,
  * are read-only data again, and this file is built for size in the worker (vita/CMakeLists.txt), so both builds keep
- * their pages (docs/memory-ledger.md, "The hook farm's 20 verified entries"). Their strings stay read-only. */
+ * their pages (docs/memory-ledger.md, "The hook farm's 20 verified entries"). Their strings stay read-only. psandvita
+ * #1's four arrays (PCSG00370, PCSG00766, PCSG01282, PCSG00769) are in the data segment again: since #418 freed a data
+ * page it has the room, and in the normal build's code segment they would leave 180 B of its last page, 324 B without
+ * them (docs/memory-ledger-history.md, "psandvita #1's six verified entries"). */
 _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one byte");
 #define RCALL(f) {OP_CALL, 0, VJO_RF_##f, NULL, NULL}
 
@@ -737,9 +740,18 @@ static const LunaOp r_PCSG00628[] = {
 /* PCSG00380 (Nippon Ichi's foaf4 page record, VJO_PLACE_READ_CELLS): ㊤㊥㊦ (CP932 0x8785-0x8787) are the pieces of
  * a long dash, one ― cell each (event 93016: もの――); ㌫ and ㍊ (0x876C, 0x876D) are the player's family and given
  * name, drawn as the defaults 北條 and 紗希 (page 37: 6 glyphs for 北條紗希も、, page 158: 26 for its line); the
- * \x04 button-icon codes are controls vjo_hook_clean drops; a page's last hit ends with a line break. */
+ * \x04 button-icon codes are controls vjo_hook_clean drops; a page's last hit ends with a line break.
+ * 逢魔が刻～かくりよの縁～ PCSG00769 (the same engine's page-build record, VJO_PLACE_READ_CELLS_B) draws ㊤㊥㊦ so too
+ * (farm page 14: 「㊤㊥㊥㊥㊥㊥㊦！！！」 drawn 「―――――――！！！」; 7 of its 37 pages hold them), and each page ends with a
+ * line break; its ㌫ and ㍊ are the player's names too, drawn as the defaults of its name entry, 榊 and 水緒 (page 27:
+ * 「大丈夫、㌫さん？」 is 10 glyphs, page 16: 「―――㍊！！！」 10; the farm's text leaves the codes out): its filter,
+ * PCSG00769, writes them, then FOAF4, this array from its third op (one array, its replacements independent of one
+ * another, so their order changes no text). */
 static const LunaOp r_PCSG00380[] VJO_DATA_TABLE(rubi_PCSG00380) = {
-    REP("㊤", "―"), REP("㊥", "―"), REP("㊦", "―"), REP("㌫", "北條"), REP("㍊", "紗希"), SPECIAL(OP_TRIM), END};
+    REP("㌫", "北條"), REP("㍊", "紗希"), /* PCSG00380's own ops; FOAF4 from here: */
+    REP("㊤", "―"), REP("㊥", "―"), REP("㊦", "―"), SPECIAL(OP_TRIM), END};
+#define r_FOAF4 (r_PCSG00380 + 2)
+static const LunaOp r_PCSG00769[] VJO_DATA_TABLE(rubi_PCSG00769) = {REP("㌫", "榊"), REP("㍊", "水緒"), RCALL(FOAF4), END};
 
 /* PCSG00415 CLANNAD (RealLive's script, Prototype's port): the line at 0x2CA70 r6 holds the protagonist's name variables
  * where the game draws his names: ＊Ａ the family name, ＊Ｂ the given name (full-width, CP932 81 96 82 60 / 82 61).
@@ -782,6 +794,30 @@ static const LunaOp r_CARET_NEWLINE[] = {REP("^", "\n"), END};
 static const LunaOp r_PCSG01250[] = {
     SUB("/ruby:(.*?)&(.*?)/", "$1"), REP("#n", "\n"), SUB("#\\w+(\\[.+?\\])?", ""), END};
 
+/* デュラララ!! 3way standoff -alley- V PCSG00370 (the message opcode's page text, 0x8104fbd8 r3, the farm's relocation of
+ * Luna's 0x80053BD0): every page ends with ▼ (CP932 0x81A5), a click wait that is not drawn; its line breaks, the
+ * 　 that indents a continued line and the ＞ that opens a monologue are drawn (farm page 1: ＞引っ越しの荷物も…\n
+ * 　ようやく慣れてきた……。▼, two lines). Luna's filter for the title, PCSG00370, drops all four. */
+static const LunaOp r_PCSG00370[] VJO_DATA_TABLE(rubi_PCSG00370) = {DEL("▼"), END};
+
+/* ニル・アドミラリの天秤 帝都幻惑綺譚 PCSG00766 (IF:Lib GAME-ENGINE 3.00, the message-tag parser's page after the #Name
+ * expander, 0x8106f862 r0, Luna's site): a spoken page starts with its speaker, glued before the tags, which the game
+ * draws in the nameplate (farm page 2: 久世ヒタキ#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]「今、…, 久世ヒタキ over 「今、…);
+ * narration starts with #Pos (page 1). The name goes on a line of its own, as PROTOTYPE_NAMELINE writes one, then
+ * IFENGINE: #n is a line break, a trailing #n ends the page, #Ruby[base,reading] its base (4 of the 31 farm pages).
+ * Luna's filter at the site, PCSG00766, drops every #n and leaves the name glued to the line: 3 of the farm's 31 pages
+ * as drawn. */
+static const LunaOp r_PCSG00766[] VJO_DATA_TABLE(rubi_PCSG00766) = {
+    SUB("^([^#\n]+)#Pos", "$1\n#Pos"), RCALL(IFENGINE), END};
+
+/* 死神と少女 PCSG01282 (Takuyo's SCR engine, the message layout function's text, 0x8100b00e r1, Luna's "dialogue main"
+ * site): a literal \n (backslash, n) is a line break and \d a click wait, not drawn (farm page 6: \n陽が沈み、…色。\d);
+ * an NVL page adds one hit a click, each led by its line breaks. Luna's FPCSG01282 at the site turns runs of line feeds
+ * into a space and drops a trailing digit (regexes for a line feed and \d, not these two-character codes), so with it
+ * the popup kept each \d: 12 of the farm's 16 single-hit pages as drawn, none of its 14 NVL pages. */
+static const LunaOp r_PCSG01282[] VJO_DATA_TABLE(rubi_PCSG01282) = {
+    REP("\\d", ""), REP("\\n", "\n"), SPECIAL(OP_TRIM), END};
+
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* read-only data (above) */
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
@@ -797,6 +833,9 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* rea
     [VJO_RF_PROTOTYPE_NAMELINE - VJO_RF_BASE] = r_PROTOTYPE_NAMELINE, [VJO_RF_PCSG00472 - VJO_RF_BASE] = r_PCSG00472,
     [VJO_RF_AOZORA_RUBY - VJO_RF_BASE] = r_AOZORA_RUBY, [VJO_RF_CARET_NEWLINE - VJO_RF_BASE] = r_CARET_NEWLINE,
     [VJO_RF_PCSG01250 - VJO_RF_BASE] = r_PCSG01250,
+    [VJO_RF_PCSG00370 - VJO_RF_BASE] = r_PCSG00370, [VJO_RF_PCSG00766 - VJO_RF_BASE] = r_PCSG00766,
+    [VJO_RF_PCSG01282 - VJO_RF_BASE] = r_PCSG01282, [VJO_RF_FOAF4 - VJO_RF_BASE] = r_FOAF4,
+    [VJO_RF_PCSG00769 - VJO_RF_BASE] = r_PCSG00769,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */

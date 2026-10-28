@@ -1103,6 +1103,59 @@ static void rubi_filters(void)
     /* BR_NEWLINE: PCSG00706 page 5 (Rejet's Unity history string, UTF-16) */
     rubi_to(VJO_RF_BR_NEWLINE, VJO_HOOK_ENC_UTF16LE, "（海……？<br>　私は学校へ行くために、<br>　道を歩いてたはずじゃ……）<br>",
             "（海……？\n　私は学校へ行くために、\n　道を歩いてたはずじゃ……）");
+    /* The hook farm's titles of psandvita #1 (Vita3K only; each input one hit's bytes on an approved page of the farm's
+     * bucket, each result that page's verified text, but where a comment says otherwise).
+     * PCSG00370 (paired-vita-pcsg00370-reloc-20261027): pages 2, 51 and 97; the ▼ goes, ＞ 　 !? and the line breaks stay */
+    rubi_to(VJO_RF_PCSG00370, VJO_HOOK_ENC_CP932, "＞不思議な街だったなあ、池袋。\n　活気があって、刺激があって……。▼",
+            "＞不思議な街だったなあ、池袋。\n　活気があって、刺激があって……。");
+    rubi_to(VJO_RF_PCSG00370, VJO_HOOK_ENC_CP932, "正臣？▼", "正臣？");
+    rubi_to(VJO_RF_PCSG00370, VJO_HOOK_ENC_CP932, "紀田君!?\nいつの間に？▼", "紀田君!?\nいつの間に？");
+    /* PCSG00766 (paired-vita-pcsg00766-20261023): pages 3 and 2 (the speaker before the tags, on a line of its own), page
+     * 29 (narration: no speaker; its ruby's base) */
+    rubi_to(VJO_RF_PCSG00766, VJO_HOOK_ENC_CP932, "久世ツグミ#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]「……ああ」#n",
+            "久世ツグミ\n「……ああ」");
+    rubi_to(VJO_RF_PCSG00766, VJO_HOOK_ENC_CP932,
+            "久世ヒタキ#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]「今、階下で使用人達が話しているのを#n　聞いたんだけど」#n",
+            "久世ヒタキ\n「今、階下で使用人達が話しているのを\n　聞いたんだけど」");
+    rubi_to(VJO_RF_PCSG00766, VJO_HOOK_ENC_CP932,
+            "#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]私は弟をたしなめるように、軽く#Ruby[睨,にら]んだ。#n",
+            "私は弟をたしなめるように、軽く睨んだ。");
+    /* PCSG01282 (paired-vita-pcsg01282-20261023): page 6's two hits (an NVL page, one hit a click, each led by its \n
+     * codes, each ending in a \d click wait), page 1 */
+    rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "\\n陽が沈み、夜が来るまでの一瞬の空の色。\\d", "陽が沈み、夜が来るまでの一瞬の空の色。");
+    rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "\\n\\nそれは深く、深く。\\d", "それは深く、深く。");
+    rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "貴方のお名前は？", "貴方のお名前は？");
+    /* PCSG00769 (paired-vita-pcsg00769-20261023, foaf4 cells as CP932): page 22's dash pieces and the page's last line
+     * break; pages 16 and 27, where the farm's text leaves the player's name codes out and its glyph counts (10 each) show
+     * the default names drawn */
+    rubi_to(VJO_RF_PCSG00769, VJO_HOOK_ENC_CP932, "「㊤㊥㊥㊦」\n", "「――――」");
+    rubi_to(VJO_RF_PCSG00769, VJO_HOOK_ENC_CP932, "「㊤㊥㊦㍊！！！」\n", "「―――水緒！！！」");
+    rubi_to(VJO_RF_PCSG00769, VJO_HOOK_ENC_CP932, "「大丈夫、㌫さん？」\n", "「大丈夫、榊さん？」");
+    /* FOAF4, the two titles' shared ops: the dash pieces and the trim, no names */
+    rubi_to(VJO_RF_FOAF4, VJO_HOOK_ENC_CP932, "㌫㊤㊥㊦\n", "㌫―――");
+
+    /* PCSG00766, PCSG01282: Rubi's filter in place of Luna's at the site, which the farm's text is not */
+    s = site("PCSG00766", 0x80073862u);
+    TEST_CHECK(s != NULL);
+    if (s) {
+        n = encode(VJO_HOOK_ENC_CP932, "久世ツグミ#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]「……ああ」#n", raw, sizeof raw);
+        TEST_CHECK(vjo_luna_text(s, raw, n, VJO_HOOK_ENC_CP932, out, sizeof out) > 0 && !strcmp(out, "久世ツグミ「……ああ」"));
+        TEST_CHECK(vjo_luna_text_filter(s, VJO_RF_PCSG00766, VJO_HOOK_ENC_CP932, raw, n, VJO_HOOK_ENC_CP932, out,
+                                        sizeof out) > 0 &&
+                   !strcmp(out, "久世ツグミ\n「……ああ」"));
+        TEST_MSG("got [%s]", out);
+    }
+    s = site("PCSG01282", 0x8000F00Eu);
+    TEST_CHECK(s != NULL);
+    if (s) {
+        n = encode(VJO_HOOK_ENC_CP932, "\\n\\nそれは深く、深く。\\d", raw, sizeof raw);
+        TEST_CHECK(vjo_luna_text(s, raw, n, VJO_HOOK_ENC_CP932, out, sizeof out) > 0 &&
+                   !strcmp(out, "\\n\\nそれは深く、深く。\\d"));
+        TEST_CHECK(vjo_luna_text_filter(s, VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, raw, n, VJO_HOOK_ENC_CP932, out,
+                                        sizeof out) > 0 &&
+                   !strcmp(out, "それは深く、深く。"));
+        TEST_MSG("got [%s]", out);
+    }
 
     /* PCSG01065: CARET_NEWLINE in place of Luna's filter at its site (FPCSG00852), which drops the ^ */
     s = site("PCSG01065", 0x80029854u);

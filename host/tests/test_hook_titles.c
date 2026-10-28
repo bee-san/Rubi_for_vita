@@ -26,7 +26,7 @@ static void test_every_verified_entry(void)
 #if VJO_HOOK_LUNA
     unsigned only_rubi = 0;
 #endif
-    TEST_CHECK(n >= 56u);
+    TEST_CHECK(n >= 62u);
     for (unsigned i = 0; i < n; i++) {
         TEST_CHECK_(vjo_hook_title_listed(all[i].title) == VJO_HOOK_TITLE_RUBI, "%s", all[i].title);
 #if VJO_HOOK_LUNA
@@ -54,6 +54,13 @@ static void test_every_verified_entry(void)
     TEST_CHECK(vjo_hook_title_listed("PCSG00505") == VJO_HOOK_TITLE_RUBI); /* 大図書館の羊飼い -Library Party- */
     TEST_CHECK(vjo_hook_title_listed("PCSG00706") == VJO_HOOK_TITLE_RUBI); /* もし、この世界に神様がいるとするならば。 */
     TEST_CHECK(vjo_hook_title_listed("PCSG01250") == VJO_HOOK_TITLE_RUBI); /* スキとスキとでサンカク恋愛 */
+    /* psandvita #1's six, all games of Luna's table */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00139") == VJO_HOOK_TITLE_RUBI); /* フォトカノ Kiss */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00370") == VJO_HOOK_TITLE_RUBI); /* デュラララ!! 3way standoff -alley- V */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00766") == VJO_HOOK_TITLE_RUBI); /* ニル・アドミラリの天秤 帝都幻惑綺譚 */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00769") == VJO_HOOK_TITLE_RUBI); /* 逢魔が刻～かくりよの縁～ */
+    TEST_CHECK(vjo_hook_title_listed("PCSG01127") == VJO_HOOK_TITLE_RUBI); /* 千の刃濤、桃花染の皇姫 */
+    TEST_CHECK(vjo_hook_title_listed("PCSG01282") == VJO_HOOK_TITLE_RUBI); /* 死神と少女 */
 #if VJO_HOOK_LUNA
     TEST_CHECK_(only_rubi == 26u, "%u verified titles are not in Luna's table (CLANNAD, 24 of the farm's, あおかな)",
                 only_rubi);
