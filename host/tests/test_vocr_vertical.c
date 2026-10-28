@@ -1140,6 +1140,54 @@ static void test_columns_gathered_once(void)
     TEST_CHECK_(!st.gathered && st.recognized == 4, "one strip: %u gathered, %u read", st.gathered, st.recognized);
 }
 
+/* API 55, the pause (#355's audit B1): a region the source froze (VjoGreySource.frozen: one frame's grey rows, stride
+ * the region's width) read as columns. line_pixels gives a tall line, and #379's gathered rectangle, in place in the
+ * frozen region, at the region's stride, not the line buffer's (the rectangle's width): every column, gathered or
+ * read one by one, must be the reference's, with its box, polarity, turned pixels and reading, as the job that is not
+ * frozen gives them. Before the fix a gathered frozen job cut every column at the rectangle's width: wrong pixels and
+ * wrong text, silently. */
+static unsigned char frozen_grey[PIX_MAX];
+static const unsigned char *frozen_rows(void *ud)
+{
+    (void)ud;
+    return frozen_grey;
+}
+static void test_frozen_columns_read_as_the_region_shows_them(void)
+{
+    static const unsigned glyphs[4] = {6, 4, 7, 3};
+    char text[VJO_OCR_TEXT_CAP];
+    VjoVocrStats st;
+    Ref ref;
+    JobOpts o = {.line = 1, .lm = 1};
+    setup_files();
+    draw_columns(RW, RH, 4, glyphs, 20, 26, 20, 225);
+    reference(0, 1, &ref);
+    TEST_ASSERT(ref.set.count == 4);
+    for (size_t i = 0; i < (size_t)rw * rh; i++)
+        frozen_grey[i] = (unsigned char)vjo_grey(pixels[4 * i], pixels[4 * i + 1], pixels[4 * i + 2]);
+    seen_ph = 1;
+    vjo_vocr_test_batch_bytes(0);
+    TEST_ASSERT(job(M_COLS, &o, text, sizeof text, NULL, 0, &st) == VJO_OK); /* the control: not frozen, gathered */
+    TEST_CHECK_(!st.frozen && st.gathered == 4, "not frozen: frozen %u, %u gathered", st.frozen, st.gathered);
+    check_columns(&ref, text, &st, "not frozen, gathered");
+    im.frozen = frozen_rows;
+    vjo_vocr_test_batch_bytes(1); /* nothing gathered: each tall column in place */
+    TEST_ASSERT(job(M_COLS, &o, text, sizeof text, NULL, 0, &st) == VJO_OK);
+    TEST_CHECK_(st.frozen == 1 && !st.gathered && st.tall == 4, "frozen, one by one: frozen %u, %u gathered, %u tall",
+                st.frozen, st.gathered, st.tall);
+    check_columns(&ref, text, &st, "frozen, one by one");
+    vjo_vocr_test_batch_bytes(0); /* gathered: the rectangle in place, each column a part of it at the region's stride */
+    const unsigned asks = line_asks;
+    TEST_ASSERT(job(M_COLS, &o, text, sizeof text, NULL, 0, &st) == VJO_OK);
+    TEST_CHECK_(st.frozen == 1 && st.gathered == 4 && st.tall == 4 && line_asks == asks,
+                "frozen, gathered: frozen %u, %u gathered, %u tall, %u line buffers asked", st.frozen, st.gathered,
+                st.tall, line_asks - asks);
+    check_columns(&ref, text, &st, "frozen, gathered");
+    TEST_CHECK_(!strcmp(text, ref.joined), "frozen, gathered: \"%s\", the columns' \"%s\"", text, ref.joined);
+    im.frozen = NULL;
+    seen_ph = 0;
+}
+
 static int horizontal_of(const unsigned (*boxes)[4], unsigned n, unsigned w, unsigned h)
 {
     VocrLine ln[VJO_VOCR_MAX_LINES];
@@ -1277,6 +1325,8 @@ TEST_LIST = {
     {"columns: one larger than the rotation buffer is left out, never read, and counted", test_rotation_buffer_bound},
     {"columns (#379): a region's columns read once, before any is recognized, as column by column; a refused block as before",
      test_columns_gathered_once},
+    {"columns (API 55, #355's audit B1): a frozen region's columns, one by one and gathered, as the region shows them",
+     test_frozen_columns_read_as_the_region_shows_them},
     {"on (API 53): the rule on the row finder's rows, horizontal and vertical, and its edges", test_rows_horizontal_rule},
     {"on (API 53): rows of horizontal text are off's job; other rows read nothing (VJO_E_VERTICAL)", test_on_check},
     {"columns: the steps for rows never run, whatever the policy asks", test_row_steps_do_not_run},

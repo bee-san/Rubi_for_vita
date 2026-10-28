@@ -15,14 +15,14 @@ data/bss):
 |---|---|---|---|
 | Kernel | 43,496 + 77,780 → 44,152 + 77,812 B | 38,344 + 76,092 → 38,928 + 76,124 B | 122,880 / 118,784 B, unchanged |
 | Shell | 98,116 + 77,760 → 98,092 + 77,760 B | 85,796 + 77,672 → 85,732 + 77,696 B | 176,128 / 163,840 B, unchanged |
-| Game worker | 180,176 + 36,840 → 181,904 + 36,424 B | 171,260 + 36,832 → 172,972 + 36,416 B | 217,088 → **221,184** / 208,896 → **212,992** B |
+| Game worker | 180,176 + 36,840 → 181,936 + 36,424 B | 171,260 + 36,832 → 172,972 + 36,416 B | 217,088 → **221,184** / 208,896 → **212,992** B |
 
 - **The game worker takes one page more in each game that is ON** (`VJO_BUDGET_WORKER_MODULE_PAGES` raised by
   4,096 B in both builds, deliberately): the pause's code (`game_ocr/main.c` pause_copy, the frame block's check,
-  ladder, release and step; `strip_source`'s frozen reads; `core/vocr_ocr.c`'s frozen region) is 1,248 B (debug) and
+  ladder, release and step; `strip_source`'s frozen reads; `core/vocr_ocr.c`'s frozen region) is 1,280 B (debug) and
   1,232 B (normal), against 48 B and 772 B left in the last code page. Its 64 B of statics needed the data segment's
   last page, which had 24 and 32 B: the pinned model table (`core/vocr_ocr.c` `models`, 480 B, in the data segment
-  since #379, `VJO_DATA_TABLE`) is read-only data again, in the new code page. That leaves 2,416 / 3,156 B of code room
+  since #379, `VJO_DATA_TABLE`) is read-only data again, in the new code page. That leaves 2,384 / 3,156 B of code room
   and 440 / 448 B of data room: room at last for the next verified hook rows (40 B each), which audit-rubi-merge-394
   N5 found had none. The page is 0.005 % of the 90,177,536 B free USER the least any job saw in CLANNAD [measured,
   #81's v0.8.0-test.1 log], whether or not the setting is on.

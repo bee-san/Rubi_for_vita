@@ -2997,6 +2997,15 @@ static void pause_watchdog_turns_pausing_off(void)
     g.game_pid = 7; g.game_active = VJO_GAME;
     ticks_for(48000u);
     TEST_CHECK(!pause_off && klogs == k0);
+    /* review M1, the audit's F1: another game in front and active (its own foreground, g.game_pid 9) while this game's
+     * copy is held: not counted either */
+    rows.frame_start = (uint32_t)model_clock | 1u;
+    ticks_for(32000u);
+    g.game_pid = 9; g.game_active = VJO_GAME;
+    ticks_for(10u * PAUSE_WATCHDOG_US);
+    g.game_pid = 7;
+    ticks_for(32000u);
+    TEST_CHECK_(!pause_off && klogs == k0, "another game in front: held %u us", wd_held);
     /* review M1: one look after the kernel worker did not run for seconds (standby) counts nothing */
     rows.frame_start = (uint32_t)model_clock | 1u;
     ticks_for(16000u);
@@ -3037,6 +3046,31 @@ static void pause_watchdog_turns_pausing_off(void)
     game_ocr_rows_tick();
     TEST_CHECK(rows.state == ROWS_IDLE && !rows.abandoned);
     stall_copy = 0;
+}
+
+/* The watchdog across the system clock's 32-bit wrap (#355's audit): it compares the clock's low 32 bits, unsigned,
+ * so a copy that stalls with its game in front across the wrap trips it past PAUSE_WATCHDOG_US, and a copy a suspended
+ * game holds across it does not. */
+static void pause_watchdog_across_the_clocks_wrap(void)
+{
+    setup();
+    model_clock = (1ull << 32) * 3u - 100000u; /* 100 ms before the low 32 bits wrap */
+    rows.state = ROWS_COPYING; rows.pid = 7; rows.job.frame = 1; rows.frame_start = (uint32_t)model_clock | 1u;
+    ticks_for(160000u);
+    TEST_CHECK_(!pause_off, "a stall across the wrap: tripped at 160 ms (held %u us)", wd_held);
+    ticks_for(64000u); /* 224 ms in all */
+    TEST_CHECK_(pause_off, "a stall across the wrap: not tripped after 224 ms (held %u us)", wd_held);
+    rows.state = ROWS_IDLE; rows.frame_start = 0; rows.job.frame = 0;
+    setup();
+    model_clock = (1ull << 32) * 5u - 50000u;
+    rows.state = ROWS_COPYING; rows.pid = 7; rows.job.frame = 1; rows.frame_start = (uint32_t)model_clock | 1u;
+    ticks_for(32000u);
+    g.game_active = 0; /* suspended in its copy, across the wrap */
+    ticks_for(4000000u);
+    g.game_active = VJO_GAME;
+    ticks_for(32000u);
+    TEST_CHECK_(!pause_off, "a suspended game's copy across the wrap: tripped (held %u us)", wd_held);
+    rows.state = ROWS_IDLE; rows.frame_start = 0; rows.job.frame = 0;
 }
 
 /* The audit's F3a: kernel/display.c's own paths, with the real hook. The game's display call (index 0, its process)
@@ -3102,6 +3136,7 @@ TEST_LIST = {
     {"API 55: the pause through kernel/display.c's hook", pause_through_the_display_hook},
     {"API 55: a frame copy's stride is at most VJO_MAX_W", pause_refuses_a_stride_past_the_widest_row},
     {"API 55: the watchdog turns pausing off when a copy outlives twice its cap", pause_watchdog_turns_pausing_off},
+    {"API 55: the watchdog across the system clock's 32-bit wrap", pause_watchdog_across_the_clocks_wrap},
     {"hook cache: bounded authenticated broker and recoverable replacement", hook_cache_persists_with_bounded_broker},
     {"hook cache: copy IO size cancellation and close failures", hook_cache_failures_preserve_previous_file},
     {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},

@@ -10,7 +10,7 @@ keeps changing under its reads (#358) also says "Or turn on Pause the game to re
 
 **What it costs.** For a CLANNAD-sized box the game's display call waits an estimated 2.4-6.4 ms at 333 MHz, once
 per reading. For the whole 960 × 544 screen, the region before a text box is drawn (□), it waits 10.8-29.0 ms, one or
-two frames at 60 fps: draw a text box first. For a frame in A2B10G10R10 it waits about 1.8 times as long. These are
+two frames at 60 fps: draw a text box first. For a frame in A2B10G10R10 it waits about 1.6-1.85 times as long. These are
 estimates, from the copy's instructions alone (no uncached CDRAM latency, no firmware copies: below), so the
 console's figure may be higher; it is unmeasured. The wait can never last longer than 100 ms. A copy that reaches it
 turns the pause off for that game until it next starts. The game is not paused while the text is recognized.
@@ -80,7 +80,9 @@ strip, rc -120, 72 display calls and nothing shown. Paused, rc 0: one display ca
    - it skips what is left of the stable-text wait (`settle_verify`), since nothing can change;
    - it skips the second read of a region that fits in one strip;
    - it reads a line taller than a strip in place, from the block, the same bytes a whole-region copy gave API 18's
-     recognizer. No tall-line block is needed.
+     recognizer. No tall-line block is needed. So does a job of columns' rectangle around its columns (#379's
+     gather), each column then read from it at the region's stride (#355's audit B1: before its fix, at the
+     rectangle's width, which gave every gathered column of vertical text the wrong pixels).
 
    A job asked on a screen still changing (`F_SETTLE_FIRST`) still waits on the live screen first, as before, then
    copies its frame. With `ocr_vertical = auto`, a region whose rows look like vertical text is read again as
@@ -129,17 +131,21 @@ that function returns. `host/tests/test_kernel_game_ocr.c` runs each path throug
 a frame copy running for more than twice its cap (`PAUSE_WATCHDOG_US`, 200 ms), it turns pausing off until the next boot,
 logged in kernel.txt (`ocr pause: ...`). Every later frame copy is then refused and jobs read strip by strip. The
 copy's own cap should never let this happen: only a row read that itself stalls would. It counts only the time the
-copy runs with its game in front, between looks no more than `PAUSE_WATCHDOG_GAP_US` (100 ms) apart (#355's review):
-a game suspended while its display thread is in a copy (the PS button) holds that thread, and the copy, as long as it
-is suspended, and a look after a longer gap (the kernel worker itself did not run: standby) counts nothing. A crash
+copy runs with its game in front, between looks no more than `PAUSE_WATCHDOG_GAP_US` (100 ms) apart (#355's review).
+A game suspended while its display thread is in a copy (the PS button) may hold that thread, and the copy, as long as
+it is suspended (inferred: unmeasured, and a thread inside a kernel call may only stop once it leaves it); that time
+and a look after a longer gap (the kernel worker itself did not run: standby) count nothing. A crash
 dump of the game that does not change the foreground first can still trip it (inferred: the pause is then off until
 the next boot, which only kernel.txt says). A copy that is only slow (150 ms, past the cap and a chunk), an ordinary
 strip's copy and an idle state never trip it (tested). The switch does not show in the Rubi app, which still says ON:
 only kernel.txt's line and the steps' rc (UNSUPPORTED) do.
 
-**The cap after a suspension.** The same suspension makes the copy's time, which the hook measures, include it: past
-the cap, the copy ends with `VJO_ERR_TIMEOUT` as the game resumes. The suspension cancels the job (the kernel's
-foreground change), and a cancelled job's cut copy does not turn the pause off for the game (`pause_capped`).
+**The cap after a suspension.** If a suspension does hold a copy (inferred, above), the copy's time, which the hook
+measures, includes it: past the cap, the copy ends with `VJO_ERR_TIMEOUT` as the game resumes. The suspension cancels
+the job (the kernel's foreground change), and a cancelled job's cut copy does not turn the pause off for the game
+(`pause_capped`). Standby that makes no foreground change (inferred) would leave the job uncancelled, so a copy held
+across it would turn the pause off for that game until it next starts: the odds are the copy's window, an estimated
+2-29 ms per reading, and the cost is only the pause.
 
 ## What was studied
 
@@ -237,7 +243,7 @@ twelve items stay twelve in every module). That is 8,192 B more: 11,022,336 B ag
 
 The modules, measured against `main` efbee95, v0.10.0 (both builds, `tools/check_memory_ledger.py`):
 - **The OCR worker** takes one page more, 4,096 B in each game that is ON, whether or not the setting is: the pause's
-  1,248 B of code (1,232 B in the normal build) did not fit the last code page (48 B of it left in the debug build,
+  1,280 B of code (1,232 B in the normal build) did not fit the last code page (48 B of it left in the debug build,
   772 B in the normal one). Its
   data keeps its pages: the pinned model table (480 B) is read-only data again, in the new page.
 - **The Shell** (SceShell's pages may only shrink: [AGENTS.md](../AGENTS.md)) keeps its pages, with room to spare:
@@ -273,7 +279,8 @@ A console run measures it: the debug build's `gstep pause` step (its us) and ker
   - the cap stops the copy within one chunk, and the job then reads strip by strip;
   - every other end (copy error, another size, no frame, cancelled, process exit) returns the display call;
   - the watchdog's threshold (a 150 ms copy never trips it), its off switch, and a stalled copy given up and tidied;
-    the time a suspended game holds a copy, and a gap in the kernel worker's looks (standby), never count;
+    the time a suspended game holds a copy, another game in front, and a gap in the kernel worker's looks (standby)
+    never count, across the system clock's 32-bit wrap too;
   - the real display hook (`kernel/display.c`): the game's call copies and goes on; another call during the copy goes
     on at once and reads nothing (`frame_busy`); other processes, indexes and no frame go on at once; only a
     static-framebuffer game is sampled from its pad calls;
@@ -281,6 +288,8 @@ A console run measures it: the debug build's `gstep pause` step (its us) and ker
 - **Core** (`host/tests/test_vocr_policy.c`, real finder):
   - a frozen region that never holds still is read once without waiting, where strip by strip gives -120;
   - a frozen first pass forgets the wait before it;
+  - a frozen region's columns, one by one and gathered (`test_vocr_vertical.c`), are the region's own pixels and
+    readings, as a job that is not frozen gives them (#355's audit B1);
   - a refused freeze reads exactly as before (the same strips, flags and frames), a one-strip region's second read
     included;
   - a tall line is read in place.
@@ -294,6 +303,7 @@ A console run measures it: the debug build's `gstep pause` step (its us) and ker
     cancelled job's cut copy (a game suspended in its copy) does not;
   - in a PSP game the pause is a no-op: no block, no copy, no step, the same steps, strips and captures as off;
   - a paused press (no wait, #413) reads the frame at the press;
+  - #500's verified-site answer after refused weights logs the pause step too (`test_game_hooks.c`);
   - another model's resident weights stay as without the pause, the frame block costing a helper instead.
 - **Auto** (`host/tests/test_game_vocr.c`): with the pause, each of auto's tries copies its own frame (three without
   the vertical model), and the step's us is their sum.

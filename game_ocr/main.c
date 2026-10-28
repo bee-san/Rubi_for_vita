@@ -523,8 +523,8 @@ static int pause_copy(Capture *c)
     }
     pz.us = c->last.copy_us;
     /* the cap: no more copies in this game (a frame that never came is TIMEOUT too, with no wait). Not in a job
-     * cancelled meanwhile (#355's review M2): a game suspended during its copy (the PS button) holds the copy, and
-     * the copy's time with it, for as long as it is suspended, and the suspension cancels the job */
+     * cancelled meanwhile (#355's review M2): a game suspended during its copy (the PS button) may hold the copy, and
+     * the copy's time with it, for as long as it is suspended (inferred), and the suspension cancels the job */
     if (rc == VJO_ERR_TIMEOUT && pz.us >= VJO_GAME_OCR_PAUSE_MAX_US && !cancelled(NULL)) pause_capped = 1;
     if (rc == (int)r->height) {
         pz.frozen = 1;
@@ -548,6 +548,22 @@ static int pause_copy(Capture *c)
         return VJO_E_CANCELLED;
     }
     return frame_release() ? VJO_E_OCR_UNAVAILABLE : 0; /* the job reads on, strip by strip */
+}
+
+/* The job's pause step (VJO_GSTEP_PAUSE), once, when it asked for the pause: kind 1 frozen; sum the reason | the
+ * block's memory << 8; us the game's waits over the job's tries (1: none). Before the blocks go back on a path that
+ * ends the job early (#500's verified-site answer: #355's audit N7), while pz still says what the copy did. */
+static void pause_step_log(uint32_t paused_us)
+{
+    if (!pz.asked) return;
+    step_add(VJO_GSTEP_PAUSE, pz.frozen ? 1u : 0u, pz.rows, pz.frozen ? 0 : pz.rc, pz.bytes,
+             (pz.frozen ? VJO_GPAUSE_FROZEN
+              : pz.tried ? VJO_GPAUSE_REFUSED
+              : pause_capped ? VJO_GPAUSE_CAPPED
+              : pz.held ? VJO_GPAUSE_UNUSED
+                        : VJO_GPAUSE_NO_ROOM) | pz.mem << 8,
+             paused_us + pz.us ? paused_us + pz.us : 1u, 0);
+    pz.asked = 0; /* logged */
 }
 
 /* VjoGreySource.frozen: the region from one frame, while every read of the job comes from it. */
@@ -2644,6 +2660,7 @@ retry_smaller:
             tried_find_us += stats.find_us;
             sceClibMemset(&stats, 0, sizeof(stats));
             stats.workspace = workspace;
+            pause_step_log(paused_us); /* API 55: this try's copy and the game's wait, before its block goes back */
             if (cleanup() || drop_resident()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
             steps_drop_blocks(try_steps, 0);
             if (no_memory_answer(r, out, &capture, &stats, id, no_mem_flags)) rc = VJO_OK;
@@ -2678,14 +2695,7 @@ retry_smaller:
                  stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
                  (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles),
                  stats.settle_us + tried_settle_us ? stats.settle_us + tried_settle_us : 1u, 0);
-    if (pz.asked) /* API 55: kind 1 frozen; sum the reason | the block's memory << 8; us the game's waits (1: none) */
-        step_add(VJO_GSTEP_PAUSE, pz.frozen ? 1u : 0u, pz.rows, pz.frozen ? 0 : pz.rc, pz.bytes,
-                 (pz.frozen ? VJO_GPAUSE_FROZEN
-                  : pz.tried ? VJO_GPAUSE_REFUSED
-                  : pause_capped ? VJO_GPAUSE_CAPPED
-                  : pz.held ? VJO_GPAUSE_UNUSED
-                            : VJO_GPAUSE_NO_ROOM) | pz.mem << 8,
-                 paused_us + pz.us ? paused_us + pz.us : 1u, 0);
+    pause_step_log(paused_us); /* API 55 */
     for (unsigned i = 0; i < stats.blank && i < VJO_VOCR_BLANK_LOGGED; i++) {
         const VjoVocrBlankStat *b = &stats.blank_line[i];
         step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,

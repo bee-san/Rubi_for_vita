@@ -2551,6 +2551,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
      * to fetch; gblock: fetched. */
     VocrLine gbox;
     const unsigned char *gblock = NULL;
+    size_t gstride = 0; /* gblock's own stride: the line buffer's (gbox.w) or, frozen (API 55), the region's (#355's B1) */
     const unsigned gather_n = cols ? gather_box(s, &set, &gbox) : 0u;
     unsigned gather = gather_n;
     /* API 54: the spotter's boxes are refined by its own policy (ocr_spotter_refine), GRAD's by the job's */
@@ -2568,8 +2569,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         }
     fetch:
         if (gblock) { /* its part of the rectangle */
-            box_pixels = gblock + (size_t)(box->y - gbox.y) * gbox.w + (box->x - gbox.x);
-            box_stride = gbox.w;
+            box_pixels = gblock + (size_t)(box->y - gbox.y) * gstride + (box->x - gbox.x);
+            box_stride = gstride;
             st->tall += box->h > s->strip_rows;
         } else {
             box_pixels = line_pixels(s, gather ? &gbox : box, &box_stride);
@@ -2577,6 +2578,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 st->tall--;
                 gather = 0;
                 gblock = box_pixels;
+                gstride = box_stride;
                 st->gathered = gblock ? gather_n : 0u;
                 if (!gblock) st->tall_skipped--; /* refused: column by column, this one first */
                 goto fetch;

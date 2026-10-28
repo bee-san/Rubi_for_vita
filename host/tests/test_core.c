@@ -782,8 +782,8 @@ static void test_config(void)
     gate = "ocr_text_gate = off\nocr_text_gate = maybe\n";
     vjo_config_parse(&c, gate, strlen(gate));
     TEST_CHECK(c.ocr_text_gate == 0 && c.n_warnings == 1);
-    /* API 55: the pause for the frame (docs/game-pause.md), off by default; it shares the gate's branch, each key its
-     * own setting, in any case; an unknown value keeps the value, warned */
+    /* API 55: the pause for the frame (docs/game-pause.md), off by default; one row of the off/on switches' table
+     * (core/config.c switches[]), its own setting, in any case; an unknown value keeps the value, warned */
     vjo_config_defaults(&c);
     TEST_CHECK(c.ocr_pause == 0);
     const char *pause = "OCR_Pause = On\n";

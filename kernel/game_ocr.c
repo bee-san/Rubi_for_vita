@@ -111,9 +111,9 @@ static int pause_off;
 #define PAUSE_WATCHDOG_US (2u * VJO_GAME_OCR_PAUSE_MAX_US)
 /* The watchdog's count: the frame copy it is timing (its frame_start), the time it has seen that copy running with
  * its game in front, and its last look. Only that time counts (#355's review M1): a game suspended (the PS button, a
- * crash dump) while its display thread is in a copy holds that thread, and the copy, for as long as the suspension
- * lasts, and a look after a longer gap than PAUSE_WATCHDOG_GAP_US (the kernel worker did not run: standby) counts
- * nothing; neither is a stalled row read. */
+ * crash dump) while its display thread is in a copy may hold that thread, and the copy, for as long as the suspension
+ * lasts (inferred, unmeasured), and a look after a longer gap than PAUSE_WATCHDOG_GAP_US (the kernel worker did not
+ * run: standby) counts nothing; neither is a stalled row read. */
 static uint32_t wd_copy, wd_held, wd_look;
 #define PAUSE_WATCHDOG_GAP_US 100000u
 /* A frame has to come within this; cancellation is checked every slice. */

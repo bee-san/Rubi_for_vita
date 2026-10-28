@@ -480,12 +480,12 @@
  * 1,236 / 464 B) or the budget is raised (audit-rubi-merge-394 N5). */
 /* API 55, the pause for the frame (#355; ocr_pause, off by default; docs/game-pause.md, docs/memory-ledger.md "The
  * pause for the frame": game_ocr/main.c pause_copy, the frame block's memory check, ladder, release and step, and
- * strip_source's frozen reads; core/vocr_ocr.c's frozen region): 1,248 B (debug) and 1,232 B (normal) of code and
+ * strip_source's frozen reads; core/vocr_ocr.c's frozen region): 1,280 B (debug) and 1,232 B (normal) of code and
  * 64 B of statics, against 48 B and 772 B of the last code page and 24 B and 32 B of the last data page left on main
  * efbee95 (v0.10.0). So this budget is raised by one page, 4,096 B, in both builds (217,088 -> 221,184 B debug,
  * 208,896 -> 212,992 B normal): the code takes one page more, and the pinned model table (core/vocr_ocr.c models,
  * 480 B) is read-only data again, in that page, so the data segment keeps its pages with room for the statics and, at
- * last, for more verified hook rows (40 B each). Debug 180,176 -> 181,904 B of text (2,416 B of room) and 36,840 ->
+ * last, for more verified hook rows (40 B each). Debug 180,176 -> 181,936 B of text (2,384 B of room) and 36,840 ->
  * 36,424 B of data/bss (440 B), normal 171,260 -> 172,972 B (3,156 B) and 36,832 -> 36,416 B (448 B) [measured:
  * tools/check_memory_ledger.py's module rows, both builds, main efbee95 and this change, tools/fast_gate.sh's vitasdk
  * image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's (counted as the tall line's ledger item, which
