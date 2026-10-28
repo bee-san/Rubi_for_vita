@@ -63,7 +63,11 @@ static int failing(const char *call, const char *path)
         return 1;
     return fail_call && !strcmp(fail_call, call) && (!fail_path || (path && strstr(path, fail_path)));
 }
-static int native(long n) { return n < 0 ? (errno == ENOENT ? (int)0x80010002u : EIO_RC) : (int)n; }
+/* (a failure is EIO unless the file is missing) */
+#define SCEIO_ERROR(e) ((e) == ENOENT ? (int)0x80010002u : EIO_RC)
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_WRITE | SCEIO_PWRITE | SCEIO_GETSTAT | SCEIO_RENAME | \
+                   SCEIO_REMOVE | SCEIO_SYNCBYFD | SCEIO_SYNC | SCEIO_DOPEN | SCEIO_DREAD | SCEIO_DCLOSE)
+#include "fakes/sceio_posix.h"
 
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
@@ -72,60 +76,38 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
         return EIO_RC;
     if (!(flags & (O_WRONLY | O_RDWR)) && fail_call && !strcmp(fail_call, "read-open") && strstr(p, fail_path))
         return EIO_RC;
-    fd = open(p, flags, mode);
+    fd = sceio_open(p, flags, mode);
     if (fd >= 0 && fd < 64)
         writing[fd] = !!(flags & (O_WRONLY | O_RDWR));
-    return native(fd);
+    return fd;
 }
 int sceIoClose(int fd)
 {
     int was = fd >= 0 && fd < 64 && writing[fd], rc;
     if (fd >= 0 && fd < 64)
         writing[fd] = 0;
-    rc = close(fd);
+    rc = sceio_close(fd);
     if (was && failing("close", NULL))
         return EIO_RC;
-    return native(rc);
+    return rc;
 }
-int sceIoRead(int fd, void *p, size_t n) { return native(read(fd, p, n)); }
 int sceIoWrite(int fd, const void *p, size_t n)
 {
     if (failing("write", NULL))
         return EIO_RC;
-    return native(write(fd, p, n));
+    return sceio_write(fd, p, n);
 }
-int sceIoPread(int fd, void *p, size_t n, SceOff off) { return native(pread(fd, p, n, off)); }
 int sceIoPwrite(int fd, const void *p, size_t n, SceOff off)
 {
     if (failing("write", NULL))
         return EIO_RC;
-    return native(pwrite(fd, p, n, off));
-}
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-static void date_of(time_t t, SceDateTime *d)
-{
-    struct tm tm;
-    gmtime_r(&t, &tm);
-    *d = (SceDateTime){(unsigned short)(tm.tm_year + 1900), (unsigned short)(tm.tm_mon + 1), (unsigned short)tm.tm_mday,
-                       (unsigned short)tm.tm_hour, (unsigned short)tm.tm_min, (unsigned short)tm.tm_sec, 0};
-}
-static int file_stat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    if (stat(p, &s))
-        return native(-1);
-    memset(st, 0, sizeof(*st));
-    st->st_mode = s.st_mode;
-    st->st_size = s.st_size;
-    date_of(s.st_mtim.tv_sec, &st->st_mtime);
-    return 0;
+    return sceio_pwrite(fd, p, n, off);
 }
 int sceIoGetstat(const char *p, SceIoStat *st)
 {
     if (fail_stat && strstr(p, fail_stat))
         return EIO_RC;
-    return file_stat(p, st);
+    return sceio_getstat(p, st);
 }
 int sceIoRename(const char *from, const char *to)
 {
@@ -134,20 +116,19 @@ int sceIoRename(const char *from, const char *to)
         return EIO_RC;
     /* the codebase never renames over a file: a rename onto one is a test failure */
     TEST_CHECK_(stat(to, &s) != 0, "rename %s over %s", from, to);
-    return native(rename(from, to));
+    return sceio_rename(from, to);
 }
 int sceIoRemove(const char *p)
 {
     if (failing("remove", p))
         return EIO_RC;
-    return native(unlink(p));
+    return sceio_remove(p);
 }
 int sceIoSyncByFd(int fd, int flag)
 {
-    (void)flag;
     if (failing("flush", NULL))
         return EIO_RC;
-    return native(fsync(fd));
+    return sceio_syncbyfd(fd, flag);
 }
 int sceIoSync(const char *device, unsigned flags)
 {
@@ -159,31 +140,29 @@ int sceIoSync(const char *device, unsigned flags)
     }
     return failing("sync", NULL) ? EIO_RC : 0;
 }
-static DIR *dirs[8];
-static char dir_paths[8][256];
 static const char *fail_dopen;
-/* dread_order 0: readdir's order; 1: by name; -1: by name, the last first (what the code does must not depend on
- * the order a directory lists its files in) */
+/* dread_order 0: readdir's order (sceio_dirs); 1: by name; -1: by name, the last first (what the code does must
+ * not depend on the order a directory lists its files in) */
 static int dread_order;
-static struct dirent **dir_list[8];
-static int dir_n[8], dir_at[8];
+static struct dirent **dir_list[SCEIO_DIRS];
+static int dir_n[SCEIO_DIRS], dir_at[SCEIO_DIRS];
 static int by_name(const struct dirent **x, const struct dirent **y) { return strcmp((*x)->d_name, (*y)->d_name); }
 int sceIoDopen(const char *p)
 {
     if (fail_dopen && !strcmp(p, fail_dopen))
         return EIO_RC;
-    for (int i = 0; i < 8; i++)
-        if (!dirs[i] && !dir_list[i]) {
+    for (int i = 0; i < SCEIO_DIRS; i++)
+        if (!sceio_dirs[i] && !dir_list[i]) {
             if (dread_order) {
                 if ((dir_n[i] = scandir(p, &dir_list[i], NULL, by_name)) < 0) {
                     dir_list[i] = NULL;
-                    return native(-1);
+                    return sceio_native(-1);
                 }
                 dir_at[i] = 0;
-            } else if (!(dirs[i] = opendir(p))) {
-                return native(-1);
+            } else if (!(sceio_dirs[i] = opendir(p))) {
+                return sceio_native(-1);
             }
-            snprintf(dir_paths[i], sizeof(dir_paths[i]), "%s", p);
+            snprintf(sceio_dir_paths[i], sizeof(sceio_dir_paths[i]), "%s", p);
             return 100 + i;
         }
     return -1;
@@ -196,15 +175,15 @@ int sceIoDread(int fd, SceIoDirent *ent)
     if (dir_list[k])
         e = dir_at[k] == dir_n[k] ? NULL : dir_list[k][dread_order > 0 ? dir_at[k] : dir_n[k] - 1 - dir_at[k]];
     else
-        e = readdir(dirs[k]);
+        e = readdir(sceio_dirs[k]);
     if (dir_list[k] && e)
         dir_at[k]++;
     if (!e)
         return 0;
     memset(ent, 0, sizeof(*ent));
     snprintf(ent->d_name, sizeof(ent->d_name), "%s", e->d_name);
-    snprintf(path, sizeof(path), "%s/%s", dir_paths[fd - 100], e->d_name);
-    TEST_ASSERT(file_stat(path, &ent->d_stat) == 0);
+    snprintf(path, sizeof(path), "%s/%s", sceio_dir_paths[k], e->d_name);
+    TEST_ASSERT(sceio_getstat(path, &ent->d_stat) == 0);
     return 1;
 }
 int sceIoDclose(int fd)
@@ -216,8 +195,8 @@ int sceIoDclose(int fd)
         free(dir_list[k]);
         dir_list[k] = NULL;
     } else {
-        rc = closedir(dirs[k]);
-        dirs[k] = NULL;
+        rc = closedir(sceio_dirs[k]);
+        sceio_dirs[k] = NULL;
     }
     return rc;
 }

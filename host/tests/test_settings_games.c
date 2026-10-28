@@ -129,8 +129,9 @@ typedef struct {
 } Session;
 static Session *session;
 
-/* ---- storage: the SDK's file calls over real files ---- */
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+/* ---- storage: the SDK's file calls over real files (fakes/sceio_posix.h) ---- */
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_READ | SCEIO_GETSTAT | SCEIO_DOPEN | SCEIO_DREAD)
+#include "fakes/sceio_posix.h"
 static Frame cur;
 static int icon_fd[1024];
 /* A test's faults: ux0:app that cannot be listed. Set before run(). */
@@ -159,7 +160,7 @@ static int is_log(const char *p, int flags)
 }
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
-    int fd = native(open(p, flags, mode)), game;
+    int fd = sceio_open(p, flags, mode), game;
     if (fd >= 0 && fd < 1024) {
         icon_fd[fd] = is_icon(p);
     }
@@ -171,83 +172,56 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
     }
     return fd;
 }
-int sceIoClose(int fd) { if (fd >= 0 && fd < 1024) icon_fd[fd] = 0; return native(close(fd)); }
+int sceIoClose(int fd) { if (fd >= 0 && fd < 1024) icon_fd[fd] = 0; return sceio_close(fd); }
 int sceIoRead(int fd, void *p, size_t len)
 {
     if (fd >= 0 && fd < 1024 && icon_fd[fd]) cur.icon_reads++;
-    return native((int)read(fd, p, len));
+    return sceio_read(fd, p, len);
 }
-int sceIoWrite(int fd, const void *p, size_t len) { return native((int)write(fd, p, len)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
 int sceIoGetstat(const char *p, SceIoStat *out)
 {
-    struct stat st;
     size_t n = strlen(p);
-    int rc;
     if (n && p[n - 1] == ':') { /* a device: there when the card has a folder of it (gro0:app for a game card) */
         char sub[64];
         snprintf(sub, sizeof(sub), "%sapp", p);
-        rc = stat(sub, &st);
-        if (rc) { snprintf(sub, sizeof(sub), "%sdata", p); rc = stat(sub, &st); }
-        if (rc) return (int)0x80010013u; /* ENODEV: modelled, not a console's answer */
-    } else rc = stat(p, &st);
-    if (!rc) { out->st_mode = st.st_mode; out->st_size = st.st_size; }
-    return native(rc);
+        if (sceio_getstat(sub, out) >= 0) return 0;
+        snprintf(sub, sizeof(sub), "%sdata", p);
+        return sceio_getstat(sub, out) >= 0 ? 0 : (int)0x80010013u; /* ENODEV: modelled, not a console's answer */
+    }
+    return sceio_getstat(p, out);
 }
 /* The threads the app's log sees (settings/applog.c): the main thread's, or a
  * test's other one (the Anki worker's). */
 static SceUID thread_id = 0x40010003;
 SceUID sceKernelGetThreadId(void) { return thread_id; }
-int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
-int sceIoChstat(const char *p, SceIoStat *st, int bits)
-{
-    if (bits != SCE_CST_SIZE) return (int)0x80010016u;
-    return native(truncate(p, st->st_size));
-}
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
-static DIR *dirs[8];
-static char dir_path[8][64];
-static int dir_reads[8]; /* entries each listing has given */
+static int dir_reads[SCEIO_DIRS]; /* entries each listing has given */
 int sceIoDopen(const char *p)
 {
+    int d;
     if (app_dir_fails && !strcmp(p, "ux0:app")) return (int)0x80010013u;
     if (dir_fails && !strcmp(p, dir_fails)) return dir_fails_rc;
     if (!strcmp(p, "ux0:app")) cur.scans++;
-    for (int i = 0; i < 8; i++)
-        if (!dirs[i]) {
-            if (!(dirs[i] = opendir(p))) return native(-1);
-            snprintf(dir_path[i], sizeof(dir_path[i]), "%s", p);
-            dir_reads[i] = 0;
-            return 100 + i;
-        }
-    return (int)0x80010018u;
+    if ((d = sceio_dopen(p)) >= 0) dir_reads[d - 100] = 0;
+    return d;
 }
+/* A listing without the names that start with '.', each entry with its mode alone. */
 int sceIoDread(int d, SceIoDirent *e)
 {
-    DIR *dir = d >= 100 && d < 108 ? dirs[d - 100] : NULL;
+    DIR *dir = sceio_dir(d);
     struct dirent *de;
     if (!dir) return (int)0x80010009u;
-    if (dread_fails && !strcmp(dir_path[d - 100], dread_fails) && dir_reads[d - 100] == dread_fails_after)
+    if (dread_fails && !strcmp(sceio_dir_paths[d - 100], dread_fails) && dir_reads[d - 100] == dread_fails_after)
         return (int)0x80010005u; /* EIO */
     while ((de = readdir(dir)) && de->d_name[0] == '.') {}
     if (!de) return 0;
-    char path[400];
+    char path[600];
     struct stat st;
     memset(e, 0, sizeof(*e));
-    snprintf(path, sizeof(path), "%s/%s", dir_path[d - 100], de->d_name);
+    snprintf(path, sizeof(path), "%s/%s", sceio_dir_paths[d - 100], de->d_name);
     if (!stat(path, &st)) e->d_stat.st_mode = st.st_mode;
     snprintf(e->d_name, sizeof(e->d_name), "%s", de->d_name);
     dir_reads[d - 100]++;
     return 1;
-}
-int sceIoDclose(int d)
-{
-    if (d < 100 || d >= 108 || !dirs[d - 100]) return (int)0x80010009u;
-    closedir(dirs[d - 100]);
-    dirs[d - 100] = NULL;
-    return 0;
 }
 
 /* ---- the scripted controller, touch screen and display ---- */

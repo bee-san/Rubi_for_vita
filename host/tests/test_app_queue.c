@@ -21,7 +21,7 @@
 #include "test_tmpdir.h"
 #include "../../settings/app_queue.h"
 
-/* ---------------- the memory card: real files, failures and stops ---------------- */
+/* ---------------- the memory card: real files (fakes/sceio_posix.h), failures and stops ---------------- */
 
 static int fail_open, fail_write, fail_flush, fail_close, fail_rename, fail_sync, fail_stat, short_writes;
 static int syncs, renames;
@@ -40,13 +40,14 @@ static int ends_with(const char *s, const char *suffix)
     size_t n = strlen(s), k = strlen(suffix);
     return n >= k && !strcmp(s + n - k, suffix);
 }
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_WRITE | SCEIO_SYNCBYFD | SCEIO_RENAME | SCEIO_SYNC | SCEIO_GETSTAT)
+#include "fakes/sceio_posix.h"
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     int fd;
     if (fail_open)
         return (int)0x80010005u;
-    fd = native(open(p, flags, mode));
+    fd = sceio_open(p, flags, mode);
     if (fd >= 0 && (flags & O_WRONLY)) {
         write_fd = fd;
         snprintf(write_path, sizeof(write_path), "%s", p);
@@ -55,8 +56,8 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
 }
 int sceIoClose(int fd)
 {
-    int rc = close(fd);
-    return fail_close ? (int)0x80010005u : native(rc);
+    int rc = sceio_close(fd);
+    return fail_close ? (int)0x80010005u : rc;
 }
 int sceIoWrite(int fd, const void *p, size_t n)
 {
@@ -65,17 +66,16 @@ int sceIoWrite(int fd, const void *p, size_t n)
         return (int)0x8001001Cu; /* ENOSPC */
     if (short_writes && n > 7)
         n = 7;
-    wrote = native((int)write(fd, p, n));
+    wrote = sceio_write(fd, p, n);
     if (wrote > 0 && fd == write_fd && ends_with(write_path, ".json.tmp"))
         crash_at("json_partial");
     return wrote;
 }
 int sceIoSyncByFd(int fd, int flag)
 {
-    (void)flag;
     if (fail_flush)
         return (int)0x80010005u;
-    int rc = native(fsync(fd));
+    int rc = sceio_syncbyfd(fd, flag);
     if (!rc && fd == write_fd && ends_with(write_path, ".json.tmp"))
         crash_at("json_flushed");
     return rc;
@@ -85,7 +85,7 @@ int sceIoRename(const char *a, const char *b)
     int rc;
     if (fail_rename)
         return (int)0x80010005u;
-    rc = native(rename(a, b));
+    rc = sceio_rename(a, b);
     if (!rc) {
         renames++;
         snprintf(last_rename, sizeof(last_rename), "%s", b);
@@ -106,19 +106,11 @@ int sceIoSync(const char *device, unsigned flags)
         crash_at("json_committed");
     return 0;
 }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
 int sceIoGetstat(const char *p, SceIoStat *st)
 {
-    struct stat s;
     if (fail_stat)
         return (int)0x80010005u;
-    if (stat(p, &s))
-        return native(-1);
-    memset(st, 0, sizeof(*st));
-    st->st_mode = s.st_mode;
-    st->st_size = s.st_size;
-    return 0;
+    return sceio_getstat(p, st);
 }
 void vjo_log(const char *fmt, ...)
 {

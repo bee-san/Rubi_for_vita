@@ -75,9 +75,10 @@ static int row_top_at(int r, int top) { return VIEW_Y + row_offset[r] - row_offs
 #define OFF 4u
 #define CARD 5u
 
-/* ---------------- the memory card: real files under a temporary directory ---------------- */
+/* ---------------- the memory card: real files under a temporary directory (fakes/sceio_posix.h) ---------------- */
 
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_RENAME | SCEIO_DOPEN)
+#include "fakes/sceio_posix.h"
 static const char *fail_open; /* an open of a path containing this fails (EIO) */
 static int fail_rename, renames, writes_opened;
 int sceIoOpen(const char *p, int flags, unsigned mode)
@@ -86,76 +87,21 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
         return (int)0x80010005u;
     if (flags & (O_WRONLY | O_RDWR))
         writes_opened++;
-    return native(open(p, flags, mode));
-}
-int sceIoClose(int fd) { return native(close(fd)); }
-int sceIoRead(int fd, void *p, size_t n) { return native((int)read(fd, p, n)); }
-int sceIoWrite(int fd, const void *p, size_t n) { return native((int)write(fd, p, n)); }
-int sceIoPread(int fd, void *p, size_t n, SceOff off) { return native((int)pread(fd, p, n, off)); }
-int sceIoPwrite(int fd, const void *p, size_t n, SceOff off) { return native((int)pwrite(fd, p, n, off)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-static void date_of(time_t t, SceDateTime *d)
-{
-    struct tm tm;
-    gmtime_r(&t, &tm);
-    *d = (SceDateTime){(unsigned short)(tm.tm_year + 1900), (unsigned short)(tm.tm_mon + 1), (unsigned short)tm.tm_mday,
-                       (unsigned short)tm.tm_hour, (unsigned short)tm.tm_min, (unsigned short)tm.tm_sec, 0};
-}
-int sceIoGetstat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    if (stat(p, &s))
-        return native(-1);
-    st->st_mode = s.st_mode;
-    st->st_size = s.st_size;
-    date_of(s.st_ctim.tv_sec, &st->st_ctime);
-    date_of(s.st_atim.tv_sec, &st->st_atime);
-    date_of(s.st_mtim.tv_sec, &st->st_mtime);
-    return 0;
+    return sceio_open(p, flags, mode);
 }
 int sceIoRename(const char *a, const char *b)
 {
     if (fail_rename)
         return (int)0x80010005u;
     renames++;
-    return native(rename(a, b));
+    return sceio_rename(a, b);
 }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
-int sceIoSyncByFd(int fd, int flag) { (void)flag; return native(fsync(fd)); }
-static DIR *dirs[4];
-static char dir_paths[4][256];
 static const char *fail_dopen; /* a directory that cannot be read */
 int sceIoDopen(const char *p)
 {
     if (fail_dopen && !strcmp(p, fail_dopen))
         return (int)0x80010005u;
-    for (int i = 0; i < 4; i++)
-        if (!dirs[i]) {
-            if (!(dirs[i] = opendir(p)))
-                return native(-1);
-            snprintf(dir_paths[i], sizeof(dir_paths[i]), "%s", p);
-            return 100 + i;
-        }
-    return -1;
-}
-int sceIoDread(int fd, SceIoDirent *ent)
-{
-    struct dirent *e = readdir(dirs[fd - 100]);
-    char path[600];
-    if (!e)
-        return 0;
-    snprintf(ent->d_name, sizeof(ent->d_name), "%s", e->d_name);
-    snprintf(path, sizeof(path), "%s/%s", dir_paths[fd - 100], e->d_name);
-    TEST_ASSERT(sceIoGetstat(path, &ent->d_stat) == 0);
-    return 1;
-}
-int sceIoDclose(int fd)
-{
-    int rc = closedir(dirs[fd - 100]);
-    dirs[fd - 100] = NULL;
-    return rc;
+    return sceio_dopen(p);
 }
 /* 2026-10-12 09:30:05 on the console */
 int sceRtcGetCurrentClockLocalTime(SceDateTime *t)

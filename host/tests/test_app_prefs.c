@@ -18,35 +18,26 @@
 static unsigned char memory[64 * 1024];
 static VjoArena arena;
 static int read_fail, write_fail, rename_fail, sync_fail, renames, writes;
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+/* the memory card's files (fakes/sceio_posix.h), with short reads and writes and failures */
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_READ | SCEIO_WRITE | SCEIO_RENAME | SCEIO_SYNC)
+#include "fakes/sceio_posix.h"
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     if (read_fail && flags == SCE_O_RDONLY && strstr(p, "app.ini")) return (int)0x80010013u;
     if (flags & SCE_O_WRONLY) writes++;
-    return native(open(p, flags, mode));
+    return sceio_open(p, flags, mode);
 }
-int sceIoClose(int fd) { return native(close(fd)); }
-int sceIoRead(int fd, void *p, size_t len) { return native((int)read(fd, p, len > 5 ? 5 : len)); } /* short reads */
+int sceIoRead(int fd, void *p, size_t len) { return sceio_read(fd, p, len > 5 ? 5 : len); } /* short reads */
 int sceIoWrite(int fd, const void *p, size_t len)
 {
     if (write_fail) return -1;
-    return native((int)write(fd, p, len > 3 ? 3 : len)); /* short writes */
-}
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-int sceIoGetstat(const char *p, SceIoStat *out)
-{
-    struct stat st;
-    int rc = stat(p, &st);
-    if (!rc) out->st_mode = st.st_mode;
-    return native(rc);
+    return sceio_write(fd, p, len > 3 ? 3 : len); /* short writes */
 }
 int sceIoRename(const char *a, const char *b)
 {
     if (++renames == rename_fail) return -1;
-    return native(rename(a, b));
+    return sceio_rename(a, b);
 }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
 int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return sync_fail ? -1 : 0; }
 
 #define APP VJO_APP_PREFS_PATH
