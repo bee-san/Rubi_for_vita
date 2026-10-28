@@ -77,81 +77,79 @@ typedef struct {
     int anki_mining;          /* 0/1: enter saves the shown word to the offline queue */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
+    /* The fields below came later, each appended after the one before, so that no earlier field moved (the Shell's
+     * code size); a new one goes last too. */
     /* Local OCR (vocr, API 22): ocr_threads, the threads that recognize a
      * region's lines at once (1 = one line after another), kept as the helper
      * threads beside the job's own (ocr_threads - 1, VjoGameOcrRequest.speed's
      * bits 0-1); and the ARM clock at 444 MHz while a job recognizes (on by
      * default; a clock already at 444 or more is left as it is; core/vocr_ocr.h
-     * VjoVocrPool, busy). Last, so that no other field moves (the Shell's code
-     * size). */
+     * VjoVocrPool, busy). */
     int ocr_helpers;          /* 0..2 */
     int ocr_boost_clock;      /* 0/1 */
     /* (config.ini's ocr_settle_press_ms, a press's wait before #413, is still accepted, 0 or 100..10000, and read
      * by nothing since: docs/text-stability.md.) */
     /* Anki (API 23): a card saved with anki_mining keeps a JPEG of the game's screen
-     * (on by default; the game worker takes it, docs/anki.md). Last, as above. */
+     * (on by default; the game worker takes it, docs/anki.md). */
     int anki_screenshot;      /* 0/1 */
     /* The left stick's lookup (#138, core/stick_cursor.h): a word the stick
      * moved the cursor to is looked up once the cursor has rested this long
-     * (0: as soon as the stick stops); the d-pad and taps look up at once.
-     * Last, as above. */
+     * (0: as soon as the stick stops); the d-pad and taps look up at once. */
     int stick_lookup_ms;      /* 0..1000 */
     /* Local OCR (vocr, API 26): the text-presence gate in front of the line finder
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
-     * text (a hidden text box, a CG screen) returns no line. Last, as above. */
+     * text (a hidden text box, a CG screen) returns no line. */
     int ocr_text_gate;        /* 0/1 */
     /* Native text hooks (API 31, audit-hooks F3): 0 (config.ini hook_sites = off) installs no table site in
      * any game, only the CALL source (the string copies), so a console run can tell the two apart; the
-     * Shell sends it as VJO_TEXT_SOURCE_NO_SITES in the text source's word. Last, as above. */
+     * Shell sends it as VJO_TEXT_SOURCE_NO_SITES in the text source's word. */
     int hook_sites;           /* 0/1, on by default */
     /* Anki (API 32): a card's screenshot is of the picture between the frame's black bars, a
      * letterbox or pillarbox the game worker finds as it reads the frame (on by default;
-     * core/shottrim.h, docs/anki.md "Black bars"). Last, as above. */
+     * core/shottrim.h, docs/anki.md "Black bars"). */
     int anki_screenshot_trim_bars; /* 0/1 */
     /* Reading statistics (the overlay's Triangle view, docs/ocr-history.md#reading-time): how a line's
      * reading time is measured, VJO_READING_* (core/history_lines.h): 0 adaptive (the default), 1 15s
-     * (Rubi 0.9.7 and older). The Shell takes it once, as it starts. Last, as above. */
+     * (Rubi 0.9.7 and older). The Shell takes it once, as it starts. */
     int reading_time;
     /* Local OCR (vocr, API 42): vita-vn-ocr #117's speed work (core/vocr_ocr.h VjoVocrPolicy.head_gate, two_level),
      * VJO_HEAD_* bits: VJO_HEAD_GATE skips the recognizer's output head on the frames the model's gate calls blank,
      * VJO_HEAD_TWO_LEVEL computes a two-level blob's rare rows only on the frames its escape picks. config.ini
      * ocr_head_gate = on (both, the default) | gate | two_level | off (neither: the full head on every frame, as
-     * before); the Shell sends the bits as they are (include/vjo_game_ocr.h VJO_GAME_OCR_S_HEAD_SHIFT). One key, not
-     * two: the normal Shell's code had 100 B of its last page left (docs/memory-ledger.md). Last, as above. */
+     * before); the Shell sends the bits as they are (include/vjo_game_ocr.h VJO_GAME_OCR_S_HEAD_SHIFT). */
     int ocr_head_gate;        /* VJO_HEAD_* bits, 0-3 */
     /* Native text hooks (API 43, docs/native-hooks.md "Trusted hooks"): 1 (the default) lets a trusted hook (a Luna
      * or Rubi verified site, or a regular source after four OCR agreements) answer without OCR; 0 (hook_trust = off)
-     * selects as Rubi 0.9.7 did. The Shell sends it as VJO_GAME_OCR_S_TRUST in each job's speed word. Last, as above. */
+     * selects as Rubi 0.9.7 did. The Shell sends it as VJO_GAME_OCR_S_TRUST in each job's speed word. */
     int hook_trust;           /* 0/1, on by default */
     /* Vertical text (vita-vn-ocr #99, API 47; docs/vita-vn-ocr.md "Vertical text"): VJO_VERTICAL_*, the
-     * request's VJO_GAME_OCR_S_VERTICAL field as it is (include/vjo_game_ocr.h). Last, as above. */
+     * request's VJO_GAME_OCR_S_VERTICAL field as it is (include/vjo_game_ocr.h). */
     int ocr_vertical;
     /* Local OCR (vocr, API 50): the line finder's fixes (bee-san/vita-vn-ocr #129; core/vocr_ocr.h
      * VjoVocrPolicy.line_fix): 1 (on, the default) its measured default, VOCR_FIX_DEFAULT (COLGAP); 2 (junk) also
      * the frame-strip rule, for regions drawn with a margin; 3 (all) also the touching-rows split; 0 (off) the
-     * frozen finder. Last, as above. */
+     * frozen finder. */
     int ocr_line_fix;         /* 0 off, 1 on, 2 junk, 3 all */
     /* Why the open overlay waits (#358; docs/text-stability.md "Why the overlay waits"): 1 (the default) has its try
      * after two jobs in a row that ended VJO_E_SCREEN_CHANGED (the text changed under every read) say why it still is
      * recognizing and what helps, instead of "Recognizing…"; 0 (ocr_wait_hint = off): "Recognizing…" all along, as
-     * before. Read by the Shell only. Last, as above. */
+     * before. Read by the Shell only. */
     int ocr_wait_hint;        /* 0/1, on by default */
     /* Lookups (#321; docs/local-dictionaries.md "Names and words"): at one span, whether an entry spelled as the
      * text in a later dictionary (a character's name, わたし) comes before a word the first dictionary spells
      * otherwise (私): VJO_NAMES_*, auto (the default) puts the word first when it is among the 1,023 most
-     * frequent. Read by the Shell's lookups only. Last, as above. */
+     * frequent. Read by the Shell's lookups only. */
     int names_first;
     /* Local OCR (vocr, API 54): the line finder of a job, VJO_FINDER_GRAD (Rubi's GRAD with the refinement and
      * the short-line probe, as every build before) or VJO_FINDER_SPOTTER (vita-vn-ocr's text spotter (#149, #128),
      * core/vocr_ocr.h VjoVocrPolicy.spot: its boxes are the lines; a job that cannot have its weights reads with
-     * GRAD); and whether the spotter's boxes are refined (VOCR_REFINE_DEFAULT; GRAD's follow ocr_refine_lines).
-     * Last, as above. */
+     * GRAD); and whether the spotter's boxes are refined (VOCR_REFINE_DEFAULT; GRAD's follow ocr_refine_lines). */
     int ocr_finder;           /* VJO_FINDER_* */
     int ocr_spotter_refine;   /* 0/1 */
     /* The pause for the frame (API 55, #348; docs/game-pause.md): 1 (ocr_pause = on) has each of the user's jobs copy
      * its region from one frame, in that frame's display call, which the game waits in for as long (at most
      * VJO_GAME_OCR_PAUSE_MAX_US), and read every row from that copy; 0 (off, the default) reads strip by strip, as
-     * before. The Shell sends it as VJO_GAME_OCR_S_PAUSE in each job's speed word. Last, as above. */
+     * before. The Shell sends it as VJO_GAME_OCR_S_PAUSE in each job's speed word. */
     int ocr_pause;            /* 0/1, off by default */
 } VjoConfig;
 
