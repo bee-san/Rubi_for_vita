@@ -82,20 +82,31 @@ been reported.
     the read (it fails without the condition), and a press on a quiet screen cancels as on any other unsettled one.
     The debug Shell takes 16 B more code, the normal one none: 4 B of code room left in each. Not run on a console.
   - **#413's audit: a line typing out no longer counts against a native text hook.** A press's read of a line still
-    typing out compared its first part with the hook's whole line: a disagreement, so one such read took a learned
-    hook's trust and two in a row unlocked it (it had to be learned again). Now, in a read without the wait, OCR's
+    typing out compared its first part with the hook's whole line: a disagreement, so one such read at a check sent a
+    learned hook back to a check every eighth line, its trust further off, and two in a row unlocked it (it had to be
+    learned again); a trusted hook was never compared, as its jobs run no OCR. Now, in a read without the wait, OCR's
     text that agrees only with the beginning of the locked hook's line is no evidence either way: the press shows OCR's
     text and the hook keeps its state; any other text still disagrees, and a background read is compared as before
     ([details](docs/native-hooks.md#a-line-typing-out-413s-audit-f2)). On the
     hooked page pool's 29 Vita sessions (host: the selection over OCR's real reads, half of the presses on a line typing
-    out) a correct hook is unlocked 47 times instead of 105, and keeps its trust for 5,149 lines instead of 3,510; it
-    is taken for a line typing out once until it agrees again, so a hook a page ahead of a page that collects its lines
-    is still unlocked, never trusted (in the actual worker with every job a press, 146 wrong lines against 103 in one
-    such game); background reads are compared exactly as before. The game worker takes 176 B more code (160 B in the debug build), the same pages. A press's partial line in
+    out) a correct hook is unlocked 47 times instead of 105, and gives 5,149 trusted lines instead of 3,510, as it
+    reaches trust sooner; it is taken for a line typing out once until it agrees again, so a hook a page ahead of a page
+    that collects its lines is still unlocked, never trusted (in the actual worker with every job a press, 146 wrong
+    lines against 103 in two sessions, PCSG00648's and one more). With the default `ocr_settle_ms`, background reads are
+    compared exactly as before; with `ocr_settle_ms = 0` no read waits, so every read gets the rule. As every change to
+    the hook code does, it renews the hook definitions' revision, so a string-copy source Rubi had learned or trusted
+    for a game is learned again after the update. The game worker takes 208 B more code (192 B in the debug build), the
+    same pages. A press's partial line in
     Automatically and the settled line after it are two `history.csv` records, so the reading totals count the start
     twice: documented ([details](docs/ocr-history.md)); its fix does not fit the Shell's pages
     ([measured](docs/memory-ledger.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)). Not run on
     a console.
+  - **#491's audit:** tests pin the worker's half of the rule (a press's request has no settle time: a case fails with
+    it wired to 0, to 1 or to another field) and two guards of the once state (a duplicate read takes no exemption; an
+    unlock forgets it). `prefix_score` is no longer inlined: the comparison's deepest stack chain is 2,736 B, where #491
+    made it 3,760 B (2,772 B before; measured, `-fstack-usage`), for 32 B of the worker's code, the same pages. Repeated
+    presses on one line still typing out can still unlock its hook (documented, the owner's call); the console check is
+    [step 19](docs/native-hooks.md#to-test-on-a-console). Not run on a console.
 
 ### Added
 

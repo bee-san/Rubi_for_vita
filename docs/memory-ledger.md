@@ -27,10 +27,30 @@ one condition and its argument (the request's settle time, `game_ocr/main.c`) an
 in the worker's job state: never persisted, the cache's record unchanged), in the game worker only (`core/hook_select.c`
 built `-Os`): its code 170,796 → 170,972 B in the normal worker and 179,760 → 179,920 B in the debug one (+176 and
 +160 B), the same pages (1,060 and 304 B of code room left), data unchanged (the state is in `.bss`'s existing page).
-Its comparison's scratch is the similarity's own: one more call of the same frame size, never beside it, so the
-stack's peak is unchanged (a code point array and the edit distance's row, as `score_of`'s). The Shell's and the
-kernel's rows are main's [measured: `tools/check_memory_ledger.py`'s module rows, both builds, main `b6507605` against
-this change].
+The Shell's and the kernel's rows are main's [measured: `tools/check_memory_ledger.py`'s module rows, both builds, main
+`b6507605` against this change].
+
+**Its stack, #491's audit F3.** `prefix_score`'s scratch is the similarity's own (a code point array, then `within`'s
+row of the edit distance), and it is called beside `score_of`, never inside it, so #491 said here that the stack's peak
+was unchanged. As built it was not: GCC inlined `prefix_score` into `vjo_hook_select_after`, whose frame then held its
+1 KiB array beside `score_of`'s call, so the comparison's deepest chain grew by 988 B, its arrays from 2,562 to 3,586 B.
+`prefix_score` is now `noinline` (as `core/games.c`'s `vjo_games_row_as` is), and the chain is 36 B under #491's
+parent's, since `within` stays out of line too:
+
+| `core/hook_select.c` | `vjo_hook_select_after` | `score_of` | `prefix_score` | `within` | deepest chain |
+|---|---:|---:|---:|---:|---:|
+| #491's parent `9398b006` | 1,112 B | 1,600 B (`within` inlined) | | | 2,772 B (+ `cmp_form` 40 + `utf8_next` 20) |
+| #491 (main `36e570c4`) | 2,136 B (`prefix_score` inlined) | 1,056 B | | 568 B | 3,760 B |
+| `noinline` | 1,112 B | 1,056 B | 1,056 B | 568 B | 2,736 B (through either) |
+
+The same in both builds [measured: `-fstack-usage -fcallgraph-info=su`, the worker's flags (`-Os`), arm-vita-eabi-gcc
+15.2.0 of the gate's vitasdk image]. Its one caller is `vjo_game_ocr_run_request` (4,528 B), under `worker_main` (72 B),
+on `VjoGameVocr`'s 32 KiB stack (`VJO_STACK_GAME`): that path takes 7,336 B (8,360 B on main, 7,372 B at the parent);
+the worker's deepest path overall is not measured here. The attribute takes 32 B of code in each build, in the same
+pages: 170,972 → 171,004 B in the normal worker (1,028 B of code room left) and 179,920 → 179,952 B in the debug one
+(272 B), data unchanged; the Shell's and the kernel's rows are main's [measured: the module rows, both builds, main
+`36e570c4` against this change]. As every change to `core/hook_select.c` does, it renews the hook definitions' revision
+(`cmake/HookRevision.cmake`), as #491 did: one renewal for the release that ships both.
 
 **F5** (a press's partial line and the settled one are two `history.csv` records:
 [ocr-history.md](ocr-history.md)) is documented, not changed. Its fix, a record of a read without the wait that a
