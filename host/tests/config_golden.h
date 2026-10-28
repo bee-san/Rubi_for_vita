@@ -1,9 +1,11 @@
-/* The config.ini golden files (#418, cleanup package P2): the parser's and the Rubi app's saves' output for the
- * fixtures host/tests/fixtures/config-*.ini, docs/config.example.ini and every record of
+/* The config.ini golden files (#418, cleanup package P2): the parser's, the Rubi app's saves' and its install's output
+ * for the fixtures host/tests/fixtures/config-*.ini, docs/config.example.ini and every record of
  * host/tests/fixtures/config-lines.txt, compared with a golden file taken before a change, so that the change's diff
- * of the golden file is the whole of its behaviour change. VJO_UPDATE_GOLDEN=1 in the environment writes the golden
- * file instead of comparing (then review its diff). Included by test_core.c (the parse) and test_preferences.c (the
- * saves). */
+ * of the golden file is the whole of its behaviour change. Each record is one line that holds only what differs from
+ * a reference (the defaults' parse, the input with a save's own appended lines, an empty file's plan); a record that
+ * differs in nothing is counted, not listed, so a change to it still shows (its line appears). VJO_UPDATE_GOLDEN=1 in
+ * the environment writes the golden file instead of comparing (then review its diff). Included by test_core.c (the
+ * parse), test_preferences.c (the saves) and test_settings_install.c (the install). */
 #ifndef VJO_TEST_CONFIG_GOLDEN_H
 #define VJO_TEST_CONFIG_GOLDEN_H
 
@@ -105,6 +107,31 @@ GOLDEN_FN void golden_dump_config(GoldenOut *o, const VjoConfig *c, const VjoCon
         golden_escape(o, c->warnings[i], strnlen(c->warnings[i], sizeof(c->warnings[i])));
         golden_puts(o, "\n");
     }
+}
+
+/* The fields of c that differ from base and its warnings, on one line: " name=value" and " | w: text" (nothing when c
+ * is base's parse with no warning). Returns whether it wrote anything. */
+GOLDEN_FN int golden_dump_config_line(GoldenOut *o, const VjoConfig *c, const VjoConfig *base)
+{
+    size_t start = o->n;
+#define VJO_GOLDEN_STR(f)                                                                                          \
+    if (strcmp(c->f, base->f)) {                                                                                   \
+        golden_puts(o, " " #f "=\"");                                                                              \
+        golden_escape(o, c->f, strlen(c->f));                                                                      \
+        golden_puts(o, "\"");                                                                                      \
+    }
+#define VJO_GOLDEN_INT(f) \
+    if (c->f != base->f) golden_printf(o, " " #f "=%d", c->f);
+    VJO_GOLDEN_STR_FIELDS(VJO_GOLDEN_STR)
+    VJO_GOLDEN_INT_FIELDS(VJO_GOLDEN_INT)
+#undef VJO_GOLDEN_STR
+#undef VJO_GOLDEN_INT
+    for (int i = 0; i < c->n_warnings && i < VJO_CONFIG_MAX_WARNINGS; i++) {
+        golden_puts(o, " | w: ");
+        golden_escape(o, c->warnings[i], strnlen(c->warnings[i], sizeof(c->warnings[i])));
+    }
+    if (c->n_warnings > VJO_CONFIG_MAX_WARNINGS) golden_printf(o, " | n_warnings=%d", c->n_warnings);
+    return o->n != start;
 }
 
 /* A file's bytes (NUL-terminated, malloc'd), or NULL. */
@@ -222,7 +249,7 @@ GOLDEN_FN size_t golden_next_line(const char *s, size_t n, size_t at)
     while (at < n && s[at] != '\n') at++;
     return at < n ? at + 1 : n;
 }
-GOLDEN_FN void golden_line_diff(GoldenOut *o, const char *a, size_t an, const char *b, size_t bn)
+GOLDEN_FN void golden_line_diff_as(GoldenOut *o, const char *a, size_t an, const char *b, size_t bn, int inline_)
 {
     size_t i = 0, j = 0;
     unsigned ai = 1, bj = 1;
@@ -238,17 +265,27 @@ GOLDEN_FN void golden_line_diff(GoldenOut *o, const char *a, size_t an, const ch
             if (ke - k == ie - i && !memcmp(b + k, a + i, ie - i)) { later = 1; break; }
         }
         if (i < an && !later) {
-            golden_printf(o, "    -%u ", ai);
+            golden_printf(o, inline_ ? " -%u " : "    -%u ", ai);
             golden_escape_short(o, a + i, ie - i);
-            golden_puts(o, "\n");
+            if (!inline_) golden_puts(o, "\n");
             i = ie, ai++;
         } else {
-            golden_printf(o, "    +%u ", bj);
+            golden_printf(o, inline_ ? " +%u " : "    +%u ", bj);
             golden_escape_short(o, b + j, je - j);
-            golden_puts(o, "\n");
+            if (!inline_) golden_puts(o, "\n");
             j = je, bj++;
         }
     }
+}
+/* One entry a line (the real files' saves, the empty file's plan). */
+GOLDEN_FN void golden_line_diff(GoldenOut *o, const char *a, size_t an, const char *b, size_t bn)
+{
+    golden_line_diff_as(o, a, an, b, bn, 0);
+}
+/* All on the line being written (a record's). */
+GOLDEN_FN void golden_line_diff_inline(GoldenOut *o, const char *a, size_t an, const char *b, size_t bn)
+{
+    golden_line_diff_as(o, a, an, b, bn, 1);
 }
 
 /* The line of text (len bytes) that starts at or before byte at: into out, cut to fit. */

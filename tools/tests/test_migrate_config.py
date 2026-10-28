@@ -103,27 +103,40 @@ def migrate_in_process(module, folder, old_bytes, *sets):
     return status, out.read_bytes() if out.exists() else None, report.getvalue()
 
 
-def golden_migration(module, folder, old_bytes, lines, first=None, sets=()):
-    """One migration in the golden file: its exit status, the template's lines it changed (- and +, each hunk's line
-    numbers on its @@ line) and its report, or (first: a first install's report lines) only the lines its report has
-    that a first install's has not (+) and the other way round (-): a first install reports every setting it writes.
-    sets: key=value overrides, as install_ftp.sh passes them. Returns the report's lines."""
+def golden_migration(module, folder, old_bytes, lines, first=None, sets=(), label=None):
+    """One migration in the golden file. A first install (first None): its exit status and its report, a line each. A
+    file or a record (label: its line's start): its exit status, the template's lines it changes (each hunk's @@ line
+    numbers, then - and +) and, for exit 0, its report's lines that a first install's has not (r+) and the other way
+    round (r-), as a first install reports every setting it writes, else its report (r:); one line for a record, a
+    line a part for a real file. A migration with exit 0, no change and the first install's report is no line (returns
+    None, the caller counts it). sets: key=value overrides, as install_ftp.sh passes them. Returns the report's lines."""
     status, new, report = migrate_in_process(module, folder, old_bytes, *sets)
-    lines.append("  exit %d" % status)
+    said = report.splitlines()
+    if first is None:
+        lines.append("  exit %d" % status)
+        lines.extend("  report: " + escape_short(line.encode("utf-8")) for line in said)
+        return said
+    parts = []
     if new is not None:
         before = TEMPLATE.read_bytes().split(b"\n")
         diff = list(difflib.diff_bytes(difflib.unified_diff, before, new.split(b"\n"), lineterm=b"", n=0))
         for d in diff[2:]:  # after the two file headers
-            if d.startswith(b"@@"):
-                lines.append("  " + d.decode("ascii"))
-            else:
-                lines.append(("  %s %s" % (d[:1].decode("ascii"), escape_short(d[1:]))).rstrip(" "))
-    said = report.splitlines()
-    if first is None:
-        lines.extend("  report: " + escape_short(line.encode("utf-8")) for line in said)
+            parts.append(d.decode("ascii") if d.startswith(b"@@") else
+                         ("%s %s" % (d[:1].decode("ascii"), escape_short(d[1:]))).rstrip(" "))
+    if status == 0:  # what its report says beyond a first install's (r+) and leaves out of it (r-)
+        parts.extend("r+ " + escape_short(line.encode("utf-8")) for line in said if line not in first)
+        parts.extend("r- " + escape_short(line.encode("utf-8")) for line in first if line not in said)
+    else:  # unchanged (1) or failed (2): its report as it is
+        parts.extend("r: " + escape_short(line.encode("utf-8")) for line in said)
+    if new is None:
+        parts.insert(0, "no file written")
+    if status == 0 and not parts:
+        return None
+    if label.startswith("= "):  # a real file: a part a line
+        lines.append("%s => exit %d" % (label, status))
+        lines.extend("  " + x for x in parts)
     else:
-        lines.extend("  report+ " + escape_short(line.encode("utf-8")) for line in said if line not in first)
-        lines.extend("  report- " + escape_short(line.encode("utf-8")) for line in first if line not in said)
+        lines.append("%s => exit %d%s" % (label, status, "".join(" | " + x for x in parts)))
     return said
 
 
@@ -140,13 +153,14 @@ class MigrateConfig(unittest.TestCase):
             first = golden_migration(module, folder, None, lines)
             for name in ("host/tests/fixtures/config-old-app-test2.ini", "host/tests/fixtures/config-test3-owner.ini",
                          "docs/config.example.ini"):
-                lines.append("= " + name)
-                golden_migration(module, folder, (ROOT / name).read_bytes(), lines, first)
-            count = 0
+                if golden_migration(module, folder, (ROOT / name).read_bytes(), lines, first, label="= " + name) is None:
+                    lines.append("= %s => as a first install" % name)
+            count = quiet = 0
             for record in list(records()) + list(long_records()):
-                lines.append("> " + escape_short(record))
-                golden_migration(module, folder, record, lines, first)
+                if golden_migration(module, folder, record, lines, first, label="> " + escape_short(record)) is None:
+                    quiet += 1
                 count += 1
+            lines.append("= %d records migrate as a first install" % quiet)
             # key=value overrides (install_ftp.sh --set), over a first install and over a file (P2's audit F4)
             for old, sets in ((None, ("log_file=on",)), (None, ("vocr_tier=large", "log_file=off")),
                               (b"vocr_tier = small\n", ("vocr_tier=huge",)), (b"", ("vocr_model=FL10_w8.vocr",)),
@@ -161,9 +175,10 @@ class MigrateConfig(unittest.TestCase):
                               (b"", ("Font_Size_JA=20", " log_file = off ")), (b"", ("local_dictionaries=mine.vjdict",)),
                               (b"local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 1\n",
                                ("local_dictionary_results=1",))):
-                lines.append("> %s --set %s" % ("(none)" if old is None else escape_short(old) or "(empty)",
-                                                 " ".join(escape(v.encode("utf-8")) for v in sets) or "(nothing)"))
-                golden_migration(module, folder, old, lines, first, sets)
+                label = "> %s --set %s" % ("(none)" if old is None else escape_short(old) or "(empty)",
+                                           " ".join(escape(v.encode("utf-8")) for v in sets) or "(nothing)")
+                if golden_migration(module, folder, old, lines, first, sets, label=label) is None:
+                    lines.append(label + " => as a first install")
         self.assertGreater(count, 300)
         text = "\n".join(lines) + "\n"
         golden = FIXTURES / "config-migrate.golden"

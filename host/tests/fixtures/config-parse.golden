@@ -1,4 +1,4 @@
-# The parse of the config fixtures (host/tests/test_core.c config_golden; VJO_UPDATE_GOLDEN=1 rewrites this file)
+# The parse of the config fixtures (host/tests/test_core.c config_golden; VJO_UPDATE_GOLDEN=1 rewrites this file): the defaults, then each file and record with the fields that differ
 = the defaults
   local_dictionary_dir="ux0:data/VitaJPOverlay/dictionaries"
   local_dictionaries="plaintext.vjdict,vndb-names.vjdict"
@@ -43,1119 +43,329 @@
   ocr_finder=1
   ocr_spotter_refine=0
   n_warnings=0
-= host/tests/fixtures/config-old-app-test2.ini
-  local_dictionary_dir="ux0:data/VitaJPOverlay/dictionaries"
-  local_dictionaries="plaintext.vjdict"
-  ocr_model_dir="ux0:data/VitaJPOverlay/ocr"
-  dictionary=3
-  local_dictionary_results=1
-  non_japanese_filter=1
-  japanese_only_selection=1
-  highlight_mode=0
-  frequency_badge=1
-  font_size_ja=18
-  font_size_en=14
-  toggle_button=2
-  subtitle_button=4
-  ocr_mode=0
-  text_source=0
-  vocr_tier=2
-  vocr_tier_explicit=0
-  ocr_settle_ms=150
-  ocr_settle_max_ms=2000
-  ocr_skip_blank_lines=0
-  ocr_lm=2
-  ocr_cascade_ms=2000
-  ocr_refine_lines=2
-  log_file=1
-  anki_mining=1
-  ocr_helpers=2
-  ocr_boost_clock=1
-  ocr_settle_press_ms=1000
-  anki_screenshot=1
-  stick_lookup_ms=200
-  ocr_text_gate=0
-  hook_sites=1
-  anki_screenshot_trim_bars=1
-  reading_time=0
-  ocr_head_gate=3
-  hook_trust=1
-  ocr_vertical=2
-  ocr_line_fix=1
-  ocr_wait_hint=1
-  names_first=2
-  ocr_finder=1
-  ocr_spotter_refine=0
-  n_warnings=1
-  warning: ocr_backend: VOCR2 was removed; using vocr
-= host/tests/fixtures/config-test3-owner.ini
-  local_dictionary_dir="ux0:data/VitaJPOverlay/dictionaries"
-  local_dictionaries="plaintext.vjdict"
-  ocr_model_dir="ux0:data/VitaJPOverlay/ocr"
-  dictionary=3
-  local_dictionary_results=1
-  non_japanese_filter=1
-  japanese_only_selection=1
-  highlight_mode=0
-  frequency_badge=1
-  font_size_ja=18
-  font_size_en=14
-  toggle_button=2
-  subtitle_button=4
-  ocr_mode=0
-  text_source=0
-  vocr_tier=3
-  vocr_tier_explicit=1
-  ocr_settle_ms=150
-  ocr_settle_max_ms=2000
-  ocr_skip_blank_lines=0
-  ocr_lm=2
-  ocr_cascade_ms=2000
-  ocr_refine_lines=2
-  log_file=1
-  anki_mining=1
-  ocr_helpers=2
-  ocr_boost_clock=1
-  ocr_settle_press_ms=1000
-  anki_screenshot=1
-  stick_lookup_ms=200
-  ocr_text_gate=0
-  hook_sites=1
-  anki_screenshot_trim_bars=1
-  reading_time=0
-  ocr_head_gate=3
-  hook_trust=1
-  ocr_vertical=2
-  ocr_line_fix=1
-  ocr_wait_hint=1
-  names_first=2
-  ocr_finder=1
-  ocr_spotter_refine=0
-  n_warnings=0
-= docs/config.example.ini
-  local_dictionary_dir="ux0:data/VitaJPOverlay/dictionaries"
-  local_dictionaries="plaintext.vjdict,vndb-names.vjdict"
-  ocr_model_dir="ux0:data/VitaJPOverlay/ocr"
-  dictionary=3
-  local_dictionary_results=2
-  non_japanese_filter=1
-  japanese_only_selection=0
-  highlight_mode=0
-  frequency_badge=1
-  font_size_ja=18
-  font_size_en=14
-  toggle_button=2
-  subtitle_button=4
-  ocr_mode=0
-  text_source=1
-  vocr_tier=2
-  vocr_tier_explicit=1
-  ocr_settle_ms=150
-  ocr_settle_max_ms=2000
-  ocr_skip_blank_lines=0
-  ocr_lm=2
-  ocr_cascade_ms=2000
-  ocr_refine_lines=2
-  log_file=1
-  anki_mining=0
-  ocr_helpers=2
-  ocr_boost_clock=1
-  ocr_settle_press_ms=1000
-  anki_screenshot=1
-  stick_lookup_ms=200
-  ocr_text_gate=0
-  hook_sites=1
-  anki_screenshot_trim_bars=1
-  reading_time=0
-  ocr_head_gate=3
-  hook_trust=1
-  ocr_vertical=2
-  ocr_line_fix=1
-  ocr_wait_hint=1
-  names_first=2
-  ocr_finder=1
-  ocr_spotter_refine=0
-  n_warnings=0
-> ; a comment
-> # a comment
->    ; an indented comment
-> \t# a tabbed comment
-> bogus = 1
-  n_warnings=1
-  warning: unknown setting 'bogus'
-> bogus line
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> Bogus_Setting = 1
-  n_warnings=1
-  warning: unknown setting 'Bogus_Setting'
-> key with spaces = 1
-  n_warnings=1
-  warning: unknown setting 'key'
-> = value
-  n_warnings=1
-  warning: unknown setting ''
->  = value
-  n_warnings=1
-  warning: unknown setting ''
-> ==
-  n_warnings=1
-  warning: unknown setting ''
-> font_size_ja
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> font_size_ja =
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> font_size_ja = 20 ; inline comment
-  font_size_ja=20
-> font_size_ja = 20 # inline comment
-  font_size_ja=20
-> font_size_ja = 20;not a comment
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> font_size_ja = 20 \t; tabbed comment
-  font_size_ja=20
-> font_size_ja=20
-  font_size_ja=20
->   font_size_ja  =  20 \x20
-  font_size_ja=20
-> \tfont_size_ja\t=\t20\t
-  font_size_ja=20
-> FONT_SIZE_JA = 20
-  font_size_ja=20
-> font_size_ja = 20\r
-  font_size_ja=20
-> font_size_ja = 20\r\nfont_size_en = 12\r\n
-  font_size_ja=20
-  font_size_en=12
-> \xEF\xBB\xBFfont_size_ja = 20
-  font_size_ja=20
->  \xEF\xBB\xBF font_size_ja = 20
-  font_size_ja=20
-> \xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20
-  font_size_ja=20
-> \xEF\xBBfont_size_ja = 20
-  n_warnings=1
-  warning: unknown setting '\xEF\xBBfont_size_ja'
-> \xEFfont_size_ja = 20
-  n_warnings=1
-  warning: unknown setting '\xEFfont_size_ja'
-> \xEF\xBB\xBEfont_size_ja = 20
-  n_warnings=1
-  warning: unknown setting '\xEF\xBB\xBEfont_size_ja'
-> font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12
-  font_size_ja=20
-  font_size_en=12
-> \xEF\xBB\xBF
-> anki_mining\r= off
-> vocr_tier\r= large
-  vocr_tier=3
-  vocr_tier_explicit=1
-> vocr_tier \r= large
-  vocr_tier=3
-  vocr_tier_explicit=1
-> highlight_mode\r=character
-  highlight_mode=1
-> japanese_only_selection \r = on
-  japanese_only_selection=1
-> local_dictionary_results\r\t= 3
-  local_dictionary_results=3
-> vocr_model\r= FL10_w8.vocr
-  vocr_tier=1
-> font_size\r= 3
-> jpdb_api_key\r= secret-17
-> ocr_backend\r= lens
-  n_warnings=1
-  warning: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
-> font_size_ja = 20\nfont_size_ja = 30
-  font_size_ja=30
-> font_size_ja = 20\nfont_size_ja = 99
-  font_size_ja=20
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5
-  n_warnings=4
-  warning: unknown setting 'bogus1'
-  warning: unknown setting 'bogus2'
-  warning: unknown setting 'bogus3'
-  warning: unknown setting 'bogus4'
-> an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1
-  n_warnings=1
-  warning: unknown setting 'an_unknown_key_much_longer_than_'
-> https://example.invalid/path?a=b
-  n_warnings=1
-  warning: unknown setting 'https://example.invalid/path?a'
-> local_dictionary_dir = ux0:data/mine
-  local_dictionary_dir="ux0:data/mine"
-> local_dictionary_dir = ux0:data/mine ; not a comment here
-  local_dictionary_dir="ux0:data/mine ; not a comment here"
-> local_dictionary_dir =
-  n_warnings=1
-  warning: local_dictionary_dir: empty (ignored)
-> LOCAL_DICTIONARY_DIR = ux0:data/Mine
-  local_dictionary_dir="ux0:data/Mine"
-> ocr_model_dir = ux0:data/models
-  ocr_model_dir="ux0:data/models"
-> ocr_model_dir = ux0:data/models # not a comment here
-  ocr_model_dir="ux0:data/models # not a comment here"
-> ocr_model_dir =
-  n_warnings=1
-  warning: ocr_model_dir: empty (ignored)
-> local_dictionaries = a.vjdict
-  local_dictionaries="a.vjdict"
-> local_dictionaries = a.vjdict,b.vjdict
-  local_dictionaries="a.vjdict,b.vjdict"
-> local_dictionaries = a.vjdict, b.vjdict ; mine
-  local_dictionaries="a.vjdict, b.vjdict"
-> local_dictionaries = plaintext.vjdict,vndb-names.vjdict
-> local_dictionaries = ../a.vjdict
-  local_dictionaries=""
-  n_warnings=1
-  warning: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionaries = a.txt
-  local_dictionaries=""
-  n_warnings=1
-  warning: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionaries = /abs.vjdict
-  local_dictionaries=""
-  n_warnings=1
-  warning: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict
-  local_dictionaries="a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict"
-> local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict
-  local_dictionaries=""
-  n_warnings=1
-  warning: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionaries =
-  local_dictionaries=""
-  n_warnings=1
-  warning: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionaries = ,
-  local_dictionaries=""
-  n_warnings=1
-  warning: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionary_results = 1
-  local_dictionary_results=1
-> local_dictionary_results = 8
-  local_dictionary_results=8
-> local_dictionary_results = 0
-  n_warnings=1
-  warning: local_dictionary_results: invalid value (1-8)
-> local_dictionary_results = 9
-  n_warnings=1
-  warning: local_dictionary_results: invalid value (1-8)
-> local_dictionary_results = two
-  n_warnings=1
-  warning: local_dictionary_results: invalid value (1-8)
-> local_dictionary_results =
-  n_warnings=1
-  warning: local_dictionary_results: invalid value (1-8)
-> non_japanese_filter = lines
-> non_japanese_filter = none
-  non_japanese_filter=0
-> non_japanese_filter = LINES
-> non_japanese_filter = None ; mine
-  non_japanese_filter=0
-> non_japanese_filter = all
-  n_warnings=1
-  warning: non_japanese_filter: invalid value
-> non_japanese_filter =
-  n_warnings=1
-  warning: non_japanese_filter: invalid value
-> japanese_only_selection = on
-  japanese_only_selection=1
-> japanese_only_selection = off
-> japanese_only_selection = ON
-  japanese_only_selection=1
-> japanese_only_selection = maybe
-  n_warnings=1
-  warning: japanese_only_selection: invalid value
-> japanese_only_selection = on\njapanese_only_selection = maybe
-  japanese_only_selection=1
-  n_warnings=1
-  warning: japanese_only_selection: invalid value
-> highlight_mode = word
-> highlight_mode = character
-  highlight_mode=1
-> HIGHLIGHT_MODE = CHARACTER
-  highlight_mode=1
-> highlight_mode = Word
-> highlight_mode = sentence
-  n_warnings=1
-  warning: highlight_mode: invalid value
-> highlight_mode =
-  n_warnings=1
-  warning: highlight_mode: invalid value
-> frequency_badge = on
-> frequency_badge = off
-  frequency_badge=0
-> frequency_badge = Off
-  frequency_badge=0
-> frequency_badge = 1
-  n_warnings=1
-  warning: frequency_badge: invalid value
-> names_first = off
-  names_first=0
-> names_first = on
-  names_first=1
-> names_first = auto
-> names_first = AUTO
-> names_first = first
-  n_warnings=1
-  warning: names_first: invalid value
-> font_size_ja = 8
-  font_size_ja=8
-> font_size_ja = 40
-  font_size_ja=40
-> font_size_ja = 7
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> font_size_ja = 41
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> font_size_ja = -8
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> font_size_ja = big
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> font_size_ja = 100000001
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> font_size_ja = 999999999999
-  n_warnings=1
-  warning: font_size_ja: invalid value (8-40)
-> font_size_ja = 0020
-  font_size_ja=20
-> font_size_en = 8
-  font_size_en=8
-> font_size_en = 40
-  font_size_en=40
-> font_size_en = 41
-  n_warnings=1
-  warning: font_size_en: invalid value (8-40)
-> font_size_en = 12px
-  n_warnings=1
-  warning: font_size_en: invalid value (8-40)
-> stick_lookup_ms = 0
-  stick_lookup_ms=0
-> stick_lookup_ms = 1000
-  stick_lookup_ms=1000
-> stick_lookup_ms = 1001
-  n_warnings=1
-  warning: stick_lookup_ms: invalid value (ms, out of range)
-> stick_lookup_ms = -5
-  n_warnings=1
-  warning: stick_lookup_ms: invalid value (ms, out of range)
-> stick_lookup_ms = 20 ms
-  n_warnings=1
-  warning: stick_lookup_ms: invalid value (ms, out of range)
-> toggle_button = select
-  toggle_button=0
-> toggle_button = start
-  toggle_button=1
-> toggle_button = l+r
-> toggle_button = select+l
-  toggle_button=3
-> toggle_button = select+r
-  toggle_button=4
-  subtitle_button=3
-  n_warnings=1
-  warning: toggle_button and subtitle_button are both select+r: subtitle_button is select+l
-> toggle_button = rear_double_tap
-  toggle_button=5
-> toggle_button = Select+R
-  toggle_button=4
-  subtitle_button=3
-  n_warnings=1
-  warning: toggle_button and subtitle_button are both select+r: subtitle_button is select+l
-> toggle_button = L+R
-> toggle_button = triangle
-  n_warnings=1
-  warning: toggle_button: invalid value
-> toggle_button =
-  n_warnings=1
-  warning: toggle_button: invalid value
-> subtitle_button = select
-  subtitle_button=0
-> subtitle_button = start
-  subtitle_button=1
-> subtitle_button = l+r
-  n_warnings=1
-  warning: toggle_button and subtitle_button are both l+r: subtitle_button is select+r
-> subtitle_button = select+l
-  subtitle_button=3
-> subtitle_button = select+r
-> subtitle_button = rear_double_tap
-  subtitle_button=5
-> subtitle_button = REAR_DOUBLE_TAP
-  subtitle_button=5
-> subtitle_button = circle
-  n_warnings=1
-  warning: subtitle_button: invalid value
-> toggle_button = select+r
-  toggle_button=4
-  subtitle_button=3
-  n_warnings=1
-  warning: toggle_button and subtitle_button are both select+r: subtitle_button is select+l
-> toggle_button = start\nsubtitle_button = start
-  toggle_button=1
-  n_warnings=1
-  warning: toggle_button and subtitle_button are both start: subtitle_button is select+r
-> toggle_button = select+l\nsubtitle_button = select+l
-  toggle_button=3
-  n_warnings=1
-  warning: toggle_button and subtitle_button are both select+l: subtitle_button is select+r
-> subtitle_button = l+r
-  n_warnings=1
-  warning: toggle_button and subtitle_button are both l+r: subtitle_button is select+r
-> text_source = ocr
-  text_source=0
-> text_source = auto
-> text_source = hooks
-  text_source=2
-> text_source = HOOKS
-  text_source=2
-> text_source = lens
-  n_warnings=1
-  warning: text_source: invalid value
-> text_source = ocr\ntext_source = maybe
-  n_warnings=1
-  warning: text_source: invalid value
-> text_source =
-  n_warnings=1
-  warning: text_source: invalid value
-> hook_sites = on
-> hook_sites = off
-  hook_sites=0
-> Hook_Sites = OFF
-  hook_sites=0
-> hook_sites = 0
-  n_warnings=1
-  warning: hook_sites: invalid value
-> hook_sites = off\nhook_sites = maybe
-  n_warnings=1
-  warning: hook_sites: invalid value
-> hook_trust = on
-> hook_trust = off
-  hook_trust=0
-> HOOK_TRUST = Off
-  hook_trust=0
-> hook_trust = off\nhook_trust =
-  n_warnings=1
-  warning: hook_trust: invalid value
-> hook_trusted = off
-  n_warnings=1
-  warning: unknown setting 'hook_trusted'
-> ocr_mode = auto
-> ocr_mode = on_press
-  ocr_mode=1
-> ocr_mode = ON_PRESS
-  ocr_mode=1
-> ocr_mode = On_Press ; mine
-  ocr_mode=1
-> ocr_mode = press
-  n_warnings=1
-  warning: ocr_mode: invalid value
-> ocr_mode =
-  n_warnings=1
-  warning: ocr_mode: invalid value
-> vocr_tier = small
-  vocr_tier=1
-  vocr_tier_explicit=1
-> vocr_tier = normal
-  vocr_tier_explicit=1
-> vocr_tier = large
-  vocr_tier=3
-  vocr_tier_explicit=1
-> vocr_tier = Large
-  vocr_tier=3
-  vocr_tier_explicit=1
-> vocr_tier = huge
-  n_warnings=1
-  warning: vocr_tier: invalid value (small, normal or large)
-> vocr_tier =
-  n_warnings=1
-  warning: vocr_tier: invalid value (small, normal or large)
-> ocr_settle_ms = 0
-  ocr_settle_ms=0
-> ocr_settle_ms = 150
-> ocr_settle_ms = 1000
-  ocr_settle_ms=1000
-> ocr_settle_ms = 1001
-  n_warnings=1
-  warning: ocr_settle_ms: invalid value (ms, out of range)
-> ocr_settle_ms = -5
-  n_warnings=1
-  warning: ocr_settle_ms: invalid value (ms, out of range)
-> ocr_settle_ms = soon
-  n_warnings=1
-  warning: ocr_settle_ms: invalid value (ms, out of range)
-> ocr_settle_max_ms = 100
-  ocr_settle_max_ms=100
-> ocr_settle_max_ms = 10000
-  ocr_settle_max_ms=10000
-> ocr_settle_max_ms = 99
-  n_warnings=1
-  warning: ocr_settle_max_ms: invalid value (ms, out of range)
-> ocr_settle_max_ms = 10001
-  n_warnings=1
-  warning: ocr_settle_max_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = 0
-  ocr_settle_press_ms=0
-> ocr_settle_press_ms = 100
-  ocr_settle_press_ms=100
-> ocr_settle_press_ms = 1000
-> ocr_settle_press_ms = 10000
-  ocr_settle_press_ms=10000
-> ocr_settle_press_ms = 1
-  n_warnings=1
-  warning: ocr_settle_press_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = 24
-  n_warnings=1
-  warning: ocr_settle_press_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = 99
-  n_warnings=1
-  warning: ocr_settle_press_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = 10001
-  n_warnings=1
-  warning: ocr_settle_press_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = -5
-  n_warnings=1
-  warning: ocr_settle_press_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = soon
-  n_warnings=1
-  warning: ocr_settle_press_ms: invalid value (ms, out of range)
-> ocr_settle_press_ms = 400\nocr_settle_press_ms = 99
-  ocr_settle_press_ms=400
-  n_warnings=1
-  warning: ocr_settle_press_ms: invalid value (ms, out of range)
-> ocr_skip_blank_lines = on
-  ocr_skip_blank_lines=1
-> ocr_skip_blank_lines = off
-> ocr_skip_blank_lines = maybe
-  n_warnings=1
-  warning: ocr_skip_blank_lines: invalid value
-> ocr_lm = off
-  ocr_lm=0
-> ocr_lm = 500k
-  ocr_lm=1
-> ocr_lm = 1000k
-> ocr_lm = 2000k
-  ocr_lm=3
-> ocr_lm = 4000k
-  ocr_lm=4
-> ocr_lm = 1000K
-> ocr_lm = 8000k
-  n_warnings=1
-  warning: ocr_lm: invalid value
-> ocr_lm = 1000
-  n_warnings=1
-  warning: ocr_lm: invalid value
-> ocr_cascade_ms = 0
-  ocr_cascade_ms=0
-> ocr_cascade_ms = 250
-  ocr_cascade_ms=250
-> ocr_cascade_ms = 3750
-  ocr_cascade_ms=3750
-> ocr_cascade_ms = 3751
-  n_warnings=1
-  warning: ocr_cascade_ms: invalid value (ms, out of range)
-> ocr_cascade_ms = -1
-  n_warnings=1
-  warning: ocr_cascade_ms: invalid value (ms, out of range)
-> ocr_refine_lines = off
-  ocr_refine_lines=0
-> ocr_refine_lines = on
-  ocr_refine_lines=1
-> ocr_refine_lines = psp
-> ocr_refine_lines = PSP
-> ocr_refine_lines = sometimes
-  n_warnings=1
-  warning: ocr_refine_lines: invalid value
-> ocr_text_gate = on
-  ocr_text_gate=1
-> ocr_text_gate = off
-> OCR_TEXT_GATE = ON
-  ocr_text_gate=1
-> ocr_text_gate = maybe
-  n_warnings=1
-  warning: ocr_text_gate: invalid value
-> ocr_head_gate = on
-> ocr_head_gate = off
-  ocr_head_gate=0
-> ocr_head_gate = gate
-  ocr_head_gate=1
-> ocr_head_gate = two_level
-  ocr_head_gate=2
-> ocr_head_gate = Two_Level
-  ocr_head_gate=2
-> ocr_head_gate = sometimes
-  n_warnings=1
-  warning: ocr_head_gate: invalid value
-> ocr_two_level = off
-  n_warnings=1
-  warning: unknown setting 'ocr_two_level'
-> ocr_line_fix = off
-  ocr_line_fix=0
-> ocr_line_fix = on
-> ocr_line_fix = junk
-  ocr_line_fix=2
-> ocr_line_fix = all
-  ocr_line_fix=3
-> ocr_line_fix = ALL
-  ocr_line_fix=3
-> ocr_line_fix = valley
-  n_warnings=1
-  warning: ocr_line_fix: invalid value
-> ocr_line_fix = spotter
-  n_warnings=1
-  warning: ocr_line_fix: invalid value
-> ocr_finder = grad
-  ocr_finder=0
-> ocr_finder = spotter
-> OCR_Finder = SPOTTER
-> ocr_finder = textdet
-  n_warnings=1
-  warning: ocr_finder: invalid value
-> ocr_finder =
-  n_warnings=1
-  warning: ocr_finder: invalid value
-> ocr_spotter_refine = on
-  ocr_spotter_refine=1
-> ocr_spotter_refine = off
-> ocr_spotter_refine = maybe
-  n_warnings=1
-  warning: ocr_spotter_refine: invalid value
-> ocr_threads = 1
-  ocr_helpers=0
-> ocr_threads = 2
-  ocr_helpers=1
-> ocr_threads = 3
-> ocr_threads = 0
-  n_warnings=1
-  warning: ocr_threads: invalid value
-> ocr_threads = 4
-  n_warnings=1
-  warning: ocr_threads: invalid value
-> ocr_threads = x
-  n_warnings=1
-  warning: ocr_threads: invalid value
-> ocr_boost_clock = on
-> ocr_boost_clock = off
-  ocr_boost_clock=0
-> ocr_boost_clock = OFF
-  ocr_boost_clock=0
-> ocr_boost_clock = maybe
-  n_warnings=1
-  warning: ocr_boost_clock: invalid value
-> ocr_wait_hint = on
-> ocr_wait_hint = off
-  ocr_wait_hint=0
-> OCR_Wait_Hint = OFF
-  ocr_wait_hint=0
-> ocr_wait_hint = maybe
-  n_warnings=1
-  warning: ocr_wait_hint: invalid value
-> ocr_wait_hints = off
-  n_warnings=1
-  warning: unknown setting 'ocr_wait_hints'
-> ocr_wait = off
-  n_warnings=1
-  warning: unknown setting 'ocr_wait'
-> ocr_vertical = off
-  ocr_vertical=0
-> ocr_vertical = on
-  ocr_vertical=1
-> ocr_vertical = auto
-> ocr_vertical = Auto
-> ocr_vertical = yes
-  n_warnings=1
-  warning: ocr_vertical: invalid value
-> OCR_Vertical = 1
-  n_warnings=1
-  warning: OCR_Vertical: invalid value
-> reading_time = adaptive
-> reading_time = 15s
-  reading_time=1
-> Reading_Time = 15S
-  reading_time=1
-> reading_time = 30s
-  n_warnings=1
-  warning: reading_time: invalid value
-> reading_time =
-  n_warnings=1
-  warning: reading_time: invalid value
-> log_file = on
-> log_file = off
-  log_file=0
-> log_file = OFF
-  log_file=0
-> log_file = 1
-  n_warnings=1
-  warning: log_file: invalid value
-> anki_mining = on
-  anki_mining=1
-> anki_mining = off
-> anki_mining = ON
-  anki_mining=1
-> anki_mining = yes
-  n_warnings=1
-  warning: anki_mining: invalid value
-> anki_screenshot = on
-> anki_screenshot = off
-  anki_screenshot=0
-> anki_screenshot = maybe
-  n_warnings=1
-  warning: anki_screenshot: invalid value
-> anki_screenshot_trim_bars = on
-> anki_screenshot_trim_bars = off
-  anki_screenshot_trim_bars=0
-> Anki_Screenshot_Trim_Bars = OFF
-  anki_screenshot_trim_bars=0
-> anki_screenshot_trim_bars = x
-  n_warnings=1
-  warning: anki_screenshot_trim_bars: invalid value
-> anki_mining = on ; a comment
-  anki_mining=1
-> anki_mining = off\nanki_mining = on
-  anki_mining=1
-> anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on
-  anki_mining=1
-  anki_screenshot=0
-> dictionary = local
-> dictionary = LOCAL
-> dictionary = local ; mine
-> dictionary = jpdb
-  n_warnings=1
-  warning: dictionary: jpdb.io was removed; using local
-> dictionary = JITEN ; old
-  n_warnings=1
-  warning: dictionary: jiten.moe was removed; using local
-> Dictionary = Jpdb\r
-  n_warnings=1
-  warning: Dictionary: jpdb.io was removed; using local
-> dictionary = jiten # x
-  n_warnings=1
-  warning: dictionary: jiten.moe was removed; using local
-> dictionary = hachidori
-  n_warnings=1
-  warning: dictionary: the Hachidori relay was removed; using local
-> DICTIONARY = Hachidori ; relay\r
-  n_warnings=1
-  warning: DICTIONARY: the Hachidori relay was removed; using local
-> dictionary = hachidorix
-  n_warnings=1
-  warning: dictionary: invalid value
-> dictionary = jpdbx
-  n_warnings=1
-  warning: dictionary: invalid value
-> dictionary = relay
-  n_warnings=1
-  warning: dictionary: invalid value
-> dictionary =
-  n_warnings=1
-  warning: dictionary: invalid value
-> dictionary
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> dictionaryx = jpdb
-  n_warnings=1
-  warning: unknown setting 'dictionaryx'
-> dictionary local = 1
-  n_warnings=1
-  warning: unknown setting 'dictionary'
-> dictionary = jpdb;x
-  n_warnings=1
-  warning: dictionary: invalid value
-> dictionary = jiten#x
-  n_warnings=1
-  warning: dictionary: invalid value
-> dictionary = hachidori;relay
-  n_warnings=1
-  warning: dictionary: invalid value
-> dictionary = hachidori\nhachidori_host = 192.168.1.20:19633
-  n_warnings=1
-  warning: dictionary: the Hachidori relay was removed; using local
-> hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori
-  n_warnings=1
-  warning: DICTIONARY: the Hachidori relay was removed; using local
-> jpdb_api_key = secret-1
-> jiten_api_key = secret-2 ; mine
-> api_key = secret-3
-> JPDB_API_KEY=secret-4
-> jiten_api_key secret-5
-> jpdb_api_key: secret-6
->   Jiten_Api_Key\tsecret-7
-> jpdb_api_key secret-8 ; x = y
-> jpdb_api_keysecret-9
-> api_keys = secret-10
-> jpdb_api_key =
-> jpdb_api_key
-> jpdb_api_key_old = secret-11
-> \xEF\xBB\xBFjpdb_api_key = secret-12
-> jpdb_api_ke = secret-13
-  n_warnings=1
-  warning: unknown setting 'jpdb_api_ke'
-> lens_api_key = secret-14
-  n_warnings=1
-  warning: unknown setting 'lens_api_key'
-> my_api_key = secret-15
-  n_warnings=1
-  warning: unknown setting 'my_api_key'
-> ; jpdb_api_key = secret-16
-> anki_host = 192.168.1.23
-> ANKI_HOST=10.0.0.2
-> anki_host = auto
-> anki_host =
-> anki_host
-> anki_audio_url = https://a.invalid/?k=secret-20
-> anki_audio_url https://a.invalid/?k=secret-21
-> anki_audio_url
-> anki_deck = Mining
-> anki_deck = Mining #1 ; main
-> anki_deck\r
-> anki_note_type = Lapis
-> anki_tags = a b
-> ANKI_TAGS
-> anki_field_word = Word
-> Anki_Field_Word = Word
-> anki_field_misc_info = X
-> anki_field = x
-  n_warnings=1
-  warning: unknown setting 'anki_field'
-> anki_fields = x
-  n_warnings=1
-  warning: unknown setting 'anki_fields'
-> anki_hosts = x
-  n_warnings=1
-  warning: unknown setting 'anki_hosts'
-> anki_hosts
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> anki_mining\n
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> ocr_backend = vocr
-> ocr_backend = VOCR
-> ocr_backend = lens
-  n_warnings=1
-  warning: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
-> ocr_backend = Lens
-  n_warnings=1
-  warning: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
-> ocr_backend = vocr2
-  n_warnings=1
-  warning: ocr_backend: VOCR2 was removed; using vocr
-> ocr_backend = VOCR2
-  n_warnings=1
-  warning: ocr_backend: VOCR2 was removed; using vocr
-> ocr_backend = meiki
-  n_warnings=1
-  warning: ocr_backend: Meiki was removed; using vocr
-> OCR_BACKEND = meiki ; old
-  n_warnings=1
-  warning: OCR_BACKEND: Meiki was removed; using vocr
-> ocr_backend = ncnn
-  n_warnings=1
-  warning: ocr_backend: ncnn runs only in host tools; using vocr
-> ocr_backend = NCNN
-  n_warnings=1
-  warning: ocr_backend: ncnn runs only in host tools; using vocr
-> ocr_backend = vocr3
-  n_warnings=1
-  warning: ocr_backend: invalid value
-> ocr_backend = google
-  n_warnings=1
-  warning: ocr_backend: invalid value
-> ocr_backend =
-  n_warnings=1
-  warning: ocr_backend: invalid value
-> ocr_backend
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> ocr_backend lens
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> ocr_backendx = lens
-  n_warnings=1
-  warning: unknown setting 'ocr_backendx'
-> log_host = 192.168.1.5
-  n_warnings=1
-  warning: log_host: the UDP log was removed (the overlay is offline); log.txt stays
-> log_host =
-> LOG_HOST=10.0.0.1 ; pc\r
-  n_warnings=1
-  warning: LOG_HOST: the UDP log was removed (the overlay is offline); log.txt stays
-> log_host
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> log_host 10.0.0.1
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> log_hosts = x
-  n_warnings=1
-  warning: unknown setting 'log_hosts'
-> log_host =\nLOG_HOST=
-> frequency_filter=500
-> frequency_filter = 3
-> FREQUENCY_FILTER = 5
-> font_size = 20
-> font_size = 3
-> font_size
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> font_size x = 1
-  n_warnings=1
-  warning: unknown setting 'font_size'
-> hw_jpeg = on
-> hw_jpeg=1
-> combo_delay_ms = 0
-> combo_delay_ms = 10
-> hachidori_host = 192.168.1.20
-> hachidori_host = http://not a host
-> hachidori_host =
-> hachidori_host
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> vocr_model = FL10_w8.vocr
-  vocr_tier=1
-> vocr_model = VOCR3_FL10_w8.vocr
-  vocr_tier=1
-> vocr_model = VOCR2_FL10_w8.vocr
-  vocr_tier=1
-> vocr_model = H15_w8.vocr
-> vocr_model = VOCR3_H15_w8.vocr
-> vocr_model = F20_w8.vocr
-  vocr_tier=3
-> vocr_model = VOCR4_W20_w8.vocr
-  vocr_tier=3
-> vocr_model = VOCR9_X_w8.vocr
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = FL10
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = FL10_w8.bin
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = dir/FL10_w8.vocr
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = .vocr
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_model
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> vocr_model FL10_w8.vocr
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> vocr_model x = 1
-  n_warnings=1
-  warning: unknown setting 'vocr_model'
-> vocr_model = meiki-stream-int8.mnn
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_model =
-  n_warnings=1
-  warning: vocr_model: not a model of this build; using vocr_tier
-> vocr_fallback_model = VOCR3_FL10_w8.vocr
-> vocr_fallback_model = none
-> vocr_fallback_model =
-> vocr_fallback_model
-  n_warnings=1
-  warning: ignored line 1 (no '=')
-> vocr_tier = large\nvocr_model = FL10_w8.vocr
-  vocr_tier=3
-  vocr_tier_explicit=1
-> vocr_model = FL10_w8.vocr\nvocr_tier = large
-  vocr_tier=3
-  vocr_tier_explicit=1
-> vocr_model = FL10_w8.vocr\nvocr_tier = huge
-  vocr_tier=1
-  n_warnings=1
-  warning: vocr_tier: invalid value (small, normal or large)
-> vocr_tier = huge\nvocr_model = W20_w8.vocr
-  vocr_tier=3
-  n_warnings=1
-  warning: vocr_tier: invalid value (small, normal or large)
-> vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr
-  vocr_tier=3
-> dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20
-  font_size_ja=20
-  vocr_tier=3
-  n_warnings=3
-  warning: dictionary: jpdb.io was removed; using local
-  warning: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
-  warning: log_host: the UDP log was removed (the overlay is offline); log.txt stays
-> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99
-  n_warnings=4
-  warning: ocr_backend: VOCR2 was removed; using vocr
-  warning: log_host: the UDP log was removed (the overlay is offline); log.txt stays
-  warning: dictionary: jiten.moe was removed; using local
-  warning: ocr_backend: Meiki was removed; using vocr
-> jpdb_api_key = SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS...[1515 bytes, fnv1a 239b4405b1ac6eb7]
-> font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1515 bytes, fnv1a 9bb3a4e11799b4b1]
-  n_warnings=1
-  warning: font_size_ja: value too long
-> frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[619 bytes, fnv1a 780be23635715869]
-  n_warnings=1
-  warning: frequency_filter: value too long
-> anki_audio_url = https://xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1525 bytes, fnv1a 662f1ed7e297a041]
-> dictionary = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 42438c3462c961e2]
-  n_warnings=1
-  warning: dictionary: value too long
-> ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[614 bytes, fnv1a 083e677aa20fd2fd]
-  n_warnings=1
-  warning: ocr_backend: value too long
-> log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[611 bytes, fnv1a ffa99aab22b09349]
-  n_warnings=1
-  warning: log_host: value too long
-> vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 1b017f76d9ce7d7e]
-  n_warnings=1
-  warning: vocr_model: value too long
-> bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc]
-  n_warnings=1
-  warning: bogus: value too long
-> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[531 bytes, fnv1a ba2526befd514680]
-  local_dictionaries=""
-  n_warnings=1
-  warning: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[532 bytes, fnv1a 9e67b788711b7053]
-  local_dictionaries=""
-  n_warnings=1
-  warning: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
-> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[533 bytes, fnv1a 45ad0ed8319fa4f6]
-  n_warnings=1
-  warning: local_dictionaries: value too long
-> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-  local_dictionary_dir="ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-> local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-  n_warnings=1
-  warning: local_dictionary_dir: value too long
-> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-  n_warnings=1
-  warning: local_dictionary_dir: value too long
-> ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-  n_warnings=1
-  warning: ocr_model_dir: value too long
-> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
-  n_warnings=1
-  warning: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
-> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
-  n_warnings=1
-  warning: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
-> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
-  n_warnings=1
-  warning: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
-> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd]
-  n_warnings=1
-  warning: ignored line 1 (no '=')
+= host/tests/fixtures/config-old-app-test2.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 anki_mining=1 | w: ocr_backend: VOCR2 was removed; using vocr
+= host/tests/fixtures/config-test3-owner.ini => local_dictionaries="plaintext.vjdict" local_dictionary_results=1 japanese_only_selection=1 text_source=0 vocr_tier=3 vocr_tier_explicit=1 anki_mining=1
+= docs/config.example.ini => vocr_tier_explicit=1
+> bogus = 1 => | w: unknown setting 'bogus'
+> bogus line => | w: ignored line 1 (no '=')
+> Bogus_Setting = 1 => | w: unknown setting 'Bogus_Setting'
+> key with spaces = 1 => | w: unknown setting 'key'
+> = value => | w: unknown setting ''
+>  = value => | w: unknown setting ''
+> == => | w: unknown setting ''
+> font_size_ja => | w: ignored line 1 (no '=')
+> font_size_ja = => | w: font_size_ja: invalid value (8-40)
+> font_size_ja = 20 ; inline comment => font_size_ja=20
+> font_size_ja = 20 # inline comment => font_size_ja=20
+> font_size_ja = 20;not a comment => | w: font_size_ja: invalid value (8-40)
+> font_size_ja = 20 \t; tabbed comment => font_size_ja=20
+> font_size_ja=20 => font_size_ja=20
+>   font_size_ja  =  20 \x20 => font_size_ja=20
+> \tfont_size_ja\t=\t20\t => font_size_ja=20
+> FONT_SIZE_JA = 20 => font_size_ja=20
+> font_size_ja = 20\r => font_size_ja=20
+> font_size_ja = 20\r\nfont_size_en = 12\r\n => font_size_ja=20 font_size_en=12
+> \xEF\xBB\xBFfont_size_ja = 20 => font_size_ja=20
+>  \xEF\xBB\xBF font_size_ja = 20 => font_size_ja=20
+> \xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20 => font_size_ja=20
+> \xEF\xBBfont_size_ja = 20 => | w: unknown setting '\xEF\xBBfont_size_ja'
+> \xEFfont_size_ja = 20 => | w: unknown setting '\xEFfont_size_ja'
+> \xEF\xBB\xBEfont_size_ja = 20 => | w: unknown setting '\xEF\xBB\xBEfont_size_ja'
+> font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12 => font_size_ja=20 font_size_en=12
+> vocr_tier\r= large => vocr_tier=3 vocr_tier_explicit=1
+> vocr_tier \r= large => vocr_tier=3 vocr_tier_explicit=1
+> highlight_mode\r=character => highlight_mode=1
+> japanese_only_selection \r = on => japanese_only_selection=1
+> local_dictionary_results\r\t= 3 => local_dictionary_results=3
+> vocr_model\r= FL10_w8.vocr => vocr_tier=1
+> ocr_backend\r= lens => | w: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
+> font_size_ja = 20\nfont_size_ja = 30 => font_size_ja=30
+> font_size_ja = 20\nfont_size_ja = 99 => font_size_ja=20 | w: font_size_ja: invalid value (8-40)
+> bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5 => | w: unknown setting 'bogus1' | w: unknown setting 'bogus2' | w: unknown setting 'bogus3' | w: unknown setting 'bogus4'
+> an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1 => | w: unknown setting 'an_unknown_key_much_longer_than_'
+> https://example.invalid/path?a=b => | w: unknown setting 'https://example.invalid/path?a'
+> local_dictionary_dir = ux0:data/mine => local_dictionary_dir="ux0:data/mine"
+> local_dictionary_dir = ux0:data/mine ; not a comment here => local_dictionary_dir="ux0:data/mine ; not a comment here"
+> local_dictionary_dir = => | w: local_dictionary_dir: empty (ignored)
+> LOCAL_DICTIONARY_DIR = ux0:data/Mine => local_dictionary_dir="ux0:data/Mine"
+> ocr_model_dir = ux0:data/models => ocr_model_dir="ux0:data/models"
+> ocr_model_dir = ux0:data/models # not a comment here => ocr_model_dir="ux0:data/models # not a comment here"
+> ocr_model_dir = => | w: ocr_model_dir: empty (ignored)
+> local_dictionaries = a.vjdict => local_dictionaries="a.vjdict"
+> local_dictionaries = a.vjdict,b.vjdict => local_dictionaries="a.vjdict,b.vjdict"
+> local_dictionaries = a.vjdict, b.vjdict ; mine => local_dictionaries="a.vjdict, b.vjdict"
+> local_dictionaries = ../a.vjdict => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
+> local_dictionaries = a.txt => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
+> local_dictionaries = /abs.vjdict => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
+> local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict => local_dictionaries="a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict"
+> local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
+> local_dictionaries = => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
+> local_dictionaries = , => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
+> local_dictionary_results = 1 => local_dictionary_results=1
+> local_dictionary_results = 8 => local_dictionary_results=8
+> local_dictionary_results = 0 => | w: local_dictionary_results: invalid value (1-8)
+> local_dictionary_results = 9 => | w: local_dictionary_results: invalid value (1-8)
+> local_dictionary_results = two => | w: local_dictionary_results: invalid value (1-8)
+> local_dictionary_results = => | w: local_dictionary_results: invalid value (1-8)
+> non_japanese_filter = none => non_japanese_filter=0
+> non_japanese_filter = None ; mine => non_japanese_filter=0
+> non_japanese_filter = all => | w: non_japanese_filter: invalid value
+> non_japanese_filter = => | w: non_japanese_filter: invalid value
+> japanese_only_selection = on => japanese_only_selection=1
+> japanese_only_selection = ON => japanese_only_selection=1
+> japanese_only_selection = maybe => | w: japanese_only_selection: invalid value
+> japanese_only_selection = on\njapanese_only_selection = maybe => japanese_only_selection=1 | w: japanese_only_selection: invalid value
+> highlight_mode = character => highlight_mode=1
+> HIGHLIGHT_MODE = CHARACTER => highlight_mode=1
+> highlight_mode = sentence => | w: highlight_mode: invalid value
+> highlight_mode = => | w: highlight_mode: invalid value
+> frequency_badge = off => frequency_badge=0
+> frequency_badge = Off => frequency_badge=0
+> frequency_badge = 1 => | w: frequency_badge: invalid value
+> names_first = off => names_first=0
+> names_first = on => names_first=1
+> names_first = first => | w: names_first: invalid value
+> font_size_ja = 8 => font_size_ja=8
+> font_size_ja = 40 => font_size_ja=40
+> font_size_ja = 7 => | w: font_size_ja: invalid value (8-40)
+> font_size_ja = 41 => | w: font_size_ja: invalid value (8-40)
+> font_size_ja = -8 => | w: font_size_ja: invalid value (8-40)
+> font_size_ja = big => | w: font_size_ja: invalid value (8-40)
+> font_size_ja = 100000001 => | w: font_size_ja: invalid value (8-40)
+> font_size_ja = 999999999999 => | w: font_size_ja: invalid value (8-40)
+> font_size_ja = 0020 => font_size_ja=20
+> font_size_en = 8 => font_size_en=8
+> font_size_en = 40 => font_size_en=40
+> font_size_en = 41 => | w: font_size_en: invalid value (8-40)
+> font_size_en = 12px => | w: font_size_en: invalid value (8-40)
+> stick_lookup_ms = 0 => stick_lookup_ms=0
+> stick_lookup_ms = 1000 => stick_lookup_ms=1000
+> stick_lookup_ms = 1001 => | w: stick_lookup_ms: invalid value (ms, out of range)
+> stick_lookup_ms = -5 => | w: stick_lookup_ms: invalid value (ms, out of range)
+> stick_lookup_ms = 20 ms => | w: stick_lookup_ms: invalid value (ms, out of range)
+> toggle_button = select => toggle_button=0
+> toggle_button = start => toggle_button=1
+> toggle_button = select+l => toggle_button=3
+> toggle_button = select+r => toggle_button=4 subtitle_button=3 | w: toggle_button and subtitle_button are both select+r: subtitle_button is select+l
+> toggle_button = rear_double_tap => toggle_button=5
+> toggle_button = Select+R => toggle_button=4 subtitle_button=3 | w: toggle_button and subtitle_button are both select+r: subtitle_button is select+l
+> toggle_button = triangle => | w: toggle_button: invalid value
+> toggle_button = => | w: toggle_button: invalid value
+> subtitle_button = select => subtitle_button=0
+> subtitle_button = start => subtitle_button=1
+> subtitle_button = l+r => | w: toggle_button and subtitle_button are both l+r: subtitle_button is select+r
+> subtitle_button = select+l => subtitle_button=3
+> subtitle_button = rear_double_tap => subtitle_button=5
+> subtitle_button = REAR_DOUBLE_TAP => subtitle_button=5
+> subtitle_button = circle => | w: subtitle_button: invalid value
+> toggle_button = select+r => toggle_button=4 subtitle_button=3 | w: toggle_button and subtitle_button are both select+r: subtitle_button is select+l
+> toggle_button = start\nsubtitle_button = start => toggle_button=1 | w: toggle_button and subtitle_button are both start: subtitle_button is select+r
+> toggle_button = select+l\nsubtitle_button = select+l => toggle_button=3 | w: toggle_button and subtitle_button are both select+l: subtitle_button is select+r
+> subtitle_button = l+r => | w: toggle_button and subtitle_button are both l+r: subtitle_button is select+r
+> text_source = ocr => text_source=0
+> text_source = hooks => text_source=2
+> text_source = HOOKS => text_source=2
+> text_source = lens => | w: text_source: invalid value
+> text_source = ocr\ntext_source = maybe => | w: text_source: invalid value
+> text_source = => | w: text_source: invalid value
+> hook_sites = off => hook_sites=0
+> Hook_Sites = OFF => hook_sites=0
+> hook_sites = 0 => | w: hook_sites: invalid value
+> hook_sites = off\nhook_sites = maybe => | w: hook_sites: invalid value
+> hook_trust = off => hook_trust=0
+> HOOK_TRUST = Off => hook_trust=0
+> hook_trust = off\nhook_trust = => | w: hook_trust: invalid value
+> hook_trusted = off => | w: unknown setting 'hook_trusted'
+> ocr_mode = on_press => ocr_mode=1
+> ocr_mode = ON_PRESS => ocr_mode=1
+> ocr_mode = On_Press ; mine => ocr_mode=1
+> ocr_mode = press => | w: ocr_mode: invalid value
+> ocr_mode = => | w: ocr_mode: invalid value
+> vocr_tier = small => vocr_tier=1 vocr_tier_explicit=1
+> vocr_tier = normal => vocr_tier_explicit=1
+> vocr_tier = large => vocr_tier=3 vocr_tier_explicit=1
+> vocr_tier = Large => vocr_tier=3 vocr_tier_explicit=1
+> vocr_tier = huge => | w: vocr_tier: invalid value (small, normal or large)
+> vocr_tier = => | w: vocr_tier: invalid value (small, normal or large)
+> ocr_settle_ms = 0 => ocr_settle_ms=0
+> ocr_settle_ms = 1000 => ocr_settle_ms=1000
+> ocr_settle_ms = 1001 => | w: ocr_settle_ms: invalid value (ms, out of range)
+> ocr_settle_ms = -5 => | w: ocr_settle_ms: invalid value (ms, out of range)
+> ocr_settle_ms = soon => | w: ocr_settle_ms: invalid value (ms, out of range)
+> ocr_settle_max_ms = 100 => ocr_settle_max_ms=100
+> ocr_settle_max_ms = 10000 => ocr_settle_max_ms=10000
+> ocr_settle_max_ms = 99 => | w: ocr_settle_max_ms: invalid value (ms, out of range)
+> ocr_settle_max_ms = 10001 => | w: ocr_settle_max_ms: invalid value (ms, out of range)
+> ocr_settle_press_ms = 0 => ocr_settle_press_ms=0
+> ocr_settle_press_ms = 100 => ocr_settle_press_ms=100
+> ocr_settle_press_ms = 10000 => ocr_settle_press_ms=10000
+> ocr_settle_press_ms = 1 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
+> ocr_settle_press_ms = 24 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
+> ocr_settle_press_ms = 99 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
+> ocr_settle_press_ms = 10001 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
+> ocr_settle_press_ms = -5 => | w: ocr_settle_press_ms: invalid value (ms, out of range)
+> ocr_settle_press_ms = soon => | w: ocr_settle_press_ms: invalid value (ms, out of range)
+> ocr_settle_press_ms = 400\nocr_settle_press_ms = 99 => ocr_settle_press_ms=400 | w: ocr_settle_press_ms: invalid value (ms, out of range)
+> ocr_skip_blank_lines = on => ocr_skip_blank_lines=1
+> ocr_skip_blank_lines = maybe => | w: ocr_skip_blank_lines: invalid value
+> ocr_lm = off => ocr_lm=0
+> ocr_lm = 500k => ocr_lm=1
+> ocr_lm = 2000k => ocr_lm=3
+> ocr_lm = 4000k => ocr_lm=4
+> ocr_lm = 8000k => | w: ocr_lm: invalid value
+> ocr_lm = 1000 => | w: ocr_lm: invalid value
+> ocr_cascade_ms = 0 => ocr_cascade_ms=0
+> ocr_cascade_ms = 250 => ocr_cascade_ms=250
+> ocr_cascade_ms = 3750 => ocr_cascade_ms=3750
+> ocr_cascade_ms = 3751 => | w: ocr_cascade_ms: invalid value (ms, out of range)
+> ocr_cascade_ms = -1 => | w: ocr_cascade_ms: invalid value (ms, out of range)
+> ocr_refine_lines = off => ocr_refine_lines=0
+> ocr_refine_lines = on => ocr_refine_lines=1
+> ocr_refine_lines = sometimes => | w: ocr_refine_lines: invalid value
+> ocr_text_gate = on => ocr_text_gate=1
+> OCR_TEXT_GATE = ON => ocr_text_gate=1
+> ocr_text_gate = maybe => | w: ocr_text_gate: invalid value
+> ocr_head_gate = off => ocr_head_gate=0
+> ocr_head_gate = gate => ocr_head_gate=1
+> ocr_head_gate = two_level => ocr_head_gate=2
+> ocr_head_gate = Two_Level => ocr_head_gate=2
+> ocr_head_gate = sometimes => | w: ocr_head_gate: invalid value
+> ocr_two_level = off => | w: unknown setting 'ocr_two_level'
+> ocr_line_fix = off => ocr_line_fix=0
+> ocr_line_fix = junk => ocr_line_fix=2
+> ocr_line_fix = all => ocr_line_fix=3
+> ocr_line_fix = ALL => ocr_line_fix=3
+> ocr_line_fix = valley => | w: ocr_line_fix: invalid value
+> ocr_line_fix = spotter => | w: ocr_line_fix: invalid value
+> ocr_finder = grad => ocr_finder=0
+> ocr_finder = textdet => | w: ocr_finder: invalid value
+> ocr_finder = => | w: ocr_finder: invalid value
+> ocr_spotter_refine = on => ocr_spotter_refine=1
+> ocr_spotter_refine = maybe => | w: ocr_spotter_refine: invalid value
+> ocr_threads = 1 => ocr_helpers=0
+> ocr_threads = 2 => ocr_helpers=1
+> ocr_threads = 0 => | w: ocr_threads: invalid value
+> ocr_threads = 4 => | w: ocr_threads: invalid value
+> ocr_threads = x => | w: ocr_threads: invalid value
+> ocr_boost_clock = off => ocr_boost_clock=0
+> ocr_boost_clock = OFF => ocr_boost_clock=0
+> ocr_boost_clock = maybe => | w: ocr_boost_clock: invalid value
+> ocr_wait_hint = off => ocr_wait_hint=0
+> OCR_Wait_Hint = OFF => ocr_wait_hint=0
+> ocr_wait_hint = maybe => | w: ocr_wait_hint: invalid value
+> ocr_wait_hints = off => | w: unknown setting 'ocr_wait_hints'
+> ocr_wait = off => | w: unknown setting 'ocr_wait'
+> ocr_vertical = off => ocr_vertical=0
+> ocr_vertical = on => ocr_vertical=1
+> ocr_vertical = yes => | w: ocr_vertical: invalid value
+> OCR_Vertical = 1 => | w: OCR_Vertical: invalid value
+> reading_time = 15s => reading_time=1
+> Reading_Time = 15S => reading_time=1
+> reading_time = 30s => | w: reading_time: invalid value
+> reading_time = => | w: reading_time: invalid value
+> log_file = off => log_file=0
+> log_file = OFF => log_file=0
+> log_file = 1 => | w: log_file: invalid value
+> anki_mining = on => anki_mining=1
+> anki_mining = ON => anki_mining=1
+> anki_mining = yes => | w: anki_mining: invalid value
+> anki_screenshot = off => anki_screenshot=0
+> anki_screenshot = maybe => | w: anki_screenshot: invalid value
+> anki_screenshot_trim_bars = off => anki_screenshot_trim_bars=0
+> Anki_Screenshot_Trim_Bars = OFF => anki_screenshot_trim_bars=0
+> anki_screenshot_trim_bars = x => | w: anki_screenshot_trim_bars: invalid value
+> anki_mining = on ; a comment => anki_mining=1
+> anki_mining = off\nanki_mining = on => anki_mining=1
+> anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on => anki_mining=1 anki_screenshot=0
+> dictionary = jpdb => | w: dictionary: jpdb.io was removed; using local
+> dictionary = JITEN ; old => | w: dictionary: jiten.moe was removed; using local
+> Dictionary = Jpdb\r => | w: Dictionary: jpdb.io was removed; using local
+> dictionary = jiten # x => | w: dictionary: jiten.moe was removed; using local
+> dictionary = hachidori => | w: dictionary: the Hachidori relay was removed; using local
+> DICTIONARY = Hachidori ; relay\r => | w: DICTIONARY: the Hachidori relay was removed; using local
+> dictionary = hachidorix => | w: dictionary: invalid value
+> dictionary = jpdbx => | w: dictionary: invalid value
+> dictionary = relay => | w: dictionary: invalid value
+> dictionary = => | w: dictionary: invalid value
+> dictionary => | w: ignored line 1 (no '=')
+> dictionaryx = jpdb => | w: unknown setting 'dictionaryx'
+> dictionary local = 1 => | w: unknown setting 'dictionary'
+> dictionary = jpdb;x => | w: dictionary: invalid value
+> dictionary = jiten#x => | w: dictionary: invalid value
+> dictionary = hachidori;relay => | w: dictionary: invalid value
+> dictionary = hachidori\nhachidori_host = 192.168.1.20:19633 => | w: dictionary: the Hachidori relay was removed; using local
+> hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori => | w: DICTIONARY: the Hachidori relay was removed; using local
+> jpdb_api_ke = secret-13 => | w: unknown setting 'jpdb_api_ke'
+> lens_api_key = secret-14 => | w: unknown setting 'lens_api_key'
+> my_api_key = secret-15 => | w: unknown setting 'my_api_key'
+> anki_field = x => | w: unknown setting 'anki_field'
+> anki_fields = x => | w: unknown setting 'anki_fields'
+> anki_hosts = x => | w: unknown setting 'anki_hosts'
+> anki_hosts => | w: ignored line 1 (no '=')
+> anki_mining\n => | w: ignored line 1 (no '=')
+> ocr_backend = lens => | w: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
+> ocr_backend = Lens => | w: ocr_backend: Google Lens was removed (the overlay is offline); using vocr
+> ocr_backend = vocr2 => | w: ocr_backend: VOCR2 was removed; using vocr
+> ocr_backend = VOCR2 => | w: ocr_backend: VOCR2 was removed; using vocr
+> ocr_backend = meiki => | w: ocr_backend: Meiki was removed; using vocr
+> OCR_BACKEND = meiki ; old => | w: OCR_BACKEND: Meiki was removed; using vocr
+> ocr_backend = ncnn => | w: ocr_backend: ncnn runs only in host tools; using vocr
+> ocr_backend = NCNN => | w: ocr_backend: ncnn runs only in host tools; using vocr
+> ocr_backend = vocr3 => | w: ocr_backend: invalid value
+> ocr_backend = google => | w: ocr_backend: invalid value
+> ocr_backend = => | w: ocr_backend: invalid value
+> ocr_backend => | w: ignored line 1 (no '=')
+> ocr_backend lens => | w: ignored line 1 (no '=')
+> ocr_backendx = lens => | w: unknown setting 'ocr_backendx'
+> log_host = 192.168.1.5 => | w: log_host: the UDP log was removed (the overlay is offline); log.txt stays
+> LOG_HOST=10.0.0.1 ; pc\r => | w: LOG_HOST: the UDP log was removed (the overlay is offline); log.txt stays
+> log_host => | w: ignored line 1 (no '=')
+> log_host 10.0.0.1 => | w: ignored line 1 (no '=')
+> log_hosts = x => | w: unknown setting 'log_hosts'
+> font_size => | w: ignored line 1 (no '=')
+> font_size x = 1 => | w: unknown setting 'font_size'
+> hachidori_host => | w: ignored line 1 (no '=')
+> vocr_model = FL10_w8.vocr => vocr_tier=1
+> vocr_model = VOCR3_FL10_w8.vocr => vocr_tier=1
+> vocr_model = VOCR2_FL10_w8.vocr => vocr_tier=1
+> vocr_model = F20_w8.vocr => vocr_tier=3
+> vocr_model = VOCR4_W20_w8.vocr => vocr_tier=3
+> vocr_model = VOCR9_X_w8.vocr => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = FL10 => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = FL10_w8.bin => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = dir/FL10_w8.vocr => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = .vocr => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_model => | w: ignored line 1 (no '=')
+> vocr_model FL10_w8.vocr => | w: ignored line 1 (no '=')
+> vocr_model x = 1 => | w: unknown setting 'vocr_model'
+> vocr_model = meiki-stream-int8.mnn => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_model = => | w: vocr_model: not a model of this build; using vocr_tier
+> vocr_fallback_model => | w: ignored line 1 (no '=')
+> vocr_tier = large\nvocr_model = FL10_w8.vocr => vocr_tier=3 vocr_tier_explicit=1
+> vocr_model = FL10_w8.vocr\nvocr_tier = large => vocr_tier=3 vocr_tier_explicit=1
+> vocr_model = FL10_w8.vocr\nvocr_tier = huge => vocr_tier=1 | w: vocr_tier: invalid value (small, normal or large)
+> vocr_tier = huge\nvocr_model = W20_w8.vocr => vocr_tier=3 | w: vocr_tier: invalid value (small, normal or large)
+> vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr => vocr_tier=3
+> dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20 => font_size_ja=20 vocr_tier=3 | w: dictionary: jpdb.io was removed; using local | w: ocr_backend: Google Lens was removed (the overlay is offline); using vocr | w: log_host: the UDP log was removed (the overlay is offline); log.txt stays
+> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99 => | w: ocr_backend: VOCR2 was removed; using vocr | w: log_host: the UDP log was removed (the overlay is offline); log.txt stays | w: dictionary: jiten.moe was removed; using local | w: ocr_backend: Meiki was removed; using vocr
+> font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1515 bytes, fnv1a 9bb3a4e11799b4b1] => | w: font_size_ja: value too long
+> frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[619 bytes, fnv1a 780be23635715869] => | w: frequency_filter: value too long
+> dictionary = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 42438c3462c961e2] => | w: dictionary: value too long
+> ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[614 bytes, fnv1a 083e677aa20fd2fd] => | w: ocr_backend: value too long
+> log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[611 bytes, fnv1a ffa99aab22b09349] => | w: log_host: value too long
+> vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 1b017f76d9ce7d7e] => | w: vocr_model: value too long
+> bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc] => | w: bogus: value too long
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[531 bytes, fnv1a ba2526befd514680] => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[532 bytes, fnv1a 9e67b788711b7053] => local_dictionaries="" | w: local_dictionaries: invalid value (1-8 relative .vjdict filenames separated by commas)
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[533 bytes, fnv1a 45ad0ed8319fa4f6] => | w: local_dictionaries: value too long
+> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => local_dictionary_dir="ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+> local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => | w: local_dictionary_dir: value too long
+> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => | w: local_dictionary_dir: value too long
+> ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd => | w: ocr_model_dir: value too long
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1 => | w: unknown setting 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd] => | w: ignored line 1 (no '=')
+= 105 records parse as the defaults, with no warning
