@@ -64,6 +64,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_vertical = VJO_VERTICAL_DEFAULT; /* docs/vita-vn-ocr.md, "Vertical text" */
     c->ocr_wait_hint = 1; /* the open overlay says why it waits (docs/text-stability.md, #358) */
     c->names_first = VJO_NAMES_DEFAULT; /* docs/local-dictionaries.md, "Names and words" (#321) */
+    c->ocr_pause = 0; /* the game is not paused for its frame unless ocr_pause = on (docs/game-pause.md) */
 }
 
 const char *vjo_config_default_text(void)
@@ -177,6 +178,10 @@ const char *vjo_config_default_text(void)
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
            "ocr_boost_clock = on\n"
+           "; vocr: pause the game a moment for each reading (the Rubi app's Pause the game to\n"
+           "; read): the text box is copied from one frame, so an animated icon cannot change\n"
+           "; it while it is read: on | off\n"
+           "ocr_pause = off\n"
            "; vocr: vertical text (manga, vertical dialogue): auto reads the region's columns,\n"
            "; right to left, with the vertical model where its rows look like vertical text |\n"
            "; on reads columns, but rows where they are lines of text | off reads rows\n"
@@ -604,9 +609,11 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_refine_lines")) {
         static const char *const modes[] VJO_DATA_TABLE(config_modes_1) = {"off", "on", "psp", NULL};
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
-    } else if (vjo_ieq(key, "ocr_text_gate") || vjo_ieq(key, spot_refine_key)) {
-        /* ocr_text_gate or (API 54) ocr_spotter_refine: their fifth letters differ, in either case */
-        set_choice(c, key, val, (key[4] | 0x20) == 's' ? &c->ocr_spotter_refine : &c->ocr_text_gate, off_on);
+    } else if (vjo_ieq(key, "ocr_text_gate") || vjo_ieq(key, spot_refine_key) || vjo_ieq(key, "ocr_pause")) {
+        /* ocr_text_gate, (API 54) ocr_spotter_refine or (API 55) ocr_pause: their fifth letters differ, in either case */
+        const int k = key[4] | 0x20;
+        set_choice(c, key, val, k == 's' ? &c->ocr_spotter_refine : k == 'p' ? &c->ocr_pause : &c->ocr_text_gate,
+                   off_on);
     } else if (vjo_ieq(key, head_key)) {
         /* each value's index is its VJO_HEAD_* bits */
         static const char *const heads[] VJO_DATA_TABLE(config_heads_1) = {"off", head_gate_name, head_two_name, "on",

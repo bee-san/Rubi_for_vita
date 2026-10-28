@@ -157,7 +157,7 @@
  * #338's audit's history rewrite (above), with the short job line's format moved to the data segment (32 B), makes it
  * 85,972 + 77,696 -> 85,988 + 77,728 on main 70deda7, the same pages, 28 B of text room [measured: the same rows, main 70deda7 and this change]: main's steps reordered, with the end's check and
  * its second read, which a file replaced since and an SCE_O_APPEND that places only the open need. Its check is exact
- * (--exact): this must equal its pages. */
+ * (--exact): this must equal its pages. PAUSE_SHELL_NOTE */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
@@ -469,6 +469,7 @@
  * allocation. The data segment's last page then has 32 B (normal) and 24 B (debug) left: the next verified row (40 B of
  * verified[], VJO_DATA_TABLE) takes a page in both builds unless a table moves to read-only data first (code room
  * 1,236 / 464 B) or the budget is raised (audit-rubi-merge-394 N5). */
+/* PAUSE_WORKER_NOTE */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
@@ -604,6 +605,7 @@
 /* #333: games.ini's reader shared with ocr_line_fix.ini's (core/games.c vjo_games_parse_kind and vjo_games_row_as;
  * the kernel reads games.ini only): text 43,432 -> 43,508 B (debug) and 38,280 -> 38,356 B (normal), data/bss
  * unchanged, the same pages [measured: tools/check_memory_ledger.py on both builds, main 9ad8eb5 and this change]. */
+/* PAUSE_KERNEL_NOTE */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else
@@ -721,6 +723,17 @@
  * of columns holds the rectangle around its columns in it (core/vocr_ocr.h VJO_VOCR_COLUMNS_BATCH, this bound), each
  * column turned out of it into the rotation buffer as it is read. */
 #define VJO_BUDGET_GAME_LINE 516096u
+/* API 55, the pause for the frame (config.ini ocr_pause, off by default; docs/game-pause.md): a job that asks for it
+ * copies the region from one frame, in one display call, into this block ("VjoGameVocrFrame": region width x height
+ * grey bytes, at most 960 x 544 = 522,240 B, page-rounded), and reads every row from it, a line taller than a strip
+ * included (core/vocr_ocr.h VjoGreySource.frozen), so it takes no VJO_BUDGET_GAME_LINE block. When the kernel refuses
+ * the copy or cannot finish it, the worker frees the block before the job reads on, so a job holds this block or a
+ * tall line's, never both: the worst case counts the larger (game_ocr/main.c checks both at compile time). Taken only
+ * when it fits beside everything the job's memory check chose, with that check's reserve (never at the cost of a model
+ * tier, the LM or the cascade, nor of another model's resident weights; it may cost a helper), on the same ladder
+ * (USER_RW, CDRAM, phycont), freed with the job. */
+#define VJO_BUDGET_GAME_FRAME 524288u
+#define VJO_BUDGET_GAME_LINE_OR_FRAME VJO_BUDGET_GAME_FRAME
 /* API 20: the beam + LM decoder's LM, resident like the weights while the game is the
  * active one, USER_RW only: the largest tier, 3,603,552 B (include/vjo_vocr_sizes.h; VOCR6's
  * 4 MB LM, vita-vn-ocr #127; ctclm.2's was 3,781,072 B), page-rounded. The worker's memory
@@ -777,9 +790,9 @@
  * 64 colour rows at 960 px (245,760 B) and the JPEG, at most VJO_GAME_OCR_SHOT_MAX
  * (196,608 B), page-rounded: 450,560 B, only while a shot runs. A shot is a job of
  * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
- * line or helpers (1,921,024 B of the job's worst case besides the resident weights, LM,
- * cascade model, SC3 charset and, API 54, the text spotter's block, which a shot keeps: 9,093,120 + 450,560 B
- * under the job's 11,014,144 B, VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
+ * line, frame block or helpers (1,929,216 B of the job's worst case besides the resident weights, LM,
+ * cascade model, SC3 charset and, API 54, the text spotter's block, which a shot keeps: 9,101,312 + 450,560 B
+ * under the job's 11,022,336 B, VOCR6's 4 MB LM, API 55's frame block): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
 /* A MAGES SC3 hook's charset (game_ocr/main.c hooks_sc3_load, "VjoGameSc3"; docs/native-hooks.md "SC3 text"): the
@@ -799,7 +812,7 @@
 #define VJO_BUDGET_GAME_SPOT 516096u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
-                            VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \
+                            VJO_BUDGET_GAME_LINE_OR_FRAME + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \
                             VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SC3 + VJO_BUDGET_GAME_SPOT)
 /* The recognizer ceiling: weights <= 2,502,656 B, the owner's int8 ceiling for the Large tier
  * (2026-10-14 18:09Z: Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB; 2,500,000 B page-rounded;
@@ -836,7 +849,9 @@
  * and the worker's four text pages (16,384 B, both builds), 610,304 B: 11,214,848 B, 12.4 % of the 90,177,536 B
  * free USER the least any job saw in CLANNAD [measured, #81's v0.8.0-test.1 log] (the worst case 11,014,144 B with
  * an SC3 charset, 12.2 %). Only a job with ocr_finder = spotter takes them, and the spotter only takes the room its check leaves
- * beside the tier, the LM and the cascade (game_ocr/main.c). */
+ * beside the tier, the LM and the cascade (game_ocr/main.c). API 55's frame block (ocr_pause, off by default) in
+ * place of the tall line's, the larger of the two (a job holds one of them, never both), adds 8,192 B: the worst
+ * case 11,022,336 B with an SC3 charset (12.2 %), under the limit, which is kept. */
 #define VJO_LIMIT_GAME_JOB 11214848u
 
 #endif

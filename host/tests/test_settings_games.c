@@ -1422,7 +1422,8 @@ static int ocr_card(const Frame *f)
                                                   "Japanese characters only", "Highlight", "Dictionaries shown",
                                                   "Text source", /* API 31 */
                                                   "Trusted hooks replace OCR", "Skip OCR on screens without text",
-                                                  "Vertical text", "Suggest a text box"}; /* API 43, 47; #358 */
+                                                  "Vertical text", "Suggest a text box",
+                                                  "Pause the game to read"}; /* API 43, 47; #358; API 55 */
     for (int i = 0; i < OCR_CARDS; i++)
         if (!strcmp(f->bar_title, titles[i])) return i;
     return -1;

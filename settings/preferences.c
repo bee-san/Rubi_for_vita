@@ -322,6 +322,15 @@ int vjo_preferences_save_skips(int text_gate, int hook_trust, VjoArena *a)
     return save_keys(keys, values, 2, a);
 }
 
+int vjo_preferences_save_pause(int on, VjoArena *a)
+{
+    static const char *const keys[] = {"ocr_pause"};
+    const char *values[1];
+    if (on != 0 && on != 1) return -1;
+    values[0] = on ? "on" : "off";
+    return save_keys(keys, values, 1, a);
+}
+
 int vjo_preferences_save_vertical(int mode, VjoArena *a)
 {
     static const char *const keys[] = {"ocr_vertical"};
