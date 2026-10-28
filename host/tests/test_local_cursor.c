@@ -373,7 +373,7 @@ static int lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     int rc = vjo_local_lookup_at(a, p, cfg, text, cursor, r, e);
     TEST_CHECK(opened == closed);
     TEST_CHECK(r->n_vocab >= 0 && r->n_vocab <= 1 && r->n_tokens == r->n_vocab);
-    TEST_CHECK(e->rc == rc && e->dict == VJO_DICT_LOCAL);
+    TEST_CHECK(e->rc == rc);
     return rc;
 }
 static void longest_and_first_posting(void)
@@ -542,7 +542,7 @@ static void repeated_lookups_oom_and_io_recovery(void)
     size_t normal_size = a.size;
     a.size = mark + 128;
     TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_OOM);
-    TEST_CHECK(a.used == mark && out.failed_stage == VJO_STAGE_DICT && out.err.dict == VJO_DICT_LOCAL);
+    TEST_CHECK(a.used == mark && out.failed_stage == VJO_STAGE_DICT);
     TEST_CHECK(out.list.header == header && out.list.entries == NULL && !out.list.n_entries);
     a.size = normal_size; fail_read = reads + 1;
     TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_LOCAL_IO);
@@ -577,7 +577,7 @@ static void normalized_source_span_and_invalid_input(void)
     TEST_CHECK(opened == before && a.used == 0);
     VjoOverlayData out = {.sentence = NULL}; /* no recognized sentence: nothing to look up */
     TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_PARSE);
-    TEST_CHECK(out.failed_stage == VJO_STAGE_DICT && out.err.dict == VJO_DICT_LOCAL && a.used == 0);
+    TEST_CHECK(out.failed_stage == VJO_STAGE_DICT && a.used == 0);
 }
 
 static void every_file_read_failure_closes_and_rolls_back(void)
@@ -600,7 +600,7 @@ static void every_file_read_failure_closes_and_rolls_back(void)
             TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_LOCAL_IO);
             TEST_CHECK(opened == closed && fixtures[0].active == 0 && a.used == mark);
             TEST_CHECK(out.list.header == header && !out.list.entries && !out.list.n_entries);
-            TEST_CHECK(out.failed_stage == VJO_STAGE_DICT && out.err.dict == VJO_DICT_LOCAL);
+            TEST_CHECK(out.failed_stage == VJO_STAGE_DICT);
         }
         fail_read = 0;
         TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
@@ -626,7 +626,7 @@ static int pages_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                         size_t cursor, int limit, VjoLocalPages *pages, VjoDictResult *r, VjoErr *e)
 {
     int rc = vjo_local_lookup_pages(a, p, cfg, text, cursor, limit, pages, r, e);
-    TEST_CHECK(opened == closed && e->rc == rc && e->dict == VJO_DICT_LOCAL);
+    TEST_CHECK(opened == closed && e->rc == rc);
     TEST_CHECK(pages->count >= 0 && pages->count <= limit && (pages->count > 0) == (r->n_vocab == 1));
     return rc;
 }

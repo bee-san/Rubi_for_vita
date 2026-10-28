@@ -18,6 +18,8 @@ enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
  * the Shell pushes with vjoSetTextSource whenever it reads the config; a game reads it as it starts. */
 enum { VJO_SOURCE_OCR = VJO_TEXT_SOURCE_OCR, VJO_SOURCE_AUTO = VJO_TEXT_SOURCE_AUTO,
        VJO_SOURCE_HOOKS = VJO_TEXT_SOURCE_HOOKS };
+/* text_source's names by value (core/config.c; the Shell's hooks line names the worker's mode with them) */
+extern const char *const vjo_text_source_names[];
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 /* dictionary: the local .vjdict files, the only dictionary (VJO_DICT_NAME in
  * messages and the log). The self-test reports the value (config

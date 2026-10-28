@@ -36,12 +36,10 @@ enum { VJO_ANKI_MARK_NONE = 0, VJO_ANKI_MARK_ADDED = 1, VJO_ANKI_MARK_QUEUED = 2
 enum { VJO_STRIP_SENTENCE = 0, VJO_STRIP_STATUS = 1, VJO_STRIP_ERROR = 2 };
 #define VJO_STRIP_MAX 4096 /* bytes of UTF-8 */
 
-/* Provenance belongs to the accepted text, never to a later job or cursor lookup.
- * model is a constant tier name; NULL means only history.csv's engine is known. */
+/* The Triangle view's line source (overlay.cpp): VJO_LINE_* (core/history_lines.h) of the accepted
+ * text, never of a later job or cursor lookup; an earlier line's is history.csv's. */
 typedef struct {
-    uint32_t origin, stream, flags, score, streams, mode, installed, refused;
-    uint32_t scene, capture_seq;
-    const char *model;
+    uint32_t origin;
 } VjoLineDebug;
 
 /* ---- view model read by the overlay (under vjo_view_lock) ---- */

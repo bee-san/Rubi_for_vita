@@ -516,6 +516,9 @@ static const char finder_key[] VJO_DATA_TABLE(config_finder_key) = "ocr_finder";
 static const char finder_grad[] VJO_DATA_TABLE(config_finder_grad) = "grad";
 static const char finder_spotter[] VJO_DATA_TABLE(config_finder_spotter) = "spotter";
 const char *const vjo_finder_names[] VJO_DATA_TABLE(config_finders_1) = {finder_grad, finder_spotter, NULL};
+/* text_source's values, VJO_SOURCE_*'s order; also the names of the mode the game worker applied in the Shell's
+ * hooks line (shell/worker.c hook_note). */
+const char *const vjo_text_source_names[] VJO_DATA_TABLE(config_sources_1) = {"ocr", "auto", "hooks", NULL};
 
 /* API 54: one off/on choice table for every off/on setting (their index is the value: off 0, on 1), and the
  * settings that parsed off/on by hand read it through set_choice, the same values and warning: the Shell's code
@@ -590,9 +593,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "subtitle_button")) {
         set_trigger(c, key, val, &c->subtitle_button);
     } else if (vjo_ieq(key, "text_source")) {
-        static const char *const sources[] VJO_DATA_TABLE(config_sources_1) = {"ocr", "auto", "hooks", NULL}; /* VJO_SOURCE_*'s order */
         c->text_source = VJO_SOURCE_AUTO; /* an unknown value: auto, with the warning */
-        set_choice(c, key, val, &c->text_source, sources);
+        set_choice(c, key, val, &c->text_source, vjo_text_source_names);
     } else if (vjo_ieq(key, "hook_sites") || vjo_ieq(key, "hook_trust")) {
         /* hook_sites or (API 43) hook_trust: their sixth letters differ, in either case */
         int *dst = (key[5] | 0x20) == 's' ? &c->hook_sites : &c->hook_trust;

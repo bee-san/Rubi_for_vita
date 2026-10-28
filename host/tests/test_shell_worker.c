@@ -675,8 +675,9 @@ int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filte
     vjo_arena_release(scratch, mark);
     return h->n;
 }
-/* A record of history.csv as shell/history.c writes it (its first four fields quoted, '"' doubled). */
-static void history_csv_add(const char *uuid, const char *line)
+/* A record of history.csv as shell/history.c writes it (its first four fields quoted, '"' doubled), read by
+ * engine ("vocr" or "hook": its line's source, core/history_lines.h). */
+static void history_csv_add_from(const char *uuid, const char *line, const char *engine)
 {
     size_t n = strlen(history_csv);
     const char *f[4] = {uuid, "vjo-1-2", "CLANNAD", line};
@@ -690,9 +691,10 @@ static void history_csv_add(const char *uuid, const char *line)
         history_csv[n++] = ',';
     }
     n += (size_t)snprintf(history_csv + n, sizeof(history_csv) - n,
-        "1792220400.250123,\"vita\",\"PCSG00415\",\"vocr\",\"model\"\n");
+        "1792220400.250123,\"vita\",\"PCSG00415\",\"%s\",\"model\"\n", engine);
     TEST_ASSERT(n < sizeof(history_csv));
 }
+static void history_csv_add(const char *uuid, const char *line) { history_csv_add_from(uuid, line, "vocr"); }
 static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
@@ -4048,7 +4050,7 @@ static void test_shell_result_oom_preserves_recognition(void)
     int idx = job_idx;
     TEST_CHECK(run_job_t(&results[idx], &cache_data[idx]) == VJO_E_OOM);
     VjoOverlayData *d = &cache_data[idx];
-    TEST_CHECK(d->failed_stage == VJO_STAGE_DICT && d->err.dict == VJO_DICT_LOCAL);
+    TEST_CHECK(d->failed_stage == VJO_STAGE_DICT);
     TEST_CHECK(d->ocr_text && !strcmp(d->ocr_text, fake_recognized_text));
     TEST_CHECK(d->sentence && !strcmp(d->sentence, "日本語です"));
     TEST_CHECK(d->list.header && !strcmp(d->list.header, "日本語です"));
@@ -5198,14 +5200,15 @@ static void test_torn_tries_leave_the_waiting_view_alone(void)
 /* ---- line history (docs/line-history.md) ---- */
 
 /* The overlay on 猫犬鳥 (its first word looked up), this game's earlier lines in history.csv with
- * another game's between them, and the current text appended already (as Auto appends it). */
+ * another game's between them (犬鳥 read from a hook), and the current text appended already (as Auto
+ * appends it). */
 static void history_setup(void)
 {
     cursor_setup();
     vjo_ledger_shell_init(); /* the visit's block is counted (VJO_SL_PAF_HISTORY) */
     history_csv_add("vita-PCSG00415", "鳥");
     history_csv_add("vita-PCSG00002", "他のゲーム");
-    history_csv_add("vita-PCSG00415", "犬鳥");
+    history_csv_add_from("vita-PCSG00415", "犬鳥", "hook");
     history_csv_add("vita-PCSG00415", "猫犬鳥");
     view_invariant = 1; view_invariant_checks = 0; invariant_generation = 0; invariant_seq = 0;
     open_overlay(); finish_current_job();
@@ -5229,13 +5232,13 @@ static void test_history_up_walks_back_and_down_returns(void)
 {
     history_setup();
     VjoLineDebug debug = g_view.line_debug;
-    TEST_CHECK(debug.origin == VJO_LINE_OCR && debug.model != NULL);
+    TEST_CHECK(debug.origin == VJO_LINE_OCR);
     uint32_t scene = local_text_scene, seq = local_text_capture_seq;
     vjo_post_cursor(3, local_text_generation); on_command(); finish_current_job();
     check_shown("猫犬鳥", "dog", 3);
     unsigned list_seq = g_view.list_seq;
     history_key(VJO_CMD_EARLIER);
-    TEST_CHECK(g_view.line_debug.origin == VJO_LINE_OCR && !g_view.line_debug.model);
+    TEST_CHECK(g_view.line_debug.origin == VJO_LINE_HOOK); /* the earlier line's own source, history.csv's */
     TEST_CHECK(history_loads == 1 && !strcmp(history_uuid, "vita-PCSG00415\",")); /* this game's lines only */
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
     TEST_CHECK(g_view.history == 1 && !strcmp(g_view.history_before, "鳥") && !strcmp(g_view.history_after, "猫犬鳥"));
@@ -5253,6 +5256,7 @@ static void test_history_up_walks_back_and_down_returns(void)
     finish_current_job();
     check_shown("鳥", "bird", 0);
     TEST_CHECK(g_view.history == 2 && !g_view.history_before && !strcmp(g_view.history_after, "犬鳥"));
+    TEST_CHECK(g_view.line_debug.origin == VJO_LINE_OCR);
     /* the oldest: Up does nothing, as at the text's top row before line history */
     history_key(VJO_CMD_EARLIER);
     TEST_CHECK(!job_running && g_view.history == 2 && history_loads == 1 && !g_view.status[0]);
@@ -5262,12 +5266,13 @@ static void test_history_up_walks_back_and_down_returns(void)
     finish_current_job();
     check_shown("犬鳥", "dog", 0);
     TEST_CHECK(g_view.history == 1 && !strcmp(g_view.history_before, "鳥"));
+    TEST_CHECK(g_view.line_debug.origin == VJO_LINE_HOOK);
     history_key(VJO_CMD_LATER);
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3);
     TEST_CHECK(g_view.history == 0 && !g_view.history_before && !g_view.history_after && !history);
     TEST_CHECK(history_allocs == 1 && history_frees == 1 && !history_held());
     TEST_CHECK(local_text_scene == scene && local_text_capture_seq == seq);
-    TEST_CHECK(!memcmp(&debug, &g_view.line_debug, sizeof(debug)));
+    TEST_CHECK(!memcmp(&debug, &g_view.line_debug, sizeof(debug))); /* the current text's source, not the hook's */
     finish_current_job();
     check_shown("猫犬鳥", "dog", 3);
     /* Down on the current text: nothing */
@@ -5617,8 +5622,7 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     open_overlay(); finish_current_job();
     check_shown("猫犬鳥", "cat", 0);
     VjoLineDebug debug = g_view.line_debug;
-    TEST_CHECK(debug.origin == VJO_LINE_HOOK && debug.stream == 9 && debug.flags == fake_hook[1]);
-    TEST_CHECK(debug.streams == fake_hook[3] && debug.mode == VJO_TEXT_SOURCE_AUTO && debug.installed == 8);
+    TEST_CHECK(debug.origin == VJO_LINE_HOOK);
     memset(fake_hook, 0, sizeof(fake_hook)); /* later OCR results must not relabel the accepted hook line */
     uint32_t generation = local_text_generation;
     unsigned seq = g_view.list_seq, inferences = vocr_allocs;
@@ -5653,8 +5657,7 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     TEST_ASSERT(job_running && job_refresh);
     finish_current_job();
     TEST_CHECK(DLOGGED("refresh rc=0: new text"));
-    TEST_CHECK(g_view.line_debug.origin == VJO_LINE_OCR && !g_view.line_debug.stream);
-    TEST_CHECK(g_view.line_debug.scene == 9 && g_view.line_debug.model != NULL);
+    TEST_CHECK(g_view.line_debug.origin == VJO_LINE_OCR);
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
     TEST_CHECK(!strcmp(local_text, "犬猫") && local_text_generation != generation && local_text_scene == 9);
     TEST_CHECK(g_view.list == &local_header && !g_view.list->n_entries && g_view.text_generation == local_text_generation);

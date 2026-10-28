@@ -5,6 +5,39 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](history/issue-59-root-cause.md).
 
+## Cleanup P1: dead Shell state (#418; no API change)
+
+State the Shell wrote and nothing read. **No block, thread, stack or allocation; no module takes a page more.**
+
+- **The Triangle view's line source** (`VjoLineDebug`, `shell/shell.h`): the view's snapshot keeps `origin`, the one
+  field the overlay shows ("This line came in through: …", `shell/overlay.cpp`); its ten other fields (the hook's
+  stream, flags, score, streams, mode, installed and refused counts, the scene, the capture and the model) were
+  written at each accepted text and read only by host tests since #291 replaced the detailed view (44 B: "Hidden
+  Triangle line diagnostics", the section of this file that added them): 4 B in `g_view` and in the line-history
+  visit's copy (`HistoryVisit`, inside its unchanged 16,384 B block), and `line_debug_accept` one store.
+- **`VjoErr.dict`** (`core/platform.h`): set to `VJO_DICT_LOCAL`, the only dictionary, in six places and read in none
+  (the per-dictionary error texts went with jpdb.io, jiten.moe and the Hachidori relay): 4 B less in each `VjoErr`, two
+  of them in the Shell's `.bss` (`cache_data`), one in the Rubi app's.
+- **The text source's names** (`hook_note`'s hooks line in `shell/worker.c`): `config.c`'s table, which
+  `text_source` is parsed with (now `vjo_text_source_names`, in the data segment as before), instead of a second
+  copy of it (12 B of the code segment's rodata).
+
+Measured with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows; the app's
+ELF with `arm-vita-eabi-size -A`), main `41678d6` against this change:
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Shell | 98,076 + 69,264 → 97,884 + 69,216 B | 85,732 + 69,200 → 85,636 + 69,152 B | 167,936 / 155,648 B, unchanged |
+| Kernel, game worker | the SELF files byte-identical | the SELF files byte-identical | unchanged |
+| Rubi app (`.text`, `.bss`) | 481,456 → 481,456 B, 5,004,872 → 5,004,856 B | 481,008 → 481,072 B, 5,004,856 → 5,004,840 B | its own process |
+
+The Shell's code is 192 B (debug) and 96 B (normal) smaller, its data/bss 48 B: room left in the last pages, the normal
+Shell's code 380 B (284 before) and data 480 B (432), the debug Shell's 420 B (228) and 416 B (368). In the app (its own
+process, not SceShell's; `config.c` built `-O2`, without LTO): `parse` +42 B, `entry_at` +6 B, `local_lookup_begin` -4
+B, `vjo_local_read_page` -4 B, `lookup_pages` -12 B: +28 B of its functions [`arm-vita-eabi-nm -S`], +64 B (normal) and
+0 B (debug) of its `.text` with their alignment; its `.data` and `.rodata` the same. These are binary and host
+measurements; nothing of it has run on a console.
+
 ## Cleanup P1: the subtitle strip's text without its arena (#418; no API change)
 
 The subtitle strip (Select + R, `shell/strip.cpp`) turned its sentence into UTF-16 in a static 8,480 B styling arena
