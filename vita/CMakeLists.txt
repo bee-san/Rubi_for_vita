@@ -690,7 +690,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy
     ${ROOT}/docs/line-history.md ${ROOT}/docs/native-hooks.md ${ROOT}/docs/hook-titles.md
     ${ROOT}/docs/hook-requests.md ${ROOT}/docs/first-box.md ${ROOT}/docs/roadmap.md ${ROOT}/docs/reading-time.md
-    ${ROOT}/docs/conjugation-display.md
+    ${ROOT}/docs/conjugation-display.md ${ROOT}/docs/game-pause.md
     ${ROOT}/docs/memory-ledger.md ${ROOT}/docs/boot-safety.md
     ${ROOT}/docs/worker-loading.md ${ROOT}/docs/ingame-capture.md ${ROOT}/docs/performance.md
     ${ROOT}/docs/auto-vs-press.md ${ROOT}/docs/first-ocr.md ${ROOT}/docs/ocr-speed.md
