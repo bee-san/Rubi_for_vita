@@ -994,7 +994,7 @@ static void the_gate_s_weights_are_a_block_of_their_own(void)
     VjoGameOcrRequest r;
     VjoGameOcrResult out;
     const VjoGameOcrStep *g, *a;
-    uint32_t need;
+    uint32_t need, need_weights;
     if (!VJO_VOCR_GATE_TEST_DIR[0]) { TEST_SKIP("no gate weights (cmake/VocrGate.cmake)"); return; }
     /* the first job with the gate: its block taken, the weights read into it */
     r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
@@ -1041,28 +1041,51 @@ static void the_gate_s_weights_are_a_block_of_their_own(void)
     quit_on_delay = 0;
     quitting = 0;
     TEST_CHECK(!gate_live && gate_frees == 1 && !gate_res.verified && !blocked);
-    /* the room: the job's check passed with 2 KiB to spare beside its weights, still to come: the gate is refused
-     * before the game is asked (no ALLOC step), the job reads as without it, its weights as before */
+    /* the room (#418's audit F1): the gate's block is decided from the job's own check, by its rule and its sample of
+     * the game's free memory, and counted in the job's need there (as 0.10.0's static page was), never by a second
+     * look once the job's blocks are taken. A game that refuses the block: the job reads as without the gate */
     r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE; refuse_gate = 1;
     vjo_game_ocr_run_request(&r, &out);
-    need = out.need_workspace + out.need_weights; /* the job's check (the gate's block is not in it) */
-    TEST_ASSERT(need > 0 && out.need_weights > 0 && gate_allocs == 1 && !gate_live);
+    need = out.need_workspace + out.need_weights; /* the job's check, the gate's 4 KiB in it */
+    need_weights = out.need_weights;
+    TEST_ASSERT(need > VJO_BUDGET_GAME_GATE && need_weights > 0 && gate_allocs == 1 && !gate_live);
     g = gate_step(&out);
     TEST_CHECK(g && g->rc == VJO_E_OOM && !g->arg); /* refused by the game: the job read as without the gate */
+    /* 2 KiB short of the job and the gate's block: the job's check passes, its gate has no room, the game is not
+     * asked (no ALLOC step), the job reads its weights as before, and its need is the job's alone */
     r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
-    available = (int)(GAME_RESERVE + need + 2048u);
+    available = (int)(GAME_RESERVE + need - 2048u);
     vjo_game_ocr_run_request(&r, &out);
     g = gate_step(&out);
     TEST_CHECK_(g && g->rc == VJO_E_OOM && !gate_allocs && !item_step(&out, VJO_GSTEP_ALLOC, VJO_GITEM_GATE) &&
-                    out.need_workspace + out.need_weights == need,
-                "2 KiB to spare: gate rc %d, its allocations %u", g ? (int)g->rc : 0, gate_allocs);
-    /* 4 KiB more: taken */
+                    out.need_workspace + out.need_weights == need - VJO_BUDGET_GAME_GATE,
+                "2 KiB short: gate rc %d, its allocations %u", g ? (int)g->rc : 0, gate_allocs);
+    /* exactly the room: taken */
     r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
-    available = (int)(GAME_RESERVE + need + 2048u + VJO_BUDGET_GAME_GATE);
+    available = (int)(GAME_RESERVE + need);
     vjo_game_ocr_run_request(&r, &out);
     g = gate_step(&out);
+    TEST_CHECK_(g && !g->rc && g->arg == 1 && gate_allocs == 1 && gate_live && out.need_workspace + out.need_weights == need,
+                "the room exactly: gate rc %d, allocations %u", g ? (int)g->rc : 0, gate_allocs);
+    TEST_CHECK(!drop_resident() && !gate_live);
+    /* a console that reports free memory in whole MiB (#324, free_mib): the least whole MiB with the room, so the
+     * check's sample has it, and once the job's capture and workspace blocks are taken the game's figure is a MiB
+     * lower: the block is still taken (no second look), where #471's second look (the room beyond the reserve and
+     * the weights still to come) refused it */
+    r = setup(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    available = (int)((GAME_RESERVE + need + 1024u * 1024u - 1u) / (1024u * 1024u) * (1024u * 1024u));
+    TEST_ASSERT((int64_t)((available - (need - need_weights - VJO_BUDGET_GAME_GATE)) / (1024 * 1024) * (1024 * 1024)) -
+                    (int64_t)GAME_RESERVE < (int64_t)VJO_BUDGET_GAME_GATE + need_weights); /* #471 refused here */
+    free_mib = 1;
+    vjo_game_ocr_run_request(&r, &out);
+    free_mib = 0;
+    g = gate_step(&out);
     TEST_CHECK_(g && !g->rc && g->arg == 1 && gate_allocs == 1 && gate_live,
-                "6 KiB to spare: gate rc %d, allocations %u", g ? (int)g->rc : 0, gate_allocs);
+                "whole MiB: gate rc %d, allocations %u", g ? (int)g->rc : 0, gate_allocs);
+    /* the block held, the next gate job counts no room for it: its workspace need is a job's without the gate */
+    r = setup_keeping_the_gate(); stripes(); r.speed = VJO_GAME_OCR_S_GATE;
+    vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(out.need_workspace == need - need_weights - VJO_BUDGET_GAME_GATE && !gate_allocs && gate_live);
     TEST_CHECK(!drop_resident() && !gate_live);
 }
 

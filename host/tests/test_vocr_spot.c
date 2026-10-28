@@ -326,6 +326,22 @@ static void no_memory_or_a_cancellation_is_not_a_crash(void)
     TEST_CHECK(load(&read) == VJO_E_OCR_UNAVAILABLE && !res.verified);
     blk.release_fail = 0;
     TEST_CHECK(vjo_vocr_spot_drop(&res) == 0 && !blk.live);
+    /* #418's audit F7 (#455's stated corner): an unverified block whose release failed is released again before the
+     * next load takes a block, never read into: the next load frees it, then takes a fresh one, verified */
+    reset();
+    TEST_CHECK(load(&read) == VJO_OK && blk.live && blk.allocs == 1);
+    card.missing = 1;
+    blk.release_fail = 1;
+    TEST_CHECK(load(&read) == VJO_E_OCR_UNAVAILABLE && !res.verified && res.data && blk.live);
+    card.missing = 0;
+    blk.release_fail = 0;
+    {
+        const unsigned releases = blk.releases;
+        TEST_CHECK(load(&read) == VJO_OK && read == 1 && res.verified && blk.live);
+        TEST_CHECK_(blk.releases == releases + 1u && blk.allocs == 2, "releases %u (+%u), allocs %u", blk.releases,
+                    blk.releases - releases, blk.allocs);
+    }
+    TEST_CHECK(vjo_vocr_spot_drop(&res) == 0 && !blk.live);
     /* cancelled while its file is opened: proves nothing about the file, verified weights stay */
     reset();
     TEST_CHECK(load(&read) == VJO_OK);
