@@ -341,6 +341,8 @@ normal=\$(ls $(q "$OUT/vita-normal")/Rubi-*.zip | grep -v -- -debug.zip)
 debug=\$(ls $(q "$OUT/vita-debug")/Rubi-*-debug.zip)
 version=\$(basename \"\$normal\" .zip); version=\${version#Rubi-}
 rm -rf $(q "$OUT/release")
+# an earlier run's logs (another version's packages, after a bump) are not this run's checks
+rm -f $(q "$OUT/e2e")-*.log
 python3 tools/package_variants.py --normal \"\$normal\" --debug \"\$debug\" --models $(q "$CACHE/models") \\
   --version \"\$version\" --source-revision $REV --sources . -o $(q "$OUT/release")
 step 'tools/package_variants.py'

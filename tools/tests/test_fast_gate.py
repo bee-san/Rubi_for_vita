@@ -2,8 +2,9 @@
 (build/gate), and a CMake cache keeps the VJO_VERSION of its first configure (vita/CMakeLists.txt's set() is a CACHE
 STRING): rubi-release-final's gate on the 0.10.0 release commit (2026-10-28) built, packaged and e2e-checked
 Rubi-0.9.8.zip and passed; only --clean built 0.10.0. The gate reads the version from vita/CMakeLists.txt and passes
-it to both Vita lanes' configure, which replaces a cached one. (CI configures a new build directory on every run, and
-tools/ci_container_build.sh builds in a new container: neither keeps a cache.)"""
+it to both Vita lanes' configure, which replaces a cached one; its e2e lane counts this run's packages' logs only.
+(CI configures a new build directory on every run, and tools/ci_container_build.sh builds in a new container:
+neither keeps a cache.)"""
 import re
 import shutil
 import subprocess
@@ -56,6 +57,15 @@ class GateVersion(unittest.TestCase):
         self.assertEqual(len(configure), 1)
         self.assertIn(configure[0], lanes)
         self.assertIn('-DVJO_VERSION=$(q "$VERSION")', configure[0])
+
+    def test_the_e2e_lane_counts_this_runs_packages_only(self):
+        """The e2e lane's line counts the PASS lines of every OUT/e2e-<package>.log: after a version bump an earlier
+        run's logs (Rubi-0.9.8*) would be counted with this run's (Rubi-0.10.0*: 744 checks instead of 372, in
+        #499's end-to-end check). The lane removes them before it writes its own."""
+        lane = GATE[GATE.index("run_lane e2e host"):GATE.index('echo "not run: a Vita build failed"')]
+        drop = lane.index('rm -f $(q "$OUT/e2e")-*.log')
+        self.assertLess(drop, lane.index('python3 tools/e2e_package.py'))
+        self.assertLess(drop, lane.index('cat $(q "$OUT/e2e")-*.log'))
 
     def test_a_cache_with_another_version_gives_way(self):
         """A build directory configured on the old version line keeps it on a plain configure after the bump (what
