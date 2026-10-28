@@ -24,4 +24,12 @@ int vjo_line_fix_file_read(VjoGames *games, VjoArena *scratch);
 int vjo_line_fix_file_load(VjoGames *games, VjoArena *scratch);
 /* As vjo_games_file_save, with vjo_line_fix_format. */
 int vjo_line_fix_file_save(const VjoGames *games, VjoArena *scratch);
+
+/* The file I/O the Shell's two readers share (shell/files.c too, #418): the whole of the open file fd, at most max
+ * bytes, into the arena with a NUL after it (its length in *len), or NULL: too large, a seek that failed, an
+ * allocation refused, a read that failed or fell short. The caller closes fd. And whether a path is there
+ * (sceIoGetstat succeeds) or missing (it says ENOENT, the SDK's encoded value). */
+char *vjo_io_read_fd(int fd, VjoArena *a, size_t max, size_t *len);
+int vjo_io_exists(const char *path);
+int vjo_io_missing(const char *path);
 #endif

@@ -629,6 +629,7 @@ vjo_suite(taicfg SOURCES host/tests/test_taicfg.c DEFINES VJO_SOURCE_DIR="${CMAK
 vjo_suite(shell_game SOURCES host/tests/test_shell_game.c shell/game.c vita/games_storage.c
   INCLUDES host/tests/vita_stubs DEFINES VJO_TEST_APPMGR_STUBS=1 UNUSED LIBS vjo_host)
 vjo_suite(preferences SOURCES host/tests/test_preferences.c settings/preferences.c shell/files.c
+  vita/games_storage.c # shell/files.c's reads are games_storage.c's (#418)
   INCLUDES host/tests/vita_stubs DEFINES VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" UNUSED LIBS vjo_host)
 # The Rubi app's own settings file, app.ini (settings/app_prefs.c): its lines as config.ini's, its saves through
 # config.ini's file layer (settings/preferences.c) without config.ini's removed-key rules, every row of its table.
@@ -729,7 +730,7 @@ vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/i
 # settings_stubs/anki_page_stub.c.
 vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
   settings/app_worker.c
-  settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c
+  settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c vita/games_storage.c
   INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs
   DEFINES VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS UNUSED LIBS vjo_host)
 # The Rubi app's seed of the overlay's reading streak (settings/streak_seed.c) on a temporary memory card: once (a
