@@ -1127,6 +1127,32 @@ static void test_scrolled_cards_keep_their_touch_targets(void)
     }
 }
 
+/* #418 (P10, audit-rubi-cleanup-10 F11): Dictionaries shown by its buttons (settings/main.c choose_preference): Enter
+ * takes the next count, 8 then 1; Left and Right the count beside it, never past 1 or 8. */
+static void test_dictionaries_shown_by_its_buttons(void)
+{
+    static const struct { uint32_t button; const char *results; } steps[] = {
+        {SCE_CTRL_CROSS, "2"}, {SCE_CTRL_RIGHT, "3"}, {SCE_CTRL_LEFT, "2"}, {SCE_CTRL_LEFT, "1"},
+        {SCE_CTRL_LEFT, "1"}, /* not past 1 */
+        {SCE_CTRL_RIGHT, "2"}, {SCE_CTRL_RIGHT, "3"}, {SCE_CTRL_RIGHT, "4"}, {SCE_CTRL_RIGHT, "5"},
+        {SCE_CTRL_RIGHT, "6"}, {SCE_CTRL_RIGHT, "7"}, {SCE_CTRL_RIGHT, "8"},
+        {SCE_CTRL_RIGHT, "8"}, /* not past 8 */
+        {SCE_CTRL_CROSS, "1"}, /* round: 8, then 1 */
+    };
+    enum { N = sizeof(steps) / sizeof(steps[0]), KEYS = 12 }; /* the page, then Down to Dictionaries shown */
+    static Input in[KEYS + 2 * N] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+                                     PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN)};
+    card("local_dictionaries = a.vjdict,b.vjdict,c.vjdict\nlocal_dictionary_results = 1\n");
+    for (int i = 0; i < N; i++) in[KEYS + 2 * i] = (Input){steps[i].button, 0, 0, 0};
+    TEST_ASSERT(run(in, KEYS + 2 * N) == KEYS + 2 * N);
+    for (int i = 0; i < N; i++) {
+        int f = KEYS + 2 * i;
+        TEST_CHECK_(focused_card(f) == 5 && !strcmp(shown[f].results, steps[i].results),
+                    "press %d (0x%x): card %d focused, results '%s'; want %s", i, (unsigned)steps[i].button,
+                    focused_card(f), shown[f].results, steps[i].results);
+    }
+}
+
 /* The press choice names what opens the overlay (config.ini toggle_button). */
 static void test_read_text_names_the_buttons_that_open_the_overlay(void)
 {
@@ -2059,6 +2085,7 @@ TEST_LIST = {
     {"the_page_scrolls_a_card_at_a_time_and_never_draws_into_the_status_line", test_the_page_scrolls_a_card_at_a_time},
     {"read_text_names_the_buttons_that_open_the_overlay", test_read_text_names_the_buttons_that_open_the_overlay},
     {"scrolled_highlight_and_dictionaries_cards_keep_their_touch_targets", test_scrolled_cards_keep_their_touch_targets},
+    {"dictionaries_shown_by_its_buttons", test_dictionaries_shown_by_its_buttons},
     {"engine_card_and_size_lines", test_engine_card_and_size_lines},
     {"banner_text_says_which_side_is_older_and_what_to_do", test_banner_text_says_which_side_is_older},
     {"banner_is_drawn_over_the_title_on_every_page_or_not_at_all", test_banner_is_drawn_on_every_page},

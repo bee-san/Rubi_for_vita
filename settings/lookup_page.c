@@ -7,8 +7,9 @@
 #include <string.h>
 #include <vita2d.h>
 
-#include "anki_page.h" /* vjo_log */
+#include "app_io.h" /* VJO_APP_RTC_UNIX_EPOCH */
 #include "app_queue.h"
+#include "applog.h"
 #include "lookup.h"
 #include "lookup_history.h"
 #include "preferences.h"
@@ -61,7 +62,7 @@
 
 enum { MODE_SEARCH, MODE_LINES };
 
-static const VjoLookupUi *s_ui;
+static const VjoPageUi *s_ui;
 static VjoConfig cfg;
 static int mode = MODE_SEARCH, line_open, configured;
 static char status[200];
@@ -505,7 +506,7 @@ static void line_time(uint64_t us, char *out, size_t cap)
     SceDateTime t;
     out[0] = '\0';
     memset(&t, 0, sizeof(t));
-    utc.tick = 62135596800000000ull + us;
+    utc.tick = VJO_APP_RTC_UNIX_EPOCH + us;
     if (us && sceRtcConvertUtcToLocalTime(&utc, &local) >= 0 && sceRtcSetTick(&t, &local) >= 0 && t.year)
         snprintf(out, cap, "%02u-%02u %02u:%02u", t.month, t.day, t.hour, t.minute);
 }
@@ -845,10 +846,7 @@ static void draw_text(void)
         draw_bytes(x, y, s_ui->white, TEXT_PX, s + hb, b - hb);
     }
     if (text_rows > TEXT_ROWS) { /* where the shown rows are in the text */
-        int room = TEXT_H - 8;
-        s_ui->rect(SCROLL_X, TEXT_Y + 4, SCROLL_W, room, s_ui->track);
-        s_ui->rect(SCROLL_X, TEXT_Y + 4 + room * text_top / text_rows, SCROLL_W, room * TEXT_ROWS / text_rows,
-                   s_ui->dim);
+        vjo_page_scroll_bar(s_ui, SCROLL_X, TEXT_Y + 4, SCROLL_W, TEXT_H - 8, text_top, TEXT_ROWS, text_rows);
     }
 }
 
@@ -873,9 +871,7 @@ static void draw_body(void)
             before += body[i].height;
     }
     if (total > BODY_END - BODY_TOP_Y) { /* more than the room: a bar where the view is */
-        int room = BODY_END - BODY_TOP_Y;
-        s_ui->rect(SCROLL_X, BODY_TOP_Y, SCROLL_W, room, s_ui->track);
-        s_ui->rect(SCROLL_X, BODY_TOP_Y + room * before / total, SCROLL_W, room * shown / total, s_ui->dim);
+        vjo_page_scroll_bar(s_ui, SCROLL_X, BODY_TOP_Y, SCROLL_W, BODY_END - BODY_TOP_Y, before, shown, total);
     }
 }
 
@@ -908,9 +904,8 @@ static void draw_list(void)
         s_ui->wrapped(BODY_X, LIST_Y + 34, 870, state == VJO_LOOKUP_HISTORY_FAILED ? s_ui->off : s_ui->white, 24, 30,
                       3, why);
     } else if (n > LIST_ROWS) {
-        int room = LIST_ROWS * LIST_ROW - (LIST_ROW - LIST_H);
-        s_ui->rect(942, LIST_Y, SCROLL_W, room, s_ui->track);
-        s_ui->rect(942, LIST_Y + room * list_top / n, SCROLL_W, room * LIST_ROWS / n, s_ui->dim);
+        vjo_page_scroll_bar(s_ui, 942, LIST_Y, SCROLL_W, LIST_ROWS * LIST_ROW - (LIST_ROW - LIST_H), list_top,
+                            LIST_ROWS, n);
     }
 }
 
@@ -978,7 +973,7 @@ void vjo_lookup_page_show(VjoArena *scratch)
     vjo_stick_latch(&rstick);
 }
 
-int vjo_lookup_page_frame(const VjoLookupUi *ui, const VjoLookupInput *in)
+int vjo_lookup_page_frame(const VjoPageUi *ui, const VjoLookupInput *in)
 {
     int dialog;
     s_ui = ui;

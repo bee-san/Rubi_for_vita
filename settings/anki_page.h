@@ -14,29 +14,15 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "../core/arena.h"
-#include "../core/buttons.h"
 #include "../core/config.h"
 #include "anki_export.h"
-
-/* main.c's drawing helpers, so the page looks like the others. */
-typedef struct {
-    void (*text)(int x, int y, unsigned color, float pixels, const char *s);
-    void (*wrapped)(int x, int y, int width, unsigned color, float pixels, int line_height, int lines,
-                    const char *s);
-    void (*card)(int y, int height, int focus);
-    void (*badge)(int x, int y, int width, int height, const char *label, int active);
-    void (*footer)(int y, int height, int text_y, int lines, const char *message, int error, const char *controls);
-    void (*header)(void);
-    unsigned white, dim, accent, off;
-    unsigned track; /* the scroll bar's track, a card's colour (API 32: the five rows scroll) */
-    const VjoButtons *buttons; /* the console's enter and cancel buttons */
-} VjoAnkiUi;
+#include "page_ui.h"
 
 /* The page is shown (Select or its tab): reloads the settings and counts the cards. */
 void vjo_anki_page_show(VjoArena *scratch);
 /* One frame of the page: the buttons pressed and a new touch (x, y; -1 when
  * none), then drawing. */
-void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch);
+void vjo_anki_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch);
 /* The left stick's move for the next frame (rows: negative up, positive down,
  * 0 none; core/stick_scroll.h): it stops at the first and last row, where
  * Up/Down wrap round. */
@@ -49,14 +35,7 @@ int vjo_anki_page_holds_cancel(void);
 /* Leaving the app: cancels and joins a running export or import (the queue is left as it was). */
 void vjo_anki_page_quit(void);
 
-/* The app's lines in log.txt, "Rubi app: " and the text (settings/applog.c,
- * below the Shell's 1 MiB rotation): written while config.ini's log_file is
- * on, which main.c sets at start and the page again when it is shown. Between
- * vjo_app_log_batch_begin and _end, in one function of one thread, that
- * thread's lines go out in one append, at the end. */
-void vjo_log_enable(int on);
-void vjo_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-void vjo_app_log_batch_begin(void);
-void vjo_app_log_batch_end(void);
+/* The app's lines in log.txt (main.c and the pages include them from here). */
+#include "applog.h"
 
 #endif

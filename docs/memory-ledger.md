@@ -174,9 +174,17 @@ game worker's SELFs are byte for byte main's.
   12,066 for 896 × 156 (`qemu-arm -one-insn-per-tb` on the Vita build's `scene.c`; about 25-40 µs at 444-333 MHz,
   **est.**). Main rebuilt each grid only when its own size changed, the job's in its syscall.
 - **The signature's copy** (`kernel/main.c` `change_detection`): 524 B on VjoWorker's 16 KiB stack instead of `.bss`
-  (`sig.0`); `change_detection` is no longer inlined into the thread's loop, so the frame is live only in its call.
-  The thread's deepest path of the plugin's own frames: 600 → 1,000 B (normal) and 608 → 1,008 B (debug), the
-  firmware's calls counted as 0 B as before (`-fstack-usage -fcallgraph-info=su`, the gate's vitasdk image).
+  (`sig.0`); `change_detection` is not inlined into the thread's loop (`noinline` since its audit's F4: GCC 15.2 did
+  not inline it anyway, the same SELF), so the frame is live only in its call. The thread's deepest path of the
+  plugin's own frames: 600 → 1,000 B (normal) and 608 → 1,008 B (debug), the firmware's calls counted as 0 B as before
+  (`-fstack-usage -fcallgraph-info=su`, the gate's vitasdk image).
+- **Other stacks** (the same measure; its audit's F4, F5): the display hook's deepest path 284 → 368 B and the static
+  framebuffer's pad-call path (`display_static_fb_sample`) 300 → 384 B in both builds, the job's grid now rebuilt there
+  (`scene_rows_add` 32 + `grid_for` 80 B) on the game thread's kernel stack, whose own size and the firmware's frames on
+  it are unmeasured (+84 B: harmless, **est.**). #430's six model syscalls, their step now out of line under
+  `model_syscall`'s 72 B frame (the indirect call added by hand): Open 120 → 168 B, Read 80 → 136, Close 64 → 120,
+  HookCache 88 → 136, ShotWrite 80 → 136, ShotSave 80 → 128 B, both builds (a syscall's stack size is not cited here:
+  harmless, **est.**).
 - **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows),
   main `85e9da1` (v0.10.0, #355's `ocr_pause` and #430) against this change:
 
@@ -192,12 +200,22 @@ game worker's SELFs are byte for byte main's.
   151,552 → 147,456 B (`tools/check_memory_ledger.py`'s pool table). The text grows 48 B (debug) and 64 B (normal):
   the second signature's begin and row, the grid's rebuild check, `change_detection` out of line. (On `b55c5f5`, before
   #355 and #430: 43,508 + 77,780 → 43,572 + 72,372 B and 38,356 + 76,092 → 38,436 + 70,684 B.)
-- **Proof** (host): `capture_parity`, the recognizer's input against API 18's capture, on 162 regions now (two more:
-  odd widths at the frame's first and at its last rows); `kernel_capture`, every format's grey and colour rows from
-  random pixels at odd widths, the frame's first and last rows and columns and a whole 960-pixel row, and the
-  region's and a job's signatures over the one grid at any two sizes, each against its own accumulator's; `fbgrey`,
-  the conversions in place at every length to 961 pixels, 4,095 pixels and every 16-bit value. **Not run on a
-  console.**
+- **Proof** (host): `capture_parity`, the recognizer's input against API 18's capture, on 162 regions, two of them
+  odd-width crops (77 px) over a line of text, one from the frame's first row and one to its last, each asserted to give
+  lines (since the audit's F2: as merged, those two lay in text-free corners and compared no line), and its first pass
+  with the capture's signature, as the worker asks for it (VJO_ROWS_SIG), so A1B5G5R5 frames take the in-place
+  expansion of the rows the signature samples (F3; before, `sig = 0` read every 16-bit row in one pass): 324 lines,
+  4,317,784 B of recognizer input, 0 differences (288 lines and 4,252,948 B before); `kernel_capture`, every format's
+  grey and colour rows from random pixels at odd widths, the frame's first and last rows and columns and a whole
+  960-pixel row, and the region's and a job's signatures over the one grid at any two sizes (widths, heights or both
+  differing), each against its own accumulator's, and the rule the grid rests on: a job's begin writes no byte of the
+  region signature's `SceneAcc` (F1; `kernel_game_ocr` checks it through `vjoOcrCaptureRows`, at the rows call's wait for
+  the frame); `fbgrey`, the conversions in place at every length to 961 pixels, 4,095 pixels and every 16-bit value.
+  The stage bench's capture and scene stages (`stage_bench_smoke`) read A1B5G5R5 rows without a signature only, so
+  they do not see the 16-bit expansion (F3); `fbgrey`, `kernel_capture`, `capture_parity` and `game_shot` do. Mutations
+  (the audit's): a forward 16-bit expansion fails `fbgrey`, `kernel_capture`, `capture_parity` and `game_shot`; a begin
+  that writes the grid, `kernel_capture` and `kernel_game_ocr`; a grid keyed on the width only, `core` and
+  `kernel_capture`. **Not run on a console.**
 
 ## The pause for the frame (API 55)
 

@@ -27,9 +27,13 @@ typedef struct {
 static int api19_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
 {
     const Api19Capture *c = ud;
+    /* The first pass's strips continue the capture's signature, as the worker asks for them (game_ocr/main.c: a
+     * VJO_STRIP_FIRST strip is VJO_ROWS_SIG) and the kernel begins it at row 0 (vjoOcrCaptureRows): so an A1B5G5R5
+     * frame's sampled rows take the kernel's in-place expansion here too (#418 P3's audit F3), the others its one pass. */
+    int sig = (flags & VJO_STRIP_FIRST) != 0;
+    if (sig && y == 0) parity_sig_begin(c->w, c->h);
     ParityRowsJob job = {c->x, c->y, c->w, c->h, c->f->fb_w, c->f->fb_h, y, n, (uint32_t)stride,
-                         (uintptr_t)dst, NULL, 0, 0, 0};
-    (void)flags;
+                         (uintptr_t)dst, NULL, sig, 0, 0};
     return parity_grey_rows((uintptr_t)c->f->pixels, c->f->pitch, c->f->fmt, c->f->fb_w, c->f->fb_h, &job);
 }
 

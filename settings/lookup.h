@@ -44,7 +44,6 @@ typedef struct {
 /* The settings the lookups use (config.ini as the app loads it): the dictionaries, their order and count, the
  * filter, the cursor's rules. A change of dictionaries closes the session's files. */
 void vjo_lookup_configure(const VjoConfig *cfg);
-const VjoConfig *vjo_lookup_config(void);
 /* Closes the dictionary session's files (the page is left: an install may replace them). */
 void vjo_lookup_close(void);
 
@@ -78,8 +77,5 @@ void vjo_lookup_highlight(size_t *start, size_t *end);
 int vjo_lookup_mine(const VjoLookupSource *source, char *msg, size_t cap);
 /* The card's note without saving it, in the card arena (for the tests): 0, or -1 (no entry, no memory). */
 int vjo_lookup_note(const VjoLookupSource *source, VjoAnkiNote *note, char *misc, size_t misc_cap);
-
-/* The static memory (docs/vita-memory.md 5.4): the lookup block, the card arena, the text. */
-size_t vjo_lookup_static_bytes(void);
 
 #endif

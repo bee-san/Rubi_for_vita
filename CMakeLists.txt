@@ -51,7 +51,7 @@ set(CORE_SRC
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
-  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c core/word_key.c core/sentence_reading.c
+  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c core/heap.c core/word_key.c core/sentence_reading.c
   core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c
   core/charmap.c)
 add_library(vjo_core STATIC ${CORE_SRC})
@@ -739,6 +739,7 @@ vjo_suite(settings_search SOURCES host/tests/test_settings_search.c settings/sea
 # (VJO_KERNEL_LOADS_WORKER: t3-worker-any-game's include/vjo_api.h; defined here for the test, which also
 # checks the lines mode's refusal of another build's payload).
 vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/install.c settings/install_page.c
+  settings/app_worker.c
   settings/preferences.c settings/text_layout.c host/tests/settings_stubs/anki_page_stub.c
   INCLUDES host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs third_party/bearssl/inc
   DEFINES VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" VJO_VERSION_STRING="0.8.0" VJO_KERNEL_LOADS_WORKER=1
@@ -750,6 +751,7 @@ vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/i
 # memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
 # settings_stubs/anki_page_stub.c.
 vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
+  settings/app_worker.c
   settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c
   INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs
   DEFINES VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS UNUSED LIBS vjo_host)

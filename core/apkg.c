@@ -4,6 +4,7 @@
 
 #include "bearssl.h"
 #include "errors.h"
+#include "heap.h"
 #include "json.h"
 #include "lapis.h"
 #include "port.h"
@@ -48,35 +49,16 @@ static int card_cmp(const VjoApkgCard *x, const VjoApkgCard *y)
     return memcmp(x->id, y->id, sizeof(x->id));
 }
 
-static void sift(VjoApkgCard *c, int root, int n)
+static int card_less(const void *x, const void *y, void *ctx)
 {
-    for (;;) {
-        int child = 2 * root + 1;
-        VjoApkgCard t;
-        if (child >= n)
-            return;
-        if (child + 1 < n && card_cmp(&c[child], &c[child + 1]) < 0)
-            child++;
-        if (card_cmp(&c[root], &c[child]) >= 0)
-            return;
-        t = c[root];
-        c[root] = c[child];
-        c[child] = t;
-        root = child;
-    }
+    (void)ctx;
+    return card_cmp((const VjoApkgCard *)x, (const VjoApkgCard *)y) < 0;
 }
 
 void vjo_apkg_sort(VjoApkgCard *cards, int n)
 {
-    /* heapsort: in place, O(n log n) for up to VJO_APKG_MAX_CARDS */
-    for (int i = n / 2 - 1; i >= 0; i--)
-        sift(cards, i, n);
-    for (int end = n - 1; end > 0; end--) {
-        VjoApkgCard t = cards[0];
-        cards[0] = cards[end];
-        cards[end] = t;
-        sift(cards, 0, end);
-    }
+    /* heapsort (heap.h): in place, O(n log n) for up to VJO_APKG_MAX_CARDS */
+    vjo_heap_sort(cards, n, sizeof(*cards), card_less, NULL);
 }
 
 int64_t vjo_apkg_note_id(const VjoApkgCard *cards, int i, int64_t previous)

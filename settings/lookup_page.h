@@ -19,22 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "../core/arena.h"
-#include "../core/buttons.h"
-
-typedef struct {
-    void (*text)(int x, int y, unsigned color, float pixels, const char *s);
-    int (*text_width)(float pixels, const char *s);
-    void (*wrapped)(int x, int y, int width, unsigned color, float pixels, int line_height, int lines,
-                    const char *s);
-    void (*rect)(int x, int y, int width, int height, unsigned color);
-    void (*card)(int y, int height, int focus);
-    void (*badge)(int x, int y, int width, int height, const char *label, int active);
-    void (*footer)(int y, int height, int text_y, int lines, const char *message, int error, const char *controls);
-    void (*header)(void);
-    void (*clip)(int x0, int y0, int x1, int y1); /* clipping to that rectangle; x1 <= x0: none */
-    unsigned white, dim, accent, off, track, selected;
-    const VjoButtons *buttons; /* the console's enter and cancel buttons */
-} VjoLookupUi;
+#include "page_ui.h"
 
 /* One frame's input, from main.c's loop. */
 typedef struct {
@@ -49,7 +34,7 @@ typedef struct {
  * history.csv's size checked (a scan again when it changed), a stick still pushed latched. */
 void vjo_lookup_page_show(VjoArena *scratch);
 /* One frame: input, a part of history.csv's scan, the drawing. 1 when the keyboard ran in it. */
-int vjo_lookup_page_frame(const VjoLookupUi *ui, const VjoLookupInput *in);
+int vjo_lookup_page_frame(const VjoPageUi *ui, const VjoLookupInput *in);
 /* Cancel is the page's (an earlier line is open: back to the list), not the app's exit. */
 int vjo_lookup_page_holds_cancel(void);
 /* The page is left (another page): the dictionaries' files are closed, so an install can replace them. */

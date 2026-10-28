@@ -1,5 +1,5 @@
 /* The Rubi app's Anki page itself (settings/anki_page.c; #163 c3), on the host. The page draws
- * through main.c's helpers (VjoAnkiUi), recorded here; its ten rows (API 32 added Trim black bars, #311 Card
+ * through main.c's helpers (VjoPageUi), recorded here; its ten rows (API 32 added Trim black bars, #311 Card
  * type, Game tag and Sentence readings, #314 Duplicates and Known words), which
  * scroll a row at a time, are checked for their layout and clipping, Up/Down and the left stick,
  * Left/Right, Enter and touch on each, each settings row's save into a
@@ -116,8 +116,13 @@ uint64_t sceKernelGetProcessTimeWide(void) { return 0; } /* (the page's log line
 
 static int (*thread_entry)(SceSize, void *), (*pending)(SceSize, void *);
 static int threads_created, threads_deleted, thread_priority, thread_affinity, fail_create;
+static int fail_mutex, fail_start; /* #418 (P10): the worker's lock, or its thread's start, fails */
 static unsigned thread_stack;
-SceUID sceKernelCreateMutex(const char *n, unsigned int a, int c, void *o) { (void)n; (void)a; (void)c; (void)o; return 0x100; }
+SceUID sceKernelCreateMutex(const char *n, unsigned int a, int c, void *o)
+{
+    (void)n; (void)a; (void)c; (void)o;
+    return fail_mutex ? (int)0x80020002u : 0x100;
+}
 int sceKernelLockMutex(SceUID u, int c, void *t) { (void)u; (void)c; (void)t; return 0; }
 int sceKernelUnlockMutex(SceUID u, int c) { (void)u; (void)c; return 0; }
 SceUID sceKernelCreateThread(const char *n, int (*e)(SceSize, void *), int p, unsigned int s, unsigned int a, int af, void *o)
@@ -131,7 +136,14 @@ SceUID sceKernelCreateThread(const char *n, int (*e)(SceSize, void *), int p, un
     thread_affinity = af;
     return 0x200 + ++threads_created;
 }
-int sceKernelStartThread(SceUID u, SceSize s, void *a) { (void)u; (void)s; (void)a; pending = thread_entry; return 0; }
+int sceKernelStartThread(SceUID u, SceSize s, void *a)
+{
+    (void)u; (void)s; (void)a;
+    if (fail_start)
+        return (int)0x80020003u;
+    pending = thread_entry;
+    return 0;
+}
 /* The worker runs now: an export from its first step to its last. */
 static void run_worker(void)
 {
@@ -253,8 +265,11 @@ static int width_of(const char *s, float px)
 }
 
 static VjoButtons buttons;
-static const VjoAnkiUi ui = {d_text, d_wrapped, d_card, d_badge, d_footer, d_header, WHITE, DIM, ACCENT, OFF, CARD,
-                             &buttons};
+/* (the page's own rectangles, its scroll bar's, are recorded with the ones it draws itself) */
+static void d_rect(int x, int y, int w, int h, unsigned color) { vita2d_draw_rectangle(x, y, w, h, color); }
+static const VjoPageUi ui = {.text = d_text, .wrapped = d_wrapped, .rect = d_rect, .card = d_card, .badge = d_badge,
+                             .footer = d_footer, .header = d_header, .white = WHITE, .dim = DIM, .accent = ACCENT,
+                             .off = OFF, .track = CARD, .buttons = &buttons};
 
 int sceDisplayWaitVblankStart(void) { return 0; }
 static unsigned char scratch_mem[64 * 1024];
@@ -1515,13 +1530,47 @@ static void failures_are_shown_and_change_nothing(void)
                drawn.footer_error);
     TEST_MSG("%s", drawn.footer);
     fail_create = 0;
+    /* #418 (P10): its thread made but not started (settings/app_worker.c deletes it again) */
+    fail_start = 1;
+    int deleted = threads_deleted;
+    frame(SCE_CTRL_CROSS);
+    TEST_CHECK(!vjo_anki_page_busy() && !strcmp(drawn.footer, "Could not start the export (0x80020003).") &&
+               drawn.footer_error && threads_deleted == deleted + 1);
+    TEST_MSG("%s; %d threads deleted", drawn.footer, threads_deleted - deleted);
+    fail_start = 0;
     TEST_CHECK(files_in(VJO_QUEUE_DIR, ".json") == 1);
+}
+
+/* #418 (P10): the worker's lock cannot be made (settings/app_worker.c vjo_app_worker_prepare: the page's first job,
+ * in this test's own process): nothing starts, the page says so, and the next press makes the lock and exports. */
+static void a_lock_that_cannot_be_made_starts_nothing(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    queue_card("猫", 0);
+    show();
+    frame(0);
+    vjo_anki_page_stick(ROWS); /* to the last row, then up to Export cards */
+    frame(0);
+    frame(SCE_CTRL_UP);
+    TEST_ASSERT(focused() == EXPORT);
+    fail_mutex = 1;
+    frame(SCE_CTRL_CROSS);
+    TEST_CHECK(!vjo_anki_page_busy() && !strcmp(drawn.footer, "Could not start the export (0x80020002).") &&
+               drawn.footer_error && threads_created == 0);
+    TEST_MSG("%s", drawn.footer);
+    fail_mutex = 0;
+    frame(SCE_CTRL_CROSS);
+    TEST_CHECK(vjo_anki_page_busy() && threads_created == 1);
+    run_worker();
+    frame(0);
+    TEST_CHECK(!vjo_anki_page_busy() && files_in(VJO_QUEUE_DIR, ".json") == 0);
 }
 
 TEST_LIST = {
     {"the_rows_and_the_footer_do_not_overlap", the_rows_and_the_footer_do_not_overlap},
     {"up_down_and_the_stick_choose_a_row", up_down_and_the_stick_choose_a_row},
     {"enter_and_left_right_save_each_row_s_key", enter_and_left_right_save_each_row_s_key},
+    {"a_lock_that_cannot_be_made_starts_nothing", a_lock_that_cannot_be_made_starts_nothing},
     {"touch_chooses_and_acts_on_each_row", touch_chooses_and_acts_on_each_row},
     {"the_export_follows_the_app_settings", the_export_follows_the_app_settings},
     {"an_export_runs_on_the_worker_and_the_page_follows_it", an_export_runs_on_the_worker_and_the_page_follows_it},

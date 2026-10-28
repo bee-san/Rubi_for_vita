@@ -1,5 +1,6 @@
 #include "psp.h"
-#include "anki_page.h" /* vjo_log: log.txt */
+#include "app_io.h"
+#include "applog.h"
 #include "../core/pspbubble.h"
 #include "../core/psptarget.h"
 #include "../core/sfo.h"
@@ -37,22 +38,11 @@ static int file_exists(const char *path)
     return sceIoGetstat(path, &st) >= 0;
 }
 
-static int write_all(SceUID fd, const void *data, size_t len)
-{
-    size_t used = 0;
-    while (used < len) {
-        int n = sceIoWrite(fd, (const char *)data + used, len - used);
-        if (n <= 0) return -1;
-        used += (size_t)n;
-    }
-    return 0;
-}
-
 static int write_file(const char *path, const void *data, size_t len)
 {
     SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (fd < 0) return -1;
-    int rc = write_all(fd, data, len);
+    int rc = vjo_app_write_all(fd, data, len, NULL);
     return sceIoClose(fd) < 0 ? -1 : rc;
 }
 
@@ -62,12 +52,7 @@ static int target_read(void *ctx, uint64_t off, void *buf, size_t n)
 {
     SceUID fd = *(SceUID *)ctx;
     if (sceIoLseek(fd, (SceOff)off, SCE_SEEK_SET) != (SceOff)off) return -1;
-    for (size_t used = 0; used < n;) {
-        int got = sceIoRead(fd, (char *)buf + used, n - used);
-        if (got <= 0) return -1;
-        used += (size_t)got;
-    }
-    return 0;
+    return vjo_app_read_exact(fd, buf, n);
 }
 
 #ifdef VJO_PSP_DEFLATE
@@ -90,10 +75,10 @@ static long target_inflate(void *ctx, const void *in, size_t n, void *out, size_
 #endif
 
 static VjoPspWork work;
-static unsigned char sfo[VJO_PSP_SFO_MAX];
 
-/* The target's TITLE and DISC_ID: its format, or VJO_PSP_E_*. */
-static int read_target(const char *path, char *title, size_t title_cap, char *disc, size_t disc_cap)
+/* The target's TITLE and DISC_ID (its PARAM.SFO read into sfo, cap bytes): its format, or VJO_PSP_E_*. */
+static int read_target(const char *path, unsigned char *sfo, size_t cap, char *title, size_t title_cap, char *disc,
+                       size_t disc_cap)
 {
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     size_t len = 0;
@@ -103,7 +88,7 @@ static int read_target(const char *path, char *title, size_t title_cap, char *di
 #ifdef VJO_PSP_DEFLATE
     f.inflate = target_inflate;
 #endif
-    int format = size > 0 ? vjo_psp_param_sfo(&f, &work, sfo, sizeof(sfo), &len) : VJO_PSP_E_READ;
+    int format = size > 0 ? vjo_psp_param_sfo(&f, &work, sfo, cap, &len) : VJO_PSP_E_READ;
     sceIoClose(fd);
     if (format < 0) return format;
     if (vjo_sfo_string(sfo, len, "TITLE", title, title_cap) < 0) title[0] = '\0';
@@ -135,7 +120,7 @@ static int describe(const VjoInstalledGame *g, const char *path)
     return write_file(file, text, (size_t)n) < 0 ? -1 : 1;
 }
 
-void vjo_psp_scan_app(VjoInstalledGame *g)
+void vjo_psp_scan_app(VjoInstalledGame *g, unsigned char *sfo, size_t cap)
 {
     static unsigned char buf[VJO_ABB_INF_MAX];
     char file[96], path[VJO_ABB_PATH_MAX] = "", title[256], disc[VJO_TITLE_ID_SIZE] = "";
@@ -167,7 +152,7 @@ void vjo_psp_scan_app(VjoInstalledGame *g)
         return;
     }
     uint64_t t0 = sceKernelGetProcessTimeWide();
-    int format = path[0] ? read_target(path, title, sizeof(title), disc, sizeof(disc)) : VJO_PSP_E_READ;
+    int format = path[0] ? read_target(path, sfo, cap, title, sizeof(title), disc, sizeof(disc)) : VJO_PSP_E_READ;
     unsigned ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u);
     if (format > 0 && title[0]) {
         for (char *s = title; *s; s++) if ((unsigned char)*s < 32) *s = ' ';

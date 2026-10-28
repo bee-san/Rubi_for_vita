@@ -1,7 +1,8 @@
 /* The Rubi app's install engine (settings/install.h; docs/one-vpk-install.md). */
 #include "install.h"
 #include "../include/vjo_build.h"
-#include "anki_page.h" /* vjo_log: log.txt */
+#include "app_io.h"
+#include "applog.h"
 #include "preferences.h"
 #include "../core/app_stamp.h"
 #include "../core/config.h"
@@ -19,7 +20,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MISSING ((int)0x80010002u)   /* SCE_ERROR_ERRNO_ENOENT */
 #define SAFE_MODE ((int)0x80010030u) /* sceIoDevctl's answer to a sandboxed app (VitaShell init.c:353-355) */
 #define CHUNK (256 * 1024)           /* the most read, written or hashed per call */
 #define ROOM (512 * 1024)            /* free space kept beside the copies (settings/psp.c kept as much) */
@@ -76,13 +76,13 @@ static void sync_path(const char *path)
     sceIoSync(dev, 0);
 }
 
-/* path's text into buf (NUL-terminated): its length; MISSING when it is not there; another error, or
+/* path's text into buf (NUL-terminated): its length; VJO_APP_MISSING when it is not there; another error, or
  * cap - 1 when it is larger than buf holds (the caller's limit then refuses it). */
 static int read_all(const char *path, char *buf, size_t cap)
 {
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     size_t used = 0;
-    if (fd < 0) return fd == MISSING ? MISSING : fd;
+    if (fd < 0) return fd == VJO_APP_MISSING ? VJO_APP_MISSING : fd;
     while (used < cap - 1) {
         int n = sceIoRead(fd, buf + used, cap - 1 - used);
         if (n < 0) { sceIoClose(fd); return n; }
@@ -94,22 +94,12 @@ static int read_all(const char *path, char *buf, size_t cap)
     return (int)used;
 }
 
-static int write_all(SceUID fd, const void *data, size_t len)
-{
-    for (size_t used = 0; used < len;) {
-        int n = sceIoWrite(fd, (const char *)data + used, len - used);
-        if (n <= 0) return -1;
-        used += (size_t)n;
-    }
-    return 0;
-}
-
 /* data as path, synced and read back: 0, or -1. */
 static int write_verified(const char *path, const void *data, size_t len)
 {
     SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (fd < 0) return -1;
-    int rc = write_all(fd, data, len);
+    int rc = vjo_app_write_all(fd, data, len, NULL);
     if (sceIoClose(fd) < 0) rc = -1;
     sync_path(path);
     if (rc < 0 || len > sizeof(cfg_check) - 1) return -1;
@@ -229,7 +219,7 @@ static int copy_verified(Run *x, const char *src, const char *dst, const VjoPayl
         if (n < 0) { rc = -1; break; }
         if (!n) break;
         br_sha256_update(&h, chunk, (size_t)n);
-        if (write_all(out, chunk, (size_t)n) < 0) { rc = -1; break; }
+        if (vjo_app_write_all(out, chunk, (size_t)n, NULL) < 0) { rc = -1; break; }
         used += (uint64_t)n;
         progress(x, used, f->bytes * 2);
     }
@@ -916,7 +906,7 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
             damaged = 1;
             snprintf(s->reason, sizeof(s->reason), "%.300s.", why);
         }
-    } else if (m != MISSING) {
+    } else if (m != VJO_APP_MISSING) {
         damaged = 1;
         snprintf(s->reason, sizeof(s->reason), "this app's files cannot be read (0x%08X).", (unsigned)m);
     }

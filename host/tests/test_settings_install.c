@@ -185,12 +185,14 @@ uint64_t sceKernelGetProcessTimeWide(void) { return clock_us += 1000; }
 uint64_t sceKernelGetSystemTimeWide(void) { return uptime_us; }
 /* the page's thread: run at once */
 static int (*thread_entry)(SceSize, void *);
+static int fail_create; /* #418 (P10): the page's thread cannot be made */
 SceUID sceKernelCreateMutex(const char *n, unsigned int a, int c, void *o) { (void)n; (void)a; (void)c; (void)o; return 1; }
 int sceKernelLockMutex(SceUID u, int c, void *t) { (void)u; (void)c; (void)t; return 0; }
 int sceKernelUnlockMutex(SceUID u, int c) { (void)u; (void)c; return 0; }
 SceUID sceKernelCreateThread(const char *n, int (*e)(SceSize, void *), int p, unsigned int s, unsigned int a, int af, void *o)
 {
     (void)n; (void)p; (void)s; (void)a; (void)af; (void)o;
+    if (fail_create) return (int)0x80020001u;
     thread_entry = e;
     return 2;
 }
@@ -1725,7 +1727,9 @@ static void d_badge(int x, int y, int w, int h, const char *l, int a)
 static void d_hints(const char *c) { if (drawn_count < 64) snprintf(drawn[drawn_count++], 300, "hints: %s", c); }
 static void d_header(void) {}
 static const VjoButtons glyphs = {SCE_CTRL_CROSS, SCE_CTRL_CIRCLE, "×", "○"};
-static const VjoInstallDraw draw = {d_text, d_measure, d_rect, d_card, d_badge, d_hints, d_header, 1, 2, 3, 4, 5, &glyphs};
+static const VjoPageUi draw = {.text = d_text, .text_width = d_measure, .rect = d_rect, .card = d_card,
+                               .badge = d_badge, .hints = d_hints, .header = d_header, .white = 1, .dim = 2,
+                               .accent = 3, .off = 4, .selected = 5, .buttons = &glyphs};
 static int shown(const char *needle)
 {
     for (int i = 0; i < drawn_count; i++)
@@ -1761,6 +1765,27 @@ static void the_page_shows_the_plan_and_runs_it(void)
     frame(0);
     TEST_CHECK(shown("[Uninstall*]") && shown("Back up ux0:tai/config.txt as config.txt.vjo-"));
     TEST_CHECK(installed_files(1));
+}
+
+/* #418 (P10): the page's worker cannot be made (settings/app_worker.c's failed start): the page says so and that nothing
+ * was changed, is not busy, and the same action runs once the thread can be made. */
+static void a_run_whose_thread_cannot_start_changes_nothing(void)
+{
+    fresh_card(1);
+    TEST_CHECK(vjo_install_page_start() == 1);
+    frame(0);
+    TEST_CHECK(shown("[Install*]"));
+    fail_create = 1;
+    frame(SCE_CTRL_CROSS);
+    fail_create = 0;
+    frame(0);
+    for (int i = 0; i < drawn_count; i++) TEST_MSG("%s", drawn[i]);
+    TEST_CHECK(!vjo_install_page_busy() && shown("Could not start (0x80020001): nothing was changed."));
+    TEST_CHECK(!installed_files(1));
+    frame(SCE_CTRL_CROSS); /* back to the plan */
+    frame(SCE_CTRL_CROSS); /* Install again: the stubs run the thread at once */
+    frame(0);
+    TEST_CHECK(!vjo_install_page_busy() && shown("Installed the overlay v0.8.0") && installed_files(1));
 }
 
 /* A stop while swap_config wrote config.txt.vjo-new (after its open, before or during the write; a power
@@ -2893,6 +2918,7 @@ TEST_LIST = {
     {"the_manifest_is_exactly_the_builds", the_manifest_is_exactly_the_builds},
     {"package_settings_are_applied", package_settings_are_applied},
     {"the_page_shows_the_plan_and_runs_it", the_page_shows_the_plan_and_runs_it},
+    {"a_run_whose_thread_cannot_start_changes_nothing", a_run_whose_thread_cannot_start_changes_nothing},
     {"an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them", an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them},
     {NULL, NULL}};
 

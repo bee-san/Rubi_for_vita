@@ -6,13 +6,13 @@
 
 #include "../core/local_dict.h" /* VJO_LOCAL_MAX_DICTS: local_dictionary_results' range */
 #include "../core/regions.h"
+#include "app_io.h" /* VJO_APP_MISSING */
 #define BACKUP VJO_PREFERENCES_PATH ".bak"
-#define MISSING ((int)0x80010002u)
 
 static int read_text(const char *path, VjoArena *a, char **out, size_t *bytes)
 {
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
-    if (fd < 0) return fd == MISSING ? 1 : -1;
+    if (fd < 0) return fd == VJO_APP_MISSING ? 1 : -1;
     int rc = -1;
     SceOff size = sceIoLseek(fd, 0, SCE_SEEK_END);
     if (size >= 0 && size <= VJO_PREFERENCES_TEXT_MAX && sceIoLseek(fd, 0, SCE_SEEK_SET) == 0) {
@@ -87,7 +87,7 @@ int vjo_prefs_publish_file(const char *path, const char *next, int len, int prim
         SceIoStat st;
         int stat_rc = sceIoGetstat(backup, &st);
         if (stat_rc >= 0) { if (sceIoRemove(backup) < 0) return -1; }
-        else if (stat_rc != MISSING) return -1;
+        else if (stat_rc != VJO_APP_MISSING) return -1;
         if (sceIoRename(path, backup) < 0) return -1;
     }
     if (sceIoRename(temp, path) < 0) {
@@ -381,7 +381,7 @@ done:
 static void region_restore(void)
 {
     SceIoStat st;
-    if (sceIoGetstat(VJO_PREFERENCES_REGION_PATH, &st) == MISSING && sceIoGetstat(REGION_BACKUP, &st) >= 0 &&
+    if (sceIoGetstat(VJO_PREFERENCES_REGION_PATH, &st) == VJO_APP_MISSING && sceIoGetstat(REGION_BACKUP, &st) >= 0 &&
         sceIoRename(REGION_BACKUP, VJO_PREFERENCES_REGION_PATH) >= 0)
         sceIoSync("ux0:", 0);
 }

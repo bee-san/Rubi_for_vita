@@ -1,11 +1,11 @@
-/* The Rubi app's lines in log.txt (settings/anki_page.h): "Rubi app: "
+/* The Rubi app's lines in log.txt (settings/applog.h): "Rubi app: "
  * and the text, written while config.ini's log_file is on, and only below the
  * Shell's 1 MiB rotation. Each line is one append, opened and closed at once,
  * so a crash keeps every line before it; a batch (vjo_app_log_batch_begin/end)
  * keeps its lines in memory and writes them in one append, as the Shell's does
  * for a job's lines (#100): an append cost the console 12-46 ms in #81's
  * self-test timestamps, and a scan of the Games list logs four lines. */
-#include "anki_page.h"
+#include "applog.h"
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>

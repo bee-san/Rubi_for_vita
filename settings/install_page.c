@@ -1,10 +1,9 @@
 #include "install_page.h"
 #include "install.h"
-#include "anki_page.h" /* vjo_log */
+#include "app_worker.h"
+#include "applog.h"
 #include "../include/vjo_api.h"
 #include <psp2/ctrl.h>
-#include <psp2/kernel/cpu.h>
-#include <psp2/kernel/threadmgr.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -34,12 +33,12 @@
 #define LINE_H 25
 #define ACTIONS_Y 466
 #define ACTIONS_H 40
-#define WORKER_STACK (64 * 1024)
 
 static const VjoInstallBuild build = {VJO_API_VERSION, VJO_VERSION_STRING, VJO_VARIANT,
                                       VJO_KERNEL_LOADS_WORKER ? VJO_TAI_WORKER_KERNEL : VJO_TAI_WORKER_LINES};
 
 static VjoInstallScan scan;   /* the main thread's, but while the worker runs (it scans again into it) */
+static int scan_state;       /* scan.state as the main thread last scanned it: the frame's, also while a run rewrites scan */
 static int scanned, action_index, scroll, stick_move;
 static int actions[4], action_count;
 /* what the box shows: the plan, the progress, or what the last action did */
@@ -51,9 +50,9 @@ static int line_count;
 static VjoTextLayout layout[VJO_INSTALL_LINES];
 static unsigned char laid_out[VJO_INSTALL_LINES];
 
-/* the worker (lock) */
-static SceUID lock_uid = -1, worker = -1;
-static int running, finished, running_action;
+/* the worker (its lock: the progress fields; the result is the worker's until the join) */
+static VjoAppWorker worker = VJO_APP_WORKER_INIT("VjoInstallPage");
+static int running_action;
 static char progress_step[120];
 static uint64_t progress_done, progress_total;
 static VjoInstallResult result;
@@ -100,6 +99,7 @@ static void set_lines(void)
 static void rescan(void)
 {
     vjo_install_scan(&scan, &build);
+    scan_state = scan.state;
     scanned = 1;
     action_count = 0;
     /* a stopped swap: putting its file back comes first when config.txt is HENkaku's default now and the
@@ -131,7 +131,7 @@ int vjo_install_page_has_payload(void) { return scanned && scan.has_payload; }
 
 void vjo_install_page_show(void)
 {
-    if (running) return;
+    if (worker.running) return;
     rescan();
     if (showing != SHOW_RESULT) {
         showing = SHOW_PLAN;
@@ -139,7 +139,7 @@ void vjo_install_page_show(void)
     }
 }
 
-int vjo_install_page_busy(void) { return running; }
+int vjo_install_page_busy(void) { return worker.running; }
 void vjo_install_page_stick(int move) { stick_move = move; }
 
 /* ---------------- the worker ---------------- */
@@ -147,44 +147,37 @@ void vjo_install_page_stick(int move) { stick_move = move; }
 static void on_progress(void *ud, const char *step, uint64_t done, uint64_t total)
 {
     (void)ud;
-    sceKernelLockMutex(lock_uid, 1, NULL);
+    vjo_app_worker_lock(&worker);
     snprintf(progress_step, sizeof(progress_step), "%s", step);
     progress_done = done;
     progress_total = total;
-    sceKernelUnlockMutex(lock_uid, 1);
+    vjo_app_worker_unlock(&worker);
 }
 
 static int worker_main(SceSize args, void *argp)
 {
     static const VjoInstallUi ui = {on_progress, NULL};
-    static VjoInstallResult r;
     (void)args;
     (void)argp;
-    vjo_install_run(&scan, running_action, &ui, &r);
-    sceKernelLockMutex(lock_uid, 1, NULL);
-    result = r;
-    finished = 1;
-    sceKernelUnlockMutex(lock_uid, 1);
+    /* Into the page's result itself: the main thread reads it only once the run is joined (reap: showing is
+     * SHOW_RUNNING until then, so neither set_lines nor the frame reads it while the worker writes). */
+    vjo_install_run(&scan, running_action, &ui, &result);
+    vjo_app_worker_lock(&worker);
+    worker.finished = 1;
+    vjo_app_worker_unlock(&worker);
     return 0;
 }
 
 static void start(void)
 {
-    if (running || !action_count) return;
-    if (lock_uid < 0 && (lock_uid = sceKernelCreateMutex("VjoInstallPage", 0, 0, NULL)) < 0) return;
+    if (worker.running || !action_count) return;
+    if (vjo_app_worker_prepare(&worker) < 0) return;
     running_action = actions[action_index];
-    finished = 0;
     progress_step[0] = '\0';
     progress_done = progress_total = 0;
-    /* CPU3 at a system priority, as the main thread (settings/sysapp.c) */
-    worker = sceKernelCreateThread("VjoInstall", worker_main, 0x10000100, WORKER_STACK, 0, SCE_KERNEL_CPU_MASK_SYSTEM, NULL);
-    running = 1;
     showing = SHOW_RUNNING;
-    int rc = worker < 0 ? worker : sceKernelStartThread(worker, 0, NULL);
+    int rc = vjo_app_worker_start(&worker, "VjoInstall", worker_main);
     if (rc < 0) {
-        if (worker >= 0) sceKernelDeleteThread(worker);
-        worker = -1;
-        running = 0;
         memset(&result, 0, sizeof(result));
         result.rc = -1;
         snprintf(result.lines[0], VJO_INSTALL_LINE, "Could not start (0x%08X): nothing was changed.", (unsigned)rc);
@@ -197,16 +190,7 @@ static void start(void)
 /* The worker is done: join it, scan the card again, and show what it did. */
 static void reap(void)
 {
-    int done;
-    if (!running) return;
-    sceKernelLockMutex(lock_uid, 1, NULL);
-    done = finished;
-    sceKernelUnlockMutex(lock_uid, 1);
-    if (!done) return;
-    sceKernelWaitThreadEnd(worker, NULL, NULL);
-    sceKernelDeleteThread(worker);
-    worker = -1;
-    running = 0;
+    if (!vjo_app_worker_reap(&worker)) return;
     rescan();
     showing = SHOW_RESULT;
     runs++;
@@ -217,19 +201,15 @@ int vjo_install_page_runs(void) { return runs; }
 
 void vjo_install_page_quit(void)
 {
-    if (!running) return;
-    sceKernelWaitThreadEnd(worker, NULL, NULL);
-    sceKernelDeleteThread(worker);
-    worker = -1;
-    running = 0;
+    vjo_app_worker_join(&worker); /* (an action cannot be stopped part way) */
 }
 
 /* ---------------- input and drawing ---------------- */
 
-static int entry_rows(const VjoInstallDraw *ui, int i)
+static int entry_rows(const VjoPageUi *ui, int i)
 {
     if (!laid_out[i]) {
-        vjo_text_layout(lines[i], BOX_W, TEXT_PX, VJO_TEXT_ROWS, ui->measure, &layout[i]);
+        vjo_text_layout(lines[i], BOX_W, TEXT_PX, VJO_TEXT_ROWS, ui->text_width, &layout[i]);
         laid_out[i] = 1;
     }
     return layout[i].rows ? layout[i].rows : 1;
@@ -238,7 +218,7 @@ static int entry_rows(const VjoInstallDraw *ui, int i)
 #define TEXT_TOP (BOX_Y + 28)
 #define TEXT_BOTTOM (BOX_Y + BOX_H - 6)
 /* The box drawn from entry first: the index after the last entry it holds whole. */
-static int shown_from(const VjoInstallDraw *ui, int first)
+static int shown_from(const VjoPageUi *ui, int first)
 {
     int y = TEXT_TOP, i = first;
     for (; i < line_count; i++) {
@@ -251,7 +231,7 @@ static int shown_from(const VjoInstallDraw *ui, int first)
 
 /* L and R: a box up or down (code audit note 2: a long plan is read a box at a time). R starts the box at
  * the first entry not shown whole; L at the earliest one from which the box still reaches the top's. */
-static void page_scroll(const VjoInstallDraw *ui, int direction)
+static void page_scroll(const VjoPageUi *ui, int direction)
 {
     if (direction > 0) {
         int end = shown_from(ui, scroll);
@@ -265,7 +245,7 @@ static void page_scroll(const VjoInstallDraw *ui, int direction)
 
 /* The bar right of the text: where the view is in the whole, by entries (counting rows would lay out every
  * entry of a long plan at once: about four times the glyph measurements of main's first frame, host count). */
-static void draw_scrollbar(const VjoInstallDraw *ui, int end)
+static void draw_scrollbar(const VjoPageUi *ui, int end)
 {
     int total = line_count, seen = end - scroll;
     if (total <= 0 || seen >= total) return;
@@ -275,7 +255,7 @@ static void draw_scrollbar(const VjoInstallDraw *ui, int end)
     ui->rect(BOX_X + BOX_W + 4, y + (h - thumb) * scroll / (total - seen), 6, thumb, ui->dim);
 }
 
-static void draw_lines(const VjoInstallDraw *ui, int error)
+static void draw_lines(const VjoPageUi *ui, int error)
 {
     char row[512];
     int y = TEXT_TOP, end = shown_from(ui, scroll);
@@ -291,13 +271,13 @@ static void draw_lines(const VjoInstallDraw *ui, int error)
     draw_scrollbar(ui, end);
 }
 
-void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touch_x, int touch_y)
+void vjo_install_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, int touch_y)
 {
     int stick = stick_move;
     stick_move = 0;
     if (!scanned) vjo_install_page_start();
     reap();
-    if (!running) {
+    if (!worker.running) {
         if (showing == SHOW_RESULT && (pressed & (ui->buttons->enter | SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
             showing = SHOW_PLAN; /* back to the plan of what the card is now */
             set_lines();
@@ -328,19 +308,19 @@ void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touc
                           ? "Up/Down: scroll   " : "";
     char step_text[120], controls[120];
     uint64_t done = 0, total = 0;
-    if (running && lock_uid >= 0) {
-        sceKernelLockMutex(lock_uid, 1, NULL);
+    if (worker.running && worker.lock >= 0) {
+        vjo_app_worker_lock(&worker);
         snprintf(step_text, sizeof(step_text), "%s", progress_step);
         done = progress_done;
         total = progress_total;
-        sceKernelUnlockMutex(lock_uid, 1);
+        vjo_app_worker_unlock(&worker);
     }
 
     ui->header();
     /* the state */
     ui->card(TITLE_Y, TITLE_H, 0);
-    ui->text(42, TITLE_Y + 33, scan.state == VJO_INSTALL_CANNOT || scan.state == VJO_INSTALL_INTERRUPTED ? ui->off : ui->white,
-             26, running ? (running_action == VJO_INSTALL_ACT_UNINSTALL ? "Uninstalling..." : running_action == VJO_INSTALL_ACT_INSTALL
+    ui->text(42, TITLE_Y + 33, scan_state == VJO_INSTALL_CANNOT || scan_state == VJO_INSTALL_INTERRUPTED ? ui->off : ui->white,
+             26, worker.running ? (running_action == VJO_INSTALL_ACT_UNINSTALL ? "Uninstalling..." : running_action == VJO_INSTALL_ACT_INSTALL
                             ? "Installing..." : "Working...") : scan.title);
     /* the plan, the progress, or the result */
     ui->card(BOX_Y, BOX_H, 0);
@@ -359,10 +339,10 @@ void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touc
         draw_lines(ui, showing == SHOW_RESULT && result.rc < 0);
     }
     /* the actions */
-    if (!running && showing == SHOW_PLAN)
+    if (!worker.running && showing == SHOW_PLAN)
         for (int i = 0; i < action_count && i < 3; i++)
             ui->badge(24 + i * 300, ACTIONS_Y, 280, ACTIONS_H, action_name(actions[i]), i == action_index);
-    if (running)
+    if (worker.running)
         snprintf(controls, sizeof(controls), "Working: it cannot be stopped part way");
     else if (showing == SHOW_RESULT)
         snprintf(controls, sizeof(controls), "%s: back   %sSelect: page   %s: exit", ui->buttons->enter_glyph, scrolling,
