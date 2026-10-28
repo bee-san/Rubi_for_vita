@@ -45,7 +45,7 @@ class DocsModelNames(unittest.TestCase):
         text = names.names_text(models, lms)
         releases = {(p[5], p[4]) for p in pins.TIER_PINS.values()}
         releases |= {("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1"),
-                     ("VOCR5", prepare_ocr.VOCR5V_TAG)}
+                     ("VOCR6", prepare_ocr.VOCR6V_TAG)}
         for generation, tag in sorted(releases):
             self.assertIn(f"({generation}, release {tag})", text)
         self.assertIn("(release v0.3.7-lm6.2)", text)

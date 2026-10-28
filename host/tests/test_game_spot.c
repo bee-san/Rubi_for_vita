@@ -117,7 +117,7 @@ int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
 {
     uint32_t size;
     TEST_CHECK(seq == 12 && !file_open_now);
-    /* (the vertical model: auto's columns try, test_spot_models.h's synthetic VOCR5-V with FL10's bytes) */
+    /* (the vertical model: auto's columns try, test_spot_models.h's synthetic vertical model with FL10's bytes) */
     TEST_ASSERT(which == VJO_GAME_OCR_OPEN_MODEL || which == VJO_GAME_OCR_OPEN_SPOT || which == VJO_GAME_OCR_OPEN_VERTICAL);
     if (which == VJO_GAME_OCR_OPEN_SPOT) {
         TEST_CHECK(current.speed & VJO_GAME_OCR_S_SPOT); /* the kernel opens it for such a request only */

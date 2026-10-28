@@ -15,7 +15,7 @@ from prepare_ocr import (VOCR_ASSETS, VOCR_GATE_ASSETS, VOCR_GATE_ATTRIBUTION, V
                          VOCR_LM_ATTRIBUTION_PIN,
                          VOCR_LM_TAG, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN, VOCR_MODEL_ATTRIBUTION_TAG,
                          VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG,
-                         VOCR5V_ASSETS, VOCR5V_TAG, VOCR6_ASSETS, VOCR6_ATTRIBUTION, VOCR6_ATTRIBUTION_PIN, VOCR6_TAG,
+                         VOCR6V_ASSETS, VOCR6V_TAG, VOCR6_ASSETS, VOCR6_ATTRIBUTION, VOCR6_ATTRIBUTION_PIN, VOCR6_TAG,
                          VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
                          VOCR_VERTICAL_MODEL, VOCR_SPOT_ASSETS, VOCR_SPOT_ATTRIBUTION, VOCR_SPOT_ATTRIBUTION_PIN,
                          VOCR_SPOT_MODEL, VOCR_SPOT_PUBLISHED, VOCR_SPOT_TAG, model_tiers)
@@ -102,7 +102,7 @@ def tier_release(name):
     """(asset table, release tag) of a model size's recognizer (or the vertical model), by the tables this
     module sees."""
     for assets, tag in ((VOCR6_ASSETS, VOCR6_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
-                        (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
+                        (VOCR_ASSETS, VOCR_TAG), (VOCR6V_ASSETS, VOCR6V_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError("Not a pinned recognizer: " + name)
@@ -371,7 +371,7 @@ def write_package(base, output, models, assets, conversion, version, source_revi
     attribution = models / VOCR_VERTICAL_ATTRIBUTION
     _, size, sha = VOCR_VERTICAL_ATTRIBUTION_PIN[VOCR_VERTICAL_ATTRIBUTION]
     if not attribution.is_file() or attribution.stat().st_size != size or digest(attribution) != sha:
-        raise ValueError("The vertical model's " + VOCR_VERTICAL_ATTRIBUTION + " is missing or not release " + VOCR5V_TAG
+        raise ValueError("The vertical model's " + VOCR_VERTICAL_ATTRIBUTION + " is missing or not release " + VOCR6V_TAG
                          + "'s ATTRIBUTION.md (tools/prepare_ocr.py --backend vocr-tiers)")
     assets[DATA + "ocr/" + VOCR_VERTICAL_ATTRIBUTION] = attribution
     # API 54: the text spotter's release names what it was trained on and its terms: that attribution ships beside its

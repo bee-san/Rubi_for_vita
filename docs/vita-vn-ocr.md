@@ -315,8 +315,8 @@ the recognizers `VOCR6.2_N_w8g2.vocr`, `VOCR6.2_S_w8.vocr` and
 `VOCR6.2_L_w8_2l.vocr` (VOCR6, release v0.4.1-vocr6.2); `VOCR3_H15_w8.vocr` and
 `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
-(VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5, release
-v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+(VOCR4, release v0.2.5-vocr4.1); `VOCR6_V_w8.vocr` (VOCR6, release
+v0.4.2-vertical6.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
 (release v0.3.7-lm6.2)<!-- end of the names -->,
 each with its pinned file length; it does not accept a caller-supplied file
@@ -1149,7 +1149,7 @@ draft #223's job, on today's main):
   job's rotation buffer, and from there it is the line: the blank-line check, the line cache, the helpers' copies,
   `vocr_run` (grey, inverted for dark text), the counter re-decode and the LM decoder take the turned strip. The
   column's box on the screen stays the line's geometry (`game vocr lines:` in the log), and its line flags carry
-  `VJO_GAME_OCR_LINE_COLUMN`, from which the Shell names `VOCR5_V_w8.vocr` as the model that read the text (Anki
+  `VJO_GAME_OCR_LINE_COLUMN`, from which the Shell names `VOCR6_V_w8.vocr` as the model that read the text (Anki
   cards, `history.csv`, the log).
 - **The text** is the columns' readings right to left, one per line, as rows are top to bottom. The popup shows a
   column a line, and the word lookup, the cross-line join (`core/textjoin.c`: a full column joins the next one as a
@@ -1361,13 +1361,20 @@ the rows instead, with `on` as with `auto` since API 53 (before it, `on`'s job f
 ladder for it either way). API 27 (#213, reverted by #222) and draft #223's API 29 had this in the flags'
 bit 15, which stays undefined.
 
-**The model.** VOCR5-V (`VOCR5_V_w8.vocr`, vita-vn-ocr #99, pre-release
-[v0.3.2-vertical.1](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.2-vertical.1)): VOCR5-S's shape
-(819,792 B of int8 weights, W8I arena 124,832 B, 4,987 classes, 967,392 MACs per CTC frame), fine-tuned from VOCR5-S on
-columns turned 90° anticlockwise. The package ships it beside the size models with its release's `ATTRIBUTION.md` as
-`ocr/VERTICAL-ATTRIBUTION.md` (VOCR5-S's training data and terms, non-commercial use only, and its vertical data).
-vita-vn-ocr #103 read its held-out vertical test set once (host, C runtime, greedy): 7.17 % CER on fixed VN columns and
-11.29 % end to end on VN regions, 0.86 % and 2.45 % on manga.
+**The model.** VOCR6-V (`VOCR6_V_w8.vocr`, vita-vn-ocr #159, pre-release
+[v0.4.2-vertical6.1](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.4.2-vertical6.1), `docs/vocr6v.md` there):
+VOCR5-V's shape, which is VOCR5-S's (819,792 B of int8 weights, W8I arena 124,832 B, 4,987 classes, 967,392 MACs per CTC
+frame), reading columns turned 90° anticlockwise. It is VOCR5-V (`VOCR5_V_w8.vocr`, vita-vn-ocr #99, pre-release
+[v0.3.2-vertical.1](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.2-vertical.1), fine-tuned from VOCR5-S)
+fine-tuned again on the owner's hooked vertical game, Yunohana SpRING! (its columns and the column finder's crops of its
+pages), and on new synthetic columns. The package ships it beside the size models with its release's `ATTRIBUTION.md` as
+`ocr/VERTICAL-ATTRIBUTION.md` (VOCR5-V's training data and terms, non-commercial use only, and VOCR6-V's).
+vita-vn-ocr #159 measured it through this job (`ocr_vertical = on`, tight regions; host; three seeds of its recipe;
+a pre-registered rule): on the game's held-out hooked pages 7.92 % → 4.64 % CER against VOCR5-V (−3.28 [−4.48, −2.14],
+with an LM built without those pages), and on vita-vn-ocr #103's development regions of other games VN 17.58 % →
+16.13 % (−1.45 [−2.25, −0.58]) and manga 4.18 % → 3.69 % (−0.49 [−1.14, −0.06]). #103's held-out vertical test set,
+read once: VN 7.26 % → 7.05 % (−0.20 [−0.69, +0.24], level), manga 2.88 % → 2.74 %. The figures below are VOCR5-V's,
+measured before VOCR6-V.
 
 **Measured through Rubi's job** (host, x86-64: `vjo-page-ocr`, the game worker's job in `core/vocr_ocr.c` on each
 region with the weights kept, on config.ini's defaults: Normal size, the 1 MB LM (ctclm.2's `vocr_lm_o3_1000k.vlm`, the
@@ -2095,7 +2102,7 @@ a gate section, took a weights page less, 1,441,792 B) and Large 942,080 B more 
 | `VOCR3_H15_w8.vocr` | 1,155,968 | `cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c` | 182,944 | v0.2.5-vocr3.1 |
 | `VOCR3_FL10_w8.vocr` | 657,664 | `87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154` | 124,832 | v0.2.5-vocr3.1 |
 | `VOCR4_W20_w8.vocr` | 1,558,016 | `2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e` | 241,056 | v0.2.5-vocr4.1 |
-| `VOCR5_V_w8.vocr` (vertical text, `ocr_vertical`) | 819,792 | `ccd20c63bb2620f054538b456904bdf19b74d483d3da8de865009e282bb04172` | 124,832 | v0.3.2-vertical.1 |
+| `VOCR6_V_w8.vocr` (vertical text, `ocr_vertical`) | 819,792 | `40485fceaef46a666bcec7781eca88bc005e9211786638ae0dddfac2eb4eea81` | 124,832 | v0.4.2-vertical6.1 |
 | `H15_w8.vocr` | 1,155,968 | `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd` | 182,944 | v0.2.0 |
 | `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
 
@@ -2132,8 +2139,8 @@ the recognizers `VOCR6.2_N_w8g2.vocr`, `VOCR6.2_S_w8.vocr` and
 `VOCR6.2_L_w8_2l.vocr` (VOCR6, release v0.4.1-vocr6.2); `VOCR3_H15_w8.vocr` and
 `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
-(VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5, release
-v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+(VOCR4, release v0.2.5-vocr4.1); `VOCR6_V_w8.vocr` (VOCR6, release
+v0.4.2-vertical6.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
 (release v0.3.7-lm6.2)<!-- end of the names -->.
 `core/vocr_models.c` gives each recognizer its generation (VOCR6; VOCR5 for the vertical model; VOCR3, VOCR4, or
@@ -2220,7 +2227,7 @@ steps below cover a source build or adding another model.
    ```sh
    python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models, MODEL-ATTRIBUTION.md,
                                                                      # VOCR6-ATTRIBUTION.md, the gate's 2 files,
-                                                                     # VOCR5_V_w8.vocr, VERTICAL-ATTRIBUTION.md
+                                                                     # VOCR6_V_w8.vocr, VERTICAL-ATTRIBUTION.md
    python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
    python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # by name: the host tools' cascade
    python3 tools/prepare_ocr.py --backend vocr --model VOCR3_H15_w8.vocr --output ocr   # by name: an earlier one
@@ -2235,7 +2242,7 @@ steps below cover a source build or adding another model.
    v0.4.0-vocr6.1's as `ocr/VOCR6-ATTRIBUTION.md` (kept under those names in `ocr/` too, beside the LMs'
    `ATTRIBUTION.md`), the text-presence
    gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`,
-   and the vertical model `VOCR5_V_w8.vocr` with v0.3.2-vertical.1's `ATTRIBUTION.md` as
+   and the vertical model `VOCR6_V_w8.vocr` with v0.4.2-vertical6.1's `ATTRIBUTION.md` as
    `ocr/VERTICAL-ATTRIBUTION.md`.
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
    FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR6_N_w8_2l.vocr --set vocr_tier=normal VITA_IP`.
