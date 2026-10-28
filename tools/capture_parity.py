@@ -26,25 +26,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-DEV_MANIFESTS = ("vita_dev.jsonl", "psp_dev.jsonl")
-# Never for scoring, tuning or this test (vita-vn-ocr eval/README): by set name and by game.
-PROTECTED_SETS = {"vita-test", "psp-test", "vita_test", "psp_test", "native", "fresh-native", "fresh_native", "clannad"}
-PROTECTED_VNS = {"v4"}  # CLANNAD
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# the development manifests, and the protected sets this test never reads (by set name and by game); also
+# tools/vocr_regions_pack.py's, through this module
+from evallib import DEV_MANIFESTS, find_shot, protected  # noqa: E402
+
 TEST = "eval_crops_give_identical_recognizer_input"
-
-
-def protected(row):
-    text = " ".join(str(row.get(k, "")) for k in ("set", "id")).lower()
-    return (str(row.get("set", "")).lower() in PROTECTED_SETS or row.get("vn") in PROTECTED_VNS
-            or "clannad" in text or "native" in text)
-
-
-def find_shot(name, dirs):
-    for d in dirs:
-        p = Path(d) / name
-        if p.exists():
-            return p
-    return None
 
 
 def load_frame(path, mask):

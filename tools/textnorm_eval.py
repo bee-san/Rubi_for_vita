@@ -41,6 +41,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from evallib import lev  # noqa: E402
+
 VOCR3 = {"FL10": "rp_FL10_C_mix_pre128k_seed1", "H15": "rp_H15_C_mix_seed2", "W20": "rp_W20_C_mix_seed1"}
 VOCR4 = {"FL10": "v4c_FL10_seed1", "H15": "v4c_H15_seed1", "W20": "v4m_W20_seed2"}
 VOCR3_FILES = ("teacher_val", "devnative_strict_ink", "devnative_strict_grad", "devnative_tv_native_ink",
@@ -136,18 +139,6 @@ def correct_text(tool, corpus):
             s["contexts"] = dict(ctx.most_common(10))
             out[f"{name}, " + (f"wrapped every {width} characters" if width else "whole lines")] = s
     return out
-
-
-def lev(a, b):
-    if a == b:
-        return 0
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
 
 
 def vowel_effect(metrics, ref, before, after):

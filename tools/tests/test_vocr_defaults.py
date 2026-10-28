@@ -415,17 +415,19 @@ class VocrDefaults(unittest.TestCase):
         tiers = {name: (int(a), int(b), flag[f]) for name, (b, _, a, f) in zip(names, settings)}
         own = {(sizes[m], sizes[lm]): (int(a), int(b), sum(flag[x.strip()] for x in f.split("|")))
                for m, lm, b, a, f in retuned}
+        import evallib  # noqa: PLC0415  (tools/evallib.py: the table both eval tools decode with)
         import lm_cer_eval  # noqa: PLC0415
         import lm_lines_eval  # noqa: PLC0415
-        for tool in (lm_cer_eval, lm_lines_eval):
-            for name, want in tiers.items():
-                self.assertEqual(tool.SETTINGS[name], want, (tool.__name__, name))
-            self.assertEqual(tool.MODEL_SETTINGS, own, tool.__name__)
-            for (model, lm), want in own.items():
-                self.assertEqual(tool.settings(model, lm), want, tool.__name__)
-            for name, want in tiers.items():  # another model (Small's, or v0.4.0-vocr6.1's VOCR6-N): the tier's
-                for model in (TIER_PINS["small"][0], "VOCR6_N_w8_2l.vocr"):
-                    self.assertEqual(tool.settings(model, name), want, (tool.__name__, model))
+        for name, want in tiers.items():
+            self.assertEqual(evallib.LM_SETTINGS[name], want, name)
+        self.assertEqual(evallib.LM_MODEL_SETTINGS, own)
+        for (model, lm), want in own.items():
+            self.assertEqual(evallib.lm_settings(model, lm), want)
+        for name, want in tiers.items():  # another model (Small's, or v0.4.0-vocr6.1's VOCR6-N): the tier's
+            for model in (TIER_PINS["small"][0], "VOCR6_N_w8_2l.vocr"):
+                self.assertEqual(evallib.lm_settings(model, name), want, model)
+        for tool in (lm_cer_eval, lm_lines_eval):  # no copy of their own
+            self.assertIs(tool.lm_settings, evallib.lm_settings, tool.__name__)
         # the ledger's LM block holds the largest, page-rounded
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))

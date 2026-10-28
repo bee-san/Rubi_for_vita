@@ -28,23 +28,8 @@ import sys
 import time
 from pathlib import Path
 
-# core/vocr_ocr.c lms[] (the bonus per tier) and lm_opts()
-# (alpha, beta, flags) per LM: core/vocr_ocr.c lms[] (VOCR6's two tiers and ctclm.2's two), and ctclm.2's
-# own 1000k / 4000k files with their settings for the earlier measurements
-LM_BOS, LM_EOS = 1, 2
-SETTINGS = {"vocr_lm_o3_500k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_1000k.vlm": (600, 2500, LM_BOS),
-            "vocr_lm_o3_2000k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_4000k.vlm": (600, 2500, LM_BOS),
-            "vocr_lm_o3_1000k.vlm": (500, 3500, LM_EOS), "vocr_lm_o3_4000k.vlm": (500, 3500, LM_EOS)}
-BETA = {name: beta for name, (_, beta, _) in SETTINGS.items()}
-# a job model's own settings for an LM, where they differ from its tier's (core/vocr_ocr.c lm_retuned: vita-vn-ocr
-# #151, VOCR6-N with the 2000k LM, measured on v0.4.0-vocr6.1's and kept for v0.4.1-vocr6.2's); the worker's decoder
-# and its cascade's take them
-MODEL_SETTINGS = {("VOCR6.2_N_w8g2.vocr", "vocr_lm_o3_2000k.vlm"): (400, 1500, LM_BOS | LM_EOS)}
+from evallib import LM_BOS, LM_MODEL_SETTINGS, LM_SETTINGS, lm_settings  # the worker's LM decoder settings
 
-
-def settings(model, lm):
-    """(alpha, beta, flags) a job on `model` decodes `lm` with (core/vocr_ocr.c vjo_vocr_lm_settings)."""
-    return MODEL_SETTINGS.get((model, lm), SETTINGS[lm])
 # the four pinned tiers (tools/prepare_ocr.py, the default); ctclm.2's old 1000k / 4000k only by --lm
 PINNED = ("vocr_lm_o3_500k.vlm", "vocr_lm6_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm", "vocr_lm6_o3_4000k.vlm")
 SETS = ("tv", "dn_ink", "dn_grad")
@@ -60,7 +45,7 @@ def main(argv=None):
     ap.add_argument("--vocr-repo", required=True, type=Path, help="vita-vn-ocr with runtime/vocr_lm.c, eval/ctclm.py")
     ap.add_argument("--models", required=True, type=Path, help="directory with the .vocr and .vlm files")
     ap.add_argument("--model", action="append", help="recognizer (default VOCR3 H15 and FL10)")
-    ap.add_argument("--lm", action="append", choices=sorted(SETTINGS),
+    ap.add_argument("--lm", action="append", choices=sorted(LM_SETTINGS),
                     help="LM file (default the four pinned tiers; ctclm.2's old 1000k/4000k by name)")
     ap.add_argument("--cascade", help="the larger recognizer a low-confidence line is read again with")
     ap.add_argument("--conf", type=int, default=700, help="the cascade's confidence threshold (1/1000)")
@@ -85,9 +70,9 @@ def main(argv=None):
     dec = {}
 
     def decoder(reader, lm, job):
-        """The decoder of `reader`'s top-K in a job on model `job`: its settings for lm (settings(): the worker decodes
-        a cascade's re-reads with the job's model's)."""
-        alpha, beta, flags = settings(job, lm)
+        """The decoder of `reader`'s top-K in a job on model `job`: its settings for lm (lm_settings(): the worker
+        decodes a cascade's re-reads with the job's model's)."""
+        alpha, beta, flags = lm_settings(job, lm)
         key = (reader, lm, alpha, beta, flags)
         if key not in dec:
             dec[key] = VocrLM(rt[reader], str(args.models / lm), beam=8, topk=8, alpha=alpha, beta=beta, gate=8000,
@@ -146,7 +131,8 @@ def main(argv=None):
             "precision": round(sum(f and w for f, w in zip(flagged, wrong)) / max(1, sum(flagged)), 4)}
         if args.cascade and args.cascade != m:
             big = cascade_reads[args.cascade]
-            if any(settings(m, lm) != settings(args.cascade, lm) for lm in lms):  # m's own settings for its re-reads
+            # m's own settings for its re-reads
+            if any(lm_settings(m, lm) != lm_settings(args.cascade, lm) for lm in lms):
                 big = [read(args.cascade, r["img"], m) for r in rows]
 
             def cascade_at(threshold, rule, keys, idx=None):
@@ -198,11 +184,11 @@ def main(argv=None):
             s["cascade"] = c
         report[m] = s
     doc = {"what": __doc__.split("\n\n")[0], "sets": sets, "dialogue_lines": len(rows), "ref_chars": ref_chars,
-           "decoder": {"beam": 8, "topk": 8, "alpha": {lm: SETTINGS[lm][0] for lm in lms},
-                       "beta": {lm: BETA[lm] for lm in lms}, "gate": 8000,
-                       "model_settings": {f"{m} {lm}": list(v) for (m, lm), v in MODEL_SETTINGS.items()
+           "decoder": {"beam": 8, "topk": 8, "alpha": {lm: LM_SETTINGS[lm][0] for lm in lms},
+                       "beta": {lm: LM_SETTINGS[lm][1] for lm in lms}, "gate": 8000,
+                       "model_settings": {f"{m} {lm}": list(v) for (m, lm), v in LM_MODEL_SETTINGS.items()
                                           if m in models and lm in lms},
-                       "flags": {lm: "BOS" if SETTINGS[lm][2] == LM_BOS else "EOS" for lm in lms}, "bracket": 8000},
+                       "flags": {lm: "BOS" if LM_SETTINGS[lm][2] == LM_BOS else "EOS" for lm in lms}, "bracket": 8000},
            "host": "times: host us (shared box); the A9 is not measured", "models": report}
     text = json.dumps(doc, indent=1, ensure_ascii=False) + "\n"
     if args.out:

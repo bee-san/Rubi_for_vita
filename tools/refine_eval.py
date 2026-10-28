@@ -45,6 +45,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import blank_lines_eval as ble  # noqa: E402 (the display paths)
 import collect_word_lookup_lines as cw  # noqa: E402 (the shared reservation rules)
+from evallib import find_shot  # noqa: E402
 
 HOWS = ("x1", "x2-bilinear", "x2-nearest")
 
@@ -118,7 +119,7 @@ def main(argv=None):
                     continue
                 if args.limit and done >= args.limit:
                     break
-                shot = next((Path(d) / row["shot"] for d in args.shots if (Path(d) / row["shot"]).exists()), None)
+                shot = find_shot(row["shot"], args.shots)
                 if shot is None or hashlib.sha256(shot.read_bytes()).hexdigest() != row["sha256"]:
                     raise SystemExit(f"refine: {row['shot']} missing or changed")
                 base = Image.open(shot).convert("RGBA")

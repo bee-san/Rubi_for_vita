@@ -48,6 +48,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from evallib import DEV_MANIFESTS, find_shot, protected  # noqa: E402 (the protected sets, never read)
+
 ROOT = Path(__file__).resolve().parent.parent
 EXPECTED = ROOT / "tools/bench_stages_expected.json"
 SAMPLE = ROOT / "host/samples/vn_textbox.jpg"
@@ -74,9 +77,6 @@ DEV_FPS = (60, 30)
 DEFAULT_KEYS = ("strips", "lines", "frames", "rows_read", "display_ms", "settle_passes", "lm_lines", "lm_changed",
                 "cascade_lines", "cascade_frames", "tries")
 CLOCKS = (444, 333)
-DEV_MANIFESTS = ("vita_dev.jsonl", "psp_dev.jsonl")
-PROTECTED_SETS = {"vita-test", "psp-test", "vita_test", "psp_test", "native", "fresh-native", "fresh_native", "clannad"}
-PROTECTED_VNS = {"v4"}  # CLANNAD
 
 
 def W(name, stage, needs=(), mode=0, region=REGION, fmt="abgr", model=None, unit="op", what=""):
@@ -284,12 +284,6 @@ def host_cpu():
 
 # ---------------------------------------------------------------- dev regions
 
-def protected(row):
-    text = " ".join(str(row.get(k, "")) for k in ("set", "id")).lower()
-    return (str(row.get("set", "")).lower() in PROTECTED_SETS or row.get("vn") in PROTECTED_VNS
-            or "clannad" in text or "native" in text)
-
-
 def cmd_dev(args):
     from PIL import Image
     rows, excluded = [], 0
@@ -310,7 +304,7 @@ def cmd_dev(args):
     frames = {}
     with tempfile.TemporaryDirectory(prefix="vjo-bench-dev-") as tmp:
         for name, row in rows:
-            shot = next((Path(d) / row["shot"] for d in args.shots if (Path(d) / row["shot"]).exists()), None)
+            shot = find_shot(row["shot"], args.shots)
             if shot is None:
                 die(f"{row['shot']} not found in {args.shots}")
             if row["shot"] not in frames:

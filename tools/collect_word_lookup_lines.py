@@ -36,9 +36,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-DEV_MANIFESTS = ("vita_dev.jsonl", "psp_dev.jsonl")
-PROTECTED_SETS = {"vita-test", "psp-test", "vita_test", "psp_test", "native", "fresh-native", "fresh_native",
-                  "clannad"}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# the development manifests and the protected sets (also blank_lines_eval's, lm_lines_eval's and refine_eval's,
+# through this module's DEV_MANIFESTS and excluded())
+from evallib import DEV_MANIFESTS, find_shot, protected_set  # noqa: E402
+
 # realplus reservation reasons that still allow an eval fixture: development and validation splits.
 ALLOWED_REASONS = {"development", "val-bucket"}
 OWNER_GAMES = Path(os.environ.get("HERD", "/local/home/skerraut/herd-vita-ocr")) / "shared/private/owner-games"
@@ -60,9 +62,8 @@ def reservation(vocr_repo):
 
 def excluded(row, reserved, test_vns, is_test_vn, owner_test):
     """Why a manifest row may not be read (None: it may)."""
-    text = " ".join(str(row.get(k, "")) for k in ("set", "id")).lower()
     vn = row.get("vn")
-    if str(row.get("set", "")).lower() in PROTECTED_SETS or "clannad" in text or "native" in text:
+    if protected_set(row):
         return "protected set"
     if vn in test_vns:
         return "test-set"
@@ -108,7 +109,7 @@ def main(argv=None):
                     skipped.setdefault(row["vn"], why)
                 if why or args.tag not in row.get("tags", []):
                     continue
-                shot = next((Path(d) / row["shot"] for d in args.shots if (Path(d) / row["shot"]).exists()), None)
+                shot = find_shot(row["shot"], args.shots)
                 if shot is None:
                     print(f"collect: {row['shot']} not found", file=sys.stderr)
                     return 2
