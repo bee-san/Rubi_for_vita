@@ -2,12 +2,12 @@
 
 `VitaJPOverlay_Shell.suprx` runs in SceShell (`*main`), where every page it holds is taken from
 SceShell's 50 MiB partition for as long as the console is on, and where the partition had 28-98 KiB
-free beside a game [measured, [vita-memory.md 5.1](vita-memory.md)]. AGENTS.md rule 1: SceShell keeps
+free beside a game [measured, [vita-memory.md 5.1](../vita-memory.md)]. AGENTS.md rule 1: SceShell keeps
 only what must run there: the Paf UI, input, and a thin, bounded transport to the game worker. This
 document is the plan for getting there, with the measured starting point and the expected pages per
 step; each step's PR replaces its estimate with the measured result.
 
-Tags as in [vita-memory.md](vita-memory.md): **[measured]**, **[source]**, **[SDK: file]**,
+Tags as in [vita-memory.md](../vita-memory.md): **[measured]**, **[source]**, **[SDK: file]**,
 **[wiki: page]**, **[estimate]**.
 
 **The owner's decision (2026-10-15 15:27Z): the overlay is offline only.** Google Lens and every
@@ -123,7 +123,7 @@ client (`--gc-sections`; only SHA-256 stays, the queue's IDs), though their sour
 On main `6020c0b` the Shell's text segment goes from 188,000 to 100,792 B (`.text` −66,728 B,
 `.rodata` −20,424 B) and data and `.bss` from 70,132 to 70,060 B: 262,144 → 176,128 B of module
 pages, 21 text pages, and the declared budget from 266,240 to 176,128 B [measured: the build log's
-module rows and `arm-vita-eabi-size`; by object in [memory-ledger.md](memory-ledger.md)]. The kernel's
+module rows and `arm-vita-eabi-size`; by object in [memory-ledger.md](../memory-ledger.md)]. The kernel's
 capture syscalls (`vjoRequestCapture`, `vjoReadRaw`) stay for step 2. **PR-B** [measured]: the
 rest of this step, done; the Shell keeps its 176,128 B of pages (text 101,488 → 99,268 B, data and
 `.bss` 70,076 → 69,772 B, on #132 and main `3aa08a6`; the normal build loses a page, 167,936 →

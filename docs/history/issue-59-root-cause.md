@@ -125,7 +125,7 @@ SceShell's section is `*main`
 `VitaJPOverlay_OCR.suprx` is registered under `*ALL`, so it is loaded into SceShell (and into
 every other application) at start. Its `module_start` finds that `main` is not a candidate
 title and starts nothing, but it returns `SCE_KERNEL_START_SUCCESS`
-([`game_ocr/main.c`](../game_ocr/main.c), end of file), so the module stays resident: 45,056 B
+([`game_ocr/main.c`](../../game_ocr/main.c), end of file), so the module stays resident: 45,056 B
 of SceShell's pages for code that never runs there. Returning `SCE_KERNEL_START_NO_RESIDENT`
 there frees them at once; the fix PR does this, and the plan moves the worker to `*TITLEID`
 sections so it is not loaded into SceShell at all.
@@ -200,4 +200,4 @@ restoring a plugin set that differs by exactly those pages. It is not a proof.
   text (section alignment under `-Wl,-q`); not applied. Still to come, as the expert's rule
   requires: the dictionary lookup and the Anki queue leave SceShell for the game process through
   the kernel broker; the Shell keeps only the PAF UI. Done since: the worker moved from `*ALL`
-  to `*TITLEID` (the installer's `--title`; [vita-memory.md 4.3](vita-memory.md)).
+  to `*TITLEID` (the installer's `--title`; [vita-memory.md 4.3](../vita-memory.md)).

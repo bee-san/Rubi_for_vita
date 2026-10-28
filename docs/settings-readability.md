@@ -549,4 +549,4 @@ prove physical display visibility during the interval.
 
 Firmware font bounds, sharpness and physical readability remain pending. The
 broader installation and private-dictionary recovery state is tracked in
-[the deployment checklist](todo-20261011.md).
+[the deployment checklist](history/todo-20261011.md).
