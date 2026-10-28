@@ -90,10 +90,10 @@ static long target_inflate(void *ctx, const void *in, size_t n, void *out, size_
 #endif
 
 static VjoPspWork work;
-static unsigned char sfo[VJO_PSP_SFO_MAX];
 
-/* The target's TITLE and DISC_ID: its format, or VJO_PSP_E_*. */
-static int read_target(const char *path, char *title, size_t title_cap, char *disc, size_t disc_cap)
+/* The target's TITLE and DISC_ID (its PARAM.SFO read into sfo, cap bytes): its format, or VJO_PSP_E_*. */
+static int read_target(const char *path, unsigned char *sfo, size_t cap, char *title, size_t title_cap, char *disc,
+                       size_t disc_cap)
 {
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     size_t len = 0;
@@ -103,7 +103,7 @@ static int read_target(const char *path, char *title, size_t title_cap, char *di
 #ifdef VJO_PSP_DEFLATE
     f.inflate = target_inflate;
 #endif
-    int format = size > 0 ? vjo_psp_param_sfo(&f, &work, sfo, sizeof(sfo), &len) : VJO_PSP_E_READ;
+    int format = size > 0 ? vjo_psp_param_sfo(&f, &work, sfo, cap, &len) : VJO_PSP_E_READ;
     sceIoClose(fd);
     if (format < 0) return format;
     if (vjo_sfo_string(sfo, len, "TITLE", title, title_cap) < 0) title[0] = '\0';
@@ -135,7 +135,7 @@ static int describe(const VjoInstalledGame *g, const char *path)
     return write_file(file, text, (size_t)n) < 0 ? -1 : 1;
 }
 
-void vjo_psp_scan_app(VjoInstalledGame *g)
+void vjo_psp_scan_app(VjoInstalledGame *g, unsigned char *sfo, size_t cap)
 {
     static unsigned char buf[VJO_ABB_INF_MAX];
     char file[96], path[VJO_ABB_PATH_MAX] = "", title[256], disc[VJO_TITLE_ID_SIZE] = "";
@@ -167,7 +167,7 @@ void vjo_psp_scan_app(VjoInstalledGame *g)
         return;
     }
     uint64_t t0 = sceKernelGetProcessTimeWide();
-    int format = path[0] ? read_target(path, title, sizeof(title), disc, sizeof(disc)) : VJO_PSP_E_READ;
+    int format = path[0] ? read_target(path, sfo, cap, title, sizeof(title), disc, sizeof(disc)) : VJO_PSP_E_READ;
     unsigned ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u);
     if (format > 0 && title[0]) {
         for (char *s = title; *s; s++) if ((unsigned char)*s < 32) *s = ' ';

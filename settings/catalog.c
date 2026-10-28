@@ -2,6 +2,7 @@
 #include "anki_page.h" /* vjo_log: log.txt */
 #include "letter.h"
 #include "psp.h"
+#include "../core/psptarget.h" /* VJO_PSP_SFO_MAX */
 #include "../core/sfo.h"
 #include "../core/utf.h"
 #include <psp2/io/devctl.h>
@@ -22,11 +23,13 @@ static int name_order(const void *a, const void *b)
     return vjo_title_order(ga->title, ga->id, gb->title, gb->id);
 }
 
+/* The scan's one bounded PARAM.SFO buffer, reused for every title read during enumeration and lent to each bubble's
+ * target read (settings/psp.c vjo_psp_scan_app), on the scan's thread; never while drawing. */
+static unsigned char sfo[VJO_PSP_SFO_MAX];
+
 /* The TITLE of path's PARAM.SFO in out, 1; out unchanged and 0 when there is none. */
 static int read_title(const char *path, char *out, size_t cap)
 {
-    /* One bounded SFO buffer reused during enumeration, never while drawing. */
-    static unsigned char sfo[64 * 1024];
     int got = 0;
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     if (fd < 0) return 0;
@@ -210,7 +213,7 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const 
             snprintf(path, sizeof(path), "%s/%s/sce_sys/param.sfo", roots[r], g->id);
             int titled = read_title(path, g->title, sizeof(g->title));
             /* AdrBubbleBooter looks for bubbles in ux0:app only. */
-            if (r == 0) vjo_psp_scan_app(g);
+            if (r == 0) vjo_psp_scan_app(g, sfo, sizeof(sfo));
             /* No title read (a bubble's may come from its game): listed under its
              * ID, a letter its player may not look under. */
             if (!titled && !strcmp(g->title, g->id)) name(&untitled, "%s", g->id);

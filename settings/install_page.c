@@ -157,12 +157,12 @@ static void on_progress(void *ud, const char *step, uint64_t done, uint64_t tota
 static int worker_main(SceSize args, void *argp)
 {
     static const VjoInstallUi ui = {on_progress, NULL};
-    static VjoInstallResult r;
     (void)args;
     (void)argp;
-    vjo_install_run(&scan, running_action, &ui, &r);
+    /* Into the page's result itself: the main thread reads it only once the run is joined (reap: showing is
+     * SHOW_RUNNING until then, so neither set_lines nor the frame reads it while the worker writes). */
+    vjo_install_run(&scan, running_action, &ui, &result);
     sceKernelLockMutex(lock_uid, 1, NULL);
-    result = r;
     finished = 1;
     sceKernelUnlockMutex(lock_uid, 1);
     return 0;
