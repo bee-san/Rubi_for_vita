@@ -353,12 +353,6 @@ if(VJO_WITH_VOCR)
   # for size: every page of it is in every game that is ON.
   set_source_files_properties(${ROOT}/game_ocr/hooks.c ${ROOT}/core/hook_place.c ${ROOT}/core/hook_stream.c
     ${ROOT}/core/sfo.c PROPERTIES COMPILE_OPTIONS "-Os")
-  # API 31: the worker reads the text source (vjoGetTextSource) once the kernel exports it; until then
-  # its native hooks stay off (game_ocr/main.c text_source: OCR).
-  file(STRINGS ${ROOT}/kernel/exports.yml VJO_KERNEL_TEXT_SOURCE REGEX "vjoGetTextSource")
-  if(VJO_KERNEL_TEXT_SOURCE)
-    target_compile_definitions(VitaJPOverlay_OCR PRIVATE VJO_HAVE_TEXT_SOURCE_IMPORT=1)
-  endif()
   # API 32: the screenshot's black bars, for size too (612 B of text against 816 B at -O2): the scan
   # reads only the bars' pixels, a small part of the frame, once a shot; the encoder stays at -O2.
   set_source_files_properties(${ROOT}/core/shottrim.c PROPERTIES COMPILE_OPTIONS "-Os")

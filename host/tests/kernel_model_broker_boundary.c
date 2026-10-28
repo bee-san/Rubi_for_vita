@@ -24,6 +24,12 @@ __attribute__((weak)) int loader_title(SceUID pid, char *title, SceSize len)
     return -1;
 }
 
+/* kernel/log.c's clock in ms (a shot's stage lines), which this harness does not link. */
+__attribute__((weak)) unsigned klog_ms(void)
+{
+    return (unsigned)(ksceKernelGetSystemTimeWide() / 1000);
+}
+
 /* The model-only and allocation harnesses never write a screenshot. They still
  * link the whole broker; the screenshot harness overrides this with its real
  * file truncation. Fail immediately if another harness unexpectedly reaches it. */

@@ -84,6 +84,7 @@ static unsigned klogs, delays;
 static const char *last_klog = "";
 static void (*before_lock)(void); /* another thread, just before a syscall's lock */
 void klog(const char *format, ...) { klogs++; last_klog = format; }
+unsigned klog_ms(void) { return (unsigned)(model_clock / 1000); } /* kernel/log.c's */
 SceUID ksceKernelGetProcessId(void) { return caller; }
 /* The calling thread (#138: one registered worker thread per game process). */
 static int caller_thread = 0x7001;

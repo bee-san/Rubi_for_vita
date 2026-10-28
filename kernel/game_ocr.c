@@ -8,6 +8,7 @@
 #include <taihen.h>
 #include "vjo_kernel.h"
 #include "game_ocr.h"
+#include "../core/games.h"
 #include "../include/vjo_vocr_sizes.h"
 
 static VjoGameOcrRequest request;
@@ -211,14 +212,16 @@ void game_ocr_init(void)
     wd_copy = wd_held = wd_look = 0;
 }
 
+#ifdef VJO_HOST
 /* A job is queued or claimed, or a model or rows call is in flight: the state
  * vjoOcrSubmit refuses a new job on (VJO_ERR_BUSY), which it tests inline; only
- * the host tests call this. */
+ * the host tests call this (not in the module). */
 int game_ocr_capture_busy_locked(void)
 {
     sync_locked();
     return pending || claimed || model_io.seq || rows.state != ROWS_IDLE || shot_spare_preparing;
 }
+#endif
 
 SceUID game_ocr_worker_pid_locked(void)
 {
@@ -238,10 +241,12 @@ int game_ocr_shutdown_locked(void)
     return 0;
 }
 
-int game_ocr_waiters_locked(void)
+#ifdef VJO_HOST
+int game_ocr_waiters_locked(void) /* the host tests' only (not in the module) */
 {
     return waiters;
 }
+#endif
 
 /* module_stop's part: the shutdown, then until the takes and reads it woke have
  * left their wait (they give their count back under the lock), at most
@@ -323,9 +328,6 @@ void game_ocr_process_gone(SceUID pid)
     }
     VJO_UNLOCK();
 }
-
-/* #194: the t= of a shot's stage lines (the system clock in ms, as klog_ms) */
-static unsigned shot_ms(void) { return (unsigned)(ksceKernelGetSystemTimeWide() / 1000u); }
 
 /* API 23: a shot's card, 32 lowercase hex digits and a NUL (core/anki_queue.h
  * vjo_queue_valid_id): the file name the kernel makes, nothing that could name
@@ -505,7 +507,7 @@ int vjoOcrTake(VjoGameOcrRequest *out)
             pending = 0; claimed = 1; rc = 0; pace[1] = (Pace){0}; pace_job = 1;
             /* #194: a shot's stages, with times, so a stalled one says where (its steps never reach the
              * Shell once it gives up) */
-            if (request.flags & VJO_GAME_OCR_F_SHOT) klog_d("ocr job %u: shot taken t=%u ms", request.seq, shot_ms());
+            if (request.flags & VJO_GAME_OCR_F_SHOT) klog_d("ocr job %u: shot taken t=%u ms", request.seq, klog_ms());
         }
         /* Nothing queued: wait once. The bit is cleared under the lock, so a
          * vjoOcrSubmit after this point wakes the wait. */
@@ -814,7 +816,7 @@ info_out:
     info.kstrip_bytes = kalloc ? kbytes : 0;
     if (rgba && rc > 0)
         klog_d("ocr job %u: shot rows %u..%u (%s), waited %u us, copy %u us, t=%u ms", req.seq, req.y, req.y + req.n,
-               req.mode == VJO_GAME_OCR_SRC_KSTRIP ? "kernel strip" : "hook", info.wait_us, info.copy_us, shot_ms());
+               req.mode == VJO_GAME_OCR_SRC_KSTRIP ? "kernel strip" : "hook", info.wait_us, info.copy_us, klog_ms());
     if (frame) /* API 55: how long the game's display call waited (the pause) */
         klog_d("ocr job %u: the frame's %u rows in one display call, %u us (rc 0x%08X)", req.seq, req.n, info.copy_us,
                (unsigned)rc);
@@ -869,7 +871,7 @@ int vjoOcrComplete(const VjoGameOcrResult *user_result)
     else {
         if (request.flags & VJO_GAME_OCR_F_SHOT)
             klog_d("ocr job %u: shot result rc %d, %u B, %u steps%s t=%u ms", request.seq, incoming.rc,
-                   incoming.shot_bytes, incoming.n_steps, cancelled ? " (cancelled)" : "", shot_ms());
+                   incoming.shot_bytes, incoming.n_steps, cancelled ? " (cancelled)" : "", klog_ms());
         if (!cancelled) {
             result = incoming;
             completed = 1;
@@ -954,7 +956,7 @@ int vjoOcrCancel(uint32_t seq)
     else {
         if (request.flags & VJO_GAME_OCR_F_SHOT)
             klog_d("ocr job %u: shot cancelled (%s) t=%u ms", seq, !claimed && pending ? "never taken"
-                   : completed ? "completed" : model_io.seq ? "its file in the kernel" : "taken, no result", shot_ms());
+                   : completed ? "completed" : model_io.seq ? "its file in the kernel" : "taken, no result", klog_ms());
         invalidate_locked();
         rc = 0;
     }
@@ -1035,6 +1037,30 @@ static int model_wait(uint64_t deadline)
                                    &bits, &timeout) >= 0;
 }
 
+/* One step of a model syscall (the *_locked functions below), under g.lock: a, b and p are the syscall's
+ * arguments after its seq, those it has (the others 0). */
+typedef int (*ModelStep)(SceUID pid, uint32_t seq, uint32_t a, uint32_t b, void *p);
+
+/* The six model syscalls (vjoOcrModelOpen/Read/Close, vjoOcrHookCache, vjoOcrShotWrite/Save): the caller's step
+ * under g.lock, again each time the kernel worker finishes an operation while the step answers BUSY, for at most
+ * MODEL_SYSCALL_WAIT_US (model_wait, without the lock); then BUSY, and the game yields and repeats the call. */
+static int model_syscall(ModelStep step, uint32_t seq, uint32_t a, uint32_t b, void *p)
+{
+    uint32_t state;
+    SceUID pid = ksceKernelGetProcessId();
+    uint64_t deadline;
+    int rc;
+    ENTER_SYSCALL(state);
+    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
+    do {
+        VJO_LOCK();
+        rc = step(pid, seq, a, b, p);
+        VJO_UNLOCK();
+    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
+    EXIT_SYSCALL(state);
+    return rc;
+}
+
 /* SceDateTime as one number, each field masked to its range. */
 static uint64_t pack_time(const SceDateTime *t)
 {
@@ -1056,7 +1082,7 @@ static int model_info_out_locked(VjoGameOcrModelInfo *info)
     return ksceKernelMemcpyKernelToUser(info, &out, sizeof(out)) < 0 ? VJO_ERR_COPY : 0;
 }
 
-static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
+static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, uint32_t b, void *info)
 {
     int rc = model_caller_locked(pid, seq, 0);
     const char *name;
@@ -1080,10 +1106,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     if (which == VJO_GAME_OCR_OPEN_SC3) {
         char title[32];
         memset(title, 0, sizeof(title));
-        if (loader_title(pid, title, sizeof(title)) < 0) return VJO_ERR_ARG;
-        for (unsigned i = 0; i < 9; i++)
-            if (!((title[i] >= 'A' && title[i] <= 'Z') || (title[i] >= '0' && title[i] <= '9'))) return VJO_ERR_ARG;
-        if (title[9]) return VJO_ERR_ARG;
+        if (loader_title(pid, title, sizeof(title)) < 0 || !vjo_title_id_strict(title)) return VJO_ERR_ARG;
         model_io.seq = seq;
         model_io.pid = pid;
         model_io.which = which;
@@ -1152,19 +1175,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
 
 int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
 {
-    uint32_t state;
-    SceUID pid = ksceKernelGetProcessId();
-    uint64_t deadline;
-    int rc;
-    ENTER_SYSCALL(state);
-    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
-    do {
-        VJO_LOCK();
-        rc = model_open_locked(pid, seq, which, info);
-        VJO_UNLOCK();
-    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
-    EXIT_SYSCALL(state);
-    return rc;
+    return model_syscall(model_open_locked, seq, which, 0, info);
 }
 
 static int model_read_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t bytes, void *dst)
@@ -1195,22 +1206,10 @@ static int model_read_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t
 
 int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t bytes, void *dst)
 {
-    uint32_t state;
-    SceUID pid = ksceKernelGetProcessId();
-    uint64_t deadline;
-    int rc;
-    ENTER_SYSCALL(state);
-    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
-    do {
-        VJO_LOCK();
-        rc = model_read_locked(pid, seq, offset, bytes, dst);
-        VJO_UNLOCK();
-    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
-    EXIT_SYSCALL(state);
-    return rc;
+    return model_syscall(model_read_locked, seq, offset, bytes, dst);
 }
 
-static int model_close_locked(SceUID pid, uint32_t seq)
+static int model_close_locked(SceUID pid, uint32_t seq, uint32_t a, uint32_t b, void *p)
 {
     int rc = model_caller_locked(pid, seq, 1);
     if (rc) return rc;
@@ -1230,22 +1229,10 @@ static int model_close_locked(SceUID pid, uint32_t seq)
 
 int vjoOcrModelClose(uint32_t seq)
 {
-    uint32_t state;
-    SceUID pid = ksceKernelGetProcessId();
-    uint64_t deadline;
-    int rc;
-    ENTER_SYSCALL(state);
-    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
-    do {
-        VJO_LOCK();
-        rc = model_close_locked(pid, seq);
-        VJO_UNLOCK();
-    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
-    EXIT_SYSCALL(state);
-    return rc;
+    return model_syscall(model_close_locked, seq, 0, 0, NULL);
 }
 
-static int hook_cache_locked(SceUID pid, uint32_t seq, uint32_t operation, void *data)
+static int hook_cache_locked(SceUID pid, uint32_t seq, uint32_t operation, uint32_t b, void *data)
 {
     int rc = model_caller_locked(pid, seq, 0);
     if (rc) return rc;
@@ -1313,19 +1300,7 @@ int vjoOcrHookLine(uint32_t seq, uint32_t bytes)
 
 int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data)
 {
-    uint32_t state;
-    SceUID pid = ksceKernelGetProcessId();
-    uint64_t deadline;
-    int rc;
-    ENTER_SYSCALL(state);
-    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
-    do {
-        VJO_LOCK();
-        rc = hook_cache_locked(pid, seq, operation, data);
-        VJO_UNLOCK();
-    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
-    EXIT_SYSCALL(state);
-    return rc;
+    return model_syscall(hook_cache_locked, seq, operation, 0, data);
 }
 
 /* File-worker only. Reuse the model staging buffer, without a kernel heap, thread or user pointer.
@@ -1386,7 +1361,7 @@ static int hook_cache_file(int operation, SceUID *fd)
  * subsequent record commit syncs the mount, including this JPEG and its name.
  * The path is
  * the kernel's own (the request's checked card ID); the game supplies bytes. */
-static int shot_write_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t bytes, const void *src)
+static int shot_write_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t bytes, void *src)
 {
     int rc = model_caller_locked(pid, seq, 0);
     if (rc) return rc;
@@ -1436,22 +1411,10 @@ static int shot_write_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t
 
 int vjoOcrShotWrite(uint32_t seq, uint32_t offset, uint32_t bytes, const void *src)
 {
-    uint32_t state;
-    SceUID pid = ksceKernelGetProcessId();
-    uint64_t deadline;
-    int rc;
-    ENTER_SYSCALL(state);
-    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
-    do {
-        VJO_LOCK();
-        rc = shot_write_locked(pid, seq, offset, bytes, src);
-        VJO_UNLOCK();
-    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
-    EXIT_SYSCALL(state);
-    return rc;
+    return model_syscall(shot_write_locked, seq, offset, bytes, (void *)src); /* read only (a user copy in) */
 }
 
-static int shot_save_locked(SceUID pid, uint32_t seq, uint32_t bytes)
+static int shot_save_locked(SceUID pid, uint32_t seq, uint32_t bytes, uint32_t b, void *p)
 {
     int rc = model_caller_locked(pid, seq, 0);
     if (rc) return rc;
@@ -1476,19 +1439,7 @@ static int shot_save_locked(SceUID pid, uint32_t seq, uint32_t bytes)
 
 int vjoOcrShotSave(uint32_t seq, uint32_t bytes)
 {
-    uint32_t state;
-    SceUID pid = ksceKernelGetProcessId();
-    uint64_t deadline;
-    int rc;
-    ENTER_SYSCALL(state);
-    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
-    do {
-        VJO_LOCK();
-        rc = shot_save_locked(pid, seq, bytes);
-        VJO_UNLOCK();
-    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
-    EXIT_SYSCALL(state);
-    return rc;
+    return model_syscall(shot_save_locked, seq, bytes, 0, NULL);
 }
 
 void game_ocr_rows_tick(void)
@@ -1684,7 +1635,7 @@ void game_ocr_model_tick(void)
             klog("screenshot file: offset %u, open %u ms, write %u ms, rc %d", offset,
                  (uint32_t)(opened - t0) / 1000,
                  (uint32_t)(ksceKernelGetSystemTimeWide() - opened) / 1000, rc);
-        klog_d("ocr shot write: %u B at %u -> %d t=%u ms", bytes, offset, rc, shot_ms());
+        klog_d("ocr shot write: %u B at %u -> %d t=%u ms", bytes, offset, rc, klog_ms());
     } else if (operation == SHOT_SAVE) {
         /* closed, then its name. #194: no sync here. test.4's two ksceIoSync("ux0:") held this thread,
          * which also polls the overlay's pad, for over 15 s, and test.4.2's ksceIoSyncByFd turned the
@@ -1692,7 +1643,7 @@ void game_ocr_model_tick(void)
          * names this file is committed with a sceIoSync("ux0:") after it (shell/anki_queue.c commit),
          * which syncs this file and its name too. */
         uint64_t t0 = ksceKernelGetSystemTimeWide();
-        klog_d("ocr shot save: closing t=%u ms", shot_ms()); /* a stop in the close or rename shows */
+        klog_d("ocr shot save: closing t=%u ms", klog_ms()); /* a stop in the close or rename shows */
         /* Trim the reservation to the entire JPEG, not the last chunk. A
          * failed trim must never publish a padded or incomplete image. */
         SceIoStat st;
@@ -1704,7 +1655,7 @@ void game_ocr_model_tick(void)
             if ((rc = ksceIoRename(path, final)) < 0) ksceIoRemove(path);
         } /* else still open: the game's Close closes and removes it */
         klog_d("ocr shot save: close and rename %u us -> 0x%08X t=%u ms", (uint32_t)(ksceKernelGetSystemTimeWide() - t0),
-               (unsigned)(rc < 0 ? rc : 0), shot_ms());
+               (unsigned)(rc < 0 ? rc : 0), klog_ms());
         if (ksceKernelGetSystemTimeWide() - t0 >= 100000u)
             klog("screenshot file: close/rename %u ms, rc 0x%08X",
                  (uint32_t)(ksceKernelGetSystemTimeWide() - t0) / 1000, (unsigned)(rc < 0 ? rc : 0));

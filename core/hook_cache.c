@@ -1,4 +1,5 @@
 #include "hook_cache.h"
+#include "games.h"
 #include <string.h>
 
 #define HEADER 16u
@@ -28,9 +29,7 @@ static int interval_ok(uint32_t n) { return n == 8u || n == 16u || n == 32u; }
 
 static int title_ok(const char *title)
 {
-    for (unsigned i = 0; i < 9; i++)
-        if (!((title[i] >= 'A' && title[i] <= 'Z') || (title[i] >= '0' && title[i] <= '9'))) return 0;
-    return !title[9] && !title[10] && !title[11];
+    return vjo_title_id_strict(title) && !title[10] && !title[11]; /* the record's 12 B, NUL-padded */
 }
 
 static int digest_ok(const uint8_t *p)
