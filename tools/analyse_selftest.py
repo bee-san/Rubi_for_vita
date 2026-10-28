@@ -929,8 +929,9 @@ APP_FOLDER = "ux0:/app/VJOSET001"
 APP_CHECK = re.compile(r"^(?:Rubi|overlay) app (ok|MISMATCH|unknown): installed '(.*?)' \((0x[0-9A-Fa-f]{8}), app (-?\d+)\), "
                        r"plugins' '(.*?)' \((0x[0-9A-Fa-f]{8})\)$")
 # ocr_backend values of removed engines, which an older Rubi app can still write (#101: test.1's app wrote
-# vocr2 beside test.2's plugins); the plugins load them as vocr (core/config.c removed_engine). Since Google
-# Lens's removal VOCR is the only engine and ocr_backend no setting: today's app and installer delete any line.
+# vocr2 beside test.2's plugins); the plugins load them as vocr, and since #418 (P2) without a warning
+# (core/config.c's list of removed settings). Since Google Lens's removal VOCR is the only engine and ocr_backend no
+# setting: today's app and installer delete any line.
 REMOVED_ENGINES = ("lens", "vocr2", "meiki", "ncnn")
 
 

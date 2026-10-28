@@ -560,9 +560,9 @@ class SharedTierTable(unittest.TestCase):
                     self.assertEqual(json.loads(j.stdout)["config"]["log_host"], "set" if value else "")
 
     def test_any_ocr_backend_line_is_one_to_delete(self):
-        # VOCR is the only engine since Google Lens's removal: the plugins warn for a removed engine's
-        # value (core/config.c removed_engine) and ignore vocr; the app's next save and the installer
-        # delete the line either way
+        # VOCR is the only engine since Google Lens's removal: the plugins ignore any ocr_backend line,
+        # without a warning since #418 (P2: core/config.c's list of removed settings); the app's next save and
+        # the installer delete the line either way
         for value in ("lens", "Lens", "vocr2", "meiki", "NCNN"):
             line = a.backend_line(value)
             self.assertIn(f"ocr_backend={value}: a removed engine", line)
