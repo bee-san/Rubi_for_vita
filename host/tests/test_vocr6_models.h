@@ -3,9 +3,9 @@
  * VOCR6's Small and Normal pinned as its tiers and its Large kept from the
  * generation before (a tier whose new candidate did not beat its incumbent keeps
  * the incumbent's blob), beside VOCR3. The names, sizes and estimates are made
- * up; no such files exist. (This package's real set is the other way round:
- * Small keeps VOCR5-S, Normal and Large are VOCR6's, core/vocr_models.c; the real
- * table's tests name each size's generation.) */
+ * up; no such files exist. (This package's real set is VOCR6's three,
+ * core/vocr_models.c; the test builds v0.9.8-test.4 and test.5 had the other mix, Small VOCR5-S beside
+ * VOCR6's Normal and Large. The real table's tests name each size's generation.) */
 static const VjoVocrModelInfo infos[] = {
     {"VOCR6_S_w8.vocr", "VOCR6", "S", 900000u, 900u, 1100000u},
     {"VOCR6_N_w8.vocr", "VOCR6", "N", 1500000u, 1000u, 1800000u},

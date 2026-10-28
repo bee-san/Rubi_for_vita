@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tools/tests"))
 import check_variant  # noqa: E402
 import e2e_package  # noqa: E402
-from test_release_variants import fake_self  # noqa: E402  (a Vita SELF as check_variant.segments reads one)
+from self_fixture import fself as fake_self  # noqa: E402  (a Vita SELF as check_variant.segments reads one)
 
 PLUGINS = {"kernel": "ur0/tai/VitaJPOverlay_Kernel.skprx", "shell": "ur0/tai/VitaJPOverlay_Shell.suprx",
            "worker": "ur0/tai/VitaJPOverlay_OCR.suprx"}
@@ -217,7 +217,7 @@ class E2EPackageEdges(unittest.TestCase):
         blob, attribution = b"a pinned model", b"the LMs' attribution"
         pins = {"m.vocr": ("https://fixture.invalid/m", len(blob), hashlib.sha256(blob).hexdigest())}
         att = {"ATTRIBUTION.md": ("https://fixture.invalid/a", len(attribution), hashlib.sha256(attribution).hexdigest())}
-        model_attribution = b"the model sizes' attribution"
+        model_attribution = b"VOCR5's attribution"
         model_att = {"MODEL-ATTRIBUTION.md": ("https://fixture.invalid/m", len(model_attribution),
                                               hashlib.sha256(model_attribution).hexdigest())}
         vocr6_attribution = b"VOCR6's attribution"
@@ -257,10 +257,10 @@ class E2EPackageEdges(unittest.TestCase):
             ("the attribution altered (P4d)", {}, {"LM-ATTRIBUTION.md": b"the LMs' attributioN"},
              ["LM-ATTRIBUTION.md is the LMs' pinned attribution"]),
             ("the attribution missing", {}, {"LM-ATTRIBUTION.md": None}, ["LM-ATTRIBUTION.md is the LMs' pinned"]),
-            ("the model sizes' attribution altered", {}, {"MODEL-ATTRIBUTION.md": b"the model sizes' attributioN"},
-             ["MODEL-ATTRIBUTION.md is the model sizes' pinned attribution"]),
-            ("the model sizes' attribution missing", {}, {"MODEL-ATTRIBUTION.md": None},
-             ["MODEL-ATTRIBUTION.md is the model sizes' pinned attribution"]),
+            ("VOCR5's attribution altered", {}, {"MODEL-ATTRIBUTION.md": b"VOCR5's attributioN"},
+             ["MODEL-ATTRIBUTION.md is VOCR5's pinned attribution"]),
+            ("VOCR5's attribution missing", {}, {"MODEL-ATTRIBUTION.md": None},
+             ["MODEL-ATTRIBUTION.md is VOCR5's pinned attribution"]),
             ("VOCR6's attribution altered", {}, {"VOCR6-ATTRIBUTION.md": b"VOCR6's attributioN"},
              ["VOCR6-ATTRIBUTION.md is VOCR6's pinned attribution"]),
             ("VOCR6's attribution missing", {}, {"VOCR6-ATTRIBUTION.md": None},

@@ -1,26 +1,39 @@
 /* vjo-vertical-on-bench MODEL_DIR [--mode off|auto|on|columns] [--fps N] [--turn FRAMES] [--rest FRAMES]
  *                       [--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows]
- *                       < JOB > RESULTS.jsonl
+ *                       [--press retry[:MS]|nowait|wait] [--cluster] < JOB > RESULTS.jsonl
  *
  * #379: L + R on a dialogue region with an animated icon in it, as the game worker reads it (core/vocr_ocr.c, with
- * the policy game_ocr/main.c gives a press on config.ini's defaults: the stable-text wait of 150 ms within 1 s, waiting
- * first, the 1 MB LM, the cascade with the next size up within 2 s, the line finder's fixes, the head gate) and the
- * Shell tries it again (shell/worker.c note_screen_changed: a job whose screen changed under every read is dropped
- * quietly, the next try at once, then 250 ms later, doubling up to 4 s), for 20 s after the press.
+ * the policy game_ocr/main.c gives a press on config.ini's defaults: the 1 MB LM, the cascade with the next size up
+ * within 2 s, the line finder's fixes, the head gate) and the Shell tries it again (shell/worker.c
+ * note_screen_changed: a job whose screen changed under every read is dropped quietly, the next try at once, then
+ * 250 ms later, doubling up to 4 s), for 20 s after the press.
+ *  - The stable-text wait, --press: retry (the default, main's since #413's audit, shell/worker.c start_job_kind):
+ *    the press's first job reads at once (#413: opening the overlay confirms that the text is ready), and once a job's
+ *    screen changed under every read (the Shell's count of them, screen_changed_streak) the retries wait as a
+ *    background read does, for 150 ms of still rows first (ocr_settle_ms; the kernel has not called a screen whose
+ *    icon moves stable), within ocr_settle_max_ms, 2 s (retry:MS: within MS); nowait, #413's, no job waits; wait, the
+ *    press before #413 (0.9.8's and #385's), every job 150 ms first within 1 s (ocr_settle_press_ms). The worker
+ *    learns an icon's rows only in the wait (core/vocr_ocr.c stream_check): without it every change of them between
+ *    two reads tears the read.
  *  - Every strip read is the game's next frame (kernel/game_ocr.c vjoOcrCaptureRows: the display hook copies the rows
  *    as the game shows its next frame), at --fps frames a second (30 by default).
  *  - The picture is the region with a 24-px icon at --icon (its top left corner in the region): a bar that turns one
  *    step a frame for --turn frames (15), then rests for --rest frames (15), and again; each phase of --phases (12)
- *    presses at another moment of it.
+ *    presses at another moment of it, phase p at p / phases of its cycle (#441's audit F3). --cluster: the phases
+ *    7,919 us apart, all 12 within 87 ms of one moment of the cycle, as the bench placed them until then (#385's,
+ *    #411's and #441's tables).
  *  - Recognition takes time on the same clock as the strips: each recognized line its CTC frames times a time a
  *    frame, --frame-us's three, in us: the Normal size's model (rows), the cascade's (the Large size's, for the
- *    frames it reads again) and the vertical model (columns). By default 2,610, 5,040 and 1,700: test.4's console
- *    logs measured VOCR5-N (VOCR6-N's shape) at 2.61 ms a frame and VOCR5-L (VOCR6-L's) at 4.98-5.10 ms, at 444 MHz,
- *    the clock a job raises by default, the LM's decoding included (docs/guide.md); VOCR5-V's is VOCR5-S's estimate at
- *    444 MHz (docs/vita-vn-ocr.md). So the icon moves while a line is recognized, as on the console (before #385's
+ *    frames it reads again) and the vertical model (columns). By default 2,610, 5,040 and 1,700: measured for rows,
+ *    estimated for columns. 0.8.0-test.4's console logs measured VOCR5-N (VOCR6-N's shape) at 2.61 ms a frame and VOCR5-L
+ *    (VOCR6-L's) at 4.98-5.10 ms, at 444 MHz, the clock a job raises by default, each a job's recognition time over
+ *    its frames with the LM's decoding and the default two helpers (docs/guide.md); VOCR5-V's is VOCR5-S's estimate at
+ *    444 MHz (docs/vita-vn-ocr.md). The bench recognizes one line at a time (the line callback turns the helpers off,
+ *    core/vocr_ocr.c), each charged so. So the icon moves while a line is recognized, as on the console. Before #385's
  *    audit F1 the bench charged 3 times each line's time on this clock, which does not move while a line is
- *    recognized: nothing; --frame-us 0,0,0 is that bench). The finder's time counts nothing. The times are
- *    estimates: no console has run this.
+ *    recognized: nothing (--frame-us 0,0,0 is that bench); before #411's audit F1 the first line of a core attempt
+ *    after one that tore with a line read went uncharged. The finder's time counts nothing. The times are estimates:
+ *    no console has run this.
  * Modes: off, rows; auto, rows checked for vertical text (VJO_VOCR_CHECK_AUTO), then the columns; on, as the worker
  * reads it (API 53: rows checked the other way, VJO_VOCR_CHECK_ON, then the columns, but a region at least as tall as
  * wide read as columns at once, #385's audit F6; --tall rows: its rows first too, as API 53 had it before that; built
@@ -31,10 +44,10 @@
  * vertical one host/samples/vertical.jpg's 220 x 380 at (630, 50), e.g. with Pillow:
  *   python3 -c "import sys; from PIL import Image; im = Image.open(sys.argv[1]).convert('RGBA').crop((30, 360, 930,
  *   520)); sys.stdout.buffer.write(b'box 900 160\n' + im.tobytes())" host/samples/vn_textbox.jpg > box.job
- * RESULTS: one JSON object per phase: rc (0 shown, -120 the screen changed under every try for 20 s), the jobs, those
- * torn, the rows that tore, the strips read, ms from the press to the text, the CTC frames recognized and the ms
- * charged for them (the cascade's included), whether it was read as columns, its lines and text ('|' between lines).
- * A summary line on stderr. Host only. */
+ * RESULTS: one JSON object per phase: the press's wait (--press), rc (0 shown, -120 the screen changed under every try
+ * for 20 s), the jobs, those torn, those that waited, the rows that tore, the strips read, ms from the press to the
+ * text, the CTC frames recognized and the ms charged for them (the cascade's included), whether it was read as
+ * columns, its lines and text ('|' between lines). A summary line on stderr. Host only. */
 #define _POSIX_C_SOURCE 200809L
 #include <math.h>
 #include <stdint.h>
@@ -57,6 +70,12 @@ static uint64_t vclock;              /* the simulated clock, us */
 static unsigned frame_us, turn = 15, rest = 15, icon_x, icon_y, rw, rh;
 static unsigned char *still;         /* the region's grey rows, the icon left out */
 static unsigned long strips;
+/* --press: which jobs of a press wait for still rows, and within what (the header) */
+enum { PRESS_RETRY, PRESS_NOWAIT, PRESS_WAIT };
+static int press_mode = PRESS_RETRY;
+static uint32_t retry_max_us = 2000000u; /* ocr_settle_max_ms */
+#define SETTLE_US 150000u                /* ocr_settle_ms */
+#define PRESS_CAP_US 1000000u            /* ocr_settle_press_ms: a press's wait budget before #413 */
 
 static uint64_t now_cb(void *ud)
 {
@@ -122,17 +141,24 @@ static int lres_release(void *ud)
 }
 /* Recognition on the simulated clock (#385's audit F1): each line the core recognized (core/vocr_ocr.c line_stat
  * counts it, then calls the line callback) its CTC frames times the try's model's time a frame, and the frames the
- * cascade read again since the last line times the cascade's. The core zeroes its counts at each of its own tries. */
+ * cascade read again since the last line times the cascade's. The core zeroes its counts at each of its own attempts
+ * (run_job, VjoVocrStats.tries): the accounting starts again when tries changes (#411's audit F1: an attempt that tore
+ * after one line left the next attempt's first line uncharged, the count not falling), and when a count falls (an
+ * attempt run again under the same number, RETRY_NOCACHE). */
 static const VjoVocrStats *cur_st;   /* the try's stats, while it runs */
 static uint32_t cur_frame_us, casc_frame_us;
-static unsigned seen_lines, seen_casc;
+static unsigned seen_lines, seen_casc, seen_tries;
 static unsigned long charged_frames; /* this phase's, the cascade's included */
 static uint64_t charged_us;
 static void line_cb(void *ud, const VjoVocrLineInfo *info)
 {
     (void)ud;
     if (!cur_st || info->blank) return;
-    if (cur_st->recognized < seen_lines) seen_lines = 0; /* the core's next try */
+    if (cur_st->tries != seen_tries) { /* the core's next attempt */
+        seen_tries = cur_st->tries;
+        seen_lines = seen_casc = 0;
+    }
+    if (cur_st->recognized < seen_lines) seen_lines = 0;
     if (cur_st->cascade_frames < seen_casc) seen_casc = 0;
     for (; seen_lines < cur_st->recognized; seen_lines++) {
         const VjoVocrLineStat *ls = &cur_st->line[seen_lines];
@@ -152,6 +178,7 @@ typedef struct {
     const VjoVocrModel *model, *cascade, *vertical;
     const VjoVocrLm *lm;
     uint32_t frame_us[3]; /* a CTC frame's time: the rows' model, the cascade's, the vertical model */
+    uint32_t settle_us;   /* the job's stable-text wait (VjoVocrPolicy.settle_us), 0: none; set for each job (--press) */
 } Setup;
 
 /* One try of a job: the worker's policy for a press (game_ocr/main.c request_policy, vjo_game_ocr_run_request). */
@@ -185,8 +212,8 @@ static int run_try(const Setup *su, const VjoPlatform *plat, const VjoVocrModel 
     pol.head_gate = pol.two_level = 1;
     pol.line_fix = cols ? 0u : VOCR_FIX_DEFAULT;
     pol.vertical_check = check;
-    pol.settle_us = 150000u;       /* ocr_settle_ms */
-    pol.settle_max_us = settle_left; /* ocr_settle_press_ms, over the job's tries */
+    pol.settle_us = su->settle_us; /* ocr_settle_ms in a job that waits (--press), else 0 */
+    pol.settle_max_us = settle_left; /* the job's wait budget, over its tries */
     pol.settle_first = first;
     pol.sleep = sleep_cb;
     pol.line = line_cb;
@@ -194,7 +221,7 @@ static int run_try(const Setup *su, const VjoPlatform *plat, const VjoVocrModel 
     cur_st = st;
     cur_frame_us = cols ? su->frame_us[2] : su->frame_us[0];
     casc_frame_us = su->frame_us[1];
-    seen_lines = seen_casc = 0;
+    seen_lines = seen_casc = seen_tries = 0;
     rc = vjo_vocr_ocr_policy(plat, su->dir, m->name, src, cols ? &vres : &res, ws, need, capture, sizeof(capture), &pol,
                              text, cap, st);
     cur_st = NULL;
@@ -206,8 +233,8 @@ int main(int argc, char **argv)
 {
     const char *mode = "on";
     unsigned fps = 30, phases = 12;
-    int tall_rows = 0;
-    char line[512], id[256];
+    int tall_rows = 0, cluster = 0;
+    char line[512], id[256], press_name[32] = "retry:2000";
     Setup su = {.frame_us = {2610u, 5040u, 1700u}};
     if (argc < 2) goto usage;
     su.dir = argv[1];
@@ -222,6 +249,19 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--frame-us") && v &&
                  sscanf(v, "%u,%u,%u", &su.frame_us[0], &su.frame_us[1], &su.frame_us[2]) == 3) i++;
         else if (!strcmp(argv[i], "--tall") && v && !strcmp(v, "rows")) tall_rows = 1, i++;
+        else if (!strcmp(argv[i], "--cluster")) cluster = 1;
+        else if (!strcmp(argv[i], "--press") && v) {
+            unsigned ms = 2000u;
+            char tail = 0;
+            if (!strcmp(v, "wait")) press_mode = PRESS_WAIT;
+            else if (!strcmp(v, "nowait")) press_mode = PRESS_NOWAIT;
+            else if (!strcmp(v, "retry") || (sscanf(v, "retry:%u%c", &ms, &tail) == 1 && ms && ms <= 10000u))
+                press_mode = PRESS_RETRY, retry_max_us = 1000u * ms;
+            else goto usage;
+            if (press_mode == PRESS_RETRY) snprintf(press_name, sizeof(press_name), "retry:%u", ms);
+            else snprintf(press_name, sizeof(press_name), "%s", v);
+            i++;
+        }
         else goto usage;
     }
     const int m_off = !strcmp(mode, "off"), m_auto = !strcmp(mode, "auto"), m_on = !strcmp(mode, "on"),
@@ -272,9 +312,10 @@ int main(int argc, char **argv)
     unsigned shown = 0;
     double sum_ms = 0;
     for (unsigned ph = 0; ph < phases; ph++) {
-        vclock = 10000000ull + (uint64_t)ph * 7919u; /* another moment of the icon's turn each phase */
+        /* another moment of the icon's cycle each phase: over the whole cycle, or (--cluster) 7.9 ms apart */
+        vclock = 10000000ull + (cluster ? (uint64_t)ph * 7919u : (uint64_t)ph * (turn + rest) * frame_us / phases);
         const uint64_t press = vclock;
-        unsigned jobs = 0, torn = 0, tears = 0, streak = 0;
+        unsigned jobs = 0, torn = 0, tears = 0, streak = 0, waited = 0;
         static char text[VJO_OCR_TEXT_CAP];
         VjoVocrStats st;
         int rc = VJO_E_SCREEN_CHANGED;
@@ -283,11 +324,17 @@ int main(int argc, char **argv)
         charged_us = 0;
         while (vclock - press < PRESS_US) {
             jobs++;
-            rc = run_try(&su, &plat, first_cols ? su.vertical : su.model, &src, first_cols ? 0 : check, 1000000u, 1, text,
+            /* this job's wait (--press): retry's once a job tore under every read (shell/worker.c start_job_kind,
+             * screen_changed_streak), wait's always, nowait's never */
+            const uint32_t budget = press_mode == PRESS_WAIT ? PRESS_CAP_US
+                                    : press_mode == PRESS_RETRY && streak ? retry_max_us : 0u;
+            su.settle_us = budget ? SETTLE_US : 0u;
+            waited += budget != 0;
+            rc = run_try(&su, &plat, first_cols ? su.vertical : su.model, &src, first_cols ? 0 : check, budget, 1, text,
                          sizeof(text), &st);
             tears += st.tears;
             if (rc == VJO_E_VERTICAL) { /* the worker's next try: the columns, within what is left of the wait */
-                const uint32_t left = 1000000u > st.settle_us ? 1000000u - st.settle_us : 1u;
+                const uint32_t left = budget > st.settle_us ? budget - st.settle_us : 1u;
                 rc = run_try(&su, &plat, su.vertical, &src, 0, left, 0, text, sizeof(text), &st);
                 tears += st.tears;
             }
@@ -303,10 +350,11 @@ int main(int argc, char **argv)
             shown++;
             sum_ms += ms;
         }
-        printf("{\"id\": \"%s\", \"mode\": \"%s\", \"fps\": %u, \"turn\": %u, \"rest\": %u, \"phase\": %u, \"rc\": %d, "
-               "\"jobs\": %u, \"torn\": %u, \"tears\": %u, \"strips\": %lu, \"ms\": %.0f, \"frames\": %lu, "
-               "\"recognition_ms\": %.0f, \"columns\": %u, \"lines\": %u, \"text\": \"",
-               id, mode, fps, turn, rest, ph, rc, jobs, torn, tears, strips, ms, charged_frames,
+        printf("{\"id\": \"%s\", \"mode\": \"%s\", \"fps\": %u, \"turn\": %u, \"rest\": %u, \"press\": \"%s\", "
+               "\"cluster\": %d, "
+               "\"phase\": %u, \"rc\": %d, \"jobs\": %u, \"torn\": %u, \"waited\": %u, \"tears\": %u, \"strips\": %lu, "
+               "\"ms\": %.0f, \"frames\": %lu, \"recognition_ms\": %.0f, \"columns\": %u, \"lines\": %u, \"text\": \"",
+               id, mode, fps, turn, rest, press_name, cluster, ph, rc, jobs, torn, waited, tears, strips, ms, charged_frames,
                (double)charged_us / 1000.0, rc == VJO_OK ? st.columns : 0u, rc == VJO_OK ? st.lines : 0u);
         for (const char *p = rc == VJO_OK ? text : ""; *p; p++) {
             if (*p == '\n') fputc('|', stdout);
@@ -316,8 +364,8 @@ int main(int argc, char **argv)
         puts("\"}");
         fflush(stdout);
     }
-    fprintf(stderr, "%s %s, %u fps, turn %u rest %u: shown in %u of %u phases, mean %.0f ms\n", id, mode, fps, turn,
-            rest, shown, phases, shown ? sum_ms / shown : 0.0);
+    fprintf(stderr, "%s %s, %u fps, turn %u rest %u, press %s: shown in %u of %u phases, mean %.0f ms\n", id, mode, fps,
+            turn, rest, press_name, shown, phases, shown ? sum_ms / shown : 0.0);
     vjo_vocr_resident_drop(&res);
     vjo_vocr_resident_drop(&vres);
     vjo_vocr_resident_drop(&cres);
@@ -325,6 +373,8 @@ int main(int argc, char **argv)
     return 0;
 usage:
     fprintf(stderr, "usage: %s MODEL_DIR [--mode off|auto|on|columns] [--fps N] [--turn FRAMES] [--rest FRAMES] "
-                    "[--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows] < JOB\n", argv[0]);
+                    "[--icon X,Y] [--phases N] [--frame-us ROWS,CASCADE,COLUMNS] [--tall rows] "
+                    "[--press retry[:MS]|nowait|wait] [--cluster] < JOB\n",
+            argv[0]);
     return 2;
 }

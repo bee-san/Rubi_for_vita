@@ -92,9 +92,9 @@ typedef struct {
      * size). */
     int ocr_helpers;          /* 0..2 */
     int ocr_boost_clock;      /* 0/1 */
-    /* Local OCR (vocr): the most a job the open overlay waits for spends waiting
-     * for the rows to hold still (0: ocr_settle_max_ms as for any job); the
-     * smaller of the two applies (docs/first-ocr.md). */
+    /* Local OCR (vocr): before #413, the most a job the open overlay waits for
+     * spent waiting for the rows to hold still. Still parsed (config.ini keeps
+     * it for older builds); no code reads it since #413 (docs/text-stability.md). */
     int ocr_settle_press_ms;  /* 0 or 100..10000 */
     /* Anki (API 23): a card saved with anki_mining keeps a JPEG of the game's screen
      * (on by default; the game worker takes it, docs/anki.md). Last, as above. */

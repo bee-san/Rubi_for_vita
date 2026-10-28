@@ -1,5 +1,5 @@
 /* The Shell's word lookups over real recognized lines, every file read counted
- * and attributed (tools/dict_lookup_bench.py, docs/dict-lookup-speed.md).
+ * and attributed (tools/dict_lookup_bench.py, docs/lookup-performance.md).
  *
  *   vjo-dict-bench DIR FILES LINES MODE ROUNDS
  *

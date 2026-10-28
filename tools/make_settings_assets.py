@@ -9,14 +9,26 @@ her speech bubble, so this script paints the bubble clean and draws a hiragana
 font is needed and the output depends only on the source image and Pillow.
 The Vita promoter rejects RGBA artwork (0x8010113D); every image is written as an
 opaque, non-interlaced, 8-bit palette PNG with at most 256 colours.
+
+    python3 tools/make_settings_assets.py [--out DIR]   # the four images, into settings/assets (or DIR)
+    python3 tools/make_settings_assets.py --check       # build them in a temporary directory: exit 1 unless
+                                                        # each is byte for byte the committed file
+
+--check is ctest's tools_make_settings_assets (tools/tests/test_make_settings_assets.py). Besides the pinned
+Pillow (tools/requirements-assets.txt), Ubuntu 24.04's 10.2.0 (CI's and the fast gate's) and 11.3.0 write the
+committed bytes [measured, 2026-10-27].
 """
+import argparse
 import hashlib
 import math
+import sys
+import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 DEST = Path(__file__).resolve().parents[1] / "settings" / "assets"
+NAMES = ("icon0.png", "startup.png", "bg.png", "pic0.png")
 SOURCE = DEST / "icon-source.png"
 SOURCE_SHA256 = "3bc8d4250b2ec35766e0b8ca4bf2431d8f199b699426a2d47ad49b7a4ea79991"
 SS = 4                      # supersampling for the hand-drawn strokes
@@ -37,6 +49,11 @@ KANA_A = [
      ((28, 59), (40, 50), (56, 46), (70, 47)),
      ((70, 47), (88, 50), (92, 72), (64, 88))],
 ]
+
+
+def flattened(image):
+    """The image's pixels in order: get_flattened_data (Pillow 12, getdata's replacement), else getdata."""
+    return image.get_flattened_data() if hasattr(image, "get_flattened_data") else image.getdata()
 
 
 def bezier(p0, p1, p2, p3, steps=48):
@@ -135,7 +152,7 @@ def cutout(image):
         if pixel != marker and sum(abs(a - b) for a, b in zip(pixel, LAVENDER)) <= 24:
             ImageDraw.floodfill(key, seed, marker, thresh=24)
     mask = Image.new("L", key.size, 0)
-    mask.putdata([0 if pixel == marker else 255 for pixel in key.get_flattened_data()])
+    mask.putdata([0 if pixel == marker else 255 for pixel in flattened(key)])
     box = mask.getbbox()
     return image.crop(box), mask.crop(box)
 
@@ -174,13 +191,13 @@ def bubble(canvas, cx, cy, r, colour, ink):
     paint(canvas, stroke_mask(canvas.size, kana_paths(cx, cy, r * 1.25), max(1.5, r * 0.2)), ink)
 
 
-def save_indexed(image, name, max_bytes=None):
-    """Quantize to <= 256 colours and write an opaque 8-bit palette PNG with no extra chunks."""
+def save_indexed(image, dest, name, max_bytes=None):
+    """Quantize to <= 256 colours and write an opaque 8-bit palette PNG with no extra chunks, as dest/name."""
     quantized = image.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     indexed = Image.new("P", quantized.size)
     indexed.putpalette(quantized.getpalette())
-    indexed.putdata(list(quantized.get_flattened_data()))
-    path = DEST / name
+    indexed.putdata(list(flattened(quantized)))
+    path = dest / name
     indexed.save(path, optimize=True, bits=8)
     with Image.open(path) as written:
         if written.mode != "P" or written.size != image.size or "transparency" in written.info:
@@ -205,9 +222,10 @@ def splash(bg):
     return canvas
 
 
-def main():
+def build(dest):
+    """The four images (NAMES) into the directory dest."""
     art = mascot()
-    save_indexed(art.resize((128, 128), Image.LANCZOS), "icon0.png", ICON0_MAX_BYTES)
+    save_indexed(art.resize((128, 128), Image.LANCZOS), dest, "icon0.png", ICON0_MAX_BYTES)
     sprite, mask = cutout(art)
 
     # Gate image: the system draws its Start button over the bottom of it.
@@ -218,7 +236,7 @@ def main():
     _, width = wordmark_paths(0, 0, 22)
     paths, _ = wordmark_paths(214 - width / 2, 88, 22)   # centred in the space right of the mascot
     sticker_text(startup, paths, 6, 2)
-    save_indexed(startup, "startup.png")
+    save_indexed(startup, dest, "startup.png")
 
     # LiveArea background; the gate sits in the middle of its upper part.
     bg = gradient((840, 500), (247, 236, 248), (250, 226, 238))
@@ -231,9 +249,35 @@ def main():
     _, width = wordmark_paths(0, 0, 46)
     paths, _ = wordmark_paths(816 - width, 428, 46)   # right-aligned at x 816
     sticker_text(bg, paths, 11, 5)
-    save_indexed(bg, "bg.png")
-    save_indexed(splash(bg), "pic0.png")
+    save_indexed(bg, dest, "bg.png")
+    save_indexed(splash(bg), dest, "pic0.png")
+
+
+def check():
+    """The images built afresh against the committed ones: one line each; 0 when every one is the same bytes."""
+    differ = 0
+    with tempfile.TemporaryDirectory() as temporary:
+        built = Path(temporary)
+        build(built)
+        for name in NAMES:
+            new, old = (built / name).read_bytes(), (DEST / name).read_bytes()
+            same = new == old
+            differ += not same
+            print(f"{name}: {'the committed bytes' if same else f'DIFFERS ({len(new)} B built, {len(old)} B committed)'}")
+    return 1 if differ else 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--out", type=Path, default=DEST, help="the directory to write into (default settings/assets)")
+    parser.add_argument("--check", action="store_true", help="compare a fresh build with the committed files")
+    args = parser.parse_args(argv)
+    if args.check:
+        return check()
+    args.out.mkdir(parents=True, exist_ok=True)
+    build(args.out)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

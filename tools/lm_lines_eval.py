@@ -32,23 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import collect_word_lookup_lines as cw  # noqa: E402 (the shared reservation rules)
-
-# core/vocr_ocr.c lm_opts(): one setting for every model; the bonus per tier
-# (alpha, beta, flags) per LM: core/vocr_ocr.c lms[] (VOCR6's two tiers and ctclm.2's two), and ctclm.2's
-# own 1000k / 4000k files with their settings for the earlier measurements
-LM_BOS, LM_EOS = 1, 2
-SETTINGS = {"vocr_lm_o3_500k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_1000k.vlm": (600, 2500, LM_BOS),
-            "vocr_lm_o3_2000k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_4000k.vlm": (600, 2500, LM_BOS),
-            "vocr_lm_o3_1000k.vlm": (500, 3500, LM_EOS), "vocr_lm_o3_4000k.vlm": (500, 3500, LM_EOS)}
-BETA = {name: beta for name, (_, beta, _) in SETTINGS.items()}
-# a job model's own settings for an LM, where they differ from its tier's (core/vocr_ocr.c lm_retuned: vita-vn-ocr
-# #151, VOCR6-N with the 2000k LM); the worker's decoder and its cascade's take them
-MODEL_SETTINGS = {("VOCR6_N_w8_2l.vocr", "vocr_lm_o3_2000k.vlm"): (400, 1500, LM_BOS | LM_EOS)}
-
-
-def settings(model, lm):
-    """(alpha, beta, flags) a job on `model` decodes `lm` with (core/vocr_ocr.c vjo_vocr_lm_settings)."""
-    return MODEL_SETTINGS.get((model, lm), SETTINGS[lm])
+from evallib import find_shot, lm_settings  # noqa: E402 (the worker's LM decoder settings)
 
 
 def main(argv=None):
@@ -79,9 +63,9 @@ def main(argv=None):
     dec = {}
 
     def decoder(reader, lm, job):
-        """The decoder of `reader`'s top-K in a job on model `job`: its settings for lm (settings(): the worker decodes
-        a cascade's re-reads with the job's model's)."""
-        alpha, beta, flags = settings(job, lm)
+        """The decoder of `reader`'s top-K in a job on model `job`: its settings for lm (lm_settings(): the worker
+        decodes a cascade's re-reads with the job's model's)."""
+        alpha, beta, flags = lm_settings(job, lm)
         key = (reader, lm, alpha, beta, flags)
         if key not in dec:
             dec[key] = VocrLM(ref[reader], str(args.models / lm), beam=8, topk=8, alpha=alpha, beta=beta, gate=8000,
@@ -105,7 +89,7 @@ def main(argv=None):
                     continue
                 if args.limit and done >= args.limit:
                     break
-                shot = next((Path(d) / row["shot"] for d in args.shots if (Path(d) / row["shot"]).exists()), None)
+                shot = find_shot(row["shot"], args.shots)
                 if shot is None or hashlib.sha256(shot.read_bytes()).hexdigest() != row["sha256"]:
                     raise SystemExit(f"lm: {row['shot']} missing or changed")
                 img = Image.open(shot).convert("RGBA")

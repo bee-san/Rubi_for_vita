@@ -6,7 +6,6 @@ import hashlib
 import io
 import json
 from pathlib import Path
-import struct
 import subprocess
 import sys
 import tempfile
@@ -21,27 +20,8 @@ import check_variant as variant  # noqa: E402
 import package_release as release  # noqa: E402
 import package_variants  # noqa: E402
 import prepare_ocr as prepare  # noqa: E402
-
-
-def fake_self(*payloads):
-    """A Vita SELF (fself) whose PT_LOAD segments hold payloads, uncompressed, as
-    vita-make-fself lays it out: the header, the ELF header, the program headers, the
-    segment info, the segments."""
-    elf_off, n = 0xA0, len(payloads)
-    ph_off = elf_off + 0x34
-    info_off = ph_off + 32 * n
-    data_off = info_off + 32 * n
-    data = bytearray(b"SCE\0" + b"\0" * (data_off - 4))
-    struct.pack_into("<QQ", data, 0x40, elf_off, ph_off)
-    struct.pack_into("<Q", data, 0x58, info_off)
-    data[elf_off:elf_off + 6] = b"\x7fELF\x01\x01"
-    struct.pack_into("<HH", data, elf_off + 42, 32, n)
-    at = data_off
-    for i, blob in enumerate(payloads):
-        struct.pack_into("<8I", data, ph_off + 32 * i, 1, 0, 0, 0, len(blob), len(blob), 5, 0x1000)
-        struct.pack_into("<4Q", data, info_off + 32 * i, at, len(blob), 1, 2)
-        at += len(blob)
-    return bytes(data) + b"".join(payloads)
+sys.path.insert(0, str(ROOT / "tools/tests"))
+from self_fixture import fself as fake_self  # noqa: E402  (a Vita SELF whose PT_LOAD segments hold the payloads)
 
 
 # A module-info block at a segment's start that names an empty import table (e_entry 0): the
@@ -347,7 +327,7 @@ class PackageVariants(unittest.TestCase):
         gate_att = b"the gate's attribution fixture"  # API 26: the text-presence gate's
         self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
             "https://fixture.invalid/G", len(gate_att), hashlib.sha256(gate_att).hexdigest())}))
-        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR6_ASSETS", "VOCR_LM_ASSETS",
+        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5V_ASSETS", "VOCR6_ASSETS", "VOCR_LM_ASSETS",
                   "VOCR_GATE_ASSETS", "VOCR_SPOT_ASSETS")  # API 54: the text spotter's weights
         for mod in (prepare, release):
             for table in tables:

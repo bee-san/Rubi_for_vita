@@ -1,6 +1,7 @@
 # Test build install issue: the template
 
-The skeleton of the GitHub issue that hands a test build (a pre-release, tag `v0.8.0-test.N`) to the
+The skeleton of the GitHub issue that hands a test build (a pre-release, tag `v<version>-test.N`, such as
+`v0.9.8-test.5`) to the
 console tester. It is filled per build from [console-test.md](console-test.md), which has the steps in full;
 `{…}` marks what each build fills in. Since the one-VPK install the VPK is the install: it carries the
 Rubi app and its plugins together, so the app and the plugins cannot be of two builds as in

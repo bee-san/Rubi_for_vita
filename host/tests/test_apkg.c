@@ -31,6 +31,7 @@
 #include "lapis.h"
 #include "sqlw.h"
 #include "zipw.h"
+#include <bearssl_hash.h>
 #include "../../settings/app_queue.h"
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
@@ -39,7 +40,13 @@
 
 uint64_t sceKernelGetProcessTimeWide(void) { return 0; } /* settings/app_platform.c's clock */
 
-/* ---------------- the memory card: real files, with failures ---------------- */
+/* ---------------- the memory card: real files (fakes/sceio_posix.h), with failures ---------------- */
+
+/* a failure is ENOENT's 0x80010002 for a missing file, else -1 */
+#define SCEIO_ERROR(e) ((e) == ENOENT ? (int)0x80010002u : -1)
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_PWRITE | SCEIO_PREAD | SCEIO_GETSTAT | SCEIO_RENAME | \
+                   SCEIO_REMOVE | SCEIO_SYNCBYFD | SCEIO_SYNC | SCEIO_DOPEN)
+#include "fakes/sceio_posix.h"
 
 static char logs[16384];
 void vjo_log(const char *fmt, ...)
@@ -113,7 +120,7 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
     if (flags == SCE_O_RDONLY && strstr(p, ".json") && io.fail_json_read_at &&
         ++io.json_reads == io.fail_json_read_at)
         return -1;
-    fd = open(p, flags, mode);
+    fd = sceio_open(p, flags, mode);
     if (fd >= 0 && (flags & O_CREAT) && strstr(p, ".apkg"))
         io.fd = fd;
     if (strstr(p, ".vjdict")) {
@@ -121,11 +128,11 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
         if (fd >= 0 && io.dict_open < 16)
             io.dict_fds[io.dict_open++] = fd;
     }
-    return fd < 0 ? (errno == ENOENT ? (int)0x80010002u : -1) : fd;
+    return fd;
 }
 int sceIoClose(int fd)
 {
-    int rc = close(fd), d = dict_fd(fd);
+    int rc = sceio_close(fd), d = dict_fd(fd);
     if (d >= 0)
         io.dict_fds[d] = io.dict_fds[--io.dict_open];
     if (fd == io.fd && io.fail_close) {
@@ -134,8 +141,6 @@ int sceIoClose(int fd)
     }
     return rc;
 }
-int sceIoRead(int fd, void *p, size_t n) { return (int)read(fd, p, n); }
-int sceIoWrite(int fd, const void *p, size_t n) { return (int)write(fd, p, n); }
 int sceIoPwrite(int fd, const void *p, size_t n, SceOff off)
 {
     if (io.write_after >= 0 && io.written + (long)n > io.write_after) {
@@ -171,37 +176,15 @@ int sceIoPread(int fd, void *p, size_t n, SceOff off)
         ((uint8_t *)p)[5000 - off] ^= 0x40;
     return (int)k;
 }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return mkdir(p, mode); }
-/* A file's time as the Vita gives it (UTC: VitaShell converts st_mtime to local time to show it). */
-static void date_of(time_t t, SceDateTime *d)
-{
-    struct tm tm;
-    gmtime_r(&t, &tm);
-    *d = (SceDateTime){(unsigned short)(tm.tm_year + 1900), (unsigned short)(tm.tm_mon + 1), (unsigned short)tm.tm_mday,
-                       (unsigned short)tm.tm_hour, (unsigned short)tm.tm_min, (unsigned short)tm.tm_sec, 0};
-}
-static int file_stat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    if (stat(p, &s))
-        return errno == ENOENT ? (int)0x80010002u : -1;
-    st->st_mode = s.st_mode;
-    st->st_size = s.st_size;
-    date_of(s.st_ctim.tv_sec, &st->st_ctime);
-    date_of(s.st_atim.tv_sec, &st->st_atime);
-    date_of(s.st_mtim.tv_sec, &st->st_mtime);
-    return 0;
-}
 int sceIoGetstat(const char *p, SceIoStat *st)
 {
     size_t n = strlen(p);
     int rc;
     if (io.fail_stat && strstr(p, io.fail_stat))
         return (int)0x80010005u; /* EIO: a file that cannot be checked */
-    rc = file_stat(p, st);
+    rc = sceio_getstat(p, st);
     if (!rc && io.package_time && n > 5 && !strcmp(p + n - 5, ".apkg"))
-        date_of(io.package_time, &st->st_mtime); /* the package's time, as the calendar cases set it */
+        sceio_date(io.package_time, &st->st_mtime); /* the package's time, as the calendar cases set it */
     return rc;
 }
 int sceIoRename(const char *from, const char *to)
@@ -245,14 +228,14 @@ int sceIoRemove(const char *p)
     int rc;
     if (io.fail_remove && strstr(p, io.fail_remove))
         return (int)0x80010005u;
-    rc = unlink(p);
+    rc = sceio_remove(p);
     if (!rc && ends_with(p, ".fix") && !ends_with(p, ".fix.tmp"))
         crash_at("intent_removed");
     /* a screenshot removed from the queue itself (never exported/): after the first, a stop */
     if (!rc && !strstr(p, "/exported/") && strstr(p, VJO_QUEUE_DIR "/") &&
         ((n > 4 && !strcmp(p + n - 4, ".jpg")) || (n > 8 && !strcmp(p + n - 8, ".jpg.tmp"))))
         crash_at("swept");
-    return rc < 0 ? (errno == ENOENT ? (int)0x80010002u : -1) : 0;
+    return rc;
 }
 int sceIoSyncByFd(int fd, int flag)
 {
@@ -273,37 +256,13 @@ int sceIoSync(const char *device, unsigned flags)
     }
     return io.fail_sync ? -1 : 0;
 }
-static DIR *dirs[4];
-static char dir_paths[4][256];
 int sceIoDopen(const char *p)
 {
+    int d;
     if (io.fail_dopen_at && ++io.dopens == io.fail_dopen_at)
         return (int)0x80010005u;
-    for (int i = 0; i < 4; i++)
-        if (!dirs[i]) {
-            if (!(dirs[i] = opendir(p)))
-                return -1;
-            snprintf(dir_paths[i], sizeof(dir_paths[i]), "%s", p);
-            return 100 + i;
-        }
-    return -1;
-}
-int sceIoDread(int fd, SceIoDirent *ent)
-{
-    struct dirent *e = readdir(dirs[fd - 100]);
-    char path[600];
-    if (!e)
-        return 0;
-    snprintf(ent->d_name, sizeof(ent->d_name), "%s", e->d_name);
-    snprintf(path, sizeof(path), "%s/%s", dir_paths[fd - 100], e->d_name);
-    TEST_ASSERT(file_stat(path, &ent->d_stat) == 0); /* (the entry's own: io.fail_stat is for getstat calls) */
-    return 1;
-}
-int sceIoDclose(int fd)
-{
-    int rc = closedir(dirs[fd - 100]);
-    dirs[fd - 100] = NULL;
-    return rc;
+    d = sceio_dopen(p);
+    return d < 0 ? -1 : d;
 }
 /* 2026-10-12 09:30:05 on the console, 1791790205 s UTC */
 static SceDateTime clock_local = {2026, 10, 12, 9, 30, 5, 0};
@@ -345,12 +304,8 @@ static int ui_stopped(void *ud)
 }
 static const VjoExportUi ui = {NULL, ui_status, ui_stopped};
 
-static void rm_rf(const char *path)
-{
-    char cmd[300];
-    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", path);
-    TEST_ASSERT(system(cmd) == 0);
-}
+/* path and everything under it gone (test_tmpdir.h's: in-process, no shell, no link followed) */
+static void rm_rf(const char *path) { TEST_ASSERT(vjo_test_remove_tree(path) == 0); }
 
 static void reset(void)
 {
@@ -530,16 +485,63 @@ static int count_dir(const char *dir, const char *suffix)
     return n;
 }
 
-/* Every file under the queue, with its bytes: a snapshot to compare. */
+/* Every file under the queue (its path below ux0:data/VitaJPOverlay, in byte order) with its bytes' SHA-256: a
+ * snapshot to compare. In-process (no shell), no link followed (test_tmpdir.h's rule). */
+static char snap_paths[512][256];
+static int snap_count;
+static void snap_walk(const char *dir)
+{
+    char path[PATH_MAX];
+    struct dirent *e;
+    struct stat st;
+    DIR *d = opendir(dir);
+    TEST_ASSERT(d != NULL);
+    while ((e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+            continue;
+        TEST_ASSERT(snprintf(path, sizeof(path), "%s/%s", dir, e->d_name) < (int)sizeof(path));
+        TEST_ASSERT(lstat(path, &st) == 0);
+        if (S_ISDIR(st.st_mode))
+            snap_walk(path);
+        else if (S_ISREG(st.st_mode)) {
+            TEST_ASSERT(snap_count < 512 && strlen(path) < sizeof(snap_paths[0]));
+            snprintf(snap_paths[snap_count++], sizeof(snap_paths[0]), "%s", path);
+        }
+    }
+    closedir(d);
+}
+static int snap_order(const void *a, const void *b) { return strcmp(a, b); }
 static char *snapshot(void)
 {
     static char buf[1 << 16];
-    FILE *p = popen("cd 'ux0:data/VitaJPOverlay' && find anki_queue -type f | sort | xargs -r sha256sum", "r");
-    size_t n;
-    TEST_ASSERT(p != NULL);
-    n = fread(buf, 1, sizeof(buf) - 1, p);
-    buf[n] = '\0';
-    pclose(p);
+    static uint8_t data[1 << 20];
+    size_t used = 0;
+    char cwd[PATH_MAX];
+    TEST_ASSERT(getcwd(cwd, sizeof(cwd)) != NULL && chdir("ux0:data/VitaJPOverlay") == 0);
+    snap_count = 0;
+    snap_walk("anki_queue");
+    qsort(snap_paths, (size_t)snap_count, sizeof(snap_paths[0]), snap_order);
+    buf[0] = '\0';
+    for (int i = 0; i < snap_count; i++) {
+        FILE *f = fopen(snap_paths[i], "rb");
+        unsigned char sha[32];
+        br_sha256_context h;
+        size_t n;
+        TEST_ASSERT(f != NULL);
+        n = fread(data, 1, sizeof(data), f);
+        TEST_ASSERT(n < sizeof(data) && !ferror(f));
+        fclose(f);
+        br_sha256_init(&h);
+        br_sha256_update(&h, data, n);
+        br_sha256_out(&h, sha);
+        for (int k = 0; k < 32 && used + 3 < sizeof(buf); k++)
+            used += (size_t)snprintf(buf + used, sizeof(buf) - used, "%02x", sha[k]);
+        if (used < sizeof(buf))
+            used += (size_t)snprintf(buf + used, sizeof(buf) - used, "  %s\n", snap_paths[i]);
+        if (used >= sizeof(buf))
+            used = sizeof(buf) - 1;
+    }
+    TEST_ASSERT(chdir(cwd) == 0);
     return buf;
 }
 

@@ -36,9 +36,6 @@ class PackageModels(unittest.TestCase):
         lm_spec = ("https://fixture.invalid/LM", len(self.lm), hashlib.sha256(self.lm).hexdigest())
         lms = {name: lm_spec for name in prepare.VOCR_LM_ASSETS}
         vocr4 = {name: vocr3_spec for name in prepare.VOCR4_ASSETS}
-        self.vocr5 = b"tiny VOCR5 asset fixture, not OCR weights!!"
-        vocr5_spec = ("https://fixture.invalid/VOCR5", len(self.vocr5), hashlib.sha256(self.vocr5).hexdigest())
-        vocr5 = {name: vocr5_spec for name in prepare.VOCR5_ASSETS}
         self.vocr6 = b"tiny VOCR6 asset fixture, not OCR weights!!"
         vocr6_spec = ("https://fixture.invalid/VOCR6", len(self.vocr6), hashlib.sha256(self.vocr6).hexdigest())
         vocr6 = {name: vocr6_spec for name in prepare.VOCR6_ASSETS}
@@ -78,7 +75,6 @@ class PackageModels(unittest.TestCase):
             self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
             self.enterContext(mock.patch.object(module, "VOCR_LM_ASSETS", lms))
             self.enterContext(mock.patch.object(module, "VOCR4_ASSETS", vocr4))
-            self.enterContext(mock.patch.object(module, "VOCR5_ASSETS", vocr5))
             self.enterContext(mock.patch.object(module, "VOCR6_ASSETS", vocr6))
             self.enterContext(mock.patch.object(module, "VOCR5V_ASSETS", vocr5v))
         self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
@@ -86,8 +82,6 @@ class PackageModels(unittest.TestCase):
 
     def fixture_of(self, name):
         """The fixture bytes setUp pins a recognizer's release table to (its asset's own)."""
-        if name in prepare.VOCR5_ASSETS:
-            return self.vocr5
         if name in prepare.VOCR6_ASSETS:
             return self.vocr6
         if name in prepare.VOCR5V_ASSETS:
@@ -105,9 +99,7 @@ class PackageModels(unittest.TestCase):
             (self.models / name).write_bytes(self.lm)
         for name in prepare.VOCR4_ASSETS:
             (self.models / name).write_bytes(self.vocr3)
-        for name in prepare.VOCR5_ASSETS:  # the model sizes': Small's
-            (self.models / name).write_bytes(self.vocr5)
-        for name in prepare.VOCR6_ASSETS:  # Normal's and Large's
+        for name in prepare.VOCR6_ASSETS:  # the model sizes'
             (self.models / name).write_bytes(self.vocr6)
         for name in prepare.VOCR5V_ASSETS:  # the vertical model (ocr_vertical)
             (self.models / name).write_bytes(self.vertical)
@@ -178,8 +170,8 @@ class PackageModels(unittest.TestCase):
                 self.package_fixture(vpk=vpk, record=record)
 
     def test_bundle_ships_the_three_model_sizes(self):
-        """API 21: each model size's pinned recognizer (tools/model_tiers.json: VOCR5-S Small, from vita-vn-ocr
-        v0.3.6-head2level.1, VOCR6-N Normal, the default, and VOCR6-L Large, from v0.4.0-vocr6.1) and the LMs; the
+        """API 21: each model size's pinned recognizer (tools/model_tiers.json: VOCR6-S Small, VOCR6-N Normal, the
+        default, and VOCR6-L Large, from vita-vn-ocr v0.4.1-vocr6.2) and the LMs; the
         earlier generations' (VOCR3's, VOCR4-W20, v0.2.0's), which no setting selects any more, are
         not shipped."""
         package = self.package_fixture()
@@ -219,11 +211,12 @@ class PackageModels(unittest.TestCase):
                 if name not in sizes:
                     self.assertNotIn(release.DATA + "ocr/" + name, manifest["files"])
             self.assertIn(release.DATA + "ocr/LM-" + prepare.VOCR_LM_ATTRIBUTION, manifest["files"])
-            # the model sizes' attribution (v0.3.6-head2level.1's ATTRIBUTION.md) ships beside them, its own bytes
+            # VOCR5's attribution (v0.3.6-head2level.1's ATTRIBUTION.md: the checkpoints the sizes start from) ships
+            # beside them, its own bytes
             self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_MODEL_ATTRIBUTION), self.model_attribution)
             self.assertEqual(manifest["files"][release.DATA + "ocr/" + prepare.VOCR_MODEL_ATTRIBUTION]["sha256"],
                              hashlib.sha256(self.model_attribution).hexdigest())
-            # and VOCR6's (v0.4.0-vocr6.1's ATTRIBUTION.md), Normal's and Large's, beside it
+            # and VOCR6's (v0.4.1-vocr6.2's ATTRIBUTION.md), the three sizes', beside it
             self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR6_ATTRIBUTION), self.vocr6_attribution)
             self.assertEqual(manifest["files"][release.DATA + "ocr/" + prepare.VOCR6_ATTRIBUTION]["sha256"],
                              hashlib.sha256(self.vocr6_attribution).hexdigest())
@@ -239,13 +232,12 @@ class PackageModels(unittest.TestCase):
                 self.assertEqual(models[name]["release"], "bee-san/vita-vn-ocr " + prepare.release_assets(name)[1])
                 self.assertEqual((models[name]["bytes"], models[name]["sha256"]),
                                  (len(self.fixture_of(name)), hashlib.sha256(self.fixture_of(name)).hexdigest()))
-            # Small comes from VOCR5's head-gated pre-release (API 42; v0.3.0's recognizer with its gate), Normal and
-            # Large from VOCR6's (their two-level heads)
-            for name in prepare.VOCR5_ASSETS:
-                self.assertEqual(models[name]["release"], "bee-san/vita-vn-ocr v0.3.6-head2level.1")
+            # every size comes from VOCR6's follow-up pre-release (Small plain, Normal's head gate and two-level head,
+            # Large's two-level head)
+            self.assertEqual(set(sizes), set(prepare.VOCR6_ASSETS))
             for name in prepare.VOCR6_ASSETS:
                 self.assertEqual((models[name]["release"], models[name]["generation"]),
-                                 ("bee-san/vita-vn-ocr v0.4.0-vocr6.1", "VOCR6"))
+                                 ("bee-san/vita-vn-ocr v0.4.1-vocr6.2", "VOCR6"))
             self.assertEqual(manifest["defaults"]["vocr_tier"], "normal")
             for key in ("vocr_model", "vocr_fallback_model"):
                 self.assertNotIn(key, manifest["defaults"])
@@ -307,12 +299,12 @@ class PackageModels(unittest.TestCase):
         self.assertFalse((self.root / "package.zip").exists())
 
     def test_vocr6s_attribution_is_required_and_pinned(self):
-        """v0.4.0-vocr6.1's ATTRIBUTION.md (what VOCR6's Normal and Large were fine-tuned on beyond VOCR5's data, the
+        """v0.4.1-vocr6.2's ATTRIBUTION.md (what VOCR6's three sizes were fine-tuned on beyond VOCR5's data, the
         owner's hooked games among it, the weights' non-commercial terms and the test sets' disclosures) ships as
         ocr/VOCR6-ATTRIBUTION.md: a package without it, or with VOCR5's under its name, is refused."""
         self.write_models()
         (self.models / prepare.VOCR6_ATTRIBUTION).unlink()
-        with self.assertRaisesRegex(ValueError, "VOCR6-ATTRIBUTION.md is missing or not release v0.4.0-vocr6.1"):
+        with self.assertRaisesRegex(ValueError, "VOCR6-ATTRIBUTION.md is missing or not release v0.4.1-vocr6.2"):
             self.package_fixture(write_models=False)
         (self.models / prepare.VOCR6_ATTRIBUTION).write_bytes(self.model_attribution)  # VOCR5's text
         with self.assertRaisesRegex(ValueError, "VOCR6-ATTRIBUTION.md is missing or not release"):
@@ -396,7 +388,7 @@ class PackageModels(unittest.TestCase):
 
     def test_manifest_names_each_model_generation_and_the_local_engine(self):
         """The bundled metadata the Rubi app's label comes from: each model's generation (by its
-        release), and the local engine's name for the package's default size, VOCR6 (Small's is VOCR5)."""
+        release), and the local engine's name for the package's default size, VOCR6 (every size's)."""
         package = self.package_fixture()
         with zipfile.ZipFile(package) as archive:
             manifest = json.loads(archive.read("package-manifest.json"))
@@ -413,17 +405,17 @@ class PackageModels(unittest.TestCase):
         default = next(n for n, m in manifest["models"].items() if m.get("tier") == manifest["defaults"]["vocr_tier"])
         self.assertEqual(manifest["defaults"]["ocr_engine"], manifest["models"][default]["generation"])
         # a release's generation reaches the manifest through its tag, and only that release's models
-        with mock.patch.dict(prepare.VOCR_GENERATION, {prepare.VOCR5_TAG: "VOCR7", prepare.VOCR3_TAG: "VOCR9"}), \
-             mock.patch.dict(release.VOCR_GENERATION, {prepare.VOCR5_TAG: "VOCR7", prepare.VOCR3_TAG: "VOCR9"}):
+        with mock.patch.dict(prepare.VOCR_GENERATION, {prepare.VOCR6_TAG: "VOCR7", prepare.VOCR3_TAG: "VOCR9"}), \
+             mock.patch.dict(release.VOCR_GENERATION, {prepare.VOCR6_TAG: "VOCR7", prepare.VOCR3_TAG: "VOCR9"}):
             (self.root / "package.zip").unlink()
             package = self.package_fixture()
             with zipfile.ZipFile(package) as archive:
                 manifest = json.loads(archive.read("package-manifest.json"))
-        moved = {"VOCR5": "VOCR7"}  # each size's model takes its own release's generation (VOCR6's are not moved)
+        moved = {"VOCR6": "VOCR7"}  # each size's model takes its own release's generation
         self.assertEqual(manifest["defaults"]["ocr_engine"], moved.get(generation[normal], generation[normal]))
         for name, g in generation.items():
             self.assertEqual(manifest["models"][name]["generation"], moved.get(g, g), name)
-        for name, g in vertical.items():  # its own release's: v0.3.0's move does not reach it
+        for name, g in vertical.items():  # its own release's (VOCR5, v0.3.2-vertical.1): the move does not reach it
             self.assertEqual(manifest["models"][name]["generation"], g, name)
         self.assertNotIn("VOCR9", json.dumps(manifest))  # VOCR3's release ships nothing
 

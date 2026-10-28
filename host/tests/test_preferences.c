@@ -6,6 +6,7 @@
 #include "../../shell/shell.h"
 #include "../../core/regions.h" /* #358: VJO_REGION_* of the Shell's region.ini loads */
 #include "../../include/vjo_vocr_sizes.h"
+#include "config_golden.h" /* #418: the saves' golden file */
 #include <psp2/io/fcntl.h>
 #include <errno.h>
 #include <stdint.h>
@@ -1215,6 +1216,174 @@ static void test_a_bom_led_line_is_the_same_setting_to_every_writer(void)
     TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.n_warnings == 0);
 }
 
+/* #418 (cleanup package P2): the Rubi app's saves of a config.ini text (len bytes): the four-preference save made
+ * with the text's own values (as the install's, settings/install.c plan_config_ini), the Anki page's keys, the
+ * secrets-free copy a save publishes first (vjo_config_patch_keys with no key) and app.ini's patch, which has no
+ * removed-key rules. full: each output on its line, escaped; else (a fixture's, long) its bytes, a hash and the lines
+ * it drops and adds (golden_line_diff, P2's audit F4). */
+static void golden_saves(GoldenOut *o, const char *text, size_t len, int full)
+{
+    static char out[2 * (VJO_CONFIG_TEXT_MAX + 1)], keys_out[2 * (VJO_CONFIG_TEXT_MAX + 1)];
+    static const char *const anki_keys[] = {"anki_mining", "anki_screenshot", "anki_screenshot_trim_bars"};
+    static const char *const anki_values[] = {"on", "off", "on"};
+    static const char *const what[] = {"preferences", "anki_keys", "clean", "app_ini"};
+    VjoConfig c;
+    int keys_n = -1;
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, text, len);
+    for (int k = 0; k < 4; k++) {
+        int n = k == 0 ? vjo_config_patch_preferences(text, len, c.vocr_tier, c.japanese_only_selection, c.highlight_mode,
+                                                      c.local_dictionary_results, out, sizeof(out))
+              : k == 1 ? vjo_config_patch_keys(text, len, anki_keys, anki_values, 3, out, sizeof(out))
+              : k == 2 ? vjo_config_patch_keys(text, len, NULL, NULL, 0, out, sizeof(out))
+                       : vjo_ini_patch_keys(text, len, anki_keys, anki_values, 3, out, sizeof(out));
+        golden_printf(o, "  %s: ", what[k]);
+        if (k == 1 && n >= 0) {
+            memcpy(keys_out, out, (size_t)n);
+            keys_n = n;
+        }
+        if (n < 0) {
+            golden_printf(o, "%d\n", n);
+        } else if (full && k == 2 && (size_t)n == len && !memcmp(out, text, len)) {
+            golden_puts(o, "(unchanged)\n"); /* the copy a save makes without a secret's line */
+        } else if (full && k == 3 && n == keys_n && !memcmp(out, keys_out, (size_t)n)) {
+            golden_puts(o, "(as anki_keys)\n"); /* no removed-key line to keep */
+        } else if (full) {
+            golden_puts(o, "\"");
+            golden_escape_short(o, out, (size_t)n);
+            golden_puts(o, "\"\n");
+        } else {
+            golden_printf(o, "%d bytes, fnv1a %016llx\n", n, golden_hash(out, (size_t)n));
+            golden_line_diff(o, text, len, out, (size_t)n);
+        }
+    }
+}
+
+/* A record's lines as vjo_config_removed_line sees them (K keep, D drop, R replace with its line, S a removed
+ * setting dropped), then its saves. */
+static void golden_saves_record(const char *record, size_t n, void *arg)
+{
+    GoldenOut *o = (GoldenOut *)arg;
+    golden_puts(o, "> ");
+    golden_escape_short(o, record, n);
+    golden_puts(o, "\n  removed_line:");
+    for (size_t i = 0; i < n;) {
+        size_t b = i;
+        const char *r = NULL;
+        while (i < n && record[i] != '\n') i++;
+        if (i < n) i++;
+        int kind = vjo_config_removed_line(record + b, i - b, &r);
+        golden_printf(o, " %c", kind >= 0 && kind <= 3 ? "KDRS"[kind] : '?');
+        if (r) {
+            golden_puts(o, "(");
+            golden_escape(o, r, strlen(r));
+            golden_puts(o, ")");
+        }
+    }
+    golden_puts(o, "\n");
+    golden_saves(o, record, n, 1);
+}
+
+/* The saves' refusals and limits (P2's audit F4: the branches no record reaches): invalid choices, keys and values,
+ * NULL and embedded NUL, and each output's room around its exact size: a capacity of the output's bytes + 1 (the
+ * NUL), one less, one more, 3 and 4 (a BOM's), 0. */
+static void golden_save_limits(GoldenOut *o)
+{
+    static char out[8192];
+    static const char *const texts[] = {"", "\xEF\xBB\xBF", "\xEF\xBB\xBFvocr_tier = large\n",
+                                        "anki_mining = on\nfont_size_ja = 20", "dictionary = jpdb\nlog_host = x\n"};
+    static const char *const ok_keys[] = {"anki_mining", "anki_screenshot"}, *ok_values[] = {"on", "off"};
+    static const char *const nl_values[] = {"on\n", "off"}, *cr_values[] = {"on", "o\rff"};
+    static const char *const long_key[] = {"k123456789012345678901234567890123456789"}; /* 40 bytes */
+    static const char *const key39[] = {"k12345678901234567890123456789012345678"};
+    static const char *const one_value[] = {"x"};
+    golden_puts(o, "= the saves' refusals and limits\n");
+    for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
+        const char *text = texts[t];
+        size_t len = strlen(text);
+        golden_puts(o, len ? "> " : "> (empty)");
+        golden_escape(o, text, len);
+        golden_puts(o, "\n");
+        /* the four-preference save's choices, each invalid once */
+        static const struct { int tier, ja, hl, results; } prefs[] = {
+            {VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 2}, {0, 0, 0, 2}, {4, 0, 0, 2}, {2, 2, 0, 2}, {2, -1, 0, 2},
+            {2, 0, 2, 2}, {2, 0, 0, 0}, {2, 0, 0, 9}, {3, 1, VJO_HIGHLIGHT_CHARACTER, 8}};
+        golden_puts(o, "  preferences choices:");
+        for (size_t k = 0; k < sizeof(prefs) / sizeof(prefs[0]); k++)
+            golden_printf(o, " %d", vjo_config_patch_preferences(text, len, prefs[k].tier, prefs[k].ja, prefs[k].hl,
+                                                                  prefs[k].results, out, sizeof(out)));
+        golden_puts(o, "\n");
+        /* the generic patch's keys and values */
+        golden_printf(o, "  keys: n=-1 %d, n=9 %d, a value with LF %d, with CR %d, a 40-byte key %d, a 39-byte key %d\n",
+                      vjo_config_patch_keys(text, len, ok_keys, ok_values, -1, out, sizeof(out)),
+                      vjo_config_patch_keys(text, len, ok_keys, ok_values, 9, out, sizeof(out)),
+                      vjo_config_patch_keys(text, len, ok_keys, nl_values, 2, out, sizeof(out)),
+                      vjo_config_patch_keys(text, len, ok_keys, cr_values, 2, out, sizeof(out)),
+                      vjo_config_patch_keys(text, len, long_key, one_value, 1, out, sizeof(out)),
+                      vjo_config_patch_keys(text, len, key39, one_value, 1, out, sizeof(out)));
+        /* each save's room: its exact size, one less, one more, a BOM's 3 and 4, and none */
+        for (int k = 0; k < 4; k++) {
+            int full = k == 0 ? vjo_config_patch_preferences(text, len, 3, 1, 1, 8, out, sizeof(out))
+                     : k == 1 ? vjo_config_patch_keys(text, len, ok_keys, ok_values, 2, out, sizeof(out))
+                     : k == 2 ? vjo_config_patch_keys(text, len, NULL, NULL, 0, out, sizeof(out))
+                              : vjo_ini_patch_keys(text, len, ok_keys, ok_values, 2, out, sizeof(out));
+            size_t caps[] = {(size_t)full + 1, (size_t)full, (size_t)full + 2, 3, 4, 0};
+            golden_printf(o, "  %s room (%d):", k == 0 ? "preferences" : k == 1 ? "keys" : k == 2 ? "clean" : "app_ini",
+                          full);
+            for (size_t c = 0; c < sizeof(caps) / sizeof(caps[0]); c++) {
+                if (full < 0 && c < 3) continue;
+                int n = k == 0 ? vjo_config_patch_preferences(text, len, 3, 1, 1, 8, out, caps[c])
+                      : k == 1 ? vjo_config_patch_keys(text, len, ok_keys, ok_values, 2, out, caps[c])
+                      : k == 2 ? vjo_config_patch_keys(text, len, NULL, NULL, 0, out, caps[c])
+                               : vjo_ini_patch_keys(text, len, ok_keys, ok_values, 2, out, caps[c]);
+                golden_printf(o, " %zu:%d", caps[c], n);
+            }
+            golden_puts(o, "\n");
+        }
+    }
+    /* NULL text with a length, a NULL output, an embedded NUL, a text over VJO_CONFIG_TEXT_MAX */
+    static char big[VJO_CONFIG_TEXT_MAX + 2];
+    memset(big, 'x', sizeof(big) - 1);
+    golden_printf(o, "> (NULL, NUL, too long)\n  preferences: %d %d %d %d\n  keys: %d %d %d %d\n",
+                  vjo_config_patch_preferences(NULL, 1, 2, 0, 0, 2, out, sizeof(out)),
+                  vjo_config_patch_preferences("a\0b", 3, 2, 0, 0, 2, out, sizeof(out)),
+                  vjo_config_patch_preferences("a", 1, 2, 0, 0, 2, NULL, 10),
+                  vjo_config_patch_preferences(big, sizeof(big) - 1, 2, 0, 0, 2, out, sizeof(out)),
+                  vjo_config_patch_keys(NULL, 1, NULL, NULL, 0, out, sizeof(out)),
+                  vjo_config_patch_keys("a\0b", 3, NULL, NULL, 0, out, sizeof(out)),
+                  vjo_config_patch_keys("a", 1, NULL, NULL, 0, NULL, 10),
+                  vjo_config_patch_keys(big, sizeof(big) - 1, NULL, NULL, 0, out, sizeof(out)));
+}
+
+/* Their outputs for the fixtures, the template and each record of host/tests/fixtures/config-lines.txt, against
+ * host/tests/fixtures/config-saves.golden (host/tests/config_golden.h). */
+static void test_config_saves_golden(void)
+{
+    static const char *const files[] = {"host/tests/fixtures/config-old-app-test2.ini",
+                                        "host/tests/fixtures/config-test3-owner.ini", "docs/config.example.ini"};
+    GoldenOut o = {0};
+    char path[512], why[GOLDEN_WHY];
+    golden_puts(&o, "# The Rubi app's saves of the config fixtures (host/tests/test_preferences.c config_saves_golden; "
+                    "VJO_UPDATE_GOLDEN=1 rewrites this file)\n");
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        size_t len;
+        snprintf(path, sizeof(path), "%s/%s", VJO_SOURCE_DIR, files[i]);
+        char *text = golden_read(path, &len);
+        TEST_ASSERT_(text != NULL, "%s", path);
+        golden_printf(&o, "= %s\n", files[i]);
+        golden_saves(&o, text, len, 0);
+        free(text);
+    }
+    snprintf(path, sizeof(path), "%s/host/tests/fixtures/config-lines.txt", VJO_SOURCE_DIR);
+    TEST_CHECK(golden_records(path, golden_saves_record, &o) > 300);
+    golden_long_records(golden_saves_record, &o);
+    golden_save_limits(&o);
+    snprintf(path, sizeof(path), "%s/host/tests/fixtures/config-saves.golden", VJO_SOURCE_DIR);
+    int rc = golden_check(&o, path, why, sizeof(why));
+    TEST_CHECK_(rc >= 0, "%s", why);
+    free(o.p);
+}
+
 /* region.ini's text ("-" without the file). */
 static const char *region_text(void)
 {
@@ -1306,6 +1475,7 @@ TEST_LIST = {
     {"shell_runs_on_the_defaults_and_never_writes_config_ini", test_shell_runs_on_the_defaults_without_writing_config_ini},
     {"shell_reads_a_stamp_file_s_first_line_whole", test_file_line_and_exists},
     {"suggest_a_text_box_lives_in_region_ini_and_the_actual_Shell_reads_it", test_suggest_lives_in_region_ini_and_the_shell_reads_it},
+    {"config_saves_golden", test_config_saves_golden},
     {NULL, NULL}
 };
 

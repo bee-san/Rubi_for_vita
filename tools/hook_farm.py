@@ -249,9 +249,10 @@ MODES_BY_DISASSEMBLY = {
     # adds r2, r5, #0; adds.w r0, r4, #0x9c0; ... (at +0x12C76, 2 mod 4, where no ARM instruction can start)
     "PCSG00509": ("2a1c14f51c6000255ff482710023fef7", 1),
     # mov r12, sp; push {r4-r8, r11, r12, lr}; sub sp, sp, #32; mov r11, sp (as Thumb its fourth halfword does not
-    # decode); the same bytes for PCSG00807 (both Rejet's Unity builds)
+    # decode); the same bytes for PCSG00807 and PCSG00706 (Rejet's Unity builds; PCSG00706's HistoryManager.Add, #394)
     "PCSG00553": ("0dc0a0e1f0592de920d04de20db0a0e1", 0),
     "PCSG00807": ("0dc0a0e1f0592de920d04de20db0a0e1", 0),
+    "PCSG00706": ("0dc0a0e1f0592de920d04de20db0a0e1", 0),
 }
 
 

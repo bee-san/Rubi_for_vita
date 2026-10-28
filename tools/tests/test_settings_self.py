@@ -11,11 +11,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tools/tests"))
 import check_settings_self as check  # noqa: E402
+from self_fixture import PT_SCE_RELA, Segment, fself  # noqa: E402
 
 CODE, DATA = 0x81000000, 0x81090000
 PRIORITY_AT, MASK_AT = 0x200, 0x204  # the two thread values in the code segment's .rodata
@@ -46,37 +47,13 @@ def code_segment(priority=0x10000100, mask=0x80000, pointers=True, magic=b"PSP2"
 
 def make_self(code=None, attribute=0x0E, phycont=0, total=0xC800, compress=True, control6=True,
               data_memsz=0x186C30, is_used=1):
-    """An fself: the SCE header, app info, ELF header, program headers, segment infos, the version,
-    control infos 4, 5, 6, 7, then the segments from 0x1000, as vita-make-fself writes them."""
-    segments = [(1, CODE, None, code if code is not None else code_segment()),
-                (1, DATA, data_memsz, b"\x5a" * 0x1074),
-                (0x60000000, 0, 0, b"\0" * 0x30)]
-    phnum = len(segments)
-    elf_offset, phdr_offset = 0xA0, 0xE0
-    seginfo_offset = phdr_offset + 32 * phnum
-    version_offset = seginfo_offset + 32 * phnum
-    control_offset = version_offset + 16
-    control = struct.pack("<4I", 4, 0x50, 1, 0) + b"\0" * 0x40
-    control += struct.pack("<4I", 5, 0x110, 1, 0) + b"\0" * 0x100
-    if control6:
-        control += struct.pack("<4I", 6, 0x110, 1, 0) + struct.pack("<4I", is_used, attribute, phycont, total) + b"\0" * 0xF0
-    control += struct.pack("<4I", 7, 0x50, 0, 0) + b"\0" * 0x40
-    out = bytearray(0x1000)
-    struct.pack_into("<4sIHHI", out, 0, b"SCE\0", 3, 0xC0, 1, 0x600)
-    struct.pack_into("<QQQQQQQQQQQQQ", out, 0x10, 0x1000, 0, 0, 0, 4, 0x80, elf_offset, phdr_offset, 0,
-                     seginfo_offset, version_offset, control_offset, len(control))
-    out[elf_offset:elf_offset + 8] = b"\x7fELF\x01\x01\x01\0"
-    struct.pack_into("<HHII", out, elf_offset + 16, 0xFE04, 40, 1, (0 << 30) | INFO_AT)
-    struct.pack_into("<HH", out, elf_offset + 42, 32, phnum)
-    out[control_offset:control_offset + len(control)] = control
-    for index, (kind, vaddr, memsz, blob) in enumerate(segments):
-        stored = zlib.compress(blob, 9) if compress else blob
-        stored += b"\0" * (-len(stored) % 4)  # vita-make-fself's padding, after the zlib stream
-        struct.pack_into("<8I", out, phdr_offset + 32 * index, kind, 0, vaddr, 0, len(blob),
-                         len(blob) if memsz is None else memsz, 5, 16)
-        struct.pack_into("<4Q", out, seginfo_offset + 32 * index, len(out), len(stored), 2 if compress else 1, 2)
-        out += stored
-    return bytes(out)
+    """The app's fself (self_fixture.fself: vita-make-fself's layout, the segments from 0x1000): the code segment
+    with the module info at INFO_AT, the data segment with its .bss and the relocations; control info 6 with these
+    boot parameters, or none."""
+    return fself(Segment(code if code is not None else code_segment(), vaddr=CODE),
+                 Segment(b"\x5a" * 0x1074, memsz=data_memsz, vaddr=DATA),
+                 Segment(b"\0" * 0x30, memsz=0, kind=PT_SCE_RELA),
+                 entry=INFO_AT, compress=compress, boot=(is_used, attribute, phycont, total) if control6 else None)
 
 
 def gfx_symbols():

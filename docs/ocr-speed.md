@@ -195,14 +195,17 @@ frames whose escape fires; with both on (`ocr_head_gate = on`, the default) an e
 333 MHz (0.41, 0.57 and 1.43 s at 444 MHz; the gate alone 0.51, 0.78 and 1.91 s;
 [head gate and two-level head](vita-vn-ocr.md#head-gate-and-two-level-head-api-42)).
 
-**VOCR6** (vita-vn-ocr #125) keeps VOCR5's shapes for Normal and Large, so their weights, arenas and compute a frame
-are VOCR5-N's and VOCR5-L's; Small stays VOCR5-S. Their blobs (`VOCR6_N_w8_2l.vocr` 1,187,616 B, `VOCR6_L_w8_2l.vocr`
-2,475,680 B) carry the two-level head and no gate, which vita-vn-ocr rejected on VOCR6's logits. vita-vn-ocr #146
-estimated all three sizes as shipped by one method (`vita/a9_layers.py` under qemu on the blobs, calibrated to
-VOCR3-H15's console rate, one core, no prefetch credit, a nominal 3-line box): 0.52, 0.79 and 1.87 s at 333 MHz and
-0.41, 0.62 and 1.46 s at 444 MHz (Small with its gate, Normal and Large with the two-level head; 0.63, 0.92 and 2.07 s
-with neither), about 30 and 80 ms more than VOCR5's Normal and Large with both paths. These are what the Rubi app shows
-(`tools/model_tiers.json`); no console has run VOCR6.
+**VOCR6** (vita-vn-ocr #125) keeps VOCR5's shapes for all three sizes, so their weights, arenas and compute a frame
+are VOCR5-S's, VOCR5-N's and VOCR5-L's. The follow-up set this package pins (v0.4.1-vocr6.2, #157:
+`VOCR6.2_S_w8.vocr` 819,792 B, `VOCR6.2_N_w8g2.vocr` 1,189,408 B, `VOCR6.2_L_w8_2l.vocr` 2,475,680 B) carries the
+sections vita-vn-ocr's rules kept on each blob's own logits: none for Small (plain), the head gate (ε = 1e-4) and the
+two-level head for Normal, the two-level head for Large. Its gate fits (vocr6-followup, with #146's driver,
+`eval/vocr6_gate.sh`) estimated all three sizes as shipped by one method (`vita/a9_layers.py` under qemu on the blobs,
+calibrated to VOCR3-H15's console rate, one core, no prefetch credit, a nominal 3-line box): 0.63, 0.77 and 1.88 s at
+333 MHz and 0.50, 0.61 and 1.47 s at 444 MHz (0.63, 0.92 and 2.07 s with neither path; on a real 89-frame Vita box
+0.30, 0.35 and 0.76 s at 333 MHz). Small is about 0.11 s slower than VOCR5-S with its gate (0.52 s), Normal 0.02 s
+faster than v0.4.0-vocr6.1's VOCR6-N (0.79 s, no gate), Large level with v0.4.0's (1.87 s). These are what the Rubi
+app shows (`tools/model_tiers.json`); no console has run VOCR6.
 
 The largest int8 weights whose 3-line box (3 x 640-px lines = 240 CTC frames, plus 0.1 s for the finder and the
 strips) stays under each tier's time, with the LM's top 8: random-init blobs of vita-vn-ocr's `vita/model_tiers.py`

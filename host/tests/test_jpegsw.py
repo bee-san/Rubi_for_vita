@@ -8,7 +8,6 @@ docs/screenshot.jpg, a 960 x 544 picture of a game with the overlay (committed i
 the repository; the private game frames docs/anki.md measures are not used here).
 """
 import io
-import math
 import struct
 import subprocess
 import sys
@@ -18,15 +17,10 @@ from pathlib import Path
 
 from PIL import Image
 
+from testlib import psnr
+
 TOOL = str(Path(sys.argv.pop(1)).resolve())
 ROOT = Path(__file__).resolve().parents[2]
-
-
-def psnr(a, b):
-    """PSNR (dB) of two RGB images of one size."""
-    pa, pb = a.tobytes(), b.tobytes()
-    err = sum((x - y) * (x - y) for x, y in zip(pa, pb)) / len(pa)
-    return 99.0 if not err else 10 * math.log10(255 * 255 / err)
 
 
 def markers(data):

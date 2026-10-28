@@ -34,10 +34,6 @@ import sys
 from pathlib import Path
 
 
-def utf16_len(s):
-    return sum(2 if ord(c) > 0xFFFF else 1 for c in s)
-
-
 def chars_for_units(s, units):
     """The number of code points of s that make `units` UTF-16 units."""
     n = u = 0

@@ -47,6 +47,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import collect_word_lookup_lines as cw  # noqa: E402 (the shared reservation rules)
+from evallib import find_shot  # noqa: E402
 
 DEFAULT_MODELS = ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr")
 HOWS = ("x1", "x2-nearest", "x2-bilinear", "x2-bil-box1", "sub720-bilin", "sub640-bilin", "blur1.0", "blur1.5")
@@ -146,7 +147,7 @@ def collect(args):
                 if why:
                     skipped.setdefault(row["vn"], why)
                     continue
-                shot = next((Path(d) / row["shot"] for d in args.shots if (Path(d) / row["shot"]).exists()), None)
+                shot = find_shot(row["shot"], args.shots)
                 if shot is None or hashlib.sha256(shot.read_bytes()).hexdigest() != row["sha256"]:
                     print(f"blank: {row['shot']} missing or changed", file=sys.stderr)
                     return 2

@@ -52,6 +52,9 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from evallib import lev  # noqa: E402
+
 LINE_COLUMN = 0x0800  # core/vocr_ocr.h VJO_VOCR_LINE_COLUMN
 PAD = 12              # vita-vn-ocr eval/vertical.py: a region is its columns' union plus 12 px (Vita)
 IOU = 0.5
@@ -70,20 +73,6 @@ def norm(s):
     s = s.replace("...", "…").replace("..", "‥")
     s = _DOTS.sub(lambda m: "…" * max(1, len(m.group()) // 3), s)
     return s.translate(_TRANS)
-
-
-def lev(a, b):
-    if a == b:
-        return 0
-    if len(a) < len(b):
-        a, b = b, a
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
 
 
 def iou(a, b):

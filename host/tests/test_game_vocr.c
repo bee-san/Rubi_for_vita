@@ -6,7 +6,8 @@
 static unsigned test_cascade_conf; /* 0: the default; 1001: every line is doubtful */
 #define VJO_GAME_CASCADE_CONF test_cascade_conf
 /* #385's audit F5: the tall-line blocks above a page keep the job's reserve here (the worker's bound is a column's,
- * 57,344 B: the 200-px frames' rectangles are smaller) */
+ * 57,344 B: the 200-px frames' rectangles are smaller). So these tests never take a block under the worker's bound
+ * without the check, as the worker takes a column's (#411's audit nit 4: that exemption is untested here). */
 #define VJO_GAME_LINE_UNCHECKED 4096u
 #ifdef VJO_VOCR_TIERS_TEST
 /* Another package's tier map (host/tests/test_shared_tiers.h): this file's own
@@ -2634,8 +2635,8 @@ static void auto_tries_report_the_last_ones_model(void)
     TEST_CHECK(!memory_live && !capture_live && !line_live);
 }
 
-/* API 47, auto's retry and the stable-text wait: a job waits at most ocr_settle_max_ms (or a press's
- * ocr_settle_press_ms) over all its tries (docs/text-stability.md), and auto's tries are the job's too. The text
+/* API 47, auto's retry and the stable-text wait: a job with the wait waits at most ocr_settle_max_ms over all its
+ * tries (docs/text-stability.md), and auto's tries are the job's too. The text
  * types out for longer than the limit allows the rows to hold still, then holds: the rows' try spends the whole
  * limit waiting (it never held still for the wait), and its rows look like vertical text. The columns' try, and
  * here (no vertical model to read) the rows' try after it, read the screen at once: the job waits no longer than
@@ -3055,8 +3056,9 @@ static void on_columns_weights_refused_read_the_rows(void)
         }
 }
 
-/* #385's audit F7: the step log of on's two tries. Vertical text in a region wider than tall, with a press's flags (the
- * LM's first tier, the cascade, a 150 ms wait, two helpers, the blank-line check): the rows' try hands the job to the
+/* #385's audit F7: the step log of on's two tries. Vertical text in a region wider than tall, with a waiting job's flags
+ * (a background read's, or since #413's audit a press's retry after a torn read: the LM's first tier, the cascade, a
+ * 150 ms wait, two helpers, the blank-line check): the rows' try hands the job to the
  * columns' try (auto's on the tall region the same). Its memory checks leave the log with its blocks (it read
  * nothing, and a later try of rows checks the sizes again), so no CHECK step comes before its find step of kind 2,
  * and the columns' try keeps every step a job of the vertical model alone logs on the same frame (its check, blocks,
@@ -3119,7 +3121,7 @@ static void on_tries_keep_the_last_try_s_steps(void)
 
 /* #385's audit F5 (AGENTS.md rule 3): a job of columns' rectangle (#379: the tall-line block for its columns together)
  * is taken only from what the game has free beyond the job's reserve and its blocks still to come. At a free memory
- * where the columns' check passes with a page less than the rectangle to spare, the rectangle is refused and the
+ * where the columns' check passes with a byte less than the rectangle's pages to spare, the rectangle is refused and the
  * columns are read one by one, each in a smaller block of its own: the same text as with room. With the blank-line
  * check the rectangle is fetched before the vertical model's weights are read, and before it took their room: they
  * were refused and the job read the columns' text as rows (find kind 5). Without the check the weights come first,
@@ -3155,7 +3157,7 @@ static void columns_rectangle_keeps_the_reserve(void)
         r.tiers = VJO_VOCR_TIERS_ALL;
         r.speed = VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT | VJO_GAME_OCR_S_NOCACHE;
         tall_columns_frame(&r);
-        available = (int)(need + rect - 4096u);
+        available = (int)(need + rect - 1u); /* a byte short: the rectangle's block is page-rounded (#411's audit) */
         const uint32_t ledger_line = vjo_ledger_current(&g_game_ledger, GL_LINE);
         int rc = vjo_game_ocr_run_request(&r, &out);
         TEST_CHECK_(line_block_max < rect && !find_steps(&out, 5),
@@ -3171,6 +3173,100 @@ static void columns_rectangle_keeps_the_reserve(void)
         }
         TEST_CHECK(!drop_resident());
     }
+}
+
+/* #411's audit F2 (B2): "at least as tall as wide" includes a square region: with on, a 200 x 200 box of columns is read
+ * as columns from the job's first try (its first memory check is the vertical model's, by name), with no rows' try (no
+ * find step of kind 2 or 4). Without the release file the columns' try cannot read the vertical model and the rows are
+ * read after it, the same ordering. No release file needed. */
+static void on_square_region_reads_columns_at_once(void)
+{
+    VjoGameOcrRequest r = setup();
+    VjoGameOcrResult out;
+    r.tiers = VJO_VOCR_TIERS_ALL;
+    r.speed = VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    frame_h = r.fb_height = r.height = 200;
+    columns_pixels(6);
+    (void)vjo_game_ocr_run_request(&r, &out);
+    const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS] = {NULL};
+    const unsigned n = check_steps(&out, s);
+    TEST_CHECK_(!find_steps(&out, 2) && !find_steps(&out, 4) && vertical_opens == 1 && n >= 1 &&
+                    !VJO_GCHECK_TIER(s[0]->kind),
+                "square: find steps of kinds 2 and 4: %u, %u; %u vertical opens; the first check's tier %u", find_steps(&out, 2),
+                find_steps(&out, 4), vertical_opens, n ? VJO_GCHECK_TIER(s[0]->kind) : 99u);
+    TEST_CHECK(!memory_live && !capture_live && !line_live);
+    TEST_CHECK(!drop_resident());
+}
+
+/* #411's audit F2 (B3): a job of columns' rectangle keeps the room of its LM too (game_ocr/main.c line_buffer). With the
+ * blank-line check the weights and the LM are read after the rectangle is fetched; at a free memory a page short of the
+ * rectangle beside the vertical model's weights and the LM (the columns' check passes), the rectangle is refused and the
+ * columns read one by one, and the LM is read: the same text as with room. With room for all three the rectangle is
+ * taken. Without the LM's term the rectangle was taken and the LM refused (rc VJO_E_OOM, a greedy reading). */
+static void columns_rectangle_keeps_the_lm_s_room(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent: the LM is not read"); return; }
+    const VjoVocrModel *v = vjo_vocr_model(VJO_VOCR_VERTICAL_NAME);
+    static VjoGameOcrResult roomy, out;
+    TEST_ASSERT(v != NULL);
+    VjoGameOcrRequest r = setup();
+    r.flags = VJO_GAME_OCR_F_BLANK | 1u << VJO_GAME_OCR_LM_SHIFT;
+    r.tiers = VJO_VOCR_TIERS_ALL;
+    r.speed = VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT | VJO_GAME_OCR_S_NOCACHE;
+    tall_columns_frame(&r);
+    (void)vjo_game_ocr_run_request(&r, &roomy);
+    const uint32_t rect = line_block_max;
+    TEST_ASSERT_(rect > VJO_GAME_LINE_UNCHECKED + 4096u && roomy.recognized == 3, "the rectangle %u B, %u read", rect,
+                 (unsigned)roomy.recognized);
+    TEST_CHECK(!drop_resident());
+    const size_t extra = vjo_vocr_lm_job_bytes(v->name) + VJO_GAME_OCR_TEXT_BYTES;
+    const uint32_t need = PAGE_ROUND(vjo_vocr_job_bytes(v->name, 200, 232) + extra) +
+                          PAGE_ROUND(vjo_vocr_capture_bytes(200, 232)) + PAGE_ROUND(v->bytes) +
+                          PAGE_ROUND(VJO_VOCR_LM1_BYTES) + GAME_RESERVE;
+    for (int shortfall = 0; shortfall <= 1; shortfall++) {
+        r = setup();
+        r.flags = VJO_GAME_OCR_F_BLANK | 1u << VJO_GAME_OCR_LM_SHIFT;
+        r.tiers = VJO_VOCR_TIERS_ALL;
+        r.speed = VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT | VJO_GAME_OCR_S_NOCACHE;
+        tall_columns_frame(&r);
+        available = (int)(need + rect - (shortfall ? 4096u : 0u));
+        const int rc = vjo_game_ocr_run_request(&r, &out);
+        int lm_rc = 1;
+        for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+            if (out.step[i].id == VJO_GSTEP_LM) lm_rc = out.step[i].rc;
+        TEST_CHECK_(rc == VJO_OK && out.recognized == 3 && lm_allocations == 1u && !lm_rc &&
+                        (shortfall ? line_block_max < rect : line_block_max == rect) && !strcmp(out.text, roomy.text),
+                    "%s: rc %d, %u read, LM blocks %u (its step's rc %d), the largest tall-line block %u B (the rectangle "
+                    "%u B), the same text %d", shortfall ? "a page short" : "with room", rc, (unsigned)out.recognized,
+                    lm_allocations, lm_rc, line_block_max, rect, !strcmp(out.text, roomy.text));
+        TEST_CHECK(!memory_live && !capture_live && !line_live);
+        TEST_CHECK(!drop_resident());
+    }
+}
+
+/* #411's audit F2 (B14): #385's audit F6 keys on the job's check, so a game whose vertical model's file failed
+ * (columns_bad: the file absent, ENOENT) reads its later tall regions' rows with on, unchecked, and never opens the
+ * vertical model again (keyed on the setting it would open it, and log find kind 3, at every job). No release file
+ * needed. */
+static void on_tall_region_after_a_bad_vertical_file_reads_rows(void)
+{
+    VjoGameOcrRequest r = setup();
+    VjoGameOcrResult out;
+    r.tiers = VJO_VOCR_TIERS_ALL;
+    r.speed = VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    tall_columns_frame(&r);
+    vertical_absent = 1;
+    missing_open_rc = (int)0x80010002u; /* ENOENT: an absent file (latches columns_bad) */
+    for (unsigned job = 0; job < 3; job++) { /* no setup() between them: the game's worker keeps columns_bad */
+        const unsigned opens = vertical_opens;
+        (void)vjo_game_ocr_run_request(&r, &out);
+        TEST_CHECK_(vertical_opens - opens == (job ? 0u : 1u) && find_steps(&out, 3) == (job ? 0u : 1u) &&
+                        !find_steps(&out, 1) && !find_steps(&out, 2) && columns_bad,
+                    "job %u: %u vertical opens, find steps of kinds 3, 1 and 2: %u, %u, %u; columns_bad %d", job,
+                    vertical_opens - opens, find_steps(&out, 3), find_steps(&out, 1), find_steps(&out, 2), columns_bad);
+        TEST_CHECK(!memory_live && !capture_live && !line_live);
+    }
+    TEST_CHECK(!drop_resident());
 }
 
 /* The cascade (#89) reads doubtful lines again with the next size up, when that
@@ -3740,6 +3836,10 @@ TEST_LIST = {
      on_tries_keep_the_last_try_s_steps},
     {"#385's audit F5: a job of columns' rectangle keeps the reserve and its weights' room; refused, one by one",
      columns_rectangle_keeps_the_reserve},
+    {"#411's audit F2: on reads a square region's columns at once", on_square_region_reads_columns_at_once},
+    {"#411's audit F2: a job of columns' rectangle keeps its LM's room", columns_rectangle_keeps_the_lm_s_room},
+    {"#411's audit F2: after a bad vertical file, on's tall regions read rows without opening it",
+     on_tall_region_after_a_bad_vertical_file_reads_rows},
     {"the request's flags become the job's policy", request_flags_become_the_policy},
     {"API 26: the text-presence gate in the worker: its file, its step, a wait first on one strip", the_gate_runs_in_the_worker},
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},

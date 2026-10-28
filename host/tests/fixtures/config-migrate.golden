@@ -1,0 +1,2445 @@
+# tools/migrate_config.py on the config fixtures against docs/config.example.ini (tools/tests/test_migrate_config.py test_golden; VJO_UPDATE_GOLDEN=1 rewrites this file)
+= no config.ini (a first install)
+  exit 0
+  report: config.ini: anki_mining = off
+  report: config.ini: anki_screenshot = on
+  report: config.ini: anki_screenshot_trim_bars = on
+  report: config.ini: dictionary = local
+  report: config.ini: font_size_en = 14
+  report: config.ini: font_size_ja = 18
+  report: config.ini: frequency_badge = on
+  report: config.ini: highlight_mode = word
+  report: config.ini: hook_sites = on
+  report: config.ini: hook_trust = on
+  report: config.ini: japanese_only_selection = off
+  report: config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  report: config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  report: config.ini: local_dictionary_results = 2
+  report: config.ini: log_file = on
+  report: config.ini: names_first = auto
+  report: config.ini: non_japanese_filter = lines
+  report: config.ini: ocr_boost_clock = on
+  report: config.ini: ocr_cascade_ms = 2000
+  report: config.ini: ocr_finder = spotter
+  report: config.ini: ocr_head_gate = on
+  report: config.ini: ocr_line_fix = on
+  report: config.ini: ocr_lm = 1000k
+  report: config.ini: ocr_mode = auto
+  report: config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  report: config.ini: ocr_refine_lines = psp
+  report: config.ini: ocr_settle_max_ms = 2000
+  report: config.ini: ocr_settle_ms = 150
+  report: config.ini: ocr_settle_press_ms = 1000
+  report: config.ini: ocr_skip_blank_lines = off
+  report: config.ini: ocr_spotter_refine = off
+  report: config.ini: ocr_text_gate = off
+  report: config.ini: ocr_threads = 3
+  report: config.ini: ocr_vertical = auto
+  report: config.ini: ocr_wait_hint = on
+  report: config.ini: reading_time = adaptive
+  report: config.ini: stick_lookup_ms = 200
+  report: config.ini: subtitle_button = select+r
+  report: config.ini: text_source = auto
+  report: config.ini: toggle_button = l+r
+  report: config.ini: vocr_tier = normal
+= host/tests/fixtures/config-old-app-test2.ini
+  exit 0
+  @@ -25 +25 @@
+  - japanese_only_selection = off
+  + japanese_only_selection = on
+  @@ -58 +58 @@
+  - text_source = auto
+  + text_source = ocr
+  @@ -132 +132 @@
+  - anki_mining = off
+  + anki_mining = on
+  report+ config.ini: anki_audio_url removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+  report+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+  report+ config.ini: hachidori_host removed
+  report+ config.ini: jiten_api_key removed
+  report+ config.ini: jpdb_api_key removed
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+  report+ config.ini: ocr_backend removed
+  report+ config.ini: vocr_fallback_model removed
+  report+ config.ini: vocr_model removed
+  report- config.ini: anki_mining = off
+  report- config.ini: dictionary = local
+  report- config.ini: font_size_en = 14
+  report- config.ini: font_size_ja = 18
+  report- config.ini: highlight_mode = word
+  report- config.ini: japanese_only_selection = off
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  report- config.ini: log_file = on
+  report- config.ini: non_japanese_filter = lines
+  report- config.ini: ocr_cascade_ms = 2000
+  report- config.ini: ocr_lm = 1000k
+  report- config.ini: ocr_mode = auto
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  report- config.ini: ocr_refine_lines = psp
+  report- config.ini: ocr_settle_max_ms = 2000
+  report- config.ini: ocr_settle_ms = 150
+  report- config.ini: ocr_skip_blank_lines = off
+  report- config.ini: subtitle_button = select+r
+  report- config.ini: text_source = auto
+  report- config.ini: toggle_button = l+r
+= host/tests/fixtures/config-test3-owner.ini
+  exit 0
+  @@ -25 +25 @@
+  - japanese_only_selection = off
+  + japanese_only_selection = on
+  @@ -58 +58 @@
+  - text_source = auto
+  + text_source = ocr
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  @@ -132 +132 @@
+  - anki_mining = off
+  + anki_mining = on
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+  report+ config.ini: ocr_backend removed
+  report- config.ini: anki_mining = off
+  report- config.ini: dictionary = local
+  report- config.ini: font_size_en = 14
+  report- config.ini: font_size_ja = 18
+  report- config.ini: highlight_mode = word
+  report- config.ini: japanese_only_selection = off
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  report- config.ini: log_file = on
+  report- config.ini: non_japanese_filter = lines
+  report- config.ini: ocr_boost_clock = on
+  report- config.ini: ocr_cascade_ms = 2000
+  report- config.ini: ocr_lm = 1000k
+  report- config.ini: ocr_mode = auto
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  report- config.ini: ocr_refine_lines = psp
+  report- config.ini: ocr_settle_max_ms = 2000
+  report- config.ini: ocr_settle_ms = 150
+  report- config.ini: ocr_settle_press_ms = 1000
+  report- config.ini: ocr_skip_blank_lines = off
+  report- config.ini: ocr_threads = 3
+  report- config.ini: subtitle_button = select+r
+  report- config.ini: text_source = auto
+  report- config.ini: toggle_button = l+r
+  report- config.ini: vocr_tier = normal
+= docs/config.example.ini
+  exit 1
+  report- config.ini: anki_mining = off
+  report- config.ini: anki_screenshot = on
+  report- config.ini: anki_screenshot_trim_bars = on
+  report- config.ini: dictionary = local
+  report- config.ini: font_size_en = 14
+  report- config.ini: font_size_ja = 18
+  report- config.ini: frequency_badge = on
+  report- config.ini: highlight_mode = word
+  report- config.ini: hook_sites = on
+  report- config.ini: hook_trust = on
+  report- config.ini: japanese_only_selection = off
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  report- config.ini: local_dictionary_results = 2
+  report- config.ini: log_file = on
+  report- config.ini: names_first = auto
+  report- config.ini: non_japanese_filter = lines
+  report- config.ini: ocr_boost_clock = on
+  report- config.ini: ocr_cascade_ms = 2000
+  report- config.ini: ocr_finder = spotter
+  report- config.ini: ocr_head_gate = on
+  report- config.ini: ocr_line_fix = on
+  report- config.ini: ocr_lm = 1000k
+  report- config.ini: ocr_mode = auto
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  report- config.ini: ocr_refine_lines = psp
+  report- config.ini: ocr_settle_max_ms = 2000
+  report- config.ini: ocr_settle_ms = 150
+  report- config.ini: ocr_settle_press_ms = 1000
+  report- config.ini: ocr_skip_blank_lines = off
+  report- config.ini: ocr_spotter_refine = off
+  report- config.ini: ocr_text_gate = off
+  report- config.ini: ocr_threads = 3
+  report- config.ini: ocr_vertical = auto
+  report- config.ini: ocr_wait_hint = on
+  report- config.ini: reading_time = adaptive
+  report- config.ini: stick_lookup_ms = 200
+  report- config.ini: subtitle_button = select+r
+  report- config.ini: text_source = auto
+  report- config.ini: toggle_button = l+r
+  report- config.ini: vocr_tier = normal
+> ; a comment
+  exit 0
+> # a comment
+  exit 0
+>    ; an indented comment
+  exit 0
+> \t# a tabbed comment
+  exit 0
+> bogus = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + bogus = 1
+  +
+> bogus line
+  exit 0
+> Bogus_Setting = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + bogus_setting = 1
+  +
+> key with spaces = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + key with spaces = 1
+  +
+> = value
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = value
+  +
+>  = value
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = value
+  +
+> ==
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = =
+  +
+> font_size_ja
+  exit 0
+> font_size_ja =
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja =
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 20 ; inline comment
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 20 # inline comment
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 20;not a comment
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20;not a comment
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 20 \t; tabbed comment
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> font_size_ja=20
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+>   font_size_ja  =  20 \x20
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> \tfont_size_ja\t=\t20\t
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> FONT_SIZE_JA = 20
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 20\r
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 20\r\nfont_size_en = 12\r\n
+  exit 0
+  @@ -41,2 +41,2 @@
+  - font_size_ja = 18
+  - font_size_en = 14
+  + font_size_ja = 20
+  + font_size_en = 12
+  report- config.ini: font_size_en = 14
+  report- config.ini: font_size_ja = 18
+> \xEF\xBB\xBFfont_size_ja = 20
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+>  \xEF\xBB\xBF font_size_ja = 20
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> \xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  report- config.ini: font_size_ja = 18
+> \xEF\xBBfont_size_ja = 20
+  exit 2
+  report- config.ini: anki_mining = off
+  report- config.ini: anki_screenshot = on
+  report- config.ini: anki_screenshot_trim_bars = on
+  report- config.ini: dictionary = local
+  report- config.ini: font_size_en = 14
+  report- config.ini: font_size_ja = 18
+  report- config.ini: frequency_badge = on
+  report- config.ini: highlight_mode = word
+  report- config.ini: hook_sites = on
+  report- config.ini: hook_trust = on
+  report- config.ini: japanese_only_selection = off
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  report- config.ini: local_dictionary_results = 2
+  report- config.ini: log_file = on
+  report- config.ini: names_first = auto
+  report- config.ini: non_japanese_filter = lines
+  report- config.ini: ocr_boost_clock = on
+  report- config.ini: ocr_cascade_ms = 2000
+  report- config.ini: ocr_finder = spotter
+  report- config.ini: ocr_head_gate = on
+  report- config.ini: ocr_line_fix = on
+  report- config.ini: ocr_lm = 1000k
+  report- config.ini: ocr_mode = auto
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  report- config.ini: ocr_refine_lines = psp
+  report- config.ini: ocr_settle_max_ms = 2000
+  report- config.ini: ocr_settle_ms = 150
+  report- config.ini: ocr_settle_press_ms = 1000
+  report- config.ini: ocr_skip_blank_lines = off
+  report- config.ini: ocr_spotter_refine = off
+  report- config.ini: ocr_text_gate = off
+  report- config.ini: ocr_threads = 3
+  report- config.ini: ocr_vertical = auto
+  report- config.ini: ocr_wait_hint = on
+  report- config.ini: reading_time = adaptive
+  report- config.ini: stick_lookup_ms = 200
+  report- config.ini: subtitle_button = select+r
+  report- config.ini: text_source = auto
+  report- config.ini: toggle_button = l+r
+  report- config.ini: vocr_tier = normal
+> \xEFfont_size_ja = 20
+  exit 2
+  report- config.ini: anki_mining = off
+  report- config.ini: anki_screenshot = on
+  report- config.ini: anki_screenshot_trim_bars = on
+  report- config.ini: dictionary = local
+  report- config.ini: font_size_en = 14
+  report- config.ini: font_size_ja = 18
+  report- config.ini: frequency_badge = on
+  report- config.ini: highlight_mode = word
+  report- config.ini: hook_sites = on
+  report- config.ini: hook_trust = on
+  report- config.ini: japanese_only_selection = off
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  report- config.ini: local_dictionary_results = 2
+  report- config.ini: log_file = on
+  report- config.ini: names_first = auto
+  report- config.ini: non_japanese_filter = lines
+  report- config.ini: ocr_boost_clock = on
+  report- config.ini: ocr_cascade_ms = 2000
+  report- config.ini: ocr_finder = spotter
+  report- config.ini: ocr_head_gate = on
+  report- config.ini: ocr_line_fix = on
+  report- config.ini: ocr_lm = 1000k
+  report- config.ini: ocr_mode = auto
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  report- config.ini: ocr_refine_lines = psp
+  report- config.ini: ocr_settle_max_ms = 2000
+  report- config.ini: ocr_settle_ms = 150
+  report- config.ini: ocr_settle_press_ms = 1000
+  report- config.ini: ocr_skip_blank_lines = off
+  report- config.ini: ocr_spotter_refine = off
+  report- config.ini: ocr_text_gate = off
+  report- config.ini: ocr_threads = 3
+  report- config.ini: ocr_vertical = auto
+  report- config.ini: ocr_wait_hint = on
+  report- config.ini: reading_time = adaptive
+  report- config.ini: stick_lookup_ms = 200
+  report- config.ini: subtitle_button = select+r
+  report- config.ini: text_source = auto
+  report- config.ini: toggle_button = l+r
+  report- config.ini: vocr_tier = normal
+> \xEF\xBB\xBEfont_size_ja = 20
+  exit 0
+  @@ -138,0 +139,2 @@
+  + \xEF\xBB\xBEfont_size_ja = 20
+  +
+> font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12
+  exit 0
+  @@ -41,2 +41,2 @@
+  - font_size_ja = 18
+  - font_size_en = 14
+  + font_size_ja = 20
+  + font_size_en = 12
+  report- config.ini: font_size_en = 14
+  report- config.ini: font_size_ja = 18
+> \xEF\xBB\xBF
+  exit 0
+> anki_mining\r= off
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = off
+  +
+> vocr_tier\r= large
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = large
+  +
+> vocr_tier \r= large
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = large
+  +
+> highlight_mode\r=character
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = character
+  +
+> japanese_only_selection \r = on
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = on
+  +
+> local_dictionary_results\r\t= 3
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = 3
+  +
+> vocr_model\r= FL10_w8.vocr
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = FL10_w8.vocr
+  +
+> font_size\r= 3
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = 3
+  +
+> jpdb_api_key\r= secret-17
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = secret-17
+  +
+> ocr_backend\r= lens
+  exit 0
+  @@ -138,0 +139,2 @@
+  +  = lens
+  +
+> font_size_ja = 20\nfont_size_ja = 30
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 30
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 20\nfont_size_ja = 99
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 99
+  report- config.ini: font_size_ja = 18
+> bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5
+  exit 0
+  @@ -138,0 +139,6 @@
+  + bogus1 = 1
+  + bogus2 = 2
+  + bogus3 = 3
+  + bogus4 = 4
+  + bogus5 = 5
+  +
+> an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1
+  +
+> https://example.invalid/path?a=b
+  exit 0
+  @@ -138,0 +139,2 @@
+  + https://example.invalid/path?a = b
+  +
+> local_dictionary_dir = ux0:data/mine
+  exit 0
+  @@ -7 +7 @@
+  - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  + local_dictionary_dir = ux0:data/mine
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+> local_dictionary_dir = ux0:data/mine ; not a comment here
+  exit 0
+  @@ -7 +7 @@
+  - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  + local_dictionary_dir = ux0:data/mine
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+> local_dictionary_dir =
+  exit 0
+  @@ -7 +7 @@
+  - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  + local_dictionary_dir =
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+> LOCAL_DICTIONARY_DIR = ux0:data/Mine
+  exit 0
+  @@ -7 +7 @@
+  - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  + local_dictionary_dir = ux0:data/Mine
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+> ocr_model_dir = ux0:data/models
+  exit 0
+  @@ -68 +68 @@
+  - ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  + ocr_model_dir = ux0:data/models
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+> ocr_model_dir = ux0:data/models # not a comment here
+  exit 0
+  @@ -68 +68 @@
+  - ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  + ocr_model_dir = ux0:data/models
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+> ocr_model_dir =
+  exit 0
+  @@ -68 +68 @@
+  - ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  + ocr_model_dir =
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+> local_dictionaries = a.vjdict
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,a.vjdict,vndb-names.vjdict
+  report+ config.ini: local_dictionaries = plaintext.vjdict,a.vjdict,vndb-names.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = a.vjdict,b.vjdict
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,a.vjdict,b.vjdict,vndb-names.vjdict
+  report+ config.ini: local_dictionaries = plaintext.vjdict,a.vjdict,b.vjdict,vndb-names.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = a.vjdict, b.vjdict ; mine
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,a.vjdict,b.vjdict,vndb-names.vjdict
+  report+ config.ini: local_dictionaries = plaintext.vjdict,a.vjdict,b.vjdict,vndb-names.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  exit 0
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = ../a.vjdict
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,../a.vjdict,vndb-names.vjdict
+  report+ config.ini: local_dictionaries = plaintext.vjdict,../a.vjdict,vndb-names.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = a.txt
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,a.txt,vndb-names.vjdict
+  report+ config.ini: local_dictionaries = plaintext.vjdict,a.txt,vndb-names.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = /abs.vjdict
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,/abs.vjdict,vndb-names.vjdict
+  report+ config.ini: local_dictionaries = plaintext.vjdict,/abs.vjdict,vndb-names.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries =
+  exit 0
+> local_dictionaries = ,
+  exit 0
+> local_dictionary_results = 1
+  exit 0
+  @@ -13 +13 @@
+  - local_dictionary_results = 2
+  + local_dictionary_results = 1
+  report- config.ini: local_dictionary_results = 2
+> local_dictionary_results = 8
+  exit 0
+  @@ -13 +13 @@
+  - local_dictionary_results = 2
+  + local_dictionary_results = 8
+  report- config.ini: local_dictionary_results = 2
+> local_dictionary_results = 0
+  exit 0
+  @@ -13 +13 @@
+  - local_dictionary_results = 2
+  + local_dictionary_results = 0
+  report- config.ini: local_dictionary_results = 2
+> local_dictionary_results = 9
+  exit 0
+  @@ -13 +13 @@
+  - local_dictionary_results = 2
+  + local_dictionary_results = 9
+  report- config.ini: local_dictionary_results = 2
+> local_dictionary_results = two
+  exit 0
+  @@ -13 +13 @@
+  - local_dictionary_results = 2
+  + local_dictionary_results = two
+  report- config.ini: local_dictionary_results = 2
+> local_dictionary_results =
+  exit 0
+  @@ -13 +13 @@
+  - local_dictionary_results = 2
+  + local_dictionary_results =
+  report- config.ini: local_dictionary_results = 2
+> non_japanese_filter = lines
+  exit 0
+  report- config.ini: non_japanese_filter = lines
+> non_japanese_filter = none
+  exit 0
+  @@ -21 +21 @@
+  - non_japanese_filter = lines
+  + non_japanese_filter = none
+  report- config.ini: non_japanese_filter = lines
+> non_japanese_filter = LINES
+  exit 0
+  @@ -21 +21 @@
+  - non_japanese_filter = lines
+  + non_japanese_filter = LINES
+  report- config.ini: non_japanese_filter = lines
+> non_japanese_filter = None ; mine
+  exit 0
+  @@ -21 +21 @@
+  - non_japanese_filter = lines
+  + non_japanese_filter = None
+  report- config.ini: non_japanese_filter = lines
+> non_japanese_filter = all
+  exit 0
+  @@ -21 +21 @@
+  - non_japanese_filter = lines
+  + non_japanese_filter = all
+  report- config.ini: non_japanese_filter = lines
+> non_japanese_filter =
+  exit 0
+  @@ -21 +21 @@
+  - non_japanese_filter = lines
+  + non_japanese_filter =
+  report- config.ini: non_japanese_filter = lines
+> japanese_only_selection = on
+  exit 0
+  @@ -25 +25 @@
+  - japanese_only_selection = off
+  + japanese_only_selection = on
+  report- config.ini: japanese_only_selection = off
+> japanese_only_selection = off
+  exit 0
+  report- config.ini: japanese_only_selection = off
+> japanese_only_selection = ON
+  exit 0
+  @@ -25 +25 @@
+  - japanese_only_selection = off
+  + japanese_only_selection = ON
+  report- config.ini: japanese_only_selection = off
+> japanese_only_selection = maybe
+  exit 0
+  @@ -25 +25 @@
+  - japanese_only_selection = off
+  + japanese_only_selection = maybe
+  report- config.ini: japanese_only_selection = off
+> japanese_only_selection = on\njapanese_only_selection = maybe
+  exit 0
+  @@ -25 +25 @@
+  - japanese_only_selection = off
+  + japanese_only_selection = maybe
+  report- config.ini: japanese_only_selection = off
+> highlight_mode = word
+  exit 0
+  report- config.ini: highlight_mode = word
+> highlight_mode = character
+  exit 0
+  @@ -29 +29 @@
+  - highlight_mode = word
+  + highlight_mode = character
+  report- config.ini: highlight_mode = word
+> HIGHLIGHT_MODE = CHARACTER
+  exit 0
+  @@ -29 +29 @@
+  - highlight_mode = word
+  + highlight_mode = CHARACTER
+  report- config.ini: highlight_mode = word
+> highlight_mode = Word
+  exit 0
+  @@ -29 +29 @@
+  - highlight_mode = word
+  + highlight_mode = Word
+  report- config.ini: highlight_mode = word
+> highlight_mode = sentence
+  exit 0
+  @@ -29 +29 @@
+  - highlight_mode = word
+  + highlight_mode = sentence
+  report- config.ini: highlight_mode = word
+> highlight_mode =
+  exit 0
+  @@ -29 +29 @@
+  - highlight_mode = word
+  + highlight_mode =
+  report- config.ini: highlight_mode = word
+> frequency_badge = on
+  exit 0
+  report- config.ini: frequency_badge = on
+> frequency_badge = off
+  exit 0
+  @@ -38 +38 @@
+  - frequency_badge = on
+  + frequency_badge = off
+  report- config.ini: frequency_badge = on
+> frequency_badge = Off
+  exit 0
+  @@ -38 +38 @@
+  - frequency_badge = on
+  + frequency_badge = Off
+  report- config.ini: frequency_badge = on
+> frequency_badge = 1
+  exit 0
+  @@ -38 +38 @@
+  - frequency_badge = on
+  + frequency_badge = 1
+  report- config.ini: frequency_badge = on
+> names_first = off
+  exit 0
+  @@ -17 +17 @@
+  - names_first = auto
+  + names_first = off
+  report- config.ini: names_first = auto
+> names_first = on
+  exit 0
+  @@ -17 +17 @@
+  - names_first = auto
+  + names_first = on
+  report- config.ini: names_first = auto
+> names_first = auto
+  exit 0
+  report- config.ini: names_first = auto
+> names_first = AUTO
+  exit 0
+  @@ -17 +17 @@
+  - names_first = auto
+  + names_first = AUTO
+  report- config.ini: names_first = auto
+> names_first = first
+  exit 0
+  @@ -17 +17 @@
+  - names_first = auto
+  + names_first = first
+  report- config.ini: names_first = auto
+> font_size_ja = 8
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 8
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 40
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 40
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 7
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 7
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 41
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 41
+  report- config.ini: font_size_ja = 18
+> font_size_ja = -8
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = -8
+  report- config.ini: font_size_ja = 18
+> font_size_ja = big
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = big
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 100000001
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 100000001
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 999999999999
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 999999999999
+  report- config.ini: font_size_ja = 18
+> font_size_ja = 0020
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 0020
+  report- config.ini: font_size_ja = 18
+> font_size_en = 8
+  exit 0
+  @@ -42 +42 @@
+  - font_size_en = 14
+  + font_size_en = 8
+  report- config.ini: font_size_en = 14
+> font_size_en = 40
+  exit 0
+  @@ -42 +42 @@
+  - font_size_en = 14
+  + font_size_en = 40
+  report- config.ini: font_size_en = 14
+> font_size_en = 41
+  exit 0
+  @@ -42 +42 @@
+  - font_size_en = 14
+  + font_size_en = 41
+  report- config.ini: font_size_en = 14
+> font_size_en = 12px
+  exit 0
+  @@ -42 +42 @@
+  - font_size_en = 14
+  + font_size_en = 12px
+  report- config.ini: font_size_en = 14
+> stick_lookup_ms = 0
+  exit 0
+  @@ -34 +34 @@
+  - stick_lookup_ms = 200
+  + stick_lookup_ms = 0
+  report- config.ini: stick_lookup_ms = 200
+> stick_lookup_ms = 1000
+  exit 0
+  @@ -34 +34 @@
+  - stick_lookup_ms = 200
+  + stick_lookup_ms = 1000
+  report- config.ini: stick_lookup_ms = 200
+> stick_lookup_ms = 1001
+  exit 0
+  @@ -34 +34 @@
+  - stick_lookup_ms = 200
+  + stick_lookup_ms = 1001
+  report- config.ini: stick_lookup_ms = 200
+> stick_lookup_ms = -5
+  exit 0
+  @@ -34 +34 @@
+  - stick_lookup_ms = 200
+  + stick_lookup_ms = -5
+  report- config.ini: stick_lookup_ms = 200
+> stick_lookup_ms = 20 ms
+  exit 0
+  @@ -34 +34 @@
+  - stick_lookup_ms = 200
+  + stick_lookup_ms = 20 ms
+  report- config.ini: stick_lookup_ms = 200
+> toggle_button = select
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = select
+  report- config.ini: toggle_button = l+r
+> toggle_button = start
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = start
+  report- config.ini: toggle_button = l+r
+> toggle_button = l+r
+  exit 0
+  report- config.ini: toggle_button = l+r
+> toggle_button = select+l
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = select+l
+  report- config.ini: toggle_button = l+r
+> toggle_button = select+r
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = select+r
+  report- config.ini: toggle_button = l+r
+> toggle_button = rear_double_tap
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = rear_double_tap
+  report- config.ini: toggle_button = l+r
+> toggle_button = Select+R
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = Select+R
+  report- config.ini: toggle_button = l+r
+> toggle_button = L+R
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = L+R
+  report- config.ini: toggle_button = l+r
+> toggle_button = triangle
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = triangle
+  report- config.ini: toggle_button = l+r
+> toggle_button =
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button =
+  report- config.ini: toggle_button = l+r
+> subtitle_button = select
+  exit 0
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = select
+  report- config.ini: subtitle_button = select+r
+> subtitle_button = start
+  exit 0
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = start
+  report- config.ini: subtitle_button = select+r
+> subtitle_button = l+r
+  exit 0
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = l+r
+  report- config.ini: subtitle_button = select+r
+> subtitle_button = select+l
+  exit 0
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = select+l
+  report- config.ini: subtitle_button = select+r
+> subtitle_button = select+r
+  exit 0
+  report- config.ini: subtitle_button = select+r
+> subtitle_button = rear_double_tap
+  exit 0
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = rear_double_tap
+  report- config.ini: subtitle_button = select+r
+> subtitle_button = REAR_DOUBLE_TAP
+  exit 0
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = REAR_DOUBLE_TAP
+  report- config.ini: subtitle_button = select+r
+> subtitle_button = circle
+  exit 0
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = circle
+  report- config.ini: subtitle_button = select+r
+> toggle_button = select+r
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = select+r
+  report- config.ini: toggle_button = l+r
+> toggle_button = start\nsubtitle_button = start
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = start
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = start
+  report- config.ini: subtitle_button = select+r
+  report- config.ini: toggle_button = l+r
+> toggle_button = select+l\nsubtitle_button = select+l
+  exit 0
+  @@ -47 +47 @@
+  - toggle_button = l+r
+  + toggle_button = select+l
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = select+l
+  report- config.ini: subtitle_button = select+r
+  report- config.ini: toggle_button = l+r
+> subtitle_button = l+r
+  exit 0
+  @@ -53 +53 @@
+  - subtitle_button = select+r
+  + subtitle_button = l+r
+  report- config.ini: subtitle_button = select+r
+> text_source = ocr
+  exit 0
+  @@ -58 +58 @@
+  - text_source = auto
+  + text_source = ocr
+  report- config.ini: text_source = auto
+> text_source = auto
+  exit 0
+  report- config.ini: text_source = auto
+> text_source = hooks
+  exit 0
+  @@ -58 +58 @@
+  - text_source = auto
+  + text_source = hooks
+  report- config.ini: text_source = auto
+> text_source = HOOKS
+  exit 0
+  @@ -58 +58 @@
+  - text_source = auto
+  + text_source = HOOKS
+  report- config.ini: text_source = auto
+> text_source = lens
+  exit 0
+  @@ -58 +58 @@
+  - text_source = auto
+  + text_source = lens
+  report- config.ini: text_source = auto
+> text_source = ocr\ntext_source = maybe
+  exit 0
+  @@ -58 +58 @@
+  - text_source = auto
+  + text_source = maybe
+  report- config.ini: text_source = auto
+> text_source =
+  exit 0
+  @@ -58 +58 @@
+  - text_source = auto
+  + text_source =
+  report- config.ini: text_source = auto
+> hook_sites = on
+  exit 0
+  report- config.ini: hook_sites = on
+> hook_sites = off
+  exit 0
+  @@ -61 +61 @@
+  - hook_sites = on
+  + hook_sites = off
+  report- config.ini: hook_sites = on
+> Hook_Sites = OFF
+  exit 0
+  @@ -61 +61 @@
+  - hook_sites = on
+  + hook_sites = OFF
+  report- config.ini: hook_sites = on
+> hook_sites = 0
+  exit 0
+  @@ -61 +61 @@
+  - hook_sites = on
+  + hook_sites = 0
+  report- config.ini: hook_sites = on
+> hook_sites = off\nhook_sites = maybe
+  exit 0
+  @@ -61 +61 @@
+  - hook_sites = on
+  + hook_sites = maybe
+  report- config.ini: hook_sites = on
+> hook_trust = on
+  exit 0
+  report- config.ini: hook_trust = on
+> hook_trust = off
+  exit 0
+  @@ -65 +65 @@
+  - hook_trust = on
+  + hook_trust = off
+  report- config.ini: hook_trust = on
+> HOOK_TRUST = Off
+  exit 0
+  @@ -65 +65 @@
+  - hook_trust = on
+  + hook_trust = Off
+  report- config.ini: hook_trust = on
+> hook_trust = off\nhook_trust =
+  exit 0
+  @@ -65 +65 @@
+  - hook_trust = on
+  + hook_trust =
+  report- config.ini: hook_trust = on
+> hook_trusted = off
+  exit 0
+  @@ -138,0 +139,2 @@
+  + hook_trusted = off
+  +
+> ocr_mode = auto
+  exit 0
+  report- config.ini: ocr_mode = auto
+> ocr_mode = on_press
+  exit 0
+  @@ -118 +118 @@
+  - ocr_mode = auto
+  + ocr_mode = on_press
+  report- config.ini: ocr_mode = auto
+> ocr_mode = ON_PRESS
+  exit 0
+  @@ -118 +118 @@
+  - ocr_mode = auto
+  + ocr_mode = ON_PRESS
+  report- config.ini: ocr_mode = auto
+> ocr_mode = On_Press ; mine
+  exit 0
+  @@ -118 +118 @@
+  - ocr_mode = auto
+  + ocr_mode = On_Press
+  report- config.ini: ocr_mode = auto
+> ocr_mode = press
+  exit 0
+  @@ -118 +118 @@
+  - ocr_mode = auto
+  + ocr_mode = press
+  report- config.ini: ocr_mode = auto
+> ocr_mode =
+  exit 0
+  @@ -118 +118 @@
+  - ocr_mode = auto
+  + ocr_mode =
+  report- config.ini: ocr_mode = auto
+> vocr_tier = small
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = small
+  report- config.ini: vocr_tier = normal
+> vocr_tier = normal
+  exit 0
+  report- config.ini: vocr_tier = normal
+> vocr_tier = large
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report- config.ini: vocr_tier = normal
+> vocr_tier = Large
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = Large
+  report- config.ini: vocr_tier = normal
+> vocr_tier = huge
+  exit 0
+> vocr_tier =
+  exit 0
+> ocr_settle_ms = 0
+  exit 0
+  @@ -75 +75 @@
+  - ocr_settle_ms = 150
+  + ocr_settle_ms = 0
+  report- config.ini: ocr_settle_ms = 150
+> ocr_settle_ms = 150
+  exit 0
+  report- config.ini: ocr_settle_ms = 150
+> ocr_settle_ms = 1000
+  exit 0
+  @@ -75 +75 @@
+  - ocr_settle_ms = 150
+  + ocr_settle_ms = 1000
+  report- config.ini: ocr_settle_ms = 150
+> ocr_settle_ms = 1001
+  exit 0
+  @@ -75 +75 @@
+  - ocr_settle_ms = 150
+  + ocr_settle_ms = 1001
+  report- config.ini: ocr_settle_ms = 150
+> ocr_settle_ms = -5
+  exit 0
+  @@ -75 +75 @@
+  - ocr_settle_ms = 150
+  + ocr_settle_ms = -5
+  report- config.ini: ocr_settle_ms = 150
+> ocr_settle_ms = soon
+  exit 0
+  @@ -75 +75 @@
+  - ocr_settle_ms = 150
+  + ocr_settle_ms = soon
+  report- config.ini: ocr_settle_ms = 150
+> ocr_settle_max_ms = 100
+  exit 0
+  @@ -76 +76 @@
+  - ocr_settle_max_ms = 2000
+  + ocr_settle_max_ms = 100
+  report- config.ini: ocr_settle_max_ms = 2000
+> ocr_settle_max_ms = 10000
+  exit 0
+  @@ -76 +76 @@
+  - ocr_settle_max_ms = 2000
+  + ocr_settle_max_ms = 10000
+  report- config.ini: ocr_settle_max_ms = 2000
+> ocr_settle_max_ms = 99
+  exit 0
+  @@ -76 +76 @@
+  - ocr_settle_max_ms = 2000
+  + ocr_settle_max_ms = 99
+  report- config.ini: ocr_settle_max_ms = 2000
+> ocr_settle_max_ms = 10001
+  exit 0
+  @@ -76 +76 @@
+  - ocr_settle_max_ms = 2000
+  + ocr_settle_max_ms = 10001
+  report- config.ini: ocr_settle_max_ms = 2000
+> ocr_settle_press_ms = 0
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = 0
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = 100
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = 100
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = 1000
+  exit 0
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = 10000
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = 10000
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = 1
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = 1
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = 24
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = 24
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = 99
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = 99
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = 10001
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = 10001
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = -5
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = -5
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = soon
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = soon
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_settle_press_ms = 400\nocr_settle_press_ms = 99
+  exit 0
+  @@ -77 +77 @@
+  - ocr_settle_press_ms = 1000
+  + ocr_settle_press_ms = 99
+  report- config.ini: ocr_settle_press_ms = 1000
+> ocr_skip_blank_lines = on
+  exit 0
+  @@ -84 +84 @@
+  - ocr_skip_blank_lines = off
+  + ocr_skip_blank_lines = on
+  report- config.ini: ocr_skip_blank_lines = off
+> ocr_skip_blank_lines = off
+  exit 0
+  report- config.ini: ocr_skip_blank_lines = off
+> ocr_skip_blank_lines = maybe
+  exit 0
+  @@ -84 +84 @@
+  - ocr_skip_blank_lines = off
+  + ocr_skip_blank_lines = maybe
+  report- config.ini: ocr_skip_blank_lines = off
+> ocr_lm = off
+  exit 0
+  @@ -86 +86 @@
+  - ocr_lm = 1000k
+  + ocr_lm = off
+  report- config.ini: ocr_lm = 1000k
+> ocr_lm = 500k
+  exit 0
+  @@ -86 +86 @@
+  - ocr_lm = 1000k
+  + ocr_lm = 500k
+  report- config.ini: ocr_lm = 1000k
+> ocr_lm = 1000k
+  exit 0
+  report- config.ini: ocr_lm = 1000k
+> ocr_lm = 2000k
+  exit 0
+  @@ -86 +86 @@
+  - ocr_lm = 1000k
+  + ocr_lm = 2000k
+  report- config.ini: ocr_lm = 1000k
+> ocr_lm = 4000k
+  exit 0
+  @@ -86 +86 @@
+  - ocr_lm = 1000k
+  + ocr_lm = 4000k
+  report- config.ini: ocr_lm = 1000k
+> ocr_lm = 1000K
+  exit 0
+  @@ -86 +86 @@
+  - ocr_lm = 1000k
+  + ocr_lm = 1000K
+  report- config.ini: ocr_lm = 1000k
+> ocr_lm = 8000k
+  exit 0
+  @@ -86 +86 @@
+  - ocr_lm = 1000k
+  + ocr_lm = 8000k
+  report- config.ini: ocr_lm = 1000k
+> ocr_lm = 1000
+  exit 0
+  @@ -86 +86 @@
+  - ocr_lm = 1000k
+  + ocr_lm = 1000
+  report- config.ini: ocr_lm = 1000k
+> ocr_cascade_ms = 0
+  exit 0
+  @@ -88 +88 @@
+  - ocr_cascade_ms = 2000
+  + ocr_cascade_ms = 0
+  report- config.ini: ocr_cascade_ms = 2000
+> ocr_cascade_ms = 250
+  exit 0
+  @@ -88 +88 @@
+  - ocr_cascade_ms = 2000
+  + ocr_cascade_ms = 250
+  report- config.ini: ocr_cascade_ms = 2000
+> ocr_cascade_ms = 3750
+  exit 0
+  @@ -88 +88 @@
+  - ocr_cascade_ms = 2000
+  + ocr_cascade_ms = 3750
+  report- config.ini: ocr_cascade_ms = 2000
+> ocr_cascade_ms = 3751
+  exit 0
+  @@ -88 +88 @@
+  - ocr_cascade_ms = 2000
+  + ocr_cascade_ms = 3751
+  report- config.ini: ocr_cascade_ms = 2000
+> ocr_cascade_ms = -1
+  exit 0
+  @@ -88 +88 @@
+  - ocr_cascade_ms = 2000
+  + ocr_cascade_ms = -1
+  report- config.ini: ocr_cascade_ms = 2000
+> ocr_refine_lines = off
+  exit 0
+  @@ -90 +90 @@
+  - ocr_refine_lines = psp
+  + ocr_refine_lines = off
+  report- config.ini: ocr_refine_lines = psp
+> ocr_refine_lines = on
+  exit 0
+  @@ -90 +90 @@
+  - ocr_refine_lines = psp
+  + ocr_refine_lines = on
+  report- config.ini: ocr_refine_lines = psp
+> ocr_refine_lines = psp
+  exit 0
+  report- config.ini: ocr_refine_lines = psp
+> ocr_refine_lines = PSP
+  exit 0
+  @@ -90 +90 @@
+  - ocr_refine_lines = psp
+  + ocr_refine_lines = PSP
+  report- config.ini: ocr_refine_lines = psp
+> ocr_refine_lines = sometimes
+  exit 0
+  @@ -90 +90 @@
+  - ocr_refine_lines = psp
+  + ocr_refine_lines = sometimes
+  report- config.ini: ocr_refine_lines = psp
+> ocr_text_gate = on
+  exit 0
+  @@ -93 +93 @@
+  - ocr_text_gate = off
+  + ocr_text_gate = on
+  report- config.ini: ocr_text_gate = off
+> ocr_text_gate = off
+  exit 0
+  report- config.ini: ocr_text_gate = off
+> OCR_TEXT_GATE = ON
+  exit 0
+  @@ -93 +93 @@
+  - ocr_text_gate = off
+  + ocr_text_gate = ON
+  report- config.ini: ocr_text_gate = off
+> ocr_text_gate = maybe
+  exit 0
+  @@ -93 +93 @@
+  - ocr_text_gate = off
+  + ocr_text_gate = maybe
+  report- config.ini: ocr_text_gate = off
+> ocr_head_gate = on
+  exit 0
+  report- config.ini: ocr_head_gate = on
+> ocr_head_gate = off
+  exit 0
+  @@ -97 +97 @@
+  - ocr_head_gate = on
+  + ocr_head_gate = off
+  report- config.ini: ocr_head_gate = on
+> ocr_head_gate = gate
+  exit 0
+  @@ -97 +97 @@
+  - ocr_head_gate = on
+  + ocr_head_gate = gate
+  report- config.ini: ocr_head_gate = on
+> ocr_head_gate = two_level
+  exit 0
+  @@ -97 +97 @@
+  - ocr_head_gate = on
+  + ocr_head_gate = two_level
+  report- config.ini: ocr_head_gate = on
+> ocr_head_gate = Two_Level
+  exit 0
+  @@ -97 +97 @@
+  - ocr_head_gate = on
+  + ocr_head_gate = Two_Level
+  report- config.ini: ocr_head_gate = on
+> ocr_head_gate = sometimes
+  exit 0
+  @@ -97 +97 @@
+  - ocr_head_gate = on
+  + ocr_head_gate = sometimes
+  report- config.ini: ocr_head_gate = on
+> ocr_two_level = off
+  exit 0
+  @@ -138,0 +139,2 @@
+  + ocr_two_level = off
+  +
+> ocr_line_fix = off
+  exit 0
+  @@ -99 +99 @@
+  - ocr_line_fix = on
+  + ocr_line_fix = off
+  report- config.ini: ocr_line_fix = on
+> ocr_line_fix = on
+  exit 0
+  report- config.ini: ocr_line_fix = on
+> ocr_line_fix = junk
+  exit 0
+  @@ -99 +99 @@
+  - ocr_line_fix = on
+  + ocr_line_fix = junk
+  report- config.ini: ocr_line_fix = on
+> ocr_line_fix = all
+  exit 0
+  @@ -99 +99 @@
+  - ocr_line_fix = on
+  + ocr_line_fix = all
+  report- config.ini: ocr_line_fix = on
+> ocr_line_fix = ALL
+  exit 0
+  @@ -99 +99 @@
+  - ocr_line_fix = on
+  + ocr_line_fix = ALL
+  report- config.ini: ocr_line_fix = on
+> ocr_line_fix = valley
+  exit 0
+  @@ -99 +99 @@
+  - ocr_line_fix = on
+  + ocr_line_fix = valley
+  report- config.ini: ocr_line_fix = on
+> ocr_line_fix = spotter
+  exit 0
+  @@ -99 +99 @@
+  - ocr_line_fix = on
+  + ocr_line_fix = spotter
+  report- config.ini: ocr_line_fix = on
+> ocr_finder = grad
+  exit 0
+  @@ -104 +104 @@
+  - ocr_finder = spotter
+  + ocr_finder = grad
+  report- config.ini: ocr_finder = spotter
+> ocr_finder = spotter
+  exit 0
+  report- config.ini: ocr_finder = spotter
+> OCR_Finder = SPOTTER
+  exit 0
+  @@ -104 +104 @@
+  - ocr_finder = spotter
+  + ocr_finder = SPOTTER
+  report- config.ini: ocr_finder = spotter
+> ocr_finder = textdet
+  exit 0
+  @@ -104 +104 @@
+  - ocr_finder = spotter
+  + ocr_finder = textdet
+  report- config.ini: ocr_finder = spotter
+> ocr_finder =
+  exit 0
+  @@ -104 +104 @@
+  - ocr_finder = spotter
+  + ocr_finder =
+  report- config.ini: ocr_finder = spotter
+> ocr_spotter_refine = on
+  exit 0
+  @@ -105 +105 @@
+  - ocr_spotter_refine = off
+  + ocr_spotter_refine = on
+  report- config.ini: ocr_spotter_refine = off
+> ocr_spotter_refine = off
+  exit 0
+  report- config.ini: ocr_spotter_refine = off
+> ocr_spotter_refine = maybe
+  exit 0
+  @@ -105 +105 @@
+  - ocr_spotter_refine = off
+  + ocr_spotter_refine = maybe
+  report- config.ini: ocr_spotter_refine = off
+> ocr_threads = 1
+  exit 0
+  @@ -108 +108 @@
+  - ocr_threads = 3
+  + ocr_threads = 1
+  report- config.ini: ocr_threads = 3
+> ocr_threads = 2
+  exit 0
+  @@ -108 +108 @@
+  - ocr_threads = 3
+  + ocr_threads = 2
+  report- config.ini: ocr_threads = 3
+> ocr_threads = 3
+  exit 0
+  report- config.ini: ocr_threads = 3
+> ocr_threads = 0
+  exit 0
+  @@ -108 +108 @@
+  - ocr_threads = 3
+  + ocr_threads = 0
+  report- config.ini: ocr_threads = 3
+> ocr_threads = 4
+  exit 0
+  @@ -108 +108 @@
+  - ocr_threads = 3
+  + ocr_threads = 4
+  report- config.ini: ocr_threads = 3
+> ocr_threads = x
+  exit 0
+  @@ -108 +108 @@
+  - ocr_threads = 3
+  + ocr_threads = x
+  report- config.ini: ocr_threads = 3
+> ocr_boost_clock = on
+  exit 0
+  report- config.ini: ocr_boost_clock = on
+> ocr_boost_clock = off
+  exit 0
+  @@ -109 +109 @@
+  - ocr_boost_clock = on
+  + ocr_boost_clock = off
+  report- config.ini: ocr_boost_clock = on
+> ocr_boost_clock = OFF
+  exit 0
+  @@ -109 +109 @@
+  - ocr_boost_clock = on
+  + ocr_boost_clock = OFF
+  report- config.ini: ocr_boost_clock = on
+> ocr_boost_clock = maybe
+  exit 0
+  @@ -109 +109 @@
+  - ocr_boost_clock = on
+  + ocr_boost_clock = maybe
+  report- config.ini: ocr_boost_clock = on
+> ocr_wait_hint = on
+  exit 0
+  report- config.ini: ocr_wait_hint = on
+> ocr_wait_hint = off
+  exit 0
+  @@ -81 +81 @@
+  - ocr_wait_hint = on
+  + ocr_wait_hint = off
+  report- config.ini: ocr_wait_hint = on
+> OCR_Wait_Hint = OFF
+  exit 0
+  @@ -81 +81 @@
+  - ocr_wait_hint = on
+  + ocr_wait_hint = OFF
+  report- config.ini: ocr_wait_hint = on
+> ocr_wait_hint = maybe
+  exit 0
+  @@ -81 +81 @@
+  - ocr_wait_hint = on
+  + ocr_wait_hint = maybe
+  report- config.ini: ocr_wait_hint = on
+> ocr_wait_hints = off
+  exit 0
+  @@ -138,0 +139,2 @@
+  + ocr_wait_hints = off
+  +
+> ocr_wait = off
+  exit 0
+  @@ -138,0 +139,2 @@
+  + ocr_wait = off
+  +
+> ocr_vertical = off
+  exit 0
+  @@ -113 +113 @@
+  - ocr_vertical = auto
+  + ocr_vertical = off
+  report- config.ini: ocr_vertical = auto
+> ocr_vertical = on
+  exit 0
+  @@ -113 +113 @@
+  - ocr_vertical = auto
+  + ocr_vertical = on
+  report- config.ini: ocr_vertical = auto
+> ocr_vertical = auto
+  exit 0
+  report- config.ini: ocr_vertical = auto
+> ocr_vertical = Auto
+  exit 0
+  @@ -113 +113 @@
+  - ocr_vertical = auto
+  + ocr_vertical = Auto
+  report- config.ini: ocr_vertical = auto
+> ocr_vertical = yes
+  exit 0
+  @@ -113 +113 @@
+  - ocr_vertical = auto
+  + ocr_vertical = yes
+  report- config.ini: ocr_vertical = auto
+> OCR_Vertical = 1
+  exit 0
+  @@ -113 +113 @@
+  - ocr_vertical = auto
+  + ocr_vertical = 1
+  report- config.ini: ocr_vertical = auto
+> reading_time = adaptive
+  exit 0
+  report- config.ini: reading_time = adaptive
+> reading_time = 15s
+  exit 0
+  @@ -126 +126 @@
+  - reading_time = adaptive
+  + reading_time = 15s
+  report- config.ini: reading_time = adaptive
+> Reading_Time = 15S
+  exit 0
+  @@ -126 +126 @@
+  - reading_time = adaptive
+  + reading_time = 15S
+  report- config.ini: reading_time = adaptive
+> reading_time = 30s
+  exit 0
+  @@ -126 +126 @@
+  - reading_time = adaptive
+  + reading_time = 30s
+  report- config.ini: reading_time = adaptive
+> reading_time =
+  exit 0
+  @@ -126 +126 @@
+  - reading_time = adaptive
+  + reading_time =
+  report- config.ini: reading_time = adaptive
+> log_file = on
+  exit 0
+  report- config.ini: log_file = on
+> log_file = off
+  exit 0
+  @@ -121 +121 @@
+  - log_file = on
+  + log_file = off
+  report- config.ini: log_file = on
+> log_file = OFF
+  exit 0
+  @@ -121 +121 @@
+  - log_file = on
+  + log_file = OFF
+  report- config.ini: log_file = on
+> log_file = 1
+  exit 0
+  @@ -121 +121 @@
+  - log_file = on
+  + log_file = 1
+  report- config.ini: log_file = on
+> anki_mining = on
+  exit 0
+  @@ -132 +132 @@
+  - anki_mining = off
+  + anki_mining = on
+  report- config.ini: anki_mining = off
+> anki_mining = off
+  exit 0
+  report- config.ini: anki_mining = off
+> anki_mining = ON
+  exit 0
+  @@ -132 +132 @@
+  - anki_mining = off
+  + anki_mining = ON
+  report- config.ini: anki_mining = off
+> anki_mining = yes
+  exit 0
+  @@ -132 +132 @@
+  - anki_mining = off
+  + anki_mining = yes
+  report- config.ini: anki_mining = off
+> anki_screenshot = on
+  exit 0
+  report- config.ini: anki_screenshot = on
+> anki_screenshot = off
+  exit 0
+  @@ -134 +134 @@
+  - anki_screenshot = on
+  + anki_screenshot = off
+  report- config.ini: anki_screenshot = on
+> anki_screenshot = maybe
+  exit 0
+  @@ -134 +134 @@
+  - anki_screenshot = on
+  + anki_screenshot = maybe
+  report- config.ini: anki_screenshot = on
+> anki_screenshot_trim_bars = on
+  exit 0
+  report- config.ini: anki_screenshot_trim_bars = on
+> anki_screenshot_trim_bars = off
+  exit 0
+  @@ -137 +137 @@
+  - anki_screenshot_trim_bars = on
+  + anki_screenshot_trim_bars = off
+  report- config.ini: anki_screenshot_trim_bars = on
+> Anki_Screenshot_Trim_Bars = OFF
+  exit 0
+  @@ -137 +137 @@
+  - anki_screenshot_trim_bars = on
+  + anki_screenshot_trim_bars = OFF
+  report- config.ini: anki_screenshot_trim_bars = on
+> anki_screenshot_trim_bars = x
+  exit 0
+  @@ -137 +137 @@
+  - anki_screenshot_trim_bars = on
+  + anki_screenshot_trim_bars = x
+  report- config.ini: anki_screenshot_trim_bars = on
+> anki_mining = on ; a comment
+  exit 0
+  @@ -132 +132 @@
+  - anki_mining = off
+  + anki_mining = on ; a comment
+  report- config.ini: anki_mining = off
+> anki_mining = off\nanki_mining = on
+  exit 0
+  @@ -132 +132 @@
+  - anki_mining = off
+  + anki_mining = on
+  report- config.ini: anki_mining = off
+> anki_screenshot = on\nANKI_SCREENSHOT = off\nanki_mining = on
+  exit 0
+  @@ -132 +132 @@
+  - anki_mining = off
+  + anki_mining = on
+  @@ -134 +134 @@
+  - anki_screenshot = on
+  + anki_screenshot = off
+  report- config.ini: anki_mining = off
+  report- config.ini: anki_screenshot = on
+> dictionary = local
+  exit 0
+  report- config.ini: dictionary = local
+> dictionary = LOCAL
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary = LOCAL
+  report- config.ini: dictionary = local
+> dictionary = local ; mine
+  exit 0
+  report- config.ini: dictionary = local
+> dictionary = jpdb
+  exit 0
+> dictionary = JITEN ; old
+  exit 0
+> Dictionary = Jpdb\r
+  exit 0
+> dictionary = jiten # x
+  exit 0
+> dictionary = hachidori
+  exit 0
+> DICTIONARY = Hachidori ; relay\r
+  exit 0
+> dictionary = hachidorix
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary = hachidorix
+  report- config.ini: dictionary = local
+> dictionary = jpdbx
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary = jpdbx
+  report- config.ini: dictionary = local
+> dictionary = relay
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary = relay
+  report- config.ini: dictionary = local
+> dictionary =
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary =
+  report- config.ini: dictionary = local
+> dictionary
+  exit 0
+> dictionaryx = jpdb
+  exit 0
+  @@ -138,0 +139,2 @@
+  + dictionaryx = jpdb
+  +
+> dictionary local = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + dictionary local = 1
+  +
+> dictionary = jpdb;x
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary = jpdb;x
+  report- config.ini: dictionary = local
+> dictionary = jiten#x
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary = jiten#x
+  report- config.ini: dictionary = local
+> dictionary = hachidori;relay
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary = hachidori;relay
+  report- config.ini: dictionary = local
+> dictionary = hachidori\nhachidori_host = 192.168.1.20:19633
+  exit 0
+  report+ config.ini: hachidori_host removed
+> hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori
+  exit 0
+  report+ config.ini: hachidori_host removed
+> jpdb_api_key = secret-1
+  exit 0
+  report+ config.ini: jpdb_api_key removed
+> jiten_api_key = secret-2 ; mine
+  exit 0
+  report+ config.ini: jiten_api_key removed
+> api_key = secret-3
+  exit 0
+  report+ config.ini: api_key removed
+> JPDB_API_KEY=secret-4
+  exit 0
+  report+ config.ini: jpdb_api_key removed
+> jiten_api_key secret-5
+  exit 0
+> jpdb_api_key: secret-6
+  exit 0
+>   Jiten_Api_Key\tsecret-7
+  exit 0
+> jpdb_api_key secret-8 ; x = y
+  exit 0
+  report+ config.ini: jpdb_api_key removed
+> jpdb_api_keysecret-9
+  exit 0
+> api_keys = secret-10
+  exit 0
+  report+ config.ini: api_key removed
+> jpdb_api_key =
+  exit 0
+  report+ config.ini: jpdb_api_key removed
+> jpdb_api_key
+  exit 0
+> jpdb_api_key_old = secret-11
+  exit 0
+  report+ config.ini: jpdb_api_key removed
+> \xEF\xBB\xBFjpdb_api_key = secret-12
+  exit 0
+  report+ config.ini: jpdb_api_key removed
+> jpdb_api_ke = secret-13
+  exit 0
+  @@ -138,0 +139,2 @@
+  + jpdb_api_ke = secret-13
+  +
+> lens_api_key = secret-14
+  exit 0
+  @@ -138,0 +139,2 @@
+  + lens_api_key = secret-14
+  +
+> my_api_key = secret-15
+  exit 0
+  @@ -138,0 +139,2 @@
+  + my_api_key = secret-15
+  +
+> ; jpdb_api_key = secret-16
+  exit 0
+> anki_host = 192.168.1.23
+  exit 0
+  report+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+> ANKI_HOST=10.0.0.2
+  exit 0
+  report+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+> anki_host = auto
+  exit 0
+  report+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+> anki_host =
+  exit 0
+  report+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+> anki_host
+  exit 0
+> anki_audio_url = https://a.invalid/?k=secret-20
+  exit 0
+  report+ config.ini: anki_audio_url removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+> anki_audio_url https://a.invalid/?k=secret-21
+  exit 0
+  @@ -138,0 +139,2 @@
+  + anki_audio_url https://a.invalid/?k = secret-21
+  +
+> anki_audio_url
+  exit 0
+> anki_deck = Mining
+  exit 0
+  report+ config.ini: anki_deck removed
+> anki_deck = Mining #1 ; main
+  exit 0
+  report+ config.ini: anki_deck removed
+> anki_deck\r
+  exit 0
+> anki_note_type = Lapis
+  exit 0
+  report+ config.ini: anki_note_type removed
+> anki_tags = a b
+  exit 0
+  report+ config.ini: anki_tags removed
+> ANKI_TAGS
+  exit 0
+> anki_field_word = Word
+  exit 0
+  report+ config.ini: anki_field_word removed
+> Anki_Field_Word = Word
+  exit 0
+  report+ config.ini: anki_field_word removed
+> anki_field_misc_info = X
+  exit 0
+  report+ config.ini: anki_field_misc_info removed
+> anki_field = x
+  exit 0
+  @@ -138,0 +139,2 @@
+  + anki_field = x
+  +
+> anki_fields = x
+  exit 0
+  @@ -138,0 +139,2 @@
+  + anki_fields = x
+  +
+> anki_hosts = x
+  exit 0
+  @@ -138,0 +139,2 @@
+  + anki_hosts = x
+  +
+> anki_hosts
+  exit 0
+> anki_mining\n
+  exit 0
+> ocr_backend = vocr
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = VOCR
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = lens
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = Lens
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = vocr2
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = VOCR2
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = meiki
+  exit 0
+  report+ config.ini: ocr_backend removed
+> OCR_BACKEND = meiki ; old
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = ncnn
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = NCNN
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = vocr3
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend = google
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend =
+  exit 0
+  report+ config.ini: ocr_backend removed
+> ocr_backend
+  exit 0
+> ocr_backend lens
+  exit 0
+> ocr_backendx = lens
+  exit 0
+  @@ -138,0 +139,2 @@
+  + ocr_backendx = lens
+  +
+> log_host = 192.168.1.5
+  exit 0
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+> log_host =
+  exit 0
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+> LOG_HOST=10.0.0.1 ; pc\r
+  exit 0
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+> log_host
+  exit 0
+> log_host 10.0.0.1
+  exit 0
+> log_hosts = x
+  exit 0
+  @@ -138,0 +139,2 @@
+  + log_hosts = x
+  +
+> log_host =\nLOG_HOST=
+  exit 0
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+> frequency_filter=500
+  exit 0
+  report+ config.ini: frequency_filter removed
+> frequency_filter = 3
+  exit 0
+  report+ config.ini: frequency_filter removed
+> FREQUENCY_FILTER = 5
+  exit 0
+  report+ config.ini: frequency_filter removed
+> font_size = 20
+  exit 0
+  report+ config.ini: font_size removed
+> font_size = 3
+  exit 0
+  report+ config.ini: font_size removed
+> font_size
+  exit 0
+> font_size x = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + font_size x = 1
+  +
+> hw_jpeg = on
+  exit 0
+  report+ config.ini: hw_jpeg removed
+> hw_jpeg=1
+  exit 0
+  report+ config.ini: hw_jpeg removed
+> combo_delay_ms = 0
+  exit 0
+  report+ config.ini: combo_delay_ms removed
+> combo_delay_ms = 10
+  exit 0
+  report+ config.ini: combo_delay_ms removed
+> hachidori_host = 192.168.1.20
+  exit 0
+  report+ config.ini: hachidori_host removed
+> hachidori_host = http://not a host
+  exit 0
+  report+ config.ini: hachidori_host removed
+> hachidori_host =
+  exit 0
+  report+ config.ini: hachidori_host removed
+> hachidori_host
+  exit 0
+> vocr_model = FL10_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = small
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = small
+  report- config.ini: vocr_tier = normal
+> vocr_model = VOCR3_FL10_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = small
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = small
+  report- config.ini: vocr_tier = normal
+> vocr_model = VOCR2_FL10_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = small
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = small
+  report- config.ini: vocr_tier = normal
+> vocr_model = H15_w8.vocr
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model = VOCR3_H15_w8.vocr
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model = F20_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = large
+  report- config.ini: vocr_tier = normal
+> vocr_model = VOCR4_W20_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = large
+  report- config.ini: vocr_tier = normal
+> vocr_model = VOCR9_X_w8.vocr
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model = FL10
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model = FL10_w8.bin
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model = dir/FL10_w8.vocr
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model = .vocr
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model = FL10_w8_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.vocr
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model
+  exit 0
+> vocr_model FL10_w8.vocr
+  exit 0
+> vocr_model x = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + vocr_model x = 1
+  +
+> vocr_model = meiki-stream-int8.mnn
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_model =
+  exit 0
+  report+ config.ini: vocr_model removed
+> vocr_fallback_model = VOCR3_FL10_w8.vocr
+  exit 0
+  report+ config.ini: vocr_fallback_model removed
+> vocr_fallback_model = none
+  exit 0
+  report+ config.ini: vocr_fallback_model removed
+> vocr_fallback_model =
+  exit 0
+  report+ config.ini: vocr_fallback_model removed
+> vocr_fallback_model
+  exit 0
+> vocr_tier = large\nvocr_model = FL10_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report+ config.ini: vocr_model removed
+  report- config.ini: vocr_tier = normal
+> vocr_model = FL10_w8.vocr\nvocr_tier = large
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report+ config.ini: vocr_model removed
+  report- config.ini: vocr_tier = normal
+> vocr_model = FL10_w8.vocr\nvocr_tier = huge
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = small
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = small
+  report- config.ini: vocr_tier = normal
+> vocr_tier = huge\nvocr_model = W20_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = large
+  report- config.ini: vocr_tier = normal
+> vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = large
+  report- config.ini: vocr_tier = normal
+> dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report+ config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+  report+ config.ini: jpdb_api_key removed
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+  report+ config.ini: ocr_backend removed
+  report+ config.ini: vocr_model removed
+  report+ config.ini: vocr_tier = large
+  report- config.ini: font_size_ja = 18
+  report- config.ini: vocr_tier = normal
+> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 99
+  @@ -138,0 +139,2 @@
+  + bogus = 1
+  +
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+  report+ config.ini: ocr_backend removed
+  report- config.ini: font_size_ja = 18
+> jpdb_api_key = SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS...[1515 bytes, fnv1a 239b4405b1ac6eb7]
+  exit 0
+  report+ config.ini: jpdb_api_key removed
+> font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1515 bytes, fnv1a 9bb3a4e11799b4b1]
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1515 bytes, fnv1a 9bb3a4e11799b4b1]
+  report- config.ini: font_size_ja = 18
+> frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[619 bytes, fnv1a 780be23635715869]
+  exit 0
+  report+ config.ini: frequency_filter removed
+> anki_audio_url = https://xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1525 bytes, fnv1a 662f1ed7e297a041]
+  exit 0
+  report+ config.ini: anki_audio_url removed (AnkiConnect was removed: the Rubi app exports the cards as an .apkg)
+> dictionary = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 42438c3462c961e2]
+  exit 0
+  @@ -4 +4 @@
+  - dictionary = local
+  + dictionary = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 42438c3462c961e2]
+  report- config.ini: dictionary = local
+> ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[614 bytes, fnv1a 083e677aa20fd2fd]
+  exit 0
+  report+ config.ini: ocr_backend removed
+> log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[611 bytes, fnv1a ffa99aab22b09349]
+  exit 0
+  report+ config.ini: log_host removed (the UDP log was removed: the overlay is offline; log.txt stays)
+> vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 1b017f76d9ce7d7e]
+  exit 0
+  report+ config.ini: vocr_model removed
+> bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc]
+  exit 0
+  @@ -138,0 +139,2 @@
+  + bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc]
+  +
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[531 bytes, fnv1a ba2526befd514680]
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[566 bytes, fnv1a 0ba8f1104f9a5eda]
+  report+ config.ini: local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[578 bytes, fnv1a e1ce21720915fc96]
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[532 bytes, fnv1a 9e67b788711b7053]
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[567 bytes, fnv1a f62c9bf0a0b066f7]
+  report+ config.ini: local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[579 bytes, fnv1a 65dfbddc9e40e41b]
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[533 bytes, fnv1a 45ad0ed8319fa4f6]
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[568 bytes, fnv1a 6d0b207e37beb668]
+  report+ config.ini: local_dictionaries = plaintext.vjdict,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[580 bytes, fnv1a 734a856cf1b068e4]
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  exit 0
+  @@ -7 +7 @@
+  - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  + local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+> local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  exit 0
+  @@ -7 +7 @@
+  - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  + local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  exit 0
+  @@ -7 +7 @@
+  - local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+  + local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  report- config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+> ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  exit 0
+  @@ -68 +68 @@
+  - ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+  + ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  report- config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  +
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  +
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  +
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd]
+  exit 0
+  @@ -138,0 +139,2 @@
+  + kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd]
+  +
+> (none) --set log_file=on
+  exit 0
+> (none) --set vocr_tier=large log_file=off
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  @@ -121 +121 @@
+  - log_file = on
+  + log_file = off
+  report+ config.ini: log_file = off
+  report+ config.ini: vocr_tier = large
+  report- config.ini: log_file = on
+  report- config.ini: vocr_tier = normal
+> vocr_tier = small\n --set vocr_tier=huge
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = small
+  report+ config.ini: vocr_tier huge is not a model size (small, normal or large); not set
+  report- config.ini: vocr_tier = normal
+> (empty) --set vocr_model=FL10_w8.vocr
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = small
+  report+ config.ini: vocr_tier = small
+  report- config.ini: vocr_tier = normal
+> vocr_tier = large\n --set vocr_model=H15_w8.vocr vocr_fallback_model=none
+  exit 0
+> (empty) --set vocr_model=FL10_w8.vocr vocr_tier=large
+  exit 0
+  @@ -71 +71 @@
+  - vocr_tier = normal
+  + vocr_tier = large
+  report+ config.ini: vocr_tier = large
+  report- config.ini: vocr_tier = normal
+> (empty) --set dictionary=jpdb
+  exit 0
+> (empty) --set dictionary=Hachidori hachidori_host=10.0.0.1
+  exit 0
+  report+ config.ini: hachidori_host is no longer a setting, not set
+> (empty) --set jpdb_api_key=secret-50 API_KEY=secret-51 jiten_api_keyx=secret-52
+  exit 0
+  report+ config.ini: jpdb_api_key is no longer a setting, not set
+  report+ config.ini: api_key is no longer a setting, not set
+  report+ config.ini: jiten_api_key is no longer a setting, not set
+> (empty) --set anki_host=auto anki_audio_url=https://a.invalid/?k=secret-53 anki_field_word=Word
+  exit 0
+  report+ config.ini: anki_host is no longer a setting, not set
+  report+ config.ini: anki_audio_url is no longer a setting, not set
+  report+ config.ini: anki_field_word is no longer a setting, not set
+> (empty) --set ocr_backend=lens log_host=10.0.0.1 frequency_filter=3 font_size=20
+  exit 0
+  report+ config.ini: ocr_backend is no longer a setting, not set
+  report+ config.ini: log_host is no longer a setting, not set
+  report+ config.ini: frequency_filter is no longer a setting, not set
+  report+ config.ini: font_size is no longer a setting, not set
+> (empty) --set my_debug_switch=1
+  exit 0
+  @@ -138,0 +139,2 @@
+  + my_debug_switch = 1
+  +
+  report+ config.ini: my_debug_switch = 1
+> my_debug_switch = 2\n --set (nothing)
+  exit 0
+  @@ -138,0 +139,2 @@
+  + my_debug_switch = 2
+  +
+> (empty) --set Font_Size_JA=20  log_file = off\x20
+  exit 0
+  @@ -41 +41 @@
+  - font_size_ja = 18
+  + font_size_ja = 20
+  @@ -121 +121 @@
+  - log_file = on
+  + log_file = off
+  report+ config.ini: font_size_ja = 20
+  report+ config.ini: log_file = off
+  report- config.ini: font_size_ja = 18
+  report- config.ini: log_file = on
+> (empty) --set local_dictionaries=mine.vjdict
+  exit 0
+  @@ -10 +10 @@
+  - local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  + local_dictionaries = mine.vjdict
+  report+ config.ini: local_dictionaries = mine.vjdict
+  report- config.ini: local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+> local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 1\n --set local_dictionary_results=1
+  exit 0
+  @@ -13 +13 @@
+  - local_dictionary_results = 2
+  + local_dictionary_results = 1
+  report- config.ini: local_dictionary_results = 2

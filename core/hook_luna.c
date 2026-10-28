@@ -616,10 +616,13 @@ static const LunaOp *const vjo_luna_post[VJO_LH_COUNT] = {
  * line-break code becomes "\n" (what the game draws); a player-name code the hook sees before the game
  * expands it becomes the game's default name (Rubi cannot know a name the player typed: such a line then
  * differs from the screen by that name only). docs/native-hooks.md#rubis-filters has the evidence.
- * The ops arrays and their index (776 B) are kept in the worker's data segment (VJO_DATA_TABLE, core/port.h),
- * whose last page has room: in its code segment they took the debug build's worker 8 B past its pages
- * (include/vjo_ledger_budget.h; docs/memory-ledger.md, "Tables in the data segment"). Their strings stay
- * read-only. */
+ * The ops arrays are kept in the worker's data segment (VJO_DATA_TABLE, core/port.h), whose last page had room: in
+ * its code segment they took the debug build's worker 8 B past its pages (include/vjo_ledger_budget.h;
+ * docs/memory-ledger.md, "Tables in the data segment"). Since the hook farm's 20 entries of 2026-10-27 filled that
+ * page, the filters' index, PCSG00628's ops and escapes (#316's audit) and the five arrays that batch added or grew
+ * (PROTOTYPE_NAMELINE with PROTOTYPE in it, PCSG00472 with IFENGINE, AOZORA_RUBY, CARET_NEWLINE, PCSG01250), 853 B,
+ * are read-only data again, and this file is built for size in the worker (vita/CMakeLists.txt), so both builds keep
+ * their pages (docs/memory-ledger.md, "The hook farm's 20 verified entries"). Their strings stay read-only. */
 _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one byte");
 #define RCALL(f) {OP_CALL, 0, VJO_RF_##f, NULL, NULL}
 
@@ -629,18 +632,37 @@ _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one
  * $t<name>@ a name drawn inline (PCSG00206); $d a line break; $[base$/reading$] ruby (PCSG00206 event
  * 367); $L1 (config labels), $A1, $S<nnn>..$S, $w, $C[rrggbb] are not drawn (PCSG00620 event 81); ＿ is a
  * blank indent and leading line breaks place the text (PCSG00620 event 80); ･ is the middle dot ・ between
- * katakana words, not Luna's … (PCSG00620: all 12 in its 995 farm pages, e.g. セブンズ･カオス, page 375). */
-static const LunaOp r_PROTOTYPE[] VJO_DATA_TABLE(rubi_PROTOTYPE) = {
+ * katakana words, not Luna's … (PCSG00620: all 12 in its 995 farm pages, e.g. セブンズ･カオス, page 375).
+ * 三国恋戦記 PCSG00183 writes a speaker with no end code, $t<name>｢..｣, drawn inline as $t<name>@ is (farm event
+ * 85, $t母親｢..｣): a $t neither form took is dropped; $K<n> (its title card's $K130九天九地盤$K0) is not drawn.
+ * The task:: engine's 果つることなき未来ヨリ PCSG00988 and ISLAND PCSG01000 (the message-window layout function's text,
+ * 0x8106a260 and 0x8106a6d8 r1) draw the speaker of $t<name>@ on a line of its own above the body, not inline as
+ * PCSG00206 does (PCSG01000 page 1: $tガキＢ@「お前怖いのか？」, ガキＢ over 「お前怖いのか？」; PCSG00988 page 5:
+ * $t？？？@『…』): their filter, PROTOTYPE_NAMELINE, is this array from its first op, which writes that line break;
+ * PROTOTYPE starts at its second (one array: no RCALL and END of its own, 24 B less; read-only data). The
+ * rest is PROTOTYPE's: PCSG00988's plain hiragana are half-width kana, ISLAND's full width (OP_KANA leaves them); a
+ * centred line's 　$A1 is at the text's start (ISLAND's prologue, \n\n\n\n\n　$A1初めに、音があった。), which the trim
+ * takes. */
+static const LunaOp r_PROTOTYPE_NAMELINE[] = {
+    SUBW("\\$t([^$@\n]*)@", "$1\n"), /* PROTOTYPE_NAMELINE's own op; PROTOTYPE from here: */
     REP("･", "・"), SPECIAL(OP_KANA), SUB("\\$t([^$@\n]*)\\$d", "$1\n"), SUB("\\$t([^$@\n]*)@", "$1"), REP("$d", "\n"),
     SUB("\\$\\[(.*?)\\$/(.*?)\\$\\]", "$1"), SUB("\\$[LA]\\d|\\$S\\d\\d\\d|\\$S|\\$w|\\$C\\[[0-9A-Fa-f]*\\]", ""),
-    REP("＿", "　"), SPECIAL(OP_TRIM), END};
+    SUB("\\$t|\\$K\\d+", ""), REP("＿", "　"), SPECIAL(OP_TRIM), END};
+#define r_PROTOTYPE (r_PROTOTYPE_NAMELINE + 1)
 /* The IF:Lib GAME-ENGINE 3.00 titles (Otomate, Rejet, Design Factory): #Ruby[base,reading] (PCSG00935
  * event 1); #Scale[1.0], #Color[7], #Speed[5], #Word[..], #Pos[x, y] and other #Tag[..] are not drawn
  * (PCSG00448 event 1, PCSG00853 sample 000001); #n is a line break, also before a Latin word (PCSG00448
- * event 54 #nLAGRANGE); a trailing #n ends every page and draws nothing. */
-static const LunaOp r_IFENGINE[] VJO_DATA_TABLE(rubi_IFENGINE) = {
+ * event 54 #nLAGRANGE); a trailing #n ends every page and draws nothing.
+ * DIABOLIK LOVERS VANDEAD CARNIVAL PCSG00472 and MORE,BLOOD PCSG00476 (the window's page after the #Name expander): the
+ * font draws ゞ (CP932 0x8155) as one !? cell and ゝ (0x8154) as one !! cell (PCSG00472 page 14: あぁゞ　ざけんなゝ drawn
+ * あぁ!?　ざけんな!!; PCSG00476 page 17: っ……ゞ drawn っ……!?), as Luna's filter for these titles' sites writes them,
+ * and for LIMITED V EDITION PCSG00272's and RE:VICE[D] PCSG00382's (Luna's PCSG00472): their filter, PCSG00472, is
+ * this array from its first op; IFENGINE starts at its third (one array, 24 B less; read-only data). */
+static const LunaOp r_PCSG00472[] = {
+    REP("ゞ", "!?"), REP("ゝ", "!!"), /* PCSG00472's own ops; IFENGINE from here: */
     SUB("#Ruby\\[([^,\\]]*),[^\\]]*\\]", "$1"), SUB("#[A-Z][A-Za-z]*(\\[[^\\]\n]*\\])?", ""), REP("#n", "\n"),
     SPECIAL(OP_TRIM), END};
+#define r_IFENGINE (r_PCSG00472 + 2)
 /* <base,reading>: the base drawn, the reading above it (PCSG00648 sample 000005, PCSG00509 event 50). */
 static const LunaOp r_ANGLE_RUBY[] VJO_DATA_TABLE(rubi_ANGLE_RUBY) = {SUB("<([^<>,\n]*),[^<>\n]*>", "$1"), END};
 /* Rejet's Unity history strings (剣が君 for V PCSG00553, Dance with Devils PCSG00807): <br> is a line break
@@ -715,12 +737,12 @@ static const LunaOp r_KID[] VJO_DATA_TABLE(rubi_KID) = {
  * is ♥ (the farm's survey of main.snr names it), any other u<n>. is dropped with the z codes (no op writes a code
  * point; none of either is in the 1208 hook pages). #316's audit F1: the escapes were read last, so !r was a line
  * break, !k !y ![ !] !| gone, !b !< !> read as ruby. */
-static const char r628_esc[] VJO_DATA_TABLE(rubi_628_esc) =
+static const char r628_esc[] = /* (this and its ops: read-only data, above) */
     "!!\0！\0!r\0ｒ\0!v\0ｖ\0!b\0ｂ\0!k\0ｋ\0!y\0ｙ\0!z\0ｚ\0!u\0ｕ\0![\0［\0!]\0］\0!|\0｜\0!<\0＜\0!>\0＞\0!.\0．\0"
     "u9829.\0♥";
 #define ESC628(k) {OP_REP, 0, 0, r628_esc + 7 * (k), r628_esc + 7 * (k) + 3} /* "!X\0" then X's 3-byte form */
 _Static_assert(sizeof r628_esc == 7 * 14 + 7 + 4, "14 escapes of 7 bytes, then u9829. and ♥");
-static const LunaOp r_PCSG00628[] VJO_DATA_TABLE(rubi_PCSG00628) = {
+static const LunaOp r_PCSG00628[] = {
     A0_BLANK, ESC628(0), ESC628(1), ESC628(2), ESC628(3), ESC628(4), ESC628(5), ESC628(6), ESC628(7), ESC628(8),
     ESC628(9), ESC628(10), ESC628(11), ESC628(12), ESC628(13), SUB("rv[^.\n]*\\.", "r"),
     {OP_REP, 0, 0, r628_esc + 7 * 14, r628_esc + 7 * 14 + 7}, SUB("[zu]\\d+\\.", ""), SUB("b[^.<>\n]*\\.", ""),
@@ -756,7 +778,26 @@ static const LunaOp r_PCSG00700[] VJO_DATA_TABLE(rubi_PCSG00700) = {
     SUB("<a>\\(([^)\n]*)\\)", "$1"), SUB("<ruby2?>\\([^)\n]*\\)", ""), SUB("</?[a-z][a-z0-9]*>", ""),
     SPECIAL(OP_KANA), END};
 
-static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_TABLE(rubi_filters) = {
+/* あまつみそらに！ 雲のはたてに PCSG00638 (PROTOTYPE's Key port, the message window's page, 0x8102e6f4 r6): Aozora Bunko's
+ * ruby, ｜base《reading》, and 《reading》 after a kanji with no ｜ (the kanji are the base); the base is drawn, the reading
+ * small above it (farm page 4: ｜神奈《かんな》は … 舟を｜漕《こ》ぎはじめた。, drawn 神奈は … 漕ぎはじめた。). */
+static const LunaOp r_AOZORA_RUBY[] = {
+    SUBW("｜([^｜《》\n]*)《[^《》\n]*》", "$1"), SUBW("([一-鿿々〆ヵヶ])《[^《》\n]*》", "$1"), END};
+
+/* 学園CLUB ～ヒミツのナイトクラブ～ PCSG01065 (Luna's site 0x80029854 r1, the message copier's page buffer): ^ is a line
+ * break on the screen (farm page 2: 小さな扉をくぐる。^わたしは足元に荷物を置くと、^庭園の…, three lines); Luna's filter
+ * there (FPCSG00852) drops it, joining the lines. */
+static const LunaOp r_CARET_NEWLINE[] = {REP("^", "\n"), END};
+
+/* スキとスキとでサンカク恋愛 PCSG01250 (ENTERGRAM, the text command's argument, 0x81014ca4 r8): /ruby:base&reading/ is ruby
+ * (farm page 18: /ruby:和呂田 茜&わろた あかね/, the base drawn) and #n a line break, as Luna's PCSG01250_T filter for its
+ * <text ..> site reads them (its patterns, shared); the engine's layout parser (0x81012b22) also reads #Size[..] and
+ * #Pos[..], which are not drawn (in none of the farm's pages). Its /size:, /pos: and /color: prefixes are added after
+ * this site, so the hook never sees them. The speaker's 【name】 is another command. */
+static const LunaOp r_PCSG01250[] = {
+    SUB("/ruby:(.*?)&(.*?)/", "$1"), REP("#n", "\n"), SUB("#\\w+(\\[.+?\\])?", ""), END};
+
+static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* read-only data (above) */
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
     [VJO_RF_BACKSLASH_NEWLINE - VJO_RF_BASE] = r_BACKSLASH_NEWLINE, [VJO_RF_PCSG00448 - VJO_RF_BASE] = r_PCSG00448,
@@ -768,6 +809,9 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_T
     [VJO_RF_PCSG00415 - VJO_RF_BASE] = r_PCSG00415,
     [VJO_RF_PCSG00020 - VJO_RF_BASE] = r_PCSG00020,
     [VJO_RF_PCSG00700 - VJO_RF_BASE] = r_PCSG00700,
+    [VJO_RF_PROTOTYPE_NAMELINE - VJO_RF_BASE] = r_PROTOTYPE_NAMELINE, [VJO_RF_PCSG00472 - VJO_RF_BASE] = r_PCSG00472,
+    [VJO_RF_AOZORA_RUBY - VJO_RF_BASE] = r_AOZORA_RUBY, [VJO_RF_CARET_NEWLINE - VJO_RF_BASE] = r_CARET_NEWLINE,
+    [VJO_RF_PCSG01250 - VJO_RF_BASE] = r_PCSG01250,
     [VJO_RF_5PB - VJO_RF_BASE] = r_5PB, [VJO_RF_KID - VJO_RF_BASE] = r_KID,
 };
 

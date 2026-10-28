@@ -32,14 +32,7 @@
 #endif
 
 /* ---------------- the Vita's file API on the host's files (the app's platform reads through it) ---------------- */
-int sceIoOpen(const char *p, int flags, unsigned mode)
-{
-    int fd = open(p, flags, mode);
-    return fd < 0 ? (int)(0x80010000u | (unsigned)errno) : fd;
-}
-int sceIoClose(int fd) { return close(fd); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoPread(int fd, void *p, size_t n, SceOff off) { return (int)pread(fd, p, n, off); }
+#include "fakes/sceio_posix.h"
 uint64_t sceKernelGetProcessTimeWide(void) { return 1; }
 /* (a card's facts: the clock is not what this suite compares) */
 int sceRtcGetCurrentTick(SceRtcTick *t) { t->tick = 62135596800000000ull + 1792000000ull * 1000000ull; return 0; }

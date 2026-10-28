@@ -187,6 +187,13 @@ static int ends_with(const char *s, const char *suffix)
     size_t n = strlen(s), k = strlen(suffix);
     return n >= k && !strcmp(s + n - k, suffix);
 }
+/* The memory card's files (fakes/sceio_posix.h; a failure is -1, as the suite's own calls return it), with the
+ * suite's faults, crash points and its one listing at a time. */
+#define SCEIO_ERROR(e) ((void)(e), -1)
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_READ | SCEIO_WRITE | SCEIO_RENAME | SCEIO_SYNCBYFD | SCEIO_SYNC | \
+                   SCEIO_DOPEN | SCEIO_DREAD | SCEIO_DCLOSE)
+#include "fakes/sceio_posix.h"
+#include "fakes/vjdict_writer.h"
 static int jpg_opens; /* sceIoOpen of a .jpg or .jpg.tmp: SceShell never opens one (AGENTS.md rule 1) */
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
@@ -216,18 +223,6 @@ int sceIoWrite(int fd, const void *p, size_t n)
         crash_at("json_partial");
     return wrote;
 }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return mkdir(p, mode); }
-int sceIoGetstat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    int rc = stat(p, &s);
-    if (!rc) {
-        st->st_mode = s.st_mode;
-        st->st_size = s.st_size; /* (so a Shell that read a file it stats would show in the arena's peak too) */
-    }
-    return rc;
-}
 int sceIoRename(const char *from, const char *to)
 {
     int rc = fail_rename ? -1 : rename(from, to);
@@ -237,7 +232,6 @@ int sceIoRename(const char *from, const char *to)
     }
     return rc;
 }
-int sceIoRemove(const char *p) { return unlink(p); }
 int sceIoSyncByFd(int fd, int flag)
 {
     int rc = fail_sync ? -1 : fsync(fd);
@@ -310,43 +304,13 @@ typedef struct {
 static DictFile dict_files[8];
 static int dict_opens;
 
-static void put16(uint8_t *p, uint16_t x) { p[0] = (uint8_t)x; p[1] = (uint8_t)(x >> 8); }
-static void put32(uint8_t *p, uint32_t x) { put16(p, (uint16_t)x); put16(p + 2, (uint16_t)(x >> 16)); }
-static void put64(uint8_t *p, uint64_t x) { put32(p, (uint32_t)x); put32(p + 4, (uint32_t)(x >> 32)); }
-static uint64_t key_hash(const char *s)
-{
-    uint64_t h = UINT64_C(14695981039346656037);
-    for (; *s; s++) h = (h ^ (uint8_t)*s) * UINT64_C(1099511628211);
-    h ^= h >> 33; h *= UINT64_C(0xff51afd7ed558ccd);
-    h ^= h >> 33; h *= UINT64_C(0xc4ceb9fe1a85ec53);
-    return h ^ (h >> 33);
-}
-/* One key with one entry (VJDICT2: header, one hash slot, the key, its posting, the payload). */
+/* One key with one entry (VJDICT2: fakes/vjdict_writer.h). */
 static void dict_build(DictFile *f, const char *name, const DictRow *r)
 {
-    size_t off = 8192, key_len = strlen(r->key), posting, payload;
-    const char *parts[] = {r->spelling, r->reading, r->meaning};
     memset(f, 0, sizeof(*f));
     f->name = name;
-    memcpy(f->bytes, "VJDICT2\0", 8);
-    put32(f->bytes + 8, 2); put32(f->bytes + 12, 64);
-    put32(f->bytes + 16, 1); put32(f->bytes + 20, 24);
-    put64(f->bytes + 24, 4096); put64(f->bytes + 32, off);
-    put64(f->bytes + 48, 1); put64(f->bytes + 56, 1);
-    if (r->title) memcpy(f->bytes + 192, r->title, strlen(r->title));
-    memcpy(f->bytes + 4096, "VJHP", 4);
-    put64(f->bytes + 4112, key_hash(r->key)); put64(f->bytes + 4120, off);
-    put32(f->bytes + 4128, 1); put16(f->bytes + 4132, (uint16_t)key_len);
-    memcpy(f->bytes + off, r->key, key_len); off += key_len;
-    posting = off; off += 16;
-    payload = off;
-    for (int i = 0; i < 3; i++) {
-        size_t n = strlen(parts[i]) + 1;
-        memcpy(f->bytes + off, parts[i], n); off += n;
-    }
-    put64(f->bytes + posting, payload); put32(f->bytes + posting + 8, (uint32_t)(off - payload));
-    put32(f->bytes + 4100, 1);
-    f->size = off; put64(f->bytes + 40, off);
+    f->size = vjdict2_one(f->bytes, sizeof(f->bytes), r->key, r->spelling, r->reading, r->meaning, r->title);
+    TEST_ASSERT(f->size > 0);
 }
 static int dict_read(void *ctx, uint64_t off, void *dst, size_t n)
 {

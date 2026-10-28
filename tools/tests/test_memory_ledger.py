@@ -3,7 +3,6 @@ fail on each kind of regression it exists for."""
 import json
 import re
 import shutil
-import struct
 import subprocess
 import sys
 import tempfile
@@ -13,7 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/check_memory_ledger.py"
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tools/tests"))
 import check_memory_ledger as ledger  # noqa: E402
+from self_fixture import Segment, fself  # noqa: E402
 
 
 def run(*args):
@@ -21,17 +22,8 @@ def run(*args):
 
 
 def fake_self(memsz_list):
-    """A minimal SELF: header offsets to an ELF header and program headers."""
-    elf_off, phdr_off = 0x100, 0x140
-    phentsize = 32
-    data = bytearray(b"SCE\0" + b"\0" * (phdr_off + phentsize * len(memsz_list) - 4))
-    struct.pack_into("<Q", data, 0x40, elf_off)
-    struct.pack_into("<Q", data, 0x48, phdr_off)
-    struct.pack_into("<H", data, elf_off + 0x2A, phentsize)
-    struct.pack_into("<H", data, elf_off + 0x2C, len(memsz_list))
-    for i, (memsz, flags) in enumerate(memsz_list):
-        struct.pack_into("<8I", data, phdr_off + i * phentsize, 1, 0, 0, 0, 0, memsz, flags, 0x1000)
-    return bytes(data)
+    """A SELF of one PT_LOAD segment per (memsz, flags), each all .bss (no file bytes): only their pages count."""
+    return fself(*(Segment(memsz=memsz, flags=flags) for memsz, flags in memsz_list))
 
 
 class MemoryLedgerCheck(unittest.TestCase):

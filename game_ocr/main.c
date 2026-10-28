@@ -2547,7 +2547,7 @@ retry_smaller:
     request_policy(r, &policy);
     if (retried) {
         /* API 47, auto's next try: the same job, so the same stable-text wait, as the core's own tries share it
-         * (docs/text-stability.md): at most ocr_settle_max_ms (a press's ocr_settle_press_ms) over all of them.
+         * (docs/text-stability.md): at most ocr_settle_max_ms over all of them (a press's first job has none).
          * The try before has just read the region (and waited first where the request asked): this one reads it
          * at once, its first pass the job's capture, and recognizes once the rows have held still settle_us,
          * within what is left of the wait (1 us: none, it reads anyway). */
@@ -2766,8 +2766,9 @@ retry_smaller:
         hk.flags = hook_pre_flags;
     } else if (!rc && hk.installed) {
         unsigned score = 0;
+        /* #413's audit F2: read without the stable-text wait (a press since #413), its text may be a line typing out */
         uint32_t id = vjo_hook_select_after(&hk.sel, hook_pick, out->text, text_len(out->text, sizeof(out->text)),
-                                            hk.cand, hk.n, &score, &hk.flags);
+                                            hk.cand, hk.n, &score, &hk.flags, !(r->flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu));
         hk.score = score;
         if (id) {
             hook_show(out, hook_cand(id), 1, norm_flags(r));

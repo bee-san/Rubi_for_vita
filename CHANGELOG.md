@@ -13,9 +13,89 @@ been reported.
 
 ### Changed
 
+- **All three model sizes are VOCR6** (vita-vn-ocr #125 and #157, pre-release v0.4.1-vocr6.2): VOCR6-S replaces
+  VOCR5-S as Small, and VOCR6-N and VOCR6-L replace v0.4.0-vocr6.1's as Normal (the default) and Large
+  (`VOCR6.2_S_w8.vocr`, 819,792 B; `VOCR6.2_N_w8g2.vocr`, 1,189,408 B; `VOCR6.2_L_w8_2l.vocr`, 2,475,680 B). Each is
+  VOCR5's shape fine-tuned again on the owner's hooked PS Vita and PSP games: Normal and Large three times as long,
+  Small at half the learning rate. Measured on a computer (dialogue CER through the GRAD finder's path of Rubi 892cfb9,
+  as vita-vn-ocr's final reads model it, with the 1 MB LM and the cascade; VOCR5 → VOCR6, 95 % intervals):
+  - the hooked games' held-out pages: Small 1.177 → 1.049 % (−0.128 points, −0.189 to −0.074), Normal 1.008 → 0.936 %
+    (−0.072, −0.111 to −0.038), Large 0.990 → 0.917 % (−0.073, −0.118 to −0.036), three held-out seeds each, read with
+    the 1 MB LM's screening build. Small's are its shipped recipe's; Normal's and Large's are v0.4.0-vocr6.1's
+    15,000-step recipe's, as the shipped 45,000-step blobs (one seed) have no held-out read. The shipped blobs then
+    trained on those pages too;
+  - other games: VOCR5's development score 1.674 → 1.549 (Small), 1.482 → 1.389 (Normal), 1.439 → 1.396 (Large),
+    none resolved. Small in the set as it ships reads it +0.041 (−0.016 to +0.099) against VOCR5-S: worse in point,
+    and its recipe was the second tried in its stage (the third at Small);
+  - read once, after every choice: CLANNAD's lines 0.73 → 0.47 %, 0.66 → 0.33 % and 0.60 → 0.31 % (each resolved);
+    vita-test + psp-test's fixed lines 0.68 → 0.58 %, 0.49 → 0.36 % and 0.47 → 0.40 %, whole dialogue 3.04 → 3.02 %,
+    2.83 → 2.70 % and 2.72 → 2.68 % (none resolved; PSP alone not better);
+  - against v0.4.0-vocr6.1, the set before this one: CLANNAD's lines better (Small −0.21 and Normal −0.10, resolved;
+    Large −0.05, not), CLANNAD's pages through the GRAD finder worse at Normal and Large (+0.33 and +0.27 points,
+    resolved; still better than VOCR5 or level) and better at Small (−0.41); vita-test + psp-test's fixed lines Small
+    better (−0.23, resolved), Normal and Large level;
+  - seen data: every VOCR6 model has seen CLANNAD's glyph raster (two hooked games, Grisaia Spinout and Little
+    Busters!), so CLANNAD's gain is not an unseen-game result; Little Busters! and planetarian (Key's box with
+    CLANNAD) and Collar x Malice (vita-test's Collar x Malice -Unlimited-) were trained on, and the 1 MB and 4 MB LMs
+    hold their text; 38 of the 49 hooked games were in VOCR5's pools already; the LMs' Jiten list holds CLANNAD's
+    script.
+
+  Rubi's default finder is now the text spotter, which this set has not been read through. Under `ocr_head_gate = on`
+  each blob runs what it carries: Small nothing (its blob is plain, so the setting changes nothing for Small), Normal
+  its head gate (ε = 1e-4) and two-level head, Large its two-level head. Estimated box times, one core at 333 / 444 MHz:
+  Small 0.63 / 0.50 s (about 0.11 s more than VOCR5-S with its gate), Normal 0.77 / 0.61 s, Large 1.88 / 1.47 s (the
+  app shows 0.6, 0.8 and 1.9 s). A Normal job with the 2 MB LM keeps VOCR6-N's own settings for it (vita-vn-ocr #151),
+  measured on v0.4.0-vocr6.1's VOCR6-N and not again on this one; every other size and LM tier keeps its tier's,
+  Small's included. Normal's weights block is a page larger again (1,191,936 B), Small's and Large's keep theirs, and
+  no budget changes: the module rows move by 16 B or less in both Vita builds, in the same pages (measured).
+  `ocr/VOCR6-ATTRIBUTION.md` is the new release's (non-commercial use only; trained on copyrighted game data, which is
+  not redistributed). An update leaves the sizes' old files in `ux0:data/VitaJPOverlay/ocr/`: 0.9.8's
+  `VOCR5_S_w8g.vocr`, `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (4,488,464 B), and the test builds
+  v0.9.8-test.4's and test.5's `VOCR6_N_w8_2l.vocr` and `VOCR6_L_w8_2l.vocr` (3,663,296 B). Nothing reads them, so they may be deleted. Nothing of
+  VOCR6 has run on a console ([details](docs/vita-vn-ocr.md#models)).
 - Opening the overlay confirms that the text is ready: its OCR read skips the stability wait. On an unsettled
   screen, a running background read yields to a new read without the wait. Background reads and quiet refreshes
   keep their stability checks; completed results still reopen from the cache.
+  - **#413's audit: a press's retry after a read torn by an animated icon waits for it again.** The wait is also what
+    tells an icon that cycles from text (`core/vocr_ocr.c`), so with an icon in the region quicker than a read every
+    try of a press tore, for ever (#353's case; on the host bench's box with the quickest icon, 0 of 12 presses at 60
+    frames a second). Now, once a read's screen changed under every try, the open overlay's next tries wait as a
+    background read does (150 ms of still rows, within `ocr_settle_max_ms`), and the press after a read reads at once
+    again: 12 of 12 there, a median 6.0 s after the press (7.1 s before #413, when every try waited); with slower icons
+    0.9-1.7 s, #413's 0.9-1.3 s (estimates of the bench, its 12 presses spread over the icon's cycle since #441's audit,
+    [details](docs/vita-vn-ocr.md#a-press-and-the-stable-text-wait-413)). The one difference from #413: a press that
+    finds that count held over from a torn job (Automatically's, a refresh's, the subtitle strip's, or a press closed
+    while it still tore) waits from its first read. With **Only when I press** every read is a press, so it never waits but
+    for those retries. `ocr_settle_press_ms`, a press's limit before #413, changes nothing, and the guide, the
+    `config.ini` template and the docs no longer say otherwise. The bench's `--press wait|nowait|retry[:MS]` replaces
+    `--settle-ms`. Tests: the press's retry waits, a held-over count, and a reopen keeps the press's own read (#413's
+    audit F3); each fails without its condition. Not run on a console.
+  - **#441's audit: a press after a torn read keeps the background read still running.** #413 cancelled a background
+    read still running on a screen not settled yet, so that the press read at once; with the count of torn reads held
+    over (#441) the press's own read waits too, so the cancel threw away a read further along for one that started its
+    wait again. 8 of test.4's 75 openings that waited for a recognition had the count held over, 4 of them on such a
+    screen [measured: the console's logs, the Shell's count replayed on the host]. Now that read is kept and its text
+    shown. The bench's 12 presses are spread over the icon's cycle (`--cluster` keeps the old spacing, all 12 within
+    87 ms of one moment of it, for the older tables), and its press figures are measured again: a sampling of one
+    moment had given "5.9 s against 1.7 s before #413", where the cycle gives 6.0 s against 7.1 s. The docs name every
+    source of the count, and the auto-vs-press page no longer says a press's job waits. Tests: the held-over count keeps
+    the read (it fails without the condition), and a press on a quiet screen cancels as on any other unsettled one.
+    The debug Shell takes 16 B more code, the normal one none: 4 B of code room left in each. Not run on a console.
+  - **#413's audit: a line typing out no longer counts against a native text hook.** A press's read of a line still
+    typing out compared its first part with the hook's whole line: a disagreement, so one such read took a learned
+    hook's trust and two in a row unlocked it (it had to be learned again). Now, in a read without the wait, OCR's
+    text that agrees only with the beginning of the locked hook's line is no evidence either way: the press shows OCR's
+    text and the hook keeps its state; any other text still disagrees, and a background read is compared as before
+    ([details](docs/native-hooks.md#a-line-typing-out-413s-audit-f2)). On the
+    hooked page pool's 29 Vita sessions (host: the selection over OCR's real reads, half of the presses on a line typing
+    out) a correct hook is unlocked 47 times instead of 105, and keeps its trust for 5,149 lines instead of 3,510; it
+    is taken for a line typing out once until it agrees again, so a hook a page ahead of a page that collects its lines
+    is still unlocked, never trusted (in the actual worker with every job a press, 146 wrong lines against 103 in one
+    such game); background reads are compared exactly as before. The game worker takes 176 B more code (160 B in the debug build), the same pages. A press's partial line in
+    Automatically and the settled line after it are two `history.csv` records, so the reading totals count the start
+    twice: documented ([details](docs/ocr-history.md)); its fix does not fit the Shell's pages
+    ([measured](docs/memory-ledger.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)). Not run on
+    a console.
 
 ### Added
 
@@ -159,7 +239,8 @@ been reported.
   labels for the fifth tab. Only the app changes: the Shell, the game worker, the kernel and the RCO are byte-identical
   to main's in both builds. Not run on a console yet.
 - A Cards page in the Rubi app (#315): **Cards: N queued** on the Anki page lists the queued cards newest first,
-  with their word, reading, game and date, a camera for a card with a picture and a mark for a word on two cards;
+  with their word, reading, game and date, a camera for a card with a picture and a mark for a word mined before
+  (the export's duplicate);
   Left/Right show the exported cards instead, read only. A card opens with its sentence (the word marked), the first
   lines of its definition and its picture. A queued card can be deleted (into `anki_queue/deleted/`, which Triangle
   empties), its sentence fixed with the keyboard (the word found again in the new text) or its picture dropped.
@@ -171,10 +252,22 @@ been reported.
     card or the new one, never both and never neither; a record never names a picture that is not there. Tested on
     the host with a failure at each storage call and a stop between each two steps in a fresh process, and an
     edited card imported by Anki 26.09.3 with its new sentence and its picture.
-  - **Memory, in the app only** (the Shell, the game worker and the kernel are unchanged): 307,364 B of static
-    memory (the list's 2,000-row table, two card views, the keyboard's buffers) and a picture texture of at most
-    442,368 B while a card is open; libjpeg's decoder adds about 290 KB of code [measured: the ELF] and at most
-    32,592 B of heap for a screenshot [measured, host].
+  - **Memory, in the app only** (the Shell, the game worker and the kernel are unchanged): 311,484 B of static
+    memory (the list's 2,000-row table, two card views, the keyboard's buffers, the held cards' list) and a picture
+    texture of at most 442,368 B while a card is open; libjpeg's decoder adds about 290 KB of code [measured: the
+    ELF] and at most 32,592 B of heap for a screenshot [measured, host].
+  - **Its audit's follow-up** (audit-rubi-rm5): a change that cannot be finished holds only its card: the export
+    leaves that card queued and says so (`… 1 stays queued: a change of it did not finish`) and the page marks it
+    (before, one unreadable intent stopped every export); a change whose new record is there is reported as made,
+    even when the memory card did not confirm it. A fixed card is not deleted or fixed again before its change is
+    settled, and two changes in a row are settled in their order (a second fix had made the export take two cards).
+    A sentence fixed back to what it was keeps its card when that change fails. A card both queued and exported is
+    read only, and deleting a card keeps the picture an exported record names. The word is found again past its 64th
+    occurrence. The duplicate mark is the export's: a word mined before, queued or exported, its earliest card not
+    marked. Cancel while the words are read stops the list, and deleting the only card of a later part of the list
+    goes back to the newer part. `test_card_picture.c` runs in the fast gate and CI's host job now (libjpeg's headers,
+    `VJO_REQUIRE_JPEG`), new tests kill the audit's surviving mutants, and the fast gate's `/tmp` is capped at 2 GiB a
+    lane. 4,288 B more code and 4,128 B more static memory [measured: the debug build's ELF].
   - Not run on a console yet.
 
 - **A text box suggested on first use** (#358; API 52; [first-box.md](docs/first-box.md)). A game with no box of its
@@ -265,6 +358,27 @@ been reported.
   modules keep their pages ([native-hooks.md](docs/native-hooks.md#sc3-text)). **Proven in the Vita3K emulator
   only, not run on a console** (the psandvita farm's 1,498, 606 and 395 approved pages); without the file the games
   read by OCR as before.
+- Native text hooks for 20 more Japanese visual novels, verified entries from the psandvita farm's hook farm, each with
+  its text clean-up: 三国恋戦記 (`PCSG00183`) and 三国恋戦記 ～思いでがえし～ (`PCSG00785`), 果つることなき未来ヨリ
+  (`PCSG00988`), ISLAND (`PCSG01000`), DIABOLIK LOVERS LIMITED V EDITION (`PCSG00272`), VANDEAD CARNIVAL (`PCSG00472`),
+  MORE,BLOOD LIMITED V EDITION (`PCSG00476`), DARK FATE (`PCSG00530`) and LUNATIC PARADE (`PCSG00826`), RE:VICE[D]
+  (`PCSG00382`), 戦場の円舞曲 (`PCSG00428`), 忍び、恋うつつ ― 雪月花恋絵巻 ― (`PCSG00602`), 薄桜鬼 真改　風ノ章
+  (`PCSG00629`), BROTHERS CONFLICT　Precious Baby (`PCSG00755`), 大図書館の羊飼い -Library Party- (`PCSG00505`),
+  あまつみそらに！ 雲のはたてに (`PCSG00638`), もし、この世界に神様がいるとするならば。 (`PCSG00706`), マブラヴ
+  オルタネイティヴ (`PCSG00777`), 学園CLUB ～ヒミツのナイトクラブ～ (`PCSG01065`) and スキとスキとでサンカク恋愛
+  (`PCSG01250`), all 1.00. Eight of them are not in LunaTranslator's table at all; for 大図書館の羊飼い and 学園CLUB the
+  entry lets Luna's own site past Rubi's placement check, and 学園CLUB's `^` now breaks the line as on the screen
+  (Luna's filter joined the lines). New clean-ups: the speaker on a line of its own in 果つることなき未来ヨリ and ISLAND,
+  DIABOLIK LOVERS' one-cell `!?` and `!!` (written ゞ and ゝ in the script), Aozora ruby (`｜神奈《かんな》`: the base),
+  スキとスキとでサンカク恋愛's `/ruby:base&reading/` and layout codes, and 三国恋戦記's speaker without an end code.
+  The entries are data in the game worker, which keeps its pages in both builds: some of Rubi's filters are read-only
+  data again and `core/hook_luna.c` is built for size, as `core/hook_re.c` is
+  ([memory ledger](docs/memory-ledger.md#the-hook-farms-20-verified-entries-no-api-change)).
+  In 忍び、恋うつつ, 薄桜鬼 真改 and BROTHERS CONFLICT the game sets a page one line at a time, so the popup shows the
+  page's last line. **Proven in the Vita3K emulator only, not run on a console**: 671 pages an AI reviewer approved
+  against the frames the games drew (8 to 100 a title); through Rubi's own path the hook's text is the farm's on 603 of
+  the 608 single-hit pages, the other 5 differ in how a one-cell `!?` or `!!` is written
+  ([details](docs/native-hooks.md#farm-checks)).
 
 ### Changed (draft #318, test build only)
 
@@ -293,6 +407,10 @@ been reported.
 
 ### Fixed
 
+- The hook farm's entries, #394's audit (no change to the game worker or any module): the engine test's check of
+  PCSG00505's 8-byte entry, that the farm's next 8 bytes are a `movw`/`movt` pair of one register, also refuses two `bl`s
+  and a pair of SP or PC (it took `bl; bl` for a pair); the filters' test vectors say which are the farm's approved hits;
+  the filter docs say what the farm's pages do not prove (`AOZORA_RUBY`'s bare form, `PCSG01250`'s `#n`).
 - **The PSP probe (debug build) stopped before reading anything on the console** (#248): the view of PSP RAM has no
   memory-block UID (`sceKernelFindMemBlockByAddr` answers `0x80024501`, `SCE_KERNEL_ERROR_INVALID_UID`), while its
   mapping is readable (`sceKernelGetMemBlockInfoByAddr`: base `0x70000000`, 32 MiB, uncached), and the probe took
@@ -451,25 +569,35 @@ been reported.
   - **A box at least as tall as wide is read as columns at once**, as in 0.9.8, with the columns' rows read once: ON's
     rule had read none of the 2,659 such boxes of vertical text measured as rows. On the host's bench a box of four
     columns showed its text in 1.6-2.0 s at 30 frames a second and 1.0-2.1 s at 60, against 2.2-3.3 s and 1.8-4.7 s
-    (the rows' try first) and 0.9.8's 2.0-5.3 s and 1.3-6.3 s (estimates: each line's CTC frames at the console's
-    measured time a frame).
+    (the rows' try first) and 0.9.8's 2.0-5.3 s and 1.3-6.3 s (estimates: each line's CTC frames at a time a frame
+    measured for rows in test.4's logs and estimated for columns, the stable-text wait a press had before #413).
   - **The columns' rectangle keeps the job's reserve** (AGENTS.md rule 3). Up to 516,096 B, it was taken outside the
     job's memory check: it could cut 504 KiB into the 4 MiB the job leaves the game, or, with
     `ocr_skip_blank_lines` on, take the room of the weights read after it, so that the job read the columns' text as
     rows. Now a block larger than a column is taken only from what the game has free beyond the reserve and the
     weights (and LM) the job has still to read; otherwise the columns are read one by one, as in 0.9.8
-    ([memory ledger](docs/memory-ledger.md)).
+    ([memory ledger](docs/memory-ledger.md)). The same holds for a band of rows that large (a picture, or lines the
+    finder could not part, on many whole screens): in a game short of memory a job of rows, OFF's and Automatic's
+    too, leaves it out, and its lines are missing from the text.
   - **The step log keeps the last try's steps**: a try of rows whose rows went to the columns leaves the log with its
     memory checks too, so that ON's and Automatic's columns keep their normalisation and parallel steps within the 20.
   - **The bench charges recognition**: it charged none (its clock stood still while a line was read), and now charges
-    each line's CTC frames at the console's measured time a frame. Its table, the docs' account of #379 and the
+    each line's CTC frames, at a time a frame measured for rows (test.4) and estimated for columns, including the first
+    line of each of the job's own retries (#411's audit; one table cell moved: 2.0 s, not 1.4 s). Its table, the
+    docs' account of #379 and the
     limits are restated ([on's rule](docs/vita-vn-ocr.md#ons-rule-api-53-379)): a name above the lines and short lines
     (4 characters or fewer) make a box columns, the box Rubi suggests on first use is read as rows in 72 % of the
     measured pages, and an animated icon can still hold a whole screen on "Recognizing…" where its columns are too
     many to read at once.
+  - **A press without the stable-text wait** (#413) does not learn an animated icon's rows, so each change of the icon
+    between two reads tears the read: on the bench's box with an icon that turns for 15 frames and rests for 15, OFF
+    and ON then showed the text after 5.0 s at 30 frames a second (2.0 s with the wait) and not within 20 s at 60
+    (1.7 s with it); with slower icons the press was quicker than with the wait. A bench estimate, not a console's;
+    `--press wait` gives the press with the wait ([details](docs/vita-vn-ocr.md#ons-rule-api-53-379)).
   - Tests: the empty box (ON's reads equal OFF's), the columns' weights refused after their check (the rows read), the
-    longest step log of ON's and Automatic's tries, and the rectangle at a page short of room; each fails without its
-    fix. No module takes a page more ([memory ledger](docs/memory-ledger.md)). Not run on a console.
+    longest step log of ON's and Automatic's tries, the rectangle a byte short of room and the LM's room beside it, a
+    square box, and a game whose vertical model's file failed; each fails without its fix. No module takes a page more
+    ([memory ledger](docs/memory-ledger.md)). Not run on a console.
 
 - **Trusted hooks, #338's audit.**
   - With **Trusted hooks replace OCR** off (`hook_trust = off`), the hook cache is 0.9.7's again: 0.9.8 saved a
@@ -576,7 +704,8 @@ been reported.
 
 ### Changed
 
-- **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1): VOCR5-N's and VOCR5-L's shapes,
+- **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1; replaced before a release by the
+  follow-up set, all three sizes VOCR6, above): VOCR5-N's and VOCR5-L's shapes,
   fine-tuned again on the owner's hooked PS Vita and PSP games, replace VOCR5-N and VOCR5-L as the Normal (the default)
   and Large model sizes (`VOCR6_N_w8_2l.vocr`, 1,187,616 B; `VOCR6_L_w8_2l.vocr`, 2,475,680 B). Small stays VOCR5-S:
   VOCR6's Small read the hooked games better but other games a little worse (VOCR5's development score, +0.070

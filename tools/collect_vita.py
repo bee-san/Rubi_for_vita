@@ -28,7 +28,7 @@ with curl as the installer does:
   ux0:data/                every *.psp2dmp crash dump
 The directories are listed (Python's ftplib, LIST as --dumps does) into listings/; the
 installed plugins, the RCO, the settings VPK, every OCR model, the beam + LM decoder's LMs,
-their LM-ATTRIBUTION.md, the model sizes' MODEL-ATTRIBUTION.md and VOCR6-ATTRIBUTION.md, the text-presence gate's
+their LM-ATTRIBUTION.md, the model sizes' VOCR6-ATTRIBUTION.md and VOCR5's MODEL-ATTRIBUTION.md, the text-presence gate's
 weights (*.vtd) and its GATE-ATTRIBUTION.md, the vertical model's VERTICAL-ATTRIBUTION.md and the text spotter's
 (*.vtsp, SPOTTER-ATTRIBUTION.md) are hashed (downloaded to a
 temporary file and deleted again, never kept) and compared with package-manifest.json when given.
@@ -89,7 +89,7 @@ NOT_THERE = (9, 19, 78)
 APP_READS = (("cwd", ()), ("nocwd", ("--ftp-method", "nocwd")))
 # Listed, and what to do with their files: "keep" downloads them, "hash" hashes them only.
 # The ocr folder holds what the package ships there: the weights (*.vocr), the LMs (*.vlm, #89), their
-# attribution, LM-ATTRIBUTION.md, the model sizes' attributions, MODEL-ATTRIBUTION.md and VOCR6-ATTRIBUTION.md,
+# attribution, LM-ATTRIBUTION.md, the model sizes' attributions, VOCR6-ATTRIBUTION.md and MODEL-ATTRIBUTION.md (VOCR5's),
 # the text-presence gate's weights (*.vtd) and attribution, GATE-ATTRIBUTION.md, the vertical model's
 # attribution, VERTICAL-ATTRIBUTION.md, and (API 54) the text spotter's weights (*.vtsp) and attribution,
 # SPOTTER-ATTRIBUTION.md, once a package carries them (package_release.py).

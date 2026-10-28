@@ -77,34 +77,26 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define OFF RGBA8(244, 160, 167, 255)
 #define MODEL_DIR "ux0:data/VitaJPOverlay/ocr"
 
-/* ---- storage: the SDK's file calls over real files ---- */
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+/* ---- storage: the SDK's file calls over real files (fakes/sceio_posix.h) ---- */
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE)
+#include "fakes/sceio_posix.h"
 static const char *close_fails; /* a file whose sceIoClose reports an error */
 static int close_fails_fd = -1;
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
-    int fd = native(open(p, flags, mode));
+    int fd = sceio_open(p, flags, mode);
     size_t n = strlen(p), m = close_fails ? strlen(close_fails) : 0;
     if (fd >= 0 && m && n >= m && !strcmp(p + n - m, close_fails)) close_fails_fd = fd;
     return fd;
 }
 int sceIoClose(int fd)
 {
-    int rc = native(close(fd));
+    int rc = sceio_close(fd);
     if (fd != close_fails_fd) return rc;
     close_fails_fd = -1;
     return (int)0x80010005u; /* EIO */
 }
-int sceIoRead(int fd, void *p, size_t len) { return native((int)read(fd, p, len)); }
-int sceIoWrite(int fd, const void *p, size_t len) { return native((int)write(fd, p, len)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-int sceIoGetstat(const char *p, SceIoStat *out)
-{ struct stat st; int rc = stat(p, &st); if (!rc) { out->st_mode = st.st_mode; out->st_size = st.st_size; } return native(rc); }
 SceUID sceKernelGetThreadId(void) { return 0x40010003; } /* settings/applog.c's batch owner */
-int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
 
 /* No installed games: the Games page is not what these tests drive. */
 int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const VjoGames *rules)
@@ -661,10 +653,10 @@ static void check_boost(int f, int y, const char *label, int on)
 }
 
 static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR6-N found.";
-static const char *const SMALL_STATUS = "Small: fastest. VOCR5-S found.";
+static const char *const SMALL_STATUS = "Small: fastest. VOCR6-S found.";
 static const char *const LARGE_STATUS = "Large: most accurate. VOCR6-L found.";
-/* This package's estimates (core/vocr_models.c): VOCR5-S, VOCR6-N, VOCR6-L (two generations, each named). */
-static const char *const DETAILS[3] = {"0.5 s, 1.0 MB", "0.8 s, 1.4 MB", "1.9 s, 2.8 MB"};
+/* This package's estimates (core/vocr_models.c): VOCR6-S, VOCR6-N, VOCR6-L (v0.4.1-vocr6.2). */
+static const char *const DETAILS[3] = {"0.6 s, 1.0 MB", "0.8 s, 1.4 MB", "1.9 s, 2.8 MB"};
 
 /* This package: one engine, VOCR; the OCR card is its Model size, Normal chosen,
  * each size with its estimates from the models' metadata, and the status line

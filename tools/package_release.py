@@ -14,7 +14,7 @@ from prepare_ocr import (VOCR_ASSETS, VOCR_GATE_ASSETS, VOCR_GATE_ATTRIBUTION, V
                          VOCR_GATE_MODEL, VOCR_GATE_TAG, VOCR_GENERATION, VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION,
                          VOCR_LM_ATTRIBUTION_PIN,
                          VOCR_LM_TAG, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN, VOCR_MODEL_ATTRIBUTION_TAG,
-                         VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS, VOCR5_TAG,
+                         VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG,
                          VOCR5V_ASSETS, VOCR5V_TAG, VOCR6_ASSETS, VOCR6_ATTRIBUTION, VOCR6_ATTRIBUTION_PIN, VOCR6_TAG,
                          VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
                          VOCR_VERTICAL_MODEL, VOCR_SPOT_ASSETS, VOCR_SPOT_ATTRIBUTION, VOCR_SPOT_ATTRIBUTION_PIN,
@@ -100,8 +100,8 @@ def base_variant(original):
 def tier_release(name):
     """(asset table, release tag) of a model size's recognizer (or the vertical model), by the tables this
     module sees."""
-    for assets, tag in ((VOCR6_ASSETS, VOCR6_TAG), (VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG),
-                        (VOCR4_ASSETS, VOCR4_TAG), (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
+    for assets, tag in ((VOCR6_ASSETS, VOCR6_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
+                        (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError("Not a pinned recognizer: " + name)
@@ -309,18 +309,18 @@ def write_package(base, output, models, assets, conversion, version, source_revi
     if attribution.stat().st_size != size or digest(attribution) != sha:
         raise ValueError("The LMs' " + VOCR_LM_ATTRIBUTION + " checksum failed: not release " + VOCR_LM_TAG + "'s")
     assets[DATA + "ocr/LM-" + VOCR_LM_ATTRIBUTION] = attribution
-    # The model sizes' release names the licences of what they were trained on (CC BY 4.0 data among
-    # them) and their terms: that attribution ships with them too, as ocr/MODEL-ATTRIBUTION.md.
+    # VOCR5's release names the licences of what the checkpoints every model size starts from were trained on (CC BY
+    # 4.0 data among them) and their terms: that attribution ships with them too, as ocr/MODEL-ATTRIBUTION.md.
     attribution = models / VOCR_MODEL_ATTRIBUTION
     if not attribution.is_file():
-        raise ValueError("The model sizes' " + VOCR_MODEL_ATTRIBUTION + " is missing (release " + VOCR_MODEL_ATTRIBUTION_TAG
+        raise ValueError("VOCR5's " + VOCR_MODEL_ATTRIBUTION + " is missing (release " + VOCR_MODEL_ATTRIBUTION_TAG
                          + "'s ATTRIBUTION.md: tools/prepare_ocr.py --backend vocr-tiers)")
     _, size, sha = VOCR_MODEL_ATTRIBUTION_PIN[VOCR_MODEL_ATTRIBUTION]
     if attribution.stat().st_size != size or digest(attribution) != sha:
-        raise ValueError("The model sizes' " + VOCR_MODEL_ATTRIBUTION + " checksum failed: not release "
+        raise ValueError("VOCR5's " + VOCR_MODEL_ATTRIBUTION + " checksum failed: not release "
                          + VOCR_MODEL_ATTRIBUTION_TAG + "'s ATTRIBUTION.md")
     assets[DATA + "ocr/" + VOCR_MODEL_ATTRIBUTION] = attribution
-    # VOCR6's release (Normal's and Large's recognizers) names what they were fine-tuned on beyond VOCR5's data (the
+    # VOCR6's release (the three sizes' recognizers) names what they were fine-tuned on beyond VOCR5's data (the
     # owner's hooked games, copyrighted game data used for training only), their terms (non-commercial use only) and
     # the disclosures for test-set numbers: its ATTRIBUTION.md ships beside them as ocr/VOCR6-ATTRIBUTION.md.
     attribution = models / VOCR6_ATTRIBUTION

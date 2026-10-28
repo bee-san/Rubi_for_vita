@@ -155,10 +155,11 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
  * console (PCH-2000, 3.65, 2026-10-23): hooked ("1 table sites"), its stream held text, it answered the jobs
  * (core/hook_select.h vjo_hook_select_no_memory: "game vocr source: hook 1, flags 0x98", rc 0), the overlay
  * showed the game's line (checked by eye against the screen), and the game did not crash.
- * The table is kept in the worker's data segment (VJO_DATA_TABLE, core/port.h), whose last page has room:
+ * The table is kept in the worker's data segment (VJO_DATA_TABLE, core/port.h), whose last page had room:
  * in its code segment the farm's entries took the debug build's worker past its pages
  * (include/vjo_ledger_budget.h; docs/memory-ledger.md, "Tables in the data segment"). Its title strings stay
- * read-only. */
+ * read-only. The hook farm's 20 rows of 2026-10-27 filled that page: some of Rubi's filters went back to read-only
+ * data for them (core/hook_luna.c). */
 static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, VJO_RF_PCSG00415, 0, 0},
@@ -174,6 +175,27 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG00620 グリザイアの果実スピンアウト！？ アイドル魔法少女ちるちる☆みちる (APP_VER 01.00): Vita3K 0x81031e90, 995 farm pages (paired-vita-pcsg00620-20261023); patch: ldr.w lr, [r5, #0x50]; ldr r2, [r5, #0x8]; cmp lr, r2 */
     {"PCSG00620", 0x90E7EC14u, 0x31E90u, 1, 4, VJO_HOOK_ENC_CP932, 16, 1066,
      {0xD5, 0xF8, 0x50, 0xE0, 0xAA, 0x68, 0x96, 0x45, 0x05, 0xDB, 0xBA, 0xF1, 0x00, 0x0F, 0x02, 0xD1}, VJO_RF_PROTOTYPE, 0, 0x0100u},
+    /* PCSG00183 三国恋戦記 (APP_VER 01.00): Vita3K 0x8103ab34, 12 farm pages (paired-vita-pcsg00183-20261023), the page
+     * handler's layout path right after the ~X expander returns: the page at sp + 0x2c + 0x282a (r13 + 10326), one hit a
+     * page or NVL paragraph; $t<name>｢..｣ has no end code (VJO_RF_PROTOTYPE drops the $t); patch: movw r2, #0x825c;
+     * movt r2, #0x1 */
+    {"PCSG00183", 0x9F3B88EAu, 0x3AB34u, 1, 13, VJO_HOOK_ENC_CP932, 16, 10326,
+     {0x48, 0xF2, 0x5C, 0x22, 0xC0, 0xF2, 0x01, 0x02, 0x5D, 0xF8, 0x02, 0xE0, 0x83, 0x46, 0xDE, 0xF8}, VJO_RF_PROTOTYPE, 0, 0x0100u},
+    /* PCSG00785 三国恋戦記 ～思いでがえし～ (APP_VER 01.00): Vita3K 0x81031e0a, 25 farm pages (paired-vita-pcsg00785-20261023), the
+     * entry of the task:: engine's message-window layout function (r1 = the text); patch: push.w {r4, r5, r6, r7, r8, r9, r10,
+     * r11, lr}; vpush {s16, s17, s18, s19}; sub.w sp, sp, #0x3d4 */
+    {"PCSG00785", 0xDCA94229u, 0x31E0Au, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x2D, 0xED, 0x04, 0x8A, 0xAD, 0xF5, 0x75, 0x7D, 0xAD, 0xF5, 0x40, 0x5D}, VJO_RF_PROTOTYPE, 0, 0x0100u},
+    /* The task:: engine's layout function in two more titles, whose speaker is drawn on a line of its own:
+     * VJO_RF_PROTOTYPE_NAMELINE */
+    /* PCSG00988 果つることなき未来ヨリ (APP_VER 01.00): Vita3K 0x8106a260, 25 farm pages (paired-vita-pcsg00988-20261023); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; vpush {s16, s17, s18, s19} */
+    {"PCSG00988", 0x278EF7E2u, 0x6A260u, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x2D, 0xED, 0x04, 0x8A, 0xAD, 0xF5, 0x7D, 0x7D, 0xAD, 0xF5, 0x40, 0x5D}, VJO_RF_PROTOTYPE_NAMELINE, 0,
+     0x0100u},
+    /* PCSG01000 ISLAND (APP_VER 01.00): Vita3K 0x8106a6d8, 39 farm pages (paired-vita-pcsg01000-20261023); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; vpush {s16, s17, s18, s19} */
+    {"PCSG01000", 0x73D45EB1u, 0x6A6D8u, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x2D, 0xED, 0x04, 0x8A, 0xAD, 0xF5, 0x7D, 0x7D, 0xAD, 0xF5, 0x40, 0x5D}, VJO_RF_PROTOTYPE_NAMELINE, 0,
+     0x0100u},
     /* IF:Lib GAME-ENGINE 3.00 (psandvita farm, Vita3K only): each title's VJO_RF_ filter writes its default names, then VJO_RF_IFENGINE; Luna's filter at the same address dropped them */
     /* PCSG00448 MARGINAL#4 IDOL OF SUPERNOVA (APP_VER 01.00): Vita3K 0x8106d8f8, 497 farm pages (paired-vita-pcsg00448-20261023); patch: ldr.w r0, [r8, #0x354]; ldrsb.w r0, [r0, #0x5]; Luna's site here (r0, filter FPCSG00448) */
     {"PCSG00448", 0x84668EFEu, 0x6D8F8u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
@@ -184,6 +206,30 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG00853 ピリオドキューブ～鳥籠のアマデウス～ (APP_VER 01.00): Vita3K 0x81007df2, 749 farm pages (paired-vita-pcsg00853-20261023); patch: movw r0, #0x1098; adds r0, r4, r0; ldrsb.w r4, [r5]; movs.w r9, #0x0; Luna's site here (r5, filter PCSG00530) */
     {"PCSG00853", 0xA92335D4u, 0x7DF2u, 1, 5, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x41, 0xF2, 0x98, 0x00, 0x20, 0x18, 0x95, 0xF9, 0x00, 0x40, 0x5F, 0xF0, 0x00, 0x09, 0xE8, 0x90}, VJO_RF_PCSG00853, 0, 0x0100u},
+    /* The same engine's window setters, Rubi's own sites after the in-place #Name expander (the player's name already in
+     * the page): '#Scale[1.0]line#nline#n', one hit a page or NVL paragraph; VJO_RF_IFENGINE, or VJO_RF_PCSG00472 where
+     * the font draws ゞ ゝ as one !? and one !! cell. The speaker's name is another call. */
+    /* PCSG00272 DIABOLIK LOVERS LIMITED V EDITION (APP_VER 01.00): Vita3K 0x8105a188, 60 farm pages (paired-vita-pcsg00272-20261023), the page buffer 0x8140e916; patch: movw r5, #0xe8a8; movt r5, #0x8140 */
+    {"PCSG00272", 0x164953F9u, 0x5A188u, 1, 5, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x4E, 0xF6, 0xA8, 0x05, 0xC8, 0xF2, 0x40, 0x15, 0x95, 0xF9, 0x23, 0x00, 0x06, 0xF2, 0x26, 0x39}, VJO_RF_PCSG00472, 0, 0x0100u},
+    /* PCSG00382 RE:VICE[D] (APP_VER 01.00): Vita3K 0x81055260, 26 farm pages (paired-vita-pcsg00382-20261023), the page buffer 0x8137401a; patch: movw r0, #0x3f88; movt r0, #0x8137 */
+    {"PCSG00382", 0x38591EB5u, 0x55260u, 1, 6, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x43, 0xF6, 0x88, 0x70, 0xC8, 0xF2, 0x37, 0x10, 0x90, 0xF9, 0x04, 0x00, 0x01, 0x28, 0x40, 0xF0}, VJO_RF_PCSG00472, 0, 0x0100u},
+    /* PCSG00428 戦場の円舞曲 (APP_VER 01.00): Vita3K 0x810271f0, 100 farm pages (paired-vita-pcsg00428-20261023), the page '#Speed[5]#Effect[0]#Scale[1]..'; patch: movw r11, #0xf0f0; movt r11, #0x817b */
+    {"PCSG00428", 0x4282EF71u, 0x271F0u, 1, 7, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x4F, 0xF2, 0xF0, 0x0B, 0xC8, 0xF2, 0x7B, 0x1B, 0x9B, 0xF9, 0x23, 0x00, 0x09, 0xF5, 0xE3, 0x7A}, VJO_RF_IFENGINE, 0, 0x0100u},
+    /* PCSG00472 DIABOLIK LOVERS VANDEAD CARNIVAL (APP_VER 01.00): Vita3K 0x8106ef92, 20 farm pages (paired-vita-pcsg00472-20261023), the page buffer 0x8143f586; patch: movw r5, #0xf518; movt r5, #0x8143; ldrsb.w r0, [r5, #0x23] */
+    {"PCSG00472", 0x92BEBE3Fu, 0x6EF92u, 1, 5, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x4F, 0xF2, 0x18, 0x55, 0xC8, 0xF2, 0x43, 0x15, 0x95, 0xF9, 0x23, 0x00, 0x06, 0xF2, 0x26, 0x39}, VJO_RF_PCSG00472, 0, 0x0100u},
+    /* PCSG00476 DIABOLIK LOVERS MORE,BLOOD LIMITED V EDITION (APP_VER 01.00): Vita3K 0x81056e4e, 21 farm pages (paired-vita-pcsg00476-20261023), the page buffer 0x814152c6; patch: movw r5, #0x5258; movt r5, #0x8141; ldrsb.w r0, [r5, #0x23] */
+    {"PCSG00476", 0x1A549EA8u, 0x56E4Eu, 1, 5, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x45, 0xF2, 0x58, 0x25, 0xC8, 0xF2, 0x41, 0x15, 0x95, 0xF9, 0x23, 0x00, 0x06, 0xF2, 0x26, 0x39}, VJO_RF_PCSG00472, 0, 0x0100u},
+    /* PCSG00530 DIABOLIK LOVERS DARK FATE (APP_VER 01.00): Vita3K 0x8105dee0, 8 farm pages (paired-vita-pcsg00530-20261023), the page buffer 0x8142db96; patch: movw r5, #0xdb28; movt r5, #0x8142 */
+    {"PCSG00530", 0x846F514Cu, 0x5DEE0u, 1, 5, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x4D, 0xF6, 0x28, 0x35, 0xC8, 0xF2, 0x42, 0x15, 0x95, 0xF9, 0x23, 0x00, 0x06, 0xF2, 0x26, 0x39}, VJO_RF_IFENGINE, 0, 0x0100u},
+    /* PCSG00826 DIABOLIK LOVERS LUNATIC PARADE (APP_VER 01.00): Vita3K 0x8107ee36, 11 farm pages (paired-vita-pcsg00826-20261023), advTalkMsgText's page after its keyword pass (#Color[7]..#Color[10]) in a stack buffer; patch: adds.w r6, r4, #0x40; movw r2, #0x7660; adds r0, r6, #0x0; movt r2, #0x8125 */
+    {"PCSG00826", 0x06F2DB50u, 0x7EE36u, 1, 9, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x14, 0xF1, 0x40, 0x06, 0x47, 0xF2, 0x60, 0x62, 0x30, 0x1C, 0xC8, 0xF2, 0x25, 0x12, 0x4B, 0x46}, VJO_RF_IFENGINE, 0, 0x0100u},
     /* Luna sites the placement check refuses, unlocked by their signature (psandvita farm, Vita3K only): filter 0 takes Luna's filter at the address */
     /* PCSG00468 黒蝶のサイケデリカ (APP_VER 01.00): Vita3K 0x8103f538, 412 farm pages (paired-vita-pcsg00468-20261023); patch: ldr r2, [r5]; subs r2, r4, r2; strd r7, r9, [sp]; Luna's site here (r1, filter FPCSG00468) */
     {"PCSG00468", 0x4DB3D205u, 0x3F538u, 1, 1, VJO_HOOK_ENC_UTF8, 16, 0,
@@ -212,6 +258,14 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG01221 紅色天井艶妖綺譚 二藍 (APP_VER 01.00): Vita3K 0x8103b554, 5 farm pages (paired-vita-pcsg01221-20261023); patch: movw r0, #0xb8c8; movt r0, #0x812f; Luna's site here (r4, filter FPCSG00852) */
     {"PCSG01221", 0x1A9CF884u, 0x3B554u, 1, 4, VJO_HOOK_ENC_CP932, 16, 0,
      {0x4B, 0xF6, 0xC8, 0x00, 0xC8, 0xF2, 0x2F, 0x10, 0x02, 0x68, 0x42, 0xF6, 0x3C, 0x60, 0xC8, 0xF2}, 0, 0, 0x0100u},
+    /* PCSG00505 大図書館の羊飼い -Library Party- (APP_VER 01.00): Vita3K 0x8102db24, 100 farm pages (paired-vita-pcsg00505-20261023), the page string in the scenario; patch: bfi lr, r2, #8, #8; sxth.w r9, lr; Luna's site here (r0, filter none). 8 bytes:
+     * the movw/movt after them hold an address the loader relocates (a relocatable eboot) */
+    {"PCSG00505", 0x13ED670Bu, 0x2DB24u, 1, 0, VJO_HOOK_ENC_CP932, 8, 0,
+     {0x62, 0xF3, 0x0F, 0x2E, 0x0F, 0xFA, 0x8E, 0xF9}, 0, 0, 0x0100u},
+    /* PCSG01065 学園CLUB ～ヒミツのナイトクラブ～ (APP_VER 01.00): Vita3K 0x81025854, 22 farm pages (paired-vita-pcsg01065-20261023), the message copier's page buffer 0x8122204c (every exit branches to the site, which the patch starts with); VJO_RF_CARET_NEWLINE in place of Luna's filter, which drops the ^ drawn as a line break; patch: movw r1, #0x2240; movt r1, #0x8122; Luna's site here (r1, filter FPCSG00852) */
+    {"PCSG01065", 0x81440C76u, 0x25854u, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x42, 0xF2, 0x40, 0x21, 0xC8, 0xF2, 0x22, 0x11, 0x08, 0x80, 0x42, 0xF2, 0x4C, 0x00, 0xC8, 0xF2}, VJO_RF_CARET_NEWLINE, 0,
+     0x0100u},
     /* Other engines (psandvita farm, Vita3K only): Rubi filters per title; PCSG00450 reads through the message's text pointer */
     /* PCSG00020 極限脱出ＡＤＶ 善人シボウデス (APP_VER 01.00): Vita3K 0x811ac998, 53 farm pages (paired-vita-pcsg00020-20261023),
      * Chunsoft's skp2v engine (Lua 5.1 + luabind): the entry of GUI.Message::setText (r1 = one click segment's text, UTF-8,
@@ -277,6 +331,31 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG01194 参千世界遊戯 ～Re Multi Universe Myself～ (APP_VER 01.00): Vita3K 0x81056e24, 30 farm pages (paired-vita-pcsg01194-20261023); patch: ldr r1, [r4, #0x4]; adds r1, r7, r1; str r0, [sp, #0xc]; adds r0, r1, #0x2; Luna's site here (r0, filter none) */
     {"PCSG01194", 0xECD30306u, 0x56E24u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
      {0x61, 0x68, 0x79, 0x18, 0x03, 0x90, 0x88, 0x1C, 0xD6, 0xF8, 0x20, 0x13, 0x00, 0xAA, 0x60, 0x60}, VJO_RF_PCSG01194, 0, 0x0100u},
+    /* Otomate's STCM2 script VM, the message command's line after its in-place #Name expander (the player's name already
+     * in it): the script keeps one string a line, so a page's lines are one hit each, within milliseconds, and the
+     * stream's latest hit is the page's last line; #Color[n] tags (PCSG00602 event 31): VJO_RF_IFENGINE */
+    /* PCSG00602 忍び、恋うつつ ― 雪月花恋絵巻 ― (APP_VER 01.00): Vita3K 0x8100b242, 33 farm pages (paired-vita-pcsg00602-20261023), the entry of the window-text setter (r2 = the line); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0xc; movs.w r9, r0; mov r11, r2 */
+    {"PCSG00602", 0x711785A4u, 0xB242u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x83, 0xB0, 0x5F, 0xEA, 0x00, 0x09, 0x93, 0x46, 0x8A, 0x46, 0x42, 0xD0}, VJO_RF_IFENGINE, 0, 0x0100u},
+    /* PCSG00629 薄桜鬼 真改　風ノ章 (APP_VER 01.00): Vita3K 0x81019b2c, 20 farm pages (paired-vita-pcsg00629-20261023), right after the expander returns (r4 = sp + 8, the line); patch: str.w r11, [sp, #0x188]; cmp.w r10, #0x0 */
+    {"PCSG00629", 0xBE150EF7u, 0x19B2Cu, 1, 4, VJO_HOOK_ENC_CP932, 16, 0,
+     {0xCD, 0xF8, 0x88, 0xB1, 0xBA, 0xF1, 0x00, 0x0F, 0x00, 0xF0, 0x8C, 0x80, 0xBA, 0xF1, 0x01, 0x0F}, VJO_RF_IFENGINE, 0, 0x0100u},
+    /* PCSG00755 BROTHERS CONFLICT　Precious Baby (APP_VER 01.00): Vita3K 0x8100e62c, 44 farm pages (paired-vita-pcsg00755-20261023), the entry of the per-line store, PCSG00602's setter (the same 16 bytes; r2 = the line); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0xc; movs.w r9, r0 */
+    {"PCSG00755", 0xEBEDA5FCu, 0xE62Cu, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x83, 0xB0, 0x5F, 0xEA, 0x00, 0x09, 0x93, 0x46, 0x8A, 0x46, 0x42, 0xD0}, VJO_RF_IFENGINE, 0, 0x0100u},
+    /* PCSG00638 あまつみそらに！ 雲のはたてに (APP_VER 01.00): Vita3K 0x8102e6f4, 19 farm pages (paired-vita-pcsg00638-20261023), PROTOTYPE's Key port: the message window's set-text method right after its strlen (r6 = the page, one hit a page; the speaker is its r3); patch: adds r2, r0, #0x1; strh.w r2, [r11, #0x16c]; adds.w r0, r4, #0x174 */
+    {"PCSG00638", 0x653BEB37u, 0x2E6F4u, 1, 6, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x42, 0x1C, 0xAB, 0xF8, 0x6C, 0x21, 0x14, 0xF5, 0xBA, 0x70, 0x31, 0x1C, 0x7A, 0xF0, 0x6E, 0xEE}, VJO_RF_AOZORA_RUBY, 0,
+     0x0100u},
+    /* PCSG00706 もし、この世界に神様がいるとするならば。 (APP_VER 01.00): Vita3K 0x81c1b060, 42 farm pages (paired-vita-pcsg00706-20261023), Rejet's Unity framework as PCSG00553: the entry of HistoryManager.Add (r1 = strData, a MonoString, its UTF-16 at +12; one hit a page); patch: mov r12, sp; push {r4, r5, r6, r7, r8, r11, r12, lr} */
+    {"PCSG00706", 0xE594FE46u, 0xC1B060u, 0, 1, VJO_HOOK_ENC_UTF16LE, 16, 12,
+     {0x0D, 0xC0, 0xA0, 0xE1, 0xF0, 0x59, 0x2D, 0xE9, 0x20, 0xD0, 0x4D, 0xE2, 0x0D, 0xB0, 0xA0, 0xE1}, VJO_RF_BR_NEWLINE, 0, 0x0100u},
+    /* PCSG00777 マブラヴ オルタネイティヴ (APP_VER 01.00): Vita3K 0x811150c4, 22 farm pages (paired-vita-pcsg00777-20261023), AGESVITA's script-message handler (r5 = the message, the speaker's 【name】 in it, drawn; one hit a message). No filter: its codes are the C0 controls \x03 (a reveal pause) and \x01 (the click wait that ends a message), which vjo_hook_clean drops; patch: adds r4, r0, #0x0; ldr r0, [r4, #0x3c]; ands r0, r0, #0x2 */
+    {"PCSG00777", 0x5C0EBBC4u, 0x1150C4u, 1, 5, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x04, 0x1C, 0xE0, 0x6B, 0x10, 0xF0, 0x02, 0x00, 0x08, 0xD0, 0xDB, 0xF8, 0x0C, 0x00, 0x06, 0xF7}, 0, 0, 0x0100u},
+    /* PCSG01250 スキとスキとでサンカク恋愛 (APP_VER 01.00): Vita3K 0x81014ca4, 22 farm pages (paired-vita-pcsg01250-20261023), ENTERGRAM's text command (r8 = its argument, one hit a page); patch: mov.w r0, #0x4c8; adds r0, r5, r0; movw r1, #0x4cc */
+    {"PCSG01250", 0x23B5D748u, 0x14CA4u, 1, 8, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x4F, 0xF4, 0x99, 0x60, 0x28, 0x18, 0x40, 0xF2, 0xCC, 0x41, 0x90, 0xED, 0x00, 0x0A, 0x68, 0x18}, VJO_RF_PCSG01250, 0, 0x0100u},
     /* MAGES/5pb. SC3 engine (psandvita farm, Vita3K only): the entry of each game's page function, whose r0 is the
      * page's SC3 string (core/hook_sc3.h), read through its end token and decoded with the game's charset
      * (third_party/sc3-charsets/). No branch, PC use or IT in the patched bytes, and no branch or pointer in segment

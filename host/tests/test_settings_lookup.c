@@ -36,13 +36,15 @@
 #include "../../settings/preferences.h"
 #include "../../core/utf.h"
 
-/* ---------------- the memory card ---------------- */
+/* ---------------- the memory card (fakes/sceio_posix.h) ---------------- */
 
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE)
+#include "fakes/sceio_posix.h"
+#include "fakes/vjdict_writer.h"
 static int open_files;
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
-    int fd = native(open(p, flags, mode));
+    int fd = sceio_open(p, flags, mode);
     if (fd >= 0)
         open_files++;
     return fd;
@@ -50,32 +52,8 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
 int sceIoClose(int fd)
 {
     open_files--;
-    return native(close(fd));
+    return sceio_close(fd);
 }
-int sceIoRead(int fd, void *p, size_t n) { return native((int)read(fd, p, n)); }
-int sceIoWrite(int fd, const void *p, size_t n) { return native((int)write(fd, p, n)); }
-int sceIoPread(int fd, void *p, size_t n, SceOff off) { return native((int)pread(fd, p, n, off)); }
-int sceIoPwrite(int fd, const void *p, size_t n, SceOff off) { return native((int)pwrite(fd, p, n, off)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-int sceIoGetstat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    if (stat(p, &s))
-        return native(-1);
-    memset(st, 0, sizeof(*st));
-    st->st_mode = s.st_mode;
-    st->st_size = s.st_size;
-    return 0;
-}
-int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
-int sceIoSyncByFd(int fd, int flag) { (void)flag; return native(fsync(fd)); }
-int sceIoDopen(const char *p) { (void)p; return -1; }
-int sceIoDread(int fd, SceIoDirent *e) { (void)fd; (void)e; return 0; }
-int sceIoDclose(int fd) { (void)fd; return 0; }
-int sceIoChstat(const char *file, SceIoStat *st, int bits) { (void)file; (void)st; (void)bits; return -1; }
 
 /* The console's clock: 2026-10-27 15:04:05 UTC, nine hours ahead locally (Japan). */
 #define NOW_UNIX 1793113445ull
@@ -278,46 +256,15 @@ static void keyboard_types(const char *s)
 /* ---------------- the card's files: dictionaries, history.csv, the queue ---------------- */
 
 #define DICT_DIR "ux0:data/VitaJPOverlay/dictionaries"
-static void put16(uint8_t *p, uint16_t x) { p[0] = (uint8_t)x; p[1] = (uint8_t)(x >> 8); }
-static void put32(uint8_t *p, uint32_t x) { put16(p, (uint16_t)x); put16(p + 2, (uint16_t)(x >> 16)); }
-static void put64(uint8_t *p, uint64_t x) { put32(p, (uint32_t)x); put32(p + 4, (uint32_t)(x >> 32)); }
-static uint64_t key_hash(const char *s)
-{
-    uint64_t h = UINT64_C(14695981039346656037);
-    for (; *s; s++) h = (h ^ (uint8_t)*s) * UINT64_C(1099511628211);
-    h ^= h >> 33; h *= UINT64_C(0xff51afd7ed558ccd);
-    h ^= h >> 33; h *= UINT64_C(0xc4ceb9fe1a85ec53);
-    return h ^ (h >> 33);
-}
-/* A VJDICT2 file of one key with one entry (as test_shell_anki.c builds them), its own name in page 0. */
+/* A VJDICT2 file of one key with one entry (fakes/vjdict_writer.h), its own name in page 0. */
 static void put_dictionary(const char *name, const char *key, const char *spelling, const char *reading,
                            const char *meaning, const char *title)
 {
     static uint8_t bytes[16384];
-    size_t off = 8192, key_len = strlen(key), posting, payload;
-    const char *parts[] = {spelling, reading, meaning};
+    size_t off = vjdict2_one(bytes, sizeof(bytes), key, spelling, reading, meaning, title);
     char path[256];
     FILE *f;
-    memset(bytes, 0, sizeof(bytes));
-    memcpy(bytes, "VJDICT2\0", 8);
-    put32(bytes + 8, 2); put32(bytes + 12, 64);
-    put32(bytes + 16, 1); put32(bytes + 20, 24);
-    put64(bytes + 24, 4096); put64(bytes + 32, off);
-    put64(bytes + 48, 1); put64(bytes + 56, 1);
-    memcpy(bytes + 192, title, strlen(title));
-    memcpy(bytes + 4096, "VJHP", 4);
-    put64(bytes + 4112, key_hash(key)); put64(bytes + 4120, off);
-    put32(bytes + 4128, 1); put16(bytes + 4132, (uint16_t)key_len);
-    memcpy(bytes + off, key, key_len); off += key_len;
-    posting = off; off += 16;
-    payload = off;
-    for (int i = 0; i < 3; i++) {
-        size_t n = strlen(parts[i]) + 1;
-        memcpy(bytes + off, parts[i], n); off += n;
-    }
-    put64(bytes + posting, payload); put32(bytes + posting + 8, (uint32_t)(off - payload));
-    put32(bytes + 4100, 1);
-    put64(bytes + 40, off);
+    TEST_ASSERT(off > 0);
     snprintf(path, sizeof(path), DICT_DIR "/%s", name);
     TEST_ASSERT((f = fopen(path, "wb")) != NULL);
     TEST_ASSERT(fwrite(bytes, 1, off, f) == off && fclose(f) == 0);

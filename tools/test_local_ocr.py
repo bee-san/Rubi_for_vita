@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Run the real pinned model on existing synthetic Japanese dialogue fixtures.
 
---backend ncnn (default): PP-OCRv5 mobile, model directory from prepare_ocr.py.
---backend vocr: vita-vn-ocr, a directory holding the default model size's recognizer
-(tools/model_tiers.json's Normal: VOCR6_N_w8_2l.vocr; tools/prepare_ocr.py --backend vocr).
+vita-vn-ocr through vjo-ocr, with a directory holding the default model size's recognizer
+(tools/model_tiers.json's Normal: VOCR6.2_N_w8g2.vocr; tools/prepare_ocr.py --backend vocr).
 """
 import argparse
 from pathlib import Path
@@ -23,19 +22,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--cli', required=True)
     ap.add_argument('--model', type=Path, required=True)
-    ap.add_argument('--backend', choices=('ncnn', 'vocr'), default='ncnn')
     args = ap.parse_args()
     root = Path(__file__).resolve().parent.parent
     image = Image.open(root/'host/samples/vn_textbox.jpg').crop((45, 375, 920, 475)).convert('RGBA')
     # the file the CLI loads by default (host/ocr_tool.c: VJO_VOCR_DEFAULT_MODEL), so the
     # corruption below is the default model's own SHA-256 check, not a missing file
-    weights_name = 'PP_OCRv5_mobile_rec.ncnn.bin' if args.backend == 'ncnn' else VOCR_DEFAULT_MODEL
+    weights_name = VOCR_DEFAULT_MODEL
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         pixels = tmp/'input.rgba'
         def run(im, model=args.model, extra=()):
             pixels.write_bytes(im.tobytes())
-            cmd = [args.cli] + (['--backend', 'vocr'] if args.backend == 'vocr' else []) + list(extra)
+            cmd = [args.cli, '--backend', 'vocr'] + list(extra)
             return subprocess.run(cmd + [str(model), str(im.width), str(im.height), str(pixels)],
                                   text=True, capture_output=True, timeout=60)
         result = run(image)
@@ -60,9 +58,8 @@ def main():
         for n in range(8): many.paste(one, (0, n*66))
         result = run(many)
         assert result.returncode == 0 and 'lines=8' in result.stderr, result.stderr
-        if args.backend == 'vocr':
-            check_vocr(run, image, many)
-        print(f'Real-model OCR ({args.backend}), multiline bounds, blank input, and corrupt/missing model checks passed.')
+        check_vocr(run, image, many)
+        print('Real-model OCR (vocr), multiline bounds, blank input, and corrupt/missing model checks passed.')
 
 
 def stat(stderr, key):
@@ -70,7 +67,7 @@ def stat(stderr, key):
 
 
 def check_vocr(run, image, many):
-    """What the bright-pixel finder cannot do, and the exact memory bound."""
+    """Dark text on a light box, an empty region, the exact memory bound and the line finder's fix."""
     # An empty region never reads the weights file.
     result = run(Image.new('RGBA', (960, 100), (0,0,0,255)))
     assert stat(result.stderr, 'loaded') == 0 and stat(result.stderr, 'lines') == 0, result.stderr

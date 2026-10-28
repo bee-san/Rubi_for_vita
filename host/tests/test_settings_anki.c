@@ -75,9 +75,10 @@ static int row_top_at(int r, int top) { return VIEW_Y + row_offset[r] - row_offs
 #define OFF 4u
 #define CARD 5u
 
-/* ---------------- the memory card: real files under a temporary directory ---------------- */
+/* ---------------- the memory card: real files under a temporary directory (fakes/sceio_posix.h) ---------------- */
 
-static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_RENAME | SCEIO_DOPEN)
+#include "fakes/sceio_posix.h"
 static const char *fail_open; /* an open of a path containing this fails (EIO) */
 static int fail_rename, renames, writes_opened;
 int sceIoOpen(const char *p, int flags, unsigned mode)
@@ -86,76 +87,21 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
         return (int)0x80010005u;
     if (flags & (O_WRONLY | O_RDWR))
         writes_opened++;
-    return native(open(p, flags, mode));
-}
-int sceIoClose(int fd) { return native(close(fd)); }
-int sceIoRead(int fd, void *p, size_t n) { return native((int)read(fd, p, n)); }
-int sceIoWrite(int fd, const void *p, size_t n) { return native((int)write(fd, p, n)); }
-int sceIoPread(int fd, void *p, size_t n, SceOff off) { return native((int)pread(fd, p, n, off)); }
-int sceIoPwrite(int fd, const void *p, size_t n, SceOff off) { return native((int)pwrite(fd, p, n, off)); }
-SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
-int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
-static void date_of(time_t t, SceDateTime *d)
-{
-    struct tm tm;
-    gmtime_r(&t, &tm);
-    *d = (SceDateTime){(unsigned short)(tm.tm_year + 1900), (unsigned short)(tm.tm_mon + 1), (unsigned short)tm.tm_mday,
-                       (unsigned short)tm.tm_hour, (unsigned short)tm.tm_min, (unsigned short)tm.tm_sec, 0};
-}
-int sceIoGetstat(const char *p, SceIoStat *st)
-{
-    struct stat s;
-    if (stat(p, &s))
-        return native(-1);
-    st->st_mode = s.st_mode;
-    st->st_size = s.st_size;
-    date_of(s.st_ctim.tv_sec, &st->st_ctime);
-    date_of(s.st_atim.tv_sec, &st->st_atime);
-    date_of(s.st_mtim.tv_sec, &st->st_mtime);
-    return 0;
+    return sceio_open(p, flags, mode);
 }
 int sceIoRename(const char *a, const char *b)
 {
     if (fail_rename)
         return (int)0x80010005u;
     renames++;
-    return native(rename(a, b));
+    return sceio_rename(a, b);
 }
-int sceIoRemove(const char *p) { return native(unlink(p)); }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
-int sceIoSyncByFd(int fd, int flag) { (void)flag; return native(fsync(fd)); }
-static DIR *dirs[4];
-static char dir_paths[4][256];
 static const char *fail_dopen; /* a directory that cannot be read */
 int sceIoDopen(const char *p)
 {
     if (fail_dopen && !strcmp(p, fail_dopen))
         return (int)0x80010005u;
-    for (int i = 0; i < 4; i++)
-        if (!dirs[i]) {
-            if (!(dirs[i] = opendir(p)))
-                return native(-1);
-            snprintf(dir_paths[i], sizeof(dir_paths[i]), "%s", p);
-            return 100 + i;
-        }
-    return -1;
-}
-int sceIoDread(int fd, SceIoDirent *ent)
-{
-    struct dirent *e = readdir(dirs[fd - 100]);
-    char path[600];
-    if (!e)
-        return 0;
-    snprintf(ent->d_name, sizeof(ent->d_name), "%s", e->d_name);
-    snprintf(path, sizeof(path), "%s/%s", dir_paths[fd - 100], e->d_name);
-    TEST_ASSERT(sceIoGetstat(path, &ent->d_stat) == 0);
-    return 1;
-}
-int sceIoDclose(int fd)
-{
-    int rc = closedir(dirs[fd - 100]);
-    dirs[fd - 100] = NULL;
-    return rc;
+    return sceio_dopen(p);
 }
 /* 2026-10-12 09:30:05 on the console */
 int sceRtcGetCurrentClockLocalTime(SceDateTime *t)
@@ -1963,7 +1909,7 @@ static void utf16(uint16_t *out, const char *s)
     out[k] = 0;
 }
 
-/* Fix sentence opens the keyboard (line breaks allowed, 2,048 characters, as VitaShell's text editor opens it:
+/* Fix sentence opens the keyboard (line breaks allowed, 2,048 UTF-16 units, as VitaShell's text editor opens it:
  * a cancel button, the default text box) with the sentence; its done button (CLOSE in a multi-line keyboard:
  * Enter types a line break there) saves the fixed card on the worker, which opens with the word found again;
  * its cancel (NONE), or the same text, changes nothing; a sentence without the word says it keeps no bold. The
@@ -2088,10 +2034,9 @@ static void the_duplicates_filter_and_empty_deleted(void)
     show();
     frame(0);
     open_cards();
-    TEST_CHECK(list_rows() == 3 && text_has("Same word as another card"));
-    frame(SCE_CTRL_SQUARE);
-    TEST_CHECK(list_rows() == 2 && badge_named("Duplicates")->active && !strcmp(row_word(0), "猫") &&
-               !strcmp(row_word(1), "猫"));
+    TEST_CHECK(list_rows() == 3 && text_has("Mined before: tagged duplicate"));
+    frame(SCE_CTRL_SQUARE); /* the later 猫 only: the one the export tags duplicate (#314) */
+    TEST_CHECK(list_rows() == 1 && badge_named("Duplicates")->active && !strcmp(row_word(0), "猫"));
     frame(SCE_CTRL_SQUARE);
     TEST_CHECK(list_rows() == 3);
     frame(SCE_CTRL_TRIANGLE);
@@ -2235,6 +2180,64 @@ static void a_picture_that_cannot_be_shown_is_said(void)
     TEST_CHECK(textures_live == 0);
 }
 
+/* #315's audit (mutant M21): a change stopped after its new record, before the old one retired: both are queued, and
+ * deleted/<old>.fix names the new one. The page settles it before it lists, so it shows the new card only. */
+static void the_page_lists_after_a_stopped_change_settles(void)
+{
+    char old_id[VJO_QUEUE_ID_SIZE], new_id[VJO_QUEUE_ID_SIZE], path[256], line[40];
+    FILE *f;
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    snprintf(old_id, sizeof(old_id), "%s", queue_full("猫", "猫がいる", 0, 3, 1, 1791790200));
+    snprintf(new_id, sizeof(new_id), "%s", queue_full("猫", "猫がいた", 0, 3, 1, 1791790200));
+    mkdir(VJO_QUEUE_DIR "/deleted", 0777);
+    snprintf(path, sizeof(path), VJO_QUEUE_DIR "/deleted/%s.fix", old_id);
+    snprintf(line, sizeof(line), "%s\n", new_id);
+    TEST_ASSERT((f = fopen(path, "wb")) != NULL);
+    TEST_ASSERT(fwrite(line, 1, strlen(line), f) == strlen(line));
+    fclose(f);
+    show();
+    frame(0);
+    open_cards();
+    TEST_CHECK_(list_rows() == 1 && text_has("1-1 of 1"), "%d rows", list_rows());
+    TEST_CHECK(!there(path) && in_dir(VJO_QUEUE_DIR, new_id, "json") && !in_dir(VJO_QUEUE_DIR, old_id, "json") &&
+               in_dir(VJO_QUEUE_DIR "/deleted", old_id, "json"));
+}
+
+/* #315's audit: 2,001 cards (the table holds 2,000): the oldest is the second window's only one; deleted, the page
+ * goes back to the first window, its last card selected, never "No cards queued" with 2,000 queued. */
+static void deleting_a_later_windows_last_card_goes_back(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    for (int i = 0; i < 2001; i++) {
+        char word[16];
+        snprintf(word, sizeof(word), "語%04d", i);
+        queue_full(word, word, 0, 3, 0, 1791790000 + i * 60);
+    }
+    show();
+    frame(0);
+    open_cards();
+    TEST_ASSERT(list_rows() == 6 && !strcmp(row_word(0), "語2000"));
+    for (int k = 0; k < 400 && vjo_cards_page_is_open() && !text_has("2000-2000"); k++) {
+        frame(SCE_CTRL_RTRIGGER);
+        if (vjo_anki_page_busy()) { /* past the window's last page: the next window */
+            run_worker();
+            frame(0);
+        }
+        if (text_has("2001-2001"))
+            break;
+    }
+    TEST_ASSERT_(text_has("2001-2001 of 2001") && list_rows() == 1 && !strcmp(row_word(0), "語0000"), "%s", drawn.footer);
+    frame(SCE_CTRL_CROSS); /* open it, then Delete twice */
+    run_worker();
+    frame(0);
+    frame(SCE_CTRL_LEFT);
+    frame(SCE_CTRL_CROSS);
+    frame(SCE_CTRL_CROSS);
+    run_jobs();
+    TEST_CHECK(!text_has("No cards queued") && list_rows() > 0 && text_has("of 2000"));
+    TEST_CHECK(list_focused() == list_rows() - 1 && !strcmp(row_word(list_rows() - 1), "語0001"));
+}
+
 TEST_LIST = {
     {"the_rows_and_the_footer_do_not_overlap", the_rows_and_the_footer_do_not_overlap},
     {"up_down_and_the_stick_choose_a_row", up_down_and_the_stick_choose_a_row},
@@ -2259,6 +2262,8 @@ TEST_LIST = {
     {"the_list_has_pages_of_six", the_list_has_pages_of_six},
     {"cancel_and_start_while_the_list_is_read", cancel_and_start_while_the_list_is_read},
     {"a_picture_that_cannot_be_shown_is_said", a_picture_that_cannot_be_shown_is_said},
+    {"the_page_lists_after_a_stopped_change_settles", the_page_lists_after_a_stopped_change_settles},
+    {"deleting_a_later_windows_last_card_goes_back", deleting_a_later_windows_last_card_goes_back},
     {NULL, NULL},
 };
 

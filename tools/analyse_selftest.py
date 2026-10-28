@@ -964,12 +964,13 @@ LOG = {
     # settings/anki_page.c worker_main: each export's result and counts (export_result); the first builds with the
     # export had no stop count, and builds before #161 no count of the screenshots no card named that it removed;
     # #314's: the duplicates (12), what Duplicates did with them (13: tag, skip or keep) and ", not checked" (14);
-    # stage C's cards tagged known (15) and ", known not checked" (16)
+    # stage C's cards tagged known (15) and ", known not checked" (16); #315's cards held (17: a Cards page change of
+    # them did not finish, so they stayed queued)
     "anki_export": re.compile(r"^(?:Rubi|overlay) app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
                               r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?"
                               r"(?:, (\d+) swept)?)?(?:, \d+ bytes, arena peak \d+(?:, (\d+) without screenshots"
                               r"(?:, (\d+) duplicates \((tag|skip|keep)\)(, not checked)?"
-                              r"(?:, (\d+) known(, known not checked)?)?)?)?)?"),
+                              r"(?:, (\d+) known(, known not checked)?(?:, (\d+) held)?)?)?)?)?"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     # API 23, shell/anki.c take_shot: a card's screenshot, made by the game worker (rc, the JPEG's quality, bytes,
     # the block, free USER, strips, source, the strips' ms, encoding ms, write ms, the whole)
@@ -1355,7 +1356,7 @@ def export_result(m):
     and checked). Cards a stop or a package's cap left queued (stopped, left) go into the next export: no problem."""
     if int(m.group(2)):
         return "fail"
-    if any(int(m.group(g) or 0) for g in (5, 6, 7)):
+    if any(int(m.group(g) or 0) for g in (5, 6, 7, 17)):  # (17: #315's cards held)
         return "partial"
     return "ok" if int(m.group(3)) else "empty"
 
@@ -1390,6 +1391,8 @@ def export_summary(a):
         t += f"; tagged known (known_words.txt): {a['export_known']} card(s)"
     if a.get("export_known_unchecked"):
         t += f"; {a['export_known_unchecked']} export(s) not checked for known words (anki_known.bin: see log.txt)"
+    if a.get("export_held"):
+        t += f"; left queued, a Cards page change of them unfinished: {a['export_held']} card(s) (see log.txt)"
     lines = [t]
     for p in a.get("export_problems", []):
         if p["rc"]:
@@ -2730,6 +2733,8 @@ def summarise_log(text):
                     an["export_known"] = an.get("export_known", 0) + int(m.group(15))
                 if m.group(16):
                     an["export_known_unchecked"] = an.get("export_known_unchecked", 0) + 1
+                if int(m.group(17) or 0):  # #315
+                    an["export_held"] = an.get("export_held", 0) + int(m.group(17))
                 if result in ("fail", "partial") and len(an["export_problems"]) < 10:
                     an["export_problems"].append({"what": m.group(1), "rc": int(m.group(2)), "cards": int(m.group(3)),
                                                   "kept": int(m.group(5) or 0), "unreadable": int(m.group(6) or 0),

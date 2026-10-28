@@ -1787,7 +1787,7 @@ static void test_vocr_config(void)
     const char ini[] = "ocr_backend = VOCR\nvocr_model = FL10_w8.vocr\n";
     const char bad[] = "vocr_model = ../H15_w8.vocr\nvocr_model = H15_w8.bin\nvocr_model =\n";
     vjo_config_defaults(&c);
-    /* Normal (VOCR6-N) by default; a job runs Small (VOCR5-S) when the game's memory has no room for it. */
+    /* Normal (VOCR6-N) by default; a job runs Small (VOCR6-S) when the game's memory has no room for it. */
     TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.log_file == 1);
     TEST_CHECK(!strcmp(vjo_vocr_tier_model(c.vocr_tier), VJO_VOCR_TIER2_NAME) &&
                !strcmp(vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL), VJO_VOCR_TIER1_NAME) &&
@@ -2442,12 +2442,15 @@ static void test_vocr_request_carries_the_job_policy(void)
     }
     /* A press confirms the screen is ready: neither stability wait is sent,
      * regardless of the saved press limit. Background reads and refreshes keep
-     * their full wait, including on a screen the kernel has not called stable. */
-    static const struct { int press, max_ms, prepares, refresh; unsigned max; } press[] = {
-        {1000, 2000, 0, 0, 0}, {1000, 2000, 1, 0, 40}, {1000, 2000, 0, 1, 40}, {0, 2000, 0, 0, 0},
-        {1000, 500, 0, 0, 0}, {300, 2000, 0, 0, 0}};
+     * their full wait, including on a screen the kernel has not called stable,
+     * and so does the open overlay's job once the last job's screen changed under
+     * every try (#413's audit F1: the wait is what learns an icon). */
+    static const struct { int press, max_ms, prepares, refresh, streak; unsigned max; } press[] = {
+        {1000, 2000, 0, 0, 0, 0}, {1000, 2000, 1, 0, 0, 40}, {1000, 2000, 0, 1, 0, 40}, {0, 2000, 0, 0, 0, 0},
+        {1000, 500, 0, 0, 0, 0}, {300, 2000, 0, 0, 0, 0}, {1000, 2000, 0, 0, 1, 40}, {300, 500, 0, 0, 2, 10}};
     for (unsigned i = 0; i < sizeof(press) / sizeof(press[0]); i++) {
         reset();
+        screen_changed_streak = press[i].streak;
         cfg.ocr_settle_press_ms = press[i].press;
         cfg.ocr_settle_max_ms = press[i].max_ms;
         ov = press[i].prepares ? OV_CLOSED : OV_OPEN;
@@ -2460,8 +2463,8 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == press[i].max);
         TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == (press[i].max ? 15u : 0u));
         TEST_CHECK(!!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST) == !!press[i].max);
-        TEST_MSG("press %d ms, max %d ms, prepares %d, refresh %d: flags 0x%08X", press[i].press, press[i].max_ms,
-                 press[i].prepares, press[i].refresh, (unsigned)fake_game_request.flags);
+        TEST_MSG("press %d ms, max %d ms, prepares %d, refresh %d, streak %d: flags 0x%08X", press[i].press,
+                 press[i].max_ms, press[i].prepares, press[i].refresh, press[i].streak, (unsigned)fake_game_request.flags);
         job_refresh = 0;
         mem_free();
     }
@@ -6624,7 +6627,7 @@ static void test_the_refreshes_backoff_outlasts_a_close_with_no_job(void)
  * its replacement reads without waiting and keeps automatic hook selection. */
 static void test_opening_trusts_the_players_unsettled_screen(void)
 {
-    for (int mode = 0; mode < 2; mode++) for (int busy = 0; busy < 3; busy++) {
+    for (int mode = 0; mode < 2; mode++) for (int busy = 0; busy < 3; busy++) for (int quiet = 0; quiet < 2; quiet++) {
         cursor_setup();
         cfg.ocr_mode = loaded.ocr_mode = mode ? VJO_OCR_AUTO : VJO_OCR_ON_PRESS;
         if (busy) {
@@ -6635,7 +6638,7 @@ static void test_opening_trusts_the_players_unsettled_screen(void)
                 job_capture_seq = state.region_seq;
             }
         }
-        state.stable = state.quiet = 0;
+        state.stable = 0; state.quiet = quiet; /* a quiet screen is unsettled too (docs/text-stability.md) */
         on_trigger();
         TEST_ASSERT(job_running && g_view.open && input_blocked);
         if (busy) {
@@ -6647,8 +6650,181 @@ static void test_opening_trusts_the_players_unsettled_screen(void)
         TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST));
         TEST_CHECK(!(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT));
         TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
-        TEST_CHECK(!state.stable && !state.quiet); /* no global scene state is forged */
+        TEST_CHECK(!state.stable && state.quiet == quiet); /* no global scene state is forged */
         check_shown("猫犬鳥", "cat", 0);
+        close_overlay(); mem_free();
+    }
+}
+
+/* The job's stable-text wait as the game worker gets it (vocr_run_one): none, or ocr_settle_ms (150 ms, 15 steps of
+ * 10 ms) within ocr_settle_max_ms (2 s, 40 steps of 50 ms), waiting first on a screen the kernel has not called
+ * stable (all of these tests'). */
+static int request_waits(void)
+{
+    const uint32_t f = fake_game_request.flags;
+    if (!(f >> VJO_GAME_OCR_SETTLE_SHIFT) && !(f & VJO_GAME_OCR_F_SETTLE_FIRST)) return 0;
+    TEST_CHECK((f >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == 15u);
+    TEST_CHECK((f >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == 40u);
+    TEST_CHECK(f & VJO_GAME_OCR_F_SETTLE_FIRST);
+    return 1;
+}
+
+/* #413's audit F1: a press reads without the wait (#413), but the worker learns a cycling icon only in that wait
+ * (core/vocr_ocr.c stream_check), so a press whose read tore on one tore at every try, for ever. Once a read's screen
+ * changed under every try (screen_changed_streak), the open overlay's retries wait as a background read does, first
+ * on a screen not stable, the paced one (background_open) too; a read ends the run, and the next press reads at once.
+ * In either OCR mode: Only when I press makes every read a press. */
+static void test_a_torn_press_retries_with_the_wait(void)
+{
+    for (int mode = 0; mode < 2; mode++) {
+        cursor_setup();
+        cfg.ocr_mode = loaded.ocr_mode = mode ? VJO_OCR_AUTO : VJO_OCR_ON_PRESS;
+        state.stable = state.quiet = 0;
+        fake_screen_changes = 2;
+        open_overlay();
+        TEST_ASSERT(job_running && !job_prepares && !screen_changed_streak);
+        finish_current_job(); /* the press's read: no wait; torn */
+        TEST_CHECK(!request_waits());
+        TEST_ASSERT(job_running && screen_changed_streak == 1); /* its retry, at once */
+        finish_current_job(); /* it waits; torn again */
+        TEST_CHECK(request_waits());
+        TEST_ASSERT(!job_running && open_retry && screen_changed_streak == 2);
+        test_now += 250000; control_tick(0); /* the paced retry */
+        TEST_ASSERT(job_running);
+        finish_current_job();
+        TEST_CHECK(request_waits());
+        check_shown("猫犬鳥", "cat", 0);
+        TEST_CHECK(!screen_changed_streak);
+        close_overlay(); mem_free();
+        /* the next press, on another screen: at once again */
+        state.scene = state.region_scene = 8; state.region_seq++;
+        open_overlay();
+        TEST_ASSERT(job_running && !job_prepares);
+        finish_current_job();
+        TEST_CHECK(!request_waits());
+        check_shown("猫犬鳥", "cat", 0);
+        close_overlay(); mem_free();
+    }
+}
+
+/* #413's audit F1, the one difference from #413: the count is the Shell's, so a press that finds it held over from a
+ * job that tore under every try waits from its first read. In Automatically after a torn background read; in Only
+ * when I press after a press closed while its tries still tore (nothing reads between presses there). A read ends
+ * it, and the press after that reads at once. */
+static void test_a_press_after_a_torn_read_waits_from_its_first(void)
+{
+    for (int mode = 0; mode < 2; mode++) {
+        cursor_setup();
+        cfg.ocr_mode = loaded.ocr_mode = mode ? VJO_OCR_AUTO : VJO_OCR_ON_PRESS;
+        state.stable = state.quiet = 0;
+        if (mode) { /* Automatically's background read tears with the overlay closed */
+            fake_screen_changes = 1;
+            start_job("auto: screen quiet", 1);
+            TEST_ASSERT(job_prepares);
+            finish_current_job();
+            TEST_CHECK(request_waits()); /* a background read keeps the wait */
+        } else { /* a press tears, and its retry, still tearing, ends after the close */
+            fake_screen_changes = 2;
+            open_overlay();
+            finish_current_job();
+            TEST_CHECK(!request_waits());
+            TEST_ASSERT(job_running && !job_prepares);
+            close_overlay();
+            finish_current_job();
+            TEST_CHECK(request_waits());
+        }
+        TEST_ASSERT(!job_running && screen_changed_streak == (mode ? 1 : 2));
+        open_overlay(); /* the next press: its first read waits */
+        TEST_ASSERT(job_running && !job_prepares);
+        finish_current_job();
+        TEST_CHECK(request_waits());
+        check_shown("猫犬鳥", "cat", 0);
+        TEST_CHECK(!screen_changed_streak);
+        close_overlay(); mem_free();
+        state.scene = state.region_scene = 8; state.region_seq++;
+        open_overlay();
+        finish_current_job();
+        TEST_CHECK(!request_waits());
+        check_shown("猫犬鳥", "cat", 0);
+        close_overlay(); mem_free();
+    }
+}
+
+/* #413's audit F5 (docs/ocr-history.md, "A press's partial line"): with Automatically a press reads at once (#413), so
+ * a line still typing is recorded as far as it had typed, and the settled screen's read after the close records the
+ * whole line: two records, as the history writer's 750 ms window for a grown line is past (shell/history.c). Pinned
+ * here so the docs say what the Shell does; a press's record that a later extension replaces needs Shell code the
+ * pages have no room for (docs/memory-ledger.md). */
+static void test_a_presss_partial_line_and_the_settled_one_are_two_records(void)
+{
+    cursor_setup();
+    history_calls = 0;
+    state.stable = state.quiet = 0;
+    fake_recognized_text = "猫";
+    open_overlay();
+    TEST_ASSERT(job_running && !job_prepares);
+    finish_current_job();
+    TEST_CHECK(!(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT)); /* the press: no wait */
+    TEST_CHECK(history_calls == 1 && !strcmp(history_text, "猫"));
+    close_overlay();
+    test_now += 2000000;
+    state.scene = state.region_scene = 8; state.region_seq++; state.stable = 1; /* typed out and settled */
+    fake_recognized_text = "猫犬鳥";
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_prepares);
+    finish_current_job();
+    TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == 15u); /* Auto's read waits */
+    TEST_CHECK(history_calls == 2 && !strcmp(history_text, "猫犬鳥"));
+    mem_free();
+}
+
+/* #413's audit F3: a reopen during the press's own read (the overlay closed and opened again before that read ended,
+ * on a screen still changing) keeps that read and shows its result: only a background read (job_prepares) yields to
+ * an opening (open_overlay). */
+static void test_a_reopen_keeps_the_presss_own_read(void)
+{
+    for (int mode = 0; mode < 2; mode++) {
+        cursor_setup();
+        cfg.ocr_mode = loaded.ocr_mode = mode ? VJO_OCR_AUTO : VJO_OCR_ON_PRESS;
+        state.stable = state.quiet = 0;
+        submits = 0;
+        open_overlay();
+        TEST_ASSERT(job_running && !job_prepares);
+        close_overlay();
+        TEST_CHECK(job_running && !job_cancelled); /* an OCR read goes on after the close */
+        open_overlay();
+        TEST_CHECK(job_running && !job_cancelled && ov == OV_OPEN_OLD_JOB);
+        finish_current_job();
+        TEST_CHECK(!job_running); /* no second read */
+        TEST_CHECK(submits == 1);
+        check_shown("猫犬鳥", "cat", 0);
+        close_overlay(); mem_free();
+    }
+}
+
+/* #441's audit: with the count held over (a background read tore, and the next one runs, as at 8 of test.4's 75
+ * openings that waited), a press on a screen not stable keeps that read: its own read would wait as that one does
+ * (#441: the count turns the wait back on), so cancelling it (#413) only threw that read's wait away. With the count
+ * at 0 the press still cancels it and reads at once (opening_trusts_the_players_unsettled_screen). */
+static void test_a_held_over_count_keeps_the_running_background_read(void)
+{
+    for (int quiet = 0; quiet < 2; quiet++) {
+        cursor_setup(); /* Automatically */
+        state.stable = 0; state.quiet = quiet;
+        fake_screen_changes = 1;
+        start_job("auto: screen quiet", 1);
+        finish_current_job(); /* torn: the count is 1 */
+        TEST_ASSERT(!job_running && screen_changed_streak == 1);
+        start_job("auto: screen settled", 1); /* the next background read, at once */
+        job_captured = 1; job_capture_scene = state.scene; job_capture_seq = state.region_seq;
+        on_trigger();
+        TEST_CHECK(job_running && !job_cancelled && ov == OV_OPEN_OLD_JOB);
+        finish_by_tick(); /* that read is the press's */
+        TEST_CHECK(!job_running); /* no second read */
+        TEST_CHECK(request_waits());
+        check_shown("猫犬鳥", "cat", 0);
+        TEST_CHECK(!screen_changed_streak);
+        TEST_MSG("quiet %d", quiet);
         close_overlay(); mem_free();
     }
 }
@@ -9094,6 +9270,13 @@ TEST_LIST = {
     {"the_previous_games_text_is_never_the_strips", test_the_previous_games_text_is_never_the_strips},
     {"the_refreshes_backoff_outlasts_a_close_with_no_job", test_the_refreshes_backoff_outlasts_a_close_with_no_job},
     {"opening_trusts_the_players_unsettled_screen", test_opening_trusts_the_players_unsettled_screen},
+    {"a_torn_press_retries_with_the_wait", test_a_torn_press_retries_with_the_wait},
+    {"a_press_after_a_torn_read_waits_from_its_first", test_a_press_after_a_torn_read_waits_from_its_first},
+    {"a_reopen_keeps_the_presss_own_read", test_a_reopen_keeps_the_presss_own_read},
+    {"a_held_over_count_keeps_the_running_background_read",
+     test_a_held_over_count_keeps_the_running_background_read},
+    {"a_presss_partial_line_and_the_settled_one_are_two_records",
+     test_a_presss_partial_line_and_the_settled_one_are_two_records},
     {"an_opening_during_autos_job_on_a_changed_screen_gets_its_own",
      test_an_opening_during_autos_job_on_a_changed_screen_gets_its_own},
     {"a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_sentence (#182 a)",
