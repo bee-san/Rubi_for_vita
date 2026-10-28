@@ -23,7 +23,12 @@ game worker's SELFs are byte for byte main's.
   region's size only; it is rebuilt for the size that needs it, in the row that needs it, when the two differ (a
   full-frame job beside a text box; a region changed during a job, which `vjoSetRegion` does not stop), and only in
   `on_frame`: the job's begin, in its syscall, writes no grid, which the display hook could be reading. 1,044 B less
-  `.bss` (`capture_acc`, 1,064 B, for `capture_rows`, 20 B).
+  `.bss` (`capture_acc`, 1,064 B, for `capture_rows`, 20 B). **Time:** a region job's first pass has the region's
+  size (`vjoOcrSubmit` crops the region), so the grid is never rebuilt for it; a pass of another size (the debug
+  self-test's `fullscreen` and `probe` stages, a region changed during a job) rebuilds it in the display hook at most
+  twice for each region signature taken during the pass (one every 8th frame): 10,360 instructions for 960 × 544,
+  12,066 for 896 × 156 (`qemu-arm -one-insn-per-tb` on the Vita build's `scene.c`; about 25-40 µs at 444-333 MHz,
+  **est.**). Main rebuilt each grid only when its own size changed, the job's in its syscall.
 - **The signature's copy** (`kernel/main.c` `change_detection`): 524 B on VjoWorker's 16 KiB stack instead of `.bss`
   (`sig.0`); `change_detection` is no longer inlined into the thread's loop, so the frame is live only in its call.
   The thread's deepest path of the plugin's own frames: 600 → 1,000 B (normal) and 608 → 1,008 B (debug), the
