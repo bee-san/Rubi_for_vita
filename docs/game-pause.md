@@ -239,7 +239,7 @@ No kernel or system thread is ever paused. No game thread is suspended, and noth
 line's (`VJO_BUDGET_GAME_LINE`, 516,096 B), never both, so the game's worst case counts the larger
 (`VJO_BUDGET_GAME_LINE_OR_FRAME`), and the worker's ledger counts it as the tall line's item, which it replaces (its
 twelve items stay twelve in every module). That is 8,192 B more: 11,022,336 B against the 11,214,848 B limit
-([memory ledger](memory-ledger.md#the-pause-for-the-frame-api-55)).
+([memory ledger](memory-ledger-history.md#the-pause-for-the-frame-api-55)).
 
 The modules, measured against `main` efbee95, v0.10.0 (both builds, `tools/check_memory_ledger.py`):
 - **The OCR worker** takes one page more, 4,096 B in each game that is ON, whether or not the setting is: the pause's

@@ -130,7 +130,7 @@ GameSentenceMiner imports both lines [host: #413's audit's probe P5, `host/tests
 how often on a console is not measured]. Before #413 this needed a line still typing more than 1 s after the press.
 Only when I press L + R records nothing, so it has neither. A record of a read without the wait that a later
 extension replaces within a longer window would fix it; it does not fit the Shell's pages
-([measured](memory-ledger.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)).
+([measured](memory-ledger-history.md#413s-audit-a-line-typing-out-and-a-presss-partial-line-no-api-change)).
 
 Short writes are retried. Write/flush/close errors are best effort and do not
 change OCR or its UI; a failed append attempts to restore the previous file
@@ -522,7 +522,7 @@ the app's next start. The same seed removes the Stats tab's `stats_cache.bin`, w
 view's read made while a line is recorded never shows an older streak, and none shows before the first) and
 allocates nothing; its code is 512 B of the normal Shell's (528 B of the debug one's), in the pages the Shell had
 [measured: the build's module rows, main `52eb948` against #501 and its audit's follow-up;
-[memory-ledger.md](memory-ledger.md#the-reading-streak-in-the-overlay-no-api-change)]. The file is 16 bytes. The seed's window and its thread's stack are the app's, in its own process
+[memory-ledger.md](memory-ledger-history.md#the-reading-streak-in-the-overlay-no-api-change)]. The file is 16 bytes. The seed's window and its thread's stack are the app's, in its own process
 ([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)).
 
 Not run on a console yet; measured on the host only: host tests of a day's rollover, gaps, a time-zone change, first

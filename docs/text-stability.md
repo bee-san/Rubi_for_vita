@@ -399,7 +399,7 @@ it says:
 asks; it fits the Shell's pages in both builds (as a second copy of the hint it took a data page more in both, on
 v0.10.0's `main` too), and `core/config.c` now parses its off/on settings from one table, which gives the Shell more
 code room than before [measured: tools/check_memory_ledger.py's module rows, both builds;
-[memory-ledger.md](memory-ledger.md#the-pause-for-the-frame-api-55)]. The rest of this
+[memory-ledger.md](memory-ledger-history.md#the-pause-for-the-frame-api-55)]. The rest of this
 section is the measurement made before, when neither fitted beside this change on `main` 8da24c8 as they were.
 - **The measurement:** `main` with this change, plus #355 at 9e44739 and #359 at f630b69's Shell change (its log
   line), each built in both variants (`tools/check_memory_ledger.py`'s module rows). Those heads predate #376 and
@@ -415,14 +415,14 @@ section is the measurement made before, when neither fitted beside this change o
   left), and each sibling adds more:
   - #359's Shell part alone: 102,404 B, 4 B past its page;
   - #355 alone with no clause: 102,436 B.
-  - So both need room found in the debug Shell first; [memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358)
+  - So both need room found in the debug Shell first; [memory-ledger.md](memory-ledger-history.md#why-the-overlay-waits-358)
     has the rows.
 
 **Its cost on `main`.** No allocation, thread or static buffer:
 - one `VjoConfig` field, `ocr_wait_hint`, read by the Shell only;
 - 96 B of the normal Shell's code (104 B of the debug one's). That is net: "Recognizing…" left the code segment for
   the data segment, where the hint's 163 B and the key's 14 B are too.
-- [memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358) has the rows.
+- [memory-ledger.md](memory-ledger-history.md#why-the-overlay-waits-358) has the rows.
 
 **Not run on a console.** The rule and its text are host-tested (`host/tests/test_shell_worker.c`
 `open_overlay_says_why_it_waits`). Whether the hint reads well over a game, and when it shows there, waits for the
