@@ -33,12 +33,15 @@ if(NOT EXISTS "${VJO_VOCR_SOURCE_DIR}/runtime/vocr_lines_rows.c")
 endif()
 set(RT ${VJO_VOCR_SOURCE_DIR}/runtime)
 # API 54: the text spotter (core/vocr_ocr.c includes vocr_textspot6.h), pinned at its own commit until the recognizer's
-# holds it (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT): that checkout, else the recognizer's when it has the files
+# holds it (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT): that checkout, else the recognizer's when it has the files, else
+# .refs/vita-vn-ocr-spot (cmake/VocrOCR.cmake's candidates; it checks their hashes, this app does not)
 set(VJO_VOCR_SPOT_SOURCE_DIR "" CACHE PATH "vita-vn-ocr checkout at cmake/VocrOCR.cmake's VJO_VOCR_SPOT_COMMIT")
 if(VJO_VOCR_SPOT_SOURCE_DIR)
   set(SPOT_RT ${VJO_VOCR_SPOT_SOURCE_DIR}/runtime)
-else()
+elseif(EXISTS "${RT}/vocr_textspot6.c")
   set(SPOT_RT ${RT})
+else()
+  set(SPOT_RT ${ROOT}/.refs/vita-vn-ocr-spot/runtime)
 endif()
 if(NOT EXISTS "${SPOT_RT}/vocr_textspot6.c")
   message(FATAL_ERROR "no text spotter in ${SPOT_RT}: set VJO_VOCR_SPOT_SOURCE_DIR (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT)")

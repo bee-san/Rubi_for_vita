@@ -419,6 +419,33 @@ class ReleaseInstall(unittest.TestCase):
         self.assertNotIn("6.6.6.6", config)
         self.assertNotIn("not_a_setting", config)
 
+    def test_the_installer_shows_package_releases_shown_column(self):
+        """install-vita.sh shows each package setting as package_release.install_settings() gives it, and nothing of
+        its own: the line is that SHOWN column, joined, with a credential only "set" (its value never printed); and
+        the installer's code (not its comments) names no credential and compiles no mask (audit-rubi-cleanup-8-b F5:
+        an installer mask of its own, a shell case on *api_key=*, passed the check of form)."""
+        sys.path.insert(0, str(ROOT / "tools"))
+        import package_release  # noqa: PLC0415
+        template = self.package / "config.ini"
+        template.write_text(template.read_text() + "\ndeepl_api_key = tmpl-secret\n")
+        manifest_path = self.package / "package-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["install_settings"] = {"anki_mining": "on", "log_file": "off", "deepl_api_key": "set"}
+        if "config.ini" in manifest["files"]:  # the template changed: its checksum too (package_release.py --verify)
+            manifest["files"]["config.ini"] = {"bytes": template.stat().st_size,
+                                               "sha256": hashlib.sha256(template.read_bytes()).hexdigest()}
+        manifest_path.write_text(json.dumps(manifest))
+        want = [line.split("\t", 1)[1] for line in package_release.install_settings(self.package)]
+        self.assertEqual(want, ["anki_mining=on", "log_file=off", "deepl_api_key=set"])
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        shown = next(l for l in result.stdout.splitlines() if l.startswith("package settings:"))
+        self.assertEqual(shown, "package settings: " + " ".join(want))
+        self.assertNotIn("tmpl-secret", result.stdout + result.stderr)
+        code = [l for l in (ROOT / "tools/install-vita.sh").read_text().splitlines() if not l.lstrip().startswith("#")]
+        for word in ("api_key", "anki_audio_url", "re.compile"):
+            self.assertEqual([l for l in code if word in l], [], word)
+
     def test_no_credential_is_a_package_setting_and_an_old_one_goes_unshown(self):
         """audit-overlay-test3-cleanup B1, after the removals: jpdb.io's and jiten.moe's API keys went
         with them and anki_audio_url (whose URL can carry a key) with AnkiConnect, so the template has

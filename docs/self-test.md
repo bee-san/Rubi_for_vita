@@ -190,8 +190,8 @@ or `WARN (rows)`) and the verdict: `PASS` (it names any diagnostics that warned)
 `INCOMPLETE: stage '<name>' began and never wrote its record` (or `INCOMPLETE: the stages were
 still waiting for text in your region`). A stop
 is the run's failure in whichever stage it happens, the probe included, and never a WARN. An API
-18 (`selftest v1`) report, as #74's, is not read (exit 2): the repository's analyser up to b55c5f5
-reads it (`git show b55c5f5:tools/analyse_selftest.py`, standard library only), as does the one in
+18 (`selftest v1`) report, as #74's, is not read (exit 2): the repository's analyser up to #464
+reads it (`git show b600a2bc^:tools/analyse_selftest.py`, standard library only), as does the one in
 the zip of an API 18 build from f83ce3f (2026-10-13) on; the API 18 builds before it shipped none.
 
 Exit status follows the verdict: 0 for PASS (diagnostic WARNs included), 1 for FAIL, NO TEXT or

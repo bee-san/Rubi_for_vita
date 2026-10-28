@@ -525,6 +525,49 @@ class PackageVariants(unittest.TestCase):
             self.assertIn(why, str(caught.exception))
             self.assertFalse((out / "SHA256SUMS").exists())
 
+    def test_a_base_whose_module_the_reader_refuses_says_which_and_why(self):
+        """package_release.base_variant: a plugin or the app that is a SELF the reader refuses is that member's error
+        with the reader's reason, which check_bases reports; it read as "the None build, given as the normal one"
+        and "the Rubi app names no version" before (audit-rubi-cleanup-8-b F7). A plugin that is no SELF at all (the
+        tests' placeholders) is still no build."""
+        def replaced(path, name, data):
+            """PATH's zip with member NAME's bytes DATA (a new zip beside it)."""
+            new = path.with_name(path.stem + "-" + hashlib.sha256(name.encode() + data).hexdigest()[:8] + ".zip")
+            with zipfile.ZipFile(path) as old, zipfile.ZipFile(new, "w") as z:
+                for item in old.infolist():
+                    z.writestr(item, data if item.filename == name else old.read(item.filename))
+            return new
+
+        normal, debug = self.base("normal"), self.base("debug")
+        shell = fake_self(MODULE_INFO + module("shell", "normal"))
+        broken = bytearray(shell)
+        broken[0xA0 + 5] = 2  # a big-endian ELF
+        with zipfile.ZipFile(normal) as z:
+            eboot = zipfile.ZipFile(io.BytesIO(z.read("Rubi.vpk"))).read("eboot.bin")
+        vpk = io.BytesIO()
+        with zipfile.ZipFile(vpk, "w") as z:
+            z.writestr("eboot.bin", eboot[:0x60])  # the app's SELF cut inside its headers
+        for base, why in ((replaced(normal, "ur0/tai/VitaJPOverlay_Shell.suprx", shell[:0x50]),
+                           "ur0/tai/VitaJPOverlay_Shell.suprx: SCE header: truncated at 0x58"),
+                          (replaced(normal, "ur0/tai/VitaJPOverlay_Shell.suprx", bytes(broken)),
+                           "ur0/tai/VitaJPOverlay_Shell.suprx: no little-endian ELF32 header in the SELF"),
+                          (replaced(normal, "Rubi.vpk", vpk.getvalue()), "Rubi.vpk's eboot.bin: "),):
+            with self.subTest(why=why):
+                with zipfile.ZipFile(base) as z, self.assertRaises(ValueError) as caught:
+                    release.base_variant(z)
+                self.assertTrue(str(caught.exception).startswith(why), str(caught.exception))
+                problems = package_variants.check_bases(base, debug, "0.8.0")
+                self.assertEqual(len(problems), 1, problems)
+                self.assertIn(f"{base.name}: {why}", problems[0])
+                self.assertNotIn("the None build", problems[0])
+        # placeholders: no SELF at all is no build (None, None), the app's too
+        placeholder = replaced(normal, "ur0/tai/VitaJPOverlay_Kernel.skprx", b"synthetic package fixture")
+        with zipfile.ZipFile(placeholder) as z:
+            self.assertEqual(release.base_variant(z), (None, None))
+        no_app = replaced(normal, "Rubi.vpk", b"not a VPK")
+        with zipfile.ZipFile(no_app) as z:
+            self.assertEqual(release.base_variant(z), ("normal", None))
+
     def sources(self):
         """A checkout of the fixture bases' tree: one literal per part that only the debug build compiles, each in
         that part's debug modules of base() and in none of its normal ones."""

@@ -73,25 +73,36 @@ def base_variant(original):
     """(variant, app version) of a base zip's modules (tools/check_variant.py): "debug" or "normal",
     from the Shell's and the kernel's strings and the Rubi app's start line; ("debug", None) for a
     base from before the two builds, which are all the debug build; (None, None) when its plugins are
-    not Vita SELFs (the tests' placeholders). Raises when the modules disagree."""
+    not Vita SELFs (the tests' placeholders). Raises when the modules disagree, and with the member's name
+    and the SELF reader's reason when one is a SELF the reader refuses (audit-rubi-cleanup-8-b F7: it read
+    as "the None build" before)."""
     from check_variant import app_version, classify, segments  # packaging only: --verify needs neither
+    import vita_self  # (beside this file in the package's tools/ too)
     blobs = {}
-    with tempfile.TemporaryDirectory(prefix="vjo-variant-") as tmp:
+
+    def read(path, data, name):
+        path.write_bytes(data)
         try:
-            for part, name in (("kernel", "ur0/tai/VitaJPOverlay_Kernel.skprx"),
-                               ("shell", "ur0/tai/VitaJPOverlay_Shell.suprx")):
-                path = Path(tmp) / part
-                path.write_bytes(original.read(name))
-                blobs[part] = segments(path)
-        except ValueError:
-            return None, None
+            return segments(path)
+        except ValueError as error:  # check_variant.segments: "PATH: the reader's reason"
+            reason = str(error)
+            reason = reason[len(f"{path}: "):] if reason.startswith(f"{path}: ") else reason
+            raise ValueError(f"{name}: {reason}") from None
+
+    with tempfile.TemporaryDirectory(prefix="vjo-variant-") as tmp:
+        for part, name in (("kernel", "ur0/tai/VitaJPOverlay_Kernel.skprx"),
+                           ("shell", "ur0/tai/VitaJPOverlay_Shell.suprx")):
+            data = original.read(name)
+            if data[:4] != vita_self.MAGIC:
+                return None, None  # not a Vita SELF: the tests' placeholders
+            blobs[part] = read(Path(tmp) / part, data, name)
         try:
             with zipfile.ZipFile(io.BytesIO(original.read("Rubi.vpk"))) as vpk:
-                path = Path(tmp) / "eboot.bin"
-                path.write_bytes(vpk.read("eboot.bin"))
-                blobs["app"] = segments(path)
-        except (KeyError, zipfile.BadZipFile, ValueError):
-            pass  # a test base's placeholder VPK: the plugins decide
+                eboot = vpk.read("eboot.bin")
+        except (KeyError, zipfile.BadZipFile):
+            eboot = None  # a test base's placeholder VPK: the plugins decide
+        if eboot is not None and eboot[:4] == vita_self.MAGIC:
+            blobs["app"] = read(Path(tmp) / "eboot.bin", eboot, "Rubi.vpk's eboot.bin")
     variant, seen, why = classify(blobs)
     if variant is None:
         raise ValueError("The base zip's modules are not one build: " + json.dumps({"seen": seen, "why": why}))
