@@ -2829,6 +2829,42 @@ static void test_a_words_cache_that_cannot_be_read(void)
     io.fail_read = NULL;
 }
 
+/* #418 (P10, audit-rubi-cleanup-10 F15): the export's list past its cap (anki_export.c list_card's heap, which
+ * VJO_APKG_MAX_CARDS keeps out of every other test): it keeps the cap oldest cards, by time and then ID, a tie at the
+ * edge too, and counts the rest as left. */
+static void test_a_list_longer_than_its_cap_keeps_the_oldest(void)
+{
+    static const int64_t t[] = {300, 0, 60, 180, 60, 240};
+    char hex[6][VJO_QUEUE_ID_SIZE];
+    VjoApkgCard kept[2], want[6];
+    List l;
+    int n = (int)(sizeof(t) / sizeof(t[0]));
+    reset();
+    for (int i = 0; i < n; i++) {
+        char word[8];
+        snprintf(word, sizeof(word), "語%d", i);
+        snprintf(hex[i], sizeof(hex[i]), "%s", queue_word(word, "ご", word, t[i]));
+        memset(&want[i], 0, sizeof(want[i]));
+        from_hex(hex[i], want[i].id);
+        want[i].time = cat.time + t[i];
+    }
+    vjo_apkg_sort(want, n); /* the oldest two first: t 0, then the t 60 card with the smaller ID */
+    vjo_arena_init(&A, mem, sizeof(mem));
+    memset(&l, 0, sizeof(l));
+    l.a = &A;
+    l.cards = kept;
+    l.cap = 2;
+    l.ui = &ui;
+    l.total = n;
+    TEST_ASSERT(scan(VJO_EXPORT_QUEUE_DIR, list_card, &l) == n);
+    TEST_CHECK_(l.n == 2 && l.left == n - 2 && !l.unreadable, "%d kept, %d left, %d unreadable", l.n, l.left,
+                l.unreadable);
+    vjo_apkg_sort(kept, l.n);
+    for (int i = 0; i < 2; i++)
+        TEST_CHECK_(!memcmp(kept[i].id, want[i].id, 16) && kept[i].time == want[i].time, "kept %d: time %lld", i,
+                    (long long)(kept[i].time - cat.time));
+}
+
 /* ---------------- #418 (P10): core/heap.h is the old heaps, step for step ---------------- */
 
 /* The four heaps as they were before core/heap.h (settings/anki_export.c word_down/word_sort, key_down/key_set and
@@ -3134,6 +3170,7 @@ TEST_LIST = {
     {"heap_order_is_the_old_heaps", test_heap_order_is_the_old_heaps},
     {"a_known_index_that_cannot_be_written", test_a_known_index_that_cannot_be_written},
     {"a_words_cache_that_cannot_be_read", test_a_words_cache_that_cannot_be_read},
+    {"a_list_longer_than_its_cap_keeps_the_oldest", test_a_list_longer_than_its_cap_keeps_the_oldest},
     {NULL, NULL},
 };
 
