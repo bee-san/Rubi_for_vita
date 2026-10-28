@@ -96,12 +96,22 @@ int sceIoRename(const char *a, const char *b)
 }
 int sceIoSync(const char *device, unsigned flags)
 {
+    /* The mount-level metadata barrier, as the card's own directories' fsyncs (test_shell_anki.c's): not the
+     * machine's sync(), which waits for every disk of it. A stop is a process's, not a power cut, so what the code
+     * wrote is there for the next process either way. */
+    static const char *const dirs[] = {VJO_QUEUE_DIR, "ux0:data/VitaJPOverlay", "ux0:data"};
     (void)flags;
     syncs++;
     TEST_CHECK(!strcmp(device, "ux0:"));
     if (fail_sync)
         return (int)0x80010005u;
-    sync();
+    for (unsigned i = 0; i < sizeof(dirs) / sizeof(*dirs); i++) {
+        int fd = open(dirs[i], O_RDONLY | O_DIRECTORY); /* (one a test made a file is not a directory: skipped) */
+        if (fd >= 0) {
+            (void)fsync(fd);
+            close(fd);
+        }
+    }
     if (ends_with(last_rename, ".json"))
         crash_at("json_committed");
     return 0;
