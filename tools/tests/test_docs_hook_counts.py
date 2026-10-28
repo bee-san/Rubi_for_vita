@@ -62,6 +62,17 @@ class DocsHookCounts(unittest.TestCase):
         self.assertLessEqual(c["total"], c["luna_titles"] + c["rubi_more"] + 1)
         self.assertGreaterEqual(c["total"], c["luna_titles"] + c["rubi_more"] + 1 - c["rubi_in_luna"])
 
+    def test_the_console_column_is_the_sources(self):
+        """tools/gen_luna_vita.py's RUBI_CONSOLE (the doc's Console column) and core/hook_place.c's comments agree: a
+        title whose comment says it ran on a console is in it, and a title in it has a comment that speaks of one."""
+        said = gen.rubi_comments((ROOT / "core/hook_place.c").read_text(encoding="utf-8"))
+        ran = re.compile(r"(?i)proven on a console|console-tested|on a console \(|on the owner's (?:vita|console)")
+        self.assertEqual({t for t, text in said.items() if ran.search(text)} - set(gen.RUBI_CONSOLE), set(),
+                         "core/hook_place.c says these ran on a console: add them to RUBI_CONSOLE")
+        for title in gen.RUBI_CONSOLE:
+            self.assertRegex(said.get(title, ""), r"(?i)console", title)
+        self.assertIn("PCSG01198", {t for t, text in said.items() if ran.search(text)})  # the rule finds one
+
     def test_a_stale_number_is_found(self):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         n = stated(text)["rubi_more"]

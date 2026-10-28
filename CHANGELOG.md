@@ -1122,6 +1122,11 @@ and the debug build are included; the normal VPK is the main download.
 
 ### On the console
 
+- A contributor's PCH-2000 (3.65) ran アマツツミ (`PCSG01198`, APP_VER 01.00) with the debug, then the normal,
+  game worker of #273's tree: its entry was hooked (`1 table sites and 4 string copies hooked, 1 sites
+  refused`), its site answered the jobs (`game vocr source: hook 1, flags 0x98`, `rc=0`), the overlay
+  showed the game's line (checked by eye against the screen) and looked words up, and the game did not
+  crash ([#273]).
 - The owner's initial CLANNAD run used matching debug plugins from main `56a831c`; hooked text
   matched the screen and hook-only readings were recorded. Later mixed-build readings do not
   establish coverage of these changes. This normal release still needs its own restart and game test.

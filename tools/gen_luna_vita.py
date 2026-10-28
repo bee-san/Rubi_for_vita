@@ -633,6 +633,20 @@ def rubi_names(source):
     return names
 
 
+def rubi_comments(source):
+    """What core/hook_place.c's comments say of each title: the text from a title ID's first mention in a comment to the
+    next title's (the table's own comment speaks of CLANNAD, then アマツツミ; a row's comment of its title)."""
+    said = {}
+    for c in re.findall(r"/\*.*?\*/", source, re.S):
+        text = " ".join(line.strip().lstrip("*").strip() for line in c[2:-2].splitlines())
+        marks = [(m.start(), m.group(0)) for m in re.finditer(r"\bPCS[A-Z]\d{5}\b", text)]
+        firsts = [(at, t) for k, (at, t) in enumerate(marks) if t not in {x for _, x in marks[:k]}]
+        for k, (at, title) in enumerate(firsts):
+            end = firsts[k + 1][0] if k + 1 < len(firsts) else len(text)
+            said[title] = said.get(title, "") + " " + text[at:end]
+    return said
+
+
 def rubi_entries(sites):
     """core/hook_place.c's verified rows, each with its game and how it stands to Luna's table (sites: vita_sites()'s)."""
     sys.path.insert(0, str(ROOT / "tools"))
