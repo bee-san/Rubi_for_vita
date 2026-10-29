@@ -1,0 +1,125 @@
+name: Publish Rubi 0.10.1
+
+on:
+  push:
+    branches: ['release/publish-0.10.1']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-rubi-0.10.1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/release/publish-0.10.1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 0f2984ffbd50687b8e1283758ed2d1135110008d
+      SOURCE_RUN: 40839697050
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0f2984ffbd50687b8e1283758ed2d1135110008d
+          persist-credentials: false
+      - name: Require the merged source's successful main build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          gh run watch "$SOURCE_RUN" --repo bee-san/Rubi_for_vita --exit-status --interval 10
+          gh api "repos/bee-san/Rubi_for_vita/actions/runs/$SOURCE_RUN" > source-run.json
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          run = json.loads(Path('source-run.json').read_text())
+          assert run['head_sha'] == os.environ['SOURCE_SHA'], run['head_sha']
+          assert (run['event'], run['head_branch'], run['status'], run['conclusion']) == ('push', 'main', 'completed', 'success')
+          version = re.search(r'^set\(VJO_VERSION "([^"]+)" CACHE STRING', Path('vita/CMakeLists.txt').read_text(), re.M).group(1)
+          assert version == '0.10.1', version
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: Rubi
+          path: ci/debug
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: Rubi-normal
+          path: ci/normal
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: ci/models
+          key: vjo-models-${{ hashFiles('tools/prepare_ocr.py', 'tools/model_tiers.json', 'include/vjo_vocr_sizes.h') }}
+      - name: Verify the pinned OCR models and language models
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python3 tools/prepare_ocr.py --backend vocr-tiers --output ci/models &&
+               python3 tools/prepare_ocr.py --backend vocr-lm --output ci/models; then
+              exit 0
+            fi
+            sleep "$((attempt * 20))"
+          done
+          exit 1
+      - name: Package and test the exact release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          normal=(ci/normal/Rubi-*.zip)
+          debug=(ci/debug/Rubi-*-debug.zip)
+          test "${#normal[@]}" = 1 && test -f "${normal[0]}"
+          test "${#debug[@]}" = 1 && test -f "${debug[0]}"
+          python3 tools/package_variants.py --normal "${normal[0]}" --debug "${debug[0]}" --models ci/models \
+            --version 0.10.1 --source-revision "$SOURCE_SHA" --sources . -o ci/release
+          for package in ci/release/Rubi-*.zip; do
+            python3 tools/e2e_package.py "$package"
+          done
+          mkdir -p publish
+          cp ci/release/Rubi-0.10.1.vpk ci/release/Rubi-0.10.1.zip publish/
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root = Path('publish')
+          names = ['Rubi-0.10.1.vpk', 'Rubi-0.10.1.zip']
+          (root / 'SHA256SUMS').write_text(''.join(f'{hashlib.sha256((root / name).read_bytes()).hexdigest()}  {name}\n' for name in names))
+          PY
+          cat publish/SHA256SUMS
+      - name: Publish the normal build as Rubi 0.10.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'NOTES'
+          Changes since 0.10.0:
+
+          - A simpler Settings menu, with Default, Mint and Paper colour schemes. Everyday Reading controls are on one screen; tuning options are under Advanced. Title IDs are hidden in the Games list.
+          - Dictionary lookups show alternate readings and senses, such as both けいい and いきさつ for 経緯. All enabled dictionaries are included automatically.
+          - Double-tap the rear touchpad with the overlay open to OCR the whole screen and look up its words. Closing returns to the saved dialogue box.
+          - Native hooks load only the current game's profile from disk. Six more Vita games have verified hook entries, tested in Vita3K.
+          - Vertical OCR uses VOCR6-V. Pause the game to read is available under Advanced and remains OFF by default.
+          - Fixes for reading-streak seeding and the packaged installer's app checks, self-tests, log collection and uninstall.
+
+          Anki options appear when mining is enabled; Click is now Reveal sentence, and Highlight is Selection mode. Known-word import is temporarily disabled while duplicate detection is developed.
+
+          The new features have been tested on the host and have not been tested on a console. Pause the game to read should remain OFF until console testing.
+
+          Install `Rubi-0.10.1.vpk` with VitaShell, open Rubi, choose **Settings → Install & repair → Update**, then restart the Vita. Install all of this version's plugins together (API 57); the app does this for you. `Rubi-0.10.1.zip` is the manual-install package, and `SHA256SUMS` contains both files' hashes. This release is the normal build.
+
+          [Full changelog](https://github.com/bee-san/Rubi_for_vita/blob/v0.10.1/CHANGELOG.md)
+          NOTES
+          gh release create v0.10.1 --repo bee-san/Rubi_for_vita --target "$SOURCE_SHA" \
+            --title 'Rubi 0.10.1' --notes-file release-notes.md --latest \
+            publish/Rubi-0.10.1.vpk publish/Rubi-0.10.1.zip publish/SHA256SUMS
+          test "$(gh api repos/bee-san/Rubi_for_vita/git/ref/tags/v0.10.1 --jq '.object.sha')" = "$SOURCE_SHA"
+          gh release view v0.10.1 --repo bee-san/Rubi_for_vita --json url,tagName,isDraft,isPrerelease,assets
+          cat publish/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
