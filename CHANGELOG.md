@@ -31,6 +31,8 @@ been reported.
 
 ### Fixed
 
+- The release zip's README.md shows its screenshots again: the six images it links (`docs/screenshots/`, 482,185 B)
+  are in the zip, as tools/tests/test_zip_docs.py requires of every file README.md links.
 - The two-level head's re-read of a doubtful counter line now follows the model (#528, Mmem-game-8): a line that
   read a full-size カ or ケ before 月, 年 and the like, where Normal's and Large's two-level head may have missed a small
   ヵ or ヶ, is read again with the full head. Since API 42 the job took that flag from its fresh workspace before the
