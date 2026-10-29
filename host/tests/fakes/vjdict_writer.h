@@ -81,7 +81,12 @@ static inline size_t vjdict2_keys(uint8_t *bytes, size_t cap, const VjdictKey *k
     memset(bytes, 0, off);
     memcpy(bytes, "VJDICT2\0", 8);
     vjdict_put32(bytes + 8, 2); vjdict_put32(bytes + 12, 64);
-    vjdict_put32(bytes + 16, (uint32_t)n_entries); vjdict_put32(bytes + 20, 24);
+    {   /* the header's count is the postings', as tools/convert_dictionary.py writes it (index_records) */
+        uint32_t postings = 0;
+        for (int k = 0; k < n_keys; k++) postings += (uint32_t)keys[k].count;
+        vjdict_put32(bytes + 16, postings);
+    }
+    vjdict_put32(bytes + 20, 24);
     vjdict_put64(bytes + 24, 4096); vjdict_put64(bytes + 32, 8192);
     vjdict_put64(bytes + 48, 1); vjdict_put64(bytes + 56, 1);
     if (title) memcpy(bytes + 192, title, strlen(title));

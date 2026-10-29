@@ -857,7 +857,7 @@ In SceShell (the overlay, `shell/anki.c`):
   88 KiB (`ANKI_TEXT_MEM`, the ledger's `VJO_BUDGET_PAF_ANKI`; the build checks
   they agree), sized by construction (#528): at its fullest a save holds the
   settings' copy, the locators, a record's worth of card, one more dictionary's
-  entry and the record being encoded (`ANKI_FULLEST`, 87,013 B on the host, less
+  entry and the record being encoded (`ANKI_FULLEST`, 87,013 B on the host, 86,869 B
   on the Vita, which the build checks the arena holds), so a card is the same
   record as in a larger arena (128 KiB until then). It is freed before the thread ends. Counting only reads the
   directory, on the thread's stack, with no heap allocation. Nothing
