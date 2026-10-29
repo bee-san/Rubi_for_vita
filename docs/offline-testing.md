@@ -26,10 +26,17 @@ The host suites compile the plugin sources themselves (`#include "../../shell/wo
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
 failed joins, cancelled jobs and crashes between steps are injected there. The core's arenas are
-cut too (`oom_paths`, #528): each arena of the Shell's lookups, its overlay texts and its Anki
-card, of the Rubi app's sentence readings and of the line history's scan runs out at every block
-it gives, on the real VOCR lines in the bundled dictionary, and each run must return an error, its
-full result, or that result with only an omission it marks; `core/arena.c`'s cap for it exists in
+cut too (`oom_paths`, #528; its design is audit-mem-crash-1's): the Shell's lookups in its 64 KiB result block,
+in `shell/worker.c`'s order (the lookup at the cursor, the word preparations on the same arena, the cursor jobs
+with every other dictionary's page), with `config.c`'s two default dictionaries (`vndb-names.vjdict` is built for
+the test from the vendored archive, so a fork's pull request runs it too; `plaintext.vjdict` joins it with the
+frozen archive), the overlay's texts, an Anki card's record and the Rubi app's sentence readings, run out at every
+block they give and at every block a cut run gives, on the real VOCR lines in `host/fixtures/word_lookup`. Each
+step must fail, give the full run's result, or give it with an omission it marks (`more_omitted`, an ordered subset
+of the other entries). The line history's scan must keep the newest lines that fit, and the Shell's own card save
+(`test_shell_anki.c`) the full record, one with fewer other entries, or a refusal that saves nothing. Without a
+default dictionary the suite exits 77 (skipped) after the history. It also runs on the A9 in the ARM lane, where
+every block size differs. `core/arena.c`'s cap for it exists in
 host builds only. 72 ctest tests with
 the release models (`VJO_VOCR_MODEL_DIR`), 71 in the normal build, which has no self-test memory
 routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 71 and 70,

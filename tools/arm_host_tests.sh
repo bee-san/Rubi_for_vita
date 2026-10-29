@@ -101,6 +101,8 @@ TESTS+=(touch_hold text_rows text_join linebreak history_lines history_read stre
         cursor_nav local_cursor settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe hooks_engine hooks_engine_external)
 TESTS+=(kernel_text_source hook_titles) # API 31's plumbing (hooks/api)
+# #528: the OOM paths on the A9's 32-bit layout (every block size differs there), with the lane's dictionary
+[ -z "${VJO_PLAINTEXT_DIR:-}" ] || TESTS+=(oom_paths)
 CMAKE_VOCR=(-DVJO_WITH_VOCR=OFF)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   # API 54: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT): VJO_VOCR_SPOT_SOURCE_DIR,
