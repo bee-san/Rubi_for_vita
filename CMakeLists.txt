@@ -743,7 +743,7 @@ vjo_suite(settings_search SOURCES host/tests/test_settings_search.c settings/sea
 # (VJO_KERNEL_LOADS_WORKER, 1 in include/vjo_api.h; defined here for the test, which also
 # checks the lines mode's refusal of another build's payload).
 vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/install.c settings/install_page.c
-  settings/app_worker.c
+  settings/app_worker.c core/boot_guard.c
   settings/preferences.c settings/text_layout.c host/tests/settings_stubs/anki_page_stub.c
   INCLUDES host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs third_party/bearssl/inc
   DEFINES VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" VJO_VERSION_STRING="0.8.0" VJO_KERNEL_LOADS_WORKER=1

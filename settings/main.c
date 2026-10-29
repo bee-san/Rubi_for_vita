@@ -1817,7 +1817,8 @@ int main(void)
                 line_fix_back ? "put back from its backup" : "only its backup read, not put back",
                 line_fix.count, line_fix.count == 1 ? "" : "s");
     /* The Install page (docs/one-vpk-install.md): the app opens on it when the overlay is not installed,
-     * is another build's, is damaged or was interrupted, or cannot be installed yet. */
+     * is another build's, is damaged or was interrupted, or cannot be installed yet, and in the boot guard's safe
+     * mode (#528, docs/boot-safety.md). */
     int open_install = vjo_install_page_start();
     vjo_app_banner(app_banner, sizeof(app_banner), vjo_install_page_has_payload()); /* at start, and after a run */
     int install_runs = vjo_install_page_runs();

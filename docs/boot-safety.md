@@ -77,6 +77,13 @@ boot guard: send status.txt and kernel.txt (install_ftp.sh --status). No boot at
 - `tools/install_ftp.sh` (and the release's `install-vita.sh`) uploads an empty `boot.txt`
   with every install and uninstall: a new build gets a fresh normal attempt, and safe mode
   never outlives the build that caused it.
+- The Rubi app's Install page reads this boot's record (#528). In safe mode the app opens on
+  that page and says that the overlay, its text hooks and OCR are off this boot, why (the
+  previous boot's end: SceShell stopped, or it ran under a minute; and the failed normal boots
+  in a row) and what ends it: the next restart while fewer than two normal boots failed in a
+  row, else Check and repair (or any install), which empties the record once the Vita has run
+  for 70 s. The guard cannot tell whose crash stopped SceShell, so the note says so. The page
+  also logs the record (`install page: boot guard: boot N safe (previous: ...)`).
 - By hand: delete `ur0:data/VitaJPOverlay/boot.txt` in VitaShell, or run the installer again.
 
 ### What is unchanged

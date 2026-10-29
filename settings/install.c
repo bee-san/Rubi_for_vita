@@ -877,6 +877,12 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
     memset(s, 0, sizeof(*s));
     s->build = *build;
     s->dict_index = -1;
+    {
+        /* #528: this boot's record (the kernel wrote it at its start): safe mode keeps the overlay off this boot */
+        char boot[VJO_BOOT_RECORD_MAX];
+        int n = read_all(BOOT_RECORD, boot, sizeof(boot));
+        s->safe_mode = n > 0 && vjo_boot_parse(boot, n, &s->boot) == 0 && s->boot.mode == VJO_BOOT_SAFE;
+    }
     memset(&t, 0, sizeof(t));
     sceRtcGetCurrentClockLocalTime(&t);
     snprintf(s->stamp, sizeof(s->stamp), "%04u%02u%02u-%02u%02u%02u", t.year % 10000u, t.month % 100u, t.day % 100u,
@@ -1169,6 +1175,45 @@ static void backup_name(const char *path, const char *stamp, char *out, size_t c
 
 /* ---------------- the plans ---------------- */
 
+/* The name the page gives the action that installs (settings/install_page.c action_name). */
+static const char *install_action_name(const VjoInstallScan *s)
+{
+    switch (s->state) {
+    case VJO_INSTALL_UPDATE: return "Update";
+    case VJO_INSTALL_REPAIR: return "Repair";
+    case VJO_INSTALL_INSTALLED: return "Check and repair";
+    default: return "Install";
+    }
+}
+
+int vjo_install_safe_note(const VjoInstallScan *s, char *out, size_t cap)
+{
+    const VjoBootRecord *b = &s->boot;
+    char why[160], then[200];
+    int n;
+    if (!cap) return 0;
+    out[0] = '\0';
+    if (!s->safe_mode) return 0;
+    if (b->prev_mode == VJO_BOOT_SAFE)
+        snprintf(why, sizeof(why), "%d normal boots in a row failed before this one.", b->failures);
+    else
+        snprintf(why, sizeof(why), "%s: %d failed normal boot%s in a row.",
+                 b->prev_fault ? "SceShell stopped during the last boot (for Rubi or for another plugin: the guard cannot "
+                                 "tell which)"
+                               : "The last boot stopped before it had run for a minute",
+                 b->failures, b->failures == 1 ? "" : "s");
+    if (!(s->actions & VJO_INSTALL_ACT_INSTALL))
+        snprintf(then, sizeof(then), "To try the overlay again, delete ur0:data/VitaJPOverlay/boot.txt in VitaShell, then "
+                 "restart the Vita.");
+    else if (b->failures >= VJO_BOOT_STICKY_FAILURES)
+        snprintf(then, sizeof(then), "It stays off until you choose %s, then restart the Vita.", install_action_name(s));
+    else
+        snprintf(then, sizeof(then), "The next restart tries the overlay again; %s also ends safe mode.",
+                 install_action_name(s));
+    n = snprintf(out, cap, "Safe mode: the overlay, its text hooks and OCR are off this boot. %s %s", why, then);
+    return n < 0 ? 0 : n < (int)cap ? n : (int)cap - 1;
+}
+
 /* A plan's line, written when it fits (n < max); the count goes on either way, so that a plan knows how
  * many lines it has. */
 static int add(char lines[][VJO_INSTALL_LINE], int n, int max, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
@@ -1403,6 +1448,9 @@ static int install_plan(const VjoInstallScan *s, char lines[][VJO_INSTALL_LINE],
         for (int i = 0; i < shown; i++) n = add(lines, n, steps, "   %s", s->config_changes[i]);
         if (more) n = add(lines, n, steps, "   and %d more line%s.", more, more == 1 ? "" : "s");
     }
+    if (s->safe_mode)
+        n = add(lines, n, steps, "%d. End the boot guard's safe mode (ur0:data/VitaJPOverlay/boot.txt is emptied): the "
+                "overlay runs again from the next restart.", k++);
     n = add(lines, n, steps, "%d. Read everything back to check it.", k++);
     *need = n + tail;
     n = n < steps ? n : steps;
