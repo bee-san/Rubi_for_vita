@@ -45,6 +45,8 @@
 void test_pin_model(unsigned which, uint32_t bytes, const unsigned char sha256[32], uint32_t arena_bytes);
 void test_pin_lm(uint32_t bytes, const unsigned char sha256[32]);
 uint32_t vjo_vocr_test_len_left(void);
+void vjo_vocr_test_lm_counts(unsigned *parses, unsigned *reuses);
+void vjo_vocr_test_row_sums(const unsigned char *rows, unsigned w, unsigned n, uint32_t *sums);
 
 #define M1 "TINY_w8.vocr"
 #define M2 "TINY2_w8.vocr"
@@ -973,6 +975,53 @@ static void test_sizes_and_fewer_helpers(void)
     pool_done(&pl);
 }
 
+/* #528's speed pass. The LM's parse is kept for the resident bytes it was made from (core/vocr_ocr.c lm_setup): a job
+ * that keeps the LM's bytes takes it, a job that reads them again (or after their block was released) parses again,
+ * and every job reads the same as the first. The strip's row checksums (row_sums) are vjo_fnv1a's, every width and
+ * row count, odd ones included. */
+static void test_lm_parse_kept_and_row_sums(void)
+{
+    static Run first, next;
+    static unsigned char rows[64 * 961];
+    static const unsigned widths[] = {1, 2, 3, 7, 64, 399, 400, 401, 959, 960, 961};
+    static const unsigned counts[] = {1, 2, 3, 59, 63, 64};
+    unsigned parses = 0, reuses = 0;
+    Opt o = {0};
+    setup();
+    o.lm = 1;
+    TEST_ASSERT(!vjo_vocr_lm_drop(&lres));
+    vjo_vocr_test_lm_counts(&parses, &reuses);
+    run(&first, NULL, &o);
+    TEST_ASSERT(first.rc == VJO_OK && first.st.lm_loaded && first.st.lm_lines > 0);
+    vjo_vocr_test_lm_counts(&parses, &reuses);
+    TEST_CHECK_(parses == 1 && reuses == 0, "the LM read: %u parses, %u reuses", parses, reuses);
+    for (int k = 0; k < 2; k++) {
+        run(&next, NULL, &o);
+        vjo_vocr_test_lm_counts(&parses, &reuses);
+        TEST_CHECK_(!next.st.lm_loaded && next.st.lm_cached && parses == 0 && reuses == 1,
+                    "the LM kept: loaded %u cached %u, %u parses, %u reuses", next.st.lm_loaded, next.st.lm_cached,
+                    parses, reuses);
+        same_job(&first, &next, "the kept parse");
+    }
+    TEST_ASSERT(!vjo_vocr_lm_drop(&lres)); /* its block released: the next job reads and parses it again */
+    run(&next, NULL, &o);
+    vjo_vocr_test_lm_counts(&parses, &reuses);
+    TEST_CHECK_(next.st.lm_loaded && parses == 1 && reuses == 0, "the LM read again: %u parses, %u reuses", parses,
+                reuses);
+    same_job(&first, &next, "the LM read again");
+    for (size_t i = 0; i < sizeof(rows); i++) rows[i] = (unsigned char)((i * 2654435761u) >> 13);
+    for (unsigned a = 0; a < sizeof(widths) / sizeof(widths[0]); a++)
+        for (unsigned b = 0; b < sizeof(counts) / sizeof(counts[0]); b++) {
+            uint32_t sums[64];
+            const unsigned w = widths[a], n = counts[b];
+            memset(sums, 0, sizeof(sums));
+            vjo_vocr_test_row_sums(rows, w, n, sums);
+            for (unsigned r = 0; r < n; r++)
+                TEST_CHECK_(sums[r] == vjo_fnv1a(VJO_FNV_INIT, rows + (size_t)r * w, w), "width %u, %u rows: row %u", w,
+                            n, r);
+        }
+}
+
 TEST_LIST = {
     {"parallel_equals_serial", test_parallel_equals_serial},
     {"capacity_like_serial", test_capacity_like_serial},
@@ -986,6 +1035,7 @@ TEST_LIST = {
     {"the_game_pool_after_a_timed_out_join", test_the_game_pool_after_a_timed_out_join},
     {"a_late_helper_asks_the_job_nothing", test_a_late_helper_asks_the_job_nothing},
     {"sizes_and_fewer_helpers", test_sizes_and_fewer_helpers},
+    {"lm_parse_kept_and_row_sums", test_lm_parse_kept_and_row_sums},
     {NULL, NULL},
 };
 

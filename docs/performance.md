@@ -93,6 +93,30 @@ early pass more instead (0.13 a job at 60 fps). Every strip not read is also a c
 the game's own display call: 0.7-2.5 ms of the game's frame each (A9, `capture_abgr` above). A changed screen is still
 seen: the stable-text pass reads every row again, and each line's fetch reads its rows again, each checked.
 
+### A job's CPU: the LM's parse kept, the rows' checksums
+
+Two parts of every job were Rubi's own work done again for nothing. `lm_setup` parsed the resident LM again in every
+job (`vocr_lm_load` checks every index of the blob: 1,791,312 instructions with the 1000k LM, more with larger ones);
+the parse is now kept with the bytes it was made from (their block and pin, size and stamp) and made again only when
+they are read again or their block is released (`core/vocr_ocr.c` `lm_kept`, 216 B of the worker's data on the Vita; `row_sums` 52 B of its code).
+And every row read was checksummed by an inlined FNV-1a loop that took 7 instructions a byte; `row_sums` gives the
+same values for a strip's rows two at a time (an odd last row paired with itself). On the A9 lane (estimates; the high bound,
+where the console sat in the calibration; before: main with the dark flags above):
+
+| workload | before | after | instructions | at 444 MHz | at 333 MHz | output |
+|---|---:|---:|---:|---:|---:|:-:|
+| `job_vocr6_s` | 81,731,890 | 78,149,343 | −3,582,547 (−4.4%) | 243.2 → 230.2 ms | 323.6 → 306.9 ms | same |
+| `job_vocr6_n` | 147,094,273 | 143,511,726 | −3,582,547 (−2.4%) | 551.5 → 535.4 ms | 723.5 → 703.4 ms | same |
+| `job_vocr6_l` | 158,706,457 | 155,123,910 | −3,582,547 (−2.3%) | 620.2 → 606.7 ms | 810.5 → 793.4 ms | same |
+| `job_vocr6_n_full` | 259,503,466 | 253,867,900 | −5,635,566 (−2.2%) | 899.5 → 877.6 ms | 1,183.3 → 1,155.6 ms | same |
+
+Of Large's job (after the dark flags above): `vocr_lm_load` 1,791,312 → 0 and the checksums 4,233,354 → 2,397,118
+(`row_sums`). The parse runs
+before the first recognized line, so at the game's clock (333 MHz in most games: about 4-5 ms a job, estimate); the
+checksums follow every strip. Output: the stage
+bench's checksums and the 358 dev regions' texts (every byte, Small, Normal and Large) are the same; the host suite
+checks `row_sums` against `vjo_fnv1a` at widths 1-961 and 1-64 rows, and that a kept parse reads what a fresh one does.
+
 Reproduce: the commands in [Reproduce](#reproduce); the dev lane with `--size N --first-ms-per-mpx 550
 --skip-missing`, and the A9 lane on a Vita build configured `-DVJO_CORE_LTO=OFF` (a release build's core library
 holds LTO objects that ARM_CC cannot link; the game worker's and the kernel's code is the same either way) with
