@@ -41,3 +41,17 @@ __attribute__((weak)) int ksceIoChstatByFd(SceUID fd, SceIoStat *st, int bits)
     (void)fd; (void)st; (void)bits;
     abort();
 }
+
+/* #536's audit: a copy that outlives its rows call. stall: the display hook claims the armed request
+ * (PENDING -> COPYING) and does not end it within the call; end: the copy ends (COPYING -> DONE), for the kernel
+ * worker's tick to tidy (game_ocr_rows_tick). */
+void test_kernel_rows_stall(void);
+void test_kernel_rows_end(void);
+void test_kernel_rows_stall(void)
+{
+    (void)__sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING);
+}
+void test_kernel_rows_end(void)
+{
+    (void)__sync_bool_compare_and_swap(&rows.state, ROWS_COPYING, ROWS_DONE);
+}

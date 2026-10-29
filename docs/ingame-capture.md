@@ -85,7 +85,7 @@ returns BUSY after arming (a copy still running after 2 s) ends its job and leav
 allocated rather than free memory the hook might write, until the next job: the kernel hands out
 no job while that copy runs (`vjoOcrSubmit` answers BUSY until the kernel worker sees the copy
 end), so the next job gives the block back before it takes its own (`release_abandoned_capture`).
-Until 0.10.1 the block stayed for the rest of the game's process and the worker took no more jobs,
+Through 0.10.1 the block stayed for the rest of the game's process and the worker took no more jobs,
 which also kept its resident weights, LM and spotter there until the game exited (#528). Through
 the kernel strip (rung 4) the hook writes the kernel's strip, never the worker's block, which goes
 back with its job.

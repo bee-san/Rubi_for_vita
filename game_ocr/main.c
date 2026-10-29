@@ -95,10 +95,10 @@ static SceUID frame_uid = -1;
 static uint32_t frame_bytes_held;
 static unsigned char *frame_base;
 /* A rows call returned BUSY after arming: the display hook may still write into the capture block (or the frame or
- * shot block), so cleanup keeps them (and the tall-line block). Only until the kernel hands out the next job: it hands
- * out none while that copy runs (vjoOcrSubmit answers BUSY until game_ocr_rows_tick sees it end), so the next job
- * gives them back before it takes its own (release_abandoned_capture). The worker goes on meanwhile: it drops its
- * resident blocks after INACTIVE_DROP_US as at any other time, and takes the next job. */
+ * shot block), so cleanup keeps them (never the tall-line block, which no rows call writes). Only until the kernel
+ * hands out the next job: it hands out none while that copy runs (vjoOcrSubmit answers BUSY until game_ocr_rows_tick
+ * sees it end), so the next job gives them back before it takes its own (release_abandoned_capture). The worker goes
+ * on meanwhile: it drops its resident blocks after INACTIVE_DROP_US as at any other time, and takes the next job. */
 static int hook_owns_capture;
 /* A helper thread could not be joined (core/vocr_ocr.h VjoVocrStats.stuck): it may
  * still run in the job's workspace, so that block is never freed either. */
@@ -531,7 +531,7 @@ static unsigned pause_frames;
 static int pause_capped;
 
 /* The frame block back to the game (a refused copy, the job's end); kept while the hook may still write it
- * (a rows call that outlived its copy: hook_owns_capture, as the capture block is). 0, or -1 when its free failed. */
+ * (a copy that outlived its rows call: hook_owns_capture, as the capture block is). 0, or -1 when its free failed. */
 static int frame_release(void)
 {
     int rc;
@@ -1144,15 +1144,17 @@ static int cleanup(void)
             rc = VJO_E_OCR_UNAVAILABLE;
         else { workspace_uid = -1; workspace_bytes_held = 0; workspace_memory = 0; }
     }
-    /* A capture block the display hook may still write into (a rows call that
-     * timed out on a copy in progress) is never freed; one whose free failed is
-     * freed again here. */
+    /* A capture block the display hook may still write into (a copy that outlived
+     * its rows call: hook_owns_capture) stays until the next job
+     * (release_abandoned_capture); one whose free failed is freed again here. */
     if (capture_uid >= 0 && !hook_owns_capture) {
         if (game_memblock_free(GL_CAPTURE, VJO_GITEM_CAPTURE, capture_uid, capture_bytes_held) < 0)
             rc = VJO_E_OCR_UNAVAILABLE;
         else { capture_uid = -1; capture_bytes_held = 0; capture_memory = 0; }
     }
-    if (line_uid >= 0 && !hook_owns_capture) { /* rows calls write tall lines here too */
+    /* A tall line's block goes at once, abandoned copy or not: no rows call writes it (core/vocr_ocr.c line_pixels
+     * reads the line's rows into the strip, the capture block, and copies them here; #536's audit) */
+    if (line_uid >= 0) {
         if (game_memblock_free(GL_LINE, VJO_GITEM_LINE, line_uid, line_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
         else { line_uid = -1; line_bytes_held = 0; line_base = NULL; }
     }

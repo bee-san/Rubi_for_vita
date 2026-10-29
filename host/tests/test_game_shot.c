@@ -62,6 +62,9 @@ int test_kernel_register(void);
 int test_kernel_submit(const VjoGameOcrRequest *request);
 int test_kernel_take(VjoGameOcrRequest *out);
 int test_kernel_capture_rows(const VjoGameOcrRows *request, void *dst, VjoGameOcrRowsInfo *info);
+void test_kernel_rows_stall(void); /* host/tests/kernel_model_broker_boundary.c (#536's audit) */
+void test_kernel_rows_end(void);
+static unsigned stall_at; /* at this frame the hook starts its copy and does not end it within the rows call (0: never) */
 int test_kernel_cancelled(uint32_t seq);
 int test_kernel_complete(const VjoGameOcrResult *result);
 int test_kernel_read(uint32_t seq, VjoGameOcrResult *out);
@@ -134,6 +137,12 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
             caller = saved;
         }
         if (resize_after && frames > (unsigned)resize_after) fb_w = 720;
+        if (stall_at && frames == stall_at) { /* the game's display thread held in the copy (a suspend, say) */
+            test_kernel_rows_stall();
+            clock_us += 2000000u; /* past the call's wait for a frame: it waits for the copy, then gives it up */
+            if (out) *out = MEV_ROWS;
+            return 0;
+        }
         in_hook = 1;
         game_ocr_rows_hook(7, fb_fmt == VJO_FB_A1B5G5R5 ? (uintptr_t)frame16 : (uintptr_t)frame32, 960, fb_fmt,
                            fb_w, fb_h);
@@ -300,7 +309,7 @@ static void reset(void)
     model_owned = 0; model_seq = 0; quitting = active_seq = 0; worker_started = claim_outstanding = blocked = 0;
     io_error = 0; hook_owns_capture = 0; shot_bytes_held = 0;
     locks = syscall_depth = 0; clock_us = 1000000;
-    frames = in_hook = 0; hook_copy_fail = resize_after = cancel_after = 0;
+    frames = in_hook = 0; hook_copy_fail = resize_after = cancel_after = 0; stall_at = 0;
     fb_w = 960; fb_h = 544; fb_fmt = VJO_FB_A8B8G8R8;
     block_live = refuse_user = refuse_all = 0; block_allocs = block_frees = live_bytes = peak_bytes = cdram_allocs = 0;
     game_free = 64 * 1024 * 1024;
@@ -361,6 +370,37 @@ static const VjoGameOcrStep *step_of(const VjoGameOcrResult *r, unsigned id, uns
     for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS; i++)
         if (r->step[i].id == id && !nth--) return &r->step[i];
     return NULL;
+}
+
+/* #536's audit: a shot whose strip's copy outlives its rows call (BUSY after arming) ends with an error and keeps its
+ * block for the hook, without stopping the worker; the kernel refuses the next job until the copy ends and its
+ * worker tidies it; that job gives the kept block back before it takes its own, and the shot is written as any
+ * other. */
+static void a_shot_whose_copy_outlives_its_call(void)
+{
+    static VjoGameOcrRequest r, took;
+    static VjoGameOcrResult res, out;
+    int seq;
+    reset();
+    procedural_frame();
+    stall_at = 3;
+    memset(&r, 0, sizeof(r));
+    r.size = sizeof(r);
+    r.flags = VJO_GAME_OCR_F_SHOT;
+    memcpy(r.shot, CARD, sizeof(CARD));
+    caller = 7; TEST_ASSERT(!vjoOcrRegister());
+    caller = 3; TEST_ASSERT((seq = vjoOcrSubmit(&r)) > 0);
+    cur_seq = (uint32_t)seq;
+    caller = 7; memset(&took, 0, sizeof(took)); TEST_ASSERT(!vjoOcrTake(&took));
+    TEST_CHECK(vjo_game_ocr_run_request(&took, &res) != VJO_OK && !res.shot_bytes);
+    TEST_CHECK(hook_owns_capture && !blocked && shot_uid >= 0 && block_live && block_allocs == 1 && !block_frees);
+    TEST_CHECK(!vjoOcrComplete(&res));
+    caller = 3; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_BUSY); /* the copy still runs */
+    stall_at = 0;
+    test_kernel_rows_end(); /* the copy ends */
+    game_ocr_rows_tick();   /* the kernel worker tidies it */
+    TEST_CHECK(shot(&out) == VJO_OK && out.shot_bytes > 0 && file_size(jpg_path) == (long)out.shot_bytes);
+    TEST_CHECK(!hook_owns_capture && block_allocs == 2 && block_frees == 2);
 }
 
 /* The whole frame (not the region), 64 rows a frame through the hook, encoded in one
@@ -1000,6 +1040,8 @@ static int shot_step(int argc, char **argv)
 TEST_LIST = {
     {"API 23: the shot is the whole frame, encoded in the game and written beside the card by the kernel",
      the_shot_is_the_whole_frame_written_beside_the_card},
+    {"#536's audit: a shot whose copy outlives its call keeps its block until the next job",
+     a_shot_whose_copy_outlives_its_call},
     {"API 23: the game's memory decides: the reserve, USER_RW, then CDRAM, else none", the_game_memory_decides},
     {"API 23: the kernel strip rung gives the same JPEG", the_kernel_strip_rung_gives_the_same_jpeg},
     {"API 23: too large is encoded lower, then given up", too_large_is_encoded_lower_then_given_up},
