@@ -1947,6 +1947,140 @@ static void test_an_earlier_lines_card_has_no_screenshot(void)
 }
 #endif
 
+/* ---------------- #528: the save with its arena cut at every block (audit-mem-crash-1's squeeze) ---------------- */
+/* core/arena.c's host-only cap (host/tests/test_oom_paths.c): the arena on this file's Paf block holds only the bytes
+ * before a block's end. Every save the full run's record, the same record with fewer of the other dictionaries'
+ * entries, or a refusal that saves nothing: never another record, never a crash. */
+extern const void *vjo_test_arena_base;
+extern size_t vjo_test_arena_cap, vjo_test_arena_ends[4096];
+extern unsigned vjo_test_arena_n_ends;
+
+/* The record without its "more" array (the other dictionaries' entries), and how many it has. */
+static void split_more(const char *json, char *rest, size_t cap, int *more)
+{
+    const char *m = strstr(json, ",\"more\":["), *p;
+    int depth = 0, in = 0;
+    *more = 0;
+    if (!m) { snprintf(rest, cap, "%s", json); return; }
+    for (p = m + 8; *p; p++) {
+        if (in) { if (*p == '\\') p++; else if (*p == '"') in = 0; continue; }
+        if (*p == '"') in = 1;
+        else if (*p == '[' || *p == '{') { if (*p == '{' && depth == 1) (*more)++; depth++; }
+        else if (*p == ']' || *p == '}') { if (--depth == 0) { p++; break; } }
+    }
+    snprintf(rest, cap, "%.*s%s", (int)(m - json), json, p);
+}
+
+/* test_what_enter_saves_whatever_the_dictionaries' card: 8 dictionaries with entries of `size` bytes (kana, or text
+ * whose escaping grows), the screenshot with or without. */
+static int squeeze_case(int heavy, int size, int with, VjoLocalPages *pages, VjoArena *a, uint8_t *mem, size_t mem_size)
+{
+    static char meaning[8][7200], names[8][16], list_names[160];
+    static DictRow rows[8];
+    VjoPlatform p;
+    VjoDictResult res;
+    VjoErr err;
+    reset();
+    list_names[0] = '\0';
+    for (int k = 0; k < 8; k++) {
+        int o = snprintf(meaning[k], sizeof(meaning[k]), "[Dictionary %d]\n", k);
+        while (o + 3 < size) {
+            const char *piece = heavy ? (o % 4 ? "\"&\"" : "<\n>") : "す";
+            memcpy(meaning[k] + o, piece, 3);
+            o += 3;
+        }
+        meaning[k][o] = '\0';
+        snprintf(names[k], sizeof(names[k]), "d%d.vjdict", k);
+        rows[k] = (DictRow){"好き", "好き", "すき", meaning[k], NULL};
+        dict_build(&dict_files[k], names[k], &rows[k]);
+        strcat(list_names, k ? "," : "");
+        strcat(list_names, names[k]);
+    }
+    snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
+    snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", list_names);
+    cfg.anki_screenshot = with;
+    reconfigure();
+    vjo_arena_init(a, mem, mem_size);
+    vjo_platform_vita(&p);
+    if (vjo_local_lookup_pages(a, &p, &cfg, list.header, 6, 8, pages, &res, &err) != VJO_OK || pages->count != 8)
+        return -1;
+    entries[1].vocab = &res.vocab[0];
+    view_pages = pages;
+    view_page = 0;
+    return 0;
+}
+
+static void test_a_save_with_its_arena_cut_at_every_block(void)
+{
+    static const int sizes[] = {300, 2700, 4000, 7000};
+    static uint8_t mem[256 * 1024];
+    static VjoLocalPages pages;
+    static size_t ends[4096];
+    static char full_json[64 * 1024], full_rest[64 * 1024], rest[64 * 1024];
+    unsigned total = 0, refused = 0, same = 0, fewer = 0, other = 0;
+    for (int heavy = 0; heavy < 2; heavy++)
+        for (unsigned z = 0; z < sizeof(sizes) / sizeof(sizes[0]); z++)
+            for (int with = 0; with < 2; with++) {
+                VjoArena a;
+                char id[VJO_QUEUE_ID_SIZE];
+                const char *json;
+                unsigned n, m = 0;
+                int full_more = 0, more = 0;
+                TEST_ASSERT(squeeze_case(heavy, sizes[z], with, &pages, &a, mem, sizeof(mem)) == 0);
+                vjo_test_arena_base = heap;
+                vjo_test_arena_cap = (size_t)-1;
+                vjo_test_arena_n_ends = 0;
+                enter(1);
+                vjo_test_arena_base = NULL;
+                TEST_CHECK_(!strcmp(g_view.anki_status, "Saved for Anki"), "the full save: %s", g_view.anki_status);
+                only_id(id);
+                TEST_ASSERT((json = queue_file(id, "json", NULL)) != NULL);
+                snprintf(full_json, sizeof(full_json), "%s", json);
+                split_more(full_json, full_rest, sizeof(full_rest), &full_more);
+                n = vjo_test_arena_n_ends;
+                memcpy(ends, vjo_test_arena_ends, n * sizeof(ends[0]));
+                finish();
+                for (unsigned i = 0; i < n; i++) {
+                    unsigned j;
+                    for (j = 0; j < m && ends[j] != ends[i]; j++) {}
+                    if (j == m) ends[m++] = ends[i];
+                }
+                for (unsigned i = 0; i < m; i++) {
+                    TEST_ASSERT(squeeze_case(heavy, sizes[z], with, &pages, &a, mem, sizeof(mem)) == 0);
+                    vjo_test_arena_base = heap;
+                    vjo_test_arena_cap = ends[i] - 1;
+                    enter(1);
+                    vjo_test_arena_base = NULL;
+                    vjo_test_arena_cap = (size_t)-1;
+                    total++;
+                    if (!strcmp(g_view.anki_status, "Saved for Anki")) {
+                        only_id(id);
+                        TEST_ASSERT((json = queue_file(id, "json", NULL)) != NULL);
+                        split_more(json, rest, sizeof(rest), &more);
+                        if (!strcmp(json, full_json)) same++;
+                        else if (!strcmp(rest, full_rest) && more < full_more) fewer++;
+                        else {
+                            other++;
+                            TEST_CHECK_(0, "cut at %zu (%d B entries%s%s): saved another record", ends[i] - 1, sizes[z],
+                                        heavy ? ", escaping" : "", with ? ", screenshot" : "");
+                        }
+                    } else if (strstr(g_view.anki_status, "not enough memory") ||
+                               strstr(g_view.anki_status, "Card not saved: over")) {
+                        refused++;
+                        TEST_CHECK_(files_ending(".json") == 0, "cut at %zu: a refused save left a record", ends[i] - 1);
+                    } else if (strstr(g_view.anki_status, "without a screenshot")) {
+                        fewer++; /* the record saved, its screenshot not (told) */
+                    } else {
+                        other++;
+                        TEST_CHECK_(0, "cut at %zu: status \"%s\"", ends[i] - 1, g_view.anki_status);
+                    }
+                    finish();
+                }
+            }
+    printf("\n  a save with its arena cut: %u cut runs: %u refused, %u the full record, %u fewer others or no "
+           "screenshot, %u other\n", total, refused, same, fewer, other);
+}
+
 TEST_LIST = {
     {"anki_off_by_default_starts_no_thread_and_allocates_nothing", test_off_by_default_allocates_nothing},
     {"enter_saves_offline_and_the_queue_survives_restart", test_enter_saves_offline},
@@ -1961,6 +2095,7 @@ TEST_LIST = {
     {"enter_records_every_dictionary", test_enter_records_every_dictionary},
     {"enter_names_titled_dictionaries", test_enter_names_titled_dictionaries},
     {"what_enter_saves_whatever_the_dictionaries", test_what_enter_saves_whatever_the_dictionaries},
+    {"a_save_with_its_arena_cut_at_every_block", test_a_save_with_its_arena_cut_at_every_block},
     {"#528 the arena's bound keeps every card whatever its entries", test_the_arena_bound_keeps_every_card_whatever_its_entries},
     {"record_round_trip_stable_ids_and_strict_decoding", test_record_format},
     {"fifty_cards_release_memory_and_threads", test_fifty_cards_release_everything},
