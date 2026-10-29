@@ -3269,6 +3269,7 @@ static void prepare_words(void)
 
 /* Kernel and local wakeups share the existing event. Handler order gives
  * input, refreshed text and foreground work priority over preparation. */
+static int64_t stats_next_us;
 static void control_tick(uint32_t bits)
 {
     int defer_prepare = bits || refresh_pending;
@@ -3341,8 +3342,13 @@ static void control_tick(uint32_t bits)
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
         mem_free();
-    if (vjo_history_total_step(&scratch)) /* the reading total's count, a window a wakeup: the next at once */
-        vjoNotifyShell();
+    /* Stats shares this input thread. Cached totals may be loaded for the open view, but CSV scans and
+     * checkpoints wait until it is closed and no foreground work runs. At most one window a second,
+     * without immediate self-wakeups; the normal poll still handles input every 50 ms. */
+    int background = ov == OV_CLOSED && !net_busy() && pending_cmd == VJO_CMD_NONE &&
+                     !bits && now_us() >= stats_next_us;
+    vjo_history_total_step(&scratch, background);
+    if (background) stats_next_us = now_us() + 1000000;
 }
 
 static int ctl_main(SceSize args, void *argp)

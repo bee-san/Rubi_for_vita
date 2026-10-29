@@ -934,7 +934,7 @@ static unsigned count_total(void)
     /* each wakeup's step: at once while it says so, else at the next poll while the count goes on */
     do {
         TEST_ASSERT(++windows < 100000);
-    } while (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING);
+    } while (vjo_history_total_step(&count_scratch, 1) || total.state == TOTAL_COUNTING || total.state == TOTAL_CACHED);
     TEST_CHECK(count_scratch.used == 24 && !view_held && !total.fd);
     return windows;
 }
@@ -976,6 +976,50 @@ static uint64_t append_total_lines(VjoHistoryRecord *r, int n)
         TEST_ASSERT_(rc == 1, "append %d of %d: %d", i, n, rc);
     }
     return chars;
+}
+
+/* Opening Stats reads only its small checked cache. A stale prefix stays visible until closed-overlay
+ * background steps finish; damaged and missing caches never start a CSV read in the open view. */
+static void test_total_deferred_until_closed(void)
+{
+    reset();
+    VjoHistoryRecord r = record("x");
+    uint64_t prefix = append_total_lines(&r, 80);
+    count_total();
+    uint64_t tail = append_total_lines(&r, 180);
+    memset(&total, 0, sizeof(total)); /* restart with an older, valid checkpoint */
+    unsigned before = reads, opened = read_opens, saved = total_writes;
+    vjo_history_total_want();
+    TEST_CHECK(!vjo_history_total_step(&count_scratch, 0));
+    TEST_CHECK(total.state == TOTAL_CACHED && shown() == prefix);
+    TEST_CHECK(reads == before && read_opens == opened && total_writes == saved && !total.fd);
+    char block[256];
+    vjo_history_stats_block(block, sizeof(block), 0);
+    TEST_CHECK(strstr(block, "characters"));
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 1 && total.fd > 0);
+    before = reads;
+    for (int i = 0; i < 20; i++) {
+        vjo_history_total_want();
+        TEST_CHECK(!vjo_history_total_step(&count_scratch, 0) && shown() == prefix);
+    }
+    TEST_CHECK(reads == before && total_writes == saved);
+    count_total();
+    TEST_CHECK(total.state == TOTAL_KNOWN && shown() == prefix + tail);
+    /* A checkpoint is deferred while open, including after the 30-minute threshold. */
+    r.time_us += 1801000000ull;
+    append_total_lines(&r, 1);
+    saved = total_writes;
+    TEST_CHECK(!vjo_history_total_step(&count_scratch, 0) && total_writes == saved);
+    TEST_CHECK(!vjo_history_total_step(&count_scratch, 1) && total_writes == saved + 1);
+    memset(&total, 0, sizeof(total));
+    FILE *f = fopen(total_file(), "wb");
+    TEST_ASSERT(f != NULL); fputs("damaged", f); fclose(f);
+    before = reads; opened = read_opens;
+    vjo_history_total_want();
+    TEST_CHECK(!vjo_history_total_step(&count_scratch, 0) && total.state == TOTAL_COUNTING);
+    TEST_CHECK(reads == before && read_opens == opened && !total.fd);
+    count_total();
+    TEST_CHECK(total.state == TOTAL_KNOWN);
 }
 
 /* API 49: a line that grows (a hook that gives its text as it types, read at once each time) replaces its own
@@ -1119,12 +1163,12 @@ static void test_grown_line_rewrite_fails_safely(void)
         memset(&total, 0, sizeof(total)); unlink(total_file()); /* a count from the start (a Shell restart) */
         vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
         vjo_history_total_want();
-        TEST_ASSERT(vjo_history_total_step(&count_scratch) == 1 && total.fd > 0); /* its first window */
+        TEST_ASSERT(vjo_history_total_step(&count_scratch, 1) == 1 && total.fd > 0); /* its first window */
         c.time_us += 50000; strcpy(result.text, "こんにちは");
         on_chstat = note_chstat; chstat_calls = 0;
         TEST_CHECK(vjo_history_append(&c) == 1 && !chstat_calls); /* the whole line: a record of its own */
         on_chstat = NULL;
-        for (unsigned steps = 0; (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING) &&
+        for (unsigned steps = 0; (vjo_history_total_step(&count_scratch, 1) || total.state == TOTAL_COUNTING || total.state == TOTAL_CACHED) &&
                                  steps < 10000; steps++) {}
         TEST_CHECK(total.state == TOTAL_KNOWN && records_in_file() == 402);
         TEST_MSG("state %d (KNOWN %d, FAILED %d)", total.state, TOTAL_KNOWN, TOTAL_FAILED);
@@ -1176,7 +1220,7 @@ static void test_total_counts_the_file_once_then_adds(void)
     want += append_total_lines(&r, 50);
     vjo_history_total_want();
     TEST_CHECK(total.state == TOTAL_KNOWN && total.chars == want && total.covered == (uint32_t)file_size());
-    TEST_CHECK(!vjo_history_total_step(&count_scratch) && reads == before && read_opens == opened && notifies == 2);
+    TEST_CHECK(!vjo_history_total_step(&count_scratch, 1) && reads == before && read_opens == opened && notifies == 2);
     TEST_CHECK(shown() == want);
     /* a game's exit keeps it */
     vjo_history_total_keep();
@@ -1198,7 +1242,7 @@ static void test_total_kept_between_starts(void)
     memset(&total, 0, sizeof(total)); /* a restart: nothing known, the writer adds nothing */
     want += append_total_lines(&r, 7);
     TEST_CHECK(total.state == TOTAL_UNREAD && !total.chars);
-    TEST_CHECK(!vjo_history_total_step(&count_scratch) && total.state == TOTAL_UNREAD); /* nothing asked */
+    TEST_CHECK(!vjo_history_total_step(&count_scratch, 1) && total.state == TOTAL_UNREAD); /* nothing asked */
     unsigned before = reads, opened = read_opens, kept_reads = total_reads;
     TEST_CHECK(count_total() == 1); /* a press: one window, the 7 records after the kept bytes */
     TEST_CHECK(total.state == TOTAL_KNOWN && total.chars == want && total.covered == (uint32_t)file_size());
@@ -1262,7 +1306,7 @@ static void test_total_of_a_replaced_file(void)
     uint64_t want = append_total_lines(&r, 3);
     TEST_CHECK(total.state == TOTAL_COUNTING); /* the writer asked for a count */
     vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
-    for (unsigned k = 0; k < 1000 && (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING); k++) {}
+    for (unsigned k = 0; k < 1000 && (vjo_history_total_step(&count_scratch, 1) || total.state == TOTAL_COUNTING || total.state == TOTAL_CACHED); k++) {}
     TEST_CHECK(total.state == TOTAL_KNOWN && total.chars == want && total.covered == (uint32_t)file_size());
     /* a longer one in its place while the Shell was off, with no record where the kept bytes end: here the
      * same file with that record's first byte changed, so that it is no record (and counts nothing) */
@@ -1321,13 +1365,13 @@ static void test_total_with_appends_during_the_count(void)
     total.seq = 1; /* as between the writer's two increments */
     vjo_history_total_want();
     vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 0); /* not again at once: at the next wakeup */
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 0); /* not again at once: at the next wakeup */
     TEST_CHECK(total.state == TOTAL_COUNTING && total.chars < want && total.covered < (uint32_t)file_size());
     TEST_CHECK(!total.fd && total_writes == 0);
     uint32_t newest = total.covered; /* the record that may have been half written: not counted yet */
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 0 && total.state == TOTAL_COUNTING && total.covered == newest);
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 0 && total.state == TOTAL_COUNTING && total.covered == newest);
     total.seq = 2; /* the append's end */
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 0);
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 0);
     TEST_CHECK(total.state == TOTAL_KNOWN && total.chars == want && total.covered == (uint32_t)file_size());
 }
 
@@ -1366,7 +1410,7 @@ static void test_total_without_a_file_and_after_failures(void)
     vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
     append_total_lines(&r, 100); /* more than one window */
     vjo_history_total_want();
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 1 && total.fd > 0);
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 1 && total.fd > 0);
     int open_fd = total.fd;
     vjo_history_total_stop();
     TEST_CHECK(!total.fd && fcntl(open_fd, F_GETFD) < 0 && errno == EBADF);
@@ -1494,7 +1538,7 @@ static void test_total_after_a_record_a_power_loss_cut(void)
         uint64_t next = append_total_lines(&r, 1); /* runs on from the cut: no record starts there */
         TEST_CHECK(total.state == TOTAL_COUNTING); /* the writer's record is not the next one after the total */
         vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
-        for (int w = 0; w < 1000 && (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING); w++) {}
+        for (int w = 0; w < 1000 && (vjo_history_total_step(&count_scratch, 1) || total.state == TOTAL_COUNTING || total.state == TOTAL_CACHED); w++) {}
         uint64_t running = total.chars, fresh = recount();
         TEST_CHECK_(total.state == TOTAL_KNOWN && running == fresh && running == before + line,
                     "case %d: running %llu, recount %llu, want %llu (the next line's %llu not counted)", k,
@@ -1584,7 +1628,7 @@ static void test_total_after_a_cut_header(void)
     runs_on = append_total_lines(&r, 1);
     TEST_CHECK(total.state == TOTAL_COUNTING);
     vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
-    for (int w = 0; w < 1000 && (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING); w++) {}
+    for (int w = 0; w < 1000 && (vjo_history_total_step(&count_scratch, 1) || total.state == TOTAL_COUNTING || total.state == TOTAL_CACHED); w++) {}
     then = append_total_lines(&r, 2);
     TEST_CHECK_(total.state == TOTAL_KNOWN && total.chars == then && recount() == then, "%llu, want %llu (not %llu)",
                 (unsigned long long)total.chars, (unsigned long long)then, (unsigned long long)runs_on);
@@ -1600,10 +1644,10 @@ static void test_total_when_the_file_shrinks_during_a_count(void)
     uint64_t want = append_total_lines(&r, 150);
     vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
     vjo_history_total_want();
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 1); /* the first window */
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 1); /* the first window */
     read_eof_at = VJO_HISTORY_WINDOW + 100;                   /* the file ends there for the reader */
     int steps = 0;
-    while (steps++ < 1000 && (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING)) {}
+    while (steps++ < 1000 && (vjo_history_total_step(&count_scratch, 1) || total.state == TOTAL_COUNTING || total.state == TOTAL_CACHED)) {}
     TEST_CHECK_(total.state == TOTAL_FAILED && !total.fd && steps < 10, "state %d after %d steps", total.state, steps);
     read_eof_at = 0;
     count_total();
@@ -1717,8 +1761,8 @@ static void test_reading_time_windows_and_retry(void)
     memset(&total, 0, sizeof(total)); unlink(total_file());
     reads = 0; read_error = 2;
     vjo_history_total_want();
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 1);
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 0 && total.state == TOTAL_FAILED);
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 1);
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 0 && total.state == TOTAL_FAILED);
     read_error = 0;
     count_total();
     TEST_CHECK(!memcmp(&total.time, &expected, sizeof(expected)));
@@ -1789,10 +1833,10 @@ static void scoped_reading_stats(uint32_t rule)
     TEST_MSG("%llu us", (unsigned long long)total.time.active_us);
     /* A checkpoint is periodic, not per dialogue. */
     saved = total_writes;
-    strcpy(result.text, "翌"); r.time_us += 61000000;
+    strcpy(result.text, "翌"); r.time_us += 1801000000;
     TEST_ASSERT(vjo_history_append(&r) == 1);
     TEST_CHECK(total_writes == saved);
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 0 && total_writes == saved + 1);
+    TEST_CHECK(vjo_history_total_step(&count_scratch, 1) == 0 && total_writes == saved + 1);
     unlink(cache_file("x/reading-vita-PCSG00415.bin"));
     unlink(cache_file("x/reading-vita-PCSG00002.bin"));
 }
@@ -2299,6 +2343,7 @@ TEST_LIST = {
     {"I/O failures restore file and allow retry", test_failures_roll_back_and_retry},
     {"restart IDs and files beyond 4 GiB", test_restart_and_large_offset},
     {"blank and invalid records do not touch disk", test_empty_and_invalid},
+    {"total: cache shown while open, reconstruction and checkpoints deferred", test_total_deferred_until_closed},
     {"total: the file counted once, in windows, then each append added", test_total_counts_the_file_once_then_adds},
     {"API 49: a grown line replaces its record; the total counts it once", test_grown_line_replaces_its_record},
     {"#338's audit F3: a grown line's rewrite opens first, never under a count, only over its own record", test_grown_line_rewrite_fails_safely},

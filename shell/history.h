@@ -57,10 +57,11 @@ void vjo_history_streak(int add);
 /* Under the view lock: the Triangle view's streak line, "\n\nStreak: current 3 days · longest 12"; "" until the record
  * has been read since the Shell started (a line recorded, or the view's request). */
 void vjo_history_streak_text(char *buf, size_t cap);
-/* Control thread, each wakeup: one window (24 KiB, in scratch) of a count asked for. 1 while the count has
- * more (wake the thread again), 0 otherwise; a count that an append ran beside goes on at the next wakeup
- * (the 50 ms poll's at the latest). A count's end saves the total to history_total.bin. */
-int vjo_history_total_step(VjoArena *scratch);
+/* Control thread: handles a request with only the checked 112-byte cache and streak. A valid cached prefix
+ * is immediately displayable. Only with background set (closed overlay, idle worker, paced by the caller)
+ * may it scan one 24 KiB CSV window or checkpoint. 1 means more windows remain; never wake immediately
+ * for these. A completed count and game exit persist the total; incremental checkpoints are 30 minutes apart. */
+int vjo_history_total_step(VjoArena *scratch, int background);
 /* Control thread, at a game's exit: history_total.bin gets the total if the writer added to it. */
 void vjo_history_total_keep(void);
 /* The Shell's stop, its threads joined: a count's history.csv is closed. */
