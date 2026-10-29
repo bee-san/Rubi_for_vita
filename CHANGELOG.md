@@ -74,6 +74,15 @@ been reported.
   the 1000k LM instead of none; CLANNAD-sized games are unchanged. The 1 MiB reserve is kept. Not yet run on a
   console.
 
+### Changed
+
+- The same screen read again is not found and recognized again: a job whose region's rows read the same as the last
+  job's, asked for the same way, takes that job's text, lines and line stats once its rows have held still, the
+  same bytes a fresh read gives (#528). The owner's history had 28 such jobs in one game process (CLANNAD's box
+  again after a menu; AFEJ00001's unchanging boot frame), each spending a median 131-373 ms in the finder and
+  46-120 ms recognizing; that saving is an estimate, not a console run. The worker's pages are unchanged in both
+  builds (788 B of its data page; its stream text decoder and profile loader built for size).
+
 ## [0.10.1] - 2026-10-29
 
 Settings now has Default, Mint and Paper colour schemes and simpler Reading and Anki controls. Dictionary

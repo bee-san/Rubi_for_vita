@@ -288,6 +288,11 @@ typedef struct {
     unsigned cascade_conf;  /* 0: 1001, every line with text is doubtful */
     VjoVocrResident *res;   /* NULL: the shared one */
     const char *model;      /* NULL: M1 */
+    /* #528: keep the cache's last region (VjoVocrCache.last) between jobs; 0: emptied before each job, so these
+     * tests read every region and test the line cache */
+    int last;
+    uint32_t settle_us;     /* the stable-text wait (VjoVocrPolicy.settle_us), at most 2 s; 0: none */
+    uint32_t salt;          /* VjoVocrPolicy.salt (#528: 0, no last region) */
 } Opt;
 
 static PosixPlatform pp;
@@ -322,6 +327,9 @@ static void run(Run *r, Pool *pl, const Opt *o)
     pol.pool = pl ? &pool : NULL;
     pol.cache = o->cache;
     pol.cache_variant = o->variant;
+    pol.settle_us = o->settle_us;
+    pol.settle_max_us = o->settle_us ? 2000000u : 0u;
+    pol.salt = o->salt;
     pol.busy = busy;
     pol.raw = r->raw;
     pol.raw_cap = sizeof(r->raw);
@@ -338,6 +346,7 @@ static void run(Run *r, Pool *pl, const Opt *o)
     busy_on = 0;
     strips_read = 0;
     tear_seen = 0;
+    if (o->cache && !o->last) o->cache->last.salt = 0;
     memset(r, 0, sizeof(*r));
     r->rc = vjo_vocr_ocr_policy(&plat, model_dir, m, &im, o->res ? o->res : &res, ws, need, capture,
                                 vjo_vocr_capture_bytes(W, H), &pol, r->text, o->cap ? o->cap : sizeof(r->text), &r->st);
@@ -650,6 +659,127 @@ static void test_cache_with_lm_and_cascade(void)
     TEST_CHECK(a.rc == VJO_OK && a.st.cascade_lines == 0 && a.st.cascade_skipped == 0);
     run(&b, &pl, &o);
     TEST_CHECK(b.rc == VJO_OK && b.st.cached == LINES && !strcmp(b.text, a.text));
+    pool_done(&pl);
+}
+
+/* #528, the content a reused job gives: what a fresh read of the same screen gives (the real runtime's lines, with the
+ * LM and the cascade), byte for byte: text, greedy text, lines, dark ones, and every line's crop, frames, flags, kana and
+ * place. Only the work differs (none found or recognized, no frames: VjoVocrStats.reused). */
+static void same_reading(const Run *fresh, const Run *r, const char *what)
+{
+    TEST_CHECK_(fresh->rc == VJO_OK && r->rc == VJO_OK, "%s: rc %d, %d", what, fresh->rc, r->rc);
+    TEST_CHECK_(!strcmp(fresh->text, r->text) && !strcmp(fresh->raw, r->raw), "%s: \"%s\" (\"%s\") vs \"%s\" (\"%s\")",
+                what, fresh->text, fresh->raw, r->text, r->raw);
+    TEST_CHECK_(fresh->st.lines == r->st.lines && fresh->st.dark == r->st.dark && fresh->st.truncated == r->st.truncated &&
+                    fresh->st.recognized == r->st.recognized,
+                "%s: lines %u/%u recognized %u/%u", what, fresh->st.lines, r->st.lines, fresh->st.recognized,
+                r->st.recognized);
+    for (unsigned i = 0; i < fresh->st.recognized && i < r->st.recognized; i++) {
+        const VjoVocrLineStat *a = &fresh->st.line[i], *b = &r->st.line[i];
+        TEST_CHECK_(a->width == b->width && a->height == b->height && a->frames == b->frames && a->flags == b->flags &&
+                        a->kana == b->kana && a->x == b->x && a->y == b->y,
+                    "%s: line %u: %ux%u at %u,%u, %u frames, flags %#x, kana %u vs %ux%u at %u,%u, %u frames, flags %#x, "
+                    "kana %u", what, i, a->width, a->height, a->x, a->y, a->frames, a->flags, a->kana, b->width, b->height,
+                    b->x, b->y, b->frames, b->flags, b->kana);
+    }
+}
+
+/* #528 (core/vocr_ocr.h VjoVocrCache.last): a job whose region reads the same at its first pass as the last job's
+ * did, with the same model and policy, gets that job's text and lines without the finder or the recognizer: the
+ * content of a fresh read of that screen. A row changed, another policy, another salt read again; a job with a
+ * doubtful line skipped for time keeps nothing; the weights read again empty it; a reused job still waits for its
+ * rows to hold still (the stable-text wait), and a change then is a tear: its next try reads the new screen. */
+static void test_an_identical_region_reuses_the_last_text(void)
+{
+    static VjoVocrCache cache;
+    static Run a, b, fresh, ref;
+    const unsigned pass = (H + 63u) / 64u; /* strips of a pass over the region (vjo_vocr_strip_rows: 64 rows) */
+    Pool pl;
+    Opt o = {0}, s;
+    setup();
+    memset(&cache, 0, sizeof cache);
+    pool_init(&pl, P_THREADS);
+    o.helpers = 2;
+    o.cache = &cache;
+    o.last = 1;
+    o.lm = o.cascade = 1;
+    o.cascade_conf = 1; /* no doubtful line: none skipped for time, so the job keeps its region */
+    o.variant = 3;
+    o.salt = 7;         /* the caller's key for this reading (the worker's: its request and choices) */
+    run(&a, &pl, &o);
+    TEST_ASSERT(a.rc == VJO_OK && !a.st.reused && a.st.recognized == LINES && cache.last.salt == 7);
+    TEST_CHECK(a.raw[0] && a.st.lm_lines == LINES);
+    /* the same screen: its first pass only, no finder, no recognizer (busy never called), the same reading */
+    busy_calls = 0;
+    run(&b, &pl, &o);
+    TEST_CHECK(b.rc == VJO_OK && b.st.reused && busy_calls == 0 && !b.st.frames && !b.st.find_us && !b.st.lm_lines);
+    TEST_CHECK_(strips_read == pass && b.st.strips == pass, "%u strips (a pass is %u)", strips_read, pass);
+    same_reading(&a, &b, "the same screen");
+    /* a fresh read of it (the cache emptied: every line recognized again) gives the same */
+    memset(&cache, 0, sizeof cache);
+    run(&fresh, &pl, &o);
+    TEST_CHECK(fresh.rc == VJO_OK && !fresh.st.reused && !fresh.st.cached && fresh.st.frames == a.st.frames);
+    same_reading(&fresh, &b, "a fresh read");
+    run(&b, &pl, &o);
+    same_reading(&fresh, &b, "after a fresh read");
+    TEST_CHECK(b.st.reused);
+    /* another salt (another reading the caller asks for): read again, then that reading is kept; none: never */
+    s = o;
+    s.salt = 1;
+    run(&b, &pl, &s);
+    TEST_CHECK(b.rc == VJO_OK && !b.st.reused && !strcmp(b.text, fresh.text));
+    run(&b, &pl, &s);
+    TEST_CHECK(b.st.reused);
+    s.salt = 0;
+    run(&b, &pl, &s);
+    TEST_CHECK(b.rc == VJO_OK && !b.st.reused && cache.last.salt == 1);
+    /* one line changed: read again, the serial job's text */
+    draw(2, 3);
+    s = o;
+    s.cache = NULL;
+    s.last = 0;
+    s.helpers = 0;
+    run(&ref, NULL, &s);
+    run(&b, &pl, &o);
+    TEST_CHECK(b.rc == VJO_OK && !b.st.reused && !strcmp(b.text, ref.text));
+    run(&b, &pl, &o);
+    TEST_CHECK(b.st.reused);
+    same_reading(&ref, &b, "the changed screen");
+    /* a doubtful line skipped for time (the cascade's ceiling): its region is not kept */
+    s = o;
+    s.cascade_conf = 0; /* every line with text doubtful */
+    s.cascade_us = 1;   /* and no time to read one again */
+    s.variant = 9;      /* (the worker's cache variant holds the cascade's ceiling: no line from the cache) */
+    s.salt = 9;
+    run(&b, &pl, &s);
+    TEST_CHECK(b.rc == VJO_OK && b.st.cascade_skipped > 0 && !cache.last.salt);
+    run(&b, &pl, &s);
+    TEST_CHECK(b.rc == VJO_OK && !b.st.reused);
+    /* the weights read from the file again: the entry goes with the line cache */
+    run(&b, &pl, &o);
+    TEST_CHECK(b.rc == VJO_OK && !b.st.reused && cache.last.salt == 7);
+    vjo_vocr_resident_drop(&res);
+    run(&b, &pl, &o);
+    TEST_CHECK(b.rc == VJO_OK && b.st.model_loaded && !b.st.reused);
+    /* the stable-text wait: a reused job waits for the rows as a read's lines do; the screen changing under it is a
+     * tear, and its next try reads (and recognizes) the new screen */
+    draw(LINES, 0);
+    o.settle_us = 1000;
+    run(&a, &pl, &o);
+    TEST_ASSERT(a.rc == VJO_OK && !a.st.reused && a.st.settled);
+    run(&b, &pl, &o);
+    TEST_CHECK(b.rc == VJO_OK && b.st.reused && b.st.settled && b.st.settle_passes > 0);
+    same_reading(&a, &b, "the same screen, after the wait");
+    tear_at = pass + 2u; /* in the reused job's first pass of the wait: line 2's rows change */
+    run(&b, &pl, &o);
+    tear_at = 0;
+    s = o;
+    s.cache = NULL;
+    s.last = 0;
+    s.helpers = 0;
+    run(&ref, NULL, &s);
+    TEST_CHECK(b.rc == VJO_OK && !b.st.reused && b.st.tries == 2 && b.st.tears > 0);
+    TEST_CHECK_(!strcmp(b.text, ref.text) && strcmp(b.text, a.text), "\"%s\" (the new screen: \"%s\")", b.text, ref.text);
     pool_done(&pl);
 }
 
@@ -1029,6 +1159,7 @@ TEST_LIST = {
     {"cache", test_cache},
     {"cache_with_lm_and_cascade", test_cache_with_lm_and_cascade},
     {"the_cache_replayed_through_the_old_layout", test_the_cache_replayed_through_the_old_layout},
+    {"an_identical_region_reuses_the_last_text", test_an_identical_region_reuses_the_last_text},
     {"the_cache_keeps_a_greedy_text_after_the_shown_one", test_the_cache_keeps_a_greedy_text_after_the_shown_one},
     {"cancel_with_helpers_running", test_cancel_with_helpers_running},
     {"failed_join", test_failed_join},

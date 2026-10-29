@@ -322,7 +322,9 @@ enum {
                             horizontal text, 4 when on's job read rows its check found horizontal, 5 when the
                             columns had no room (rc VJO_E_OOM: the vertical model's check refused, arg 0, or its
                             weights after it; the job read the rows next); bytes the columns left out, larger than
-                            the rotation buffer (core/vocr_ocr.h VJO_VOCR_ROTATE_BYTES; 0 for rows) */
+                            the rotation buffer (core/vocr_ocr.h VJO_VOCR_ROTATE_BYTES; 0 for rows); #528: 6 when
+                            the region read as the last job's, whose lines and text it took (core/vocr_ocr.h
+                            VjoVocrCache.last; no refine, recognize, LM, cascade, par or spot step then) */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
                             line (core/vocr_ocr.h vjo_vocr_warm) */
     VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc, bytes their CTC frames; API 42: kind the share of

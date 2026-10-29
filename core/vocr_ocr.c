@@ -147,9 +147,11 @@ static const VjoVocrModel models[] = {
  * byte for byte, with ctclm.2's settings (docs/ctc-lm-decode.md). vocr6-final-lm (vita-vn-ocr #151) checked them
  * on v0.4.0-vocr6.1's VOCR6 blobs and kept them all but one job model's for one LM (lm_retuned, below); v0.4.1-vocr6.2's
  * blobs read them unchanged (vita-vn-ocr's final read of that set used the 1 MB tier's). A host test's
- * model table may bring its own (VJO_VOCR_TEST_LMS: host/tests/test_parallel_models.h). */
+ * model table may bring its own (VJO_VOCR_TEST_LMS: host/tests/test_parallel_models.h). In the data segment
+ * (docs/memory-ledger.md, "Tables in the data segment"): its 224 B pay for #528's identical-capture reuse in the
+ * normal build's exact code pages. */
 #ifndef VJO_VOCR_TEST_LMS
-static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] = {
+static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] VJO_DATA_TABLE(vocr_lms) = {
     {VJO_VOCR_LM1_NAME, VJO_VOCR_LM1_BYTES,
      {0x38,0xea,0x94,0xe0,0xc4,0xec,0x93,0x86,0x34,0x54,0x38,0x7e,0x7c,0x2c,0x46,0x9d,
       0x20,0x9a,0xaf,0x21,0xf2,0xf6,0xee,0x5d,0x04,0x0e,0x75,0xa0,0x9d,0x00,0xd2,0x86}, 3000, 1, 500, VOCR_LM_EOS},
@@ -688,6 +690,10 @@ typedef struct {
     /* API 55: the source froze the region at the first pass (VjoGreySource.frozen): every read since and to come
      * returns the same rows, so nothing is waited for or read again to see a change */
     int frozen;
+    /* #528: the last job's region (VjoVocrCache.last), when the policy keys its jobs (salt): NULL, none; and whether
+     * it may be taken: this model's verified weights resident (a file read again empties it with the line cache) */
+    VjoVocrLast *last;
+    int last_ok;
     int err;
 } Stream;
 
@@ -695,6 +701,11 @@ static void bits_clear(Stream *s)
 {
     memset(s->seen, 0, 2u * BIT_BYTES(s->h));
 }
+
+/* #528: Stream.err when the first pass read the last job's region (VjoVocrCache.last): not an error, the job's text
+ * is that job's (run_job). Above every VJO_E_* and VOCR_* code, which are 0 or negative. */
+#define REUSE_LAST 2
+
 
 static uint16_t fold16(uint32_t sum)
 {
@@ -834,6 +845,11 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
         stream_check(s, y + r, ha, first);
         if (pair) stream_check(s, y + r + 1u, hb, first);
     }
+    /* #528: the first pass is in, with no row changed under it: a region read as the last job's (every row's sum,
+     * its size and the policy's salt, VjoVocrCache.last) ends the finder here, and the job takes that job's text */
+    if (!s->err && first && (flags & VJO_STRIP_LAST) && s->last_ok && s->last->salt == s->pol->salt &&
+        s->last->sum == s->st->region_sum && s->last->w == s->w && s->last->h == s->h)
+        s->err = REUSE_LAST;
     if (!s->err && !first && s->cover_next >= s->h) {
         s->verified_from = s->cover_from;
         s->verified = 1;
@@ -2317,7 +2333,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     unsigned char *c0 = x0 + vjo_vocr_lm_job_bytes(mi->name); /* the cascade's (l->cascade) */
     Lines *L = &lines;
     uint32_t t0, len_left = 0;
-    int rc, loaded = 0, busy_on = 0;
+    int rc, loaded = 0, busy_on = 0, reuse = 0;
     const int cols = columns_of(mi); /* a model of columns: vertical text, each column read turned */
 
     if (L->stuck) { /* an earlier job's helper may still run in its workspace */
@@ -2440,6 +2456,13 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             }
         }
     }
+    /* #528: the first pass read the last job's region (VjoVocrCache.last): its text (run_job, REUSE_LAST), once the
+     * rows have held still for settle_us, as a read's lines are recognized only then (a change: a tear, the next try) */
+    if (rc == VOCR_LINES_E_SOURCE && s->err == REUSE_LAST) {
+        s->err = 0;
+        reuse = 1;
+        goto settle;
+    }
     if (rc == VOCR_LINES_E_SOURCE) return stream_error(s, VJO_E_SOURCE);
     if (rc) return rc == VOCR_LINES_E_ARENA ? VJO_E_OOM : VJO_E_OCR_REGION;
     /* A region inside one strip was read once: read it again, so that a screen
@@ -2461,8 +2484,10 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
     if (!set.count) return VJO_OK; /* nothing to read: the model file is not opened */
     if (cancelled(im)) return VJO_E_CANCELLED;
+settle:
     /* Nothing is recognized before the rows have held still for settle_us. */
     if (settle_on(s) && settle_verify(s) < 0) return stream_error(s, VJO_E_SOURCE);
+    if (reuse) return REUSE_LAST;
 
     memset(L, 0, sizeof(*L));
     L->p = p;
@@ -2835,6 +2860,57 @@ fail:
 
 static const VjoVocrPolicy no_policy;
 
+/* ---- #528: the last job's region (VjoVocrCache.last) ---- */
+
+/* Keeps a successful job's text, greedy text and line stats for its region, when its text is the one an unhurried
+ * job gives (VjoVocrLast: no line left out for room, no doubtful line skipped for time, nothing asked for refused: the
+ * LM, the cascade, the refinement, the gate, the spotter) and it fits; else the entry is emptied. */
+static void last_put(VjoVocrLast *e, const Stream *s, const char *text, const VjoVocrStats *st)
+{
+    const VjoVocrPolicy *pol = s->pol;
+    const size_t len = strlen(text);
+    size_t raw = 0;
+    if (pol->raw && pol->raw_cap)
+        while (raw < pol->raw_cap && pol->raw[raw]) raw++;
+    e->salt = 0;
+    if ((st->tall_skipped | st->cascade_skipped) ||
+        (st->cascade_rc | st->lm_rc | st->refine_rc | st->gate_rc | st->spot_rc) || len + raw + 2u > VJO_VOCR_LAST_TEXT ||
+        st->recognized > VJO_VOCR_LAST_LINES)
+        return;
+    memcpy(e->text, text, len + 1u);
+    memcpy(e->text + len + 1u, pol->raw, raw); /* (last_get ends it) */
+    e->len = (uint16_t)len;
+    e->raw_len = (uint16_t)raw;
+    e->lines = (uint8_t)st->lines;
+    e->dark = (uint8_t)st->dark;
+    e->truncated = (uint8_t)st->truncated;
+    e->recognized = (uint8_t)st->recognized;
+    memcpy(e->line, st->line, sizeof(e->line));
+    e->sum = st->region_sum;
+    e->w = (uint16_t)s->w;
+    e->h = (uint16_t)s->h;
+    e->salt = pol->salt;
+}
+
+/* The job's text, greedy text and lines from the last job's region (VjoVocrStats.reused: nothing found or recognized,
+ * no frames; line[] that job's). Its key holds the text's capacity, which the entry's text fits. */
+static int last_get(const VjoVocrLast *e, char *text, const VjoVocrPolicy *pol, VjoVocrStats *st)
+{
+    memcpy(text, e->text, (size_t)e->len + 1u);
+    if (pol->raw && pol->raw_cap) {
+        const size_t n = e->raw_len < pol->raw_cap ? e->raw_len : pol->raw_cap - 1u;
+        memcpy(pol->raw, e->text + e->len + 1u, n);
+        pol->raw[n] = '\0';
+    }
+    st->lines = e->lines;
+    st->dark = e->dark;
+    st->truncated = e->truncated;
+    st->recognized = e->recognized;
+    memcpy(st->line, e->line, sizeof(e->line)); /* (at most VJO_VOCR_LAST_LINES: last_put) */
+    st->reused = 1;
+    return VJO_OK;
+}
+
 /* one_shot: the weights occupy the front of workspace for this job only. */
 static int run_job(const VjoPlatform *platform, const char *model_dir, const char *model,
                    const VjoGreySource *image, VjoVocrResident *res, void *workspace,
@@ -2973,6 +3049,9 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     st.cycle_cap = VJO_VOCR_CYCLE_ROWS;
     st.learn = st.pol->settle_us && platform->now_us;
     st.settle_left = st.pol->settle_max_us ? st.pol->settle_max_us : VJO_VOCR_SETTLE_MAX_US;
+    /* #528: the last job's region, unless a per-line callback must see every line (host tools) */
+    st.last = st.pol->salt && st.pol->cache && !st.pol->line ? &st.pol->cache->last : NULL;
+    st.last_ok = st.last && res->model == mi && res->data;
     /* The screen may change while it is read (the player advanced the text): then
      * the region is captured again, up to VJO_VOCR_TRIES times. Without the
      * stable-text wait from scratch; with it, after waiting for the rows to hold
@@ -2993,6 +3072,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
         }
         rc = recognize(platform, model_dir, mi, image, res, (unsigned char *)workspace + front, &l, &st,
                        text, text_cap, stats, nocache);
+        if (rc == REUSE_LAST) rc = last_get(st.last, text, st.pol, stats); /* #528 (recognize) */
         if (rc == RETRY_NOCACHE) { /* a cached line that would not fit as read: once more without the cache */
             nocache = 1;
             attempt--;
@@ -3001,6 +3081,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
         if (rc != VJO_E_SCREEN_CHANGED || cancelled(image)) break;
     }
     if (rc) text[0] = '\0'; /* never publish a partial recognition */
+    else if (st.last && !stats->reused) last_put(st.last, &st, text, stats);
     return rc;
 }
 

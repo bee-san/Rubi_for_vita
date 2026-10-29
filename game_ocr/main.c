@@ -1607,8 +1607,20 @@ static uint64_t pool_thread_us(void *ud)
 static const VjoVocrPool helper_pool_base = {0, pool_run, pool_join, pool_thread_us, NULL};
 static VjoVocrPool helper_pool;
 /* Line texts of earlier jobs (core/vocr_ocr.h VjoVocrCache): a page read again
- * is not recognized again. Emptied whenever the weights are read from the file. */
+ * is not recognized again. Emptied whenever the weights are read from the file.
+ * #528: with the last job's region (VjoVocrCache.last), whose rows read the same
+ * again give its text again; also emptied when the game is not the active one
+ * and by a job that fails other than cancelled or by a screen change. */
 static VjoVocrCache line_cache;
+#ifdef VJO_HOST
+/* The host suites' spies give lines that are not a function of the frame's pixels (a finder spy's boxes, a recognizer
+ * spy's text, set between jobs on the same frame): they keep no last region between jobs, except #528's own tests,
+ * which clear this (the console's worker always keeps it). */
+static int test_no_last = 1;
+#define NO_LAST_REGION() test_no_last
+#else
+#define NO_LAST_REGION() 0
+#endif
 
 /* Forget every cached line (tools/vita3k_smoke: the next job recognizes every line). */
 void vjo_game_ocr_cache_clear(void);
@@ -1780,6 +1792,18 @@ static size_t text_len(const char *s, size_t cap)
     size_t n = 0;
     while (n < cap && s[n]) n++;
     return n;
+}
+
+/* #528: the request's part of the job's key (core/vocr_ocr.h VjoVocrPolicy.salt): every field (its region in its
+ * frame, models and directory, tiers, flags, speed and hook pick) but those of one job: its sequences and
+ * VJO_GAME_OCR_F_SETTLE_FIRST (the screen's state when it was asked). A job asked for differently (another setting,
+ * region or text source) reads again. */
+static uint32_t request_salt(const VjoGameOcrRequest *r)
+{
+    VjoGameOcrRequest k = *r;
+    k.seq = k.capture_seq = 0;
+    k.flags &= ~VJO_GAME_OCR_F_SETTLE_FIRST;
+    return vjo_fnv1a(VJO_FNV_INIT, (const unsigned char *)&k, sizeof(k));
 }
 
 /* AUTO keeps Luna text ahead of generic streams even when the text pool fills. Otherwise keep the
@@ -2624,6 +2648,14 @@ retry_smaller:
     open_cascade = casc != NULL;
     job_model = use; /* #385's audit F5: the blocks the core may still take (line_buffer) */
     job_lm = lm;
+    {   /* #528: the job's key beside its region's rows (core/vocr_ocr.h VjoVocrCache.last): the request, and what this
+         * try chose, its model, cache variant (LM, cascade, refinement, decoder), vertical check, spotter and the
+         * cascade's confidence; never 0 */
+        const uint32_t k[] = {(uint32_t)(uintptr_t)use, policy.cache_variant, (uint32_t)check, (uint32_t)spot_rows,
+                              policy.cascade_conf};
+        policy.salt = vjo_fnv1a(request_salt(r), (const unsigned char *)k, sizeof(k)) | 1u;
+        if (NO_LAST_REGION()) line_cache.last.salt = 0;
+    }
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
@@ -2731,9 +2763,12 @@ retry_smaller:
                  stats.tries > 1 ? stats.retry_at - (uint32_t)job_started_us : 0u, 0, 0, 0);
     if (capture.failed) step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
                                  capture.last.fb_format, capture.pass_us, 0);
-    /* kind: 1 columns; API 53, 4: on's rows, which its check found horizontal (the log's line for on's rows) */
-    step_add(VJO_GSTEP_FIND, stats.columns ? 1u : policy.vertical_check == VJO_VOCR_CHECK_ON ? 4u : 0u, stats.lines,
-             rc == VJO_E_OCR_REGION ? rc : 0, stats.rotate_skipped, stats.dark, stats.find_us, 0);
+    /* kind: 1 columns; API 53, 4: on's rows, which its check found horizontal (the log's line for on's rows); #528, 6:
+     * the region read as the last job's, whose lines it took (core/vocr_ocr.h VjoVocrCache.last: nothing found,
+     * refined or recognized, so none of those steps) */
+    const unsigned found = stats.reused ? 0u : stats.lines;
+    step_add(VJO_GSTEP_FIND, stats.reused ? 6u : stats.columns ? 1u : policy.vertical_check == VJO_VOCR_CHECK_ON ? 4u : 0u,
+             stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, stats.rotate_skipped, stats.dark, stats.find_us, 0);
     if (policy.settle_us)
         step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes + tried_settle_passes, /* the job's whole wait (API 47) */
                  stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,
@@ -2746,7 +2781,7 @@ retry_smaller:
         step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,
                  (uint32_t)(b->ink.hi - b->ink.lo) << 16 | b->ink.edges, stats.blank_us ? stats.blank_us : 1u, 0);
     }
-    if ((stats.spot_ran ? spot_refine : refine) && stats.lines) /* each count at most VJO_VOCR_MAX_LINES: one try's */
+    if ((stats.spot_ran ? spot_refine : refine) && found) /* each count at most VJO_VOCR_MAX_LINES: one try's */
         step_add(VJO_GSTEP_REFINE, stats.spot_ran ? VJO_GAME_OCR_REFINE_ON : refine_mode, stats.refine_lines,
                  stats.refine_rc,
                  stats.refine_boxes << 16 | (stats.refine_capped & 0xFFu) << 8 | (stats.refine_split & 0xFFu),
@@ -2754,10 +2789,10 @@ retry_smaller:
     if (stats.model_loaded || stats.model_cached) /* arg 1: read by the warm-up */
         step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT,
                  stats.warmed, 0, held_bytes(&resident), 0, stats.load_us, 1);
-    if (stats.lines)
+    if (found)
         step_add(VJO_GSTEP_RECOGNIZE, head_gated_percent(&stats), stats.recognized, rc, stats.frames,
                  stats.tall_skipped | stats.cache_long << 8, stats.recognize_us, 0);
-    if (lm && (stats.lines || stats.lm_loaded || (stats.warmed && stats.lm_rc))) { /* also the warm-up's read */
+    if (lm && (found || stats.lm_loaded || (stats.warmed && stats.lm_rc))) { /* also the warm-up's read */
         unsigned low = 0;
         for (unsigned i = 0; i < stats.recognized && i < VJO_VOCR_MAX_LINES; i++)
             low += (stats.line[i].flags & VJO_VOCR_LINE_CONF) < VJO_GAME_OCR_LOW_CONF;
@@ -2765,7 +2800,7 @@ retry_smaller:
                  (stats.lm_loaded ? VJO_GLM_READ : stats.lm_cached ? VJO_GLM_RESIDENT : 0u) | low << 16 | stats.lm_lines,
                  stats.lm_load_us, stats.lm_us + 1u, 0);
     }
-    if (casc && (stats.lines || stats.cascade_loaded || (stats.warmed && stats.cascade_rc))) cascade_step(&stats);
+    if (casc && (found || stats.cascade_loaded || (stats.warmed && stats.cascade_rc))) cascade_step(&stats);
     if (!rc) {
         /* What is shown and looked up is normalised; the recognizer's own (greedy)
          * text follows it in the same buffer, for the Shell's log. An empty text too:
@@ -2797,7 +2832,7 @@ retry_smaller:
             hk.from = id;
         }
     }
-    if (stats.lines && (want_helpers || stats.cached)) {
+    if (found && (want_helpers || stats.cached)) {
         /* the recognized lines' share of a core: the lowest and the mean (percent; 0 unknown) */
         uint32_t lo = 100u, sum = 0, n = 0;
         for (unsigned i = 0; i < stats.recognized && i < VJO_VOCR_MAX_LINES; i++) {
@@ -2828,7 +2863,7 @@ retry_smaller:
         out->suggest_rows = vjo_vocr_suggest(&stats, r->fb_width, r->fb_height);
     /* API 54: the spotter's step, the last one (a full log drops it first): whether it found the lines or why GRAD
      * did, the boxes, its scratch and weights (read or kept), and its weights' load time in ms << 16 */
-    if (want_spot) /* a try of columns: the rows' try's reason (spot_handed); a try of rows: its own */
+    if (want_spot && !stats.reused) /* a try of columns: the rows' try's reason (spot_handed); a try of rows: its own */
         spot_step(&stats, vertical ? spot_handed : spot_rc, spot_read, spot_load_us);
     /* A helper that could not be joined may still run in the workspace: keep it,
      * and take no more jobs (core/vocr_ocr.h VjoVocrPool). */
@@ -2881,6 +2916,9 @@ done:
         sceClibMemset(out->text, 0, sizeof(out->text));
         out->suggest_rows = 0;
     }
+    /* #528: a job refused or failed (not a cancellation or a screen that changed under it, the Shell's pacing): the
+     * next one reads its region again */
+    if (rc && rc != VJO_E_CANCELLED && rc != VJO_E_SCREEN_CHANGED) line_cache.last.salt = 0;
     hooks_result(out, rc);
     out->rc = rc; active_seq = 0;
     log_to = NULL;
@@ -3009,6 +3047,9 @@ static int worker_main(SceSize args, void *argp)
             if (!vjoOcrComplete(&pending_result) && !pending_result.cleanup_status) claim_outstanding = 0;
         } else {
             int registered = vjoOcrRegister(), gone = inactive_long(registered);
+            /* #528: not the active game (suspended, another app in front, its title disabled, the Shell
+             * restarted): its next job reads its region again */
+            if (registered && registered != VJO_ERR_BUSY) line_cache.last.salt = 0;
             if (!registered) {
                 static VjoGameOcrRequest request; /* not on the 32 KiB stack */
                 uint64_t asked;

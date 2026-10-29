@@ -24,8 +24,9 @@ static int capture_live;
 /* API 55, the pause: the worker's frame block, and the kernel's frame copies (VJO_ROWS_FRAME) */
 static unsigned char frame_mem_block[64*1024] __attribute__((aligned(64)));
 static int frame_live, frame_alloc_failure, frame_refuse, frame_busy_armed, frame_gone_first;
-/* #528: the next strip's copy outlives its call (the kernel answers BUSY after arming) */
-static int strip_busy_armed;
+/* #528: the next strip's copy outlives its call (the kernel answers BUSY after arming); strip_error: every strip call
+ * answers it (VJO_ERR_TIMEOUT: no frame came) */
+static int strip_busy_armed, strip_error;
 static unsigned frame_block, frame_allocs, frame_calls, strip_calls, spin; /* spin: a spinner moves at each frame */
 static int frame_cancel; /* the Shell cancels while the copy waits for its frame */
 static int frame_cancel_cut; /* review M2: the job cancelled while its copy ran (a game suspended in its display call) */
@@ -198,6 +199,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
     strip_calls++;
     if (frame_gone_first) TEST_CHECK(!frame_live); /* a refused copy's block goes back before the job reads on */
     if (strip_busy_armed) { info->armed = 1; return VJO_ERR_BUSY; } /* its copy outlived the call */
+    if (strip_error) return strip_error;
     clock_value += 16667u;
     spinner_moves();
     TEST_CHECK(req->seq == 12 && req->y < H && req->n && req->n <= H - req->y && capture_live);
@@ -319,7 +321,7 @@ static void reset(void)
     frame_uid = -1; frame_base = NULL; frame_bytes_held = 0; hook_owns_capture = 0;
     memset(&pz, 0, sizeof(pz));
     frame_live = frame_alloc_failure = frame_refuse = frame_busy_armed = frame_gone_first = frame_cancel = 0;
-    strip_busy_armed = 0;
+    strip_busy_armed = strip_error = 0;
     frame_block = frame_allocs = frame_calls = strip_calls = spin = 0;
     frame_refuse_us = 0; pause_capped = 0; frame_cancel_cut = 0; psp_title = 0;
 }
@@ -497,6 +499,77 @@ static void inactive_game_and_stop_release_weights(void)
     quitting = 0; registered_rc = 0; quit_after_delay = 0; quit_delays = 0;
     TEST_CHECK(!run("FL10_w8.vocr", &out) && weights_live && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !resident.model);
+}
+/* The job's step of id, or NULL. */
+static const VjoGameOcrStep *step_of(const VjoGameOcrResult *out, unsigned id)
+{
+    for (unsigned i = 0; i < out->n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        if (out->step[i].id == id) return &out->step[i];
+    return NULL;
+}
+/* #528: an identical capture reuses the last result (core/vocr_ocr.h VjoVocrCache.last), through the real worker: the
+ * same screen's next job reads its first pass only (no finder, no recognizer: the spies run nothing), says so in its
+ * FIND step (kind 6), logs no recognize step, and gives the same result: the text buffer (the shown text and the
+ * greedy one after it), the lines and their crops, frames and flags, the region's sum. Asked while the screen still
+ * changed (VJO_GAME_OCR_F_SETTLE_FIRST), the same. Another request (a hook pick), a refused job and the game not the
+ * active one for a moment read the region again. */
+static void an_identical_capture_reuses_the_last_result(void)
+{
+    static VjoGameOcrResult first, out;
+    VjoGameOcrRequest r;
+    const VjoGameOcrStep *f;
+    unsigned runs, strips;
+    reset();
+    test_no_last = 0;
+    spy_boxes[0] = (VocrLine){10, 30, 150, 8, 0};
+    spy_boxes[1] = (VocrLine){10, 40, 100, 8, 0};
+    spy_boxes_n = 2;
+    spy_text = "ひらがな";
+    TEST_CHECK(!run("FL10_w8.vocr", &first) && first.recognized == 2 && first.text[0]);
+    f = step_of(&first, VJO_GSTEP_FIND);
+    TEST_CHECK(f && f->kind == 0 && step_of(&first, VJO_GSTEP_RECOGNIZE));
+    runs = spy_runs;
+    strips = strip_calls;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && spy_runs == runs && strip_calls == strips + 1u); /* its first pass */
+    f = step_of(&out, VJO_GSTEP_FIND);
+    TEST_CHECK(f && f->kind == 6 && f->arg == 2 && !step_of(&out, VJO_GSTEP_RECOGNIZE));
+    TEST_CHECK(!memcmp(out.text, first.text, sizeof(out.text)) && out.lines == first.lines &&
+               out.recognized == first.recognized && out.region_sum == first.region_sum && !out.find_us &&
+               !out.recognize_us && !out.frames);
+    for (unsigned i = 0; i < out.recognized; i++)
+        TEST_CHECK(out.line[i].width == first.line[i].width && out.line[i].height == first.line[i].height &&
+                   out.line[i].frames == first.line[i].frames && out.line[i].flags == first.line[i].flags);
+    r = request("FL10_w8.vocr");
+    r.flags |= VJO_GAME_OCR_F_SETTLE_FIRST; /* the screen was still changing when it was asked: the same job */
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 6);
+    TEST_CHECK(!strcmp(out.text, first.text) && spy_runs == runs);
+    r = request("FL10_w8.vocr");
+    r.hook_pick = VJO_HOOK_PICK_OCR; /* another request: read again */
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 0);
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 0); /* (its own) */
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 6);
+    cancel_now = 1; /* a cancelled job (the Shell's pacing) keeps it */
+    TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_CANCELLED);
+    cancel_now = 0;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 6);
+    strip_error = VJO_ERR_TIMEOUT; /* a job that failed (no frame came), the weights kept: the next reads again */
+    TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_SOURCE && weights_live);
+    strip_error = 0;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 0 && out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT);
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 6);
+    available = 512 * 1024; /* a job the memory check refuses (under the job's reserve) */
+    TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_OOM && out.reserve_bytes);
+    available = 64 * 1024 * 1024;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 0);
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 6);
+    registered_rc = VJO_ERR_NO_GAME; /* not the active game for one round of the loop (a suspend, another app) */
+    quit_delays = 1;
+    worker_main(0, NULL);
+    quitting = 0;
+    registered_rc = 0;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && (f = step_of(&out, VJO_GSTEP_FIND)) && f->kind == 0);
+    TEST_CHECK(!strcmp(out.text, first.text));
+    test_no_last = 1;
 }
 /* #528: a strip's copy that outlived its call (BUSY after arming) ends the job, which keeps the capture block the hook
  * may still write, and the worker goes on. Its game in the background for INACTIVE_DROP_US: the resident weights go
@@ -1175,6 +1248,8 @@ TEST_LIST = {
     {"an inactive game and the worker stop release the weights", inactive_game_and_stop_release_weights},
     {"#528: a copy that outlived its call stops neither the worker nor the weights' release; the next job frees it",
      a_copy_that_outlived_its_call_stops_nothing},
+    {"#528: an identical capture reuses the last result; another request, a refused job, an inactive game read again",
+     an_identical_capture_reuses_the_last_result},
     {"a failed release blocks the worker until stop retries it", failed_release_blocks_until_stop_retries},
     {"the worker's loop keeps its pace with a waiting kernel and an older one", worker_loop_keeps_its_pace},
     {NULL, NULL}
