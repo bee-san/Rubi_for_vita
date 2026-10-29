@@ -1970,7 +1970,7 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK);
     TEST_CHECK(fake_game_request.tiers == 5u && !strcmp(fake_game_request.model, VJO_VOCR_TIER3_NAME));
     /* the worker went from Large to Small: two tiers down, Small read the text */
-    TEST_CHECK(logged("tier large did not fit in this game (need 4048576, free 91238400); using small") != NULL);
+    TEST_CHECK(logged("tier large did not fit in this game (need 3524288, free 91238400); using small") != NULL);
     mem_free();
 }
 
@@ -2049,9 +2049,9 @@ static void test_vocr_refused_fallback_is_labelled(void)
     fake_tier_checks = VJO_VOCR_TIERS_ALL; fake_free_user = 1500000;
     memcpy(job_title, "PCSG00415", 10);
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
-    TEST_CHECK(logged("tier large did not fit in PCSG00415 (need 4048576, free 1512288); trying normal") != NULL);
-    TEST_CHECK(logged("tier normal did not fit in PCSG00415 (need 3048576, free 1508192); trying small") != NULL);
-    TEST_CHECK(logged("tier small did not fit in PCSG00415 (need 2048576, free 1504096); no smaller tier: "
+    TEST_CHECK(logged("tier large did not fit in PCSG00415 (need 3524288, free 1512288); trying normal") != NULL);
+    TEST_CHECK(logged("tier normal did not fit in PCSG00415 (need 2524288, free 1508192); trying small") != NULL);
+    TEST_CHECK(logged("tier small did not fit in PCSG00415 (need 1524288, free 1504096); no smaller tier: "
                       "not enough memory") != NULL);
     mem_free();
 }
@@ -2077,10 +2077,10 @@ static void test_vocr_memory_fallback_is_logged(void)
     TEST_CHECK(line != NULL);
     /* need: the check's bytes and the tier's reserve; free: free USER and the own blocks released first */
     line = logged("tier large");
-    TEST_CHECK(line && !strcmp(line, "tier large did not fit in PCSG00415 (need 4048576, free 91238400); trying normal"));
+    TEST_CHECK(line && !strcmp(line, "tier large did not fit in PCSG00415 (need 3524288, free 91238400); trying normal"));
     TEST_MSG("%s", line ? line : "(no large line)");
     line = logged("tier normal");
-    TEST_CHECK(line && !strcmp(line, "tier normal did not fit in PCSG00415 (need 3048576, free 91234304); using small"));
+    TEST_CHECK(line && !strcmp(line, "tier normal did not fit in PCSG00415 (need 2524288, free 91234304); using small"));
     TEST_MSG("%s", line ? line : "(no normal line)");
     TEST_CHECK(!logged("tier small")); /* it fitted */
     /* nothing of it in what the user sees: no error, no warning, the Anki cards name Small's model */
