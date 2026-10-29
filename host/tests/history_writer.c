@@ -137,7 +137,8 @@ int main(int argc, char **argv)
             vjo_arena_init(&scratch, mem, sizeof(mem));
             clock_gettime(CLOCK_MONOTONIC, &t0);
             vjo_history_total_want();
-            while ((vjo_history_total_step(&scratch) || total.state == TOTAL_COUNTING) && windows < 1000000) windows++;
+            while ((vjo_history_total_step(&scratch, 1) || total.state == TOTAL_COUNTING ||
+                    total.state == TOTAL_CACHED) && windows < 1000000) windows++;
             clock_gettime(CLOCK_MONOTONIC, &t1);
             ns[k] = (uint64_t)(t1.tv_sec - t0.tv_sec) * 1000000000u + (uint64_t)t1.tv_nsec - (uint64_t)t0.tv_nsec;
             if (total.state != TOTAL_KNOWN) { fprintf(stderr, "vjo-history-writer: no total (%d)\n", total.state); return 1; }
