@@ -639,13 +639,14 @@ int vjo_history_append(const VjoHistoryRecord *record)
     if (history_on_append) history_on_append();
     return history_write_fail ? -1 : 1;
 }
-/* The reading total (shell/history.c, its own tests in test_shell_history.c): the control thread's calls.
- * total_windows: the windows a count still has (each wakeup's step takes one, and wakes the thread again). */
-static unsigned total_steps, total_keeps, total_windows;
-int vjo_history_total_step(VjoArena *scratch)
+/* The reading total: each poll may handle cached values, but only an idle background step scans a window. */
+static unsigned total_steps, total_keeps, total_windows, total_background;
+int vjo_history_total_step(VjoArena *scratch, int background)
 {
     TEST_CHECK(scratch != NULL && !held_view && !held_cmd);
     total_steps++;
+    if (!background) return 0;
+    total_background++;
     return total_windows ? (int)(--total_windows > 0) : 0;
 }
 void vjo_history_total_keep(void) { TEST_CHECK(!held_view && !held_cmd); total_keeps++; }
@@ -998,7 +999,8 @@ static void reset(void)
     history_csv[0] = history_uuid[0] = 0;
     history_loads = 0;
     history_load_rc = 0;
-    total_steps = total_keeps = total_windows = 0;
+    total_steps = total_keeps = total_windows = total_background = 0;
+    stats_next_us = 0;
 #endif
     memset(&g_view, 0, sizeof(g_view));
     view_lock = 81;
@@ -9183,21 +9185,30 @@ static void test_input_wins_the_worker_slot_after_one_prepared_word(void)
 #endif
 
 #ifdef VJO_WITH_VOCR
-/* The reading total (docs/ocr-history.md#total-characters-read; shell/history.c, whose own tests are
- * test_shell_history.c's): each wakeup takes one window of a count asked for and wakes the thread again
- * for the next, after everything else the wakeup does; a game's exit keeps the total. */
+/* CSV windows are paced, deferred while open, and never cause immediate wakeups. Closing wins
+ * over a due scan, while game exit still checkpoints incremental counters. */
 static void test_reading_total_on_the_control_thread(void)
 {
     reset();
-    control_tick(0);
-    TEST_CHECK(total_steps == 1 && !shell_notifications); /* nothing asked for: no wakeup */
     total_windows = 3;
     control_tick(0);
-    TEST_CHECK(total_steps == 2 && shell_notifications == 1);
+    TEST_CHECK(total_background == 1 && total_windows == 2 && !shell_notifications);
     control_tick(VJO_EV_SHELL);
-    TEST_CHECK(total_steps == 3 && shell_notifications == 2);
-    control_tick(VJO_EV_SHELL); /* the last window */
-    TEST_CHECK(total_steps == 4 && shell_notifications == 2 && !total_windows);
+    control_tick(0);
+    TEST_CHECK(total_background == 1 && total_windows == 2 && !shell_notifications);
+    test_now += 1000000;
+    control_tick(0);
+    TEST_CHECK(total_background == 2 && total_windows == 1 && !shell_notifications);
+    /* An open overlay always allows only cache handling, even after the next window is due. */
+    ov = OV_OPEN;
+    test_now += 1000000;
+    control_tick(0);
+    TEST_CHECK(total_background == 2 && total_windows == 1 && !shell_notifications);
+    pending_cmd = VJO_CMD_CLOSED;
+    control_tick(VJO_EV_SHELL);
+    TEST_CHECK(ov == OV_CLOSED && total_background == 2 && total_windows == 1);
+    control_tick(0);
+    TEST_CHECK(total_background == 3 && !total_windows && !shell_notifications);
     state.game_pid = PS_GAME_PID;
     control_tick(VJO_EV_GAME_START);
     TEST_CHECK(!total_keeps); /* a game's start reads nothing for it */
