@@ -41,3 +41,16 @@ ai is really good at doing gruntwork that i dont want to do. for example, "when 
 
 there was a time in my life where i would be the one to find that bug. i was never the one to feel good about squashing it, i always felt good about using the things i created. so i am thankful i no longer have to do that and I can focus entirely on making the program feel great, fast, and smooth.
 
+## Screenshots
+
+![](docs/screenshots/2026-10-29-223532.jpg)
+
+![](docs/screenshots/2026-10-29-223535.jpg)
+
+![](docs/screenshots/2026-10-29-223538.jpg)
+
+![](docs/screenshots/2026-10-29-223544.jpg)
+
+![](docs/screenshots/2026-10-29-223548.jpg)
+
+![](docs/screenshots/2026-10-29-223559.jpg)
