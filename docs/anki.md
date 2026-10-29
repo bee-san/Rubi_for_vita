@@ -383,8 +383,9 @@ no card names, unless a Cancel stopped its clearing
 archived is kept: the queued copy goes when the two are the same bytes or both are that card's (its checksum is its
 name, or its name with the frequency source its card was saved with: [#528](#a-record-that-is-not-its-names-528)).
 An archived copy that is no whole record is replaced by the queued one when that is the card's. When the two differ
-otherwise (a whole record edited in either place), neither is removed: the card stays queued, and `log.txt` says
-`kept queued: it differs from …`.
+otherwise (a whole record edited in either place, or a newer build's record), neither is removed: the card stays
+queued, and `log.txt` says `kept queued: it differs from …`. **Export all cards**, which lists both directories,
+puts such a card in its package once (the queued copy).
 When an intact record's screenshot is missing, empty, too large or lacks its JPEG start/end
 markers, the app tries the other directory first, then exports the text without the picture
 and reports how many cards did so. It never rewrites the original record or changes its ID;
@@ -450,8 +451,10 @@ own sync syncs it too, #194) before its record is written, so a record never nam
 there. Files with other names,
 including leftover `.tmp` files, are ignored. Editing a record by hand changes its
 checksum: a whole record is still exported, as it reads (below); one that is no longer a whole
-record stays queued and is reported. No build writes a record, and none deletes a whole record (above: a card in
-both directories).
+record stays queued and is reported. No build writes a record, and a whole record is deleted only when the card's
+other copy holds that card: the same bytes, or both provably the card's (above: a card in both directories). An edit
+of the frequency source alone reads as the saved card ([below](#a-record-that-is-not-its-names-528)): the edit is
+not exported.
 Delete a card's `.json` to drop it: its `.jpg`, which no record names then, goes
 with the sweep of the next export that writes a package (above).
 
@@ -483,8 +486,11 @@ The card now copies the source. The Rubi app reads a record whose name is not it
   its frequency source]`; the result says `N exported as they read`;
 - else (no whole record): queued, as before, and named once (above).
 
-Each read first checks that the arena has room for all of it (`read_room`): with less, the record is left for a
-later read (`log.txt`: `not enough memory to read it now`), never taken for a damaged one.
+Each read first checks that the arena has room for all of it (`read_room`, from the record's exact token count as
+the JSON parser counts them): with less, the record is left for a later read (`log.txt`: `not enough memory to read
+it now`), never taken for a damaged one. On a console whose dictionaries name another frequency list besides
+`Jiten`, a mismatched record that says `Jiten` keeps it, though its rank may be the other list's; Rubi's own
+dictionaries have no other list.
 
 Each line is written by the export that takes the card, and the export's own line in `log.txt` counts them
 (`N restored, N mismatched`). The record is moved into `exported/` as it is, under its name, so its note's GUID

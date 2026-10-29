@@ -272,20 +272,52 @@ static char *as_named_with_bundled_source(VjoArena *a, const char *json, size_t 
     return alt;
 }
 
-/* What reading a record of len bytes takes of an arena, at most: the record as its writer named it
- * (as_named_with_bundled_source: the bytes, and the parse it releases), the decoder's parse and copies (every string
- * once, with its NUL and alignment; the pointer arrays; the other dictionaries' entries) and record_game's parse and
- * copy. A record has at most one token for each of its quotes, brackets and commas, and one more: each token starts
- * with one (an object or array, a string) or a primitive ends at one (or at the end). With this room no allocation of
- * a read is refused, so a record that cannot be read is no whole record, never a shortage of memory (#528). */
-static size_t read_room(const char *json, size_t len)
+/* jsmn's token count of len bytes, as core/json.c's strict parser counts them before its parse takes their memory, or
+ * more: a token at each object's and array's opening bracket, at each string's opening quote, and at each primitive,
+ * which runs to the next space, tab, CR, LF, comma or closing bracket (a colon, a quote or an opening bracket inside
+ * one is its own: strict mode ends a primitive at none of them, and takes the next one without a comma between).
+ * jsmn stops at a NUL, where this goes on counting. #528's audit 2: counting brackets, quotes and commas alone left
+ * out the numbers of a list like [0 0 0]. host/tests/test_apkg.c checks it against jsmn's own count. */
+static int ends_primitive(char c)
 {
-    size_t n = 1;
-    for (size_t i = 0; i < len; i++)
-        n += json[i] == '"' || json[i] == '{' || json[i] == '}' || json[i] == '[' || json[i] == ']' || json[i] == ',';
-    return 3u * len + n * (2u * sizeof(jsmntok_t) + 8u + sizeof(char *)) +
-           (3u + VJO_ANKI_MAX_MORE) * (sizeof(char *) + 8u) + (VJO_ANKI_MAX_MORE + 1u) * sizeof(VjoAnkiGloss) +
-           sizeof(BUNDLED_SOURCE_JSON) + 64u;
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == ',' || c == ']' || c == '}';
+}
+static size_t json_tokens(const char *s, size_t len)
+{
+    size_t t = 0;
+    for (size_t i = 0; i < len;) {
+        char c = s[i];
+        if (c == '"') { /* a string, to its closing quote, past every escaped character */
+            for (t++, i++; i < len && s[i] != '"'; i++)
+                if (s[i] == '\\')
+                    i++;
+            i++;
+        } else if (c == '{' || c == '[') {
+            t++, i++;
+        } else if (c == '}' || c == ']' || c == ':' || ends_primitive(c)) {
+            i++;
+        } else {
+            t++;
+            do
+                i++;
+            while (i < len && !ends_primitive(s[i]));
+        }
+    }
+    return t;
+}
+
+/* What reading a record of len bytes takes of an arena after its read, at most: the record as its writer named it
+ * (as_named_with_bundled_source: the bytes, and a parse it gives back before the decoder's), the decoder's parse
+ * (core/anki_queue.c: the same tokens), its copies (each string at most its token's bytes, with its NUL and alignment)
+ * and pointer arrays (each array's elements and one more), the other dictionaries' entries, and with game,
+ * record_game's parse and copy. With this room no allocation of a read is refused, so a record that cannot be read is
+ * no whole record, never a shortage of memory (#528). */
+static size_t read_room(const char *json, size_t len, int game)
+{
+    size_t t = json_tokens(json, len), parse = t * sizeof(jsmntok_t) + 8u;
+    return len + sizeof(BUNDLED_SOURCE_JSON) + 8u + (game ? 2u : 1u) * parse + len + 8u + t * (8u + sizeof(char *)) +
+           (3u + VJO_ANKI_MAX_MORE) * (sizeof(char *) + 8u) + (VJO_ANKI_MAX_MORE + 1u) * sizeof(VjoAnkiGloss) + 8u +
+           (game ? len + 8u : 0u) + 64u;
 }
 
 /* How read_card read a record (its name is its ID, the SHA-256 of the bytes its writer named it with). */
@@ -312,7 +344,7 @@ static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *not
     card_path(path, archive, hex, "json");
     if (!(json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, &error)))
         return error == VJO_E_PARSE ? -1 : -2; /* (an empty file or one over the limit is no record) */
-    if (vjo_arena_free(a) < read_room(json, len)) {
+    if (vjo_arena_free(a) < read_room(json, len, game)) {
         vjo_log("anki export: %s: not enough memory to read it now", path);
         return -2;
     }
@@ -1221,7 +1253,14 @@ static int list_card(void *ud, const char *hex)
     return 0;
 }
 
-/* One entry per card ID (sorted): the queued copy when both exist. */
+/* (ID order) */
+static int card_by_id(const void *x, const void *y, void *ctx)
+{
+    (void)ctx;
+    return memcmp(((const VjoApkgCard *)x)->id, ((const VjoApkgCard *)y)->id, 16) < 0;
+}
+
+/* One entry per card ID (sorted by ID): the queued copy when both exist. */
 static int dedupe(VjoApkgCard *c, int n)
 {
     int k = 0;
@@ -1457,10 +1496,23 @@ enum {
     ARCHIVED_SAME,        /* the queued record's bytes (an export a power cut stopped in its rename can leave both
                            * names to one file's clusters) */
 };
+/* 1 when a record that read_card cannot read is a newer build's (a version this build does not know), not a damaged
+ * one. In the room read_card's check gave (its own work given back first), so a refused parse is no record. */
+static int newer_record(VjoArena *a, const char *json, size_t len)
+{
+    size_t mark = vjo_arena_mark(a);
+    VjoJson j;
+    long v;
+    int newer = vjo_json_parse(a, json, len, &j) >= 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
+                vjo_json_int(&j, vjo_json_obj_get(&j, 0, "version"), &v) >= 0 && v > VJO_QUEUE_VERSION;
+    vjo_arena_release(a, mark);
+    return newer;
+}
+
 static int archived_state(VjoArena *a, const char *hex)
 {
     char path[VJO_EXPORT_PATH_MAX], *q, *x;
-    size_t mark = vjo_arena_mark(a), nq = 0, nx = 0;
+    size_t mark = vjo_arena_mark(a), nq = 0, nx = 0, read;
     VjoAnkiNote note;
     int state, picture, error;
     card_path(path, 1, hex, "json");
@@ -1468,14 +1520,15 @@ static int archived_state(VjoArena *a, const char *hex)
         return error == VJO_E_PARSE ? ARCHIVED_DAMAGED : ARCHIVED_UNREAD;
     card_path(path, 0, hex, "json");
     q = read_file(a, path, VJO_QUEUE_TEXT_MAX, &nq, 0, NULL);
+    read = vjo_arena_mark(a);
     if (q && nq == nx && !memcmp(q, x, nx))
         state = ARCHIVED_SAME;
     else if ((state = read_card(a, 1, hex, &note, &picture, 0, REPORT_NONE)) == -2)
         state = ARCHIVED_UNREAD;
+    else if (state == -1) /* (a newer build's record is a whole one: #528's audit 2, -7a) */
+        state = (vjo_arena_release(a, read), newer_record(a, x, nx)) ? ARCHIVED_WHOLE : ARCHIVED_DAMAGED;
     else
-        state = state == READ_VERIFIED || state == READ_RESTORED ? ARCHIVED_CARD
-                : state == READ_MISMATCHED                         ? ARCHIVED_WHOLE
-                                                                   : ARCHIVED_DAMAGED;
+        state = state == READ_VERIFIED || state == READ_RESTORED ? ARCHIVED_CARD : ARCHIVED_WHOLE;
     vjo_arena_release(a, mark);
     return state;
 }
@@ -1760,8 +1813,11 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
         vjo_arena_release(a, base);
         return r->rc = VJO_E_LOCAL_IO;
     }
-    vjo_apkg_sort(l.cards, l.n);
+    /* one entry per card, then the package's order: by ID first, as a card's queued and archived copies may differ
+     * in time (an edited one, exported as it reads since #570: #528's audit 2) and Export all lists both */
+    vjo_heap_sort(l.cards, l.n, sizeof(*l.cards), card_by_id, NULL);
     l.n = dedupe(l.cards, l.n);
+    vjo_apkg_sort(l.cards, l.n);
     if (!l.n && !l.unreadable && l.skipped_queued) { /* (Skip) every queued card's word was mined before */
         snprintf(msg, cap, "No new cards: the %d queued %s already mined, and stay%s queued (Duplicates: Skip).",
                  l.skipped_queued, l.skipped_queued == 1 ? "is a word" : "are words",

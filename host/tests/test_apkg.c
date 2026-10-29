@@ -2526,6 +2526,278 @@ static void test_audit528_an_archived_restored_record_is_kept(void)
     TEST_CHECK(count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 0);
 }
 
+
+/* ---------------- #528 audit 2 (audit-mem-anki-queue-2): the archive's unread copies, the room check, -7a ---------------- */
+
+/* the clearing's reads failing: a path's reads (fail_read) or the Nth .json opened from the clearing on */
+static const char *audit2_fail_read;
+static int audit2_fail_json_at;
+static void audit2_status(void *ud, const char *msg)
+{
+    (void)ud;
+    if (!strncmp(msg, "Clearing the queue", 18)) {
+        if (audit2_fail_read)
+            io.fail_read = audit2_fail_read;
+        if (audit2_fail_json_at) {
+            io.json_reads = 0;
+            io.fail_json_read_at = audit2_fail_json_at;
+        }
+    }
+}
+static const VjoExportUi audit2_ui = {NULL, audit2_status, NULL};
+
+static size_t audit2_edit(char *out, size_t cap, const char *src, const char *from, const char *to)
+{
+    const char *at = strstr(src, from);
+    size_t n = strlen(src), fl = strlen(from), tl = strlen(to), head;
+    TEST_ASSERT(at != NULL && n - fl + tl < cap);
+    head = (size_t)(at - src);
+    memmove(out + head + tl, at + fl, n - head - fl + 1); /* (out == src, or a copy of it) */
+    if (out != src)
+        memcpy(out, src, head);
+    memcpy(out + head, to, tl);
+    return n - fl + tl;
+}
+
+/* A card whose archived copy is a whole record (edited) beside its own queued one: when the archived copy cannot be
+ * read at the clearing (an I/O error at its first read, or at read_card's own), it is neither removed nor replaced
+ * (ARCHIVED_UNREAD), and the next export, reading it, keeps both as well. */
+static void test_audit2_an_archived_copy_not_read_now_stays(void)
+{
+    char own[1024], edited[1024], qpath[256], xpath[256], msg[300];
+    uint8_t back[1024];
+    const char *name = released[0].name;
+    size_t no = released_record(own, sizeof(own), 0, "\"Jiten\""), ne;
+    memcpy(edited, own, no + 1);
+    ne = audit2_edit(edited, sizeof(edited), edited, "\"rank\":1500", "\"rank\":1502");
+    snprintf(qpath, sizeof(qpath), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+    snprintf(xpath, sizeof(xpath), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
+    for (int k = 0; k < 2; k++) {
+        VjoExportResult r;
+        reset();
+        put_file(qpath, own, no);
+        TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+        put_file(xpath, edited, ne);
+        audit2_fail_read = k == 0 ? "exported/14a5848a63c19cfca6b2a457b5790e15.json" : NULL;
+        audit2_fail_json_at = k == 1 ? 3 : 0; /* archived_state's third: read_card's own read of the archived copy */
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_ASSERT(vjo_export_run(&A, 0, NULL, NULL, &audit2_ui, &r, msg, 300) == VJO_OK);
+        audit2_fail_read = NULL;
+        audit2_fail_json_at = 0;
+        io.fail_read = NULL;
+        io.fail_json_read_at = 0;
+        TEST_CHECK_(r.cards == 1 && r.kept == 1 && !r.moved && !strstr(logs, "the archived copy is damaged"),
+                    "%s read failing: %s\n%s", k ? "the second" : "the first", msg, logs);
+        TEST_CHECK(get_bytes(qpath, back, sizeof(back)) == no && !memcmp(back, own, no));
+        TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == ne && !memcmp(back, edited, ne));
+        logs[0] = '\0';
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+        TEST_CHECK_(r.kept == 1 && strstr(logs, "kept queued: it differs from") && get_bytes(xpath, back, sizeof(back)) == ne &&
+                    !memcmp(back, edited, ne), "next export: %s\n%s", msg, logs);
+    }
+}
+
+/* The room check against long and dense records, verified and restored, read with their game: in every arena it
+ * says not now (-2) or reads the record as it is, the game too. A 32 KiB meaning of kana (the bound's len term), an
+ * unknown key of 12,000 comma-separated numbers (the commas and both parses), 7 more[] of 1,024 meanings. */
+static void test_audit2_the_room_check_holds_for_long_and_dense_records(void)
+{
+    static char rec[40000], stored[40000], m[40000];
+    char name[VJO_QUEUE_ID_SIZE], path[256];
+    for (int c = 0; c < 3; c++) {
+        size_t n = released_record(rec, sizeof(rec), 0, "\"Jiten\""), k = 0, ns;
+        if (c == 0) {
+            k = (size_t)snprintf(m, sizeof(m), "\"meanings\":[\"");
+            for (int i = 0; i < 680; i++)
+                k += (size_t)snprintf(m + k, sizeof(m) - k, "あいうえおかきくけこさしすせそ");
+            snprintf(m + k, sizeof(m) - k, "\"]");
+            n = audit2_edit(rec, sizeof(rec), rec, "\"meanings\":[\"cat\",\"shamisen \\\"neko\\\"\"]", m);
+        } else if (c == 1) {
+            k = (size_t)snprintf(m, sizeof(m), ",\"x\":[");
+            for (int i = 0; i < 12000; i++)
+                k += (size_t)snprintf(m + k, sizeof(m) - k, i ? ",0" : "0");
+            snprintf(m + k, sizeof(m) - k, "],\"time\":");
+            n = audit2_edit(rec, sizeof(rec), rec, ",\"time\":", m);
+        } else {
+            char unit[4000];
+            size_t u = (size_t)snprintf(unit, sizeof(unit), "{\"dictionary\":\"d\",\"spelling\":\"s\",\"reading\":\"r\",\"meanings\":[");
+            for (int i = 0; i < 1024; i++)
+                u += (size_t)snprintf(unit + u, sizeof(unit) - u, i ? ",\"\"" : "\"\"");
+            snprintf(unit + u, sizeof(unit) - u, "]}");
+            k = (size_t)snprintf(m, sizeof(m), "\"more\":[");
+            for (int i = 0; i < 7; i++)
+                k += (size_t)snprintf(m + k, sizeof(m) - k, "%s%s", i ? "," : "", unit);
+            snprintf(m + k, sizeof(m) - k, "]");
+            n = audit2_edit(rec, sizeof(rec), rec, "\"more\":[]", m);
+        }
+        TEST_ASSERT(n <= VJO_QUEUE_TEXT_MAX);
+        vjo_queue_id(rec, n, name);
+        for (int restored = 0; restored < 2; restored++) {
+            int reads = 0;
+            memcpy(stored, rec, n + 1);
+            ns = restored ? audit2_edit(stored, sizeof(stored), stored, "\"source\":\"Jiten\"", "\"source\":\"x\"") : n;
+            reset();
+            snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+            put_file(path, stored, ns);
+            for (size_t room = 0; ns + 1 + room <= sizeof(mem); room += room < 65536 ? 256 : 4096) {
+                VjoAnkiNote note;
+                int picture, rc, how = restored ? READ_RESTORED : READ_VERIFIED;
+                vjo_arena_init(&A, mem, ns + 1 + room);
+                rc = read_card(&A, 0, name, &note, &picture, 1, REPORT_NONE);
+                TEST_CHECK_(rc == -2 || (rc == how && note.game && !strcmp(note.game, "CLANNAD") && note.source &&
+                                         !strcmp(note.source, "Jiten")),
+                            "record %d%s, %u B of room: %d (game %s)", c, restored ? " restored" : "", (unsigned)room, rc,
+                            rc >= 0 && note.game ? note.game : "none");
+                reads += rc == how;
+                if (rc == how)
+                    break;
+            }
+            TEST_CHECK_(reads == 1, "record %d%s never read", c, restored ? " restored" : "");
+        }
+    }
+}
+
+/* -7a: a record restored from the bytes its writer named, though its stored source is one the decoder refuses (a NUL
+ * or a raw control byte: hand edits only) */
+static void test_audit2_a_restored_record_is_read_from_its_named_bytes(void)
+{
+    static const char *const sources[] = {"\"\\u0000\"", "\"\x01\"", "\"a\tb\""};
+    static uint8_t pkg[1 << 20];
+    for (unsigned k = 0; k < sizeof(sources) / sizeof(sources[0]); k++) {
+        char json[1024], path[256], msg[300];
+        size_t len = released_record(json, sizeof(json), 0, sources[k]), np;
+        VjoAnkiNote note;
+        VjoExportResult r;
+        int picture;
+        reset();
+        snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, released[0].name);
+        put_file(path, json, len);
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_CHECK_(read_card(&A, 0, released[0].name, &note, &picture, 1, REPORT_NONE) == READ_RESTORED && note.source &&
+                    !strcmp(note.source, "Jiten") && note.game && !strcmp(note.game, "CLANNAD"), "source %u", k);
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+        np = package_bytes(r.path, pkg, sizeof(pkg));
+        TEST_CHECK_(r.cards == 1 && r.restored == 1 && occurrences(pkg, np, "<li>Jiten: 1500</li>") == 1, "source %u: %s", k,
+                    msg);
+    }
+}
+
+/* Maudit-mem-anki-queue-2-1 (RED before its fix): jsmn (strict) ends a number at whitespace and takes the next one without a comma, so
+ * an array of them holds more tokens than read_room's count: in an arena whose room passes the check, such a whole
+ * record must still read as itself or not now, never as no whole record */
+static void test_audit2_red_whitespace_separated_numbers(void)
+{
+    static char rec[40000], m[20000];
+    char name[VJO_QUEUE_ID_SIZE], path[256];
+    size_t n = released_record(rec, sizeof(rec), 0, "\"Jiten\""), k = (size_t)snprintf(m, sizeof(m), ",\"x\":[");
+    int wrong = 0;
+    for (int i = 0; i < 3000; i++)
+        k += (size_t)snprintf(m + k, sizeof(m) - k, i ? " 0" : "0");
+    snprintf(m + k, sizeof(m) - k, "],\"time\":");
+    n = audit2_edit(rec, sizeof(rec), rec, ",\"time\":", m);
+    vjo_queue_id(rec, n, name);
+    reset();
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+    put_file(path, rec, n);
+    for (size_t room = 0; room <= 128 * 1024; room += 1024) {
+        VjoAnkiNote note;
+        int picture, rc;
+        vjo_arena_init(&A, mem, n + 1 + room);
+        rc = read_card(&A, 0, name, &note, &picture, 0, REPORT_NONE);
+        wrong += rc != -2 && rc != READ_VERIFIED;
+    }
+    TEST_CHECK_(!wrong, "%d rooms read a whole record (%u B, bound %u) as no whole record", wrong, (unsigned)n,
+                (unsigned)read_room(rec, n, 0));
+}
+
+/* Maudit-mem-anki-queue-2-3 (RED before its fix): Export all with a card's queued and archived copies of different times (an edit),
+ * another card's time between them: the package must hold the card once (dedupe merges only neighbours) */
+static void test_audit2_red_export_all_holds_a_card_once(void)
+{
+    static uint8_t pkg[1 << 20];
+    char own[1024], late[1024], other[1024], path[256], msg[300], oname[VJO_QUEUE_ID_SIZE], guid[VJO_APKG_GUID_MAX];
+    const char *name = released[0].name;
+    size_t no = released_record(own, sizeof(own), 0, "\"Jiten\""), nl, nt, np;
+    uint8_t id[16];
+    VjoExportResult r;
+    memcpy(late, own, no + 1);
+    nl = audit2_edit(late, sizeof(late), late, "\"time\":1791158400", "\"time\":1791158500");
+    memcpy(other, own, no + 1);
+    nt = audit2_edit(other, sizeof(other), other, "\"spelling\":\"猫\"", "\"spelling\":\"犬\"");
+    nt = audit2_edit(other, sizeof(other), other, "\"time\":1791158400", "\"time\":1791158450");
+    vjo_queue_id(other, nt, oname);
+    reset();
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+    put_file(path, late, nl);
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, oname);
+    put_file(path, other, nt);
+    TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
+    put_file(path, own, no);
+    TEST_ASSERT(run(1, &r, msg) == VJO_OK);
+    np = package_bytes(r.path, pkg, sizeof(pkg));
+    from_hex(name, id);
+    vjo_apkg_guid(id, guid);
+    TEST_CHECK_(r.cards == 2 && occurrences(pkg, np, guid) == 1, "%d notes, the card's GUID %d times: %s", r.cards,
+                occurrences(pkg, np, guid), msg);
+}
+
+/* read_room's token count (json_tokens) is never below jsmn's own (vjo_json_parse's), and equals it for every record a
+ * writer makes (#528's audit 2): the released writers' records, lists of numbers with and without commas, nested
+ * containers, escapes, a primitive with a colon, a quote or a bracket in it, a NUL, cut records and garbage. */
+static void test_the_token_count_is_jsmns_or_more(void)
+{
+    static const char *const odd[] = {
+        "[0 0 0]", "[0\t0\r\n0,1]", "{\"a\":[1,2,{\"b\":[]}],\"c\":{}}", "{\"a\":\"x\\\"y\\\\\",\"b\":\"\\u0041\"}",
+        "[1:2,3]", "[1\"a,2,3\",4]", "[1[2]]", "[1{\"a\":2}]", "[true false null]", "{\"a\":1}\0[1,2,3]",
+        "[\"a\" \"b\"]", "[[[[[[0]]]]]]", "{\"a\":[1,2", "[\"unterminated", "{]", "xyz", "", "[-1,-2e5,3.5]",
+    };
+    static const size_t odd_len[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0}; /* 0: strlen (9: a NUL in it) */
+    char json[1024];
+    for (unsigned k = 0; k < sizeof(released) / sizeof(released[0]); k++) {
+        size_t len = released_record(json, sizeof(json), released[k].picture, released[k].source);
+        VjoJson j;
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_ASSERT(vjo_json_parse(&A, json, len, &j) == 0);
+        TEST_CHECK_(json_tokens(json, len) == (size_t)j.n, "%s: %u, jsmn %d", released[k].when,
+                    (unsigned)json_tokens(json, len), j.n);
+    }
+    for (unsigned k = 0; k < sizeof(odd) / sizeof(odd[0]); k++) {
+        size_t len = odd_len[k] ? odd_len[k] : strlen(odd[k]);
+        VjoJson j;
+        vjo_arena_init(&A, mem, sizeof(mem));
+        if (vjo_json_parse(&A, odd[k], len, &j) == 0)
+            TEST_CHECK_(json_tokens(odd[k], len) >= (size_t)j.n, "input %u: %u, jsmn %d", k,
+                        (unsigned)json_tokens(odd[k], len), j.n);
+    }
+}
+
+/* A newer build's record archived beside the card's own queued one (a version this build cannot read: hand copies,
+ * as IDs are checksums) is a whole record: neither is removed, the card stays queued. */
+static void test_a_newer_builds_archived_record_is_kept(void)
+{
+    char own[1024], newer[1024], qpath[256], xpath[256], msg[300];
+    uint8_t back[1024];
+    const char *name = released[0].name;
+    size_t no = released_record(own, sizeof(own), 0, "\"Jiten\""), nn;
+    VjoExportResult r;
+    TEST_ASSERT(!strncmp(own, "{\"version\":4,", 13));
+    memcpy(newer, own, no + 1);
+    newer[11] = '9'; /* {"version":9, ... */
+    nn = no;
+    reset();
+    snprintf(qpath, sizeof(qpath), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+    snprintf(xpath, sizeof(xpath), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
+    put_file(qpath, own, no);
+    TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+    put_file(xpath, newer, nn);
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK_(r.cards == 1 && r.kept == 1 && !r.moved && strstr(logs, "(a whole record), and neither replaces"),
+                "%s\n%s", msg, logs);
+    TEST_CHECK(get_bytes(qpath, back, sizeof(back)) == no && !memcmp(back, own, no));
+    TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == nn && !memcmp(back, newer, nn));
+}
+
 static void test_screenshots_are_one_file_each(void)
 {
     VjoExportResult r;
@@ -3511,6 +3783,13 @@ TEST_LIST = {
     {"#528 audit: the page reads every damaged record once", test_audit528_the_page_reads_every_damaged_record_once},
     {"#528 audit: an archived restored record is kept", test_audit528_an_archived_restored_record_is_kept},
     {"#528 audit: a short arena never reads as damage", test_a_short_arena_never_reads_as_damage},
+    {"#528 audit 2: an archived copy not read now stays", test_audit2_an_archived_copy_not_read_now_stays},
+    {"#528 audit 2: the room check holds for long and dense records", test_audit2_the_room_check_holds_for_long_and_dense_records},
+    {"#528 audit 2: a restored record is read from its named bytes", test_audit2_a_restored_record_is_read_from_its_named_bytes},
+    {"#528 audit 2: whitespace-separated numbers read as a whole record", test_audit2_red_whitespace_separated_numbers},
+    {"#528 audit 2: Export all holds a card once", test_audit2_red_export_all_holds_a_card_once},
+    {"#528 audit 2: the token count is jsmn's or more", test_the_token_count_is_jsmns_or_more},
+    {"#528 audit 2: a newer build's archived record is kept", test_a_newer_builds_archived_record_is_kept},
     {"screenshots_are_one_file_each", test_screenshots_are_one_file_each},
     {"missing_or_damaged_screenshots_export_the_text", test_missing_or_damaged_screenshots_export_the_text},
     {"good_screenshot_copy_survives_a_damaged_copy", test_good_screenshot_copy_survives_a_damaged_copy},

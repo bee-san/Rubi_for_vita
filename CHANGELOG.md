@@ -42,16 +42,18 @@ been reported.
   `checksum mismatch (edited or damaged)`, some queued since 10-17; the Anki page had read 64 of about 260). Every
   Shell from 0.8.0 to 0.10.1 kept a card's frequency source (`Jiten`) as a pointer into the overlay's lookup memory,
   named the card's record before its screenshot and wrote it after. If that memory was rewritten or given back in
-  that time (a cursor move, a dictionary page turned, a line-history step, a text change, the next read, the game
-  closing), the source changed, the record no longer matched its name, and the Rubi app refused it. The card now
+  that time (a cursor move, a dictionary page turned, a line-history step, a text change, the next read, the game or
+  the overlay closing), the source changed, the record no longer matched its name, and the Rubi app refused it. The card now
   copies it (Shell +16 B of code in the normal build, +32 B in the debug one, the same pages). The Rubi app reads
   such a record as the card that was saved: with `Jiten` as its source, its checksum is its name, so the card
   exports from those bytes. A whole record that matches its name in no way (edited by hand, or rewritten twice) is
   exported as it reads, without its frequency source unless that is `Jiten`, and the result says how many. No record
-  is written. A card whose queued and archived records differ keeps both and stays queued; as before, a copy that is
-  no whole record is replaced by the card's own. A record that is not whole stays queued, and the Anki page reads
-  and logs it once instead of at every show (an export reads it again). A shortage of memory leaves a record for a
-  later read instead of calling it damaged. The export's `log.txt` line counts the restored and mismatched cards
+  is written. A card whose queued and archived records differ keeps both and stays queued, unless both are provably
+  the card's (the queued copy, which adds nothing, goes) or the archived one is no whole record (replaced by the
+  card's own, as before); a newer build's record counts as whole. **Export all cards** holds such a card once. A
+  record that is not whole stays queued, and the Anki page reads and logs it once instead of at every show (an
+  export reads it again). A shortage of memory leaves a record for a later read instead of calling it damaged: each
+  read first checks its room, from the record's exact token count. The export's `log.txt` line counts the restored and mismatched cards
   (`N restored, N mismatched`), and `tools/analyse_selftest.py` reports them. Host-tested with every released
   writer's records; not yet run on a console.
 - With `ocr_settle_ms = 0`, a job whose lines the text spotter found reads its region once more before recognizing
