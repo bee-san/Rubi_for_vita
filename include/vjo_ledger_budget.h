@@ -144,9 +144,9 @@
 #define VJO_BUDGET_PAF_UI 20480u
 /* The overlay page itself: Paf's own blocks for PageOpen's widgets while it is open, outside our ledger and not ours to
  * size: a median 94,800 B and at most 103,296 B in the 81 opens of #528's logs where Rubi allocated again before the
- * page closed (74 of them 92,368-103,296 B; the 7 smaller ones, 16-88,624 B, allocated before the page had laid out its
- * text; audit-mem-lead-1's pairing of the same opens: 81,152-103,296 B, median 94,928 B) [measured, log; reports/mem
- * findings Mmem-paf-3]. With the text block held from the start (#528) the reserve
+ * page closed (74 of them 92,368-103,296 B; of the 7 smaller ones, 16-88,624 B, three allocated before PageOpen and
+ * two had a read give the result arena back between the samples; audit-mem-lead-1's pairing of the same opens:
+ * 81,152-103,296 B, median 94,928 B) [measured, log; reports/mem findings Mmem-paf-3]. With the text block held from the start (#528) the reserve
  * guard no longer runs before PageOpen, so shell/paf_guard.h vjo_paf_page_fits opens the page only with the most of
  * those free and VJO_PAF_PAGE_MARGIN beside them for SceShell: Paf's use besides ours moved the free figure by at
  * most 17,712 B between two of our allocations within one open (12 pairs, the page's own layout between them

@@ -71,7 +71,7 @@ network row (it was 707,840 B with Google Lens alone, 731,632 B with the relay's
 slot). An Anki card's screenshot (API 23) is made in the game: the Shell's 88 KiB Anki arena
 holds only its job's request and result, and the game's `VjoGameShot` block (450,560 B) is a job of
 the one job slot, never beside an OCR job's transient blocks, so neither pool's worst case moves.
-The shipped default (local JMdict) has 640,128 B of headroom (743,424 B before the overlay page's own blocks were counted, #528; 759,808 B before line history). The kernel row has no full-frame
+The shipped default (local JMdict) has 681,088 B of headroom (640,128 B once the overlay page's own blocks were counted and before the Anki arena's bound, #528; 743,424 B before the page's blocks were counted; 759,808 B before line history). The kernel row has no full-frame
 capture since API 24 (2,088,960 B of its 2,248,704 B worst case until then): no Shell code took it
 after Google Lens's removal, and OCR and the screenshot read the screen in the game. Its worst case is
 now the permanent part, a kernel strip and a starting game's `games.ini` read.
@@ -113,13 +113,15 @@ What each item uses of its budget, from #528's logs (Oct 16-29, the owner's PCH-
 | overlay text block | 20,480 | at most 18,016 B of texts and spans and 2,048 B of ranges (source bounds, `test_ledger.c`) | the Shell's start (#528) | never |
 | result arena | 65,536 | the dictionary session, 6,784 B [measured: `sizeof(VjoLocalSession)` with the Vita compiler], and the lookup's arena, 54,832 B at most over 979 jobs' `arena peak` [measured, log]: 61,616 B, 3,920 B left, so no room to shrink it | after a job's OCR when it looks up (in Auto, a background read's too), or a cursor's lookup | at the next read's start, a game's exit, with no game and the overlay closed |
 | Anki arena | 90,112 (131,072 before #528's bound) | 7,068 B at most over 20 saves [measured, log]; at most `ANKI_FULLEST`, 87,013 B on the host, by construction, which 16 cards at the inputs' bounds use up to 87,008 B of when capped at it [measured, host] | a save (Enter) | the save's end |
-| line history | 16,384 | unmeasured on the console (two visits logged, sizes not logged); 2-6 KiB for 32 typical lines [estimate] | the overlay's first Up past its text's top row | the return to the current text, the close, the game's exit |
-| overlay page (Paf's) | 103,296 | a median 94,800 B, at most 103,296 B, over 81 opens (74 of them 92,368-103,296 B; the 7 smaller ones allocated before the page's layout) [measured, log] | the page's open | its close |
+| line history | 16,384 | 1,591 B of lines in each of the two visits logged (`history: 32 earlier lines of …, 1591 B`), 1,747 B with the visit's 156 B table [measured, log]; 2-6 KiB for 32 typical lines [estimate] | the overlay's first Up past its text's top row | the return to the current text, the close, the game's exit |
+| overlay page (Paf's) | 103,296 | a median 94,800 B, at most 103,296 B, over 81 opens (74 of them 92,368-103,296 B; of the 7 smaller ones, three allocated before `PageOpen` and two had a read give the result arena back between the samples: 95,248 and 95,376 B with it added back) [measured, log] | the page's open | its close |
 
 The dictionary's lookahead locators and its other per-text state are in the result arena; the fonts are the
 firmware's (Rubi allocates none); the reading statistics' window is VjoControl's static scratch (Shell pages, not
-Paf); the text spotter's and the hooks' text are the game worker's. The largest Rubi held in the logs was 225,280 B
-(the ledger's peak: the plugin, the text block, a result arena and an Anki save), beside about 95 KB of the page's.
+Paf); the text spotter's and the hooks' text are the game worker's. The most Rubi held in the logs was 241,664 B (an
+API 33 debug boot: the plugin, the text block, a result arena, a line-history visit and an Anki save at once), beside
+that open's page, 102,912 B: 344,576 B, 384 B under the pool's worst case before the Anki arena's bound (#548)
+[measured, log].
 
 Allocations here take no new pages from the partition; a failure is a `NULL`, never `0x80024302`
 (vita-memory.md 3.2). Later sessions saw 355-441 KiB and 190 KiB free [measured], which would

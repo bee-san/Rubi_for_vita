@@ -163,8 +163,9 @@ static __attribute__((noinline)) ui::Scene *strip_page_open(Plugin *plugin, Plug
 {
     uint32_t before = vjo_shell_heap_free_size();
     ui::Scene *page = plugin->PageOpen("vjo_page_strip", param);
-    vjo_log("%s Paf allocation: free=%u requested=%u reserve=%u success=%d", "vjo_page_strip", (unsigned)before,
-            (unsigned)(before - vjo_shell_heap_free_size()), 0u, page != NULL);
+    if (page) /* a failure is strip_open's own line (a failed open is tried again at every frame: one line each) */
+        vjo_log("%s Paf allocation: free=%u requested=%u reserve=%u success=%d", "vjo_page_strip", (unsigned)before,
+                (unsigned)(before - vjo_shell_heap_free_size()), 0u, 1);
     return page;
 }
 #endif

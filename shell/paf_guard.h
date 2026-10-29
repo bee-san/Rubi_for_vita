@@ -43,9 +43,10 @@ static inline int vjo_paf_page_fits(size_t available)
         return 0;
     }
 #if VJO_DEBUG
-    /* The debug build's sample of the heap at every open, in memory.cpp's own format (one string in the module): the
-     * next Paf line of the open, less this one, is what the page took, as the text block's line at every open was until
-     * #528 kept the block (the page's cost and this margin are measured from them) */
+    /* The debug build's sample of the heap at every open, in memory.cpp's own format (one string in the module): this
+     * line's free size less the free size of the open's next Paf line (memory.cpp logs the free size before its own
+     * request) is what the page took, as with the text block's line at every open until #528 kept the block (the
+     * page's cost and this margin are measured from them) */
     vjo_log("%s Paf allocation: free=%u requested=%u reserve=%u success=%d",
             "overlay page", (unsigned)available, (unsigned)VJO_PAF_PAGE_MAX, (unsigned)VJO_PAF_PAGE_MARGIN, 1);
 #endif
