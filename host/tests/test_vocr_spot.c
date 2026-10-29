@@ -684,6 +684,58 @@ static void without_the_wait_every_row_is_read_again(void)
                 n_got, n, bad_pixels);
 }
 
+/* #528: with the stable-text wait on, a spotter job whose finding ends before the wait's due time (settle_us after its
+ * first pass began) sleeps until then and reads the region once (one pass that counts), not at once and again after
+ * the sleep; a change during the sleep is seen by that pass (a second try, the changed frame's boxes). */
+static unsigned sleeps;
+static uint64_t slept_until;
+static void test_sleep(uint32_t us)
+{
+    sleeps++;
+    clock_now += us;
+    slept_until = clock_now;
+    if (switch_after_first == 2) switched = 1; /* the screen changes while the job sleeps */
+}
+static void the_wait_reads_one_pass_at_its_due_time(void)
+{
+    VjoVocrStats st;
+    VjoVocrPolicy p;
+    VocrLine want[VJO_VOCR_MAX_LINES];
+    unsigned more = 0, n;
+    load_blob();
+    load_textbox();
+    reset();
+    TEST_ASSERT(load(NULL) == VJO_OK);
+    p = policy();
+    p.settle_us = 150000u;
+    p.settle_max_us = 2000000u;
+    p.sleep = test_sleep;
+    make_frame(TB_W, 2u * TB_H, 0, 0, 0); /* five strips; the clock moves 7 us a reading: the finding ends early */
+    switch_after_first = 0;
+    sleeps = 0;
+    TEST_ASSERT(counting_job(&p, &st) == VJO_OK);
+    TEST_CHECK_(st.spot_ran && st.tries == 1 && st.settled && st.settle_passes == 1 && sleeps == 1,
+                "spot %u, %u tries, settled %u, %u stable-text passes, %u sleeps", st.spot_ran, st.tries, st.settled,
+                st.settle_passes, sleeps);
+    for (unsigned y = 0; y < frame_h; y++) TEST_CHECK_(row_reads[y] >= 2, "row %u read %u time(s)", y, row_reads[y]);
+    /* the screen changes during the sleep: the pass at the due time sees it, and the job gives the new frame */
+    {
+        static unsigned char plain[MAX_W * MAX_H * 4];
+        memcpy(plain, rgba, (size_t)frame_w * frame_h * 4);
+        make_frame(TB_W, 2u * TB_H, 0, 0, 1);
+        memcpy(rgba_b, rgba, (size_t)frame_w * frame_h * 4);
+        memcpy(rgba, plain, (size_t)frame_w * frame_h * 4);
+    }
+    switch_after_first = 2;
+    sleeps = 0;
+    TEST_ASSERT(counting_job(&p, &st) == VJO_OK);
+    switch_after_first = 0;
+    TEST_CHECK_(st.tries == 2 && st.tears > 0, "%u tries, %u tears", st.tries, st.tears);
+    n = runtime_lines(VOCR_TEXTSPOT6_SCALE2, want, &more);
+    TEST_CHECK_(same_lines(got, n_got, want, n) && !bad_pixels, "%u lines against the changed frame's %u, %u bad crops",
+                n_got, n, bad_pixels);
+}
+
 TEST_LIST = {
     {"the_fixture_is_the_pinned_blob", the_fixture_is_the_pinned_blob},
     {"the_weights_are_read_checked_and_kept", the_weights_are_read_checked_and_kept},
@@ -698,5 +750,6 @@ TEST_LIST = {
     {"vertical_text_checks_hand_over_by_the_spotters_counts", vertical_text_checks_hand_over_by_the_spotters_counts},
     {"a_model_of_columns_takes_no_part_of_the_spotters_scratch", a_model_of_columns_takes_no_part_of_the_spotters_scratch},
     {"without_the_wait_every_row_is_read_again", without_the_wait_every_row_is_read_again},
+    {"the_wait_reads_one_pass_at_its_due_time", the_wait_reads_one_pass_at_its_due_time},
     {NULL, NULL}
 };
