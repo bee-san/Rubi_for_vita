@@ -12,6 +12,8 @@
 #include "acutest.h"
 #undef main
 #include "test_tmpdir.h"
+#include "soak_track.h" /* #528 (mem-leak): soak_cycles */
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -521,6 +523,57 @@ static void a_shot_leaves_the_slot_as_it_found_it(void)
     TEST_CHECK(block_allocs == 5 && block_frees == 5 && !game_ocr_capture_busy_locked());
 }
 
+/* This process's open file descriptors (the shot's file is a real one: a descriptor the kernel worker leaves open is
+ * a leaked host one), or -1 where /proc/self/fd cannot be read. */
+static int open_fds(void)
+{
+    DIR *d = opendir("/proc/self/fd");
+    int n = 0;
+    if (!d) return -1;
+    while (readdir(d)) n++;
+    closedir(d);
+    return n;
+}
+
+/* #528 (mem-leak): Anki screenshots soaked, the owner's anki_screenshot = on. A cycle is a card's shot, one through
+ * the kernel strip, one the Shell cancels, one whose file write fails and one whose file the card refuses: each
+ * leaves nothing held in the game or the kernel (shot()), the game's ledger at 0 for the shot, and no descriptor
+ * more than the first cycle left. VJO_SOAK_CYCLES=N runs N cycles (40 by default). */
+static void soak_shots_hold_nothing(void)
+{
+    const unsigned cycles = soak_cycles(40);
+    VjoGameOcrResult out;
+    int fds0 = -1;
+    reset();
+    procedural_frame();
+    for (unsigned i = 0; i <= cycles; i++) {
+        unlink(jpg_path);
+        TEST_CHECK_(shot(&out) == VJO_OK && file_size(jpg_path) == (long)out.shot_bytes, "cycle %u: the shot", i);
+        unlink(jpg_path);
+        hook_copy_fail = 1;
+        TEST_CHECK_(shot(&out) == VJO_OK, "cycle %u: through the kernel strip", i);
+        hook_copy_fail = 0;
+        unlink(jpg_path);
+        frames = 0; /* the harness's frames since reset(): the Shell cancels at the shot's 2nd to 5th */
+        cancel_after = 2 + (int)(i % 4u);
+        TEST_CHECK_(shot(&out) == VJO_E_CANCELLED, "cycle %u: cancelled", i);
+        cancel_after = 0;
+        write_error = (int)0x8001001Cu; /* ENOSPC */
+        TEST_CHECK_(shot(&out) == VJO_E_LOCAL_IO && file_size(tmp_path) < 0, "cycle %u: a failed write", i);
+        write_error = 0;
+        open_error = (int)0x80010013u;
+        TEST_CHECK_(shot(&out) == VJO_E_LOCAL_IO, "cycle %u: a refused file", i);
+        open_error = 0;
+        TEST_CHECK_(g_game_ledger.current[GL_SHOT] == 0 && !block_live && !kstrip_live && file_fd < 0,
+                    "cycle %u: a shot's block, strip or file held", i);
+        if (!i) fds0 = open_fds();
+        else if (fds0 >= 0) TEST_CHECK_(open_fds() == fds0, "cycle %u: %d descriptors open, %d after the first", i, open_fds(), fds0);
+    }
+    TEST_CHECK(block_allocs == block_frees && kstrip_allocs > 0);
+    fprintf(stderr, "soak game: Anki screenshots %5u cycles (5 shots each): %u shot blocks and %u kernel strips taken and "
+            "given back, %d descriptors open after every cycle\n", cycles, block_allocs, kstrip_allocs, fds0);
+}
+
 /* ---- API 32: the frame's black bars (VJO_GAME_OCR_S_TRIM, core/shottrim.h) ---- */
 
 /* What the JPEG must be: the frame's sub-rectangle (x, y, w, h) through core/jpegsw.c at quality,
@@ -952,6 +1005,7 @@ TEST_LIST = {
     {"API 23: too large is encoded lower, then given up", too_large_is_encoded_lower_then_given_up},
     {"API 23: a refused file, a cancellation, a resized frame leave no file", failures_leave_no_file},
     {"API 23: five shots leave the slot, the kernel and the game as they were", a_shot_leaves_the_slot_as_it_found_it},
+    {"#528 soak: screenshots hold nothing after each cycle", soak_shots_hold_nothing},
     {"API 23: a slow card's save is waited for; one given up leaves no file and no blocked worker",
      a_slow_card_is_waited_for_and_never_blocks_the_worker},
     {"API 23: all JPEG chunks and the close share one file deadline", all_file_calls_share_one_deadline},

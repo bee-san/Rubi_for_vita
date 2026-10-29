@@ -198,6 +198,7 @@ int main(int argc, char **argv)
     static BenchOut out;
     const char *stage, *frame = NULL, *model = NULL, *texts = NULL, *config = NULL, *lm = NULL, *cascade = NULL,
                *spot = NULL;
+    char *text_buf = NULL; /* --texts' lines, read_texts' (free'd at the end) */
     unsigned iters = 1;
     size_t len = 0;
     int rc;
@@ -258,7 +259,7 @@ int main(int argc, char **argv)
         if (!(in.spot = read_file(spot, &len))) { fprintf(stderr, "%s: unreadable\n", spot); return 2; }
         in.spot_bytes = (uint32_t)len;
     }
-    if (texts && !(in.text = read_texts(texts))) { fprintf(stderr, "%s: unreadable\n", texts); return 2; }
+    if (texts && !(in.text = text_buf = read_texts(texts))) { fprintf(stderr, "%s: unreadable\n", texts); return 2; }
     if (config && !(in.config_text = read_file(config, NULL))) { fprintf(stderr, "%s: unreadable\n", config); return 2; }
     rc = bench_stage(stage, &in, iters, &out);
     if (rc) {
@@ -280,5 +281,13 @@ int main(int argc, char **argv)
         json_string(out.text);
     }
     printf("}\n");
+    /* the inputs read above (LeakSanitizer reads a process's end: #528's ASan run of stage_bench_smoke) */
+    free((void *)in.rgba);
+    free((void *)in.model);
+    free((void *)in.lm);
+    free((void *)in.cascade);
+    free((void *)in.spot);
+    free((void *)in.config_text);
+    free(text_buf);
     return 0;
 }

@@ -26,12 +26,20 @@ static int rows(void *ud, uint32_t row, uint32_t n, uint8_t *dst)
     return (int)n;
 }
 
+/* The buffers go back on every way out: LeakSanitizer reads a process's end (#528's ASan run of jpeg_encoder). */
+static int done(int rc, uint8_t *px, uint8_t *mem)
+{
+    free(px);
+    free(mem);
+    return rc;
+}
+
 int main(int argc, char **argv)
 {
     Image im;
     VjoArena a;
     VjoBuf out = {0};
-    uint8_t *px, *mem;
+    uint8_t *px = NULL, *mem = NULL;
     size_t bytes, cap;
     FILE *f;
     int quality;
@@ -43,18 +51,26 @@ int main(int argc, char **argv)
     bytes = (size_t)im.w * im.h * 4u;
     cap = argc > 6 ? strtoul(argv[6], NULL, 10) : 16u * 1024u * 1024u;
     if (!(px = (uint8_t *)malloc(bytes ? bytes : 1)) || !(mem = (uint8_t *)malloc(cap)) || !(f = fopen(argv[1], "rb")))
-        return 2;
-    if (fread(px, 1, bytes, f) != bytes)
-        return 2;
+        return done(2, px, mem);
+    if (fread(px, 1, bytes, f) != bytes) {
+        fclose(f);
+        return done(2, px, mem);
+    }
     fclose(f);
     im.px = px;
     vjo_arena_init(&a, mem, cap);
     if (vjo_jpeg_encode(&a, im.w, im.h, im.w * 4u, rows, &im, quality, &out) < 0) {
         fprintf(stderr, "vjo-jpeg: encode failed (%s)\n", out.oom ? "out of memory" : "bad size");
-        return 3;
+        return done(3, px, mem);
     }
-    if (!(f = fopen(argv[5], "wb")) || fwrite(out.data, 1, out.len, f) != out.len || fclose(f))
-        return 2;
+    if (!(f = fopen(argv[5], "wb")))
+        return done(2, px, mem);
+    if (fwrite(out.data, 1, out.len, f) != out.len) {
+        fclose(f);
+        return done(2, px, mem);
+    }
+    if (fclose(f))
+        return done(2, px, mem);
     printf("%u %u\n", (unsigned)out.len, (unsigned)a.peak);
-    return 0;
+    return done(0, px, mem);
 }

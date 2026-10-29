@@ -23,6 +23,7 @@
 #include "acutest.h"
 #undef main
 #include "test_tmpdir.h"
+#include "soak_track.h" /* #528 (mem-leak): soak_cycles */
 #include "anki.h"
 #include "json.h"
 #define VJO_TEST_MUTEX_STUBS 1
@@ -1461,6 +1462,62 @@ static void test_fifty_cards_release_everything(void)
     finish();
 }
 
+/* This process's open file descriptors (the queue's files are real ones here: a leaked sceIo descriptor is a
+ * leaked host one), or -1 where /proc/self/fd cannot be read. */
+static int open_fds(void)
+{
+    DIR *d = opendir("/proc/self/fd");
+    int n = 0;
+    if (!d) return -1;
+    while (readdir(d)) n++;
+    closedir(d);
+    return n;
+}
+
+/* #528 (mem-leak): Anki mining soaked. A cycle is the overlay's open (its count of the queue), a save of a new card
+ * (every other one with the game's screenshot, where the build has the game worker's client) and a save of a card
+ * already queued; each cycle must end with the job's Paf arena and its thread gone (and out of the ledger), no file
+ * descriptor more than the first ended with, and the queue one card longer. VJO_SOAK_CYCLES=N runs N cycles (100 by
+ * default). */
+static void test_soak_mining_holds_no_more_after_each_card(void)
+{
+    static char header[64];
+    const unsigned cycles = soak_cycles(100);
+    int fds0 = -1, queued = 0;
+    reset();
+    for (unsigned i = 0; i <= cycles; i++) {
+        snprintf(header, sizeof(header), "猫が好き%u", i);
+        list.header = header;
+        g_view.list_seq = 1000 + i;
+#ifdef VJO_WITH_VOCR
+        cfg.anki_screenshot = (int)(i & 1u);
+        reconfigure();
+#endif
+        vjo_anki_post_count(); /* the overlay opens: its queue line */
+        vjo_anki_reap();
+        enter(0);
+        TEST_CHECK_(!strcmp(g_view.anki_status, "Saved for Anki"), "card %u: %s", i, g_view.anki_status);
+        queued++;
+        g_view.list_seq = 5000 + i; /* the same card from a new lookup: queued already */
+        enter(0);
+        TEST_CHECK_(!strcmp(g_view.anki_status, "Already queued"), "card %u again: %s", i, g_view.anki_status);
+        TEST_CHECK_(!heap_live && heap_allocs == heap_frees && threads_created == threads_deleted && thread < 0,
+                    "card %u: arena %d (%d/%d), threads %d/%d", i, heap_live, heap_allocs, heap_frees, threads_created,
+                    threads_deleted);
+        TEST_CHECK_(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_ANKI) == 0 &&
+                        vjo_ledger_current(&g_shell_ledger, VJO_SL_ANKI_STACK) == 0,
+                    "card %u: the ledger holds %u B of arena and %u B of stack", i,
+                    (unsigned)vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_ANKI),
+                    (unsigned)vjo_ledger_current(&g_shell_ledger, VJO_SL_ANKI_STACK));
+        if (!i) fds0 = open_fds();
+        else if (fds0 >= 0) TEST_CHECK_(open_fds() == fds0, "card %u: %d descriptors open, %d after the first", i, open_fds(), fds0);
+    }
+    TEST_CHECK_(vjo_queue_count() == queued, "%d cards queued of %d", vjo_queue_count(), queued);
+    fprintf(stderr, "soak shell: Anki mining %5u cycles: %d arenas and %d threads taken and given back, %d descriptors open "
+            "after every cycle\n", cycles, heap_allocs, threads_created, fds0);
+    finish();
+}
+
 /* SceShell refuses the VjoAnki thread. With anki_mining on it is created on every
  * overlay open (to count the queue), and for enter: each refusal is in log.txt
  * with its rc, the bytes asked for, SceShell's free USER and the Shell pages we hold,
@@ -1756,6 +1813,7 @@ TEST_LIST = {
     {"what_enter_saves_whatever_the_dictionaries", test_what_enter_saves_whatever_the_dictionaries},
     {"record_round_trip_stable_ids_and_strict_decoding", test_record_format},
     {"fifty_cards_release_memory_and_threads", test_fifty_cards_release_everything},
+    {"#528 soak: mining holds no more after each card", test_soak_mining_holds_no_more_after_each_card},
     {"a_refused_job_thread_is_logged_with_its_rc_and_sceshell_free", test_a_refused_job_thread_is_logged},
 #ifdef VJO_WITH_VOCR
     {"api23_enter_saves_the_screenshot_beside_the_card", test_enter_saves_the_screenshot_beside_the_card},

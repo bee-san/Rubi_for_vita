@@ -9,6 +9,8 @@
 #include "acutest.h"
 #undef main
 #include "test_tmpdir.h"
+#include "soak_track.h" /* #528 (mem-leak): soak_cycles */
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -384,6 +386,59 @@ static void test_on_by_default_loads_the_worker(void)
                vjo_ledger_peak(&g_kernel_ledger, VJO_KL_POLICY) == VJO_BUDGET_KERNEL_POLICY);
 }
 
+/* This process's open file descriptors (games.ini and the worker's file are real files here: a leaked
+ * descriptor of the kernel's read is a leaked host one), or -1 where /proc/self/fd cannot be read. */
+static int open_fds(void)
+{
+    DIR *d = opendir("/proc/self/fd");
+    int n = 0;
+    if (!d) return -1;
+    while (readdir(d)) n++;
+    closedir(d);
+    return n;
+}
+
+/* #528 (mem-leak): process starts soaked. Each cycle starts a game that is ON, one that is OFF, one with L held, one
+ * whose games.ini read gets no kernel block, one with games.ini unreadable (its backup read) and one with neither
+ * file: after every start the VjoPolicy block is back (none live, the ledger's item at 0) and no descriptor is left
+ * open. VJO_SOAK_CYCLES=N runs N cycles (200 by default). */
+static void test_soak_process_starts_hold_nothing(void)
+{
+    const unsigned cycles = soak_cycles(200);
+    int fds0;
+    unsigned loads = 0;
+    reset();
+    put(VJO_GAMES_PATH, "# Rubi per-game settings\ndefault = enabled\nPCSG00415 = enabled\nPCSF00001 = disabled\n");
+    fds0 = open_fds();
+    for (unsigned i = 0; i < cycles; i++) {
+        TEST_CHECK(start(GAME_PID, "PCSG00415") == CONTINUE_RC);
+        loads += (unsigned)load_calls;
+        TEST_CHECK(start(GAME_PID, "PCSF00001") == CONTINUE_RC && !load_calls);
+        pad_buttons = SCE_CTRL_LTRIGGER;
+        TEST_CHECK(start(GAME_PID, "PCSG00415") == CONTINUE_RC && !load_calls);
+        pad_buttons = 0;
+        alloc_fail = 1;
+        TEST_CHECK(start(GAME_PID, "PCSG00415") == CONTINUE_RC && !load_calls);
+        alloc_fail = 0;
+        put(VJO_GAMES_PATH, "not a games.ini\n\x01");
+        put(VJO_GAMES_BACKUP, "default = enabled\n");
+        TEST_CHECK(start(GAME_PID, "PCSG00415") == CONTINUE_RC);
+        loads += (unsigned)load_calls;
+        unlink(VJO_GAMES_PATH);
+        unlink(VJO_GAMES_BACKUP);
+        TEST_CHECK(start(GAME_PID, "PCSG00415") == CONTINUE_RC); /* neither file: the defaults */
+        loads += (unsigned)load_calls;
+        put(VJO_GAMES_PATH, "# Rubi per-game settings\ndefault = enabled\nPCSG00415 = enabled\nPCSF00001 = disabled\n");
+        TEST_CHECK_(!live_blocks && vjo_ledger_current(&g_kernel_ledger, VJO_KL_POLICY) == 0,
+                    "cycle %u: %d policy blocks live, the ledger holds %u B", i, live_blocks,
+                    (unsigned)vjo_ledger_current(&g_kernel_ledger, VJO_KL_POLICY));
+        if (fds0 >= 0) TEST_CHECK_(open_fds() == fds0, "cycle %u: %d descriptors open, %d before", i, open_fds(), fds0);
+    }
+    TEST_CHECK(loads >= 3 * cycles);
+    fprintf(stderr, "soak kernel: process starts %5u cycles (6 starts each): %d policy blocks taken, none held; "
+            "%u worker loads; %d descriptors open after every cycle\n", cycles, blocks, loads, fds0);
+}
+
 /* The Shell's rules, as core/games.c has them: the title's own row, then the default. */
 static void test_rows_and_default(void)
 {
@@ -701,6 +756,7 @@ static void test_text_source_only_where_started_on(void)
 }
 
 TEST_LIST = {
+    {"#528 soak: process starts hold no policy block and no file", test_soak_process_starts_hold_nothing},
     {"module_stop waits for a start inside the hook, bounded", test_release_drains_starts_inside},
     {"hook install: 3.60 then 3.63+ NIDs, off without its functions", test_hook_install_and_release},
     {"never into SceShell, system apps, VitaShell, the Rubi app", test_never_into_shell_or_system_apps},
