@@ -173,6 +173,15 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"AFEJ00001", 0x7FEE3308u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
      0, VJO_PLACE_READ_STRING, 0x0001u},
+    /* The r5 game build fixes native byte order in the town-combination table
+     * and count. Its observer has the same offset and relocation-free veneer;
+     * the rebuilt executable has a new module NID. Retain r4 above so both
+     * experimental builds keep their exact-build checks. The installed r5
+     * executable and custom profile were read back and SHA-256 verified on
+     * 2026-10-29; physical dialogue capture remains unverified. */
+    {"AFEJ00001", 0xC7116601u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
+     0, VJO_PLACE_READ_STRING, 0x0001u},
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, VJO_RF_PCSG00415, 0, 0},
     {"PCSG01198", 0x8AA413F2u, 0x745C8u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
