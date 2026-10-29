@@ -1587,6 +1587,34 @@ static void rows_copy_outliving_its_call(void)
     }
 }
 
+/* #528: the game worker gives back the blocks an abandoned copy may write at its next job, which holds only if no
+ * job is handed out while that copy runs: once the worker has completed the job that gave the copy up, the Shell's
+ * next job is refused (BUSY) for as long as the copy runs, and after it until the kernel worker's tick has returned
+ * the rows to IDLE; then it is submitted and taken. */
+static void no_job_while_an_abandoned_copy_runs(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    stall_copy = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == VJO_ERR_BUSY && info.armed);
+    TEST_CHECK(rows.state == ROWS_COPYING && rows.abandoned);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0); /* the worker ends that job */
+    TEST_CHECK(next_submit() == VJO_ERR_BUSY);               /* the copy runs */
+    model_tick();
+    TEST_CHECK(rows.state == ROWS_COPYING && next_submit() == VJO_ERR_BUSY);
+    rows.state = ROWS_DONE;                                  /* the hook ends its copy */
+    TEST_CHECK(next_submit() == VJO_ERR_BUSY);               /* not tidied yet */
+    model_tick();
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.abandoned);
+    stall_copy = 0;
+    int next = next_submit();
+    TEST_CHECK(next > 0 && (uint32_t)next != seq);
+    take((uint32_t)next); /* the worker's next job, the copy over */
+    frames_come = 1;
+    TEST_CHECK(rows_call((uint32_t)next, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == 8 && info.armed);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
 /* N1: the destination stride is bounded, so the span the kernel checks is the
  * span the hook writes. */
 static void rows_stride_is_bounded(void)
@@ -3304,6 +3332,7 @@ TEST_LIST = {
     {"rows: cancellation during the wait", rows_cancelled_while_waiting},
     {"rows: the kernel strip rung, freed before the call returns", rows_kernel_strip_rung},
     {"rows: a copy outliving its call is abandoned, then tidied by the kernel worker", rows_copy_outliving_its_call},
+    {"#528: no job is handed out while an abandoned copy runs", no_job_while_an_abandoned_copy_runs},
     {"rows: the destination stride is bounded (no wrapped span)", rows_stride_is_bounded},
     {"rows: a process exit never pulls state or the strip from a call", rows_process_exit_cannot_pull_state_from_a_call},
     {"rows: a pending request pins captures; process exit clears it", rows_pending_pins_and_process_exit},

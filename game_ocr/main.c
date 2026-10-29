@@ -92,8 +92,11 @@ static uint32_t shot_bytes_held;
 static SceUID frame_uid = -1;
 static uint32_t frame_bytes_held;
 static unsigned char *frame_base;
-/* A rows call returned BUSY: the display hook may still write into the capture
- * (or tall-line) block, so neither is freed (they go with the process). */
+/* A rows call returned BUSY after arming: the display hook may still write into the capture block (or the frame or
+ * shot block), so cleanup keeps them (and the tall-line block). Only until the kernel hands out the next job: it hands
+ * out none while that copy runs (vjoOcrSubmit answers BUSY until game_ocr_rows_tick sees it end), so the next job
+ * gives them back before it takes its own (release_abandoned_capture). The worker goes on meanwhile: it drops its
+ * resident blocks after INACTIVE_DROP_US as at any other time, and takes the next job. */
 static int hook_owns_capture;
 /* A helper thread could not be joined (core/vocr_ocr.h VjoVocrStats.stuck): it may
  * still run in the job's workspace, so that block is never freed either. */
@@ -471,9 +474,9 @@ static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, 
             step_add(VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_KERNEL, c->rgba ? VJO_GITEM_SHOT : VJO_GITEM_CAPTURE,
                      c->last.kstrip_rc, n * c->r->width * (c->rgba ? 4u : 1u), 0, 0, 0);
         c->failed = rc;
-        /* An armed request's copy outlived the call: the hook may still write dst, so the
-         * block is never freed and this worker takes no more jobs. */
-        if (rc == VJO_ERR_BUSY && c->last.armed) blocked = hook_owns_capture = 1;
+        /* An armed request's copy outlived the call: the hook may still write dst, so the block stays until the
+         * next job (hook_owns_capture). Through the kernel strip the hook writes the kernel's strip, never dst. */
+        if (rc == VJO_ERR_BUSY && c->last.armed && c->mode == VJO_GAME_OCR_SRC_HOOK) hook_owns_capture = 1;
         return rc == VJO_ERR_CANCELLED ? VJO_E_CANCELLED : rc < 0 ? rc : VJO_E_SOURCE;
     }
 }
@@ -520,7 +523,7 @@ static int frame_release(void)
 }
 
 /* The copy at the first pass: 0 (frozen, or refused: the job reads on as before), or the error that ends the job (a
- * cancellation; a copy that outlived its call, after which no job runs in this game). */
+ * cancellation; a copy that outlived its call, whose block the next job gives back). */
 static int pause_copy(Capture *c)
 {
     const VjoGameOcrRequest *r = c->r;
@@ -562,8 +565,9 @@ static int pause_copy(Capture *c)
     }
     pz.rc = rc < 0 ? rc : VJO_E_SOURCE;
     if (rc == VJO_ERR_BUSY && c->last.armed) {
-        /* the hook may still write the block: it is never freed, and this worker takes no more jobs */
-        blocked = hook_owns_capture = 1;
+        /* the hook may still write the block: it stays until the next job (hook_owns_capture), as a capture
+         * block does */
+        hook_owns_capture = 1;
         pz.held = 0;
         c->failed = rc;
         return rc;
@@ -1074,6 +1078,18 @@ static int cleanup(void)
     return rc;
 }
 
+/* A job the kernel handed out after a rows copy outlived its call (hook_owns_capture): the kernel hands out none while
+ * that copy runs (vjoOcrSubmit and every rows call answer BUSY until game_ocr_rows_tick sees the copy end), so nothing
+ * writes the blocks cleanup kept any more. They go back to the game before this job takes its own, so a job never
+ * holds two captures. Called before the job's step log is set: their FREE steps were the earlier job's, whose log is
+ * gone. A free that fails blocks the worker, as cleanup's failure at a job's end does. */
+static void release_abandoned_capture(void)
+{
+    if (!hook_owns_capture || blocked) return;
+    hook_owns_capture = 0;
+    if (cleanup()) blocked = 1;
+}
+
 /* ---- the self-test's probe (VJO_GAME_OCR_F_PROBE): every rung, one strip each ----
  * The debug build's only: the normal build has no self-test, and refuses a
  * probe request as it does any request it cannot run (docs/release-variants.md). */
@@ -1163,7 +1179,8 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                 out->fb_width = c.last.fb_width; out->fb_height = c.last.fb_height;
                 out->fb_pitch = c.last.fb_pitch; out->fb_format = c.last.fb_format;
             }
-            if (blocked) return VJO_E_OCR_UNAVAILABLE;
+            /* a copy that outlived its call may still write the block: cleanup keeps it for the next job */
+            if (blocked || hook_owns_capture) return VJO_E_OCR_UNAVAILABLE;
         }
         if (i == 0) {
             /* The user-mode read, into the same USER_RW block. */
@@ -2022,6 +2039,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     hk.n = 0;
     active_seq = r->seq; io_error = 0; stat_error = 0; open_which = VJO_GAME_OCR_OPEN_MODEL; open_cascade = 0;
     tiered = 0; job_reserve = GAME_RESERVE;
+    release_abandoned_capture(); /* before log_to: an earlier job's blocks (#528) */
     log_to = out;
     job_started_us = now_wide();
     int rc = VJO_E_SOURCE;
@@ -2563,8 +2581,9 @@ retry_smaller:
      * fails, so a Rubi verified site's newest text answers unconfirmed here too (with the 4 MiB reserve before #280 the
      * check failed there). This try's blocks and the resident ones go back to the game first, as on that path; its
      * captures and finder time stay the job's, and its blocks' steps leave the log (steps_drop_blocks). Never while a
-     * block may still be written (a stuck helper, a capture the display hook may still own: blocked). */
-    if (rc == VJO_E_OOM && !stats.stuck && !blocked && hk.installed && !cancelled(NULL)) {
+     * block may still be written (a stuck helper: blocked; a capture the display hook may still own: hook_owns_capture,
+     * which a VJO_E_OOM never follows in one job, as its rows call ended the job). */
+    if (rc == VJO_E_OOM && !stats.stuck && !blocked && !hook_owns_capture && hk.installed && !cancelled(NULL)) {
         uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
         if (id) {
             const size_t workspace = stats.workspace;

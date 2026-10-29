@@ -35,6 +35,11 @@ been reported.
   with almost nothing (the logs' lowest free, 131,432 B, would have left about 8 KB). Not yet run on a console.
 - The memory ledger counts the overlay page's own Paf blocks (103,296 B, the most measured in #528's logs) in the
   Shell's Paf worst case: 241,664 → 344,960 B. Accounting only: no code or memory changes.
+- A screen copy that outlives its call (the game's display thread held for over 2 s inside the copy) no
+  longer stops OCR in that game until it is restarted, nor keeps the model, LM and spotter loaded until then.
+  The game worker keeps the copied-into block only until the next job, which gives it back before taking its own;
+  meanwhile the resident blocks go back after 5 s in the background as at any other time (#528). Host-tested;
+  not seen in #528's logs and not run on a console.
 
 ## [0.10.1] - 2026-10-29
 

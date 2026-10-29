@@ -62,6 +62,7 @@ static int capture_live, refuse_user, refuse_cdram, refuse_phycont, rows_error, 
 static int lm_bad_size; /* the LM files report one byte more than they hold (a wrong file) */
 static int cascade_bad_size; /* the same for the cascade's model */
 static int busy_unarmed, busy_armed, allow_capture_held; /* rows calls that answer BUSY, before / after arming */
+static int busy_armed_kstrip; /* #528: the next kernel-strip rows call answers BUSY after arming */
 static unsigned capture_block, capture_allocs, capture_frees, rows_calls, kstrip_calls, last_type;
 static unsigned allocations, frees, reads_count, bytes_read, thread_creates, weight_allocations, weight_frees;
 static int memory_live, alloc_failure, base_failure, free_failure, close_failure, weights_live;
@@ -321,6 +322,10 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
     }
     if (rows_error) return rows_error;
     if (hook_write_error && req->mode == VJO_GAME_OCR_SRC_HOOK) return VJO_ERR_COPY;
+    if (busy_armed_kstrip && req->mode == VJO_GAME_OCR_SRC_KSTRIP) { /* #528: through the kernel strip */
+        busy_armed_kstrip = 0; busy_unarmed = 1000;
+        return VJO_ERR_BUSY;
+    }
     for (unsigned r = 0; r < req->n; r++)
         for (unsigned x = 0; x < 200; x++) {
             const unsigned char *p = pixels + ((req->y + r) * 200 + x) * 4;
@@ -445,7 +450,7 @@ static VjoGameOcrRequest setup(void)
     worker = workspace_uid = weights_blk.uid = capture_uid = line_uid = -1;
     capture_live = refuse_user = refuse_cdram = refuse_phycont = rows_error = hook_write_error = 0;
     lm_bad_size = cascade_bad_size = 0;
-    busy_unarmed = busy_armed = allow_capture_held = 0; hook_owns_capture = 0;
+    busy_unarmed = busy_armed = allow_capture_held = 0; hook_owns_capture = 0; busy_armed_kstrip = 0;
     capture_block = capture_allocs = capture_frees = rows_calls = kstrip_calls = 0;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
     lm_res.lm = NULL; lm_res.data = NULL; lm_res.capacity = 0; lm_res.size = lm_res.stamp = 0; lm_blk.uid = -1;
@@ -748,8 +753,12 @@ static void hook_failure_falls_back_to_the_kernel_strip(void)
     TEST_CHECK(logged);
 }
 /* A BUSY before arming (a previous copy not tidied yet) is asked again; one
- * after arming (the copy outlived the call) keeps the block for the hook and
- * stops the worker. */
+ * after arming (the copy outlived the call) keeps the block for the hook until
+ * the next job, which the kernel hands out only once that copy has ended: it
+ * gives the block back before it takes its own (the stub refuses a second
+ * capture block while one is live), and the worker is never stopped (#528).
+ * Through the kernel strip the hook writes the kernel's strip, never the
+ * worker's block: it goes back with the job. */
 static void busy_rows_calls(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -764,7 +773,16 @@ static void busy_rows_calls(void)
     busy_unarmed = 0; busy_armed = 1; allow_capture_held = 1; rows_calls = 0;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) != VJO_OK);
     /* the armed BUSY is not retried, so the unarmed ones after it never hide it */
-    TEST_CHECK(rows_calls == 1 && blocked && hook_owns_capture && capture_live && !memory_live);
+    TEST_CHECK(rows_calls == 1 && !blocked && hook_owns_capture && capture_live && !memory_live && !out.cleanup_status);
+    unsigned allocs = capture_allocs, frees = capture_frees;
+    busy_unarmed = 0; allow_capture_held = 0; /* the copy ended: the kernel tidied it and hands out the next job */
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !blocked && !hook_owns_capture && !capture_live && !memory_live);
+    TEST_CHECK(capture_allocs == allocs + 1 && capture_frees == frees + 2); /* the kept block, then the job's own */
+    /* through the kernel strip (the hook could not write the block): it goes back with the job */
+    hook_write_error = 1; busy_armed_kstrip = 1; rows_calls = kstrip_calls = 0;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && kstrip_calls == 1 && rows_calls == 2);
+    TEST_CHECK(!blocked && !hook_owns_capture && !capture_live && !memory_live && !out.cleanup_status);
+    hook_write_error = 0; busy_unarmed = 0;
 }
 
 #if VJO_DEBUG /* the self-test's probe: the debug build's (docs/release-variants.md) */
@@ -789,6 +807,13 @@ static void probe_tries_every_rung(void)
     /* USER and CDRAM blocks, hook and kernel strip each, plus the user-mode read once */
     TEST_CHECK(probes == 5 && hook_ok == 2 && kstrip_ok == 2 && user_fail == 1 && phycont_refused == 1);
     TEST_CHECK(out.strip_rows == 60 && !out.lines && allocations == 0);
+    /* #528: the probe's first copy outlives its call: the probe stops there and its block stays for the hook (no
+     * other rung, no free), until the next job, which gives it back first */
+    r = setup(); r.flags = VJO_GAME_OCR_F_PROBE; busy_armed = 1; allow_capture_held = 1;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OCR_UNAVAILABLE && rows_calls == 1);
+    TEST_CHECK(hook_owns_capture && capture_live && !capture_frees && capture_allocs == 1 && !blocked);
+    busy_unarmed = 0; allow_capture_held = 0; r.flags = 0;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !hook_owns_capture && !capture_live && capture_frees == 2);
 }
 /* The probe's user-mode read of the frame stays inside the frame's own block:
  * the frame (200x60, 48,000 B) is in 64 KiB of mapped memory, and each refused
