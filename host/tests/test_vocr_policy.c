@@ -2392,7 +2392,9 @@ static void two_level_checks(VjoPlatform *p, const VjoVocrModel *m, int gated)
  * job on a workspace whose bytes are 0x00 or 0xA5 reads the kana line (九カ月です, no frame that ran the rare rows)
  * again with the full head with VOCR6-N and VOCR6-L, which have the two-level head, and never with VOCR6-S, which has
  * none; with the LM and greedy. Before the fix the flag was read from the workspace before load_model parsed the
- * model into it: 0x00 left Normal and Large without the re-read, 0xA5 gave Small one. */
+ * model into it: 0x00 left Normal and Large without the re-read, 0xA5 gave Small one. Both load sites: the job's
+ * eager one, and with the blank-line check (VjoVocrPolicy.blank) the one at its first line that is not skipped
+ * (blank_edges 1: none is). */
 static void test_the_two_level_flag_is_the_models_on_a_fresh_workspace(void)
 {
     static const char *const files[] = {VJO_VOCR6_N_NAME, VJO_VOCR6_L_NAME, VJO_VOCR6_S_NAME, VJO_VOCR_LM2_NAME};
@@ -2407,7 +2409,8 @@ static void test_the_two_level_flag_is_the_models_on_a_fresh_workspace(void)
     p.file_open = posix_open ? posix_open : p.file_open;
     for (unsigned k = 0; k < 3; k++)
         for (int lm = 0; lm < 2; lm++)
-            for (int fill = 0; fill < 2; fill++) {
+            for (int fill = 0; fill < 4; fill++) {
+                const int lazy = fill >> 1; /* the blank-line check's load, at the first line read */
                 const VjoVocrModel *m = vjo_vocr_model(names[k]);
                 VjoVocrStats st;
                 static char text[1024], raw[1024];
@@ -2416,13 +2419,13 @@ static void test_the_two_level_flag_is_the_models_on_a_fresh_workspace(void)
                 TEST_ASSERT(m != NULL);
                 ws_bytes = vjo_vocr_job_bytes(m->name, W, H) + vjo_vocr_lm_job_bytes(m->name);
                 TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
-                memset(ws, fill ? 0xA5 : 0x00, ws_bytes); /* what a fresh block may hold */
+                memset(ws, fill & 1 ? 0xA5 : 0x00, ws_bytes); /* what a fresh block may hold */
                 VjoVocrResident res = {test_alloc, free_weights, NULL, {NULL}, NULL, 0, 0, 0};
                 VjoVocrLmResident lres = {test_alloc, free_lm, NULL, {NULL}, NULL, 0, 0, 0};
                 res.ud = &res;
                 lres.ud = &lres;
                 VjoVocrPolicy pol = {.counter_tau = VJO_VOCR_COUNTER_TAU, .counter_open = VJO_VOCR_COUNTER_OPEN,
-                                     .head_gate = 1, .two_level = 1};
+                                     .head_gate = 1, .two_level = 1, .blank = lazy, .blank_edges = lazy ? 1u : 0u};
                 if (lm) {
                     pol.lm = vjo_vocr_lm_tier(2);
                     pol.lm_res = &lres;
@@ -2436,8 +2439,10 @@ static void test_the_two_level_flag_is_the_models_on_a_fresh_workspace(void)
                                                 vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
                 const unsigned want = k < 2 ? 1u : 0u; /* N, L: the two-level head; S: none */
                 TEST_CHECK_(wrap.ungated_runs == want && st.head_rereads == want,
-                            "%s, %s, workspace 0x%02x: %u re-reads, want %u", m->name, lm ? "LM" : "greedy",
-                            fill ? 0xA5 : 0, st.head_rereads, want);
+                            "%s, %s, workspace 0x%02x, %s load: %u re-reads, want %u", m->name, lm ? "LM" : "greedy",
+                            fill & 1 ? 0xA5 : 0, lazy ? "the blank check's" : "the eager", st.head_rereads, want);
+                TEST_CHECK_(!lazy || (st.blank == 0 && st.recognized > 0), "%s: %u blank, %u read", m->name, st.blank,
+                            st.recognized);
                 if (!lm) TEST_CHECK(!strstr(text, "九カ月です") == (want == 1)); /* the full head's reading stands */
                 wrap.on = 0;
                 TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));

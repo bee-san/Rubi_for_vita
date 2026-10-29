@@ -2949,8 +2949,9 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
 
     if (policy && policy->spot && !columns_of(mi) && policy->vertical_check != VJO_VOCR_CHECK_ON) {
         /* API 54: the spotter's arena and result from the scratch's start, before the job writes any other part
-         * (#528: over them, below): the job's own workspace as the caller sized it (vjo_vocr_job_bytes_spot). Without its parsed weights, an arena the build takes,
-         * or room, the job finds its lines with GRAD (stats->spot_rc says why). A model of columns reads without
+         * (#528: over them, below): the job's own workspace as the caller sized it (vjo_vocr_job_bytes_spot).
+         * Without its parsed weights, an arena the build takes, or room, the job finds its lines with GRAD
+         * (stats->spot_rc says why). A model of columns reads without
          * it, and so does on's job (ocr_vertical = on: GRAD's rows and on's check decide, #379's measured rule;
          * the spotter's boxes were not measured there: audit-vocr6-spotter2-rubi F1). */
         const vocr_textspot6 *m = spot_model(policy->spot_res);

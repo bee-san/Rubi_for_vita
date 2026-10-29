@@ -1664,7 +1664,9 @@ above.
   whose text does not fit the room left in the job's text keeps the gated reading: the line is read gated once more
   (the same bits). The rule's two-level head is the job's model's, as `load_model` parsed it (#528, Mmem-game-8:
   from API 42 until then the job read the flag from its workspace before the model was parsed into it, so a block
-  that came zero-filled left Normal and Large without the kana re-read, and other bytes could give Small one).
+  that came zero-filled left Normal without the kana re-read and Large without any re-read, the counter context's
+  too: Large has no gate, so only its two-level head skips frames. Bytes that read as a two-level model made Small,
+  which has neither, read again every line either trigger found).
   On real development lines the counter-context trigger read nothing again (0 in 8,233 reads per
   size, `docs/headgate.md`; vita-vn-ocr does not report the kana trigger on development lines, and this overlay's
   1,074 development jobs with `on`, below, read none again); on vita-vn-ocr's synthetic counter set the re-read
@@ -1982,9 +1984,14 @@ refinement's arena, the LM's and the cascade's extras and the helpers' line slot
 spotter's boxes are copied out (`core/vocr_ocr.c` `run_job`). So a job grows only by what the part exceeds the job and
 its extras. With the cascade, as Small and Normal read by default, it grows not at all (114,688 and 57,344 B less than
 before at a textbox on the host build, `tier-small-88MiB` and `tier-normal-88MiB` in the owner scenario), and Large's
-never did. With the LM alone Small's job still grows by 57,344 B at a textbox and Normal's by a page at the full
-screen; with neither, by 114,688 B (Small) and 53,248 B (Normal) [host: `reports/mem/mem-game-map.md` in #528's
-swarm]. Only a job with the spotter takes either, and only beside what its memory check chose.
+never did. Without the cascade it still grows: at a textbox, Small's by 57,344 B with the LM alone, and with neither
+the LM nor the cascade Small's by 114,688 B and Normal's by 53,248 B [measured, host: the game worker in
+`host/tests/test_alloc_sim.c`'s simulator, `scenario_job` with the owner's config (`host/tests/owner_request.h`) and
+`ocr_lm` / `ocr_cascade_ms` set, 88,080,384 B free, its textbox; the workspace block against the same job with
+`ocr_finder = grad`]. At the full screen Normal's grows by a page with the LM alone (`tools/owner_scenario.py`, rows
+`est-3MiB-full`, Normal with the 500k LM: since #575 that job takes the spotter, and its peak rose by 65,536 B, the
+61,440 B spotter block and one workspace page; at the textbox, `est-3MiB-box`, by the block alone). Only a job with
+the spotter takes either, and only beside what its memory check chose.
 
 **Time (estimates: vita-vn-ocr `eval/textspot6_a9_20261026.json`, its forced-scale rows for this shape, t64n8c16:
 regions read halved as Rubi reads them, dark flags on, the Vita compiler's `-O2` code priced by the Cortex-A9 cycle

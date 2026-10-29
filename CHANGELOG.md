@@ -33,13 +33,17 @@ been reported.
 
 - The release zip's README.md shows its screenshots again: the six images it links (`docs/screenshots/`, 482,185 B)
   are in the zip, as tools/tests/test_zip_docs.py requires of every file README.md links.
-- The two-level head's re-read of a doubtful counter line now follows the model (#528, Mmem-game-8): a line that
-  read a full-size カ or ケ before 月, 年 and the like, where Normal's and Large's two-level head may have missed a small
-  ヵ or ヶ, is read again with the full head. Since API 42 the job took that flag from its fresh workspace before the
-  model was read into it, so a block that came zero-filled never made the re-read, and other bytes could make Small,
-  which has no two-level head, read such a line twice. Host-tested with the release models on fresh workspaces of
-  0x00 and 0xA5 bytes; the 358 development regions' texts are the same at every size (none of their lines needs a
-  re-read). Whether the console's new blocks come zero-filled is not known. Not yet run on a console.
+- The two-level head's re-read of a doubtful counter line now follows the model (#528, Mmem-game-8): a line whose
+  reading has a full-size カ or ケ before 月, 年 and the like (where the two-level head may have missed a small ヵ or
+  ヶ), or a counter context the gated reading may have lost, is read again with the full head. Since API 42 the job
+  took the two-level flag from its fresh workspace before the model was read into it. On a block that came
+  zero-filled, Normal never made the kana re-read and Large made no re-read at all (it has no head gate, so both
+  triggers need the flag); other bytes could make Small, which has neither, read again every line either trigger
+  found. If the console's new blocks do come zero-filled, a Normal or Large line read with the LM may now show a small
+  ヵ or ヶ where it showed a full-size カ or ケ. Host-tested with the release models on fresh workspaces of 0x00 and
+  0xA5 bytes, at both of the job's load sites; the 358 development regions' texts are the same at every size (none
+  of their lines needs a re-read). Whether the console's new blocks come zero-filled is not known. Not yet run on a
+  console.
 - A Small or Normal OCR job with the text spotter takes 114,688 B (Small) or 57,344 B (Normal) less of the game's
   memory at a textbox with the default settings, the LM, the cascade and both helpers (host build; #528,
   Mmem-regress-2): the spotter's arena runs over the parts of the
