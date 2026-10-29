@@ -864,9 +864,11 @@ static void scenario_job(const char *name, const VjoConfig *c, uint32_t flags, c
         if (s->id == VJO_GSTEP_CHECK && !s->rc) {
             tier = VJO_GCHECK_TIER(s->kind); lm = s->kind & 7u; casc = !!(s->kind & VJO_GCHECK_CASCADE);
         }
-        if (s->id == VJO_GSTEP_SPOT) spot = s->kind == 1 && !s->rc;
-        if (s->id == VJO_GSTEP_PAR) helpers = s->arg;
     }
+    /* the spotter and the helpers from the job's whole stats (game_ocr/main.c host_last_stats): a cold job's step log
+     * is full before its SPOT and PAR steps (Mmem-game-7); the PAR step's arg is stats.helpers */
+    spot = host_last_stats.spot_ran && !host_last_stats.spot_rc;
+    helpers = host_last_stats.helpers;
     told = rc == 0 || (rc == VJO_E_OOM && last_out.reserve_bytes != 0);
     fprintf(stderr, "owner-scenario game %s: free=%lld rc=%d failed=%d tier=%u lm=%u cascade=%u spot=%u "
                     "helpers=%u peak=%lld lines=%u told=%d\n", name, (long long)free_bytes, rc, rc != 0, rc ? 0u : tier,

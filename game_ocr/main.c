@@ -2141,6 +2141,11 @@ static __attribute__((noinline)) int no_memory_answer(const VjoGameOcrRequest *r
     return 1;
 }
 
+#ifdef VJO_HOST
+/* The last job's stats, for the host tests only (#528's owner scenario: a cold job's step log is full before its SPOT
+ * and PAR steps, Mmem-game-7). The Vita build has no such copy. */
+static VjoVocrStats host_last_stats;
+#endif
 int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     if (!r || !out) return VJO_E_SOURCE;
@@ -2928,6 +2933,9 @@ done:
     hooks_result(out, rc);
     out->rc = rc; active_seq = 0;
     log_to = NULL;
+#ifdef VJO_HOST
+    host_last_stats = stats; /* the host tests: the job's stats whole (the step log keeps VJO_GAME_OCR_STEPS) */
+#endif
     return rc;
 }
 
