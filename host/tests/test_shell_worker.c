@@ -9398,6 +9398,7 @@ static void test_overlay_page_needs_its_own_room(void)
     TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) == NULL);
     TEST_CHECK_(logged("overlay page Paf reserve guard: free=110952 requested=103296 reserve=65536") != NULL, "%s",
                 scenario_last_log());
+    TEST_CHECK(!logged("overlay page Paf allocation")); /* a refusal logs no success line, in either build (#552) */
     TEST_CHECK(scenario_ui && vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_UI) == VJO_OVERLAY_MEM_BYTES); /* kept */
     /* the threshold, then one byte under it */
     scenario_others = (int64_t)VJO_PAF_HEAP - need - 28672;
@@ -9407,6 +9408,8 @@ static void test_overlay_page_needs_its_own_room(void)
                (VJO_DEBUG != 0));
     scenario_others++;
     TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) == NULL);
+    TEST_CHECK_(strstr(scenario_last_log(), "overlay page Paf reserve guard: free=168831 ") != NULL, "%s",
+                scenario_last_log()); /* the refusal's line is the last: no success line after it */
     /* the logs' lowest press: 202,296 B free beside 0.10.1's 8,192 B opens */
     scenario_level(202296u, 8192u);
     TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) == scenario_ui);

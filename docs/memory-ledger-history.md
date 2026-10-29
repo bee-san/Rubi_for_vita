@@ -2433,7 +2433,8 @@ audit-mem-paf-1 (MERGE_OK for #534 and #537) asked for:
   unchanged, data unchanged, pages unchanged in both [measured: `tools/check_memory_ledger.py`'s module rows, the
   gate's image].
 - **The figures.** The page took a median 94,800 B and at most 103,296 B over its 81 measured opens (74 of them
-  92,368-103,296 B; the 7 smaller ones allocated before the page had laid out its text): "94,672-103,296 B" was
+  92,368-103,296 B; of the 7 smaller ones, three allocated before `PageOpen` and two had a read give the result arena
+  back between the samples, 95,248 and 95,376 B with it added back, audit-mem-paf-2): "94,672-103,296 B" was
   wrong. SceShell's own in-session swing, with Rubi at its 8 KiB and no page open, is a median 20,008 B, 117,888 B
   at the 95th percentile and 370,272 B at most (286 sessions); the 21,904 / 149,728 / 486,176 B figures had our
   blocks and the page in the samples. The 17,712 B between two of our allocations within one open include the page's
@@ -2459,4 +2460,30 @@ overlay's frame, into which `strip_open` is inlined, keeps nothing across it). W
 overlay page's room check waits for that measurement (mem-lead, Mmem-lead-7). Debug Shell text 98,196 -> 98,268 B
 (36 B of code room left), normal 85,996 B unchanged, data unchanged, pages unchanged in both [measured:
 `tools/check_memory_ledger.py`'s module rows, the gate's image, main `1ab1b7a6`].
+
+## The overlay's Paf: audit-mem-paf-2's follow-up (#528)
+
+audit-mem-paf-2 (MERGE_OK for #539 and #552) found, and this change does:
+
+- **Figures** (docs/memory-ledger.md, the budget header): the most Rubi held in the logs was 241,664 B, not 225,280 B
+  (an API 33 debug boot: the plugin, the text block, a result arena, a line-history visit and an Anki save at once),
+  and that open's page took 102,912 B: 344,576 B, 384 B under #539's worst case [measured, log]. The line-history
+  visits logged 1,591 B of lines each (1,747 B with the table), not "sizes not logged". Of the page's 7 small samples,
+  three allocated before `PageOpen` and two had a read give the result arena back between the samples (95,248 and
+  95,376 B with it added back). The debug sample's recipe: the page took this line's free size less the open's next
+  Paf line's (`shell/paf_guard.h`; the sign was wrong). Stale headroom and worst-case lines since #548's Anki bound:
+  681,088 B, 304,000 B.
+- **Tests.** `tools/tests/test_shell_paf.py` reads statements, not text: the take must be its own statement at the top
+  of `vjo_worker_start` (not under an `if`, a nested block or a preprocessor conditional), after both threads started,
+  after every failure exit and before the boot ledger line; `open_page` must return when `vjo_overlay_mem_open` refuses
+  before it calls `PageOpen`. Mutants that passed before now fail (the call under `if (0)` or `#if 0`, `open_page`
+  ignoring the check), and harmless edits (spacing in a call, a declaration before the definition, a definition's
+  name on its own line, the free size through a local) pass. `overlay_page_needs_its_own_room` checks that a refusal
+  logs no success line.
+- **The strip's sample** (#563) is logged only when the strip page opened: a failed open is `strip_open`'s own line,
+  as before #563, so a failed open costs one line per frame again, not two. No code byte in either build.
+- **Not changed:** a failed strip `PageOpen` is still tried again at every frame, as in 0.10.1 (Maudit-mem-paf-2-5,
+  latent: no such line in the logs). A latch against it takes 32 B of the normal Shell's code (measured, two forms
+  tried: a version latch and one on `s_fresh`), which has 20 B; it waits for room. The refusal notice
+  (Maudit-mem-paf-2-6) waits for the strip's measurement (Mmem-lead-7).
 
