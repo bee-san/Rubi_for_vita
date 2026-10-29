@@ -2333,7 +2333,89 @@ static void test_a_save_with_its_arena_cut_at_every_block(void)
            "screenshot, %u other\n", total, refused, same, fewer, other);
 }
 
+/* audit-mem-leak-4 (#569), Maudit-mem-leak-4-3: each alternates case reaches read_more's search and its card keeps
+ * other readings; and the fullest card made of the spelling's other readings (n dictionaries x 8 entries: dictionary
+ * 0's 7 others fill the card) is the same record in the bound's arena as in a 1 MiB one (bound_check). */
+static void test_alternates_reach_the_search_and_the_card(void)
+{
+    static const BoundCase cases[] = {
+        {8, 4, 0, 1, 8150, 0, VJO_STRIP_MAX - 1}, {2, 8, 0, 0, 4000, 0, VJO_STRIP_MAX - 1},
+        {2, 8, 1, 1, 4000, 0, VJO_STRIP_MAX - 1}, {8, 3, 1, 0, 2000, 0, 15},
+    };
+    static uint8_t mem[128 * 1024];
+    static VjoLocalPage out[VJO_LOCAL_MAX_RESULTS];
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const BoundCase *c = &cases[i];
+        VjoArena a;
+        VjoPlatform p;
+        int full = 0, n, more = 0, alt_kept = 0;
+        size_t peak;
+        const char *ref;
+        TEST_ASSERT(bound_setup(c) == 0);
+        vjo_arena_init(&a, mem, sizeof(mem));
+        vjo_platform_vita(&p);
+        n = vjo_local_alternates(&a, &p, &cfg, &bound_pages, out, VJO_LOCAL_MAX_RESULTS, &full);
+        ref = reference_record(1, 0, &peak, &more);
+        /* an entry j >= 1 of a dictionary on the card is one of its other readings ("[Dictionary k]\n<j>") */
+        for (int k = 0; k < c->n_dicts && ref; k++)
+            for (int j = 1; j < c->per_dict; j++) {
+                char needle[48];
+                snprintf(needle, sizeof(needle), "\"[Dictionary %d]\\n%d", k, j);
+                alt_kept += strstr(ref, needle) != NULL;
+            }
+        printf("%d x %d%s: search located %d (expected %d), full %d; card keeps %d more, %d of them other "
+               "readings\n", c->n_dicts, c->per_dict, c->key192 ? " (192-byte spelling)" : "", n,
+               c->n_dicts * (c->per_dict - 1), full, more, alt_kept);
+        TEST_CHECK(n == c->n_dicts * (c->per_dict - 1) && alt_kept > 0);
+        finish();
+    }
+}
+
+/* The least cap (8-byte steps) at which case c's card is the 1 MiB arena's. */
+static size_t fullest_least(const BoundCase *c)
+{
+    size_t cl = 4096, ch = ANKI_FULLEST;
+    if (!bound_save(c, ch).same) return 0;
+    while (ch - cl > 8) {
+        size_t mid = (cl + (ch - cl) / 2) & ~(size_t)7;
+        if (bound_save(c, mid).same) ch = mid; else cl = mid;
+    }
+    return ch;
+}
+
+/* The fullest card of other readings: n x 8 entries of the spelling, every meaning as long as all 7 others
+ * (dictionary 0's other readings) are kept, the record within 8 B of VJO_QUEUE_TEXT_MAX; the search's upper end
+ * (4,100 B) keeps 8 such payloads within DictFile's 43,008 B. Short text, titled or not. */
+static void test_the_fullest_card_of_other_readings(void)
+{
+    static const int dicts[] = {2, 4, 8};
+    for (unsigned di = 0; di < 3; di++)
+    for (int titled = 0; titled < 2; titled++)
+        for (int key192 = 0; key192 < 2; key192++) {
+            BoundCase c = {dicts[di], 8, key192, titled, 0, 0, 15};
+            size_t lo = 200, hi = 4100, record = 0, least;
+            int more = 0;
+            char what[160];
+            while (hi - lo > 1) {
+                c.meaning_len = (lo + hi) / 2;
+                if (bound_probe(&c, &more, &record) && more == 7) lo = c.meaning_len;
+                else hi = c.meaning_len;
+            }
+            c.meaning_len = lo;
+            TEST_ASSERT(bound_probe(&c, &more, &record) && more == 7);
+            snprintf(what, sizeof(what), "the fullest card of other readings (%d x 8%s, %s), meanings %u B, "
+                     "%d located", c.n_dicts, key192 ? ", a 192-byte spelling" : "", titled ? "titled" : "no title",
+                     (unsigned)lo, c.n_dicts * 7);
+            bound_check(what, &c);
+            least = fullest_least(&c);
+            printf("least arena, %s: %u B\n", what, (unsigned)least);
+        }
+}
+
+
 TEST_LIST = {
+    {"alternates reach the search and the card (audit-mem-leak-4)", test_alternates_reach_the_search_and_the_card},
+    {"the fullest card of other readings fits the bound (audit-mem-leak-4)", test_the_fullest_card_of_other_readings},
     {"anki_off_by_default_starts_no_thread_and_allocates_nothing", test_off_by_default_allocates_nothing},
     {"enter_saves_offline_and_the_queue_survives_restart", test_enter_saves_offline},
     {"a_card_exported_before_says_so", test_a_card_exported_before_says_so},
