@@ -38,10 +38,9 @@ vita-vn-ocr's cost model at the pin, estimates):
 | `sha256_vocr6_l`: Large's 2,475,680 B weights | model | 7.07 ms | 94,155,682 | 106.6-237.4 ms | 142.1-313.7 ms | yes |
 
 A job row is its compute at one clock; on the console the spotter runs at the game's clock (before the boost, which
-starts at the first recognized line) and the recognition at 444 MHz. On the sample the default job reads 8 strips:
-the spotter's pass, one stable-text pass and the lines (13 before the spotter's boxes took their dark flags from
-the pixels the job fetches for each line, [below](#the-spotters-dark-flags-at-the-lines-fetch), 11 before the
-stable-text wait read its pass at its due time, [below](#the-stable-text-waits-pass-at-its-due-time)).
+starts at the first recognized line) and the recognition at 444 MHz. On the sample the default job reads 11 strips:
+the spotter's pass, two stable-text passes and the lines (13 before the spotter's boxes took their dark flags from
+the pixels the job fetches for each line, [below](#the-spotters-dark-flags-at-the-lines-fetch)).
 
 Where Large's job's instructions go (A9 lane): the recognizer 80% (`mm_i16` 68%), the spotter 12% (`chain` 7.9%,
 `feed` 3.9%), the row checksums 3.2% (`stream_read`), the LM parsed again 1.1% (`vocr_lm_load`, every job, on bytes
@@ -108,35 +107,30 @@ large region, 30 fps); elsewhere the strips were read inside the wait anyway, an
 early pass more instead (0.26 a job at 60 fps). In some regions that early pass makes the job one display frame
 slower: its first pass now starts before the due time, so it does not count, and a second pass follows the sleep
 (of the 358 regions, 106 faster, 234 the same and 18 slower by 16-17 ms at 60 fps; 161, 159 and 38 slower by 33-67
-ms at 30 fps). The next change, [below](#the-stable-text-waits-pass-at-its-due-time), reads that pass at its due time
-instead: none is slower then. Every strip not read is also a copy the display hook does not make in
+ms at 30 fps). Reading that pass at its due time instead was tried and reverted, [below](#the-stable-text-waits-pass-at-its-due-time-tried-reverted). Every strip not read is also a copy the display hook does not make in
 the game's own display call: 0.7-2.5 ms of the game's frame each (A9, `capture_abgr` above). A changed screen is still
 seen: the stable-text pass reads every row again (without the wait, one more pass does, since #545's audit), and
 each line's fetch reads its rows again, each checked.
 
-### The stable-text wait's pass at its due time
+### The stable-text wait's pass at its due time (tried, reverted)
 
 After the finder, the stable-text wait (`settle_verify`) re-reads the region until a pass starts `settle_us` (150 ms)
-after the rows were first read the same. A job whose finder had re-read the region itself (GRAD's second pass, a
-one-strip region's re-read) slept until then and read one pass; a job of the spotter, which reads the region once,
-read one pass at once, which could not count when it began before the due time, then slept and read another. The
-wait now sleeps until the due time before its first pass too: one pass, at that time. The rule is unchanged (the rows
-must read the same over at least `settle_us`); what changes is when a change after the finding is seen: at the due
-time, not just after the finding, so a job whose screen changes then begins its next try later by at most the time
-between its finding's end and that due time (about 60 ms for a dialogue box found in 90 ms; nothing for a large region
-whose finding runs past it) [estimate]. Measured (host, this bench; console ms estimated):
-
-| | before | after |
-|---|---:|---:|
-| sample's box (`job_vocr6_n`): strips; stable-text passes | 11; 2 | 8; 1 |
-| full screen (`job_vocr6_n_full`): strips | 24 | 24 (its finding ends past the due time) |
-| 358 dev regions, Normal, 60 fps: strips a job; simulated display | 9.22; 221.9 ms | 7.14; −5.7 ms mean (90 faster, none slower, up to −67) |
-| the same at 30 fps | 8.40; 323.6 ms | 7.14; −19.4 ms mean (172 faster, none slower, up to −100) |
-| texts (every byte, the shown and the greedy text) | | identical: 0 of 358 regions differ, at both rates |
-
-Every strip not read is a copy the display hook does not make in the game's own display call (0.7-2.5 ms of its frame
-each, A9). Host test `vocr_spot the_wait_reads_one_pass_at_its_due_time`: one stable-text pass and one sleep for an
-early finding, and a change during the sleep seen by that pass (a second try, the changed frame's boxes).
+after the rows were first read the same. A job of the spotter, which reads the region once, re-reads it at once (a pass
+that cannot count when it begins before the due time), sleeps, and reads the pass that counts at the due time; a job
+whose finder re-read the region itself (GRAD's second pass, a one-strip region's re-read) sleeps first. #565 had the
+spotter's jobs sleep first too: one pass instead of two. On this bench (each strip one display frame) that read 2.08
+strips fewer a job at 60 fps and was 5.7 ms sooner on average, none slower, with the same texts. Its audit
+(audit-speed-ocr-4, #565) timed the same jobs on screens that change, also on a display paced by frames (a strip
+waits for the next frame boundary, as the console's does after a sleep), and found the early pass worth keeping
+there: on CLANNAD's 852×135 box at 60 fps on that display a still screen's text came no sooner, and with an icon
+blinking every 4-30 frames, the player advancing or a screen that never holds still it came 10-50 ms later on average
+(up to 217 ms: an icon back in its first state at the single pass tears later, at a line's fetch); at 30 fps most of
+them came 54-176 ms sooner (a 4-frame icon and a never-still screen 25-33 ms later), but CLANNAD runs at 60. So the early re-read is back, and the host test `vocr_spot
+the_wait_rereads_at_once_and_counts_at_its_due_time` pins it: the counting pass starts exactly `settle_us` after the
+first pass, a change during the sleep is seen by it, and a wait whose budget ends during the sleep goes on without
+settling. A rule that keeps the early re-read only where it ends before the due time (else sleeps first) would take
+the 30 fps gain without the 60 fps cost; it needs the strip time without the spotter's compute in it, which this
+bench does not model (Mspeed-ocr-8).
 
 ### A job's CPU: the LM's parse kept, the rows' checksums
 

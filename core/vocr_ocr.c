@@ -932,13 +932,14 @@ static int settle_wait(Stream *s)
 
 /* After the finder: re-reads the region until a whole pass started settle_us
  * after the rows were first read the same (pass_from). A change is a tear: the
- * lines found are not the screen's any more. A pass that would start too early
- * is not read: the job sleeps until it is due (with a sleep callback), so a job
- * whose finding ended before then reads the region once more, at that time. (#528:
- * until then the first re-read came at once, which could not count when it began
- * before the due time, and another followed the sleep; a finder that re-read the
- * region itself, GRAD's second pass, already slept first. A change is now seen at
- * the due time, not before it: the stable-text wait's rule is unchanged.) */
+ * lines found are not the screen's any more. Once one re-read has matched, a
+ * pass that would start too early is not read: the job sleeps until it is due
+ * (with a sleep callback). The first re-read comes at once, even before the due
+ * time, when it cannot count: a change after the finding (an icon's next state,
+ * the player advancing) is seen then, not at the due time. (#565 slept first
+ * instead. Its audit measured, on a simulated 60 fps display paced by frames, the
+ * text of a screen with a blinking icon or a change 10-50 ms later on average,
+ * up to 217 ms, and a still screen's no sooner: restored, #528.) */
 static int settle_verify(Stream *s)
 {
     uint32_t t0 = clock_us(s->p);
@@ -946,7 +947,7 @@ static int settle_verify(Stream *s)
     while (!s->verified || s->verified_from - s->pass_from < s->pol->settle_us) {
         uint32_t now = clock_us(s->p), due = s->pass_from + s->pol->settle_us;
         if (now - t0 >= s->settle_left || s->st->strips >= VJO_VOCR_SETTLE_READS) { over = 1; break; }
-        if (s->pol->sleep && (int32_t)(due - now) > 0) {
+        if (s->verified && s->pol->sleep && (int32_t)(due - now) > 0) {
             uint32_t nap = due - now, left = s->settle_left - (now - t0);
             s->pol->sleep(nap < left ? nap : left);
             if (cancelled(s->src)) { s->err = VJO_E_CANCELLED; break; }
