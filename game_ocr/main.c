@@ -2430,7 +2430,7 @@ retry_smaller:
         const uint32_t held = held_bytes(&spot_res);
         const size_t extra = extra_job_bytes(use, lm, casc), block = use_bytes + extra;
         /* #528: the spotter's part runs over the job and the core's extras after it (core/vocr_ocr.c run_job): the
-         * workspace grows only by what the part passes them by (Large's, and every job with an LM: none) */
+         * workspace grows only by what the part passes them by (Large's, and every job with the cascade: none) */
         const size_t with = vjo_vocr_job_bytes_spot(use->name, r->width, r->height, spot_rows ? spot_bytes : 0),
                      room = use_bytes + (extra ? extra - VJO_GAME_OCR_TEXT_BYTES : 0u), more = with > room ? with - room : 0u;
         const uint32_t grow = more ? PAGE_ROUND(block + more) - PAGE_ROUND(block) : 0u;

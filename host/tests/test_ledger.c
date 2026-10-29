@@ -153,6 +153,31 @@ static size_t full_job(const char *model, const char *cascade)
     return (own + extras > spot ? own + extras : spot) + VJO_GAME_OCR_TEXT_BYTES +
            vjo_vocr_helpers_bytes(model, VJO_VOCR_HELPERS_MAX);
 }
+/* #528 (audit-mem-game-2): the spotter's part runs from the scratch over the parts after it (core/vocr_ocr.c run_job),
+ * which recognize writes only after the find; a helper's context is planned at its first line's dispatch. That order
+ * matters only where the part reaches a context: for every model of rows and every region it ends before the first
+ * helper's (the job, the caller's line slot, the helper's arena: with no refinement, LM or cascade between, the
+ * closest it can be), so a model with a smaller arena than these makes the order a tested property again. */
+static void test_the_spotters_part_never_reaches_a_helpers_context(void)
+{
+    unsigned n = 0, checked = 0;
+    const VjoVocrModel *all = vjo_vocr_models(&n);
+    for (unsigned i = 0; i < n; i++) {
+        if (all[i].finder_mode & VJO_VOCR_FINDER_COLUMNS) continue; /* a model of columns reads without the spotter */
+        const size_t slot = vjo_vocr_helpers_bytes(all[i].name, 1) - vjo_vocr_helper_bytes(all[i].name);
+        for (unsigned w = 8; w <= VJO_OCR_MAX_WIDTH; w += 8)
+            for (unsigned h = 8; h <= VJO_OCR_MAX_HEIGHT; h += 8) {
+                const size_t job = vjo_vocr_job_bytes(all[i].name, w, h);
+                const size_t part_end = vjo_vocr_job_bytes_spot(all[i].name, w, h, vjo_vocr_spot_bytes_max());
+                const size_t context = job + slot + (((size_t)all[i].arena_bytes + 15u) & ~(size_t)15u);
+                TEST_CHECK_(job && part_end <= context, "%s at %ux%u: the part ends at %zu B, the first helper's "
+                            "context starts at %zu B", all[i].name, w, h, part_end, context);
+                checked++;
+            }
+    }
+    TEST_CHECK(checked > 0);
+}
+
 static void test_game_workspace_budget_matches_the_layout(void)
 {
     static const char *const tiers[] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME};
@@ -231,6 +256,7 @@ static void test_vertical_job_fits_the_workspace_budget(void)
 #endif
 
 TEST_LIST = {
+    {"the spotter's part never reaches a helper's context", test_the_spotters_part_never_reaches_a_helpers_context},
     {"add_sub_and_peaks", test_add_sub_and_peaks},
     {"budget_table_is_consistent", test_budget_table_is_consistent},
 #ifdef VJO_WITH_VOCR
