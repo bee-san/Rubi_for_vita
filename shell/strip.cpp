@@ -141,16 +141,16 @@ static void strip_fit(void)
     if (sh > SCREEN_H)
         sh = SCREEN_H;
     if (s_strip_box) {
-        s_strip_box->SetSize(STRIP_BOX_W, h, 0.0f);
-        s_strip_box->SetPos(0.0f, 0.0f, 0.0f);
+        vjo_paf_size(s_strip_box, STRIP_BOX_W, h);
+        vjo_paf_pos(s_strip_box, 0.0f, 0.0f);
     }
     if (s_strip) {
-        s_strip->SetSize((float)SCREEN_W, sh, 0.0f);
-        s_strip->SetPos(0.0f, SCREEN_H / 2.0f - sh / 2.0f, 0.0f);
+        vjo_paf_size(s_strip, (float)SCREEN_W, sh);
+        vjo_paf_pos(s_strip, 0.0f, SCREEN_H / 2.0f - sh / 2.0f);
         s_strip->Show();
     }
     if (s_strip_busy)
-        s_strip_busy->SetPos(SCREEN_W / 2.0f - STRIP_BUSY_INSET, -sh / 2.0f + STRIP_BUSY_INSET, 0.0f);
+        vjo_paf_pos(s_strip_busy, SCREEN_W / 2.0f - STRIP_BUSY_INSET, -sh / 2.0f + STRIP_BUSY_INSET);
 }
 
 static void strip_open(Plugin *plugin)
@@ -163,10 +163,11 @@ static void strip_open(Plugin *plugin)
         vjo_log("strip page failed to open");
         return;
     }
-    s_strip = s_strip_page->FindChild("vjo_strip");
-    s_strip_box = s_strip_page->FindChild("vjo_strip_box");
-    s_strip_text = (ui::Text *)s_strip_page->FindChild("vjo_strip_text");
-    s_strip_busy = (ui::BusyIndicator *)s_strip_page->FindChild("vjo_strip_busy");
+    vjo_colour_page(s_strip_page);
+    s_strip = vjo_paf_child(s_strip_page, "vjo_strip");
+    s_strip_box = vjo_paf_child(s_strip_page, "vjo_strip_box");
+    s_strip_text = (ui::Text *)vjo_paf_child(s_strip_page, "vjo_strip_text");
+    s_strip_busy = (ui::BusyIndicator *)vjo_paf_child(s_strip_page, "vjo_strip_busy");
     if (s_strip_text) {
         s_strip_text->SetLayoutAttribute(graph::TextLayoutAttribute_WordWrap, true);
         s_strip_text->SetLayoutAttribute(graph::TextLayoutAttribute_Kinsoku, true);

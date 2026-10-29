@@ -47,7 +47,7 @@ target_compile_options(vjo_taihen_parser PRIVATE -w)
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
   core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/history_read.c core/streak.c core/streak_scan.c
-  core/entries.c core/config.c core/regions.c
+  core/entries.c core/config.c core/colour_scheme.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
@@ -369,6 +369,8 @@ vjo_suite(apkg SOURCES host/tests/test_apkg.c settings/app_queue.c settings/app_
 # shell/log_vita.c on an in-memory file system: a batch of lines (vjo_log_batch_begin/end)
 # writes the same bytes in the same order as line by line, with one append per file.
 vjo_suite(shell_log SOURCES host/tests/test_shell_log.c INCLUDES host/tests/log_stubs DEFINES VJO_HOST=1 UNUSED)
+# The shared app/overlay palette and the exact Shell surface recolouring loop over host widgets.
+vjo_suite(colour_scheme SOURCES host/tests/test_colour_scheme.cpp FEATURES cxx_std_11 LIBS vjo_host)
 # The Shell's VjoPlatform (shell/platform_vita.c): its files over stubbed sceIo, and its clock.
 vjo_suite(platform_vita SOURCES host/tests/test_platform_vita.c INCLUDES host/tests/vita_stubs UNUSED LIBS vjo_core)
 set_tests_properties(platform_vita PROPERTIES TIMEOUT 60) # a read loop that never ends fails, not hangs

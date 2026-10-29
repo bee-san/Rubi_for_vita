@@ -5,8 +5,10 @@
 #include <string.h>
 
 #include "../core/regions.h"
+#include "../core/colour_scheme.h"
 #include "../vita/games_storage.h" /* vjo_io_read_fd, vjo_io_exists, vjo_io_missing (#418: one copy in the Shell) */
 #include "shell.h"
+#include "../core/port.h"
 
 #define MAX_FILE (64 * 1024)
 
@@ -117,4 +119,20 @@ int vjo_region_save(const char *title_id, const VjoRect *r, VjoArena *scratch)
     }
     vjo_arena_release(scratch, mark);
     return rc;
+}
+
+/* Read only at game activation, in the existing control scratch; never on an input or render path. */
+__attribute__((noinline)) int vjo_colour_scheme_load(VjoArena *scratch)
+{
+    static const char path[] VJO_DATA_TABLE(appearance_path) = VJO_DATA_DIR "/app.ini";
+    static const char backup[] VJO_DATA_TABLE(appearance_backup) = VJO_DATA_DIR "/app.ini.bak";
+    size_t mark = vjo_arena_mark(scratch), len = 0;
+    char *text = file_read_limit(scratch, path, &len, VJO_CONFIG_TEXT_MAX);
+    if (!text && vjo_io_missing(path)) {
+        vjo_arena_release(scratch, mark);
+        text = file_read_limit(scratch, backup, &len, VJO_CONFIG_TEXT_MAX);
+    }
+    int scheme = vjo_colour_scheme_parse(text, len);
+    vjo_arena_release(scratch, mark);
+    return scheme;
 }

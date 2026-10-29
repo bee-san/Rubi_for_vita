@@ -9,6 +9,7 @@
 
 extern "C" {
 #include "../core/styled.h"
+#include "../core/colour_scheme.h"
 #include "shell.h"
 }
 
@@ -17,7 +18,7 @@ extern "C" {
 #define BOX_W 920.0f /* text width: the screen less the side margins */
 
 /* paf::math::v2/v4 keep their floats private. */
-static inline paf::math::v2 v2f(float x, float y)
+static __attribute__((noinline)) paf::math::v2 v2f(float x, float y)
 {
     paf::math::v2 v;
     float f[2] = {x, y};
@@ -32,16 +33,20 @@ static inline float v2_get(const paf::math::v2 &v, int k)
     return f[k];
 }
 
-static inline paf::math::v4 rgba(uint32_t rgb)
-{
-    return paf::math::v4(((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f, 1.0f);
-}
+/* One implementation in overlay.cpp, shared by text, highlights, surfaces and the subtitle strip. */
+paf::math::v4 rgba(uint32_t rgb, float alpha = 1.0f);
+void vjo_colour_page(paf::ui::Scene *page);
+paf::ui::Widget *vjo_paf_child(paf::ui::Scene *page, const char *name);
+void vjo_paf_pos(paf::ui::Widget *w, float x, float y);
+void vjo_paf_size(paf::ui::Widget *w, float width, float height);
 
 static inline void text_set(paf::ui::Text *w, const VjoStyled *st)
 {
     if (!w)
         return;
     w->SetString(paf::wstring((const wchar_t *)st->text, st->len));
+    /* Text past the semantic spans (a clipped kanji block) still needs the theme's base colour. */
+    w->SetStyleAttribute(paf::graph::TextStyleAttribute_Color, 0, st->len, rgba(VJO_RGB_TEXT));
     for (int i = 0; i < st->n_spans; i++) {
         const VjoSpan *sp = &st->spans[i];
         /* Point takes a v2 (glyph width, height), as in GrapheneCt's NetStream */
@@ -52,7 +57,7 @@ static inline void text_set(paf::ui::Text *w, const VjoStyled *st)
 }
 
 /* Laid-out size of a Text's content; 0 if not laid out yet. */
-static inline float text_bound(paf::ui::Text *w, int k)
+static __attribute__((noinline)) float text_bound(paf::ui::Text *w, int k)
 {
     paf::math::v2 b;
     if (!w || w->GetBounds(b) < 0)
@@ -65,7 +70,7 @@ static inline float text_height(paf::ui::Text *w)
     return text_bound(w, 1);
 }
 
-static inline void font_px(int *ja, int *en)
+static __attribute__((noinline)) void font_px(int *ja, int *en)
 {
     vjo_view_lock();
     *ja = vjo_font_px(g_view.font_size_ja);

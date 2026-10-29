@@ -145,7 +145,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/json.c
   ${ROOT}/core/textfilter.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/entries.c
   ${ROOT}/core/history_lines.c ${ROOT}/core/streak.c
-  ${ROOT}/core/config.c ${ROOT}/core/regions.c
+  ${ROOT}/core/config.c ${ROOT}/core/colour_scheme.c ${ROOT}/core/regions.c
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
@@ -177,7 +177,7 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
 # (core/textfilter.c, once per recognized text and per earlier line: 288 -> 240 B)
 # are built for size for the room line history's code takes in the normal Shell's
 # text pages (docs/line-history.md).
-set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
+set_source_files_properties(${ROOT}/core/colour_scheme.c ${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c
   ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/client.c
@@ -430,7 +430,7 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
   ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
   ${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
-  ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
+  ${ROOT}/core/config.c ${ROOT}/core/colour_scheme.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/core/regions.c # #358: Suggest a text box, region.ini's line for every game (settings/preferences.c)
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
   ${VJO_SETTINGS_ANKI_SRC} ${VJO_SETTINGS_HISTORY_SRC} ${VJO_SETTINGS_LOOKUP_SRC})

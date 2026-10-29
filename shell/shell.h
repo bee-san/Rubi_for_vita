@@ -109,6 +109,7 @@ typedef struct {
      * Last, so that no other field moves. */
     uint32_t suggest;
     int full_scan_requested; /* one-shot UI handoff: dismiss an in-progress region selector */
+    int colour_scheme; /* app.ini, latched for this game process; atomic UI read */
 } VjoView;
 
 extern VjoView g_view;
@@ -348,6 +349,7 @@ int vjo_file_write(const char *path, const void *data, size_t len);
 int vjo_file_line(const char *path, char *buf, int cap);
 int vjo_file_exists(const char *path);
 void vjo_config_load(VjoConfig *cfg, VjoArena *scratch);
+int vjo_colour_scheme_load(VjoArena *scratch);
 /* title_id's region (VJO_REGION_* from core/regions.h). */
 int vjo_region_load(const char *title_id, VjoRect *out, VjoArena *scratch);
 /* Saves title_id's region; NULL = the full screen. Other games' lines are

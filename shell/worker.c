@@ -2957,6 +2957,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     game_static_fb = mode == VJO_GAME_STATIC_FB; /* API 55: WAIT_HINT_PAUSE's game */
     if (pid != hook_pid) { /* API 31: log this game session's installation counts again. */
         hook_pid = pid;
+        __atomic_store_n(&g_view.colour_scheme, vjo_colour_scheme_load(&scratch), __ATOMIC_RELEASE);
         hook_logged[0] = 0;
     }
     if (!vjo_game_enabled(tid, id->psp, &title_line_fix, &scratch)) {

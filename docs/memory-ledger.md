@@ -24,6 +24,8 @@ sections code comments cite by title ("Vertical text") and, at its end, the budg
 PR #518's [compact suffix pool](memory-ledger-history.md#compact-suffix-table-pr-518-merge-gate-repair) brings
 the combined Shell back within the declared 167,936 B debug / 155,648 B normal module limits. The limits and
 allocation budgets below are unchanged; the history records the packaged-binary measurements.
+The [shared overlay colour schemes](memory-ledger-history.md#app-colour-schemes-in-the-overlay) also fit
+these limits by sharing PAF helpers; they add no allocation sites or pool budgets.
 
 The pool figures below are the combined source's declared budgets, including line history's
 16 KiB visit. They are not console measurements or proof that the combined modules fit.

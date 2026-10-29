@@ -1,6 +1,7 @@
 /* The Rubi app's own settings: ux0:data/VitaJPOverlay/app.ini (#310's rule for app features; #311, #314).
  *
- * The overlay never reads this file. config.ini is the overlay's: a key it does not know shows "unknown setting" in
+ * The overlay reads only colour_scheme at game activation. config.ini holds its other settings: a key it does
+ * not know shows "unknown setting" in
  * the open overlay (core/config.c), and teaching the Shell a key costs Shell bytes, so a choice that only the app
  * uses lives here. The lines are config.ini's: `key = value`, comments after ';' or '#' (also after a value, behind
  * a space or tab), a UTF-8 BOM and CRLF line ends allowed, keys and values in any case. A key the app does not know,
@@ -33,7 +34,7 @@ typedef struct {
     int anki_card_type;  /* VJO_CARD_* (core/lapis.h): word, the default */
     int anki_game_tag;   /* 1 (the default): each note has its game's tag, Game::<title> */
     int anki_sentence_readings; /* 1 (the default, reports/sentence-readings.md): readings over the sentence */
-    int colour_scheme; /* VJO_THEME_*: Default (yellow), Mint or Paper, app pages only */
+    int colour_scheme; /* VJO_THEME_*: Default (yellow), Mint or Paper, app pages and in-game overlay */
 } VjoAppPrefs;
 
 /* Every setting at its default (here, so that code which only follows the settings, as the export does, needs no

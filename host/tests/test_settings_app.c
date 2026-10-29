@@ -1583,7 +1583,7 @@ static void test_app_colour_schemes(void)
     for (int i = 0; i < 7; i++) {
         int f = frames[i];
         const VjoAppTheme *t = vjo_app_theme(choices[i]);
-        TEST_CHECK(shown[f].clear == t->bg && shows(f, "Selected") && shows(f, "App colour scheme"));
+        TEST_CHECK(shown[f].clear == t->bg && shows(f, "Selected") && shows(f, "Restart your game"));
         const Text *selected_label = text_at(f, 112 + 245, 24 + choices[i] * 312, 24 + choices[i] * 312 + 288);
         TEST_CHECK(selected_label && !strcmp(selected_label->text, "Selected") && selected_label->color == t->bg);
         TEST_CHECK(shown[f].rect[0].color == t->accent); /* the shared header */

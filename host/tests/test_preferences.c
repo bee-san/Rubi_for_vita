@@ -1451,7 +1451,33 @@ static void test_suggest_lives_in_region_ini_and_the_shell_reads_it(void)
     unlink(VJO_PREFERENCES_REGION_PATH ".tmp");
 }
 
+static void put_theme(const char *path, const char *text) { put_file(path, text, strlen(text)); }
+static void test_shell_colour_scheme(void)
+{
+    reset();
+    VjoArena shell; unsigned char mem[24 * 1024];
+    vjo_arena_init(&shell, mem, sizeof(mem));
+    TEST_CHECK(vjo_colour_scheme_load(&shell) == 0 && !shell.used && !handles);
+    put_theme("ux0:data/VitaJPOverlay/app.ini", "colour_scheme = mint\nanki_card_type = sentence\n");
+    TEST_CHECK(vjo_colour_scheme_load(&shell) == 1 && !shell.used && !handles);
+    unlink("ux0:data/VitaJPOverlay/app.ini");
+    put_theme("ux0:data/VitaJPOverlay/app.ini.bak", "colour_scheme = paper\n");
+    TEST_CHECK(vjo_colour_scheme_load(&shell) == 2 && !shell.used && !handles);
+    put_theme("ux0:data/VitaJPOverlay/app.ini", "colour_scheme = default\n");
+    TEST_CHECK(vjo_colour_scheme_load(&shell) == 0); /* primary beats backup */
+    read_fail = 1;
+    TEST_CHECK(vjo_colour_scheme_load(&shell) == 0 && !shell.used && !handles);
+    read_fail = 0;
+    put_theme("ux0:data/VitaJPOverlay/app.ini", "colour_scheme = mint\n");
+    TEST_ASSERT(vjo_arena_alloc(&shell, 64));
+    TEST_CHECK(vjo_colour_scheme_load(&shell) == 1 && shell.used == 64 && !handles);
+    vjo_arena_init(&shell, mem, 8); /* storage opens, but scratch cannot hold the text */
+    TEST_CHECK(vjo_colour_scheme_load(&shell) == 0 && !shell.used && !handles);
+    unlink("ux0:data/VitaJPOverlay/app.ini"); unlink("ux0:data/VitaJPOverlay/app.ini.bak");
+}
+
 TEST_LIST = {
+    {"shared theme load, backup, short reads and errors", test_shell_colour_scheme},
     {"settings_save_drops_removed_anki_settings", test_settings_save_drops_removed_anki_settings},
     {"a_bom_led_line_is_the_same_setting_to_every_writer", test_a_bom_led_line_is_the_same_setting_to_every_writer},
     {"anki_page_saves_mining_and_address_keeping_every_other_byte", test_anki_page_save},
