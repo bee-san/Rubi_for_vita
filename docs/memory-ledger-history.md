@@ -2447,3 +2447,15 @@ audit-mem-paf-1 (MERGE_OK for #534 and #537) asked for:
   guide's troubleshooting says what the log line means. The subtitle strip's own `PageOpen` stays unchecked and
   unmeasured, as in 0.10.1.
 
+## The subtitle strip's page, sampled (#528)
+
+The strip's `PageOpen` (`shell/strip.cpp`) takes its own blocks from SceShell's Paf heap, unchecked and unmeasured,
+as in 0.10.1 (audit-mem-paf-1's Maudit-mem-paf-1-4). The debug build now logs, at every strip open, the heap's free
+size before the page opened and what `PageOpen` took for the page and its widgets (`vjo_page_strip Paf allocation:
+free=… requested=… reserve=0 success=1`, `shell/memory.cpp`'s debug format, one string in the module; the text the
+next frames lay out is not in it), from a debug-only wrapper of the call (`strip_page_open`, out of line so the
+overlay's frame, into which `strip_open` is inlined, keeps nothing across it). Whether the strip's open needs the
+overlay page's room check waits for that measurement (mem-lead, Mmem-lead-7). Debug Shell text 98,196 -> 98,268 B
+(36 B of code room left), normal 85,996 B unchanged, data unchanged, pages unchanged in both [measured:
+`tools/check_memory_ledger.py`'s module rows, the gate's image, main `1ab1b7a6`].
+
