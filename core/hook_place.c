@@ -163,6 +163,13 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
  * data for them (core/hook_luna.c). */
 #ifndef VJO_EXTERNAL_HOOK_PROFILES
 static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
+    /* AFEJ00001 どうぶつの森e＋ experimental native port r4 (APP_VER 00.01):
+     * pc_ac_dialogue_observe receives a bounded UTF-8 visible page in r0.
+     * Its 16-byte PUSH/MOV veneer has no SELF relocation; the BL starts after it.
+     * Host placement and trusted selection checked; physical hook execution pending. */
+    {"AFEJ00001", 0x7FEE3308u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
+     0, VJO_PLACE_READ_STRING, 0x0001u},
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, VJO_RF_PCSG00415, 0, 0},
     {"PCSG01198", 0x8AA413F2u, 0x745C8u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
