@@ -2,7 +2,7 @@
 
 A native text hook reads a game's own text, so the popup shows exactly what the game draws instead of OCR's
 reading of the screen. Rubi has game-specific entries for the Vita title IDs the README counts
-([native text hooks](../README.md#native-text-hooks)): LunaTranslator's table and Rubi's own verified entries. On the
+([native text hooks](guide.md#native-text-hooks)): LunaTranslator's table and Rubi's own verified entries. On the
 Rubi app's **Games** page a game with one is tagged **Hook** (Rubi's verified entry) or **Luna hook** (a
 LunaTranslator site); every other Vita game is read with OCR, after Rubi tries its string copies. That long tail grows
 fastest when the people who play those games ask for them, because each request brings what a verified entry needs

@@ -1,4 +1,4 @@
-"""README.md's hook counts are the tables' (#418, P9): the native text hooks section's numbers of LunaTranslator's
+"""docs/native-hooks.md's hook counts are the tables' (#418, P9): the native text hooks section's numbers of LunaTranslator's
 titles and ported sites, of Rubi's own verified entries (core/hook_place.c, beside CLANNAD's own row), of those that are
 games of Luna's table and of those at one of Luna's sites, and the total of title IDs with a game-specific entry, as
 tools/gen_luna_vita.py reads the tables for docs/hook-titles.md (whose generated part ctest hook_luna_table checks)."""
@@ -57,10 +57,10 @@ def stated(text):
 
 
 class DocsHookCounts(unittest.TestCase):
-    def test_the_readme_states_the_tables_counts(self):
+    def test_the_document_states_the_tables_counts(self):
         want = counts()
-        self.assertEqual(stated((ROOT / "README.md").read_text(encoding="utf-8")), want,
-                         "README.md's native text hooks section: update its numbers to the tables'")
+        self.assertEqual(stated((ROOT / "docs/native-hooks.md").read_text(encoding="utf-8")), want,
+                         "docs/native-hooks.md's native text hooks section: update its numbers to the tables'")
 
     def test_the_counts_are_read(self):
         c = counts()
@@ -87,7 +87,7 @@ class DocsHookCounts(unittest.TestCase):
         self.assertIn("PCSG00007", console_sources(source.replace("562 farm pages", "562 pages, proven on a console")))
 
     def test_a_stale_number_is_found(self):
-        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        text = (ROOT / "docs/native-hooks.md").read_text(encoding="utf-8")
         n = stated(text)["rubi_more"]
         self.assertIsNotNone(n)
         stale = text.replace(f"**{n} more Vita title IDs", f"**{n - 1} more Vita title IDs", 1)

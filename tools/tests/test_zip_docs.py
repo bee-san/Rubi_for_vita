@@ -133,7 +133,7 @@ class ZipDocs(unittest.TestCase):
         cmake = (ROOT / "vita/CMakeLists.txt").read_text(encoding="utf-8")
         line = "${ROOT}/docs/anki.md "
         self.assertEqual(cmake.count(line), 1)
-        self.assertIn("docs/anki.md: README.md links it, but the zip lacks it", problems(cmake.replace(line, "")))
+        self.assertIn("docs/anki.md: docs/guide.md links it, but the zip lacks it", problems(cmake.replace(line, "")))
         image = " ${ROOT}/docs/img/conjugation-after-chain-host.png"
         self.assertEqual(cmake.count(image), 1)
         self.assertIn("docs/img/conjugation-after-chain-host.png: docs/conjugation-display.md links it, but the zip "
