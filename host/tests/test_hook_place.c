@@ -211,7 +211,9 @@ static void test_verified(void)
     TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), SEG_BASE + 2, 0xC5187D60u) == VJO_PLACE_ALIGN);
 }
 
-/* The native e+ r4 observer's signature stays valid at different ASLR bases. */
+/* AFEJ00001, the native e+ r4 port's observer (#529): its row's fields and version, and its checks at two segment 0
+ * bases, which they do not depend on. That the eboot has no relocation in these 16 bytes rests on their encoding (no
+ * address or immediate field in them) and on the row's comment in core/hook_place.c, not on this test. */
 static void test_verified_eplus(void)
 {
     static const uint8_t sig[16] = {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46,
@@ -459,7 +461,7 @@ TEST_LIST = {
     {"range_align", test_range_align},
     {"isa", test_isa},
     {"verified", test_verified},
-    {"verified: Doubutsu no Mori e+ r4, relocation-free UTF-8 observer", test_verified_eplus},
+    {"verified: Doubutsu no Mori e+ r4, its UTF-8 observer at two segment bases", test_verified_eplus},
     {"verified: アマツツミ, a site inside a function", test_verified_amatsutsumi},
     {"verified: every entry of the list", test_verified_table},
     {"verified: r15 entries only with segment 0 at its link address", test_verified_fixed_address},

@@ -156,16 +156,19 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
  * console (PCH-2000, 3.65, 2026-10-23): hooked ("1 table sites"), its stream held text, it answered the jobs
  * (core/hook_select.h vjo_hook_select_no_memory: "game vocr source: hook 1, flags 0x98", rc 0), the overlay
  * showed the game's line (checked by eye against the screen), and the game did not crash.
- * The table is kept in the worker's data segment (VJO_DATA_TABLE, core/port.h), whose last page had room:
- * in its code segment the farm's entries took the debug build's worker past its pages
- * (include/vjo_ledger_budget.h; docs/memory-ledger.md, "Tables in the data segment"). Its title strings stay
- * read-only. The hook farm's 20 rows of 2026-10-27 filled that page: some of Rubi's filters went back to read-only
- * data for them (core/hook_luna.c). */
+ * Since API 57 the worker does not compile this table (VJO_EXTERNAL_HOOK_PROFILES, vita/CMakeLists.txt): it loads the
+ * current title's rows from the shipped hooks/profiles.vjhp, which tools/hook_profiles.py exports from this table
+ * (docs/native-hooks.md, "Current-game profiles"). The table is compiled into the Rubi app, for the Games page's tag
+ * (core/hook_titles.c), and into the host tools and tests. VJO_DATA_TABLE (core/port.h) still puts it in the data
+ * segment, where it went while the worker linked it: in the worker's code segment the farm's entries took the debug
+ * build past its pages (docs/memory-ledger.md, "Tables in the data segment"). Its title strings stay read-only. */
 #ifndef VJO_EXTERNAL_HOOK_PROFILES
 static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* AFEJ00001 どうぶつの森e＋ experimental native port r4 (APP_VER 00.01):
      * pc_ac_dialogue_observe receives a bounded UTF-8 visible page in r0.
      * Its 16-byte PUSH/MOV veneer has no SELF relocation; the BL starts after it.
+     * Unchecked: a branch elsewhere in segment 0 into its patched bytes (+0x20F2-0x20F7), and the port's page size
+     * (Rubi reads at most VJO_HOOK_RAW_BYTES of it; audit-rubi-merge-529 N3, N4).
      * Host placement and trusted selection checked; physical hook execution pending. */
     {"AFEJ00001", 0x7FEE3308u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},

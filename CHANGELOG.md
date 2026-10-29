@@ -24,6 +24,10 @@ been reported.
   owner's 0.10.1 logs have none for the native ports. The `memory` line reads it. No allocation, thread or page:
   the normal kernel's text +380 B and data +32 B (28 B of `.bss`), its pages unchanged; the debug build is
   unchanged (its `log.txt` has every check). Not yet run on a console.
+- A verified native text hook for the experimental native どうぶつの森e＋ r4 port (`AFEJ00001`, `APP_VER 00.01`):
+  with trusted hooks on (the default), its dialogue comes from the game's own text instead of OCR (#529). Only that
+  build is hooked: its module NID and the 16 bytes at the site must match. Live hook execution on a console is
+  still unverified.
 
 ### Fixed
 
