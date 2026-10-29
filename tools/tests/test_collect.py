@@ -181,6 +181,36 @@ class Collect(unittest.TestCase):
         return subprocess.run(["bash", str(self.package / "tools/install_ftp.sh"), "--collect", f"127.0.0.1:{ftp.port}"],
                               capture_output=True, text=True, timeout=180, cwd=self.root)
 
+    def test_status_ends_with_the_memory_line_of_both_boots(self):
+        """#528: --status prints the boots' files, then one line on their memory (tools/analyse_selftest.py
+        --status): here a PAF drop Rubi did not take in the previous boot, and the kernel's ledger."""
+        data = self.device / "ux0/data/VitaJPOverlay"
+        (data / "status.prev.txt").write_text(
+            "Rubi shell started (kernel API 57, the normal build: a short log)\n"
+            "ledger start paf: current=8192 peak=8192 limit=985088 free=2491704\n"
+            "overlay text arena Paf reserve guard: free=426872 requested=20480 reserve=1572864\n")
+        (data / "status.txt").write_text("Rubi shell started (kernel API 57, the normal build: a short log)\n"
+                                         "ledger start paf: current=28672 peak=28672 limit=985088 free=2529512\n")
+        (data / "kernel.txt").write_text("ledger kernel: current=147456 peak=147456 limit=237568 (start)\n")
+        stale = self.package / "build/device/status/kernel.prev.txt"
+        stale.parent.mkdir(parents=True)
+        stale.write_text("an earlier run's copy\n")
+        (data / "kernel.prev.txt").unlink()
+        with FtpMock(self.device) as ftp:
+            result = subprocess.run(["bash", str(self.package / "tools/install_ftp.sh"), "--status",
+                                     f"127.0.0.1:{ftp.port}"], capture_output=True, text=True, timeout=120, cwd=self.root)
+            writes = list(ftp.stored)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(writes, [])
+        out = result.stdout.splitlines()
+        self.assertEqual(out[-2], "=== memory")
+        self.assertTrue(out[-1].startswith("  memory (status.prev.txt + status.txt, 2 boots): "), out[-1])
+        self.assertIn("1 drop of 2,064,832 B that Rubi did not take (status.prev.txt:3", out[-1])
+        self.assertIn("kernel: Rubi 147,456 B", out[-1])
+        # a file the Vita does not have is "(none)", not an earlier run's copy
+        self.assertIn("=== kernel.prev.txt\n(none)", result.stdout)
+        self.assertFalse(stale.exists())
+
     # ---- the installed Rubi app (core/app_stamp.h): --collect reads it as --check-app does (#138) ----
     EBOOT = b"SCE\0 the package's eboot.bin"
     STAMP = f"vjoapp1 api=21 build={hashlib.sha256(EBOOT).hexdigest()[:16]}"

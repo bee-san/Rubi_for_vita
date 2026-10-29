@@ -764,7 +764,9 @@ logged starts, 3,725,976 B, less the block and the 16 B the heap adds to a block
 allocations in those logs].)
 
 `free=` is the PAF heap's free size as `GetFreeSize()` reports it (0 before Paf is ready). Stacks
-include their 4 KiB of TLS. The kernel writes `ledger kernel: current=… peak=… limit=…` and its
+include their 4 KiB of TLS. `tools/install_ftp.sh --status` and `--collect` sum these lines up in one `memory` line
+(`tools/analyse_selftest.py`, #528): a drop of `free=` between two samples, of the reserve's size or more, that the
+lines' `current=` does not account for is named as another plugin's ([vita-memory.md](vita-memory.md) section 4.5). The kernel writes `ledger kernel: current=… peak=… limit=…` and its
 items to `kernel.txt` once a boot, at its start (`kernel/main.c`; until API 24 also at every
 full-frame capture, from the removed `VjoCapture` allocator). The game worker keeps its ledger in the
 game's process, which has no file access; its numbers reach the Shell log through the job result

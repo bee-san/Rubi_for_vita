@@ -31,7 +31,7 @@
 #   tools/install_ftp.sh --purge 192.168.1.50     (uninstall, then delete the
 #     plugin files and both VitaJPOverlay data folders; config.ini and
 #     region.ini are copied to the local backup first)
-#   tools/install_ftp.sh --status 192.168.1.50   (prints the plugin logs and the self-test report)
+#   tools/install_ftp.sh --status 192.168.1.50   (prints the plugin logs, the self-test report and a memory line)
 #   tools/install_ftp.sh --self-test 192.168.1.50 (arms the on-device self-test for the next
 #      boot and game start; docs/self-test.md)
 #   tools/install_ftp.sh --dumps 192.168.1.50    (downloads system crash dumps)
@@ -350,9 +350,13 @@ if [ $STATUS = 1 ]; then
     && cat "build/device/status/boot.txt" || echo "(none)"
   for f in kernel.prev kernel status.prev status; do
     echo "=== $f.txt"
+    rm -f "build/device/status/$f.txt" # an earlier run's copy is not this boot's
     get "ux0:/data/VitaJPOverlay/$f.txt" "build/device/status/$f.txt" 2>/dev/null \
       && cat "build/device/status/$f.txt" || echo "(none)"
   done
+  # #528: one line on the memory of the two boots above (docs/vita-memory.md section 4.5)
+  echo "=== memory"
+  python3 tools/analyse_selftest.py --status build/device/status 2>/dev/null || echo "(none)"
   exit 0
 fi
 

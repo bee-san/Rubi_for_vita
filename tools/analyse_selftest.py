@@ -3,6 +3,7 @@
 
     python3 tools/analyse_selftest.py build/device/status/selftest-report.txt [--json]
     python3 tools/analyse_selftest.py --collect build/device/collect/vjo-collect-STAMP [--json]
+    python3 tools/analyse_selftest.py --status build/device/status [--json]
 
 Prints two tables, then the free memory every memory route read at each step,
 the game worker's own memory around each allocation, and what failed, in plain
@@ -44,7 +45,15 @@ OCR job, its memory and times, the ARM clock by game window with the boost's lik
 dictionary, the overlay, Anki and each .apkg export's result), the Anki queue,
 crash dumps (each dated against the boot: this boot's, an earlier boot's, or not placed), the self-test
 analysis when a report is there, the tier from the lowest
-free game memory seen, and what this tool cannot decide, with where the data is.
+free game memory seen, and what this tool cannot decide, with where the data is. Its
+`memory` line (#528) sums up SceShell's PAF free and each drop of it that Rubi's own
+ledger does not show (another plugin's, docs/vita-memory.md section 4.5), what Rubi held
+and had refused there, the game's free memory and Rubi's blocks there, and the kernel's
+ledger.
+
+--status DIR prints that line alone for a folder `install_ftp.sh --status` wrote: its
+status.prev.txt and status.txt (the previous and this boot) and kernel.txt; exit 2 when
+the folder has neither status file.
 
 Exit status follows the verdict: 0 PASS (diagnostic WARNs included), 1 FAIL,
 NO TEXT or INCOMPLETE, 2 for a file that is not a report. With --collect: the self-test's
@@ -3171,6 +3180,185 @@ def render_dumps(d):
     return L
 
 
+# ---------------------------------------------------------------- the memory line (#528)
+# shell/ledger.c vjo_ledger_shell_log: the Shell's PAF pool as Rubi holds it at its start and at each game start and
+# exit, with the heap's free size (GetFreeSize, 0 before Paf is ready); both builds log it, to status.txt and log.txt
+PAF_LEDGER = re.compile(r"^ledger (boot|start|exit) paf: current=(\d+) peak=(\d+) limit=\d+ free=(\d+)$")
+# shell/memory.cpp vjo_shell_heap_alloc_for: a request the reserve guard refused, one Paf itself refused (the normal
+# build's line) and the debug build's line for every request (success=0: refused)
+PAF_REQUEST = re.compile(r"^(.+?) Paf (reserve guard|allocation refused|allocation): free=(\d+) requested=(\d+)"
+                         r"(?: reserve=\d+)?(?: success=([01]))?$")
+# shell/ledger.c vjo_shell_thread_create: a thread SceShell's partition refused, with the partition's free USER
+THREAD_REFUSED = re.compile(r"^thread (\S+) refused 0x[0-9A-Fa-f]{8}: \d+ B; SceShell free (-?\d+)")
+# kernel/main.c: the kernel plugin's ledger at its start (kernel.txt)
+KERNEL_LEDGER = re.compile(r"^ledger kernel: current=(\d+) peak=(\d+) limit=(\d+)")
+# A drop of the PAF heap's free size between two of the Shell's samples that Rubi's own ledger does not account for,
+# of the reserve's size or more: SceShell's own swings are far smaller (the start's LiveArea about 1.0 MB, a game
+# session's at most 486 KB in the owner's 293 sessions without one), and a drop that size, while it is held, leaves
+# every request of Rubi's under the reserve (docs/vita-memory.md section 4.5: another plugin's ~2.1 MB, #528).
+PAF_DROP = PAF_RESERVE
+
+
+def summarise_memory(shell_text, kernel_text=None):
+    """The memory line's figures (#528), from the Shell's lines (log.txt and log.old.txt, or status.prev.txt and
+    status.txt) and kernel.txt: the PAF heap's free size at the game starts and its lowest; each drop of PAF_DROP or
+    more between two samples that Rubi's ledger does not show, and whether free stayed under half of it back until
+    the boot's last sample (held); what Rubi held between jobs and at most; the requests refused, by ledger item;
+    the threads SceShell refused; the game's free USER memory at the jobs' memory checks (the debug build logs
+    every check, the normal build a refused one only), the sizes that did not fit, and Rubi's largest workspace and
+    kept weights there (the debug build's job lines); and the kernel's ledger, its last line."""
+    s = {"boots": 0, "normal_boots": 0, "debug_boots": 0, "starts": [], "frees": [], "drops": [], "held": [],
+         "peak": 0, "refused": {}, "after_drop": 0, "threads": [],
+         "game": {"checks": 0, "refused": 0, "unknown": 0, "free": [], "tier_free": [], "workspace": 0, "resident": 0},
+         "kernel": None}
+    samples = []  # this boot's PAF samples: (line, free, Rubi's PAF then)
+    refusals = []  # this boot's refused requests' lines
+
+    def boot_end():
+        first = None
+        for i, ((_, f1, c1), (n2, f2, c2)) in enumerate(zip(samples, samples[1:])):
+            gone = (f1 - f2) - (c2 - c1)  # what the heap lost that Rubi did not take
+            if gone >= PAF_DROP:
+                later = [f for _, f, _ in samples[i + 2:]]
+                s["drops"].append({"line": n2, "bytes": gone, "before": f1, "after": f2,
+                                   "held": all(f < f1 - gone // 2 for f in later)})
+                first = n2 if first is None else first
+        # a refusal at or after the boot's first drop: the drop explains it (its line is the refusal's own when the
+        # refusal is the first sample after the drop)
+        s["after_drop"] += sum(first is not None and n >= first for n in refusals)
+        samples.clear()
+        refusals.clear()
+
+    current = 0  # Rubi's PAF as its last ledger line said (a refusal takes nothing)
+    for n, raw in enumerate(shell_text.splitlines(), 1):
+        line = raw.strip()
+        m = SHELL_STARTED.match(line)
+        if m:
+            boot_end()
+            s["boots"] += 1
+            s["normal_boots" if m.group(2) else "debug_boots"] += 1
+            current = 0
+            continue
+        m = PAF_LEDGER.match(line)
+        if m:
+            if m.group(1) == "boot" and samples:  # a boot that logged no start line (a cut log)
+                boot_end()
+            current, free = int(m.group(2)), int(m.group(4))
+            s["peak"] = max(s["peak"], int(m.group(3)))
+            if m.group(1) != "boot":
+                s["held"].append(current)
+            if free:
+                if m.group(1) == "start":
+                    s["starts"].append(free)
+                s["frees"].append(free)
+                samples.append((n, free, current))
+            continue
+        m = PAF_REQUEST.match(line)
+        if m:
+            free = int(m.group(3))
+            if m.group(2) != "allocation" or m.group(5) == "0":
+                s["refused"][m.group(1)] = s["refused"].get(m.group(1), 0) + 1
+                refusals.append(n)
+            if free:
+                s["frees"].append(free)
+                samples.append((n, free, current))
+            continue
+        m = THREAD_REFUSED.match(line)
+        if m:
+            s["threads"].append({"name": m.group(1), "free": int(m.group(2))})
+            continue
+        g = s["game"]
+        m = LOG["memory"].match(line)
+        if m:
+            g["checks"] += 1
+            g["free"].append(int(m.group(1)))
+            g["refused"] += m.group(6) == "refused"
+            continue
+        if LOG["memory_unknown"].match(line):
+            g["unknown"] += 1
+            continue
+        m = LOG["tier"].match(line)
+        if m:
+            g["tier_free"].append(int(m.group(4)))
+            continue
+        m = LOG["job"].match(line)
+        if m:
+            g["workspace"] = max(g["workspace"], int(m.group(9)))
+            g["resident"] = max(g["resident"], int(m.group(11)))
+    boot_end()
+    for raw in (kernel_text or "").splitlines():
+        m = KERNEL_LEDGER.match(raw.strip())
+        if m:
+            s["kernel"] = {"current": int(m.group(1)), "peak": int(m.group(2)), "limit": int(m.group(3))}
+    return s
+
+
+def _one(values):
+    """_span, but one figure when they are all one."""
+    return f"{min(values):,}" if min(values) == max(values) else _span(values)
+
+
+def memory_line(s):
+    """The one memory line of --collect and --status (#528), from summarise_memory's figures: where to look first
+    when Rubi reports no memory. s["source"] names the files it read; each drop's "where", its line in them."""
+    parts = []
+    if s["starts"]:
+        st = sorted(s["starts"])
+        parts.append(f"Shell PAF free at {_n(len(st), 'game start')}: median {st[len(st) // 2]:,} B, {_one(st)} B")
+    if s["frees"]:
+        parts.append(f"lowest {min(s['frees']):,} B")
+    d = s["drops"]
+    if d:
+        at = ", ".join(x.get("where") or f"line {x['line']}" for x in d[:4]) + (", ..." if len(d) > 4 else "")
+        held = sum(x["held"] for x in d)
+        parts.append(f"{_n(len(d), 'drop')} of {_one([x['bytes'] for x in d])} B that Rubi did not take ({at}; "
+                     f"{held} held to the boot's end): another plugin's (docs/vita-memory.md section 4.5)")
+    if s["held"]:
+        usual = max(set(s["held"]), key=s["held"].count)
+        parts.append(f"Rubi held {usual:,} B of PAF at {s['held'].count(usual)} of {_n(len(s['held']), 'game start')} "
+                     f"and exit (at most {max(s['held']):,} B), {s['peak']:,} B at its peak")
+    ref = s["refused"]
+    parts.append("refused " + (", ".join(f"{k} x{n}" for k, n in sorted(ref.items(), key=lambda kv: (-kv[1], kv[0])))
+                               + (f" ({s['after_drop']} after a drop)" if d else "") if ref else "nothing"))
+    if s["threads"]:
+        parts.append(f"SceShell refused {_n(len(s['threads']), 'thread')} (free as low as "
+                     f"{min(t['free'] for t in s['threads']):,} B)")
+    g = s["game"]
+    passed = g["checks"] - g["refused"]
+    if passed:
+        parts.append(f"game free USER {_one(g['free'])} B at {_n(g['checks'], 'memory check')}, {g['refused']} refused")
+    elif g["checks"]:
+        parts.append(f"game free USER {_one(g['free'])} B at {_n(g['checks'], 'refused memory check')}")
+    elif s["boots"] and not s["debug_boots"]:
+        parts.append("game free USER not logged (the normal build logs a refused memory check only: none)")
+    else:
+        parts.append("no game memory check logged")
+    if g["unknown"]:
+        parts.append(f"game free USER unreadable {g['unknown']}x")
+    if g["tier_free"]:
+        parts.append(f"model sizes that did not fit at {_one(g['tier_free'])} B free")
+    if g["workspace"] or g["resident"]:
+        parts.append(f"Rubi in the game: workspace up to {g['workspace']:,} B, weights kept up to {g['resident']:,} B")
+    k = s["kernel"]
+    if k:
+        parts.append(f"kernel: Rubi {k['current']:,} B, at most {k['peak']:,} B of its {k['limit']:,} B")
+    boots = f", {_n(s['boots'], 'boot')}" if s["boots"] > 1 else ""
+    return f"  memory ({s.get('source', '?')}{boots}): " + "; ".join(parts)
+
+
+def summarise_status(folder):
+    """install_ftp.sh --status's folder (build/device/status): the memory line's figures over the previous and this
+    boot's status.txt, and this boot's kernel.txt."""
+    folder = Path(folder)
+    prev, now = _read(folder, "status.prev.txt") or "", _read(folder, "status.txt") or ""
+    k = len(prev.splitlines())
+    s = summarise_memory(prev + ("\n" if prev and not prev.endswith("\n") else "") + now, _read(folder, "kernel.txt"))
+    s["source"] = " + ".join(n for n, t in (("status.prev.txt", prev), ("status.txt", now)) if t) or "no status.txt"
+    for d in s["drops"]:
+        d["where"] = f"status.prev.txt:{d['line']}" if d["line"] <= k else f"status.txt:{d['line'] - k}"
+    return s
+
+
 def summarise_collect(folder):
     folder = Path(folder)
     data = "ux0/data/VitaJPOverlay/"
@@ -3231,6 +3419,17 @@ def summarise_collect(folder):
     out["log_rotated"] = (folder / (data + "log.old.txt")).is_file()
     kt = _read(folder, data + "kernel.txt")
     out["kernel"] = summarise_kernel(kt, (folder / (data + "kernel.txt")).stat().st_size) if kt is not None else None
+    # the memory line (#528): log.txt's lines, which hold every boot's ledger lines, refusals and game checks, else
+    # (log_file = off) the two status.txt files
+    if logs:
+        out["memory"] = summarise_memory(logs, kt)
+        out["memory"]["source"] = "log.old.txt + log.txt" if old else "log.txt"
+        for d in out["memory"]["drops"]:
+            d["where"] = where(d["line"])
+    else:
+        prev, now = _read(folder, data + "status.prev.txt") or "", _read(folder, data + "status.txt") or ""
+        out["memory"] = summarise_memory(prev + ("\n" if prev and not prev.endswith("\n") else "") + now, kt)
+        out["memory"]["source"] = "status.prev.txt + status.txt"
     st = _read(folder, data + "status.txt")
     out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", *(n + " shell started" for n in NAMES),
                                                                                 "worker start", "boot guard"))][:12]
@@ -3282,9 +3481,13 @@ def summarise_collect(folder):
     if out["status_prev_head"] or (folder / (data + "kernel.prev.txt")).is_file():
         und.append(f"the previous boot's records ({data}status.prev.txt, kernel.prev.txt) are in the zip, not summarised"
                    + (f"; it had: {out['status_prev_head'][0]}" if out["status_prev_head"] else ""))
-    if (out["log"] or {}).get("shell_refusals"):
-        und.append(f"SceShell refused memory {len(out['log']['shell_refusals'])} time(s) (threads/PAF; listed above with the other "
-                   f"problem lines): whether that is SceShell's own use or ours needs the status.txt ledger lines")
+    refusals = len((out["log"] or {}).get("shell_refusals") or [])
+    explained = min((out.get("memory") or {}).get("after_drop", 0), refusals)
+    if refusals > explained:
+        und.append(f"SceShell refused memory {refusals - explained} time(s) (threads/PAF; listed above with the other "
+                   f"problem lines) with no PAF drop Rubi did not take before them in their boot"
+                   + (f" ({explained} more came after one: the memory line)" if explained else "")
+                   + ": whether that is SceShell's own use or ours needs the status.txt ledger lines")
     if out["selftest"]:
         for w in out["selftest"].get("warnings", []):
             src = {"probe": "the probe stage's gstep lines", "kernel-memory": "the kmem lines",
@@ -3417,6 +3620,8 @@ def render_collect(c):
     L.append(f"  boot.txt: {c['boot_record'] or '(none)'}")
     if c.get("status_prev_head"):
         L.append("  previous boot (status.prev.txt): " + "; ".join(c["status_prev_head"][:3]))
+    if c.get("memory"):
+        L.append(memory_line(c["memory"]))
     k = c["kernel"]
     if k:
         L.append(f"  kernel.txt: {k['bytes']:,} B{' (cap reached)' if k['capped'] else ''}; "
@@ -3637,7 +3842,17 @@ def main():
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--collect", type=Path, metavar="DIR",
                         help="a folder written by install_ftp.sh --collect: every log, record and the self-test")
+    parser.add_argument("--status", type=Path, metavar="DIR",
+                        help="a folder written by install_ftp.sh --status: the memory line of its two status.txt "
+                             "files and kernel.txt")
     args = parser.parse_args()
+    if args.status:
+        if not any((args.status / n).is_file() for n in ("status.txt", "status.prev.txt")):
+            print(f"analyse_selftest: {args.status} has no status.txt", file=sys.stderr)
+            return 2
+        s = summarise_status(args.status)
+        print(json.dumps(s, indent=2, default=list) if args.json else memory_line(s))
+        return 0
     if args.collect:
         if not (args.collect / "COLLECT.json").is_file():
             print(f"analyse_selftest: {args.collect} is not a collect folder (no COLLECT.json)", file=sys.stderr)
