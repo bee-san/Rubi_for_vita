@@ -715,6 +715,8 @@ static void test_an_identical_region_reuses_the_last_text(void)
     TEST_CHECK(b.rc == VJO_OK && b.st.reused && busy_calls == 0 && !b.st.frames && !b.st.find_us && !b.st.lm_lines);
     TEST_CHECK_(strips_read == pass && b.st.strips == pass, "%u strips (a pass is %u)", strips_read, pass);
     same_reading(&a, &b, "the same screen");
+    for (unsigned i = VJO_VOCR_LAST_LINES; i < VJO_VOCR_MAX_LINES; i++) /* (#558's audit M7: the entry keeps 8) */
+        TEST_CHECK_(!b.st.line[i].width && !b.st.line[i].frames && !b.st.line[i].flags, "line %u not empty", i);
     /* a fresh read of it (the cache emptied: every line recognized again) gives the same */
     memset(&cache, 0, sizeof cache);
     run(&fresh, &pl, &o);
@@ -745,6 +747,23 @@ static void test_an_identical_region_reuses_the_last_text(void)
     run(&b, &pl, &o);
     TEST_CHECK(b.st.reused);
     same_reading(&ref, &b, "the changed screen");
+    /* the LM refused for room (its extras do not fit the workspace): a greedy reading under the same salt, kept for no
+     * job (#558's audit M4b: a later job with room would have taken it for the LM's); the next job, with room, reads */
+    {
+        Opt g = {0};
+        s = o;
+        s.cascade = 0;
+        s.helpers = 0;
+        s.salt = 11;
+        s.variant = 12; /* (no line from the jobs before, whose cascade made another reading) */
+        s.ws = job_need(&g, 0); /* the job's own workspace, without the LM's extras */
+        run(&b, NULL, &s);
+        TEST_CHECK_(b.rc == VJO_OK && b.st.lm_rc == VJO_E_OOM && !b.st.lm_lines && !cache.last.salt,
+                    "rc %d lm_rc %d lm_lines %u salt %u", b.rc, b.st.lm_rc, b.st.lm_lines, cache.last.salt);
+        s.ws = 0;
+        run(&b, NULL, &s);
+        TEST_CHECK(b.rc == VJO_OK && !b.st.reused && b.st.lm_lines > 0 && cache.last.salt == 11);
+    }
     /* a doubtful line skipped for time (the cascade's ceiling): its region is not kept */
     s = o;
     s.cascade_conf = 0; /* every line with text doubtful */

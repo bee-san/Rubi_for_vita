@@ -10,7 +10,8 @@ comments until #418 ("Budget history"). The ledger itself, its table and its che
 The game worker keeps the last job's reading of its whole region (`core/vocr_ocr.h` `VjoVocrCache.last`, inside the
 line cache: [ocr-speed.md](ocr-speed.md#the-last-region-528)), so a job whose region reads the same takes that text
 without the finder or the recognizer. No block, thread or budget changes: the entry is 788 B of the worker's
-`.bss` (`line_cache` 3,216 → 4,004 B; at most 8 lines and 576 B of text), in its data segment's last page. Code: `core/vocr_ocr.c`'s check at the first
+`.bss` (`line_cache` 3,216 → 4,000 B: the old struct's tail padding takes 4 B of it; at most 8 lines and 576 B of
+text), in its data segment's last page (+1,008 B of data with `lms`). Code: `core/vocr_ocr.c`'s check at the first
 pass, the wait and the entry's copies, and `game_ocr/main.c`'s key and drops. They fit the normal build's exact code
 pages because `core/hook_text.c` (a stream's text decoder) and `core/hook_profile.c` (API 57's profile loader, once a
 game start) are now built `-Os` like the rest of the worker's control code (their text 1,640 → 1,288 B and 1,348 →
@@ -24,6 +25,11 @@ game start) are now built `-Os` like the rest of the worker's control code (thei
 [measured: the packaged SELFs' segments, `tools/check_memory_ledger.py --variant debug|normal`, the gate's pinned
 VitaSDK GCC 15.2.0, Release; the kernel's and the Shell's are main's]. The owner scenario's numbers are unchanged:
 its game cases run one cold job each (`tools/owner_scenario.py --check`: PASS).
+
+Its audit's follow-up (#558's audit: no warm-up after a reused job, which had read and kept the cascade's weights, and
+no per-line time for its lines): `VitaJPOverlay_OCR` 168,872 → 168,888 B of code (debug) and 159,700 → 159,732 B
+(normal, 12 B of room left), the data unchanged, the same pages [measured: the same check, main `623144d5` and the
+follow-up].
 
 ## The game's whole-MiB free memory (#528, mem-game; no API change)
 

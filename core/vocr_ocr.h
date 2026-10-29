@@ -748,7 +748,8 @@ typedef struct {
     unsigned spot_frame_w, spot_frame_h;
     /* #528: the job's key beside its region's rows for VjoVocrCache.last: a hash of whatever else its text depends on
      * (the game worker's: the request but its sequences, and the model, LM, cascade, finder and vertical check it
-     * chose). 0: no region is kept or taken, exactly as before. */
+     * chose). The caller's jobs with one salt pass the same text capacity (the worker's is its result's 4 KiB): a kept
+     * text is copied as it is, at most VJO_VOCR_LAST_TEXT bytes. 0: no region is kept or taken, exactly as before. */
     uint32_t salt;
 } VjoVocrPolicy;
 #define VJO_VOCR_CHECK_AUTO 1 /* VjoVocrPolicy.vertical_check: API 47's auto, columns where the rows look vertical */
