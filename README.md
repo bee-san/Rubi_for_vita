@@ -68,3 +68,12 @@ In VitaShell, press **START** and choose **Reboot**.
 Start a game and press **L + R** to open Rubi. Every game is ON by default.
 
 The [guide](docs/guide.md#install) also covers the standalone VPK and computer-side installers.
+
+# Usage
+
+Go to a game and press left trigger + right trigger to open the overlay.
+
+1. Left trackpad == word by word lookup
+2. Left joystick == character by character
+3. Double tap the back of the Vita to OCR, useful for menus etc that may not appear in dialogue text
+
