@@ -1234,13 +1234,14 @@ class AnkiExportLines(unittest.TestCase):
         for prefix in ("Rubi app: ", "overlay app: "):
             # (no held count since the Cards page went, 2026-10-28: group 17 reads 0.9.8 test builds' lines only)
             line = prefix + export_fmt % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000, 9,
-                                                              3, "tag", "", 4, "", 4321)
+                                                              3, "tag", "", 4, "", 5, 6, 4321)
             m = a.LOG["anki_export"].match(line)
             self.assertEqual([m.group(g) for g in range(1, 11)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7", "8"])
             self.assertEqual([m.group(g) for g in range(11, 18)], ["9", "3", "tag", None, "4", None, None])
+            self.assertEqual((m.group(18), m.group(19)), ("5", "6"))  # #528: restored, mismatched
             # #314: Skip, and an export too large to check, its known words' index damaged
             line = prefix + export_fmt % ("all", 0, 5, 0, 0, 0, 0, 0, 0, 0, 1000, 2000, 0, 2, "skip",
-                                                              ", not checked", 0, ", known not checked", 10)
+                                                              ", not checked", 0, ", known not checked", 0, 0, 10)
             m = a.LOG["anki_export"].match(line)
             self.assertEqual([m.group(g) for g in range(12, 17)], ["2", "skip", ", not checked", "0", ", known not checked"])
         # the 0.9.8 test builds' line (#315's Cards page: ", N held" before the time), which --collect still reads, as
@@ -1253,6 +1254,15 @@ class AnkiExportLines(unittest.TestCase):
         self.assertEqual([m.group(g) for g in (1, 2, 3, 15, 17)], ["queued", "0", "5", "4", "2"])
         an = a.summarise_log(old + "\n")["anki"]
         self.assertEqual(an.get("export_held"), 2)
+        # #528: cards whose record was not its name's, read and summarised
+        line = ("Rubi app: anki: export (queued) rc=0: 5 cards, 5 moved, 0 kept, 0 unreadable, 0 too large, 0 left, "
+                "0 stopped, 0 swept, 1000 bytes, arena peak 2000, 0 without screenshots, 0 duplicates (tag), 0 known, "
+                "4 restored, 1 mismatched, 4321 ms")
+        an = a.summarise_log(line + "\n")["anki"]
+        self.assertEqual((an.get("export_restored"), an.get("export_mismatched"), an.get("export_ok")), (4, 1, 1))
+        text = "\n".join(a.export_summary(an))
+        self.assertIn("exported with the frequency source they were saved with", text)
+        self.assertIn("exported as their records read", text)
         # the app's own idea of an error, which export_result follows (#314: "not checked" is one, as a missing
         # screenshot is: the package is whole, its result line says what it lacks)
         self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture || "

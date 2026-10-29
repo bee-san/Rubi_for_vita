@@ -321,8 +321,9 @@ static void test_anki_note_from_entry(void)
     TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_SENTENCE, &n), "<b>猫</b>が<br>好き"));
     TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_FREQUENCY, &n),
                        "<ul style=\"text-align: left;\"><li>BCCWJ: 1500</li></ul>"));
-    /* the copies are the card's own: the result memory may go */
-    TEST_CHECK(n.spelling != v[1].spelling && n.meanings[0] != v[1].meanings[0]);
+    /* the copies are the card's own: the result memory may go (#528: its frequency source too, which a lookup during
+     * the Shell's save wrote over) */
+    TEST_CHECK(n.spelling != v[1].spelling && n.meanings[0] != v[1].meanings[0] && n.source != r.source);
     /* the dictionary's name: none here (no title, no "[name]" line) */
     TEST_CHECK(!n.dictionary);
     /* its file's title (Bee's Ultimate Dictionary names itself in page 0), copied */
@@ -343,6 +344,10 @@ static void test_anki_note_from_entry(void)
         TEST_CHECK(n.dictionary && !strcmp(n.dictionary, "Titled"));
     }
     TEST_CHECK(vjo_anki_note_from_entry(&A, &l, l.n_entries, &n) == -1);
+    /* no frequency list: none (null in its record), never "" */
+    l.source = NULL;
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, cat, &n) == 0);
+    TEST_CHECK(!n.source);
 }
 
 static void test_anki_config(void)

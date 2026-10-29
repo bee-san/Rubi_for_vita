@@ -2175,6 +2175,154 @@ static void test_damaged_cards_stay_and_the_rest_are_exported(void)
     TEST_CHECK(count_dir(VJO_EXPORT_DIR, ".apkg") == 1);
 }
 
+/* ---------------- #528: what every released Shell writer wrote ---------------- */
+
+/* The record of test_shell_anki.c's card (猫 in 猫が好き猫, CLANNAD, with or without its screenshot) as the Shell
+ * writes it, with this frequency source (its JSON). Every released Shell writer (v0.8.0, v0.9.0 to v0.9.8, v0.10.0,
+ * v0.10.1), in its own tag's host harness (test_shell_anki.c, the shown lookup's memory written over where released[]
+ * says), saved these bytes under these names, the same in all twelve [measured: mem-anki-queue, 2026-10-29]: only
+ * the picture and the source differ. */
+static size_t released_record(char *out, size_t cap, int picture, const char *source)
+{
+    int n = snprintf(out, cap,
+                     "{\"version\":4,\"spelling\":\"猫\",\"reading\":\"ねこ\",\"sentence\":\"猫が好き猫\",\"rank\":1500,"
+                     "\"hl_start\":0,\"hl_end\":3,\"picture\":%s,\"meanings\":[\"cat\",\"shamisen \\\"neko\\\"\"],"
+                     "\"sentence_furigana\":\"猫が好き猫\",\"sf_hl_start\":0,\"sf_hl_end\":3,\"source\":%s,\"pitch\":[],"
+                     "\"pos\":[],\"misc\":\"CLANNAD (2026-10-12 09:30)\",\"furigana\":null,\"dictionary\":null,"
+                     "\"more\":[],\"game\":\"CLANNAD\",\"title_id\":\"PCSG00415\",\"platform\":\"vita\","
+                     "\"ocr_engine\":\"vocr\",\"ocr_model\":\"VOCR3_H15_w8.vocr\",\"time\":1791158400,"
+                     "\"ocr_confidence\":null}\n",
+                     picture ? "true" : "false", source);
+    TEST_ASSERT(n > 0 && (size_t)n < cap);
+    return (size_t)n;
+}
+
+static const struct {
+    const char *when;   /* when the overlay's next lookup wrote over the shown lookup's memory */
+    int picture;
+    const char *source; /* the record's (JSON) */
+    const char *name;   /* the ID its writer named it with */
+    const char *sha;    /* its bytes' ID (the first 128 bits of their SHA-256) */
+    int how;            /* read_card's READ_* */
+} released[] = {
+    {"never (no screenshot)", 0, "\"Jiten\"", "14a5848a63c19cfca6b2a457b5790e15", "14a5848a63c19cfca6b2a457b5790e15",
+     READ_VERIFIED},
+    {"never", 1, "\"Jiten\"", "a2b2d1144804436112ac767bf55153f9", "a2b2d1144804436112ac767bf55153f9", READ_VERIFIED},
+    /* before the record was named: its name's, the lookup's bytes its source (since 0.10.2 the card has its own) */
+    {"before its name (no screenshot)", 0, "\"to come; to arrive\"", "4f406bd5f550fb3b24ef22504c95bc22",
+     "4f406bd5f550fb3b24ef22504c95bc22", READ_VERIFIED},
+    {"before its name", 1, "\"to come; to arrive\"", "92043a128784efee53e43ce1885fc685",
+     "92043a128784efee53e43ce1885fc685", READ_VERIFIED},
+    /* between its name and its write, during the screenshot: the owner's 31 (#528), "checksum mismatch" until now */
+    {"during the screenshot: a meaning", 1, "\"to come; to arrive\"", "a2b2d1144804436112ac767bf55153f9",
+     "92043a128784efee53e43ce1885fc685", READ_RESTORED},
+    {"during the screenshot: a word", 1, "\"来る\"", "a2b2d1144804436112ac767bf55153f9",
+     "004688c4c52f24478b846626867f3c0b", READ_RESTORED},
+    {"during the screenshot: other bytes", 1, "\"\\u0010*\x81\\u0001\x7f\\\"\\\\\"", "a2b2d1144804436112ac767bf55153f9",
+     "a8082df72c88e41522bdbe54d4f8a9a7", READ_RESTORED},
+    {"during the screenshot: a NUL first", 1, "\"\"", "a2b2d1144804436112ac767bf55153f9",
+     "0911ba6971fed42e30c3d27ba36129e0", READ_RESTORED},
+    /* before its name and again during the screenshot: named with no list's name, so not proven */
+    {"before its name and during the screenshot", 1, "\"来る\"", "92043a128784efee53e43ce1885fc685",
+     "004688c4c52f24478b846626867f3c0b", READ_MISMATCHED},
+};
+
+/* Every released writer's records (released[]): the Rubi app reads each as the card that was saved, the Anki page
+ * counts its word without a line in log.txt, and the export takes it with the frequency source its card was saved
+ * with ("Jiten: 1500"), one line for a record that is not its name's, and moves the record as it is: never written,
+ * never removed. The record the reconstruction cannot prove (the last row) is a whole card all the same: exported as
+ * it reads, without its source, and the result says so. */
+static void test_every_released_writers_records_export(void)
+{
+    static uint8_t pkg[1 << 20];
+    char json[1024], actual[VJO_QUEUE_ID_SIZE], path[256], msg[300];
+    uint8_t pic[300], back[1024];
+    for (unsigned k = 0; k < sizeof(released) / sizeof(released[0]); k++) {
+        const char *when = released[k].when, *name = released[k].name;
+        size_t len = released_record(json, sizeof(json), released[k].picture, released[k].source), n;
+        int picture = -1, how = released[k].how;
+        VjoAnkiNote note;
+        VjoExportResult r;
+        VjoWords w;
+        reset();
+        vjo_queue_id(json, len, actual);
+        TEST_CHECK_(!strcmp(actual, released[k].sha), "%s: not the released writers' bytes (%s)", when, actual);
+        snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+        put_file(path, json, len);
+        if (released[k].picture) {
+            snprintf(path, sizeof(path), "%s/%s.jpg", VJO_EXPORT_QUEUE_DIR, name);
+            put_file(path, pic, jpeg(pic, 5, sizeof(pic)));
+        }
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_CHECK_(read_card(&A, 0, name, &note, &picture, 1, REPORT_NONE) == how, "%s", when);
+        TEST_CHECK(!strcmp(note.spelling, "猫") && !strcmp(note.reading, "ねこ") && picture == released[k].picture &&
+                   note.game && !strcmp(note.game, "CLANNAD") && note.rank == 1500);
+        TEST_CHECK_(how == READ_MISMATCHED  ? !note.source
+                    : how == READ_RESTORED ? note.source && !strcmp(note.source, "Jiten")
+                                           : note.source != NULL,
+                    "%s: source %s", when, note.source ? note.source : "(none)");
+        /* the Anki page's count */
+        logs[0] = '\0';
+        TEST_CHECK(words(&w, 64) == 0 && w.n == 1 && w.read == 1 && !w.unreadable && !strstr(logs, name));
+        TEST_MSG("%s\n%s", when, logs);
+        /* the export */
+        logs[0] = '\0';
+        TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 1 && r.moved == 1 && !r.unreadable &&
+                   r.restored == (how == READ_RESTORED) && r.mismatched == (how == READ_MISMATCHED) &&
+                   !strstr(msg, "stay queued") && (how == READ_MISMATCHED) == !!strstr(msg, "1 exported as it reads"));
+        TEST_MSG("%s: %s\n%s", when, msg, logs);
+        n = package_bytes(r.path, pkg, sizeof(pkg));
+        TEST_CHECK_(occurrences(pkg, n, "<li>Jiten: 1500</li>") == (how == READ_RESTORED || released[k].source[1] == 'J'),
+                    "%s", when);
+        TEST_CHECK_(occurrences((const uint8_t *)logs, strlen(logs), name) == (how != READ_VERIFIED), "%s:\n%s", when,
+                    logs);
+        snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
+        TEST_CHECK_(get_bytes(path, back, sizeof(back)) == len && !memcmp(back, json, len), "%s: the record changed",
+                    when);
+        TEST_CHECK(count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 0 && count_dir(VJO_EXPORT_ARCHIVE_DIR, ".jpg") ==
+                   released[k].picture);
+    }
+}
+
+/* A record that is no whole record (cut short, as a damaged card leaves one) stays queued, its bytes as they are, and
+ * is reported once: the Anki page reads and logs it at its first show, then knows it (anki_words.bin) and neither
+ * reads nor logs it again; an export reads it again and lists it with the cards that stay. Put right, the next export
+ * takes it. */
+static void test_a_damaged_record_stays_and_is_reported_once(void)
+{
+    char json[1024], path[256], msg[300];
+    uint8_t back[1024];
+    const char *name = released[0].name;
+    size_t len = released_record(json, sizeof(json), 0, "\"Jiten\"");
+    VjoExportResult r;
+    VjoWords w;
+    reset();
+    queue_card(&cat, 0);
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+    put_file(path, json, 200);
+    for (int show = 0; show < 3; show++) {
+        logs[0] = '\0';
+        TEST_ASSERT(words(&w, 64) == 0);
+        TEST_CHECK_(w.n == 1 && w.unreadable == 1 && w.read == !show, "show %d: %d words, %d read, %d unreadable", show,
+                    w.n, w.read, w.unreadable);
+        TEST_CHECK_(occurrences((const uint8_t *)logs, strlen(logs), name) == !show, "show %d:\n%s", show, logs);
+    }
+    TEST_CHECK(get_bytes(path, back, sizeof(back)) == 200 && !memcmp(back, json, 200));
+    logs[0] = '\0';
+    TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 1 && r.unreadable == 1 && strstr(msg, "1 stay queued; see log.txt"));
+    TEST_MSG("%s\n%s", msg, logs);
+    TEST_CHECK(occurrences((const uint8_t *)logs, strlen(logs), name) == 1 &&
+               strstr(logs, "checksum mismatch (edited or damaged)"));
+    TEST_CHECK(get_bytes(path, back, sizeof(back)) == 200 && !memcmp(back, json, 200));
+    logs[0] = '\0';
+    TEST_CHECK(words(&w, 64) == 0 && w.unreadable == 1 && !w.read && !strstr(logs, name));
+    /* put right */
+    put_file(path, json, len);
+    TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 1 && r.moved == 1 && !r.unreadable);
+    TEST_MSG("%s", msg);
+    TEST_CHECK(words(&w, 64) == 0 && w.n == 2 && !w.unreadable && !w.read);
+}
+
 static void test_screenshots_are_one_file_each(void)
 {
     VjoExportResult r;
@@ -2425,13 +2573,9 @@ static void test_screenshots_no_card_names_go_after_a_verified_package(void)
     bad.picture = 6;
     id = queue_card(&bad, 0);
     snprintf(path, sizeof(path), Q "%s.json", id);
-    {
-        FILE *f = fopen(path, "r+b"); /* edited: its checksum no longer its name, so it stays queued */
-        TEST_ASSERT(f != NULL);
-        fseek(f, 30, SEEK_SET);
-        fputc('Y', f);
-        fclose(f);
-    }
+    /* damaged: cut short, no whole record, so it stays queued (#528: a whole record that is not its name's, as an
+     * edit leaves it, is exported as it reads) */
+    TEST_ASSERT(truncate(path, 30) == 0);
     age_file(path, HOURS(2));
     snprintf(bad_jpg, sizeof(bad_jpg), Q "%s.jpg", id);
     age_file(bad_jpg, HOURS(2));
@@ -3157,6 +3301,8 @@ TEST_LIST = {
     {"short_reads_are_read_again", test_short_reads_are_read_again},
     {"an_archived_copy_is_kept_only_when_it_is_the_card", test_an_archived_copy_is_kept_only_when_it_is_the_card},
     {"damaged_cards_stay_and_the_rest_are_exported", test_damaged_cards_stay_and_the_rest_are_exported},
+    {"#528 every released writer's records export", test_every_released_writers_records_export},
+    {"#528 a damaged record stays and is reported once", test_a_damaged_record_stays_and_is_reported_once},
     {"screenshots_are_one_file_each", test_screenshots_are_one_file_each},
     {"missing_or_damaged_screenshots_export_the_text", test_missing_or_damaged_screenshots_export_the_text},
     {"good_screenshot_copy_survives_a_damaged_copy", test_good_screenshot_copy_survives_a_damaged_copy},

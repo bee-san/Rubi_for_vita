@@ -31,6 +31,19 @@ been reported.
 
 ### Fixed
 
+- Anki cards queued while the overlay looked up another word are exported again (#528: the owner's 31 `checksum
+  mismatch (edited or damaged)` cards, some queued since 10-17). Every Shell from 0.8.0 to 0.10.1 kept a card's
+  frequency source (`Jiten`) as a pointer into the overlay's lookup memory, named the card's record before its
+  screenshot and wrote it after: a cursor move, a text change or a new read in that time rewrote the source, and
+  the record no longer matched its name, so the Rubi app refused it. The card now copies it (Shell +16 B of code in
+  the normal build, +32 B in the debug one, the same pages). The Rubi app reads such a record as the card that was
+  saved: its name is the record's checksum with `Jiten` as its source, so the card exports with it; a whole record
+  that matches its name in no way (edited by hand, or rewritten twice) is exported as it reads, without its
+  frequency source, and the result says how many. No record is ever written or deleted. A record that is not a
+  whole record still stays queued, and the Anki page now reads and logs it once instead of at every show (an export
+  reads it again). The export's `log.txt` line counts both kinds (`N restored, N mismatched`), and
+  `tools/analyse_selftest.py` reports them. Host-tested with every released writer's records; not yet run on a
+  console.
 - With `ocr_settle_ms = 0`, a job whose lines the text spotter found reads its region once more before recognizing
   them (#528): the spotter reads the region once, so a change in rows where it found no box could otherwise be missed
   and a torn screen read. One more pass a job, only with the stable-text wait off (the default waits).

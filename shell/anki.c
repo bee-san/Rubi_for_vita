@@ -80,11 +80,13 @@ static VjoArena arena;
  * and its dictionary's name is its file's title or the "[name]" its meaning starts with, at most 96 bytes with its
  * NUL. The card's text, the shown lines, is local_text: at most VJO_STRIP_MAX bytes with its NUL. */
 #define ANKI_ALIGN 8u
-/* The note (core/anki.c vjo_anki_note_from_entry): the entry's strings, the sentence, the dictionary's name and the
- * meanings' and parts of speech's pointer arrays (one each: a local dictionary's entry has one meaning and no parts of
- * speech, core/local_dict.c read_entry; a reader that gives it more must raise this, and so must a note that copies
- * another string, audit-mem-leak-2 F5): seven blocks. */
-#define ANKI_NOTE_MAX (2u * VJO_LOCAL_MAX_ENTRY + VJO_STRIP_MAX + 96u + 2u * sizeof(char *) + 7u * ANKI_ALIGN)
+/* The note (core/anki.c vjo_anki_note_from_entry): the entry's strings, the sentence, the dictionary's name, the
+ * frequency list's name (a dictionary's v3 header field, VJO_LOCAL_TITLE_SIZE with its NUL; a copy since #528's fix,
+ * a pointer into the lookup's memory before) and the meanings' and parts of speech's pointer arrays (one each: a local
+ * dictionary's entry has one meaning and no parts of speech, core/local_dict.c read_entry; a reader that gives it more
+ * must raise this, and so must a note that copies another string, audit-mem-leak-2 F5): eight blocks. */
+#define ANKI_NOTE_MAX (2u * VJO_LOCAL_MAX_ENTRY + VJO_STRIP_MAX + 96u + VJO_LOCAL_TITLE_SIZE + 2u * sizeof(char *) + \
+                       8u * ANKI_ALIGN)
 /* The card's facts (card_facts): the game's name, its title ID and the model, copied. */
 #define ANKI_FACTS_MAX (sizeof(game_name) + sizeof(game_tid) + sizeof(ocr_model) + 3u * ANKI_ALIGN)
 /* Another dictionary's entry kept (keep_entry): its meaning's pointer and its strings in one block, after the

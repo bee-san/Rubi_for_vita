@@ -133,8 +133,11 @@ int sceKernelDeleteThread(SceUID uid) { threads_deleted++; return 0; }
 static uint64_t rtc_unix_us = 1791158400007000ull; /* the UTC clock (a minute starts at 1791158400 s) */
 int sceRtcGetCurrentTick(SceRtcTick *t) { t->tick = 62135596800000000ull + rtc_unix_us; return 0; }
 static int clock_fails;
+static void (*on_clock)(void); /* #528: card_facts' call, after the note's copy and before its record is named */
 int sceRtcGetCurrentClockLocalTime(SceDateTime *t)
 {
+    if (on_clock)
+        on_clock();
     if (clock_fails)
         return -1;
     *t = (SceDateTime){2026, 10, 12, 9, 30, 5, 0};
@@ -389,6 +392,7 @@ static int shot_reads, shot_job_rc;
 static uint32_t shot_speed; /* API 32: the last shot's speed word (VJO_GAME_OCR_S_TRIM or 0) */
 static uint32_t shot_seq;
 static char shot_id[VJO_QUEUE_ID_SIZE];
+static void (*on_shot)(void); /* #528: the screenshot's job, after the record is named and before it is written */
 int vjo_game_job_begin(int (*stop)(void *), int64_t wait_us)
 {
     TEST_CHECK(stop != NULL && wait_us > 0 && !held_box && !held_view && slot_begins == slot_ends);
@@ -414,6 +418,8 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
     char path[256];
     FILE *f;
     TEST_CHECK(slot_begins == slot_ends + 1); /* in the game worker's slot */
+    if (on_shot)
+        on_shot();
     TEST_CHECK(r->size == sizeof(*r) && r->flags == VJO_GAME_OCR_F_SHOT && !r->tiers && !(r->speed & ~VJO_GAME_OCR_S_TRIM) &&
                !r->model[0] && !r->model_dir[0] && strlen(r->shot) == 32 && vjo_queue_valid_id(r->shot));
     shot_speed = r->speed;
@@ -616,6 +622,7 @@ static void reset(void)
     write_path[0] = last_rename[0] = '\0';
     rtc_unix_us = 1791158400007000ull;
     shot_reset();
+    on_clock = on_shot = NULL;
     /* the Shell starts the mailbox before its first config load */
     TEST_ASSERT(vjo_anki_start() == 0);
     fixture();
@@ -2142,6 +2149,56 @@ static void test_an_earlier_lines_card_has_no_screenshot(void)
 }
 #endif
 
+/* ---------------- #528: the overlay's next lookup during a save ---------------- */
+/* A card is the record of the entry shown when Enter was pressed, whatever the overlay does while it is saved. The
+ * shown list's frequency source (the list's name, "Jiten" for the bundled dictionary) is in the lookup's memory, which
+ * the overlay's next lookup writes over (shell/worker.c run_cursor_job: the cursor on another word, a text replaced
+ * by a refresh, a new read). Until 0.10.2 the card kept a pointer to it: a lookup before the record was named gave
+ * the card that lookup's bytes as its source; one between its name and its write, during the screenshot, a record
+ * that is not its name's, which the Rubi app's export refused ("checksum mismatch") and settings/anki_export.c now
+ * reads again (host/tests/test_apkg.c, every released writer's record). */
+static char lookup_source[64];
+static void lookup_writes_over_the_source(void)
+{
+    memset(lookup_source, 0, sizeof(lookup_source));
+    memcpy(lookup_source, "to come; to arrive", 18); /* another entry's meaning, where the name was */
+}
+static void save_while_a_lookup_runs(int screenshot, int at_shot)
+{
+    char id[VJO_QUEUE_ID_SIZE], actual[VJO_QUEUE_ID_SIZE];
+    const char *json;
+    size_t len;
+    reset();
+    if (screenshot) {
+        cfg.anki_screenshot = 1;
+        reconfigure();
+    }
+    snprintf(lookup_source, sizeof(lookup_source), "Jiten");
+    list.source = lookup_source;
+    if (at_shot)
+        on_shot = lookup_writes_over_the_source;
+    else
+        on_clock = lookup_writes_over_the_source;
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki"));
+    TEST_MSG("%s", g_view.anki_status);
+    TEST_CHECK(shot_jobs == screenshot);
+    only_id(id);
+    TEST_ASSERT((json = queue_file(id, "json", &len)) != NULL);
+    vjo_queue_id(json, len, actual);
+    TEST_CHECK_(!strcmp(actual, id), "%s (the lookup %s): named %s, its checksum %s", screenshot ? "with a screenshot" :
+                "a text card", at_shot ? "during the screenshot" : "before its name", id, actual);
+    TEST_CHECK_(strstr(json, "\"source\":\"Jiten\",") != NULL, "%s", json);
+    list.source = NULL;
+    finish();
+}
+static void test_a_lookup_during_the_save_changes_nothing(void)
+{
+    save_while_a_lookup_runs(0, 0); /* before its name: the card's own source, not the lookup's bytes */
+    save_while_a_lookup_runs(1, 0);
+    save_while_a_lookup_runs(1, 1); /* during the screenshot: the record its name's */
+}
+
 /* ---------------- #528: the save with its arena cut at every block (audit-mem-crash-1's squeeze) ---------------- */
 /* core/arena.c's host-only cap (host/tests/test_oom_paths.c): the arena on this file's Paf block holds only the bytes
  * before a block's end. Every save the full run's record, the same record with fewer of the other dictionaries'
@@ -2306,6 +2363,7 @@ TEST_LIST = {
     {"api23_no_screenshot_is_asked_for_when_off_or_without_a_game", test_no_screenshot_is_asked_for_when_off_or_without_a_game},
     {"line_history_an_earlier_lines_card_has_no_screenshot", test_an_earlier_lines_card_has_no_screenshot},
 #endif
+    {"#528 a lookup during the save changes nothing in the card's record", test_a_lookup_during_the_save_changes_nothing},
     {NULL, NULL}
 };
 
