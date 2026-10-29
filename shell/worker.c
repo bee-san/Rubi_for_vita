@@ -557,6 +557,16 @@ static int shows_screen(uint32_t scene, uint32_t seq, const VjoState *st)
 
 static void mem_free(void);
 
+/* When the lookup's result arena goes back, as one step each: a job's start (start_job_kind, for a job that is not a
+ * refresh), its run (run_job: a refresh and the self-test's job keep it, the overlay's entry lives in it), a game's
+ * exit (on_game_exit: unless the job thread still uses it) and the control thread's idle rule (no game, no job, the
+ * overlay closed). #528's owner scenario (host/tests/owner_scenario.h) runs these same steps at its events, so a
+ * change of when the arena is held is measured there. Macros: the Vita build's code is as when they were written out. */
+#define RESULT_MEM_JOB_START() mem_free()
+#define RESULT_MEM_JOB_RUN() do { if (!job_refresh && !job_selftest) mem_free(); } while (0)
+#define RESULT_MEM_GAME_EXIT() do { if (!net_busy()) mem_free(); } while (0)
+#define RESULT_MEM_IDLE() do { if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED) mem_free(); } while (0)
+
 static int has_result_memory(void)
 {
     return mem_heap != NULL || mem_uid >= 0;
@@ -1452,8 +1462,7 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
     sceClibMemset(out, 0, sizeof(*out));
     out->list.header = "";
     /* A refresh and the self-test's job keep the arena: the overlay's entry lives in it. */
-    if (!job_refresh && !job_selftest)
-        mem_free();
+    RESULT_MEM_JOB_RUN();
     vjo_arena_reset(a);
     /* On the console only: no image or connection leaves it. */
     if (run_vocr(out) != VJO_OK) {
@@ -1800,7 +1809,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
             if (ov != OV_CLOSED)
                 view_publish(1, NULL, status, 0);
         }
-        mem_free();
+        RESULT_MEM_JOB_START();
     }
     vjo_dlog("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
     job_refresh = refresh;
@@ -3048,8 +3057,7 @@ static void on_game_exit(void)
         set_subtitles(0);
     clear_input_block_error();
     /* Free memory unless the job thread still uses it. */
-    if (!net_busy())
-        mem_free();
+    RESULT_MEM_GAME_EXIT();
     title_id[0] = '\0';
     vjo_anki_set_game("", "", 0);
     vjo_history_total_keep(); /* the reading total's file, when lines were added to it */
@@ -3341,8 +3349,7 @@ static void control_tick(uint32_t bits)
 #endif
     if (!defer_prepare) prepare_words();
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
-    if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
-        mem_free();
+    RESULT_MEM_IDLE();
     /* Stats shares this input thread. Cached totals may be loaded for the open view, but CSV scans and
      * checkpoints wait until it is closed and no foreground work runs. At most one window a second,
      * without immediate self-wakeups; the normal poll still handles input every 50 ms. */

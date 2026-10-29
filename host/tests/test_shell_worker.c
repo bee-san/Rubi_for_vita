@@ -2319,6 +2319,47 @@ static void test_vocr_job_log_is_appended_in_batches(void)
 }
 #endif
 
+/* The owner scenario's job (#528, host/tests/owner_request.h): the request the Shell sends with the owner's config,
+ * a textbox's and the full screen's, is the one test_alloc_sim.c's game part runs, field by field; and with the
+ * zero cases (no stable-text wait, no cascade) and a full screen with the spotter off. */
+#include "owner_request.h"
+static void owner_request_matches(const char *what, uint32_t flags)
+{
+    VjoGameOcrRequest q;
+    owner_request(&q, &cfg, flags, vjo_vocr_tier_model(cfg.vocr_tier));
+    TEST_CHECK_(fake_game_request.size == q.size && fake_game_request.tiers == q.tiers, "%s: tiers %u / %u", what,
+                fake_game_request.tiers, q.tiers);
+    TEST_CHECK_(fake_game_request.flags == q.flags, "%s: flags 0x%08X, the owner scenario's 0x%08X", what,
+                (unsigned)fake_game_request.flags, (unsigned)q.flags);
+    TEST_CHECK_(fake_game_request.speed == q.speed, "%s: speed 0x%08X, the owner scenario's 0x%08X", what,
+                (unsigned)fake_game_request.speed, (unsigned)q.speed);
+    TEST_CHECK_(fake_game_request.hook_pick == q.hook_pick, "%s: hook_pick %u / %u", what,
+                (unsigned)fake_game_request.hook_pick, (unsigned)q.hook_pick);
+    TEST_CHECK_(!strcmp(fake_game_request.model, q.model) && !strcmp(fake_game_request.model_dir, q.model_dir),
+                "%s: model %s in %s, the owner scenario's %s in %s", what, fake_game_request.model,
+                fake_game_request.model_dir, q.model, q.model_dir);
+}
+static void test_owner_scenario_request(void)
+{
+    static const char *const extra[] = {"", "ocr_settle_ms = 0\nocr_cascade_ms = 0\n", "ocr_finder = grad\n"};
+    for (unsigned i = 0; i < sizeof(extra) / sizeof(extra[0]); i++)
+        for (int full = 0; full <= 1; full++) {
+            char what[64];
+            reset();
+            vjo_config_defaults(&cfg);
+            vjo_config_parse(&cfg, owner_config, sizeof(owner_config) - 1);
+            vjo_config_parse(&cfg, extra[i], strlen(extra[i]));
+            TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.ocr_helpers == 2);
+            job_full_screen = full;
+            fake_recognized_text = "猫";
+            TEST_CHECK(run_vocr_job() == VJO_OK);
+            snprintf(what, sizeof(what), "%s, case %u", full ? "full screen" : "textbox", i);
+            owner_request_matches(what, full ? VJO_GAME_OCR_F_FULL : 0u);
+            job_full_screen = 0;
+            mem_free();
+        }
+}
+
 static void test_vocr_request_carries_the_job_policy(void)
 {
     reset();
@@ -9710,6 +9751,7 @@ TEST_LIST = {
     {"vocr_job_log_is_appended_in_batches", test_vocr_job_log_is_appended_in_batches},
 #endif
     {"vocr_request_carries_the_job_policy", test_vocr_request_carries_the_job_policy},
+    {"owner scenario request", test_owner_scenario_request}, /* #528: the game part runs this job */
     {"a_games_own_line_fix", test_a_games_own_line_fix},
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"vocr_oom_statistics_are_cached", test_vocr_oom_statistics_are_cached},

@@ -31,10 +31,22 @@ LIMITS = ROOT / "tools" / "owner_scenario.json"
 
 BOOT_RE = re.compile(r"^Rubi shell started \(kernel API (\d+)(.*)\)")
 LEDGER_RE = re.compile(r"^ledger (boot|start|exit) paf: current=(\d+) peak=(\d+) limit=\d+ free=(\d+)")
-GUARD_RE = re.compile(r"^(overlay text arena|result arenas) Paf reserve guard: free=(\d+) requested=(\d+) reserve=(\d+)")
-# One line per saved card, with a screenshot or without (shell/anki.c's "save rc=0").
-ANKI_RE = re.compile(r"^anki: save rc=0, \d+ ms$")
-# The Paf plugin's own 8 KiB, which every ledger line of 0.10.1 shows held between jobs.
+# A refusal of an item of the Shell's Paf ledger: the reserve guard's line (shell/paf_guard.h), or the normal build's
+# line for an allocation the heap refused after the guard passed (shell/memory.cpp). Its item is the ledger's name
+# (shell/ledger.c): the overlay page (#537: its own room, after #534 kept the text block) and its text arena (0.10.1)
+# are a press; the result arenas a lookup; the Anki arena a card's save.
+REFUSAL_RE = re.compile(r"^(.+?) Paf (?:reserve guard: free=(\d+) requested=(\d+) reserve=\d+|"
+                        r"allocation refused: free=(\d+) requested=(\d+))$")
+PRESS = ("overlay page", "overlay text arena")
+RESULTS = "result arenas"
+ANKI = "Anki arena"
+# One line per card saved (shell/anki.c's "save ... rc=0": the normal build's has no word, the debug build's has it).
+ANKI_RE = re.compile(r"^anki: save (?:.+ )?rc=0, \d+ ms$")
+# The lines a press's own job is not past: the next press's, a ledger line, the debug build's next job.
+JOB_START_RE = re.compile(r"^job start ")
+# The Paf plugin's own 8 KiB, which every ledger line of 0.10.1 shows held between jobs: what Rubi held at an event
+# before the boot's first ledger line. After it, an event holds what the boot's last ledger line said Rubi held (0.10.1:
+# 8,192 B at every refusal; after #534, the kept text block too: 28,672 B).
 HELD_0101 = 8192
 
 
@@ -52,43 +64,70 @@ def parse_boots(lines):
 
 
 def boot_events(body):
-    """One boot's events, in order. A refusal of the overlay's text arena is a press of the toggle; a refusal of a
-    result arena within three lines of it, at the same free size, is that press's lookup; any other refusal of a
-    result arena is a lookup of its own (a background read's, or a cursor move's). An Anki save is a press that
-    saved a card, at the last free size the log showed."""
-    events, guards = [], []
-    level = None
+    """One boot's events, in order. A refusal of the overlay's page or text arena is a press of the toggle. Its own job's
+    result arena is the refusal at the same free size up to three lines before it, else the first at the same free size
+    after it before the next press, ledger line or job start (the debug build logs the job's lines between: the heap
+    has not moved meanwhile); any other refusal of a result
+    arena is a lookup of its own (a background read's, or a cursor move's). An Anki save, or its arena's refusal, is a
+    press that saved a card, at the last free size the log showed. Other items' refusals (line history) are not
+    replayed: unreplayed() counts them."""
+    events, refusals = [], []
+    level, held = None, HELD_0101
     for n, line in body:
         m = LEDGER_RE.match(line)
         if m:
-            level = int(m.group(4))
-            events.append([m.group(1), level, int(m.group(2))])
+            level, held = int(m.group(4)), int(m.group(2))
+            events.append([m.group(1), level, held])
+            refusals.append((n, "ledger", level, None, held))
             continue
-        m = GUARD_RE.match(line)
+        if JOB_START_RE.match(line):
+            refusals.append((n, "job", level, None, held))
+            continue
+        m = REFUSAL_RE.match(line)
         if m:
-            level = int(m.group(2))
-            guards.append((n, m.group(1), level, len(events)))
-            events.append(None)  # placed below, once the pairs are known
+            what = m.group(1)
+            level = int(m.group(2) or m.group(4))
+            if what in PRESS or what == RESULTS:
+                refusals.append((n, what, level, len(events), held))
+                events.append(None)  # placed below, once the pairs are known
+            elif what == ANKI:
+                events.append(["anki", level, held])
             continue
         if ANKI_RE.match(line) and level is not None:
-            events.append(["anki", level, HELD_0101])
+            events.append(["anki", level, held])
     paired = set()
-    for i, (n, what, free, slot) in enumerate(guards):
-        if what != "overlay text arena":
+    for i, (n, what, free, slot, held) in enumerate(refusals):
+        if what not in PRESS:
             continue
         lookup = None
-        for j, (n2, what2, free2, slot2) in enumerate(guards):
-            if what2 == "result arenas" and j not in paired and free2 == free and abs(n2 - n) <= 3:
+        for j in range(i - 1, -1, -1):  # just before it, at the same free size
+            n2, what2, free2, slot2, _ = refusals[j]
+            if n - n2 > 3:
+                break
+            if what2 == RESULTS and j not in paired and free2 == free:
                 lookup = j
                 break
+        if lookup is None:  # else the first after it, before the next press, ledger line or job start
+            for j in range(i + 1, len(refusals)):
+                n2, what2, free2, slot2, _ = refusals[j]
+                if what2 in PRESS or what2 in ("ledger", "job"):
+                    break
+                if what2 == RESULTS and j not in paired and free2 == free:
+                    lookup = j
+                    break
         if lookup is not None:
             paired.add(lookup)
-            events[guards[lookup][3]] = "drop"
-        events[slot] = ["press", free, HELD_0101, 1 if lookup is not None else 0]
-    for j, (n, what, free, slot) in enumerate(guards):
-        if what == "result arenas" and j not in paired:
-            events[slot] = ["lookup", free, HELD_0101]
+            events[refusals[lookup][3]] = "drop"
+        events[slot] = ["press", free, held, 1 if lookup is not None else 0]
+    for j, (n, what, free, slot, held) in enumerate(refusals):
+        if what == RESULTS and j not in paired:
+            events[slot] = ["lookup", free, held]
     return [e for e in events if e != "drop" and e is not None]
+
+
+def unreplayed(body):
+    """The boot's refusals of items the replay does not run (line history): counted, so a log that has them says so."""
+    return sum(1 for _, line in body if (m := REFUSAL_RE.match(line)) and m.group(1) not in PRESS + (RESULTS, ANKI))
 
 
 def extract(paths, min_api):
@@ -102,8 +141,9 @@ def extract(paths, min_api):
             if not any(e[0] in ("press", "lookup", "anki") for e in events):
                 continue
             first = body[0][0] - 1 if body else 0
-            scenarios.append({"name": f"boot{len(scenarios) + 1}-line{first}", "api": api,
-                              "build": "normal" if normal else "debug", "line": first, "events": events})
+            # named by its API and its first line: another boot added to the logs renames no other scenario
+            scenarios.append({"name": f"api{api}-line{first}", "api": api, "build": "normal" if normal else "debug",
+                              "line": first, "events": events, "unreplayed": unreplayed(body)})
     return scenarios
 
 
@@ -112,8 +152,8 @@ def write_events(scenarios, source, out):
         "# The owner scenario (#528): Rubi's Shell Paf events on the owner's PCH-1001, one scenario per boot.",
         f"# Generated by tools/owner_scenario.py --extract from {source}; numbers only (docs/owner-scenario.md).",
         "# scenario NAME API BUILD | boot|start|exit FREE HELD | press FREE HELD LOOKUP | lookup FREE HELD | anki FREE HELD",
-        "# FREE: the Paf heap's free bytes the log showed; HELD: what Rubi held then (the ledger's current, or the",
-        "# plugin's 8 KiB at a refusal); LOOKUP: 1 when 0.10.1 asked for the press's result arena too.",
+        "# FREE: the Paf heap's free bytes the log showed; HELD: what Rubi held then (the ledger's current; at a",
+        "# refusal, the boot's last ledger figure); LOOKUP: 1 when the log has the press's own job's result arena.",
     ]
     for s in scenarios:
         rows.append(f"scenario {s['name']} {s['api']} {s['build']}")
@@ -163,6 +203,8 @@ def parse_lines(text):
             if "=" in kv:
                 k, v = kv.split("=", 1)
                 values[k] = int(v) if re.fullmatch(r"-?\d+", v) else v
+        if m.group(1) == "shell" and "silent" not in values and "refused" in values:
+            values["silent"] = values["refused"] - values.get("told", 0)  # a binary from before `silent`
         rows[(m.group(1), m.group(2))] = values
     return rows
 
@@ -181,8 +223,9 @@ def find(build, names):
 
 
 def run(build, shell_bin=None, game_bin=None):
-    shell_bin = shell_bin or find(build, ["vjo-shell-worker-paf-tests"])
-    game_bin = game_bin or find(build, ["vjo-alloc-sim-tests", "vjo-alloc_sim-tests", "alloc_sim"])
+    """Runs the binaries given, or found under `build` (none is looked for without it)."""
+    shell_bin = shell_bin or (find(build, ["vjo-shell-worker-paf-tests"]) if build else None)
+    game_bin = game_bin or (find(build, ["vjo-alloc-sim-tests"]) if build else None)
     rows, problems = {}, []
     if not shell_bin:
         problems.append(f"no Shell scenario binary (vjo-shell-worker-paf-tests) under {build}")
@@ -202,30 +245,33 @@ def run(build, shell_bin=None, game_bin=None):
 def table(rows, limits):
     out = []
     before = limits.get("before", {})
-    out.append("Shell (Paf heap at the logged free sizes; 0.10.1's figures: its log, and this replay at main 1845471b)")
-    out.append(f"{'scenario':<22} {'presses':>7} {'not opened':>10} {'lookups':>7} {'refused':>7} {'told':>5} "
-               f"{'anki ok':>7} {'refused':>7} {'peak B':>8} {'held B':>7}   0.10.1: not opened / refused / peak")
+    labels = before.get("labels", {})
+    out.append("Shell (the Paf heap at the logged free sizes). Before: " + labels.get("shell", "-"))
+    out.append(f"{'scenario':<22} {'presses':>7} {'not opened':>10} {'page':>4} {'lookups':>7} {'refused':>7} "
+               f"{'told':>5} {'silent':>6} {'anki ok':>7} {'refused':>7} {'peak B':>8} {'held B':>7}"
+               f"   before: not opened / silent / peak")
     for (part, name), v in rows.items():
         if part != "shell":
             continue
         b = before.get("shell", {}).get(name, {})
-        out.append(f"{name:<22} {v.get('presses', 0):>7} {v.get('not_opened', 0):>10} {v.get('lookups', 0):>7} "
-                   f"{v.get('refused', 0):>7} {v.get('told', 0):>5} "
-                   f"{v.get('anki_ok', 0):>7} {v.get('anki_refused', 0):>7} {v.get('peak', 0):>8} {v.get('held', 0):>7}   "
-                   f"{b.get('not_opened', '-')} / {b.get('refused', '-')} / {b.get('peak', '-')}")
+        bsilent = b.get("silent", b.get("refused", 0) - b.get("told", 0)) if b else "-"
+        out.append(f"{name:<22} {v.get('presses', 0):>7} {v.get('not_opened', 0):>10} {v.get('page_failed', 0):>4} "
+                   f"{v.get('lookups', 0):>7} {v.get('refused', 0):>7} {v.get('told', 0):>5} {v.get('silent', 0):>6} "
+                   f"{v.get('anki_ok', 0):>7} {v.get('anki_refused', 0):>7} {v.get('peak', 0):>8} {v.get('held', 0):>7}"
+                   f"   {b.get('not_opened', '-')} / {bsilent} / {b.get('peak', '-')}")
     game = [(name, v) for (part, name), v in rows.items() if part == "game"]
     if game:
         out.append("")
         out.append("Game USER (the owner's job: Large, LM 1000k, cascade, spotter, 3 threads; free USER as logged or "
-                   "estimated)")
+                   "estimated). Before: " + labels.get("game", "-"))
         out.append(f"{'level':<22} {'free USER':>10} {'rc':>5} {'tier':>5} {'lm':>3} {'casc':>4} {'spot':>4} "
-                   f"{'helpers':>7} {'peak B':>9} {'told':>4}   0.10.1: rc / tier / peak")
+                   f"{'helpers':>7} {'lines':>5} {'peak B':>9} {'told':>4}   before: rc / tier / peak")
         for name, v in game:
             b = before.get("game", {}).get(name, {})
             out.append(f"{name:<22} {v.get('free', 0):>10} {v.get('rc', 0):>5} {v.get('tier', 0):>5} "
                        f"{v.get('lm', 0):>3} {v.get('cascade', 0):>4} {v.get('spot', 0):>4} {v.get('helpers', 0):>7} "
-                       f"{v.get('peak', 0):>9} {v.get('told', 0):>4}   {b.get('rc', '-')} / {b.get('tier', '-')} / "
-                       f"{b.get('peak', '-')}")
+                       f"{v.get('lines', 0):>5} {v.get('peak', 0):>9} {v.get('told', 0):>4}   {b.get('rc', '-')} / "
+                       f"{b.get('tier', '-')} / {b.get('peak', '-')}")
     else:
         out.append("")
         out.append("Game USER: not run (no alloc_sim binary with the release models in this build: "
@@ -233,10 +279,13 @@ def table(rows, limits):
     return "\n".join(out)
 
 
-def check(rows, limits):
-    """The ratchet: no count above its limit, no floor undercut, every scenario present. Returns the problems."""
+def check(rows, limits, require_game=False):
+    """The ratchet: no count above its limit, no floor undercut, every scenario present with every counter it is held
+    to. Returns the problems."""
     problems = []
     game_ran = any(p == "game" for p, _ in rows)
+    if require_game and not game_ran:
+        problems.append("game: no rows, although this build has the release models (the game part did not run)")
     for part in ("shell", "game"):
         for name, lim in limits.get("limits", {}).get(part, {}).items():
             v = rows.get((part, name))
@@ -246,13 +295,16 @@ def check(rows, limits):
                 problems.append(f"{part} {name}: missing from the run (did it crash?)")
                 continue
             for key, bound in lim.items():
-                if key.startswith("min_"):
-                    have = v.get(key[4:], 0)
+                have = v.get(key[4:] if key.startswith("min_") else key)
+                if have is None:
+                    problems.append(f"{part} {name}: no {key.removeprefix('min_')} in the run's line, which "
+                                    f"tools/owner_scenario.json holds")
+                elif key.startswith("min_"):
                     if have < bound:
                         problems.append(f"{part} {name}: {key[4:]}={have}, below its floor {bound} "
                                         f"(tools/owner_scenario.json; a regression)")
-                elif v.get(key, 0) > bound:
-                    problems.append(f"{part} {name}: {key}={v.get(key, 0)}, above its limit {bound} "
+                elif have > bound:
+                    problems.append(f"{part} {name}: {key}={have}, above its limit {bound} "
                                     f"(tools/owner_scenario.json; a regression)")
     for (part, name) in rows:
         if name != "all" and name not in limits.get("limits", {}).get(part, {}):
@@ -260,15 +312,17 @@ def check(rows, limits):
     return problems
 
 
-# What the ratchet holds: counts and bytes that may only go down, and (min_) what a job chose that may only go up.
-SHELL_LIMITS = ("not_opened", "refused", "anki_refused", "peak", "held")
+# What the ratchet holds: counts and bytes that may only go down, and (min_) what a job chose or did that may only go
+# up. `silent`: refusals no open overlay showed (refused - told); `refused` and `told` alone are not held, as a press
+# that now opens asks for its lookup, and is told when it is refused.
+SHELL_LIMITS = ("not_opened", "silent", "anki_refused", "peak", "held")
 GAME_LIMITS = ("failed", "peak")
-GAME_FLOORS = ("told", "tier", "lm")
+GAME_FLOORS = ("told", "tier", "lm", "spot", "helpers", "lines")
 
 
 def lowered(rows, limits, parts=("shell", "game")):
     """limits with every limit of `parts` lowered to the run's value and every floor raised to it: never the other
-    way."""
+    way. A scenario new to the limits takes the run's values."""
     out = json.loads(json.dumps(limits))
     lim = out.setdefault("limits", {})
     for (part, name), v in sorted(rows.items()):
@@ -279,6 +333,23 @@ def lowered(rows, limits, parts=("shell", "game")):
             cur[key] = min(cur.get(key, v.get(key, 0)), v.get(key, 0))
         for key in () if part == "shell" else GAME_FLOORS:
             cur["min_" + key] = max(cur.get("min_" + key, v.get(key, 0)), v.get(key, 0))
+    return out
+
+
+def rises(old, new):
+    """Every limit that `new` holds looser than `old` (a higher limit, a lower floor, a scenario no longer held)."""
+    out = []
+    for part, scen in old.get("limits", {}).items():
+        for name, lim in scen.items():
+            now = new.get("limits", {}).get(part, {}).get(name)
+            if now is None:
+                out.append(f"{part} {name}: no longer held")
+                continue
+            for key, bound in lim.items():
+                if key not in now:
+                    out.append(f"{part} {name}: {key} no longer held")
+                elif key.startswith("min_") and now[key] < bound or not key.startswith("min_") and now[key] > bound:
+                    out.append(f"{part} {name}: {key} {bound} -> {now[key]}")
     return out
 
 
@@ -302,6 +373,12 @@ def main(argv=None):
                          "code for that part, and --part)")
     ap.add_argument("--part", choices=("shell", "game"),
                     help="--set-before and --lower act on this part only (the other keeps its baseline and limits)")
+    ap.add_argument("--reset-limits", action="store_true",
+                    help="with --set-before: the run's values become the part's limits even where they are looser (a "
+                         "change of the replay's model; every limit that rises is printed); without it --set-before "
+                         "keeps the tighter of the old limit and the run")
+    ap.add_argument("--require-game", action="store_true",
+                    help="with --check: fail when the game part printed no rows (a build with the release models)")
     ap.add_argument("--json", action="store_true", help="print the run's rows as JSON instead of the table")
     args = ap.parse_args(argv)
     if args.extract:
@@ -309,33 +386,43 @@ def main(argv=None):
         write_events(scenarios, args.source, args.out)
         counts = logged_counts(scenarios)
         print(f"{len(scenarios)} scenarios, {sum(len(s['events']) for s in scenarios)} events -> {args.out}")
-        for name, c in counts.items():
-            print(f"  {name}: {c}")
+        for s in scenarios:
+            print(f"  {s['name']}: {counts[s['name']]}" + (f", {s['unreplayed']} refusal(s) of items not replayed"
+                                                          if s["unreplayed"] else ""))
         return 0
     if not (args.run or args.check or args.lower or args.set_before):
         ap.error("nothing to do: --extract, --run, --check, --lower or --set-before")
     if not args.build and not args.shell_bin:
         ap.error("--build (or --shell-bin) is needed to run the scenario")
     limits = json.loads(LIMITS.read_text(encoding="utf-8")) if LIMITS.exists() else {}
-    rows, problems = run(args.build or Path("."), args.shell_bin, args.game_bin)
+    rows, problems = run(args.build, args.shell_bin, args.game_bin)
     if args.json:
         print(json.dumps({f"{p} {n}": v for (p, n), v in sorted(rows.items())}, indent=1))
     else:
         print(table(rows, limits))
     parts = (args.part,) if args.part else ("shell", "game")
+    old_limits = json.loads(json.dumps(limits))
+    if args.set_before and not problems:
+        for part in parts:
+            if not any(p == part for p, _ in rows):
+                problems.append(f"--set-before: no {part} rows in this run (the game part needs a build with "
+                                f"VJO_VOCR_MODEL_DIR): nothing recorded")
     if args.set_before and not problems:
         before = limits.setdefault("before", {})
         for part in parts:
             before[part] = {name: v for (p, name), v in rows.items() if p == part}
             before.setdefault("labels", {})[part] = args.set_before
-            limits.setdefault("limits", {})[part] = {}  # the new baseline is the limit: lowered() fills it below
+            if args.reset_limits:
+                limits.setdefault("limits", {})[part] = {}  # the new baseline is the limit: lowered() fills it below
         before.pop("label", None)
     if (args.lower or args.set_before) and not problems:
         limits = lowered(rows, limits, parts)
+        for r in rises(old_limits, limits):
+            print(f"limit loosened (--reset-limits): {r}")
         LIMITS.write_text(json.dumps(limits, indent=1, sort_keys=True) + "\n", encoding="utf-8")
         print(f"wrote {LIMITS.relative_to(ROOT)}")
     if args.check:
-        problems += check(rows, limits)
+        problems += check(rows, limits, args.require_game)
     for p in problems:
         print(f"owner scenario: {p}", file=sys.stderr)
     if problems:

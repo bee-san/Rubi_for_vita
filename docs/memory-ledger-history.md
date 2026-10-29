@@ -2289,7 +2289,7 @@ as the arena resets at the close, at a failed `PageOpen` and at the start went: 
 ## The overlay page's own Paf, counted (#528)
 
 The page's widgets, which `PageOpen` takes from SceShell's Paf heap while the overlay is open, were the largest Paf use
-Rubi causes and were in no budget: 94,672-103,296 B (median 94,800 B) over the 81 opens of #528's logs where Rubi
+Rubi causes and were in no budget: 81,152-103,296 B (median 94,928 B) over the 81 opens of #528's logs where Rubi
 allocated again before the page closed [measured, log]. `VJO_BUDGET_PAF_PAGE` (= `VJO_PAF_PAGE_MAX`, 103,296 B) puts
 the most measured into the pool's worst case; no code changes, and the run-time ledger still counts only our own
 blocks (Paf takes these).

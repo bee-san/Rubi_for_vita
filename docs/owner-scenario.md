@@ -15,33 +15,41 @@ how much memory SceShell or a game has (AGENTS.md rule 5). Every console number 
 **The Shell's Paf heap** (ctest `shell_worker_paf`, test `owner scenario`, in `host/tests/owner_scenario.h`). The
 events are in `tools/owner_scenario.txt`, made from the owner's `log.txt` by `tools/owner_scenario.py --extract`:
 numbers only, no game text and no title IDs. Each boot of a build since API 31 that logged a refusal or a saved
-card is one scenario: 24 of them, 591 events, from the collection's `current-device/rubi-log.txt` (gist
-`5e67276`). An event is:
+card is one scenario, named by its API and first line (`api57-line11385`): 25 of them, 766 events, from the
+collection's `current-device/rubi-log.txt` (gist `5e67276`). An event is:
 
 | Event | From the log | What the replay runs |
 | --- | --- | --- |
-| `boot`, `start`, `exit` | the ledger's `ledger boot/start/exit paf: current=… free=…` lines | at `boot` the Shell's start step: the overlay's text block, taken and kept from then on (`shell/overlay_mem.h` `vjo_overlay_mem_boot`, since #528's first fix; 0.10.1 took nothing there); at a start or an exit no game is active, so the worker gives its result arena back (`shell/worker.c` `on_game_exit` and the control thread's idle rule) |
-| `press` | `overlay text arena Paf reserve guard: free=…` | the overlay opens (`shell/overlay_mem.h`, as `overlay.cpp`'s `open_page` takes its text arena), the cursor's word is looked up (`shell/worker.c` `mem_alloc`), and the overlay closes |
-| `lookup` | a `result arenas Paf reserve guard` line that is not a press's | a background read's lookup: `run_job` gives the arena back, then asks for one after OCR |
-| `anki` | `anki: save rc=0` | a press that saved a card: the Anki arena (`shell/anki.c`'s request, `VJO_BUDGET_PAF_ANKI`) while the overlay is open |
+| `boot`, `start`, `exit` | the ledger's `ledger boot/start/exit paf: current=… free=…` lines | at `boot` the Shell's start step: the overlay's text block, taken and kept from then on (`shell/overlay_mem.h` `vjo_overlay_mem_boot`, since #534; 0.10.1 took nothing there); at an exit `on_game_exit`'s step, and at a start or an exit, with no game in front, the control thread's idle rule (`shell/worker.c` `RESULT_MEM_GAME_EXIT`, `RESULT_MEM_IDLE`) |
+| `press` | `overlay text arena Paf reserve guard: free=…` (0.10.1), `overlay page Paf reserve guard: free=…` (since #537) | the overlay opens (`shell/overlay_mem.h`, as `overlay.cpp`'s `open_page`), the cursor's word is looked up (`shell/worker.c` `mem_alloc`; when the log has the press's own job, its start and run steps first: `RESULT_MEM_JOB_START`, `RESULT_MEM_JOB_RUN`), and the overlay closes |
+| `lookup` | a `result arenas` refusal (the guard's line, or the normal build's `Paf allocation refused`) that is not a press's | a background read's lookup: its job's start and run steps, then the arena after OCR |
+| `anki` | `anki: save … rc=0` (with the word in the debug build), or an `Anki arena` refusal | a press that saved a card: the Anki arena (`shell/anki.c`'s request, `VJO_BUDGET_PAF_ANKI`) while the overlay is open |
 
-A press's lookup is the `result arenas` refusal within three lines of it at the same free size, when there is one.
+A press's own job's lookup is the `result arenas` refusal at the same free size up to three lines before it, else the
+first one at the same free size after it, before the next press, ledger line or (debug build) `job start`. Line
+history's refusals are counted by `--extract` but not replayed; the visits that took its 16 KiB block are not logged
+in the normal build (the API 33 debug boot at line 4403 reached the ledger's 241,664 B worst case with one: the
+replay's peak there is 225,280 B).
 Every request goes through the Shell's own guard (`shell/paf_guard.h`, which `shell/memory.cpp` asks before every
 Paf allocation), against a model of the heap: 5,242,880 B (`VJO_PAF_HEAP`), of which others held what the log
-showed was neither free nor Rubi's (the heap less `free=` less Rubi's `current=`, or the plugin's 8 KiB at a
-refusal) until the next event. A build that holds less than 0.10.1 did leaves more free beside the same others.
+showed was neither free nor Rubi's (the heap less `free=` less Rubi's `current=`; at a refusal, Rubi's figure from the
+boot's last ledger line: 8,192 B in 0.10.1, 28,672 B since #534 kept the text block) until the next event. A build that
+holds less than 0.10.1 did leaves more free beside the same others.
 The overlay page's own Paf, which `PageOpen` takes for its widgets outside Rubi's ledger, is 103,296 B while it is
-open: the most of the 81 opens in the owner's logs where Rubi allocated again before the page closed (median
-94,800 B) [measured, log]. With less free, `PageOpen` fails (`overlay page failed to open`) and the press counts as not opened; since #528's
+open: the most of the 81 opens in the owner's logs where Rubi allocated again before the page closed (81,152 to
+103,296 B, median 94,928 B; 94,800 B over the 67 whose next block was a result arena; the largest followed a line
+history visit, whose view may add widgets) [measured, log]. With less free, `PageOpen` fails (`overlay page failed to open`) and the press counts as not opened; since #528's
 follow-up the page check before it (`shell/paf_guard.h` `vjo_paf_page_fits`: 103,296 B and SceShell's 64 KiB margin
 free, read through the scenario's own `vjo_shell_heap_free_size`) refuses first, and `page_failed` counts both.
+The result arena's lifetime is the worker's own: its `RESULT_MEM_*` steps (`shell/worker.c`) run in the replay where
+the worker runs them, so a change of when the arena is held changes the table.
 
 Each scenario prints a line, `owner-scenario shell NAME: …`:
 
 - `presses`, `not_opened`, `page_failed`: toggles, those whose overlay did not open (the user sees nothing), and of
   these the ones whose page itself had no room;
-- `lookups`, `refused`, `told`: result arena requests, the refused ones, and the refused ones in an open overlay,
-  which shows why (`OOM_SHELL_RESULTS`);
+- `lookups`, `refused`, `told`, `silent`: result arena requests, the refused ones, the refused ones in an open
+  overlay, which shows why (`OOM_SHELL_RESULTS`), and the rest (`refused - told`: no open overlay showed them);
 - `anki_ok`, `anki_refused`: saved cards;
 - `peak`, `held`: the most Paf Rubi held, and the most it held between jobs (at game starts and exits).
 
@@ -50,8 +58,9 @@ the Shell asks for it with his `config.ini` (Large, `ocr_lm = 1000k`, `ocr_casca
 the spotter and the other defaults) runs through the real worker and kernel (`game_ocr/main.c`, `kernel/`) on a
 textbox and on the full screen, at the free USER sizes his games logged and at smaller ones. Each case prints a
 line, `owner-scenario game LEVEL-REGION: …`: `rc`, `failed`, the `tier`, `lm` tier and `cascade` the memory check
-chose, `spot` (the spotter found the lines), `helpers`, `peak` (the USER bytes of Rubi's blocks) and `told` (it read
-text, or its refusal carries the memory check's figures, which the Shell shows and logs).
+chose, `spot` (the spotter found the lines), `helpers`, `lines`, `peak` (the USER bytes of Rubi's blocks) and `told`
+(it read text, or its refusal carries the memory check's figures, which the Shell shows and logs). The request is
+`host/tests/owner_request.h`'s, which `test_shell_worker.c`'s `owner scenario request` holds against the Shell's own.
 
 ## The model's limits
 
@@ -67,19 +76,25 @@ text, or its refusal carries the memory check's figures, which the Shell shows a
 
 ## Rubi 0.10.1's numbers
 
-The replay of 0.10.1's code (main `1845471b`, whose Shell and game memory code is 0.10.1's) gives the log's own
-counts: 24 overlays not opened and 28 result arenas refused in the API 57 boots, 10 and 23 in API 31's.
+The replay of 0.10.1's Shell code (the overlay's text arena taken at each open and given back at each close, as
+before #534) gives the log's own counts: 24 overlays not opened and 28 result arenas refused in the API 57 boots, 10
+and 23 in API 31's. `tools/owner_scenario.json` keeps the column (`before.shell`, from a build of this harness with
+0.10.1's `shell/overlay_mem.h` steps).
 
-| Shell, by boot | Presses (cards) | Not opened | Lookups | Refused | Told | Peak B |
+| Shell, by boot | Presses (cards) | Not opened | Refused | Told | Silent | Peak B |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| API 31 (line 1735) | 10 (0) | 10 | 23 | 23 | 0 | 8,192 |
-| API 57 (line 11156) | 11 (6) | 5 | 17 | 15 | 0 | 225,280 |
-| API 57 (line 11385) | 10 (0) | 10 | 12 | 12 | 0 | 8,192 |
-| API 57 (line 11446) | 1 (1) | 0 | 2 | 1 | 0 | 225,280 |
+| API 31 (line 1735) | 10 (0) | 10 | 23 | 0 | 23 | 8,192 |
+| API 57 (line 11156) | 11 (6) | 5 | 15 | 0 | 15 | 225,280 |
+| API 57 (line 11385) | 10 (0) | 10 | 12 | 0 | 12 | 8,192 |
+| API 57 (line 11446) | 1 (1) | 0 | 1 | 0 | 1 | 225,280 |
 | API 57 (line 11563) | 9 (0) | 9 | 0 | 0 | 0 | 8,192 |
-| all 24 scenarios | 273 (239) | 34 | 124 | 51 | 0 | 225,280 |
+| all 25 scenarios | 274 (240) | 34 | 51 | 0 | 51 | 225,280 |
 
-Rubi held the plugin's 8,192 B at every start and exit in every scenario, as the log's ledger lines show. Since the overlay's text block is taken at the Shell's start (#528's first fix) it holds 28,672 B there, and a scenario ends holding that block: `held` and, in the three scenarios that took nothing else, `peak` are 28,672 B.
+In the log, Rubi's ledger shows the plugin's 8,192 B alone at 828 of its 836 game starts and exits; the other 8, none
+in a boot with a pressure step, held the text arena or a result arena for a moment (28,672 or 73,728 B). The replay
+holds 8,192 B at every start and exit of 0.10.1's code. Since #534 keeps the text block from the Shell's start, Rubi
+holds 28,672 B there, and `held` and, in the three scenarios that took nothing else, `peak` are 28,672 B: the
+ratchet's two deliberate raises.
 
 | Game, free USER | Tier | LM | Spotter | Helpers | Peak B (textbox) |
 | --- | --- | --- | --- | ---: | ---: |
@@ -102,15 +117,20 @@ python3 tools/owner_scenario.py --build build/host --check  # what ctest owner_s
 ```
 
 Without the release models (`VJO_VOCR_MODEL_DIR`) the game part is left out and says so; the fast gate's models
-lane runs it. `tools/owner_scenario.json` holds the 0.10.1 column (`before`) and the limits: each scenario's
-counts and peaks may only go down, and a game case's `told`, `tier` and `lm` only up. A change that lowers one
+lane runs it, and there a game part that prints no rows fails (`--require-game`). `tools/owner_scenario.json` holds
+the 0.10.1 columns (`before`, with each part's label) and the limits: a Shell scenario's `not_opened`, `silent`,
+`anki_refused`, `peak` and `held`, and a game case's `failed` and `peak`, may only go down, and a game case's `told`,
+`tier`, `lm`, `spot`, `helpers` and `lines` only up; a counter the limits hold that a run does not print fails. A
+change that lowers one
 runs `--lower` in the same pull request, which writes the new limits (it never loosens one), and pastes the table
 in its body. Raising a limit is a deliberate edit the pull request explains, as raising a memory budget is
 ([memory-ledger.md](memory-ledger.md)).
 
 A change to the replay's model (what the console does that the replay did not yet model, such as how it reports free
 memory) records its part's baseline again with 0.10.1's code for that part, in a commit before the fix:
-`--set-before "LABEL" --part game` (or `shell`) replaces that part's 0.10.1 column and limits and leaves the other's.
+`--set-before "LABEL" --part game --reset-limits` (or `shell`) replaces that part's 0.10.1 column and limits, prints
+every limit that rises, and leaves the other part's. Without `--reset-limits` it keeps the tighter of each old limit
+and the run; with no rows for the part (the game part without the release models) it records nothing.
 
 New console logs: `python3 tools/owner_scenario.py --extract LOG... --source "where they came from"` rewrites the
 events, then `--lower` adds the new scenarios' limits.

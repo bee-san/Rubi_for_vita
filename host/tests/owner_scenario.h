@@ -7,15 +7,18 @@
  * (the ledger's current; the plugin's 8 KiB at a refusal), so others held VJO_PAF_HEAP - FREE - HELD: that stays
  * until the next event, and this build's requests see what is left beside what it holds itself. Rubi's own steps are
  * its own code: the overlay page's text arena (shell/overlay_mem.h, as overlay.cpp's open_page and close_page take
- * and give it), the lookup's result arena (shell/worker.c mem_alloc and mem_free, in run_job's and the control
- * thread's order) and an Anki save's arena (shell/anki.c's request, VJO_BUDGET_PAF_ANKI, through the same heap).
+ * and give it), the lookup's result arena (shell/worker.c mem_alloc, and the worker's own RESULT_MEM_* steps for
+ * when it goes back: a job's start and run, a game's exit, the idle rule) and an Anki save's arena (shell/anki.c's
+ * request, VJO_BUDGET_PAF_ANKI, through the same heap).
  * The page's own Paf, which PageOpen takes outside Rubi's ledger, is SCENARIO_PAGE_PAF while it is open.
  *
  * Events, one a line: boot|start|exit FREE HELD (at boot the Shell's start step: shell/overlay_mem.h
- * vjo_overlay_mem_boot, #528), press FREE HELD LOOKUP (the toggle: the page opens, the cursor's word
- * is looked up when it opened or when 0.10.1 asked for its arena too, LOOKUP 1, and it closes), lookup FREE HELD (a
- * background read's lookup: run_job gives the arena back, then takes one after OCR), anki FREE HELD (a press that
- * saved a card). Each scenario prints one `owner-scenario shell NAME: key=value ...` line; tools/owner_scenario.py
+ * vjo_overlay_mem_boot, #528; at a start or an exit no game is in front: on_game_exit's step and the idle rule),
+ * press FREE HELD LOOKUP (the toggle: the page opens, the cursor's word is looked up, and it closes; LOOKUP 1: 0.10.1's
+ * log has the press's own job asking for its arena, so the press runs a job: its start and run steps first), lookup
+ * FREE HELD (a background read's lookup: its job's start and run steps, then the arena after OCR), anki FREE HELD (a
+ * press that saved a card). silent = refused - told: refusals no open overlay showed. Each scenario prints one
+ * `owner-scenario shell NAME: key=value ...` line; tools/owner_scenario.py
  * holds them against tools/owner_scenario.json. The checks here hold for any policy: every refusal is logged, the
  * overlay that did not open says so, and a scenario gives back all it took but the overlay's text block, which is
  * the plugin's from its start (#528). */
@@ -50,6 +53,24 @@ static void scenario_level(uint32_t free_logged, uint32_t held_logged)
 {
     scenario_others = (int64_t)VJO_PAF_HEAP - (int64_t)free_logged - (int64_t)held_logged;
     if (scenario_others < 0) scenario_others = 0;
+}
+
+/* No game in front (it left, or the next has not started): the control thread's idle rule (shell/worker.c
+ * control_tick), as the worker sees it then: no title, no job, the overlay closed. */
+static void scenario_no_game(void)
+{
+    title_id[0] = '\0';
+    job_running = 0;
+    RESULT_MEM_IDLE();
+}
+
+/* A user's job, neither a refresh nor the self-test's (the normal build has no self-test: job_selftest is 0 there). */
+static void scenario_user_job(void)
+{
+    job_refresh = 0;
+#if VJO_DEBUG
+    job_selftest = 0;
+#endif
 }
 
 static void scenario_between_jobs(ScenarioCounts *c)
@@ -94,7 +115,13 @@ static void scenario_press(ScenarioCounts *c, int lookup_logged, int anki)
         page = 1;
     }
     /* The cursor's word: an open page always asks; one that did not open asked too when 0.10.1's log has its arena's
-     * refusal beside it (the job started before the page's close came) */
+     * refusal beside it (the job started before the page's close came). Such a press ran a job: the worker's own
+     * steps give the arena back at its start and run (a press without one looks up on the shown text) */
+    if (lookup_logged) {
+        scenario_user_job();
+        RESULT_MEM_JOB_START();
+        RESULT_MEM_JOB_RUN();
+    }
     if ((ui || lookup_logged) && scenario_arena(c) < 0 && ui)
         c->told++; /* run_cursor_job: the open page shows OOM_SHELL_RESULTS ("... too low for dictionary results") */
     if (anki && ui) { /* Enter in the open page: shell/anki.c's arena for the card (ANKI_TEXT_MEM) */
@@ -113,8 +140,9 @@ static void scenario_press(ScenarioCounts *c, int lookup_logged, int anki)
 static void scenario_print(const char *name, const ScenarioCounts *c)
 {
     fprintf(stderr, "owner-scenario shell %s: presses=%u not_opened=%u page_failed=%u lookups=%u refused=%u told=%u "
-                    "anki_ok=%u anki_refused=%u peak=%u held=%u\n", name, c->presses, c->not_opened, c->page_failed,
-            c->lookups, c->refused, c->told, c->anki_ok, c->anki_refused, (unsigned)c->peak, (unsigned)c->held);
+                    "silent=%u anki_ok=%u anki_refused=%u peak=%u held=%u\n", name, c->presses, c->not_opened,
+            c->page_failed, c->lookups, c->refused, c->told, c->refused - c->told, c->anki_ok, c->anki_refused,
+            (unsigned)c->peak, (unsigned)c->held);
 }
 
 static void scenario_end(const char *name, ScenarioCounts *c, ScenarioCounts *all, uint32_t start_held)
@@ -123,7 +151,7 @@ static void scenario_end(const char *name, ScenarioCounts *c, ScenarioCounts *al
      * still hold beside the plugin's own, once no game runs */
     uint32_t kept = scenario_ui ? VJO_OVERLAY_MEM_BYTES : 0;
     c->peak = scenario_peak;
-    if (has_result_memory()) mem_free(); /* the control thread's, once no game runs */
+    scenario_no_game(); /* the boot ends with no game in front: the idle rule */
     TEST_CHECK_(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == start_held + kept,
                 "%s: everything but the kept text block given back (%u held, %u at the start, %u kept)", name,
                 (unsigned)vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF), (unsigned)start_held,
@@ -176,11 +204,16 @@ static void test_owner_scenario_shell(void)
              * text block, kept from now on (#528; 0.10.1 took no Paf here beside the plugin's) */
             vjo_overlay_mem_boot(&scenario_ui);
             scenario_between_jobs(&c);
-        } else if (!strcmp(kind, "start") || !strcmp(kind, "exit")) {
-            /* No game was active (it left the front, or this one starts): on_game_exit, or the control thread's
-             * idle rule (no game active, the page closed), gives the result arena back; 0.10.1's ledger lines show
-             * the plugin's 8 KiB alone at every start and exit */
-            if (has_result_memory()) mem_free();
+        } else if (!strcmp(kind, "exit")) {
+            /* the game left the front: on_game_exit's step, then the idle rule */
+            job_running = 0;
+            RESULT_MEM_GAME_EXIT();
+            scenario_no_game();
+            scenario_between_jobs(&c);
+        } else if (!strcmp(kind, "start")) {
+            /* no game ran since the last exit (the idle rule), then this one is in front */
+            scenario_no_game();
+            memcpy(title_id, "PCSG00415", 10);
             scenario_between_jobs(&c);
         } else if (!strcmp(kind, "press")) {
             TEST_ASSERT(n == 4);
@@ -188,7 +221,10 @@ static void test_owner_scenario_shell(void)
         } else if (!strcmp(kind, "anki")) {
             scenario_press(&c, 1, 1);
         } else if (!strcmp(kind, "lookup")) {
-            mem_free(); /* run_job: a new read gives the arena back first (a refresh keeps it) */
+            /* a background read (not a refresh): its job's start and run steps, then the arena after OCR */
+            scenario_user_job();
+            RESULT_MEM_JOB_START();
+            RESULT_MEM_JOB_RUN();
             scenario_arena(&c);
         } else {
             TEST_CHECK_(0, "unknown event: %s", line);
