@@ -55,6 +55,9 @@ static uint32_t kd_taken, kd_peak, kd_refusals;
 static int64_t user_free, cdram_free, phycont_free;
 static int64_t user_used, cdram_used, phycont_used, user_peak;
 static unsigned refuse;          /* bits: 1 USER capture, 2 CDRAM capture, 4 PHYCONT capture */
+/* #528: the console reports the game's free USER memory in whole MiB (#324: all 78 samples of あおかな were 1-4 MiB;
+ * every "free USER=" in the owner's logs is a whole MiB): report_mib rounds it down so */
+static int report_mib;
 typedef struct { SceUID uid; void *base; size_t bytes; int type; int kernel; } Block;
 static Block blocks[16];
 static SceUID next_uid = 100;
@@ -90,7 +93,9 @@ static int64_t free_of(int type)
 /* the game */
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 {
-    out->size_user = (int)(user_free - user_used);
+    int64_t user = user_free - user_used;
+    if (report_mib && user > 0) user -= user % (1 << 20); /* whole MiB, as the console reports it (#324) */
+    out->size_user = (int)user;
     out->size_cdram = (int)(cdram_free - cdram_used);
     out->size_phycont = (int)(phycont_free - phycont_used);
     return 0;
@@ -557,6 +562,52 @@ static void api55_pause_reads_one_frame_beside_a_spinner(void)
  * log_tier_checks). tools/owner_scenario.py holds them against tools/owner_scenario.json. */
 #include "../../core/config.h"
 #include "owner_request.h" /* the owner's config and the Shell's packing of his job, shared with test_shell_worker.c */
+/* One job of the owner scenario's game part at the pool's current state (cold: nothing resident; warm: what the job
+ * before it left), and its `owner-scenario game NAME:` line. */
+static void scenario_job(const char *name, const VjoConfig *c, uint32_t flags, const uint16_t r[4], int64_t free_bytes)
+{
+    VjoGameOcrRequest request;
+    unsigned tier = 0, lm = 0, casc = 0, spot = 0, helpers = 0;
+    int rc, told;
+    kd_taken = kd_peak = 0;
+    user_peak = user_used; /* a warm job's resident blocks are Rubi's too */
+    memset(&g, 0, sizeof(g));
+    game_ocr_init();
+    clock_us = 1000000;
+    g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME;
+    g.ocr_epoch = 1; g.fb_w = FB_W; g.fb_h = FB_H; g.done_seq = g.capture_seq = 11;
+    g.region = (VjoRect){r[0], r[1], r[2], r[3]};
+    caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
+    owner_request(&request, c, flags, tier_names[c->vocr_tier - 1]); /* the largest tier's model names the job */
+    TEST_ASSERT(vjoOcrSubmit(&request) > 0);
+    caller = 7;
+    TEST_ASSERT(!vjoOcrTake(&request));
+    rc = vjo_game_ocr_run_request(&request, &last_out);
+    TEST_CHECK(!vjoOcrComplete(&last_out));
+    for (unsigned i = 0; i < last_out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+        const VjoGameOcrStep *s = &last_out.step[i];
+        if (s->id == VJO_GSTEP_CHECK && !s->rc) {
+            tier = VJO_GCHECK_TIER(s->kind); lm = s->kind & 7u; casc = !!(s->kind & VJO_GCHECK_CASCADE);
+        }
+        if (s->id == VJO_GSTEP_SPOT) spot = s->kind == 1 && !s->rc;
+        if (s->id == VJO_GSTEP_PAR) helpers = s->arg;
+    }
+    told = rc == 0 || (rc == VJO_E_OOM && last_out.reserve_bytes != 0);
+    fprintf(stderr, "owner-scenario game %s: free=%lld rc=%d failed=%d tier=%u lm=%u cascade=%u spot=%u "
+                    "helpers=%u peak=%lld lines=%u told=%d\n", name, (long long)free_bytes, rc, rc != 0, rc ? 0u : tier,
+            rc ? 0u : lm, rc ? 0u : casc, spot, helpers, (long long)user_peak, last_out.lines, told);
+    /* any policy: no block outlives the job but the resident ones, the kernel's pool untouched */
+    TEST_CHECK(kd_taken == 0 && cdram_used == 0 && phycont_used == 0);
+    TEST_CHECK_(user_peak <= free_bytes, "%s: peak %lld over the free %lld", name, (long long)user_peak,
+                (long long)free_bytes);
+}
+
+/* #528 (mem-game): the console reports the game's free USER memory in whole MiB, rounded down (#324: all 78 samples of
+ * あおかな were 1-4 MiB; every "free USER=" the owner's debug builds logged is a whole MiB), so every case runs with
+ * that figure; each level runs the job twice, cold (nothing of Rubi's resident) and warm (`-warm`: beside the weights,
+ * LM and spotter the cold job left, as every later job of a session runs); and the owner's config at each model size
+ * (`tier-SIZE-88MiB`: vocr_tier = small, normal, large; CLANNAD's measured free USER, textbox, cold), which #528's
+ * summary reports game memory per size from. */
 static void owner_scenario_game(void)
 {
     static const struct { const char *name; int64_t free; } levels[] = {
@@ -570,7 +621,12 @@ static void owner_scenario_game(void)
     static const struct { const char *name; uint32_t flags; uint16_t r[4]; } regions[] = {
         {"box", 0, {1536, 48188, 62600, 15059}}, {"full", VJO_GAME_OCR_F_FULL, {0, 0, 0, 0}},
     };
+    static const struct { const char *name; int tier; } sizes[] = {
+        {"tier-small-88MiB", VJO_VOCR_TIER_SMALL}, {"tier-normal-88MiB", VJO_VOCR_TIER_NORMAL},
+        {"tier-large-88MiB", VJO_VOCR_TIER_LARGE},
+    };
     VjoConfig c;
+    char name[64];
     if (!have_models()) {
         TEST_MSG("release weights absent (VJO_VOCR_MODEL_DIR): the owner scenario's game part is left out");
         fprintf(stderr, "owner-scenario game: skipped (no release models)\n");
@@ -581,48 +637,30 @@ static void owner_scenario_game(void)
     TEST_ASSERT(c.vocr_tier == VJO_VOCR_TIER_LARGE && c.ocr_lm == 2 && c.ocr_helpers == 2 && c.ocr_finder);
     make_frame();
     kd_largest = KD_GRANTED_74;
+    report_mib = 1;
     for (unsigned li = 0; li < sizeof(levels) / sizeof(levels[0]); li++)
         for (unsigned ri = 0; ri < sizeof(regions) / sizeof(regions[0]); ri++) {
-            VjoGameOcrRequest request;
-            unsigned tier = 0, lm = 0, casc = 0, spot = 0, helpers = 0;
-            int rc, told;
             TEST_CHECK(drop_resident() == 0); /* a cold job: nothing kept from the case before */
             reset_worker();
-            kd_taken = kd_peak = 0;
             user_free = levels[li].free; cdram_free = 128 << 20; phycont_free = 16 << 20; refuse = 0;
             hook_copy_fails = 0; spinner = 0;
             user_used = cdram_used = phycont_used = user_peak = 0;
-            memset(&g, 0, sizeof(g));
-            game_ocr_init();
-            clock_us = 1000000;
-            g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME;
-            g.ocr_epoch = 1; g.fb_w = FB_W; g.fb_h = FB_H; g.done_seq = g.capture_seq = 11;
-            g.region = (VjoRect){regions[ri].r[0], regions[ri].r[1], regions[ri].r[2], regions[ri].r[3]};
-            caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
-            owner_request(&request, &c, regions[ri].flags, VJO_VOCR_TIER3_NAME);
-            TEST_ASSERT(vjoOcrSubmit(&request) > 0);
-            caller = 7;
-            TEST_ASSERT(!vjoOcrTake(&request));
-            rc = vjo_game_ocr_run_request(&request, &last_out);
-            TEST_CHECK(!vjoOcrComplete(&last_out));
-            for (unsigned i = 0; i < last_out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
-                const VjoGameOcrStep *s = &last_out.step[i];
-                if (s->id == VJO_GSTEP_CHECK && !s->rc) {
-                    tier = VJO_GCHECK_TIER(s->kind); lm = s->kind & 7u; casc = !!(s->kind & VJO_GCHECK_CASCADE);
-                }
-                if (s->id == VJO_GSTEP_SPOT) spot = s->kind == 1 && !s->rc;
-                if (s->id == VJO_GSTEP_PAR) helpers = s->arg;
-            }
-            told = rc == 0 || (rc == VJO_E_OOM && last_out.reserve_bytes != 0);
-            fprintf(stderr, "owner-scenario game %s-%s: free=%lld rc=%d failed=%d tier=%u lm=%u cascade=%u spot=%u "
-                            "helpers=%u peak=%lld lines=%u told=%d\n", levels[li].name, regions[ri].name,
-                    (long long)levels[li].free, rc, rc != 0, rc ? 0u : tier, rc ? 0u : lm, rc ? 0u : casc, spot,
-                    helpers, (long long)user_peak, last_out.lines, told);
-            /* any policy: no block outlives the job but the resident ones, the kernel's pool untouched */
-            TEST_CHECK(kd_taken == 0 && cdram_used == 0 && phycont_used == 0);
-            TEST_CHECK_(user_peak <= levels[li].free, "%s: peak %lld over the free %lld", levels[li].name,
-                        (long long)user_peak, (long long)levels[li].free);
+            snprintf(name, sizeof(name), "%s-%s", levels[li].name, regions[ri].name);
+            scenario_job(name, &c, regions[ri].flags, regions[ri].r, levels[li].free);
+            snprintf(name, sizeof(name), "%s-%s-warm", levels[li].name, regions[ri].name);
+            scenario_job(name, &c, regions[ri].flags, regions[ri].r, levels[li].free);
         }
+    for (unsigned si = 0; si < sizeof(sizes) / sizeof(sizes[0]); si++) {
+        VjoConfig t = c;
+        t.vocr_tier = sizes[si].tier;
+        TEST_CHECK(drop_resident() == 0);
+        reset_worker();
+        user_free = 88080384; cdram_free = 128 << 20; phycont_free = 16 << 20; refuse = 0;
+        hook_copy_fails = 0; spinner = 0;
+        user_used = cdram_used = phycont_used = user_peak = 0;
+        scenario_job(sizes[si].name, &t, regions[0].flags, regions[0].r, 88080384);
+    }
+    report_mib = 0;
     TEST_CHECK(drop_resident() == 0);
     reset_worker();
 }
