@@ -887,6 +887,18 @@ static void hooked_job(unsigned i)
     TEST_CHECK(job(shell_request(3, 2, 2000, SPEED_BASE | SPEED_SPOT | SPEED_VAUTO)) == VJO_OK);
     TEST_CHECK_(job_out.text_from == HOOK_SITE && capture_takes - takes0 == 1u && weights_blk.uid < 0,
                 "cycle %u: the resumed game's trusted line (%u capture blocks)", i, capture_takes - takes0);
+    /* audit-mem-leak-5: Auto's case: its job starts on the region's events, after the resumed game's first sampled frames,
+     * so the region has its screen and the next trusted line is published without pixels */
+    suspend_and_resume();
+    region_set_again();
+    make_frame(page_no++);
+    frames_shown(4u * VJO_CHECK_EVERY_FRAMES);
+    hook_text = lines[(i + 1u) % 3u];
+    hook_seq++;
+    takes0 = capture_takes;
+    TEST_CHECK(job(shell_request(3, 2, 2000, SPEED_BASE | SPEED_SPOT | SPEED_VAUTO)) == VJO_OK);
+    TEST_CHECK_(job_out.text_from == HOOK_SITE && capture_takes - takes0 == 0u && weights_blk.uid < 0,
+                "cycle %u: Auto's trusted line after a resume (%u capture blocks)", i, capture_takes - takes0);
     hooks_on = 0;
 }
 /* Vertical text (config.ini ocr_vertical, API 47): a tall region of columns at the screen's right, read once with
@@ -903,6 +915,17 @@ static int vertical_model_there(void)
     fclose(f);
     return 1;
 }
+/* audit-mem-leak-5: the job's lines were all columns (VJO_GAME_OCR_LINE_COLUMN) and, handed, its rows' try gave them to the
+ * columns' (a FIND step of kind 2: auto's rows looked like vertical text) */
+static int read_columns(int handed)
+{
+    unsigned cols = 0, k2 = 0;
+    for (unsigned k = 0; k < job_out.recognized && k < VJO_GAME_OCR_LINES; k++)
+        cols += (job_out.line[k].flags & VJO_GAME_OCR_LINE_COLUMN) != 0;
+    for (unsigned k = 0; k < job_out.n_steps && k < VJO_GAME_OCR_STEPS; k++)
+        k2 += job_out.step[k].id == VJO_GSTEP_FIND && job_out.step[k].kind == 2;
+    return job_out.recognized && cols == job_out.recognized && (!handed || k2);
+}
 static void region_set(VjoRect r)
 {
     VJO_LOCK();
@@ -914,16 +937,44 @@ static unsigned vertical_reads;
 static void vertical_job(unsigned i)
 {
     const uint32_t on = VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    /* audit-mem-leak-5: without the vertical model the first columns try latches columns_bad (game_ocr/main.c), and every
+     * later job of the game reads rows unchecked; here each job tries again, as a game's first job of columns does,
+     * so that the lanes without the models (CI, the ARM lane) soak the hand-overs' blocks too */
+    const int vbad = !models_ok || !vertical_model_there();
+    if (vbad) columns_bad = 0;
     region_set(TALL_REGION);
     make_vframe(page_no++);
     note_job(job(shell_request(3, 2, 2000, SPEED_BASE | on)));
     if (resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME)) vertical_reads++;
-    TEST_CHECK_(!models_ok || !vertical_model_there() || resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME),
+    TEST_CHECK_(!models_ok || !vertical_model_there() ||
+                    (resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME) && read_columns(0)),
                 "cycle %u: ocr_vertical = on read the columns with the vertical model", i);
     make_vframe(page_no++);
+    if (vbad) columns_bad = 0;
     note_job(job(shell_request(3, 2, 2000, SPEED_BASE | SPEED_SPOT | SPEED_VAUTO)));
     if (resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME)) vertical_reads++;
+    /* audit-mem-leak-5: auto's rows went to the columns, read with the vertical model on left resident (read once) */
+    TEST_CHECK_(!models_ok || !vertical_model_there() ||
+                    (resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME) && read_columns(1) &&
+                     job_out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT),
+                "cycle %u: ocr_vertical = auto read the columns with the resident vertical model (weights %u)", i,
+                (unsigned)job_out.weights);
     region_set(BOX_REGION);
+}
+/* audit-mem-leak-5: vertical text, then the game left for 6 s of its running time: the vertical model, its LM and the
+ * spotter go back with the others (inactive_long), and the next cycle reads them again */
+static void vertical_left_job(unsigned i)
+{
+    vertical_job(i);
+    g.game_active = 0;
+    loop_sleeps = 60; /* 100 ms sleeps: 6 s of the game's time */
+    worker_main(0, NULL);
+    loop_sleeps = 0;
+    __atomic_store_n(&quitting, 0, __ATOMIC_RELEASE);
+    TEST_CHECK_(weights_blk.uid < 0 && lm_blk.uid < 0 && spot_blk.uid < 0 && !blocked,
+                "cycle %u: the vertical model and its LM went back to a game left for 6 s", i);
+    g.game_active = VJO_GAME;
+    (void)inactive_long(0);
 }
 /* The game suspended (the PS button: SceShell's LiveArea in front) and resumed during its job: the kernel's foreground
  * events as kernel/lifecycle.c applies them (each moves the epoch on; the resumed game is active again at the Shell's
@@ -990,6 +1041,7 @@ static const Scenario scenarios[] = {
     {"a hooked game: OCR, then 8 trusted answers", hooked_job},
     {"the game suspended (PS) and resumed during its job", suspended_job},
     {"vertical text: ocr_vertical on, then auto", vertical_job},
+    {"vertical text, then the game left for 6 s", vertical_left_job},
 };
 
 static void the_game_process_holds_no_more_after_each_cycle(void)

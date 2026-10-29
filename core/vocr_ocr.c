@@ -2890,7 +2890,7 @@ static void last_put(VjoVocrLast *e, const Stream *s, const char *text, const Vj
         st->recognized > VJO_VOCR_LAST_LINES)
         return;
     memcpy(e->text, text, len + 1u);
-    memcpy(e->text + len + 1u, pol->raw, raw); /* (last_get ends it) */
+    if (raw) memcpy(e->text + len + 1u, pol->raw, raw); /* (last_get ends it; no raw text: pol->raw may be NULL) */
     e->len = (uint16_t)len;
     e->raw_len = (uint16_t)raw;
     e->lines = (uint8_t)st->lines;
