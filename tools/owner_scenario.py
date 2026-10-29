@@ -266,12 +266,13 @@ GAME_LIMITS = ("failed", "peak")
 GAME_FLOORS = ("told", "tier", "lm")
 
 
-def lowered(rows, limits):
-    """limits with every limit lowered to the run's value and every floor raised to it: never the other way."""
+def lowered(rows, limits, parts=("shell", "game")):
+    """limits with every limit of `parts` lowered to the run's value and every floor raised to it: never the other
+    way."""
     out = json.loads(json.dumps(limits))
     lim = out.setdefault("limits", {})
     for (part, name), v in sorted(rows.items()):
-        if name == "all":
+        if name == "all" or part not in parts:
             continue
         cur = lim.setdefault(part, {}).setdefault(name, {})
         for key in SHELL_LIMITS if part == "shell" else GAME_LIMITS:
@@ -296,7 +297,11 @@ def main(argv=None):
                     help="run, then lower tools/owner_scenario.json's limits (and raise its floors) to the run's "
                          "values: the ratchet's step in a fix's pull request; it never loosens one")
     ap.add_argument("--set-before", metavar="LABEL",
-                    help="run, then record the run as the table's 'before' column, named LABEL (done once, for 0.10.1)")
+                    help="run, then record the run as the table's 'before' column, named LABEL, and make it the "
+                         "limits: done for 0.10.1's code, and again only when the replay's model changes (with 0.10.1's "
+                         "code for that part, and --part)")
+    ap.add_argument("--part", choices=("shell", "game"),
+                    help="--set-before and --lower act on this part only (the other keeps its baseline and limits)")
     ap.add_argument("--json", action="store_true", help="print the run's rows as JSON instead of the table")
     args = ap.parse_args(argv)
     if args.extract:
@@ -317,13 +322,16 @@ def main(argv=None):
         print(json.dumps({f"{p} {n}": v for (p, n), v in sorted(rows.items())}, indent=1))
     else:
         print(table(rows, limits))
+    parts = (args.part,) if args.part else ("shell", "game")
     if args.set_before and not problems:
-        before = {"label": args.set_before, "shell": {}, "game": {}}
-        for (part, name), v in sorted(rows.items()):
-            before[part][name] = v
-        limits["before"] = before
+        before = limits.setdefault("before", {})
+        for part in parts:
+            before[part] = {name: v for (p, name), v in rows.items() if p == part}
+            before.setdefault("labels", {})[part] = args.set_before
+            limits.setdefault("limits", {})[part] = {}  # the new baseline is the limit: lowered() fills it below
+        before.pop("label", None)
     if (args.lower or args.set_before) and not problems:
-        limits = lowered(rows, limits)
+        limits = lowered(rows, limits, parts)
         LIMITS.write_text(json.dumps(limits, indent=1, sort_keys=True) + "\n", encoding="utf-8")
         print(f"wrote {LIMITS.relative_to(ROOT)}")
     if args.check:
