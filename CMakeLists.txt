@@ -299,6 +299,14 @@ if(_vjo_plaintext_dir)
     ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir};VJO_REQUIRE_PLAINTEXT=1")
 endif()
 vjo_suite(text_hit SOURCES host/tests/test_text_hit.c LIBS vjo_host)
+# #528: each arena of the Shell's lookup, its overlay texts, an Anki card, the export's sentence readings and the line
+# history cut at every block it gives (core/arena.c's host-only cap): every run returns an error or the full result.
+vjo_suite(oom_paths SOURCES host/tests/test_oom_paths.c INCLUDES host
+  DEFINES VJO_WORD_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures/word_lookup" LIBS vjo_host)
+if(_vjo_plaintext_dir)
+  set_tests_properties(oom_paths PROPERTIES FIXTURES_REQUIRED plaintext
+    ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir};VJO_REQUIRE_PLAINTEXT=1")
+endif()
 # The arrow keys over the header's displayed rows (#81), on layout fixtures.
 # The overlay's paf texts re-wrapped where paf broke inside a word (shell/wrap_fix.h), on a model layout.
 vjo_suite(wrap_fix SOURCES host/tests/test_wrap_fix.cpp FEATURES cxx_std_11 LIBS vjo_host)
