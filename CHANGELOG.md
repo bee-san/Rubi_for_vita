@@ -18,6 +18,11 @@ been reported.
   now leaves every plugin as it was instead of a new kernel beside an old Shell or OCR worker, which gave no overlay
   until a Repair; a rename that fails puts back the ones renamed in before it (#528). No memory changes: the
   install still copies 256 KiB at a time through its static buffer.
+- The overlay opens even when another plugin has used up SceShell's PAF heap (#528: 34 `overlay not opened` lines,
+  202-427 KB free). Its 20 KiB text block is taken once as the Shell starts, through the same 1.5 MiB reserve
+  guard, and kept, so an open asks for no memory of Rubi's; a refused dictionary arena then shows the recognized
+  text and the memory message instead of nothing. Shell PAF held permanently: 8,192 → 28,672 B; worst case
+  unchanged (241,664 B); module pages unchanged (both builds 16 B less code). Not yet run on a console.
 
 ## [0.10.1] - 2026-10-29
 

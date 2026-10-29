@@ -276,6 +276,9 @@ void vjo_shell_heap_free(int item, void *p, size_t bytes)
     vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
 }
 uint32_t vjo_shell_heap_free_size(void) { return 2557952; }
+/* shell/overlay.cpp's take of its text block as the Shell starts (#528, vjo_worker_start's end): overlay.cpp is not
+ * built here; the owner scenario runs the step itself (shell/overlay_mem.h vjo_overlay_mem_boot, at its boot event). */
+void vjo_overlay_boot(void) {}
 static int theme_loads, theme_choice;
 int vjo_colour_scheme_load(VjoArena *a) { (void)a; theme_loads++; return theme_choice; }
 void vjo_config_load(VjoConfig *out, VjoArena *a) { start_step('C'); *out = loaded; }

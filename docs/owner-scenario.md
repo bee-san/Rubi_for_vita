@@ -20,7 +20,7 @@ card is one scenario: 24 of them, 591 events, from the collection's `current-dev
 
 | Event | From the log | What the replay runs |
 | --- | --- | --- |
-| `boot`, `start`, `exit` | the ledger's `ledger boot/start/exit paf: current=… free=…` lines | at a start or an exit no game is active, so the worker gives its result arena back (`shell/worker.c` `on_game_exit` and the control thread's idle rule) |
+| `boot`, `start`, `exit` | the ledger's `ledger boot/start/exit paf: current=… free=…` lines | at `boot` the Shell's start step: the overlay's text block, taken and kept from then on (`shell/overlay_mem.h` `vjo_overlay_mem_boot`, since #528's first fix; 0.10.1 took nothing there); at a start or an exit no game is active, so the worker gives its result arena back (`shell/worker.c` `on_game_exit` and the control thread's idle rule) |
 | `press` | `overlay text arena Paf reserve guard: free=…` | the overlay opens (`shell/overlay_mem.h`, as `overlay.cpp`'s `open_page` takes its text arena), the cursor's word is looked up (`shell/worker.c` `mem_alloc`), and the overlay closes |
 | `lookup` | a `result arenas Paf reserve guard` line that is not a press's | a background read's lookup: `run_job` gives the arena back, then asks for one after OCR |
 | `anki` | `anki: save rc=0` | a press that saved a card: the Anki arena (`shell/anki.c`'s request, `VJO_BUDGET_PAF_ANKI`) while the overlay is open |
@@ -78,7 +78,7 @@ counts: 24 overlays not opened and 28 result arenas refused in the API 57 boots,
 | API 57 (line 11563) | 9 (0) | 9 | 0 | 0 | 0 | 8,192 |
 | all 24 scenarios | 273 (239) | 34 | 124 | 51 | 0 | 225,280 |
 
-Rubi held the plugin's 8,192 B at every start and exit in every scenario, as the log's ledger lines show.
+Rubi held the plugin's 8,192 B at every start and exit in every scenario, as the log's ledger lines show. Since the overlay's text block is taken at the Shell's start (#528's first fix) it holds 28,672 B there, and a scenario ends holding that block: `held` and, in the three scenarios that took nothing else, `peak` are 28,672 B.
 
 | Game, free USER | Tier | LM | Spotter | Helpers | Peak B (textbox) |
 | --- | --- | --- | --- | ---: | ---: |

@@ -2237,3 +2237,39 @@ Measured from the packaged SELF segments with the pinned VitaSDK image (2026.08)
 `VJO_BUDGET_WORKER_MODULE_PAGES` is lowered to those page counts. Kernel and Shell page budgets
 are unchanged; the debug kernel remains 118,784 B (44,712 + 72,404 B), Shell 167,936 B
 (97,620 + 69,192 B). These are binary measurements, not console headroom measurements.
+
+## The overlay's text block from the Shell's start (#528)
+
+#528's logs (Rubi 0.10.1, API 57, PCH-1001 on 3.65) hold 34 `overlay not opened: no Paf memory for its text (20 KiB)`
+lines (24 at API 57, 10 at API 31): the 20,480 B text block was taken at every open, through the 1.5 MiB reserve
+guard, while another plugin's retained 2,187,264 B buffer left the PAF heap 202,296-426,872 B free, and nothing
+was shown. The block is now taken once, at the end of `vjo_worker_start` (`shell/overlay.cpp` `vjo_overlay_boot`,
+the seam's `shell/overlay_mem.h` `vjo_overlay_mem_boot`), through the same guard while the heap is at its fullest
+(3,725,976-3,744,264 B free at all 90 logged Shell starts), and kept (`vjo_overlay_mem_close` gives nothing back);
+an open takes it only if that take was refused. The reserve, the guard and every
+budget are unchanged: `VJO_BUDGET_PAF_UI` moves from the transient items to `VJO_WORST_SHELL_PAF_PERMANENT`.
+
+| Pool "shell paf" | Before | After |
+|---|---:|---:|
+| permanent (`VJO_WORST_SHELL_PAF_PERMANENT`) | 8,192 B | 28,672 B |
+| worst case (`VJO_WORST_SHELL_PAF`) | 241,664 B | 241,664 B |
+| limit / headroom | 985,088 / 743,424 B | 985,088 / 743,424 B |
+
+Shell module, packaged SELF segments with the pinned VitaSDK image, `tools/check_memory_ledger.py`, main `b024c93b`
+and this change:
+
+| Shell | Before: text + data/bss | After: text + data/bss | Loaded pages |
+|---|---:|---:|---:|
+| Debug | 98,164 + 69,632 B | 98,148 + 69,632 B | 167,936 B (unchanged) |
+| Normal | 85,948 + 69,556 B | 85,932 + 69,556 B | 155,648 B (unchanged, exact) |
+
+The owner scenario (`tools/owner_scenario.py`, [owner-scenario.md](owner-scenario.md)): no overlay fails to open in
+its 273 presses (34 before; the page's own 103,296 B fits at every one); the presses whose overlay now opens ask for
+their lookup, so two scenarios' `refused` limits go up (23 → 25, 0 → 9: an open overlay that shows the text and
+why there is no entry, `told`, 34 in all), and every scenario's `held` (and three scenarios' `peak`) is 28,672 B:
+the kept block.
+
+What SceShell gives up: 20,496 B of its PAF heap while no overlay is open (the block and the heap's 16 B per block),
+from the start, beside the 1,977,448 B the heap had at its lowest in #528's 293 sessions without the outside buffer
+[measured]; with the overlay open nothing changes. These are binary and log measurements, not a console run of this
+build.
