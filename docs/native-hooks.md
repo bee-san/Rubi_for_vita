@@ -25,10 +25,17 @@ Vita3K. The normal release build has no reported console run. The remaining cons
 The experimental native **どうぶつの森e＋ r4** port (`AFEJ00001`, `APP_VER 00.01`) has an entry for
 its visible-dialogue publisher: module NID `7FEE3308`, segment 0 offset `20F0`, Thumb, UTF-8 in `r0`.
 The first 16 bytes are a PUSH/MOV veneer with no SELF relocation; the call starts after them.
-With trusted hooks enabled this verified site supplies dialogue without OCR. Earlier experimental
-builds have another module NID and are refused. This entry is for that native port, not a GameCube
-image by itself. Placement, decoding and trusted selection pass host checks; live hook execution
-is still unverified. The exact r4 executable has SHA-256
+With trusted hooks enabled this verified site supplies dialogue without OCR. A build of the port is
+hooked only if it has this module NID and these 16 bytes at the site and, when its `APP_VER` can be
+read, `00.01`; otherwise the entry is refused (the debug build's `hooks.log` says `signature` or
+`version`). Earlier experimental builds were reported with another module NID (#529; no log of them
+is recorded here). This entry is for that native port, not a GameCube image by itself. Rubi reads at
+most 512 bytes of the page (`VJO_HOOK_RAW_BYTES`), up to its NUL and never past its memory block; a
+longer page is cut at its last whole character. The port's own page size is not recorded here, and
+neither is whether a branch elsewhere in segment 0 lands inside the patched bytes (`+20F2` to
+`+20F7`). Placement, decoding and trusted selection pass host checks (`host/tests/test_hooks_engine.c`
+runs the row through the worker's own path in both table modes); live hook execution is still
+unverified. The exact r4 executable has SHA-256
 `acf744c9be46d5945676d4e41f4661ad75771797bcf65a09f34d177e1b207ff6` (recorded provenance; runtime
 installation checks the NID, version and instruction signature).
 

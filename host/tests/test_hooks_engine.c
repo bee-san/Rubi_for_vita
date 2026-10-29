@@ -1483,7 +1483,7 @@ static void test_app_version(void)
         uint16_t want;
     } cases[] = {{"01.01", 0x0101}, {"1.10", 0x0110}, {"02.00", 0x0200}, {"01.1", 0}, {"01.01a", 0},
                  {"a1.00", 0},     {"", 0},          {"100.00", 0},     {"01,01", 0}, {"01.0x", 0},
-                 {".10", 0},       {"101.01", 0}};
+                 {".10", 0},       {"101.01", 0},    {"00.01", 0x0001}, {"0.01", 0x0001}};
     VjoStreamSlot zero;
     memset(&zero, 0, sizeof(zero));
     for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
@@ -1766,6 +1766,94 @@ static void test_verified_version(void)
         TEST_CHECK_(cases[k].hooked || strstr(logbuf, " refused: version") != NULL, "case %u: the log", k);
 #endif
     }
+}
+
+/* AFEJ00001, the native どうぶつの森e＋ r4 port (#529): its own row through the worker's path, in both suites (the
+ * built-in table and the shipped archive; audit-rubi-merge-529 N8). The port's 16 bytes at +0x20F0, with its module NID
+ * and APP_VER 00.01, are hooked; another APP_VER or NID is refused, and an unreadable APP_VER leaves the decision to the
+ * NID and the bytes. r0's UTF-8 page is read up to its NUL, at most VJO_HOOK_RAW_BYTES and never past its memory block
+ * (a guard page follows it), nothing is written to it, and its text gets Rubi's clean-up only (no filter, no Luna site
+ * at the address). */
+static void test_eplus_row(void)
+{
+    static const uint8_t sig[16] = {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46,
+                                    0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46};
+    static const struct {
+        const char *sfo;
+        uint32_t nid;
+        int hooked;
+        const char *log; /* the debug build's hooks.log line for the row */
+    } cases[] = {{"00.01", 0x7FEE3308u, 1, "verified +20F0 thumb r0 hooked, stream 1"},
+                 {NULL, 0x7FEE3308u, 1, "verified +20F0 thumb r0 hooked, stream 1"},
+                 {"00.02", 0x7FEE3308u, 0, "verified +20F0 thumb r0 refused: version"},
+                 {"00.01", 0x52DEA492u, 0, "verified +20F0 thumb r0 refused: signature"}};
+    static const char page[] = "こんにちは！\x01\n今日もいい天気だね。";
+    static const char want[] = "こんにちは！\n今日もいい天気だね。";
+    char text[1024], cut[3u * 170u + 1u];
+    uint32_t frame[16], inst, refused, seq;
+    VjoHookSnap s;
+    for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
+        reset();
+        memcpy(code + 0x20F0, sig, sizeof sig);
+        mod.nid = cases[k].nid;
+        if (cases[k].sfo) set_sfo(cases[k].sfo);
+        vjo_hooks_start("AFEJ00001", VJO_TEXT_SOURCE_AUTO, 0);
+        vjo_hooks_counts(NULL, &inst, &refused);
+        TEST_CHECK_((inst >> 16) == (unsigned)cases[k].hooked && refused == (unsigned)!cases[k].hooked &&
+                        n_offs == (unsigned)cases[k].hooked,
+                    "case %u (APP_VER %s, NID %08X): hooked %u, refused %u", k, cases[k].sfo ? cases[k].sfo : "(none)",
+                    (unsigned)cases[k].nid, (unsigned)(inst >> 16), (unsigned)refused);
+#if VJO_DEBUG
+        TEST_CHECK_(strstr(logbuf, cases[k].log) != NULL, "case %u: hooks.log says \"%s\"", k, cases[k].log);
+#endif
+    }
+
+    reset();
+    memcpy(code + 0x20F0, sig, sizeof sig);
+    mod.nid = 0x7FEE3308u;
+    set_sfo("00.01");
+    add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    vjo_hooks_start("AFEJ00001", VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_ASSERT(n_sites == 1 && site_info[0].ver && !site_info[0].luna && vjo_hooks_verified(1));
+    TEST_CHECK(n_offs == 1 && offs[0].segidx == 0 && offs[0].offset == 0x20F0u && offs[0].thumb == 1);
+    TEST_CHECK(site_info[0].ver->filter == 0 && site_info[0].ver->read == VJO_PLACE_READ_STRING);
+
+    /* a page: its NUL ends the read; the clean-up drops a C0 control and keeps the line break */
+    memcpy(data + 0x100, page, sizeof page);
+    memset(frame, 0, sizeof frame);
+    frame[0] = a32(data) + 0x100;
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.kind == VJO_HOOK_KIND_SITE && s.key == 0x20F0u && s.site == NULL);
+    TEST_CHECK(s.encoding == VJO_HOOK_ENC_UTF8 && s.n == sizeof page - 1u && !memcmp(s.raw, page, s.n));
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) == sizeof want - 1u && !strcmp(text, want));
+    TEST_MSG("got [%s]", text);
+
+    /* a page of 600 bytes before its NUL: the first VJO_HOOK_RAW_BYTES of them; the character the cut splits is
+     * dropped */
+    for (unsigned i = 0; i < 200; i++) memcpy(data + 0x400 + 3u * i, "あ", 3);
+    for (unsigned i = 0; i < 170; i++) memcpy(cut + 3u * i, "あ", 3);
+    cut[3u * 170u] = 0;
+    frame[0] = a32(data) + 0x400;
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.n == VJO_HOOK_RAW_BYTES && !memcmp(s.raw, data + 0x400, VJO_HOOK_RAW_BYTES));
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof text) == 3u * 170u && !strcmp(text, cut));
+
+    /* a page its memory block ends inside, with no NUL: read to the block's end only (the guard page after it faults) */
+    memcpy(data + DATA_SIZE - 9u, "あいう", 9);
+    frame[0] = a32(data) + DATA_SIZE - 9u;
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.n == 9u && vjo_hooks_text(&s, text, sizeof text) == 9u && !strcmp(text, "あいう"));
+
+    /* r0 in no memory block: no text, the stream keeps its last */
+    seq = s.seq;
+    frame[0] = 0x10u;
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq == seq && s.n == 9u);
+    /* the hits only read the game's memory */
+    TEST_CHECK(!memcmp(data + 0x100, page, sizeof page) && !memcmp(code + 0x20F0, sig, sizeof sig));
 }
 
 /* ---- Rubi's verified entries on the farm's own bytes (tools/hook_farm.py fixtures) ---- */
@@ -2413,6 +2501,7 @@ static void test_profile_fallback(void)
 }
 #endif
 TEST_LIST = {
+    {"AFEJ00001 (native e+ r4): its row through the worker, r0's UTF-8 page, bounded", test_eplus_row},
 #ifdef VJO_EXTERNAL_HOOK_PROFILES
     {"external profiles: current-title farm excerpts through real capture and filters", test_farm_excerpts},
     {"external profiles: SC3 sites still load their character tables", test_sc3_sites},
