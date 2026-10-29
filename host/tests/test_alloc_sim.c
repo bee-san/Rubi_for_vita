@@ -56,8 +56,21 @@ static int64_t user_free, cdram_free, phycont_free;
 static int64_t user_used, cdram_used, phycont_used, user_peak;
 static unsigned refuse;          /* bits: 1 USER capture, 2 CDRAM capture, 4 PHYCONT capture */
 /* #528: the console reports the game's free USER memory in whole MiB (#324: all 78 samples of あおかな were 1-4 MiB;
- * every "free USER=" in the owner's logs is a whole MiB): report_mib rounds it down so */
+ * every "free USER=" in the owner's logs is a whole MiB): report_mib rounds it down so. The sweep below (mem-game)
+ * also tracks the least true free memory the worker left the game beside a block of its that stayed
+ * (user_headroom_min), and a block the worker takes, samples once and gives back at once (game_ocr/main.c
+ * resident_alloc's probe: the deepest such dip under the reserve, and how many) */
 static int report_mib;
+static int64_t user_headroom_min;
+static SceUID pending_uid;
+static int pending_resident; /* the pending block is a resident one's (weights, LM, cascade, spotter): resident_alloc's */
+static int64_t pending_headroom, probe_dip_max;
+static unsigned probes_refused, pending_samples;
+static void pending_commit(void)
+{
+    if (pending_uid && pending_headroom < user_headroom_min) user_headroom_min = pending_headroom;
+    pending_uid = 0;
+}
 typedef struct { SceUID uid; void *base; size_t bytes; int type; int kernel; } Block;
 static Block blocks[16];
 static SceUID next_uid = 100;
@@ -94,6 +107,7 @@ static int64_t free_of(int type)
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 {
     int64_t user = user_free - user_used;
+    if (pending_uid) pending_samples++;
     if (report_mib && user > 0) user -= user % (1 << 20); /* whole MiB, as the console reports it (#324) */
     out->size_user = (int)user;
     out->size_cdram = (int)(cdram_free - cdram_used);
@@ -113,6 +127,14 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned n, void *opt)
     if (uid < 0) return uid;
     *used_of(type) += n;
     if (user_used > user_peak) user_peak = user_used;
+    /* #528: the least free memory the game kept beside a block of ours that stayed; a block given back right after
+     * one sample (the worker's probe, game_ocr/main.c resident_alloc) counts as a dip instead */
+    pending_commit();
+    pending_uid = uid;
+    pending_resident = !strcmp(name, "VjoGameVocrWeights") || !strcmp(name, "VjoGameVocrLM") ||
+                       !strcmp(name, "VjoGameVocrCascade") || !strcmp(name, "VjoGameVocrSpot");
+    pending_headroom = user_free - user_used;
+    pending_samples = 0;
     return uid;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
@@ -126,6 +148,14 @@ int sceKernelFreeMemBlock(SceUID uid)
 {
     Block *b = find_uid(uid);
     if (!b || b->kernel) return -1;
+    if (pending_uid && uid == pending_uid && pending_resident && pending_samples <= 2) {
+        /* taken, sampled (its ALLOC step's sample and the worker's own), given back: a probe */
+        if (VJO_GAME_RESERVE - pending_headroom > probe_dip_max) probe_dip_max = VJO_GAME_RESERVE - pending_headroom;
+        probes_refused++;
+        pending_uid = 0;
+    } else {
+        pending_commit();
+    }
     *used_of(b->type) -= (int64_t)b->bytes;
     free(b->base);
     memset(b, 0, sizeof(*b));
@@ -332,6 +362,7 @@ typedef struct {
 
 static void reset_worker(void)
 {
+    game_room = 0; /* #528: the worker's figure of the game's free memory, the last case's */
     if (weights_blk.uid >= 0 || resident.data) drop_one(&resident);
     worker = workspace_uid = weights_blk.uid = capture_uid = line_uid = -1;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0;
@@ -550,6 +581,250 @@ static void api55_pause_reads_one_frame_beside_a_spinner(void)
     spinner = 0; case_speed = 0;
 }
 
+/* ---- #528 (mem-game): the game's memory, swept with the release models ----
+ * Jobs by tiers as the owner's 0.10.1 Shell asks for them (issue #528's config.ini: vocr_tier = large, so Large,
+ * Normal and Small; ocr_lm = 1000k, or 4000k; ocr_cascade_ms = 2000; ocr_threads = 3: two helpers; the boost;
+ * hook_trust; ocr_finder = spotter; non_japanese_filter = lines; ocr_vertical = auto; ocr_line_fix = on;
+ * ocr_head_gate = on; ocr_refine_lines = psp), on CLANNAD's text box (833 x 127, history.csv) and the full screen
+ * (Deltarune's and e+'s jobs, history.csv), at a game's free USER memory from the logs and around every tier's need.
+ * Free memory is reported exactly, or in whole MiB as the console reports it (#324). Each level runs two jobs, the
+ * second beside what the first left resident. The worker's own step log says what ran: the check that passed last
+ * (its tier, LM and cascade), the LM's and the spotter's own steps, the helpers. Not device evidence: the pool is a
+ * model of the logs' numbers. */
+typedef struct {
+    int rc;
+    unsigned tier, lm, lm_rc_bad, cascade, spot, spot_oom, helpers, checks, passed, loads, lm_loads, probes;
+    int64_t peak, headroom, held, dip;
+} GameJob;
+
+/* held: the worker's blocks after the job, the resident ones (USER) */
+static int64_t worker_held(void)
+{
+    return (int64_t)weights_blk.held * (weights_blk.uid >= 0) + (int64_t)lm_blk.held * (lm_blk.uid >= 0) +
+           (int64_t)cascade_blk.held * (cascade_blk.uid >= 0) + (int64_t)spot_blk.held * (spot_blk.uid >= 0) +
+           (int64_t)gate_blk.held * (gate_blk.uid >= 0);
+}
+
+static void game_sim_reset(void)
+{
+    TEST_CHECK(!drop_resident());
+    reset_worker();
+    TEST_CHECK(user_used == 0); /* nothing of the worker's is left in the game */
+    user_used = cdram_used = phycont_used = 0;
+}
+
+static void dump_steps(const char *who)
+{
+    fprintf(stderr, "  %s: rc %d fallback %u free_user %d reserve %u need ws %u weights %u release %u\n", who,
+            (int)last_out.rc, (unsigned)last_out.fallback, (int)last_out.free_user, (unsigned)last_out.reserve_bytes,
+            (unsigned)last_out.need_workspace, (unsigned)last_out.need_weights, (unsigned)last_out.release_bytes);
+    for (unsigned i = 0; i < last_out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        fprintf(stderr, "    step id %2u kind %3u arg %5u rc %11d bytes %10u sum 0x%08X main %9d\n",
+                last_out.step[i].id, last_out.step[i].kind, last_out.step[i].arg, last_out.step[i].rc,
+                last_out.step[i].bytes, last_out.step[i].sum, last_out.step[i].free_main);
+}
+
+static GameJob game_job(unsigned lm_tier, const uint16_t rect[4], uint32_t flags)
+{
+    GameJob o;
+    memset(&o, 0, sizeof(o));
+    kd_taken = kd_peak = 0;
+    user_peak = user_used;
+    user_headroom_min = user_free - user_used;
+    pending_uid = 0; pending_samples = 0; probe_dip_max = 0; probes_refused = 0;
+    memset(&g, 0, sizeof(g));
+    game_ocr_init();
+    clock_us = 1000000;
+    g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME;
+    g.ocr_epoch = 1; g.fb_w = FB_W; g.fb_h = FB_H; g.done_seq = g.capture_seq = 11;
+    g.region = (VjoRect){rect[0], rect[1], rect[2], rect[3]};
+    caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
+    VjoGameOcrRequest request = {.size = sizeof(request), .tiers = VJO_VOCR_TIERS_ALL};
+    request.flags = flags | (lm_tier & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT |
+                    (2000u + 125u) / 250u << VJO_GAME_OCR_CASCADE_SHIFT | 2u << VJO_GAME_OCR_REFINE_SHIFT;
+    request.speed = 2u | VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_TRUST | VJO_GAME_OCR_S_SPOT |
+                    VJO_GAME_OCR_S_DROP_BORDERS | VJO_GAME_OCR_S_HEAD_GATE | VJO_GAME_OCR_S_TWO_LEVEL |
+                    (uint32_t)VJO_GAME_OCR_VERTICAL_AUTO << VJO_GAME_OCR_S_VERTICAL_SHIFT | VJO_GAME_OCR_S_LINE_FIX;
+    strcpy(request.model_dir, VJO_VOCR_MODEL_ROOT);
+    strcpy(request.model, VJO_VOCR_TIER3_NAME);
+    int seq = vjoOcrSubmit(&request);
+    TEST_ASSERT(seq > 0);
+    caller = 7;
+    TEST_ASSERT(!vjoOcrTake(&request));
+    o.rc = vjo_game_ocr_run_request(&request, &last_out);
+    TEST_CHECK(!vjoOcrComplete(&last_out));
+    pending_commit();
+    o.peak = user_peak;
+    o.headroom = user_headroom_min;
+    o.probes = probes_refused;
+    o.dip = probe_dip_max;
+    o.held = worker_held();
+    for (unsigned i = 0; i < last_out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+        const VjoGameOcrStep *s = &last_out.step[i];
+        if (s->id == VJO_GSTEP_CHECK && VJO_GCHECK_TIER(s->kind)) {
+            o.checks++;
+            if (!s->rc) { /* the last check that passed is the one that ran (#324's retry checks again) */
+                o.passed++;
+                o.tier = VJO_GCHECK_TIER(s->kind);
+                o.lm = s->kind & 0x7u;
+                o.cascade = !!(s->kind & VJO_GCHECK_CASCADE);
+            }
+        } else if (s->id == VJO_GSTEP_LM) {
+            o.lm_rc_bad = s->rc != 0;
+            o.lm_loads += !!(s->bytes & VJO_GLM_READ);
+        } else if (s->id == VJO_GSTEP_SPOT) {
+            o.spot = s->kind;
+            o.spot_oom = s->rc == VJO_E_OOM;
+        } else if (s->id == VJO_GSTEP_PAR) {
+            o.helpers = s->arg;
+        } else if (s->id == VJO_GSTEP_LOAD) {
+            o.loads += s->kind == VJO_GAME_OCR_WEIGHTS_READ;
+        }
+    }
+    if (o.rc) o.tier = o.lm = o.cascade = 0;
+    TEST_CHECK(kd_taken == 0 && cdram_used == 0 && phycont_used == 0);
+    TEST_CHECK_(user_used == o.held, "after the job the game holds %lld B of ours, the resident blocks %lld B",
+                (long long)user_used, (long long)o.held);
+    return o;
+}
+
+static const char *const tier_id[] = {"-", "Small", "Normal", "Large"};
+static const char *const lm_id[] = {"no LM", "500k", "1000k", "2000k", "4000k"};
+
+static void game_say(const char *what, int64_t free_bytes, const GameJob *a, const GameJob *b)
+{
+    fprintf(stderr,
+            "game-mem: %-34s free %9lld B%s  1st rc=%-4d %-6s %-5s%s%s h%u peak %8lld  2nd rc=%-4d %-6s %-5s%s%s "
+            "h%u kept %8lld least left %8lld%s%s\n",
+            what, (long long)free_bytes, report_mib ? " (MiB)" : "      ", a->rc, tier_id[a->tier & 3u],
+            lm_id[a->lm <= 4u ? a->lm : 0u], a->lm_rc_bad ? "!" : "", a->spot_oom ? " grad" : "", a->helpers,
+            (long long)a->peak, b->rc, tier_id[b->tier & 3u], lm_id[b->lm <= 4u ? b->lm : 0u],
+            b->lm_rc_bad ? "!" : "", b->spot_oom ? " grad" : "", b->helpers, (long long)b->held,
+            (long long)(a->headroom < b->headroom ? a->headroom : b->headroom),
+            a->passed > 1 || b->passed > 1 ? "  (a passed check was retried smaller)" : "",
+            a->probes || b->probes ? "  (a probe went back)" : "");
+    if (a->probes || b->probes)
+        fprintf(stderr, "game-mem:   probes given back %u + %u, at most %lld B under the reserve for one sample\n",
+                a->probes, b->probes, (long long)(a->dip > b->dip ? a->dip : b->dip));
+}
+
+/* The free USER memory a job of tier t (no LM, no cascade, no spotter, no helpers) needs at a w x h region, beside
+ * the reserve: its page-rounded workspace, capture block and weights, as the worker's check counts them. */
+static int64_t tier_need(unsigned t, unsigned w, unsigned h)
+{
+    const VjoVocrModel *m = vjo_vocr_model(tier_names[t - 1u]);
+    size_t job = m ? vjo_vocr_job_bytes(m->name, w, h) : 0;
+    TEST_ASSERT(job);
+    return (int64_t)PAGE_ROUND(job) + PAGE_ROUND(vjo_vocr_capture_bytes(w, h)) + PAGE_ROUND(m->bytes) +
+           VJO_GAME_RESERVE;
+}
+
+static void game_memory_sweep(void)
+{
+    static const struct { const char *what; uint16_t r[4]; uint32_t flags; } regions[] = {
+        {"CLANNAD box", {3619, 49996, 56866, 15299}, 0},
+        {"full screen", {0, 0, 0, 0}, VJO_GAME_OCR_F_FULL},
+    };
+    /* the logs' free USER (#528's collection, the debug builds' "game vocr memory" lines; #324; #280): CLANNAD
+     * 87-91 MiB, the PSP emulator 29-44 MiB, Code:Realize 10-17 MiB, あおかな 1-4 MiB, アマツツミ 2 MiB */
+    static const int64_t logged[] = {91226112, 29360128, 10485760, 4194304, 3145728, 2097152, 1048576};
+    if (!have_models()) { TEST_MSG("release weights absent (VJO_VOCR_MODEL_DIR): sweep skipped"); return; }
+    make_frame();
+    kd_largest = KD_GRANTED_74; refuse = 0; hook_copy_fails = 0;
+    cdram_free = phycont_free = 0; /* USER alone: a full game's other pools give the ladder nothing */
+    for (unsigned ri = 0; ri < sizeof(regions) / sizeof(regions[0]); ri++) {
+        const uint16_t *rect = regions[ri].r;
+        unsigned w, h;
+        user_free = logged[0]; report_mib = 0;
+        game_sim_reset();
+        GameJob probe = game_job(2u, rect, regions[ri].flags); /* the region's size, as the kernel cuts it */
+        if (getenv("GAME_SIM_DEBUG")) {
+            fprintf(stderr, "probe rc %d tier %u passed %u checks %u io 0x%08X\n", probe.rc, probe.tier, probe.passed,
+                    probe.checks, (unsigned)last_out.io_error);
+            for (unsigned i = 0; i < last_out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+                fprintf(stderr, "  step id %u kind %u arg %u rc %d bytes %u sum 0x%X main %d\n", last_out.step[i].id,
+                        last_out.step[i].kind, last_out.step[i].arg, last_out.step[i].rc, last_out.step[i].bytes,
+                        last_out.step[i].sum, last_out.step[i].free_main);
+        }
+        TEST_ASSERT(!probe.rc && probe.tier == 3u);
+        w = last_out.width; h = last_out.height;
+        const int64_t small = tier_need(1, w, h), large = tier_need(3, w, h);
+        for (unsigned lmi = 0; lmi < 2; lmi++) {
+            const unsigned lm_tier = lmi ? 4u : 2u;
+            for (unsigned mode = 0; mode < 2; mode++) {
+                int64_t levels[64];
+                unsigned nl = 0;
+                for (unsigned i = 0; i < sizeof(logged) / sizeof(logged[0]); i++) levels[nl++] = logged[i];
+                /* around every tier's need: a page under and at it, and every whole MiB from Small's up to Large's
+                 * with the largest LM, the spotter's scratch and both helpers */
+                for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++) {
+                    levels[nl++] = tier_need(t, w, h) - 4096;
+                    levels[nl++] = tier_need(t, w, h);
+                }
+                for (int64_t m = small >> 20; m <= (large + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_WORKSPACE) >> 20 &&
+                                              nl < 64; m++)
+                    levels[nl++] = m << 20;
+                for (unsigned i = 0; i < nl; i++) {
+                    char what[64];
+                    const int64_t f = levels[i], seen = mode && f > 0 ? f - f % (1 << 20) : f;
+                    user_free = f;
+                    report_mib = 0; /* the reset runs on exact figures */
+                    game_sim_reset();
+                    report_mib = (int)mode;
+                    snprintf(what, sizeof(what), "%s %ux%u, %s", regions[ri].what, w, h, lm_id[lm_tier]);
+                    GameJob a = game_job(lm_tier, rect, regions[ri].flags);
+                    if (getenv("GAME_SIM_DUMP") && atoll(getenv("GAME_SIM_DUMP")) == f && (int)mode == atoi(getenv("GAME_SIM_DUMP_MODE") ? getenv("GAME_SIM_DUMP_MODE") : "1") && !ri && !lmi) dump_steps("1st");
+                    GameJob b = game_job(lm_tier, rect, regions[ri].flags);
+                    if (getenv("GAME_SIM_DUMP") && atoll(getenv("GAME_SIM_DUMP")) == f && (int)mode == atoi(getenv("GAME_SIM_DUMP_MODE") ? getenv("GAME_SIM_DUMP_MODE") : "1") && !ri && !lmi) dump_steps("2nd");
+                    if (getenv("GAME_SIM_STEADY")) { /* six more jobs: the steady state's failures and weight reads */
+                        char seq[64];
+                        unsigned fails = 0, reads = a.loads + b.loads, lm_reads = a.lm_loads + b.lm_loads, k = 0;
+                        seq[k++] = (char)("-SNL"[a.tier & 3u]); seq[k++] = (char)("-SNL"[b.tier & 3u]);
+                        fails = !!a.rc + !!b.rc;
+                        for (unsigned j = 0; j < 6; j++) {
+                            GameJob c = game_job(lm_tier, rect, regions[ri].flags);
+                            seq[k++] = (char)("-SNL"[c.tier & 3u]);
+                            fails += !!c.rc; reads += c.loads; lm_reads += c.lm_loads;
+                        }
+                        seq[k] = 0;
+                        fprintf(stderr, "game-steady: %-30s free %9lld%s  tiers %s  failed %u/8  weight reads %u  LM reads %u\n",
+                                what, (long long)f, mode ? " (MiB)" : "      ", seq, fails, reads, lm_reads);
+                    }
+                    game_say(what, f, &a, &b);
+                    /* The reserve holds in truth: the game always keeps VJO_GAME_RESERVE beside our blocks. */
+                    TEST_CHECK_(a.headroom >= VJO_GAME_RESERVE && b.headroom >= VJO_GAME_RESERVE,
+                                "%s at %lld B: %lld / %lld B left to the game", what, (long long)f,
+                                (long long)a.headroom, (long long)b.headroom);
+                    /* a block the worker takes to see whether it fits, and gives back at once, leaves the game less
+                     * than the reserve for one sample only, by less than the console's unit */
+                    TEST_CHECK_(a.dip < (1 << 20) && b.dip < (1 << 20) &&
+                                    (mode || f % (1 << 20) == 0 || (!a.probes && !b.probes)),
+                                "%s at %lld B%s: probes %u / %u, %lld / %lld B under the reserve", what, (long long)f,
+                                mode ? " (MiB)" : "", a.probes, b.probes, (long long)a.dip, (long long)b.dip);
+                    /* A job never fails for memory while Small fits beside the reserve as its check sees the game,
+                     * and one that does fail leaves the game nothing of ours. */
+                    if (seen >= small)
+                        TEST_CHECK_(!a.rc && (mode || !b.rc), "%s at %lld B%s (Small needs %lld): rc %d / %d", what,
+                                    (long long)f, mode ? " (MiB)" : "", (long long)small, a.rc, b.rc);
+                    if (f < small)
+                        TEST_CHECK_(a.rc == VJO_E_OOM && b.rc == VJO_E_OOM, "%s at %lld B, under Small's %lld: rc %d / %d",
+                                    what, (long long)f, (long long)small, a.rc, b.rc);
+                    TEST_CHECK_((!a.rc || a.rc == VJO_E_OOM) && (!b.rc || b.rc == VJO_E_OOM) && (!b.rc || !b.held),
+                                "%s at %lld B: rc %d / %d, %lld B kept", what, (long long)f, a.rc, b.rc,
+                                (long long)b.held);
+                    /* The reserve is applied once: the tier the check chose is the tier that reads, whether the
+                     * console reports whole MiB or not (#324 refused Normal's weights after a passed check). */
+                    TEST_CHECK_(a.passed <= 1 && b.passed <= 1, "%s at %lld B%s: %u / %u passed checks", what,
+                                (long long)f, mode ? " (MiB)" : "", a.passed, b.passed);
+                }
+            }
+        }
+    }
+    report_mib = 0;
+    cdram_free = 128 << 20; phycont_free = 16 << 20;
+    game_sim_reset();
+}
+
 /* The owner scenario (#528, docs/owner-scenario.md), the game's part: the owner's OCR job, as the Shell asks for it
  * with his config.ini (Large, ocr_lm 1000k, ocr_cascade_ms 2000, ocr_threads 3, the spotter and the other defaults;
  * shell/worker.c vocr_run_one packs it: keep the two in step, test_shell_worker.c's
@@ -667,6 +942,7 @@ static void owner_scenario_game(void)
 
 TEST_LIST = {
     {"owner scenario", owner_scenario_game}, /* #528: tools/owner_scenario.py runs it by this name */
+    {"#528 the game's memory swept: every tier, the LM and the spotter, exact and in whole MiB", game_memory_sweep},
     {"API 55 the pause reads one frame beside a spinner that tears every strip-by-strip read", api55_pause_reads_one_frame_beside_a_spinner},
     {"API 18 kernel capture refused at the full screen under #74's pool", api18_kernel_capture_is_refused_at_the_full_screen},
     {"API 19 OCR takes no kernel memory under #74's pools", api19_runs_with_no_kernel_memory},

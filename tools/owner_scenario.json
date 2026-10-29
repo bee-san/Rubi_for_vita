@@ -1103,14 +1103,14 @@
     "peak": 1015808
    },
    "est-2.5MiB-box-warm": {
-    "failed": 1,
+    "failed": 0,
     "min_helpers": 0,
-    "min_lines": 0,
+    "min_lines": 3,
     "min_lm": 0,
     "min_spot": 0,
-    "min_tier": 0,
+    "min_tier": 1,
     "min_told": 1,
-    "peak": 823296
+    "peak": 1015808
    },
    "est-2.5MiB-full": {
     "failed": 0,
@@ -1123,136 +1123,96 @@
     "peak": 1019904
    },
    "est-2.5MiB-full-warm": {
-    "failed": 1,
+    "failed": 0,
     "min_helpers": 0,
-    "min_lines": 0,
+    "min_lines": 4,
     "min_lm": 0,
     "min_spot": 0,
-    "min_tier": 0,
+    "min_tier": 1,
     "min_told": 1,
-    "peak": 823296
+    "peak": 1019904
    },
    "est-2MiB-box": {
-    "failed": 1,
+    "failed": 0,
     "min_helpers": 0,
-    "min_lines": 0,
+    "min_lines": 3,
     "min_lm": 0,
     "min_spot": 0,
-    "min_tier": 0,
+    "min_tier": 1,
     "min_told": 1,
-    "peak": 61440
+    "peak": 1015808
    },
    "est-2MiB-box-warm": {
-    "failed": 1,
+    "failed": 0,
     "min_helpers": 0,
-    "min_lines": 0,
+    "min_lines": 3,
     "min_lm": 0,
     "min_spot": 0,
-    "min_tier": 0,
+    "min_tier": 1,
     "min_told": 1,
-    "peak": 61440
+    "peak": 1015808
    },
    "est-2MiB-full": {
-    "failed": 1,
+    "failed": 0,
     "min_helpers": 0,
-    "min_lines": 0,
+    "min_lines": 4,
     "min_lm": 0,
     "min_spot": 0,
-    "min_tier": 0,
+    "min_tier": 1,
     "min_told": 1,
-    "peak": 61440
+    "peak": 1019904
    },
    "est-2MiB-full-warm": {
-    "failed": 1,
+    "failed": 0,
     "min_helpers": 0,
-    "min_lines": 0,
+    "min_lines": 4,
     "min_lm": 0,
     "min_spot": 0,
-    "min_tier": 0,
+    "min_tier": 1,
     "min_told": 1,
-    "peak": 61440
+    "peak": 1019904
    },
    "est-3MiB-box": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
-    "min_lm": 0,
+    "min_lm": 1,
     "min_spot": 0,
-    "min_tier": 1,
+    "min_tier": 2,
     "min_told": 1,
-    "peak": 1015808
+    "peak": 2011136
    },
    "est-3MiB-box-warm": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
-    "min_lm": 0,
+    "min_lm": 1,
     "min_spot": 0,
-    "min_tier": 1,
+    "min_tier": 2,
     "min_told": 1,
-    "peak": 1015808
+    "peak": 2011136
    },
    "est-3MiB-full": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 4,
-    "min_lm": 0,
+    "min_lm": 1,
     "min_spot": 0,
-    "min_tier": 1,
+    "min_tier": 2,
     "min_told": 1,
-    "peak": 1019904
+    "peak": 2015232
    },
    "est-3MiB-full-warm": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 4,
-    "min_lm": 0,
+    "min_lm": 1,
     "min_spot": 0,
-    "min_tier": 1,
+    "min_tier": 2,
     "min_told": 1,
-    "peak": 1019904
+    "peak": 2015232
    },
    "est-4MiB-box": {
-    "failed": 0,
-    "min_helpers": 0,
-    "min_lines": 3,
-    "min_lm": 1,
-    "min_spot": 0,
-    "min_tier": 2,
-    "min_told": 1,
-    "peak": 2125824
-   },
-   "est-4MiB-box-warm": {
-    "failed": 0,
-    "min_helpers": 0,
-    "min_lines": 3,
-    "min_lm": 2,
-    "min_spot": 1,
-    "min_tier": 2,
-    "min_told": 1,
-    "peak": 2605056
-   },
-   "est-4MiB-full": {
-    "failed": 0,
-    "min_helpers": 0,
-    "min_lines": 3,
-    "min_lm": 1,
-    "min_spot": 0,
-    "min_tier": 2,
-    "min_told": 1,
-    "peak": 2138112
-   },
-   "est-4MiB-full-warm": {
-    "failed": 0,
-    "min_helpers": 0,
-    "min_lines": 3,
-    "min_lm": 2,
-    "min_spot": 1,
-    "min_tier": 2,
-    "min_told": 1,
-    "peak": 2617344
-   },
-   "est-5MiB-box": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
@@ -1262,17 +1222,17 @@
     "min_told": 1,
     "peak": 2871296
    },
-   "est-5MiB-box-warm": {
+   "est-4MiB-box-warm": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
-    "min_lm": 1,
+    "min_lm": 0,
     "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
-    "peak": 3436544
+    "peak": 2871296
    },
-   "est-5MiB-full": {
+   "est-4MiB-full": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
@@ -1282,17 +1242,17 @@
     "min_told": 1,
     "peak": 2875392
    },
-   "est-5MiB-full-warm": {
+   "est-4MiB-full-warm": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
-    "min_lm": 1,
+    "min_lm": 0,
     "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
-    "peak": 3440640
+    "peak": 2875392
    },
-   "est-6MiB-box": {
+   "est-5MiB-box": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
@@ -1302,17 +1262,17 @@
     "min_told": 1,
     "peak": 3915776
    },
-   "est-6MiB-box-warm": {
+   "est-5MiB-box-warm": {
     "failed": 0,
-    "min_helpers": 1,
+    "min_helpers": 0,
     "min_lines": 3,
     "min_lm": 2,
     "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
-    "peak": 4317184
+    "peak": 3915776
    },
-   "est-6MiB-full": {
+   "est-5MiB-full": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
@@ -1322,15 +1282,55 @@
     "min_told": 1,
     "peak": 3919872
    },
-   "est-6MiB-full-warm": {
+   "est-5MiB-full-warm": {
     "failed": 0,
-    "min_helpers": 1,
+    "min_helpers": 0,
     "min_lines": 3,
     "min_lm": 2,
     "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
-    "peak": 4321280
+    "peak": 3919872
+   },
+   "est-6MiB-box": {
+    "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
+    "min_lm": 2,
+    "min_spot": 1,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4648960
+   },
+   "est-6MiB-box-warm": {
+    "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
+    "min_lm": 2,
+    "min_spot": 1,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4648960
+   },
+   "est-6MiB-full": {
+    "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
+    "min_lm": 2,
+    "min_spot": 1,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4653056
+   },
+   "est-6MiB-full-warm": {
+    "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
+    "min_lm": 2,
+    "min_spot": 1,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4653056
    },
    "est-8MiB-box": {
     "failed": 0,

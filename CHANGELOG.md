@@ -61,6 +61,18 @@ been reported.
   The game worker keeps the copied-into block only until the next job, which gives it back before taking its own;
   meanwhile the resident blocks go back after 5 s in the background as at any other time (#528). Host-tested;
   not seen in #528's logs and not run on a console.
+- OCR in games short of memory reads with the model the game has room for (#528). The console reports a game's free
+  memory in whole MiB, rounded down (#324), and the worker's own blocks moved that figure a whole MiB at a time: a
+  job's check passed Normal, the figure read after its first blocks refused the weights, and Small read instead
+  (#324's あおかな); the spotter's 57,344 B block cost a 2 MiB game its only model; and a job beside its resident
+  weights was refused where the job before it read, so every other read failed. Now the worker plans with the most
+  the figure has shown free beside its own blocks, checks a block whose need falls in that last MiB after taking it
+  (the reserve, a whole MiB, is then tested exactly; a block that leaves less goes back at once), and skips the
+  spotter where it cannot fit beside the smallest model. On the host model of the console's figures (the owner
+  scenario, the owner's config): 2 MiB reads Small instead of failing, 2.5 MiB's second job reads instead of
+  failing, 3 MiB reads Normal with the 500k LM instead of Small, 4 MiB Large instead of Normal, 5 MiB Large with
+  the 1000k LM instead of none; CLANNAD-sized games are unchanged. The 1 MiB reserve is kept. Not yet run on a
+  console.
 
 ## [0.10.1] - 2026-10-29
 

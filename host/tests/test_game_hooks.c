@@ -206,6 +206,8 @@ SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
 /* 1: the free USER memory in whole MiB, rounded down, as a console reports it (#324: あおかな on a PCH-2000) */
 static int free_mib;
+/* #528: bytes the game takes of its own as the job's workspace is taken (once): memory gone after the job's check */
+static int64_t drop_on_workspace;
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 {
     out->size_user = (int)(available - live_bytes);
@@ -248,6 +250,8 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
     }
     TEST_CHECK(!strcmp(name, "VjoGameVocr") && !job_live && size <= sizeof(job_memory));
     job_live = 1; job_block = size; live_bytes += size;
+    available -= drop_on_workspace; /* #528: the game takes memory of its own right after the job's check */
+    drop_on_workspace = 0;
     return 9;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
@@ -451,7 +455,8 @@ static void reset(void)
     keeps = 0; memset(kept_ids, 0, sizeof(kept_ids)); memset(kept_keys, 0, sizeof(kept_keys)); fake_call_dropped = fake_call_replaced = 0;
     capture_live = job_live = weights_live = 0; capture_block = capture_allocs = 0; live_bytes = 0;
     shot_allocs = probe_allocs = 0;
-    available = 64*1024*1024; clock_value = 0; free_mib = 0;
+    available = 64*1024*1024; clock_value = 0; free_mib = 0; drop_on_workspace = 0;
+    game_room = 0; /* #528: the worker's figure of the game's free memory, the last case's */
     frame_live = 0; frame_block = frame_copies = 0; /* API 55, and the worker's frame state */
     frame_uid = -1; frame_base = NULL; frame_bytes_held = 0; memset(&pz, 0, sizeof(pz)); pause_capped = 0;
     file_open_now = cancel_now = rows_error = 0;
@@ -1300,12 +1305,20 @@ static void verified_site_answers_when_ocr_has_no_memory(void)
 }
 
 /* #280's audit F1: with every size's reserve 1 MiB, a game at アマツツミ's measured 2 MiB (PCSG01198, 2026-10-23)
- * passes the model's check, and on a console that reports its free memory in whole MiB (#324) the weights are refused
- * once the job's blocks are taken (2 MiB less those blocks reads 1 MiB, the reserve). No smaller model is left, so no
- * OCR can run in this game now, as when the check fails: with hook_trust = off a Rubi verified site's newest text
- * answers unconfirmed there too, after the try's blocks go back (its ALLOC steps leave the log, its passed check
- * stays), with one more pass beside the hook-only reserve. A CALL caller alone keeps the refusal; with the exact
- * figure OCR runs and agrees; a trusted site answers before any check, as before. */
+ * passes the model's check. Should the game then take memory of its own while the job's blocks are taken, its weights
+ * are refused beside the reserve. No smaller model is left, so no OCR can run in this game now, as when the check
+ * fails: with hook_trust = off a Rubi verified site's newest text answers unconfirmed there too, after the try's blocks
+ * go back (its ALLOC steps leave the log, its passed check stays), with one more pass beside the hook-only reserve. A
+ * CALL caller alone keeps the refusal; a trusted site answers before any check, as before. #528: the game taking
+ * nothing, the weights are taken (whole MiB or exact, the weights' block is checked against the reserve once taken,
+ * resident_alloc), so OCR reads and the hook agrees; before #528 a console's whole-MiB figure refused them there. */
+/* #528: what the game takes after the check so that it keeps exactly the hook-only pass's room (its strip beside
+ * VJO_GAME_RESERVE_HOOK_ONLY) of `free_bytes`: less than the job's capture, workspace and weights need beside the
+ * reserve, so the weights are refused, and the verified site's pass still fits once the try's blocks go back */
+static int64_t drop_to_the_pass(int64_t free_bytes)
+{
+    return free_bytes - VJO_GAME_RESERVE_HOOK_ONLY - PAGE_ROUND(vjo_vocr_strip_rows(W, H) * W);
+}
 static void verified_site_answers_when_its_weights_are_refused(void)
 {
     VjoGameOcrResult out;
@@ -1316,13 +1329,23 @@ static void verified_site_answers_when_its_weights_are_refused(void)
         fake_verified = 1u; /* stream 1: a Rubi verified site */
         stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
         spy_text = OCR1;
+        TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0); /* the game takes nothing: room for the weights too */
+        TEST_CHECK_(!strcmp(out.text, LINE1) && out.text_from == 1 && runs == 1 &&
+                        out.hook_flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_SITE),
+                    "%s from %u, %u runs, flags 0x%x", out.text, (unsigned)out.text_from, runs,
+                    (unsigned)out.hook_flags);
+        TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE && weights_live);
+        /* the game takes memory right after the check: the weights no longer fit beside the reserve (exact
+         * figures: a whole-MiB one would show the pass's own room only at 2 MiB, more than the weights miss) */
+        if (!exact) continue;
+        reset();
+        available = 2 * 1024 * 1024;
+        drop_on_workspace = drop_to_the_pass(available);
+        fake_verified = 1u;
+        stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
+        spy_text = OCR1;
         TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
         TEST_CHECK_(!strcmp(out.text, LINE1) && out.text_from == 1, "%s from %u", out.text, (unsigned)out.text_from);
-        if (exact) { /* room for the weights too: OCR reads, and the hook agrees */
-            TEST_CHECK(runs == 1 && out.hook_flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_SITE));
-            TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE && weights_live);
-            continue;
-        }
         TEST_CHECK_(out.hook_flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE) && !runs &&
                         !out.lines && !out.recognized,
                     "flags 0x%x, %u runs, %u lines", (unsigned)out.hook_flags, runs, (unsigned)out.lines);
@@ -1340,7 +1363,6 @@ static void verified_site_answers_when_its_weights_are_refused(void)
          * does). The answer comes as above, and the LM goes back to the game first, its FREE step kept (the try did
          * not take it); the try's capture is the job's (one PASS step, its strips counted beside the pass's). */
         reset();
-        free_mib = 1;
         fake_verified = 1u;
         stream(1, VJO_HOOK_KIND_SITE, 8, LINE2);
         spy_reads_rows = 1;
@@ -1351,6 +1373,7 @@ static void verified_site_answers_when_its_weights_are_refused(void)
             TEST_ASSERT(lm_res.data != NULL && lm_live);
             lm_res.lm = lm1; lm_res.capacity = lm_res.size = lm1->bytes; lm_res.stamp = 1;
             available = 2 * 1024 * 1024 + (int64_t)lm_block; /* the check sees 2 MiB beside the LM */
+            drop_on_workspace = drop_to_the_pass(2 * 1024 * 1024); /* and the game takes memory after it */
         }
         VjoGameOcrRequest q = request(VJO_HOOK_PICK_AUTO);
         q.flags = 1u << VJO_GAME_OCR_LM_SHIFT; /* the LM's first tier allowed: the resident one */
@@ -1373,8 +1396,8 @@ static void verified_site_answers_when_its_weights_are_refused(void)
                     (unsigned)out.captures, strips, (unsigned)out.capture_us);
         /* a CALL caller alone: the refusal, as before */
         reset();
-        free_mib = 1;
         available = 2 * 1024 * 1024;
+        drop_on_workspace = drop_to_the_pass(available);
         stream(9, VJO_HOOK_KIND_CALL, 6, LINE2);
         TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.text[0] && !runs);
         /* hook_trust = on: the trusted site answers before any check, with no block */
@@ -1397,8 +1420,8 @@ static void verified_site_after_refused_weights_logs_the_pause(void)
 {
     VjoGameOcrResult out;
     reset();
-    free_mib = 1;
     available = 2 * 1024 * 1024;
+    drop_on_workspace = drop_to_the_pass(available); /* #528: the game takes memory after the check */
     fake_verified = 1u;
     stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
     spy_text = OCR1;
@@ -2049,8 +2072,8 @@ TEST_LIST = {
     {"API 49: the learned source is reported flagged once trusted, restored ones by identity", trusted_watch_learned_source},
     {"API 50: the line finder's fixes follow the request", line_fix_follows_the_request},
     {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
-    {"#280's audit F1: a verified site answers when the weights are refused after the check (アマツツミ's 2 MiB, "
-     "whole MiB)", verified_site_answers_when_its_weights_are_refused},
+    {"#280's audit F1: a verified site answers when the weights are refused after the check (the game "
+     "took memory; at 2 MiB, whole MiB or exact, they fit: #528)", verified_site_answers_when_its_weights_are_refused},
     {"API 55, #355's audit N7: that path with the pause logs the pause step", verified_site_after_refused_weights_logs_the_pause},
     {"Luna: no initial, periodic or repeated OCR and no generic cache IO", luna_never_loads_ocr_or_generic_learning},
     {"Luna: preserve generic learning and resume it when unavailable", luna_preserves_generic_state_and_falls_back_when_unavailable},

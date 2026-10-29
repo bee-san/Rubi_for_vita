@@ -64,7 +64,11 @@
 /* Current-game disk profiles remove the full catalogue/program data from the worker.
  * Measured with the pinned VitaSDK: debug 168,264 + 28,840 -> 204,800 B;
  * normal 159,156 + 28,824 -> 192,512 B, 12,288 B fewer pages in each build.
- * The current title's bounded profile is included in these module pages. */
+ * The current title's bounded profile is included in these module pages.
+ * #528 (the game's whole-MiB free memory, mem-game): debug 168,808 + 29,544 B, normal 159,636 + 29,528 B, the same
+ * pages (normal: 108 B of code room left; the ledger table, the resident descriptors and the blocks' and threads'
+ * names moved to the data page) [measured: tools/check_memory_ledger.py, both builds, the gate's VitaSDK image, on
+ * main e8b6abe3]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
 #else

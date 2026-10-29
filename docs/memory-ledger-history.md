@@ -5,6 +5,33 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## The game's whole-MiB free memory (#528, mem-game; no API change)
+
+The console reports a game's free USER memory in whole MiB, rounded down (#324). The worker's memory check
+(`game_ocr/main.c` `check_free`) now plans with the most that figure has shown free beside the worker's resident
+blocks, while it stays within a MiB of it; a block whose need falls in the figure's last MiB (`resident_alloc`)
+is checked after it is taken, against the reserve, a whole MiB too; the workspace of a check that planned above
+the figure it read is checked once taken; and the spotter is not read where it cannot fit beside the smallest
+model (`spot_fits`). No new block, thread or allocation site, no budget change: every block is one the ledger
+already counts, taken beside the same 1 MiB reserve. The worker's ledger item table, its six resident blocks'
+descriptors and the blocks' and threads' names moved to the data segment's last page (`VJO_DATA_TABLE`, as
+`core/hook_luna.c`'s tables are), so the normal build's code keeps its pages (the change's code alone was 180 B over
+its last page on main `e8b6abe3`).
+
+Measured from packaged worker SELF segments with the gate's pinned VitaSDK GCC 15.2.0, Release builds
+(`tools/check_memory_ledger.py`), **not console measurements**:
+
+| Worker | Text | Data/bss | Loaded pages | Room in last code / data pages |
+|---|---:|---:|---:|---:|
+| Normal (main `e8b6abe3`) | 159,492 B | 29,040 B | 192,512 B | 252 / 3,728 B |
+| Normal (this change) | 159,636 B | 29,528 B | 192,512 B, unchanged | 108 / 3,240 B |
+| Debug (main `e8b6abe3`) | 168,616 B | 29,056 B | 204,800 B | 3,416 / 3,712 B |
+| Debug (this change) | 168,808 B | 29,544 B | 204,800 B, unchanged | 3,224 / 3,224 B |
+
+Host tests: `host/tests/test_alloc_sim.c` ("#528 the game's memory swept", and the owner scenario's game part
+with whole-MiB figures and a warm job), `test_game_vocr.c` and `test_game_hooks.c` (#324's and #280's retries now
+on a game that takes memory after the check). Console behaviour is unmeasured.
+
 ## The Anki arena bounded by construction (#528)
 
 An Anki save's arena (`shell/anki.c` `ANKI_TEXT_MEM`, the ledger's `VJO_BUDGET_PAF_ANKI`) goes from 131,072 to
