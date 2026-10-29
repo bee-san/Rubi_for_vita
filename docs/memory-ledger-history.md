@@ -2273,3 +2273,15 @@ What SceShell gives up: 20,496 B of its PAF heap while no overlay is open (the b
 from the start, beside the 1,977,448 B the heap had at its lowest in #528's 293 sessions without the outside buffer
 [measured]; with the overlay open nothing changes. These are binary and log measurements, not a console run of this
 build.
+
+The follow-up: with the block held, the 1.5 MiB guard no longer stood before `PageOpen`, and at the logs' lowest free
+(131,432 B at a game start) the page would have left SceShell about 8 KB (110,952 B with the block, less the page's
+103,296 B). The page now opens only with `VJO_PAF_PAGE_MAX` (103,296 B, the most it took in 81 measured opens) and
+`VJO_PAF_PAGE_MARGIN` (64 KiB) free (`shell/paf_guard.h` `vjo_paf_page_fits`, run by `shell/overlay_mem.h`
+`vjo_overlay_mem_open`; the refusal is logged in the guard's format). The margin is about three times what SceShell
+was seen to take between two of our allocations within one open (at most 17,712 B, 12 pairs) and its median swing over
+a game session (21,904 B, 293 sessions) [measured, log]; whether it is enough at the very bottom is not measured
+[estimate]. Every press of the owner scenario still opens (the least room, 181,816 B, is above the 168,832 B it asks).
+The open's code takes 48 B more in the normal Shell (85,932 -> 85,980 B of text) and none in the debug one (98,148 B),
+as the arena resets at the close, at a failed `PageOpen` and at the start went: the block is never given back, so
+`s_ui` never points into freed memory, and `open_page` sets it afresh. Pages and data unchanged in both builds.

@@ -32,8 +32,9 @@ showed was neither free nor Rubi's (the heap less `free=` less Rubi's `current=`
 refusal) until the next event. A build that holds less than 0.10.1 did leaves more free beside the same others.
 The overlay page's own Paf, which `PageOpen` takes for its widgets outside Rubi's ledger, is 103,296 B while it is
 open: the most of the 81 opens in the owner's logs where Rubi allocated again before the page closed (median
-94,800 B) [measured, log]. With less free, `PageOpen` fails (`overlay page failed to open`) and the press counts as
-not opened.
+94,800 B) [measured, log]. With less free, `PageOpen` fails (`overlay page failed to open`) and the press counts as not opened; since #528's
+follow-up the page check before it (`shell/paf_guard.h` `vjo_paf_page_fits`: 103,296 B and SceShell's 64 KiB margin
+free, read through the scenario's own `vjo_shell_heap_free_size`) refuses first, and `page_failed` counts both.
 
 Each scenario prints a line, `owner-scenario shell NAME: …`:
 
