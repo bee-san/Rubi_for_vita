@@ -69,15 +69,13 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #endif
 #define VJO_VOCR_COLUMNS (VJO_VOCR_FINDER_COLUMNS | VJO_VOCR_COLUMN_FLAGS)
 
-/* The pinned models: read-only data again (#355's review H1: API 55's pause takes the worker one code page more, with
- * room for this table, and its statics need the data segment's last page, which this table's 480 B had taken since
- * #379, when the worker's code pages were full; docs/memory-ledger.md, "The pause for the frame"). */
+/* The pinned models: reuse space in the worker's existing data page for these
+ * descriptors, as for lms below. This keeps the dialogue reader within the same
+ * code pages; docs/memory-ledger.md, "The pause for the frame". */
 #ifdef VJO_VOCR_TEST_MODELS
 /* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
 #include VJO_VOCR_TEST_MODELS
 #else
-/* Reuse space in the worker's existing data page for these descriptors, as
- * for lms below. This keeps the dialogue reader within the same code pages. */
 static const VjoVocrModel models[] VJO_DATA_TABLE(vocr_models) = {
     /* The three tiers (include/vjo_vocr_sizes.h), VOCR6-S, VOCR6-N and VOCR6-L (vita-vn-ocr #125, docs/vocr6.md
      * "The follow-up", v0.4.1-vocr6.2), the arena each plans with ocr_head_gate's default, on, and the paths its
