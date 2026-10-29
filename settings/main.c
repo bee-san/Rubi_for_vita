@@ -12,6 +12,8 @@
 #include "anki_page.h"
 #include "app_check.h"
 #include "app_prefs.h"
+#include "app_worker.h"
+#include "../include/vjo_ledger_budget.h"
 #include "catalog.h"
 #include "chrome.h"
 #include "icons.h"
@@ -101,6 +103,12 @@
 #define PREFERENCE_FOOTER_H 30
 static const VjoAppTheme *theme = &vjo_app_themes[VJO_THEME_DEFAULT];
 static int theme_writable, appearance_error;
+/* Only the standalone app: a third worker stack and private preference scratch, counted by
+ * check_settings_self.py. Never share main.c's scratch across the UI and a slow storage sync. */
+static VjoAppWorker appearance_worker = VJO_APP_WORKER_INIT("VjoAppearance");
+static unsigned char appearance_mem[VJO_APP_APPEARANCE_SCRATCH];
+static VjoAppPrefs appearance_saved, appearance_readback;
+static int appearance_pending = -1, appearance_job, appearance_rc, appearance_read_rc;
 static char appearance_status[160];
 #define BG (theme->bg)
 #define CARD (theme->card)
@@ -506,31 +514,73 @@ static void apply_theme(const VjoAppPrefs *p)
     vita2d_set_clear_color(BG);
 }
 
-/* Independent of config.ini: an unreadable overlay configuration must not lock the app's own appearance. Reload
- * after any attempted save, including a failed final sync, so the displayed choice is the one actually on disk. */
-static void set_theme(int index)
+static int save_appearance(SceSize args, void *argp)
 {
-    VjoAppPrefs p;
+    (void)args; (void)argp;
+    VjoArena a;
     const char *keys[] = {"colour_scheme"};
-    int rc, read_rc;
-    if (index < 0 || index >= VJO_THEMES || !theme_writable || theme == vjo_app_theme(index)) return;
-    rc = vjo_app_prefs_save(keys, &index, 1, &scratch);
-    read_rc = vjo_app_prefs_load(&p, &scratch);
-    theme_writable = read_rc >= 0;
-    /* An unreadable file keeps the currently visible palette, and locks further saves. */
-    if (theme_writable) apply_theme(&p);
-    appearance_error = rc < 0 || read_rc < 0;
+    vjo_arena_init(&a, appearance_mem, sizeof(appearance_mem));
+    appearance_rc = vjo_app_prefs_save(keys, &appearance_job, 1, &a);
+    appearance_read_rc = vjo_app_prefs_load(&appearance_readback, &a);
+    vjo_app_worker_lock(&appearance_worker);
+    appearance_worker.finished = 1;
+    vjo_app_worker_unlock(&appearance_worker);
+    return 0;
+}
+
+/* Readback is applied only when the worker has finished. A newer choice stays visible and supersedes
+ * the older job; at most one save runs and one latest choice waits, however quickly the user cycles. */
+static void appearance_finished(void)
+{
+    if (appearance_read_rc >= 0) appearance_saved = appearance_readback;
+    if (appearance_pending != appearance_job && appearance_read_rc >= 0) return;
+    appearance_pending = -1;
+    theme_writable = appearance_read_rc >= 0;
+    apply_theme(&appearance_saved);
+    appearance_error = appearance_rc < 0 || appearance_read_rc < 0;
     snprintf(appearance_status, sizeof(appearance_status), "%s", appearance_error
         ? "Save not confirmed. Check the displayed choice, then retry."
         : "Saved. The app's colours change immediately.");
 }
 
+static void appearance_poll(void)
+{
+    if (vjo_app_worker_reap(&appearance_worker)) appearance_finished();
+}
+
+/* Start only after the new palette has been drawn. No file I/O on the input/draw thread. */
+static void appearance_start(void)
+{
+    if (appearance_pending < 0 || appearance_worker.running) return;
+    appearance_job = appearance_pending;
+    if (vjo_app_worker_prepare(&appearance_worker) >= 0 &&
+        vjo_app_worker_start(&appearance_worker, "VjoAppearanceSave", save_appearance) >= 0) return;
+    appearance_pending = -1;
+    apply_theme(&appearance_saved);
+    appearance_error = 1;
+    snprintf(appearance_status, sizeof(appearance_status), "Could not start save. Choose again to retry.");
+}
+
+/* Independent of config.ini. Selecting a palette is immediate; the durable save runs separately. */
+static void set_theme(int index)
+{
+    VjoAppPrefs p;
+    if (index < 0 || index >= VJO_THEMES || !theme_writable || theme == vjo_app_theme(index)) return;
+    vjo_app_prefs_defaults(&p);
+    p.colour_scheme = appearance_pending = index;
+    apply_theme(&p);
+    appearance_error = 0;
+    snprintf(appearance_status, sizeof(appearance_status), "Saving colour scheme…");
+}
+
 static void load_theme(void)
 {
     VjoAppPrefs p;
+    if (appearance_worker.running || appearance_pending >= 0) return;
     int rc = vjo_app_prefs_load(&p, &scratch);
     theme_writable = rc >= 0;
     appearance_error = rc < 0;
+    appearance_saved = p;
     apply_theme(&p);
     snprintf(appearance_status, sizeof(appearance_status), "%s", rc < 0
         ? "Cannot read app.ini. Press Start to retry."
@@ -1800,6 +1850,7 @@ int main(void)
     memset(&stick_state, 0, sizeof(stick_state));
     for (;;) {
         SceCtrlData pad;
+        appearance_poll();
         font_tick(); /* a font a switch replaced (its atlas full), freed now the GPU is done with it */
         memset(&pad, 0, sizeof(pad));
         if (sceCtrlPeekBufferPositive(0, &pad, 1) < 1)
@@ -2021,6 +2072,15 @@ int main(void)
         else if (game_view >= 0) draw_game_page(); /* #333 */
         else draw();
         sceDisplayWaitVblankStart();
+        appearance_start();
+    }
+    /* A normal exit waits for the durable save, including the latest choice queued during a save. */
+    while (appearance_worker.running || appearance_pending >= 0) {
+        appearance_start();
+        if (appearance_worker.running) {
+            vjo_app_worker_join(&appearance_worker);
+            appearance_finished();
+        }
     }
     vjo_anki_page_quit();
     vjo_streak_seed_quit();

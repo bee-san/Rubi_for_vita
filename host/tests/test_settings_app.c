@@ -1543,6 +1543,33 @@ static VjoAppPrefs app_choices(void)
     return p;
 }
 #define APPEARANCE_PAGE TAP(200, 325)
+extern int vjo_app_worker_stub_delay, vjo_app_worker_stub_fail_start;
+static void test_theme_while_save_waits(void)
+{
+    card(NULL);
+    put_file(VJO_APP_PREFS_PATH, "; keep\nanki_card_type = sentence\n");
+    vjo_app_worker_stub_delay = 1000; /* storage does not finish during any scripted frame */
+    static const Input keys[] = {APPEARANCE_PAGE, PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT),
+        PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_SELECT)};
+    run(keys, sizeof(keys) / sizeof(keys[0]));
+    TEST_CHECK(shown[3].clear == vjo_app_theme(VJO_THEME_MINT)->bg && shows(3, "Saving colour scheme"));
+    TEST_CHECK(shown[5].clear == vjo_app_theme(VJO_THEME_PAPER)->bg && shows(5, "Saving colour scheme"));
+    TEST_CHECK(shown[7].clear == vjo_app_theme(VJO_THEME_MINT)->bg);
+    TEST_CHECK(shown[9].clear == vjo_app_theme(VJO_THEME_PAPER)->bg);
+    TEST_CHECK(shown[11].clear == vjo_app_theme(VJO_THEME_PAPER)->bg && shows(11, "Look up"));
+    /* Exit waits for both the in-flight save and the latest choice; unrelated keys survive. */
+    VjoAppPrefs p = app_choices();
+    TEST_CHECK(p.colour_scheme == VJO_THEME_PAPER && p.anki_card_type == 1);
+    vjo_app_worker_stub_delay = 0;
+    /* A thread that cannot start rolls back and allows another choice. */
+    vjo_app_worker_stub_fail_start = 1;
+    static const Input choose[] = {APPEARANCE_PAGE, PRESS(SCE_CTRL_LEFT)};
+    run(choose, sizeof(choose) / sizeof(choose[0]));
+    TEST_CHECK(shown[3].clear == vjo_app_theme(VJO_THEME_PAPER)->bg && shows(3, "Could not start save"));
+    TEST_CHECK(app_choices().colour_scheme == VJO_THEME_PAPER);
+    vjo_app_worker_stub_fail_start = 0;
+}
+
 static void test_app_colour_schemes(void)
 {
     static const Input keys[] = {APPEARANCE_PAGE, PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_RIGHT),
@@ -1687,6 +1714,7 @@ TEST_LIST = {
     {"settings_walkthrough", test_settings_walkthrough},
     {"settings_navigation", test_settings_navigation},
     {"app_colour_schemes", test_app_colour_schemes},
+    {"theme stays responsive during a held save", test_theme_while_save_waits},
     {"the_tab_bar_six_tabs_fit_their_labels_and_their_touches", test_the_tab_bar},
     {"the_look_up_page_s_wiring_show_leave_cancel_and_the_keyboard", test_the_look_up_page_s_wiring},
     {"full_glyph_atlases_get_empty_ones", test_full_glyph_atlases_get_empty_ones},

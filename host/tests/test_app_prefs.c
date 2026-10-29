@@ -18,6 +18,7 @@
 static unsigned char memory[64 * 1024];
 static VjoArena arena;
 static int read_fail, write_fail, rename_fail, sync_fail, renames, writes;
+static void (*during_sync)(void);
 /* the memory card's files (fakes/sceio_posix.h), with short reads and writes and failures */
 #define SCEIO_OWN (SCEIO_OPEN | SCEIO_READ | SCEIO_WRITE | SCEIO_RENAME | SCEIO_SYNC)
 #include "fakes/sceio_posix.h"
@@ -38,7 +39,14 @@ int sceIoRename(const char *a, const char *b)
     if (++renames == rename_fail) return -1;
     return sceio_rename(a, b);
 }
-int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return sync_fail ? -1 : 0; }
+int sceIoSync(const char *p, unsigned flags)
+{
+    (void)p; (void)flags;
+    void (*hook)(void) = during_sync;
+    during_sync = NULL;
+    if (hook) hook();
+    return sync_fail ? -1 : 0;
+}
 
 #define APP VJO_APP_PREFS_PATH
 #define BAK VJO_APP_PREFS_PATH ".bak"
@@ -87,6 +95,29 @@ static int save1(const char *key, int value)
     int values[1] = {value};
     vjo_arena_init(&arena, memory, sizeof(memory));
     return vjo_app_prefs_save(keys, values, 1, &arena);
+}
+
+static void competing_save(void)
+{
+    unsigned char mem[64 * 1024];
+    VjoArena a;
+    const char *keys[] = {"anki_card_type"};
+    int values[] = {1};
+    vjo_arena_init(&a, mem, sizeof(mem));
+    int before = writes;
+    TEST_CHECK(vjo_app_prefs_save(keys, values, 1, &a) == -1 && writes == before);
+}
+
+static void test_competing_save_is_nonblocking(void)
+{
+    fresh();
+    put(APP, "; keep\ncolour_scheme = default\n");
+    during_sync = competing_save; /* a UI save while the appearance worker is inside card sync */
+    TEST_CHECK(save1("colour_scheme", VJO_THEME_PAPER) == 0);
+    TEST_CHECK(save1("anki_card_type", 1) == 0); /* retry merges with the now-committed palette */
+    VjoAppPrefs p;
+    TEST_CHECK(load(&p) == 0 && p.colour_scheme == VJO_THEME_PAPER && p.anki_card_type == 1);
+    TEST_CHECK(strstr(get(APP), "; keep\n"));
 }
 
 static void test_defaults_without_a_file(void)
@@ -303,6 +334,7 @@ static void test_config_ini_is_never_touched(void)
 }
 
 TEST_LIST = {
+    {"competing save fails promptly and retry preserves both keys", test_competing_save_is_nonblocking},
     {"defaults_without_a_file", test_defaults_without_a_file},
     {"lines_read_as_config_ini_reads_them", test_lines_read_as_config_ini_reads_them},
     {"every_row_saves_and_loads_each_value", test_every_row_saves_and_loads_each_value},

@@ -659,7 +659,7 @@ add_library(vjo_settings_app OBJECT settings/app_prefs.c settings/model_size.c s
   settings/letter.c settings/app_check.c settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
   vita/games_storage.c vita/buttons_vita.c host/tests/settings_stubs/streak_seed_stub.c
   host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
-  host/tests/settings_stubs/lookup_page_stub.c)
+  host/tests/settings_stubs/lookup_page_stub.c host/tests/settings_stubs/app_worker_stub.c)
 add_library(vjo_settings_main OBJECT settings/main.c)
 set_source_files_properties(settings/main.c PROPERTIES COMPILE_DEFINITIONS main=vjo_settings_main)
 foreach(_vjo_target IN ITEMS vjo_settings_app vjo_settings_main vjo-settings-app-tests vjo-settings-vocr6-tests)

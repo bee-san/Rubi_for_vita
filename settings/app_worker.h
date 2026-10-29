@@ -1,11 +1,11 @@
-/* The Rubi app's worker threads (settings/anki_page.c, install_page.c): one job at a time on a thread
+/* The Rubi app's worker threads (settings/anki_page.c, install_page.c, main.c appearance saves): one job at a time on a thread
  * of its own, which the main thread starts, asks to stop and joins once the job says it has finished. Each page keeps
  * its job's own state (its progress text, its result) and writes it under the worker's lock, with finished. */
 #ifndef VJO_SETTINGS_APP_WORKER_H
 #define VJO_SETTINGS_APP_WORKER_H
 #include <psp2/kernel/threadmgr.h>
 
-/* A worker thread's stack: a page's job runs in it (tools/check_settings_self.py counts two of them). */
+/* A worker thread's stack: a page's job runs in it (tools/check_settings_self.py counts three of them). */
 #define VJO_APP_WORKER_STACK (64 * 1024)
 
 typedef struct {
