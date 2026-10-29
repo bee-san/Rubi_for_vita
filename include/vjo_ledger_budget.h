@@ -159,7 +159,8 @@
 /* The page's blocks, counted in the pool's worst case although Paf takes them, not our wrapper (the run-time ledger
  * cannot see them): they are held because our page is open, beside everything else an open page can hold. The
  * subtitle strip's page is never open with the overlay's (shell/overlay.cpp frame: the strip closes first); its own
- * blocks are unmeasured, assumed no larger (one text, its box and a busy indicator) [estimate]. */
+ * blocks are unmeasured, assumed no larger (one text, its box and a busy indicator) [estimate]; the debug build samples
+ * them at every strip open (shell/strip.cpp strip_page_open) so a console run measures them. */
 #define VJO_BUDGET_PAF_PAGE VJO_PAF_PAGE_MAX
 /* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
  * first Up past its text's top row until the return to the current text (or the overlay's close): the

@@ -153,12 +153,32 @@ static void strip_fit(void)
         vjo_paf_pos(s_strip_busy, SCREEN_W / 2.0f - STRIP_BUSY_INSET, -sh / 2.0f + STRIP_BUSY_INSET);
 }
 
+#if VJO_DEBUG
+/* The debug build's sample of the strip page's own Paf (#528, unmeasured until then): the heap's free size before the
+ * page opens and what PageOpen took for it and its widgets, in memory.cpp's debug format (one string in the module);
+ * the text set and laid out in the next frames is not in it. Measured, it decides whether the strip's open needs the
+ * overlay page's room check (shell/paf_guard.h vjo_paf_page_fits). Out of line, so strip_open, inlined into the
+ * overlay's frame, keeps nothing across PageOpen (the debug Shell's code room). */
+static __attribute__((noinline)) ui::Scene *strip_page_open(Plugin *plugin, Plugin::PageOpenParam &param)
+{
+    uint32_t before = vjo_shell_heap_free_size();
+    ui::Scene *page = plugin->PageOpen("vjo_page_strip", param);
+    vjo_log("%s Paf allocation: free=%u requested=%u reserve=%u success=%d", "vjo_page_strip", (unsigned)before,
+            (unsigned)(before - vjo_shell_heap_free_size()), 0u, page != NULL);
+    return page;
+}
+#endif
+
 static void strip_open(Plugin *plugin)
 {
     Plugin::PageOpenParam param;
     param.overwrite_draw_priority = 6; /* above the game, as the overlay */
     s_fresh = 1;
+#if VJO_DEBUG
+    s_strip_page = strip_page_open(plugin, param);
+#else
     s_strip_page = plugin->PageOpen("vjo_page_strip", param);
+#endif
     if (!s_strip_page) {
         vjo_log("strip page failed to open");
         return;
