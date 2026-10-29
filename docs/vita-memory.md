@@ -421,8 +421,11 @@ Facts:
   the game has. Since #528 the worker plans with the most the figure has shown free beside its
   resident blocks (while it stays within a MiB of that), and it checks a block whose need falls in
   that last MiB after taking it: the reserve is a whole MiB too, so "the game still keeps 1 MiB"
-  is then exact, and a block that leaves less goes back at once (for the time of one sample the
-  game had less than the reserve, by less than a MiB). Before #528 the second figure refused
+  is then exact, and a block that leaves less goes back (from the block's allocation until the worker
+  gives it back, the game had less than the reserve, by less than a MiB; a game thread can preempt the
+  worker in between [inference: the worker runs at the lowest user priority; unmeasured]). The blocks a
+  job takes after its workspace (a helper's stack, the pause's frame block, the gate's) are checked the
+  same way when the check planned with a carried figure (audit-mem-game-1 F1). Before #528 the second figure refused
   weights that fitted, and a job beside its resident weights could be refused where the job before
   it read (host model: `host/tests/test_alloc_sim.c`, "#528 the game's memory swept"). Weights the
   game really leaves no room for, because it took memory since the check, are still refused: the

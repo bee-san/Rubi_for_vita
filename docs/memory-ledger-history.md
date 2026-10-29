@@ -5,6 +5,26 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## The blocks after the workspace's re-check keep the reserve (#528, audit-mem-game-1 F1; no API change)
+
+When the memory check planned with a carried figure (#556's `check_free`: more than the whole-MiB figure read now),
+the workspace's re-check covered the capture and the workspace, and the blocks taken after it were planned on the
+carried figure and never checked: a helper's stack and TLS (20,480 B each), the pause's frame block (at most
+524,288 B, `ocr_pause`), the text gate's block (4,096 B). Each is now checked once taken against the reserve
+(`game_ocr/main.c` `carried_short`, exact: the figure and the reserve are whole MiB) and given back short of it. No
+block, thread or budget is added.
+
+To keep the normal worker's pages, the JPEG encoder's five largest tables move to the data segment
+(`core/jpegsw.c`, `VJO_DATA_TABLE`: zigzag, the two quantisation tables and the two AC value tables, 516 B):
+
+| Build | main `6cf932fb` text + data | this change | Pages |
+|---|---|---|---|
+| normal | 159,668 + 30,536 B | 159,220 + 31,056 B | 192,512 B, unchanged |
+| debug | 168,840 + 30,552 B | 168,376 + 31,072 B | 204,800 B, unchanged |
+
+[measured: `tools/check_memory_ledger.py`, the gate's VitaSDK image]. Without the move the fix took the normal build's
+text to 159,748 B, one page over its budget.
+
 ## The spotter's part over the job's extras (#528, Mmem-regress-2; no API change)
 
 The text spotter's arena and result ran in the job's scratch, which grew to hold them when the recognizer's arena was

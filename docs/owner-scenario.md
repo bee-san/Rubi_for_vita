@@ -107,7 +107,7 @@ more at every level that reads):
 
 | Game, free USER | Cold: tier, LM, spotter, helpers | Peak B | Warm: tier, LM, spotter, helpers | Peak B |
 | --- | --- | ---: | --- | ---: |
-| 88,080,384 (CLANNAD), 29,360,128 (Adrenaline), 12,664,832 and 10,485,760 (PCSG00402) [measured]; 8 MiB [estimate] | Large, 1000k, yes, 2 | 4,648,960 | the same | 4,648,960 |
+| 88,080,384 (CLANNAD), 29,360,128 (Adrenaline) and 10,485,760 (PCSG00402) [measured]; 12,664,832 (PCSG00402: the check's figure, the free figure plus Rubi's blocks it counts as released, [measured] in the normal build's "tier large did not fit" lines); 8 MiB [estimate] | Large, 1000k, yes, 2 | 4,648,960 | the same | 4,648,960 |
 | 6 MiB [estimate] | Large, 1000k, yes, 0 | 3,915,776 | Large, 1000k, yes, 1 | 4,317,184 |
 | 5 MiB [estimate] | Large, off, yes, 0 | 2,871,296 | Large, 500k, yes, 0 | 3,436,544 |
 | 4 MiB [estimate] | Normal, 500k, no, 0 | 2,125,824 | Normal, 1000k, yes, 0 | 2,605,056 |
