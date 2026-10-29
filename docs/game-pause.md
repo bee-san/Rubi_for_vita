@@ -125,7 +125,7 @@ that function returns. `host/tests/test_kernel_game_ocr.c` runs each path throug
 | the job cancelled before a frame came | not called | ends cancelled, the block freed |
 | the game exits right after the frame | returned already; the call tidies the state | ends |
 | the watchdog's switch (or a `VJO_GAME_STATIC_FB` game, which the worker never asks: step 1) | not called | strip by strip (`VJO_ERR_UNSUPPORTED`) |
-| a copy that outlives its call (2 s) | still copying: nothing outside the game's thread may stop it | ends; the block and the capture block stay until the next job, which the kernel hands out only once the copy has ended and which gives them back first, as for a strip's copy ([in-game capture](ingame-capture.md#the-fallback-ladder); until 0.10.1 they stayed for the game's life and the worker took no more jobs) |
+| a copy that outlives its call (2 s) | still copying: nothing outside the game's thread may stop it | ends; the block and the capture block stay until the next job, which the kernel hands out only once the copy has ended and which gives them back first, as for a strip's copy ([in-game capture](ingame-capture.md#the-fallback-ladder); through 0.10.1 they stayed for the game's life and the worker took no more jobs) |
 
 **The watchdog.** The kernel worker's tick runs every 16 ms (`kernel/game_ocr.c` `game_ocr_rows_tick`). If it sees
 a frame copy running for more than twice its cap (`PAUSE_WATCHDOG_US`, 200 ms), it turns pausing off until the next boot,

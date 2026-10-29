@@ -779,6 +779,18 @@ static void busy_rows_calls(void)
     busy_unarmed = 0; allow_capture_held = 0; /* the copy ended: the kernel tidied it and hands out the next job */
     TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !blocked && !hook_owns_capture && !capture_live && !memory_live);
     TEST_CHECK(capture_allocs == allocs + 1 && capture_frees == frees + 2); /* the kept block, then the job's own */
+    {   /* the kept block's FREE is no step of this job: it goes back before the job's log is set (#536's audit) */
+        unsigned cap_free = 0;
+        for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+            cap_free += out.step[i].id == VJO_GSTEP_FREE && out.step[i].arg == VJO_GITEM_CAPTURE;
+        TEST_CHECK_(out.n_steps && out.step[0].id == VJO_GSTEP_MEM && cap_free == 1, "first step %u, capture FREE steps %u",
+                    out.n_steps ? out.step[0].id : 0u, cap_free);
+    }
+    /* a tall line's block goes back with its job, the copy abandoned or not: no rows call writes it (#536's audit) */
+    TEST_CHECK(line_buffer(NULL, 4096) && line_live);
+    hook_owns_capture = 1;
+    TEST_CHECK(!cleanup() && !line_live && line_uid < 0 && hook_owns_capture);
+    hook_owns_capture = 0;
     /* through the kernel strip (the hook could not write the block): it goes back with the job */
     hook_write_error = 1; busy_armed_kstrip = 1; rows_calls = kstrip_calls = 0;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && kstrip_calls == 1 && rows_calls == 2);
