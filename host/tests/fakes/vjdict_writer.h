@@ -55,4 +55,63 @@ static inline size_t vjdict2_one(uint8_t *bytes, size_t cap, const char *key, co
     vjdict_put64(bytes + 40, off);
     return off;
 }
+
+/* Several keys with several entries each (#528's audit-mem-leak-2: alternates of one spelling, a long key): the
+ * header, one hash page whose slots are in hash order, each key's group (its bytes, its postings) and the payloads;
+ * key k lists entries first .. first + count - 1. 0 when it does not fit. */
+typedef struct { const char *key; int first, count; } VjdictKey;
+typedef struct { const char *spelling, *reading, *meaning; } VjdictEntry;
+static inline size_t vjdict2_keys(uint8_t *bytes, size_t cap, const VjdictKey *keys, int n_keys,
+                                  const VjdictEntry *entries, int n_entries, const char *title)
+{
+    size_t off = 8192, group[16], poff[64], plen[64];
+    int order[16];
+    if (n_keys < 1 || n_keys > 16 || n_entries < 1 || n_entries > 64 || (title && strlen(title) > 63)) return 0;
+    for (int k = 0; k < n_keys; k++) {
+        if (keys[k].first < 0 || keys[k].count < 1 || keys[k].first + keys[k].count > n_entries) return 0;
+        group[k] = off;
+        off += strlen(keys[k].key) + 16u * (size_t)keys[k].count;
+    }
+    for (int e = 0; e < n_entries; e++) {
+        poff[e] = off;
+        plen[e] = strlen(entries[e].spelling) + 1 + strlen(entries[e].reading) + 1 + strlen(entries[e].meaning) + 1;
+        off += plen[e];
+    }
+    if (off > cap) return 0;
+    memset(bytes, 0, off);
+    memcpy(bytes, "VJDICT2\0", 8);
+    vjdict_put32(bytes + 8, 2); vjdict_put32(bytes + 12, 64);
+    vjdict_put32(bytes + 16, (uint32_t)n_entries); vjdict_put32(bytes + 20, 24);
+    vjdict_put64(bytes + 24, 4096); vjdict_put64(bytes + 32, 8192);
+    vjdict_put64(bytes + 48, 1); vjdict_put64(bytes + 56, 1);
+    if (title) memcpy(bytes + 192, title, strlen(title));
+    memcpy(bytes + 4096, "VJHP", 4);
+    vjdict_put32(bytes + 4100, (uint32_t)n_keys);
+    for (int k = 0; k < n_keys; k++) order[k] = k;
+    for (int i = 1; i < n_keys; i++)
+        for (int j = i; j > 0 && vjdict_key_hash(keys[order[j]].key) < vjdict_key_hash(keys[order[j - 1]].key); j--) {
+            int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t;
+        }
+    for (int s = 0; s < n_keys; s++) {
+        const VjdictKey *k = &keys[order[s]];
+        uint8_t *slot = bytes + 4096 + 16 + 24 * s;
+        vjdict_put64(slot, vjdict_key_hash(k->key)); vjdict_put64(slot + 8, group[order[s]]);
+        vjdict_put32(slot + 16, (uint32_t)k->count); vjdict_put16(slot + 20, (uint16_t)strlen(k->key));
+    }
+    for (int kk = 0; kk < n_keys; kk++) {
+        size_t at = group[kk], kl = strlen(keys[kk].key);
+        memcpy(bytes + at, keys[kk].key, kl);
+        for (int j = 0; j < keys[kk].count; j++) {
+            vjdict_put64(bytes + at + kl + 16 * j, poff[keys[kk].first + j]);
+            vjdict_put32(bytes + at + kl + 16 * j + 8, (uint32_t)plen[keys[kk].first + j]);
+        }
+    }
+    for (int e = 0; e < n_entries; e++) {
+        size_t at = poff[e];
+        const char *parts[3] = {entries[e].spelling, entries[e].reading, entries[e].meaning};
+        for (int i = 0; i < 3; i++) { size_t n = strlen(parts[i]) + 1; memcpy(bytes + at, parts[i], n); at += n; }
+    }
+    vjdict_put64(bytes + 40, off);
+    return off;
+}
 #endif

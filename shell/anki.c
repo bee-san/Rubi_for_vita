@@ -81,7 +81,9 @@ static VjoArena arena;
  * NUL. The card's text, the shown lines, is local_text: at most VJO_STRIP_MAX bytes with its NUL. */
 #define ANKI_ALIGN 8u
 /* The note (core/anki.c vjo_anki_note_from_entry): the entry's strings, the sentence, the dictionary's name and the
- * meanings' and parts of speech's pointer arrays (one each): seven blocks. */
+ * meanings' and parts of speech's pointer arrays (one each: a local dictionary's entry has one meaning and no parts of
+ * speech, core/local_dict.c read_entry; a reader that gives it more must raise this, and so must a note that copies
+ * another string, audit-mem-leak-2 F5): seven blocks. */
 #define ANKI_NOTE_MAX (2u * VJO_LOCAL_MAX_ENTRY + VJO_STRIP_MAX + 96u + 2u * sizeof(char *) + 7u * ANKI_ALIGN)
 /* The card's facts (card_facts): the game's name, its title ID and the model, copied. */
 #define ANKI_FACTS_MAX (sizeof(game_name) + sizeof(game_tid) + sizeof(ocr_model) + 3u * ANKI_ALIGN)
@@ -385,7 +387,7 @@ static int shot_stopped(void *ud)
 static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
 {
     size_t mark = vjo_arena_mark(&arena);
-    struct { /* 5,404 B */
+    struct { /* 5,440 B (288 + 5,152, the host's and the Vita's) */
         VjoGameOcrRequest req;
         VjoGameOcrResult res;
     } *job = vjo_arena_zalloc(&arena, sizeof(*job));

@@ -579,7 +579,7 @@ seam between two bands of rows.
    closed), and its `.tmp` until the kernel's close runs.
 
 SceShell holds no pixel and no byte of the JPEG, only the job's request and
-result (5,404 B) in the Anki job's arena.
+result (5,440 B) in the Anki job's arena.
 
 The whole chain runs on the host in one test, `host/tests/test_card_screenshot.py`: the actual game worker and
 kernel transport shoot a game's frame (`docs/screenshot.jpg`) into `anki_queue/<id>.jpg`, the actual Shell's Enter
@@ -834,14 +834,17 @@ In SceShell (the overlay, `shell/anki.c`):
   needed. `the arena's bound keeps every card whatever its entries` saves 16 cards at the inputs' bounds (whole
   8,192 B payloads of kana, of text JSON escaping doubles or grows sixfold, empty readings, 63-byte titles, the
   longest text) in the 88 KiB arena and in one capped at `ANKI_FULLEST`, and each record is the one a 1 MiB arena
-  makes, byte for byte [measured, host].
+  makes, byte for byte [measured, host]. `the fullest cards that save are the same in the bound` does the same for
+  the cards that grid cannot reach (audit-mem-leak-2): the fullest card that saves (8 dictionaries' entries of kana,
+  all 7 others kept, the record tuned to 32,768 B), the same with one byte more (the last entry left out), several
+  entries of the spelling in each dictionary and a 192-byte spelling. The fullest peaks at 66,705 B in the arena.
 - The note is copied out of the shown lookup under the view lock before
   anything is written; the result memory is never read during file I/O. If
   memory is refused or a write fails, only the Anki status line changes: the
   recognized text, its lookup and the overlay stay usable, the queued cards
   stay, and Enter can be pressed again.
 - A card's screenshot adds only its job's request and result to the arena,
-  5,404 B: a one-word card's save peaks at 6,860 B with it, and the 8-dictionary
+  5,440 B: a one-word card's save peaks at 6,936 B with it, and the 8-dictionary
   cases are the same with it or without [measured, host]; the bound counts it (it is smaller than the record it
   replaces in the arena). Its pixels and its JPEG
   are the game's ([above](#the-screenshot)).
