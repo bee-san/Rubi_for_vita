@@ -770,7 +770,9 @@ def render_doc():
                f"{sum(r['luna'] == 'its site' for r in rubi)} at the address of one of Luna's sites there (where "
                "Rubi's placement check refuses Luna's site, the entry's signature unlocks it; at one it accepts, the "
                "entry pins the game's bytes and gives the text Rubi's clean-up). "
-               "Each was proven in Vita3K, by the psandvita hook farm's pages (CLANNAD's by the PR #16 profile); "
+               "Commercial-game evidence comes from the psandvita hook farm's Vita3K pages "
+               "(CLANNAD's from the PR #16 profile). Experimental native-port checks are described in "
+               "[native-hooks.md](native-hooks.md#experimental-e-native-port). "
                "Console: what a console run showed. Site: the offset in the module the NID names, with the "
                "signature's length; Version: the game version (param.sfo's APP_VER) the entry is tried in.")
     out.append("")
