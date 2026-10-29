@@ -24,6 +24,8 @@ static int capture_live;
 /* API 55, the pause: the worker's frame block, and the kernel's frame copies (VJO_ROWS_FRAME) */
 static unsigned char frame_mem_block[64*1024] __attribute__((aligned(64)));
 static int frame_live, frame_alloc_failure, frame_refuse, frame_busy_armed, frame_gone_first;
+/* #528: the next strip's copy outlives its call (the kernel answers BUSY after arming) */
+static int strip_busy_armed;
 static unsigned frame_block, frame_allocs, frame_calls, strip_calls, spin; /* spin: a spinner moves at each frame */
 static int frame_cancel; /* the Shell cancels while the copy waits for its frame */
 static int frame_cancel_cut; /* review M2: the job cancelled while its copy ran (a game suspended in its display call) */
@@ -195,6 +197,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
     }
     strip_calls++;
     if (frame_gone_first) TEST_CHECK(!frame_live); /* a refused copy's block goes back before the job reads on */
+    if (strip_busy_armed) { info->armed = 1; return VJO_ERR_BUSY; } /* its copy outlived the call */
     clock_value += 16667u;
     spinner_moves();
     TEST_CHECK(req->seq == 12 && req->y < H && req->n && req->n <= H - req->y && capture_live);
@@ -316,6 +319,7 @@ static void reset(void)
     frame_uid = -1; frame_base = NULL; frame_bytes_held = 0; hook_owns_capture = 0;
     memset(&pz, 0, sizeof(pz));
     frame_live = frame_alloc_failure = frame_refuse = frame_busy_armed = frame_gone_first = frame_cancel = 0;
+    strip_busy_armed = 0;
     frame_block = frame_allocs = frame_calls = strip_calls = spin = 0;
     frame_refuse_us = 0; pause_capped = 0; frame_cancel_cut = 0; psp_title = 0;
 }
@@ -493,6 +497,31 @@ static void inactive_game_and_stop_release_weights(void)
     quitting = 0; registered_rc = 0; quit_after_delay = 0; quit_delays = 0;
     TEST_CHECK(!run("FL10_w8.vocr", &out) && weights_live && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !resident.model);
+}
+/* #528: a strip's copy that outlived its call (BUSY after arming) ends the job, which keeps the capture block the hook
+ * may still write, and the worker goes on. Its game in the background for INACTIVE_DROP_US: the resident weights go
+ * back as at any other time. The next job, which the kernel hands out only once that copy has ended, gives the kept
+ * block back before it takes its own (the stub refuses a second capture block while one is live) and reads. Before,
+ * the worker stopped there: no OCR in the game, and its resident blocks held until the game's exit. */
+static void a_copy_that_outlived_its_call_stops_nothing(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset();
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && weights_live && capture_allocs == 1);
+    strip_busy_armed = 1;
+    r = request("FL10_w8.vocr");
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !out.text[0] && !out.cleanup_status);
+    TEST_CHECK(hook_owns_capture && capture_live && capture_allocs == 2 && !job_live && !blocked && weights_live);
+    registered_rc = VJO_ERR_NO_GAME; quit_delays = 60; /* 6 s in the background */
+    worker_main(0, NULL);
+    TEST_CHECK(!weights_live && !resident.model && !blocked);
+    TEST_CHECK(hook_owns_capture && capture_live); /* nothing tells the worker that the copy ended but a new job */
+    quitting = 0; registered_rc = 0; quit_delays = 0;
+    strip_busy_armed = 0; /* the copy ended: the kernel's rows are IDLE again, and it hands out the next job */
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && out.text[0] && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
+    TEST_CHECK(!hook_owns_capture && !capture_live && capture_allocs == 3 && !blocked && weights_live);
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live);
 }
 /* The worker's loop keeps its pace whatever the kernel does: after an idle
  * vjoOcrTake that answered at once (an older kernel) it sleeps its 100 ms, so it
@@ -929,8 +958,10 @@ static void without_room_the_job_reads_as_before(void)
                ps->sum == VJO_GPAUSE_NO_ROOM && ps->rc == VJO_E_OOM);
 }
 /* A job cancelled while its copy waits for a frame ends cancelled with the block given back; a copy that outlived its
- * call (the hook may still write the block) ends the job, keeps the block for the game's life and takes no more jobs,
- * as for the capture block. */
+ * call (the hook may still write the block) ends the job and keeps the block, and the capture block, until the next
+ * job, as for a strip's copy (#528): the kernel hands that job out only once the copy has ended, and it gives both
+ * back before it takes its own (the stubs refuse a second block of either while one is live), then pauses for its own
+ * frame. The worker is not stopped meanwhile. */
 static void a_cancelled_or_stuck_copy(void)
 {
     VjoGameOcrResult out;
@@ -942,10 +973,13 @@ static void a_cancelled_or_stuck_copy(void)
     reset(); frame_busy_armed = 1;
     r = paused(1);
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) != VJO_OK && !out.text[0] && !strip_calls);
-    TEST_CHECK(blocked && hook_owns_capture && frame_live); /* never freed under the hook */
+    TEST_CHECK(!blocked && hook_owns_capture && frame_live && capture_live); /* never freed under the hook */
+    TEST_CHECK(!job_live && !out.cleanup_status);
+    frame_busy_armed = 0; /* the copy ended: the kernel's rows are IDLE again, and it hands out the next job */
     r = paused(1);
-    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OCR_UNAVAILABLE && frame_calls == 1);
-    hook_owns_capture = 0; frame_live = 0; frame_uid = -1; capture_live = 0; capture_uid = -1; blocked = 0;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && frame_calls == 2 && frame_allocs == 2 &&
+               capture_allocs == 2);
+    TEST_CHECK(!hook_owns_capture && !frame_live && !capture_live && !job_live && !blocked && !out.cleanup_status);
 }
 
 /* #324: the check passed, yet the model's weights were refused (the console's free memory in whole MiB): the job gives
@@ -1139,6 +1173,8 @@ TEST_LIST = {
     {"the job peak stays within a page of the old single block", peak_is_the_old_single_block_within_a_page},
     {"the preflight counts resident weights once; a refusal releases them", preflight_counts_resident_weights_and_refusal_releases_them},
     {"an inactive game and the worker stop release the weights", inactive_game_and_stop_release_weights},
+    {"#528: a copy that outlived its call stops neither the worker nor the weights' release; the next job frees it",
+     a_copy_that_outlived_its_call_stops_nothing},
     {"a failed release blocks the worker until stop retries it", failed_release_blocks_until_stop_retries},
     {"the worker's loop keeps its pace with a waiting kernel and an older one", worker_loop_keeps_its_pace},
     {NULL, NULL}
