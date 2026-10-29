@@ -8,6 +8,7 @@
 #define VJO_SETTINGS_INSTALL_H
 #include <stddef.h>
 #include <stdint.h>
+#include "../core/boot_guard.h"
 #include "../core/payload.h"
 #include "../core/taicfg.h"
 
@@ -91,10 +92,20 @@ typedef struct {
     char stamp[20];            /* the backups' date: YYYYMMDD-HHMMSS (local time) */
     char before_overlay[2][128];/* each folder's newest backup without our kernel line ("" none) */
     char storage[40];          /* a storage plugin in ur0's *KERNEL: taiHEN reads ur0's at boot */
+    /* #528: this boot's record of the boot guard (ur0:data/VitaJPOverlay/boot.txt, core/boot_guard.h). safe_mode: it
+     * says safe, so the overlay, its hooks and OCR are off this boot; boot: the record (the failed normal boots in a
+     * row, the previous boot's stage and fault). From VJO_BOOT_STICKY_FAILURES on, safe mode stays until an install
+     * or Check and repair resets the record (vjo_install_run); below it, the next restart tries the overlay again. */
+    int safe_mode;
+    VjoBootRecord boot;
 } VjoInstallScan;
 
 /* Reads the card into s (writes nothing). */
 void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build);
+
+/* #528: what the page says first while the boot guard holds the overlay in safe mode (s->safe_mode): why, and what
+ * ends it. Its length, 0 when s is not in safe mode. */
+int vjo_install_safe_note(const VjoInstallScan *s, char *out, size_t cap);
 
 /* The plan of action, one entry per line (the page wraps them): their count (at most max). */
 int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTALL_LINE], int max);

@@ -39,6 +39,7 @@ static const VjoInstallBuild build = {VJO_API_VERSION, VJO_VERSION_STRING, VJO_V
 
 static VjoInstallScan scan;   /* the main thread's, but while the worker runs (it scans again into it) */
 static int scan_state;       /* scan.state as the main thread last scanned it: the frame's, also while a run rewrites scan */
+static int scan_safe;        /* scan.safe_mode, as scan_state (#528: the boot guard's safe mode) */
 static int scanned, action_index, scroll, stick_move;
 static int actions[4], action_count;
 /* what the box shows: the plan, the progress, or what the last action did */
@@ -70,6 +71,18 @@ static const char *action_name(int a)
     }
 }
 
+/* text's sentences as lines, one each: a plan line holds VJO_INSTALL_LINE bytes in at most VJO_TEXT_ROWS rows */
+static void add_sentences(const char *at)
+{
+    while (*at && line_count < VJO_INSTALL_LINES - 1) {
+        const char *end = strstr(at, ". ");
+        int len = end ? (int)(end - at) + 1 : (int)strlen(at);
+        snprintf(lines[line_count++], VJO_INSTALL_LINE, "%.*s", len, at);
+        at += len;
+        while (*at == ' ') at++;
+    }
+}
+
 static void set_lines(void)
 {
     memset(laid_out, 0, sizeof(laid_out));
@@ -80,18 +93,12 @@ static void set_lines(void)
         return;
     }
     line_count = 0;
+    char note[480];
+    /* #528: safe mode first (the overlay is off this boot), then why an install cannot run */
+    if (vjo_install_safe_note(&scan, note, sizeof(note))) add_sentences(note);
     if (scan.reason[0] && (scan.state == VJO_INSTALL_CANNOT || scan.state == VJO_INSTALL_NO_PAYLOAD ||
-                           scan.state == VJO_INSTALL_INTERRUPTED)) {
-        /* one line per sentence: a plan line holds VJO_INSTALL_LINE bytes in at most VJO_TEXT_ROWS rows */
-        const char *at = scan.reason;
-        while (*at && line_count < VJO_INSTALL_LINES - 1) {
-            const char *end = strstr(at, ". ");
-            int len = end ? (int)(end - at) + 1 : (int)strlen(at);
-            snprintf(lines[line_count++], VJO_INSTALL_LINE, "%.*s", len, at);
-            at += len;
-            while (*at == ' ') at++;
-        }
-    }
+                           scan.state == VJO_INSTALL_INTERRUPTED))
+        add_sentences(scan.reason);
     if (action_count)
         line_count += vjo_install_plan(&scan, actions[action_index], lines + line_count, VJO_INSTALL_LINES - line_count);
 }
@@ -100,6 +107,7 @@ static void rescan(void)
 {
     vjo_install_scan(&scan, &build);
     scan_state = scan.state;
+    scan_safe = scan.safe_mode;
     scanned = 1;
     action_count = 0;
     /* a stopped swap: putting its file back comes first when config.txt is HENkaku's default now and the
@@ -116,6 +124,10 @@ static void rescan(void)
     vjo_log("install page: %s (state %d, actions 0x%x; " VJO_WORKER_MARK ")", scan.title, scan.state, (unsigned)scan.actions);
     if (scan.reason[0]) /* why it cannot, as the page shows it (#194: the console run had only the title) */
         vjo_log("install page: %s", scan.reason);
+    if (scan.safe_mode) /* #528: and the boot guard's record, as kernel.txt has it */
+        vjo_log("install page: boot guard: boot %u safe (previous: %s, stage %s%s%s, failures %d)", (unsigned)scan.boot.seq,
+                vjo_boot_mode_name(scan.boot.prev_mode), vjo_boot_stage_name(scan.boot.prev_stage),
+                scan.boot.prev_inert ? ", inert" : "", scan.boot.prev_fault ? ", fault" : "", scan.boot.failures);
 }
 
 int vjo_install_page_start(void)
@@ -124,7 +136,8 @@ int vjo_install_page_start(void)
     showing = SHOW_PLAN;
     action_index = 0;
     set_lines();
-    return scan.state != VJO_INSTALL_INSTALLED && scan.state != VJO_INSTALL_NO_PAYLOAD;
+    /* #528: also in the boot guard's safe mode, so that the app says at once why the overlay is off */
+    return (scan.state != VJO_INSTALL_INSTALLED && scan.state != VJO_INSTALL_NO_PAYLOAD) || scan.safe_mode;
 }
 
 int vjo_install_page_has_payload(void) { return scanned && scan.has_payload; }
@@ -319,7 +332,8 @@ void vjo_install_page_frame(const VjoPageUi *ui, uint32_t pressed, int touch_x, 
     ui->header();
     /* the state */
     ui->card(TITLE_Y, TITLE_H, 0);
-    ui->text(42, TITLE_Y + 33, scan_state == VJO_INSTALL_CANNOT || scan_state == VJO_INSTALL_INTERRUPTED ? ui->off : ui->white,
+    ui->text(42, TITLE_Y + 33, scan_state == VJO_INSTALL_CANNOT || scan_state == VJO_INSTALL_INTERRUPTED || scan_safe ? ui->off
+             : ui->white,
              26, worker.running ? (running_action == VJO_INSTALL_ACT_UNINSTALL ? "Uninstalling..." : running_action == VJO_INSTALL_ACT_INSTALL
                             ? "Installing..." : "Working...") : scan.title);
     /* the plan, the progress, or the result */

@@ -1909,6 +1909,95 @@ static void the_page_shows_the_plan_and_runs_it(void)
     TEST_CHECK(installed_files(1));
 }
 
+/* #528 (Mmem-crash-7): the boot guard's safe mode, as the kernel's record of this boot says it
+ * (ur0:data/VitaJPOverlay/boot.txt, core/boot_guard.h). The app opens on the Install page, which says that the overlay
+ * is off this boot, why, and what ends it; Check and repair a minute into the boot empties the record, and the note
+ * is gone. A normal boot's record, or one that does not parse, says nothing. */
+#define BOOT_TXT "ur0:data/VitaJPOverlay/boot.txt"
+static void the_boot_guards_safe_mode_is_said_and_ended(void)
+{
+    VjoInstallResult r;
+    char note[480];
+    size_t bn;
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    /* a normal boot */
+    put_text(BOOT_TXT, "vjoboot1 seq=3 mode=0 stage=4 inert=0 fault=0 failures=0 api=57 prev=0/4/0/0\n");
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INSTALLED, "state %d: %s", s.state, s.title);
+    TEST_CHECK(!s.safe_mode && vjo_install_safe_note(&s, note, sizeof(note)) == 0 && !note[0]);
+    TEST_CHECK(vjo_install_page_start() == 0); /* the app opens on its settings */
+    frame(0);
+    TEST_CHECK(!shown("Safe mode"));
+    /* the second failed normal boot in a row, SceShell stopped during it: off until Check and repair */
+    put_text(BOOT_TXT, "vjoboot1 seq=5 mode=1 stage=1 inert=0 fault=0 failures=2 api=57 prev=0/3/0/1\r\n");
+    s = scan_now();
+    TEST_CHECK(s.safe_mode && s.boot.seq == 5 && s.boot.failures == 2 && s.boot.prev_fault && s.boot.prev_stage == 3);
+    TEST_CHECK(vjo_install_safe_note(&s, note, sizeof(note)) == (int)strlen(note) && note[0]);
+    TEST_MSG("%s", note);
+    TEST_CHECK(!strncmp(note, "Safe mode: the overlay, its text hooks and OCR are off this boot. ", 66));
+    TEST_CHECK(strstr(note, "SceShell stopped during the last boot (for Rubi or for another plugin: the guard cannot tell "
+                            "which): 2 failed normal boots in a row.") != NULL);
+    TEST_CHECK(strstr(note, "It stays off until you choose Check and repair, then restart the Vita.") != NULL);
+    TEST_CHECK(vjo_install_page_start() == 1); /* the app opens on the Install page */
+    frame(0);
+    for (int i = 0; i < drawn_count; i++) TEST_MSG("%s", drawn[i]);
+    TEST_CHECK(shown("Safe mode: the overlay, its text hooks and OCR are off this boot."));
+    TEST_CHECK(shown("[Check and repair*]"));
+    {
+        static char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+        int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
+        TEST_CHECK(has_line((const char (*)[VJO_INSTALL_LINE])plan, n, ". End the boot guard's safe mode (ur0:data/VitaJPOverlay/"
+                            "boot.txt is emptied): the overlay runs again from the next restart."));
+    }
+    TEST_CHECK(strstr(log_text, "install page: boot guard: boot 5 safe (previous: normal, stage worker, fault, failures 2)")
+               != NULL);
+    /* Check and repair, an hour into the boot: the record is emptied, the note gone */
+    frame(SCE_CTRL_CROSS); /* the stubs run the thread at once */
+    frame(0);
+    TEST_CHECK(shown("nothing needed writing"));
+    TEST_CHECK(slurp(BOOT_TXT, &bn) && bn == 0);
+    TEST_CHECK(vjo_install_page_start() == 0);
+    frame(0);
+    TEST_CHECK(!shown("Safe mode"));
+    {
+        static char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+        VjoInstallScan now = scan_now();
+        int n = vjo_install_plan(&now, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        TEST_CHECK(!has_line((const char (*)[VJO_INSTALL_LINE])plan, n, "End the boot guard's safe mode"));
+    }
+    /* the first failed normal boot (it stopped before its stable minute): the next restart tries again */
+    put_text(BOOT_TXT, "vjoboot1 seq=2 mode=1 stage=1 inert=0 fault=0 failures=1 api=57 prev=0/2/0/0\n");
+    s = scan_now();
+    TEST_CHECK(s.safe_mode && vjo_install_safe_note(&s, note, sizeof(note)) > 0);
+    TEST_CHECK(strstr(note, "The last boot stopped before it had run for a minute: 1 failed normal boot in a row.") != NULL);
+    TEST_CHECK(strstr(note, "The next restart tries the overlay again; Check and repair also ends safe mode.") != NULL);
+    /* a safe boot after a complete safe one: the failures came before */
+    put_text(BOOT_TXT, "vjoboot1 seq=6 mode=1 stage=1 inert=0 fault=0 failures=2 api=57 prev=1/4/1/0\n");
+    s = scan_now();
+    TEST_CHECK(s.safe_mode && vjo_install_safe_note(&s, note, sizeof(note)) > 0);
+    TEST_CHECK(strstr(note, "2 normal boots in a row failed before this one. It stays off until you choose Check and repair")
+               != NULL);
+    /* a small buffer gets a cut note, never past it */
+    char small[24];
+    memset(small, 'x', sizeof(small));
+    TEST_CHECK(vjo_install_safe_note(&s, small, sizeof(small)) == (int)sizeof(small) - 1 && !small[sizeof(small) - 1]);
+    /* not a record (the kernel then starts as at a first boot): no safe mode */
+    put_text(BOOT_TXT, "safe");
+    s = scan_now();
+    TEST_CHECK(!s.safe_mode);
+    /* in a boot's first minute the reset is left (the kernel writes its record over it), and the note stays */
+    put_text(BOOT_TXT, "vjoboot1 seq=5 mode=1 stage=1 inert=0 fault=0 failures=2 api=57 prev=0/3/0/1\n");
+    uptime_us = 20ull * 1000000ull;
+    s = scan_now();
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && has_line(r.lines, r.count, "the Vita has run for under a minute"));
+    uptime_us = 3600ull * 1000000ull;
+    s = scan_now();
+    TEST_CHECK(s.safe_mode);
+}
+
 /* #418 (P10): the page's worker cannot be made (settings/app_worker.c's failed start): the page says so and that nothing
  * was changed, is not busy, and the same action runs once the thread can be made. */
 static void a_run_whose_thread_cannot_start_changes_nothing(void)
@@ -3094,6 +3183,7 @@ TEST_LIST = {
     {"the_manifest_is_exactly_the_builds", the_manifest_is_exactly_the_builds},
     {"package_settings_are_applied", package_settings_are_applied},
     {"the_page_shows_the_plan_and_runs_it", the_page_shows_the_plan_and_runs_it},
+    {"the_boot_guards_safe_mode_is_said_and_ended", the_boot_guards_safe_mode_is_said_and_ended},
     {"a_run_whose_thread_cannot_start_changes_nothing", a_run_whose_thread_cannot_start_changes_nothing},
     {"an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them", an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them},
     {NULL, NULL}};

@@ -435,6 +435,7 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/settings/applog.c ${ROOT}/settings/app_worker.c ${ROOT}/settings/vita2d_textures.c ${ROOT}/settings/font_raster.c
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
   ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
+  ${ROOT}/core/boot_guard.c # #528: the Install page reads the boot guard's record (its safe mode)
   ${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
   ${ROOT}/core/config.c ${ROOT}/core/colour_scheme.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/core/regions.c # #358: Suggest a text box, region.ini's line for every game (settings/preferences.c)
