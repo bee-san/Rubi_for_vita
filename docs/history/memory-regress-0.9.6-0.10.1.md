@@ -169,7 +169,8 @@ every entry under the shown word's key, homophones included. It also searched th
 cache and read each alternate's payload. #544 passes over the homophones unread, as their posting hints allow,
 with identical results at every tap. Reads per cursor lookup (`vjo-dict-stage-bench`, 1,156 taps) went from 10.41
 to 8.74 with the bundled dictionary, and from 12.01 to 10.34 with the names dictionary too. That is about 5 ms a
-lookup on the console [estimate: `tools/dict_stage_report.py`'s 13.1 ms + 2.98 ms a read]. The rest of #520's cost
+lookup on the console [estimate: 1.67 reads at the test.4 fit's 2.98 ms a read,
+[docs/lookup-performance.md](../lookup-performance.md); 6.4 ms at docs/performance.md's older 3.82 ms]. The rest of #520's cost
 (the second index search, about 2.2 reads; the alternates' own payloads, which the popup shows) is left.
 
 ## Handed on

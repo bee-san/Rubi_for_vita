@@ -7,8 +7,9 @@
 Prints, over every tap: reads per lookup by what they fetch, bytes, distinct 4 KiB pages, the
 candidates generated/searched/found, the host microseconds by stage (CPU with the host's warm file
 cache), and the console estimate: fixed + read-ms x reads + cpu-factor x host CPU, the fit of the
-owner's console logs (docs/performance.md, reports/rubi-dict-speed.md: v0.8.0-test.4, 338 cursor
-lookups, 13.1 ms + 2.98 ms a read, R^2 0.73; test.2: 11.2 + 3.76; CPU about 10x the host's).
+owner's console logs (docs/lookup-performance.md, "the test.4 fit": v0.8.0-test.4, 338 cursor
+lookups, 13.1 ms + 2.98 ms a read, R^2 0.73; test.2: 11.2 + 3.76; CPU about 10x the host's;
+docs/performance.md's older fit, test.1, is 15.3 + 3.82).
 --before compares two runs tap by tap: every digest must match (identical results), and the
 reads/time deltas are printed. Exit 1 on a digest difference.
 """
