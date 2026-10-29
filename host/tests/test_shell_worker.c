@@ -9436,8 +9436,10 @@ static void test_overlay_page_needs_its_own_room(void)
  * starts, Auto reads its settled screen and looks its first word up with the overlay closed, the overlay opens on it,
  * the cursor moves, a dictionary page turns, line history goes back a line and returns, a settled new screen is
  * refreshed quietly, the overlay closes, Auto reads the next screen, the overlay opens on it and the game is
- * suspended (PS: SceShell's LiveArea in front) and resumed, the game is suspended again while Auto's next job runs and
- * resumed, the game exits. Every cycle must end holding
+ * suspended (PS: SceShell's LiveArea in front) and resumed, again while the open overlay's cursor job holds the
+ * result arena (the idle rule gives it back once the job is done) and with an earlier line shown, and while Auto's
+ * next job runs, each resumed, and the game exits; after each PS no result arena or visit is held. Every cycle must
+ * end holding
  * what the first ended with (every item counted, the ledger's pools, the result arena, the scratch arena), and no
  * dictionary file or line-history visit once its game has exited. VJO_SOAK_CYCLES=N runs N cycles (40 by default). */
 /* The game resumed: the kernel's GAME_START with the game in front, then classify_pending's verdict. */
@@ -9503,6 +9505,38 @@ static void soak_shell_cycle(unsigned i)
     control_tick(VJO_EV_GAME_EXIT);
     control_tick(0);
     TEST_CHECK_(ov == OV_CLOSED && !g_view.open && !history && !paged_live, "cycle %u: PS closed the overlay", i);
+    TEST_CHECK_(!has_result_memory(), "cycle %u: PS gave the result arena back", i); /* AUDIT P5 */
+    soak_resume(i);
+    /* AUDIT P4: PS while the open overlay's cursor job holds the result arena: on_game_exit leaves it to the job
+     * (net_busy), the idle rule gives it back once the job is done; then PS with an earlier line shown (a visit) */
+    open_overlay();
+    if (job_running) finish_current_job();
+    TEST_CHECK_(ov == OV_OPEN && has_result_memory(), "cycle %u: the overlay open on its word", i);
+    gen = local_text_generation;
+    vjo_post_cursor(3, gen);
+    on_command();
+    TEST_ASSERT_(job_running && has_result_memory(), "cycle %u: a cursor job holds the arena", i);
+    state.game_pid = 0;
+    control_tick(VJO_EV_GAME_EXIT);
+    TEST_CHECK_(ov == OV_CLOSED && has_result_memory(), "cycle %u: the job still holds the arena after PS", i);
+    finish_current_job();
+    control_tick(0);
+    TEST_CHECK_(!has_result_memory() && !paged_live, "cycle %u: the idle rule gave the arena back", i);
+    soak_resume(i);
+    next_scene(1000 + 4 * i);
+    stable_pending = 1;
+    auto_prefetch();
+    if (job_running) finish_current_job();
+    open_overlay();
+    if (job_running) finish_current_job();
+    history_key(VJO_CMD_EARLIER);
+    if (job_running) finish_current_job();
+    TEST_CHECK_(history && g_view.history == 1, "cycle %u: an earlier line shown before PS", i);
+    state.game_pid = 0;
+    control_tick(VJO_EV_GAME_EXIT);
+    if (job_running) finish_current_job();
+    control_tick(0);
+    TEST_CHECK_(!history && !has_result_memory() && !paged_live, "cycle %u: PS ended the visit", i);
     soak_resume(i);
     /* PS while Auto's job runs: its result comes back for a game no longer in front, then the resume */
     next_scene(103 + 4 * i);
@@ -9513,6 +9547,7 @@ static void soak_shell_cycle(unsigned i)
     control_tick(VJO_EV_GAME_EXIT);
     if (job_running) finish_current_job();
     control_tick(0);
+    TEST_CHECK_(!has_result_memory(), "cycle %u: nothing held once Auto's job ended after PS", i); /* AUDIT P5 */
     soak_resume(i);
     state.game_pid = 0;
     control_tick(VJO_EV_GAME_EXIT);

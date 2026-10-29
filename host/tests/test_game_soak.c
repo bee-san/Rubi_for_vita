@@ -2,15 +2,15 @@
  * transport (kernel/game_ocr.c, capture.c, buffers.c) run OCR job after job in one game process, as on the
  * console, never reset between jobs, with every allocator they use counted by pool and name
  * (host/tests/soak_track.h): the game's USER, CDRAM and phycont blocks, the kernel pool's blocks, the worker's
- * threads and the kernel's file descriptors. Each of the 18 scenarios is a cycle run many times (VJO_SOAK_CYCLES,
+ * threads and the kernel's file descriptors. Each of the 19 scenarios is a cycle run many times (VJO_SOAK_CYCLES,
  * else a few for ctest): the owner's settings (VOCR6.2 Large, the 1000k LM, the spotter, vertical auto, two
  * helpers; #528's config.ini), Normal with its cascade and the 4000k LM and the gate, Small with nothing, a setting
  * changed at every job, the pause, a blank text box, the same page again (the line cache), the Shell cancelling
  * during the capture and during the model reads, the game short of memory (a smaller size) and out of it (refused),
  * the weights refused after the check (#324), the capture's ladder (CDRAM, phycont), the kernel strip, the game
  * left for over 5 s of its running time (the resident blocks go back), the worker stopped and started, a hooked
- * game (a verified site's eight trusted lines after an OCR read) and the game suspended (PS) and resumed during its
- * job. After
+ * game (a verified site's eight trusted lines after an OCR read, and one after a suspension), the game suspended (PS)
+ * and resumed during its job, and vertical text (ocr_vertical on and auto, on a tall region of columns). After
  * the cycle's first run (which may read the resident models), every item must hold exactly what it held then: zero
  * net bytes per cycle in every pool. The game worker's ledger (g_game_ledger) must agree with the blocks counted
  * here, and the kernel's (g_kernel_ledger) with its strips.
@@ -117,8 +117,10 @@ static int drop_block(Block *b)
  * the game's current line, as vjo_hooks_start installs it in such a game (host/tests/test_game_hooks.c has the
  * engine's every case); while a game thread writes it (hook_busy) its snapshot fails and the job reads the screen.
  * The engine itself allocates nothing (game_ocr/hooks.c, core/hook_*.c: static state; its taiHEN hooks are taken at
- * the worker's start and released at its stop), so the soak counts what the worker takes around it. */
-#define HOOK_SITE 2u
+ * the worker's start and released at its stop), so the soak counts what the worker takes around it. The worker's
+ * trusted watch between jobs (vjoOcrHookLine, a host macro here) is not run: with it, the kernel publishes a trusted
+ * line through its own scene even in a region without a screen (kernel/game_ocr.c), taking no memory either. */
+#define HOOK_SITE 1u /* one site installed: its stream is 1, as game_ocr/hooks.c numbers it */
 static int hooks_on, hook_busy;
 static uint32_t hook_seq;
 static const char *hook_text;
@@ -284,11 +286,13 @@ int ksceKernelDelayThread(SceUInt us) { clock_us += us; return 0; }
 /* the Shell cancels the job at this display call of it (0: never); the game is suspended and resumed at this one */
 static unsigned cancel_at_frame, suspend_at_frame, frames_this_job;
 static void suspend_and_resume(void);
+static void sample_frame(void);
 int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *out, SceUInt *timeout)
 {
     (void)uid; (void)wait; (void)out;
     if (bits == MEV_ROWS) { /* the game shows its next frame: the display hook runs in its thread */
         ++frames_this_job;
+        sample_frame(); /* AUDIT P3: on_frame's signature, as between jobs */
         if (cancel_at_frame && frames_this_job == cancel_at_frame) {
             SceUID saved = caller;
             caller = SHELL_PID;
@@ -496,7 +500,30 @@ static void make_frame(unsigned page)
     glyph_line(44, 476, 620, 22, 0xFFECE4E4u);
 }
 
+/* columns of glyphs, right to left, for vertical text (API 47) */
+static void glyph_column(unsigned x0, unsigned y0, unsigned y1, unsigned gw, uint32_t abgr)
+{
+    for (unsigned y = y0; y + gw <= y1; y += gw + gw / 6) {
+        unsigned strokes = 3 + rnd(4), t = gw / 10 ? gw / 10 : 1;
+        for (unsigned k = 0; k < strokes; k++) {
+            if (rnd(2)) { unsigned yy = y + rnd(gw - t); box(x0, yy, x0 + gw, yy + t, abgr); }
+            else { unsigned xx = x0 + rnd(gw - t); box(xx, y, xx + t, y + gw, abgr); }
+        }
+    }
+}
+static void make_vframe(unsigned page)
+{
+    make_frame(0);
+    box(690, 30, 910, 530, 0xFF221812u);
+    seed = 91u + page * 7919u;
+    glyph_column(856, 50, 506, 22, 0xFFF0F0F0u);
+    glyph_column(816, 50, 446, 22, 0xFFF0F0F0u);
+    glyph_column(776, 50, 386, 22, 0xFFF0F0F0u);
+}
+
 /* ---- the game process: the kernel's state for it once, then job after job ---- */
+#define BOX_REGION ((VjoRect){1536, 48188, 62600, 15059}) /* a CLANNAD-sized text box */
+#define TALL_REGION ((VjoRect){47787, 4819, 13653, 57826}) /* 700-900 x 40-520 px: the columns' */
 static void game_starts(void)
 {
     memset(&g, 0, sizeof(g));
@@ -512,7 +539,7 @@ static void game_starts(void)
     g.fb_w = FB_W;
     g.fb_h = FB_H;
     g.done_seq = g.capture_seq = 11;
-    g.region = (VjoRect){1536, 48188, 62600, 15059}; /* a CLANNAD-sized text box */
+    g.region = BOX_REGION;
     user_free = USER_FREE_CLANNAD;
     cdram_free = 128 << 20;
     phycont_free = 16 << 20;
@@ -787,16 +814,21 @@ static void stop_start_job(unsigned i)
 /* The game's frames between jobs, as the kernel samples them: a region signature every VJO_CHECK_EVERY_FRAMES frames
  * (kernel/display.c on_frame) and the scene tracker's update with it (kernel/main.c change_detection), n frames of
  * 1/60 s. The tracker then knows the region's screen, which a trusted answer's capture without pixels needs. */
-static void frames_shown(unsigned n)
+static unsigned frame_n;
+static void sample_frame(void)
 {
     SceneSig sig;
+    if (!g.game_active || ++frame_n % VJO_CHECK_EVERY_FRAMES) return;
+    if (region_sig_hook((uintptr_t)frame, FB_W, 0x00000000u, FB_W, FB_H, &sig)) return;
+    VJO_LOCK();
+    (void)scene_update(&g.tracker, &sig, (int64_t)clock_us, 0, 0);
+    VJO_UNLOCK();
+}
+static void frames_shown(unsigned n)
+{
     for (unsigned k = 1; k <= n; k++) {
         clock_us += 16667;
-        if (!g.game_active || k % VJO_CHECK_EVERY_FRAMES) continue;
-        if (region_sig_hook((uintptr_t)frame, FB_W, 0x00000000u, FB_W, FB_H, &sig)) continue;
-        VJO_LOCK();
-        (void)scene_update(&g.tracker, &sig, (int64_t)clock_us, 0, 0);
-        VJO_UNLOCK();
+        sample_frame();
     }
 }
 /* The Shell sets the region again (kernel/main.c reset_change_detection): a region without a screen yet. */
@@ -821,7 +853,6 @@ static void hooked_job(unsigned i)
                                         "「だったら今夜のうちに準備しておけばいいじゃない」"};
     unsigned snaps0, takes0;
     hooks_on = 1;
-    region_set_again();
     hook_busy = 1;
     hook_text = lines[i % 3u];
     hook_seq++;
@@ -830,6 +861,7 @@ static void hooked_job(unsigned i)
     hook_busy = 0;
     for (unsigned k = 1; k <= TRUST_DROP_ANSWERS; k++) {
         make_frame(page_no++);
+        if (k == 1) region_set_again(); /* AUDIT P3: the Shell sets the region again: no screen yet */
         if (k > 1) frames_shown(4u * VJO_CHECK_EVERY_FRAMES); /* the new line's screen, settled */
         hook_text = lines[(i + k) % 3u];
         hook_seq++;
@@ -845,7 +877,53 @@ static void hooked_job(unsigned i)
     }
     TEST_CHECK_(weights_blk.uid < 0 && lm_blk.uid < 0 && spot_blk.uid < 0,
                 "cycle %u: the resident blocks went back after %u trusted answers", i, TRUST_DROP_ANSWERS);
+    /* the game suspended (PS) and resumed between two trusted lines: its region has no screen again until it has
+     * shown its frames (audit-mem-leak-3 F5) */
+    suspend_and_resume();
+    region_set_again();
+    make_frame(page_no++);
+    hook_seq++;
+    takes0 = capture_takes;
+    TEST_CHECK(job(shell_request(3, 2, 2000, SPEED_BASE | SPEED_SPOT | SPEED_VAUTO)) == VJO_OK);
+    TEST_CHECK_(job_out.text_from == HOOK_SITE && capture_takes - takes0 == 1u && weights_blk.uid < 0,
+                "cycle %u: the resumed game's trusted line (%u capture blocks)", i, capture_takes - takes0);
     hooks_on = 0;
+}
+/* Vertical text (config.ini ocr_vertical, API 47): a tall region of columns at the screen's right, read once with
+ * ocr_vertical = on (its columns, the vertical model alone) and once with auto, as the owner's config has it (its
+ * rows are checked for vertical text, then read as columns). The Shell sets that region (vjoSetRegion: the kernel's
+ * tracker starts again) and the text box's again at the cycle's end. */
+static int vertical_model_there(void)
+{
+    char path[1024];
+    FILE *f;
+    if (!VJO_VOCR_MODEL_DIR[0]) return 0;
+    snprintf(path, sizeof(path), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_VERTICAL_NAME);
+    if (!(f = fopen(path, "rb"))) return 0;
+    fclose(f);
+    return 1;
+}
+static void region_set(VjoRect r)
+{
+    VJO_LOCK();
+    g.region = r;
+    VJO_UNLOCK();
+    region_set_again();
+}
+static unsigned vertical_reads;
+static void vertical_job(unsigned i)
+{
+    const uint32_t on = VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    region_set(TALL_REGION);
+    make_vframe(page_no++);
+    note_job(job(shell_request(3, 2, 2000, SPEED_BASE | on)));
+    if (resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME)) vertical_reads++;
+    TEST_CHECK_(!models_ok || !vertical_model_there() || resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME),
+                "cycle %u: ocr_vertical = on read the columns with the vertical model", i);
+    make_vframe(page_no++);
+    note_job(job(shell_request(3, 2, 2000, SPEED_BASE | SPEED_SPOT | SPEED_VAUTO)));
+    if (resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME)) vertical_reads++;
+    region_set(BOX_REGION);
 }
 /* The game suspended (the PS button: SceShell's LiveArea in front) and resumed during its job: the kernel's foreground
  * events as kernel/lifecycle.c applies them (each moves the epoch on; the resumed game is active again at the Shell's
@@ -859,7 +937,7 @@ static void kernel_foreground(SceUID pid, int active)
     game_ocr_foreground_changed_locked();
     VJO_UNLOCK();
 }
-static unsigned suspensions, suspended_cancelled;
+static unsigned suspensions, suspended_jobs, suspended_cancelled;
 static void suspend_and_resume(void)
 {
     SceUID saved = caller;
@@ -878,14 +956,16 @@ static void suspended_job(unsigned i)
     unsigned before = suspensions, cancelled = shell_cancelled;
     make_frame(page_no++);
     if ((i & 1u) || !models_ok) {
-        suspend_at_frame = 1u + i % 6u;
+        suspend_at_frame = 1u + (models_ok ? i / 2u : i) % 6u; /* every point, also on the odd cycles alone */
     } else {
         TEST_CHECK(!drop_resident());
-        suspend_at_read = 1u + i % 4u;
+        suspend_at_read = 1u + (i / 2u) % 4u;
     }
     (void)job(shell_request(3, 2, 2000, SPEED_BASE | SPEED_SPOT | SPEED_VAUTO));
     TEST_CHECK_(suspensions == before + 1u, "cycle %u: the game was suspended during its job", i);
+    TEST_CHECK_(shell_cancelled == cancelled + 1u, "cycle %u: the Shell read the suspended job as cancelled", i);
     suspended_cancelled += shell_cancelled - cancelled;
+    suspended_jobs++;
     suspend_at_frame = suspend_at_read = 0;
     owner_job(i);
 }
@@ -909,6 +989,7 @@ static const Scenario scenarios[] = {
     {"the worker stopped and started", stop_start_job},
     {"a hooked game: OCR, then 8 trusted answers", hooked_job},
     {"the game suspended (PS) and resumed during its job", suspended_job},
+    {"vertical text: ocr_vertical on, then auto", vertical_job},
 };
 
 static void the_game_process_holds_no_more_after_each_cycle(void)
@@ -937,8 +1018,11 @@ static void the_game_process_holds_no_more_after_each_cycle(void)
         soak_snap(&b);
         grew += soak_growth("game", scenarios[s].name, &a, &b, cycles);
         if (scenarios[s].cycle == suspended_job)
-            printf("soak game: %u jobs suspended, %u of them read as cancelled by the Shell\n", suspensions,
+            printf("soak game: %u jobs suspended, %u of them read as cancelled by the Shell\n", suspended_jobs,
                    suspended_cancelled);
+        if (scenarios[s].cycle == vertical_job)
+            printf("soak game: vertical text: %u of %u jobs ended with the vertical model resident\n", vertical_reads,
+                   2u * (cycles + 1u));
         if (models_ok && scenarios[s].cycle != cancelled_job && scenarios[s].cycle != blank_job &&
             scenarios[s].cycle != no_memory_job)
             TEST_CHECK_(recognized > 0, "%s: no job recognized a line", scenarios[s].name);

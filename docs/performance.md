@@ -517,7 +517,9 @@ python3 tools/bench_stages.py report --host host.json --a9 a9.json --dev dev.jso
 checksum with `tools/bench_stages_expected.json`: the checksums hash each stage's whole output (the
 grey bytes and the signature, the lines, the text and the greedy text, the entries and their
 spans, every parsed setting, the Anki record's bytes), so a speed change that alters a stage's
-output fails it. The log stage is a replica of the Shell's formatting (its format strings, a
+output fails it. It also runs three of the tool's error exits (a missing input after the frame, an unknown
+stage) and checks their exit codes; a buffer left behind there fails it only in a build with
+`-fsanitize=address` (LeakSanitizer's exit code), which no CI or gate lane makes. The log stage is a replica of the Shell's formatting (its format strings, a
 typical job's values), so for logging it checks the formatted bytes, not the Shell's code; the
 Shell's log lines are checked by `host/tests/test_shell_worker.c` through its own `vjo_log` stub;
 `shell/log_vita.c` itself has no host test here (the logging PR adds one). The `a9` lane links the Vita build's own libraries
