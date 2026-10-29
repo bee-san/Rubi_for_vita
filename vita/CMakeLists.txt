@@ -219,7 +219,13 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/divide.c) # the Shell's integer division, in place of libgcc's (the Shell only)
 # Cross-file optimization removes redundant wrappers and constant branches so reading statistics
 # fit the existing Shell pages. Only these Shell targets use LTO; kernel, OCR and Settings do not.
-set_property(TARGET vjo_core_vita VitaJPOverlay_Shell PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+# VJO_CORE_LTO=OFF builds them without it, for the stage bench's Cortex-A9 lane only (tools/bench_stages.py a9 links
+# these libraries with an ARM Linux toolchain, which cannot read the Vita compiler's LTO objects; the game worker's
+# and the kernel's code, which its OCR stages count, is the same either way): never for a release.
+option(VJO_CORE_LTO "LTO for the Shell's core library and module (OFF: the stage bench's A9 lane only)" ON)
+if(VJO_CORE_LTO)
+  set_property(TARGET vjo_core_vita VitaJPOverlay_Shell PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
 add_dependencies(VitaJPOverlay_Shell vjo_kernel_stubs)
 target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
 # The overlay page (once a frame while it is open; paf's own calls dominate)

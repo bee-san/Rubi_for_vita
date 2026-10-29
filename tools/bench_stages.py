@@ -21,19 +21,26 @@ leaves out). This script runs it in four ways:
       vita-vn-ocr's insn_mix and cache plugins, twice per workload (1 and 3 iterations;
       the difference is one steady-state iteration), costed with vita-vn-ocr's own
       Cortex-A9 model (vita/a9_cycles.py at the pinned commit) as a cycle range at 444 and
-      333 MHz. Estimates, not console measurements.
+      333 MHz. Estimates, not console measurements. The Vita build must be configured
+      -DVJO_CORE_LTO=OFF: a release build's core library holds LTO objects ARM_CC cannot link.
   bench_stages.py dev --binary ... --models DIR --manifests DIR --shots DIR [--shots DIR] -o dev.json
+                      [--size S|N|L [--first-ms-per-mpx MS]] [--skip-missing]
       the game worker's job on every region of vita-vn-ocr's linefind dev manifests
       (protected sets excluded, as tools/capture_parity.py does), twice: API 19's job and
       main's default one (the stable-text wait on a simulated display at 60 and 30 fps, beam + LM, the
       cascade; refined boxes in the PSP regions): strips (display frames), lines, CTC frames,
-      cascade re-reads per job, the inputs of the job model.
+      cascade re-reads per job, the inputs of the job model. With --size, the default one is API 54's
+      (the text spotter, VOCR6 of that size and the next size up as its cascade, the worker's policy), and
+      --first-ms-per-mpx puts the spotter's compute (an A9 estimate per megapixel of the region) on the
+      simulated clock of its first pass, so the stable-text wait sees the time it takes.
   bench_stages.py report --host host.json --a9 a9.json [--dev dev.json] -o OUT.json [--md OUT.md]
       the stage table and the end-to-end job model (docs/performance.md).
 
 Environment: VITASDK, ARM_CC (an arm-none-linux-gnueabihf gcc), QEMU_PLUGINS_DIR (the
-plugin-enabled qemu: bin/qemu-arm, plugins/libinsn_mix.so, plugins/libcache.so) and
-VJO_VOCR_SOURCE_DIR (vita-vn-ocr at the pinned commit, for the cost model).
+plugin-enabled qemu: bin/qemu-arm, plugins/libinsn_mix.so, plugins/libcache.so),
+VJO_VOCR_SOURCE_DIR (vita-vn-ocr at the pinned commit, for the cost model) and
+VJO_VOCR_SPOT_SOURCE_DIR (the text spotter's pin, cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT, when it is not
+VJO_VOCR_SOURCE_DIR's commit).
 """
 import argparse
 import collections
@@ -71,21 +78,38 @@ MODELS = ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR4_W20_w8.vocr")
 # host/bench/stage_bench.c stage_job's mode bits.
 LM = "vocr_lm6_o3_1000k.vlm"
 CASCADE = MODELS[2]
-JOB_FIRST, JOB_LM, JOB_CASCADE, JOB_SETTLE, JOB_REFINE = 1, 2, 4, 8, 16
+JOB_FIRST, JOB_LM, JOB_CASCADE, JOB_SETTLE, JOB_REFINE, JOB_SPOT, JOB_WORKER = 1, 2, 4, 8, 16, 32, 64
 JOB_DEFAULT = JOB_LM | JOB_CASCADE | JOB_SETTLE
+# API 54's default job (since Rubi 0.10.0): the text spotter finds the lines (ocr_finder = spotter, with its
+# weights), and the game worker's request_policy on the defaults (the head gate and the two-level head where a blob
+# carries them, the counter re-decode, the short-line probe, ocr_vertical = auto's check); the sizes are VOCR6's,
+# each with the next size up as its cascade (game_ocr/main.c cascade_of: Large has none). host/bench/stage_bench.c
+# stage_job's mode bits.
+SPOT = "textspot8_t64n8c16_w8.vtsp"
+VOCR6 = ("VOCR6.2_S_w8.vocr", "VOCR6.2_N_w8g2.vocr", "VOCR6.2_L_w8_2l.vocr")
+CASCADE6 = {VOCR6[0]: VOCR6[1], VOCR6[1]: VOCR6[2], VOCR6[2]: None}
+JOB_SPOT_DEFAULT = JOB_DEFAULT | JOB_SPOT | JOB_WORKER
 DEV_FPS = (60, 30)
 DEFAULT_KEYS = ("strips", "lines", "frames", "rows_read", "display_ms", "settle_passes", "lm_lines", "lm_changed",
                 "cascade_lines", "cascade_frames", "tries")
 CLOCKS = (444, 333)
 
 
-def W(name, stage, needs=(), mode=0, region=REGION, fmt="abgr", model=None, unit="op", what=""):
+def W(name, stage, needs=(), mode=0, region=REGION, fmt="abgr", model=None, unit="op", what="", cascade=CASCADE):
     return {"name": name, "stage": stage, "needs": set(needs), "mode": mode, "region": region, "fmt": fmt,
-            "model": model, "unit": unit, "what": what}
+            "model": model, "unit": unit, "what": what, "cascade": cascade}
 
 
 def job_needs(mode):
-    return ("frame", "model") + (("lm",) if mode & JOB_LM else ()) + (("cascade",) if mode & JOB_CASCADE else ())
+    return (("frame", "model") + (("lm",) if mode & JOB_LM else ()) + (("cascade",) if mode & JOB_CASCADE else ()) +
+            (("spot",) if mode & JOB_SPOT else ()))
+
+
+def spot_job(name, model, mode=JOB_SPOT_DEFAULT, region=REGION, what=""):
+    """A job of API 54's default path with VOCR6 size `model` and its cascade (none for Large)."""
+    casc = CASCADE6[model]
+    mode = mode if casc else mode & ~JOB_CASCADE
+    return W(name, "job", job_needs(mode), mode=mode, region=region, model=model, unit="job", what=what, cascade=casc)
 
 
 # The workloads. unit: what one "op" of the stage is (ms per op are reported).
@@ -124,6 +148,30 @@ WORKLOADS = [
       what="API 19's job: greedy decoding, no wait, no cascade (the previous baseline's job_h15)"),
     W("sha256_h15", "sha256", ("model",), model=MODELS[0], unit="model",
       what="SHA-256 of the VOCR3-H15 weights (1,155,968 B), BearSSL"),
+    # API 54's default path (Rubi 0.10.0 on): the text spotter, the VOCR6 sizes, their jobs
+    W("spot_textbox", "spot", ("frame", "spot"), unit="region",
+      what="game worker: the text spotter (textspot8, the default finder) on the sample's dialogue box, read halved "
+           "as from a 960x544 frame, with its boxes' dark flags"),
+    W("spot_full", "spot", ("frame", "spot"), region=FULL, unit="region",
+      what="the same on the whole 960x544 frame (a game with no region drawn)"),
+    W("recognize_vocr6_s", "recognize", ("frame", "model"), mode=1, model=VOCR6[0], unit="line",
+      what="game worker: VOCR6-S (Small) on each found line, resident weights, the job's head options"),
+    W("recognize_vocr6_n", "recognize", ("frame", "model"), mode=1, model=VOCR6[1], unit="line",
+      what="game worker: VOCR6-N (Normal, the default size) on each found line: its head gate and two-level head"),
+    W("recognize_vocr6_l", "recognize", ("frame", "model"), mode=1, model=VOCR6[2], unit="line",
+      what="game worker: VOCR6-L (Large) on each found line: its two-level head"),
+    spot_job("job_vocr6_n", VOCR6[1],
+             what="game worker: the whole job on the defaults since API 54 (the spotter finds the lines, the stable-text "
+                  "wait, VOCR6-N with beam + 1000k LM, the cascade to VOCR6-L, the worker's policy), resident files"),
+    spot_job("job_vocr6_n_first", VOCR6[1], mode=JOB_SPOT_DEFAULT | JOB_FIRST,
+             what="the same as a game's first job: the spotter's weights, the model's and the LM read in 32 KiB pieces "
+                  "and SHA-256 checked (the cascade's are read at its first doubtful line: none on this sample)"),
+    spot_job("job_vocr6_l", VOCR6[2], what="the default job with VOCR6-L (Large: no cascade), resident files"),
+    spot_job("job_vocr6_s", VOCR6[0], what="the default job with VOCR6-S (Small, the cascade to VOCR6-N)"),
+    spot_job("job_vocr6_n_full", VOCR6[1], region=FULL,
+             what="the default job on the whole 960x544 frame (VOCR6-N, the spotter over the full screen)"),
+    W("sha256_vocr6_l", "sha256", ("model",), model=VOCR6[2], unit="model",
+      what="SHA-256 of the VOCR6-L weights (2,475,680 B), BearSSL: a game's first Large job"),
     W("postproc", "postproc", ("texts",), unit="text",
       what="Shell: the recognized text filtered and trimmed, its first selectable letter"),
     W("lookup_first", "lookup", ("texts", "dict"), unit="lookup",
@@ -190,7 +238,9 @@ def bench_args(w, frame, models, dictionary, iters, rel=False):
     if "lm" in w["needs"]:
         a += ["--lm", f(model_path(models, LM)), "--lm-name", LM]
     if "cascade" in w["needs"]:
-        a += ["--cascade", f(model_path(models, CASCADE)), "--cascade-name", CASCADE]
+        a += ["--cascade", f(model_path(models, w["cascade"])), "--cascade-name", w["cascade"]]
+    if "spot" in w["needs"]:
+        a += ["--spot", f(model_path(models, SPOT))]
     if "texts" in w["needs"]:
         a += ["--texts", f(TEXTS)]
     if "dict" in w["needs"]:
@@ -206,8 +256,10 @@ def available(w, models, dictionary):
         missing.append(f"weights {w['model']} (--models)")
     if "lm" in w["needs"] and not model_path(models, LM):
         missing.append(f"LM {LM} (--models)")
-    if "cascade" in w["needs"] and not model_path(models, CASCADE):
-        missing.append(f"cascade weights {CASCADE} (--models)")
+    if "cascade" in w["needs"] and not model_path(models, w["cascade"]):
+        missing.append(f"cascade weights {w['cascade']} (--models)")
+    if "spot" in w["needs"] and not model_path(models, SPOT):
+        missing.append(f"spotter weights {SPOT} (--models)")
     if "dict" in w["needs"] and not dictionary:
         missing.append("plaintext.vjdict (--dict or VJO_PLAINTEXT_DIR)")
     return missing
@@ -296,17 +348,24 @@ def cmd_dev(args):
                 excluded += 1
                 continue
             rows.append((name, row))
-    model = model_path(args.models, args.model)
-    lm, cascade = model_path(args.models, LM), model_path(args.models, CASCADE)
-    if not model or not lm or not cascade:
-        die(f"no {args.model}, {LM} or {CASCADE} in --models")
-    out = {"model": args.model, "regions": [], "excluded": excluded}
+    model_name = VOCR6["SNL".index(args.size)] if args.size else args.model
+    casc_name = CASCADE6[model_name] if args.size else CASCADE
+    model = model_path(args.models, model_name)
+    lm, cascade = model_path(args.models, LM), model_path(args.models, casc_name) if casc_name else None
+    spot = model_path(args.models, SPOT) if args.size else None
+    if not model or not lm or (casc_name and not cascade) or (args.size and not spot):
+        die(f"no {model_name}, {LM}, {casc_name} or {SPOT} in --models")
+    out = {"model": model_name, "cascade": casc_name, "spot": bool(spot), "regions": [], "excluded": excluded,
+           "first_ms_per_mpx": args.first_ms_per_mpx}
     frames = {}
     with tempfile.TemporaryDirectory(prefix="vjo-bench-dev-") as tmp:
         for name, row in rows:
             shot = find_shot(row["shot"], args.shots)
             if shot is None:
-                die(f"{row['shot']} not found in {args.shots}")
+                if not args.skip_missing:
+                    die(f"{row['shot']} not found in {args.shots}")
+                out["missing"] = out.get("missing", 0) + 1
+                continue
             if row["shot"] not in frames:
                 if row.get("sha256") and hashlib.sha256(shot.read_bytes()).hexdigest() != row["sha256"]:
                     die(f"{shot} does not match the manifest's sha256")
@@ -331,11 +390,21 @@ def cmd_dev(args):
             # The kernel crops x to an even pixel (kernel/capture.c capture_crop_of): the same here.
             x0 &= ~1
             base = [args.binary, "job", "--iters", "1", "--frame", str(raw), "--fb", f"{fw}x{fh}",
-                    "--region", f"{x0},{y0},{x1 - x0},{y1 - y0}", "--model", str(model), "--model-name", args.model]
+                    "--region", f"{x0},{y0},{x1 - x0},{y1 - y0}", "--model", str(model), "--model-name", model_name]
             # API 19's job (greedy, no wait), and main's default job: a PSP game's also refines the finder's
-            # boxes (ocr_refine_lines = psp; the psp_dev frames stand in for Adrenaline's).
+            # boxes (ocr_refine_lines = psp; the psp_dev frames stand in for Adrenaline's). With --size, API 54's:
+            # the spotter, VOCR6 of the size, its cascade (Large none), the worker's policy.
             r0 = run_json([*base, "--mode", "0"])
-            mode = JOB_DEFAULT | (JOB_REFINE if name.startswith("psp") else 0)
+            mode = (JOB_SPOT_DEFAULT if args.size else JOB_DEFAULT) | (JOB_REFINE if name.startswith("psp") else 0)
+            if not casc_name:
+                mode &= ~JOB_CASCADE
+            extra = ["--lm", str(lm), "--lm-name", LM]
+            if casc_name:
+                extra += ["--cascade", str(cascade), "--cascade-name", casc_name]
+            if spot:
+                extra += ["--spot", str(spot)]
+                if args.first_ms_per_mpx:
+                    extra += ["--first-us", str(int(args.first_ms_per_mpx * (x1 - x0) * (y1 - y0) / 1000.0))]
             reg = {"manifest": name, "id": row["id"], "w": x1 - x0, "h": y1 - y0,
                    "gt_lines": len(row.get("lines", [])), "mode": mode, "ns": r0["ns_per_iter"]}
             c0 = r0["counters"]
@@ -344,11 +413,18 @@ def cmd_dev(args):
                         "rows_read": c0["rows_read"], "strip_rows": c0["strip_rows"]})
             # main's default job, its display at each rate (d60_*, d30_*)
             for fps in DEV_FPS:
-                r = run_json([*base, "--mode", str(mode), "--fps", str(fps), "--lm", str(lm), "--lm-name", LM,
-                              "--cascade", str(cascade), "--cascade-name", CASCADE])
+                try:
+                    r = run_json([*base, "--mode", str(mode), "--fps", str(fps), *extra])
+                except RuntimeError as e:  # API 54: a region the spotter takes for vertical text (auto's columns)
+                    reg[f"d{fps}_error"] = str(e)[-200:]
+                    continue
                 c = r["counters"]
                 reg.update({f"d{fps}_{k}": c[k] for k in DEFAULT_KEYS})
                 reg[f"d{fps}_ns"] = r["ns_per_iter"]
+                reg[f"d{fps}_check"] = r["check"]
+            if any(f"d{fps}_error" in reg for fps in DEV_FPS):
+                out.setdefault("failed", []).append(reg)
+                continue
             out["regions"].append(reg)
     regs = out["regions"]
     out["summary"] = summarize(regs)
@@ -433,8 +509,18 @@ def build_a9(vita_build, out):
     for lib in libs:
         if not lib.exists():
             die(f"{lib} missing (build the Vita tree first)")
+    # The Shell's core library is built with LTO for a release (vita/CMakeLists.txt): its objects then hold the Vita
+    # compiler's LTO bytecode, which ARM_CC's linker cannot read. The lane needs a build configured -DVJO_CORE_LTO=OFF.
+    vobjdump = vbin / "arm-vita-eabi-objdump"
+    for lib in libs:
+        heads = subprocess.run([str(vobjdump), "-h", str(lib)], capture_output=True, text=True, check=False).stdout
+        if ".gnu.lto" in heads:
+            die(f"{lib} holds LTO objects: configure {vita_build} with -DVJO_CORE_LTO=OFF for this lane")
     kobjs = kernel_objects(vita_build)
-    inc = ["-I", str(ROOT / "core"), "-I", str(ROOT / "include"), "-I", f"{vocr}/runtime",
+    # the text spotter's headers (API 54) from its own pin's checkout, after the recognizer's, as cmake/VocrOCR.cmake
+    # orders them (VJO_VOCR_SPOT_SOURCE_DIR: tools/fast_gate.sh's; the recognizer's checkout when the pins are one)
+    spot = os.environ.get("VJO_VOCR_SPOT_SOURCE_DIR") or vocr
+    inc = ["-I", str(ROOT / "core"), "-I", str(ROOT / "include"), "-I", f"{vocr}/runtime", "-I", f"{spot}/runtime",
            "-I", str(ROOT / "third_party/bearssl/inc")]
     stage_o, glue_o, main_o = out / "stage_bench.o", out / "kernel_glue.o", out / "bench_main.o"
     subprocess.run([str(vcc), *CORE_FLAGS, *inc, "-c", "-o", str(stage_o), str(ROOT / "host/bench/stage_bench.c")],
@@ -550,7 +636,7 @@ def cmd_a9(args):
         shutil.copy2(exe, stage / exe.name)
         for p in (TEXTS, CONFIG):
             shutil.copy2(p, stage / p.name)
-        for name in (*MODELS, LM):
+        for name in (*MODELS, *VOCR6, LM, SPOT):
             if model_path(args.models, name):
                 shutil.copy2(model_path(args.models, name), stage / name)
         if dictionary:
@@ -665,7 +751,14 @@ def main(argv=None):
     d.add_argument("--binary", required=True)
     d.add_argument("--models", default=os.environ.get("VJO_VOCR_MODEL_DIR"))
     d.add_argument("--model", default=MODELS[0])
+    d.add_argument("--size", choices=("S", "N", "L"),
+                   help="API 54's default job instead (the spotter, VOCR6 of this size and its cascade, the worker's "
+                        "policy): --model is ignored")
+    d.add_argument("--first-ms-per-mpx", type=float, default=0.0,
+                   help="--size: the spotter's compute during the first pass on the simulated clock, ms per megapixel "
+                        "of the region (an A9 estimate the caller gives; 0: none, every strip a display frame only)")
     d.add_argument("--manifests", required=True)
+    d.add_argument("--skip-missing", action="store_true", help="count and leave out the regions whose shot is not found")
     d.add_argument("--shots", action="append", required=True)
     d.add_argument("-o", "--out", required=True)
     r = sub.add_parser("report")
