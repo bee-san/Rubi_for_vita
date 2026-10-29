@@ -1328,6 +1328,50 @@ static void helpers_with_the_lm_and_cascade_give_the_serial_text(void)
     r.speed = 0;
 }
 
+/* #528 with the release weights, the 1 MB LM and the cascade: an identical capture reuses the last result
+ * (core/vocr_ocr.h VjoVocrCache.last). The same screen's next job reads only its first pass, and its result is the
+ * fresh read's byte for byte: the whole text buffer (the shown text, the recognizer's text after it, zeros after
+ * that), the lines and every line's crop, frames and flags; a fresh read again, the caches emptied, gives the same. */
+static void an_identical_capture_reuses_the_real_read(void)
+{
+    VjoGameOcrRequest r = setup();
+    static VjoGameOcrResult fresh, out;
+    char lm2[600], w20[600];
+    unsigned rows;
+    FILE *f;
+    snprintf(lm2, sizeof(lm2), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_LM2_NAME);
+    snprintf(w20, sizeof(w20), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_CASCADE_NAME);
+    if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(lm2, "rb"))) { TEST_SKIP("no LM beside the release weights"); return; }
+    fclose(f);
+    if (!(f = fopen(w20, "rb"))) { TEST_SKIP("no VOCR4-W20 beside the release weights"); return; }
+    fclose(f);
+    five_lines(&r);
+    available = 64 * 1024 * 1024;
+    test_cascade_conf = 1; /* no line doubtful: none skipped for the cascade's time, so the job keeps its region */
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    r.speed = 2;
+    test_no_last = 0;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &fresh) == 0);
+    if (fresh.lines < 5) { test_no_last = 1; TEST_SKIP("the finder did not find five lines (%u)", fresh.lines); return; }
+    TEST_CHECK(fresh.text[0] && fresh.text[strlen(fresh.text) + 1] && line_cache.last.salt);
+    rows = rows_calls;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK_(rows_calls - rows == 5, "%u rows calls (a pass of the 272 rows is 5 strips)", rows_calls - rows);
+    TEST_CHECK(!out.find_us && !out.recognize_us && !out.frames && helper_live == 0 && !memory_live);
+    TEST_CHECK_(!memcmp(out.text, fresh.text, sizeof(out.text)), "\"%s\" vs \"%s\"", out.text, fresh.text);
+    TEST_CHECK(out.lines == fresh.lines && out.recognized == fresh.recognized && out.region_sum == fresh.region_sum);
+    for (unsigned i = 0; i < out.recognized; i++)
+        TEST_CHECK_(out.line[i].width == fresh.line[i].width && out.line[i].height == fresh.line[i].height &&
+                        out.line[i].frames == fresh.line[i].frames && out.line[i].flags == fresh.line[i].flags,
+                    "line %u", i);
+    vjo_game_ocr_cache_clear(); /* a fresh read again: every line recognized */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.frames == fresh.frames && !memcmp(out.text, fresh.text, sizeof(out.text)));
+    test_no_last = 1;
+    test_cascade_conf = 0;
+    r.speed = 0;
+}
+
 /* API 22: VJO_GAME_OCR_S_NOCACHE (the self-test's stages) empties the line cache and leaves it
  * unused: the job recognizes its line, and nothing is cached from it. */
 static void a_nocache_job_recognizes_and_caches_nothing(void)
@@ -4311,6 +4355,8 @@ TEST_LIST = {
      the_worker_s_cache_replayed_through_the_old_layout},
     {"API 22: helpers with the LM and the cascade give the serial job's text and recognizer text",
      helpers_with_the_lm_and_cascade_give_the_serial_text},
+    {"#528: an identical capture reuses the last result, byte for byte the release models' read",
+     an_identical_capture_reuses_the_real_read},
     {NULL, NULL}
 };
 #endif /* VJO_VOCR_TIERS_TEST */

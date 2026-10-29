@@ -429,6 +429,9 @@ typedef struct {
     unsigned cache_long;     /* lines the cache left out for their texts' length (VJO_VOCR_CACHE_TEXT) */
     uint32_t key_us;         /* time spent hashing lines for the cache */
     unsigned stuck;          /* 1: a helper could not be joined: it may still run in the workspace */
+    /* #528: 1: the region read as the last job's (VjoVocrCache.last): its text and lines again, nothing found or
+     * recognized (lines, recognized, frames and line[] are that job's; line[] cached, with no time) */
+    unsigned reused;
     /* ocr-first (docs/first-ocr.md). */
     uint32_t retry_at;       /* VjoPlatform.now_us when the last capture attempt began (tries > 1) */
     unsigned warmed;         /* 1: vjo_vocr_warm read what the job had not (its loaded/load_us fields) */
@@ -600,9 +603,30 @@ typedef struct {
     uint16_t greedy_at;      /* its greedy text at text + greedy_at: 0 (the shown text), or after the shown one's NUL */
     char text[VJO_VOCR_CACHE_TEXT];
 } VjoVocrCacheLine;
+/* #528: the last job's reading of its whole region (VjoVocrCache.last), for a caller that keys its jobs
+ * (VjoVocrPolicy.salt: whatever else than the region's rows the text depends on). A job whose region reads the same at
+ * its first pass (the sum of its rows' sums, VjoVocrStats.region_sum, and its size) with the same salt gets that
+ * job's text, greedy text and line stats again, without the finder, the spotter, the gate or the recognizer
+ * (VjoVocrStats.reused), once the rows have held still as a read's would (the stable-text wait): the same rows give
+ * the same lines. It is kept from a job whose text is the one an unhurried job gives, as a cached line is: the LM,
+ * the cascade (none of its lines skipped for time), the spotter, the gate and the refinement when asked for, no line
+ * left out for room, at most VJO_VOCR_LAST_LINES lines and a text and greedy text within VJO_VOCR_LAST_TEXT (a
+ * textbox's; the worker's data page holds it); it is emptied with the line cache (the weights read from the file
+ * again). Not with a per-line callback (VjoVocrPolicy.line). */
+#define VJO_VOCR_LAST_TEXT 576u
+#define VJO_VOCR_LAST_LINES 8u
+typedef struct {
+    uint32_t salt, sum;           /* the job's VjoVocrPolicy.salt (0: no entry) and its region's sum */
+    uint16_t w, h;                /* the region's size */
+    uint16_t len, raw_len;        /* the text's bytes; its greedy text's, after the text's NUL (0 without one) */
+    uint8_t lines, dark, truncated, recognized;
+    VjoVocrLineStat line[VJO_VOCR_LAST_LINES];
+    char text[VJO_VOCR_LAST_TEXT];
+} VjoVocrLast;
 typedef struct {
     VjoVocrCacheLine line[VJO_VOCR_CACHE_LINES];
     uint32_t tick, hits, misses;
+    VjoVocrLast last;             /* #528 */
 } VjoVocrCache;
 #ifndef __vita__
 /* Host builds only (#418; nothing of it in the Vita's): a hook before (after 0) and after (after 1) each lookup of the
@@ -721,6 +745,10 @@ typedef struct {
     VjoVocrSpotResident *spot_res;
     unsigned spot_refine;
     unsigned spot_frame_w, spot_frame_h;
+    /* #528: the job's key beside its region's rows for VjoVocrCache.last: a hash of whatever else its text depends on
+     * (the game worker's: the request but its sequences, and the model, LM, cascade, finder and vertical check it
+     * chose). 0: no region is kept or taken, exactly as before. */
+    uint32_t salt;
 } VjoVocrPolicy;
 #define VJO_VOCR_CHECK_AUTO 1 /* VjoVocrPolicy.vertical_check: API 47's auto, columns where the rows look vertical */
 #define VJO_VOCR_CHECK_ON 2   /* API 53's on: columns unless the rows look horizontal */

@@ -5,6 +5,26 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## An identical capture reuses the last result (#528)
+
+The game worker keeps the last job's reading of its whole region (`core/vocr_ocr.h` `VjoVocrCache.last`, inside the
+line cache: [ocr-speed.md](ocr-speed.md#the-last-region-528)), so a job whose region reads the same takes that text
+without the finder or the recognizer. No block, thread or budget changes: the entry is 788 B of the worker's
+`.bss` (`line_cache` 3,216 → 4,004 B; at most 8 lines and 576 B of text), in its data segment's last page. Code: `core/vocr_ocr.c`'s check at the first
+pass, the wait and the entry's copies, and `game_ocr/main.c`'s key and drops. They fit the normal build's exact code
+pages because `core/hook_text.c` (a stream's text decoder) and `core/hook_profile.c` (API 57's profile loader, once a
+game start) are now built `-Os` like the rest of the worker's control code (their text 1,640 → 1,288 B and 1,348 →
+1,256 B) and the LM tiers' table (`lms`, 224 B) moved to the data segment ("Tables in the data segment").
+
+| module | debug | normal |
+|---|---:|---:|
+| `VitaJPOverlay_OCR`, main `8d13583c` | 168,808 + 29,544 B, 204,800 B of pages | 159,636 + 29,528 B, 192,512 B |
+| this change | 168,840 + 30,552 B, the same pages | 159,684 + 30,536 B, the same pages (60 B of code room, 2,232 B of data room) |
+
+[measured: the packaged SELFs' segments, `tools/check_memory_ledger.py --variant debug|normal`, the gate's pinned
+VitaSDK GCC 15.2.0, Release; the kernel's and the Shell's are main's]. The owner scenario's numbers are unchanged:
+its game cases run one cold job each (`tools/owner_scenario.py --check`: PASS).
+
 ## The game's whole-MiB free memory (#528, mem-game; no API change)
 
 The console reports a game's free USER memory in whole MiB, rounded down (#324). The worker's memory check

@@ -334,6 +334,12 @@ if(VJO_WITH_VOCR)
   set_source_files_properties(${ROOT}/core/hook_re.c ${ROOT}/core/hook_luna.c PROPERTIES COMPILE_OPTIONS "-Os")
   # MAGES' SC3 text (core/hook_sc3.c): a hit's span and the job's decoder, for size too.
   set_source_files_properties(${ROOT}/core/hook_sc3.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # #528: a stream's text decoder (core/hook_text.c: a few short strings a job, or a trusted line's) and API 57's
+  # profile loader (core/hook_profile.c: once at a game's start) are control code too: for size, which pays for the
+  # identical capture's reuse (core/vocr_ocr.c VjoVocrCache.last) in the normal build's exact pages. Their text
+  # 1,640 -> 1,288 B and 1,348 -> 1,256 B (the normal build's objects, VitaSDK gcc 15.2.0). (Source properties: the
+  # Rubi app's copy of hook_text.c, mostly dropped by --gc-sections, is -Os too.)
+  set_source_files_properties(${ROOT}/core/hook_text.c ${ROOT}/core/hook_profile.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
   # control code built for size, with Luna's PSP table (core/hook_luna_psp.inc) as its data.
   if(VJO_DEBUG)

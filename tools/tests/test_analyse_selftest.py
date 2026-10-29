@@ -2199,7 +2199,10 @@ class BoostLikeForLike(unittest.TestCase):
         worker = (ROOT / "game_ocr/main.c").read_text(encoding="utf-8")
         self.assertIn("if (id != VJO_GSTEP_FREE && log_to->n_steps + reserve >= VJO_GAME_OCR_STEPS) return NULL;", worker)
         par = worker.index("step_add(VJO_GSTEP_PAR, 0, stats.helpers,")
-        cond = worker.index("if (stats.lines && (want_helpers || stats.cached)) {")
+        # (#528: `found`, the lines this job found: none for one that reused the last job's, FIND kind 6, which no
+        # self-test stage does: their jobs keep no line cache, VJO_GAME_OCR_S_NOCACHE)
+        self.assertIn("const unsigned found = stats.reused ? 0u : stats.lines;", worker)
+        cond = worker.index("if (found && (want_helpers || stats.cached)) {")
         self.assertLess(cond, par)
         self.assertLess(par - cond, 1500)
         # the done line's appends (DONE_APPENDS), which builds before API 22 do not log, and since #360 the lines it held

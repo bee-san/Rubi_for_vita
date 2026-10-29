@@ -146,6 +146,43 @@ where it falls makes the job read the region again without the cache, as the ser
 lines only once it has succeeded. On the development regions with the LM and the cascade, 825 of 845 lines came
 from the cache on the second pass; the other 20 were lines the cascade read as empty.
 
+## The last region (#528)
+
+The line cache spares the recognizer a line it read before, but the finder (the text spotter, at about 370 ms on a
+full 960x544 screen in the owner's logs) and every line's rows still run. A job whose whole region reads the same as
+the last job's took that job's text from the start: `VjoVocrCache.last` (core/vocr_ocr.h), one entry inside the line
+cache, 788 B of the worker's data.
+
+- **The key.** The region's sum (`VjoVocrStats.region_sum`: FNV-1a over every row's checksum, as the first pass read
+  them), its size, and the job's salt (`VjoVocrPolicy.salt`), which the worker makes from the request (everything
+  but its two sequences and `VJO_GAME_OCR_F_SETTLE_FIRST`: the region in its frame, the models and directory, the
+  tiers, the flags, the speed word, the hook pick) and from what that try chose (its model, the cache variant with
+  the LM, the cascade, its ceiling and the refinement, the vertical check, the spotter, the cascade's confidence).
+  The scene and the capture sequence are not in it: both change at every job, and neither changes the text; the
+  reused text is tagged with this job's capture as a read's is, since the kernel publishes this job's first pass.
+- **When it is taken.** At the end of the first pass, before the finder's work and the recognizer, with this
+  model's verified weights resident. The job then waits for its rows to hold still for `ocr_settle_ms`, as a read's
+  lines are recognized only after that wait (a row that changes is a tear: the next try reads the new screen), and
+  gives the last job's text, greedy text, lines and their stats: the same bytes a fresh read gives (host tests with
+  the real runtime and with the release models). Its FIND step says kind 6; it has no refine, recognize, LM,
+  cascade, par or spot step, and no CTC frames, find or recognize time (`history.csv`: `find_us` and
+  `recognize_us` 0 with lines).
+- **When it is kept.** After a successful job whose text is the one an unhurried job gives, as a cached line is: no
+  line left out for room, no doubtful line skipped for the cascade's time, nothing it asked for refused (the LM, the
+  cascade, the refinement, the gate, the spotter), at most 8 lines and a text and greedy text within 576 B (a
+  textbox's; a longer page is read again).
+- **When it goes.** With the line cache (the weights read from the file again); when the worker's loop sees the game
+  is not the active one (a suspend, another app in front, its title disabled, the Shell restarted); after a job that
+  failed, other than cancelled or by a screen that changed under it (the Shell's own pacing); at the game's exit.
+  A setting, a region or a text source changed is another salt.
+
+In the owner's `history.csv` (#528) 37 of 874 OCR jobs read the same region as the job before them, 28 of them in
+the same game process, the ones the worker's entry can serve (it does not outlive the process): 21 in CLANNAD (the
+same box again after a menu, say; 131 ms of finder and 46 ms of recognition in the median such job) and 7 in
+AFEJ00001, whose port kept submitting its boot frame (373 ms and 120 ms) [measured: the collection's history, finder
+and recognition times as the console logged them]. Such a job keeps its first pass, the wait and the memory check;
+what it no longer spends is an estimate from those medians, not a console run.
+
 ## The request (API 22)
 
 The helpers and the clock ride in a new word, `VjoGameOcrRequest.speed` (`VJO_GAME_OCR_S_*`: bits 0-1 the helpers,
