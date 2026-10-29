@@ -61,7 +61,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 KD_TOTAL = 36 * 1024 * 1024          # ScePhyMemPartKD on retail firmware (wiki Memory_budget)
-PAF_RESERVE = 1536 * 1024            # shell/memory.cpp RESERVE: below it every PAF request is refused
+PAF_RESERVE = 1536 * 1024            # shell/paf_guard.h vjo_paf_guard_reserve: below it every PAF request is refused
 CAPTURE_LIMIT = 64 * 1024            # API 19: a region's capture block (one strip and its row checksums)
 STAGES = ("fallback", "textbox", "fullscreen", "probe", "textbox2")  # shell/selftest.c's order
 REGION_STAGES = ("fallback", "textbox", "textbox2")  # the user's region: a row there with no line is NOTEXT

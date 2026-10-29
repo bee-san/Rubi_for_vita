@@ -8,9 +8,8 @@
 #include "../include/vjo_ledger_budget.h"
 extern "C" {
 #include "shell.h"
+#include "paf_guard.h" /* the reserve guard's decision, which the host tests run too (docs/owner-scenario.md) */
 }
-
-static const size_t RESERVE = VJO_PAF_RESERVE;
 
 template <typename Function> static bool ready(Function fn)
 {
@@ -48,15 +47,12 @@ extern "C" void *vjo_shell_heap_alloc_for(int item, size_t bytes)
     if (!heap) return nullptr;
     const char *what = item >= 0 && item < VJO_SL_COUNT ? g_shell_ledger.defs[item].name : "?";
     const size_t available = heap->GetFreeSize();
-    if (available < RESERVE || bytes > available - RESERVE) {
-        vjo_log("%s Paf reserve guard: free=%u requested=%u reserve=%u",
-                what, (unsigned)available, (unsigned)bytes, (unsigned)RESERVE);
+    if (!vjo_paf_guard(item, what, available, bytes))
         return nullptr;
-    }
     void *p = sce_paf_memalign(16, bytes);
 #if VJO_DEBUG
     vjo_log("%s Paf allocation: free=%u requested=%u reserve=%u success=%d",
-            what, (unsigned)available, (unsigned)bytes, (unsigned)RESERVE, p != nullptr);
+            what, (unsigned)available, (unsigned)bytes, (unsigned)vjo_paf_guard_reserve(item), p != nullptr);
 #else
     if (!p) /* the normal build logs a refusal only */
         vjo_log("%s Paf allocation refused: free=%u requested=%u", what, (unsigned)available, (unsigned)bytes);

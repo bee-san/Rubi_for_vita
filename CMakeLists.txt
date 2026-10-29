@@ -388,7 +388,8 @@ endif()
 add_test(NAME shell_worker COMMAND vjo-shell-worker-tests)
 add_executable(vjo-shell-worker-paf-tests host/tests/test_shell_worker.c core/region_select.c)
 target_include_directories(vjo-shell-worker-paf-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
-target_compile_definitions(vjo-shell-worker-paf-tests PRIVATE VJO_PAF_ALLOC=1)
+# VJO_SOURCE_DIR: the owner scenario's events (tools/owner_scenario.txt, host/tests/owner_scenario.h)
+target_compile_definitions(vjo-shell-worker-paf-tests PRIVATE VJO_PAF_ALLOC=1 VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_compile_options(vjo-shell-worker-paf-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-worker-paf-tests vjo_host Threads::Threads)
 target_link_options(vjo-shell-worker-paf-tests PRIVATE -Wl,-z,now)
@@ -913,6 +914,16 @@ if(VJO_WITH_VOCR)
       ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir}")
   endif()
 endif()
+
+# The owner scenario (#528, docs/owner-scenario.md): Rubi's memory failures on the owner's console replayed through
+# Rubi's own code, the Shell's Paf requests (shell_worker_paf's "owner scenario") and, with the release models, the
+# game worker's job at the logged free USER sizes (alloc_sim's), held against tools/owner_scenario.json's limits.
+set(_vjo_owner_scenario --shell-bin $<TARGET_FILE:vjo-shell-worker-paf-tests>)
+if(TARGET vjo-alloc-sim-tests)
+  list(APPEND _vjo_owner_scenario --game-bin $<TARGET_FILE:vjo-alloc-sim-tests>)
+endif()
+add_test(NAME owner_scenario COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/owner_scenario.py --check
+  ${_vjo_owner_scenario})
 
 # The variant_free label's derivation (host/tests/variant_free.py, the end of this file) on small builds of its own.
 add_test(NAME variant_free_rules COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_variant_free.py)

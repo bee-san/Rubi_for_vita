@@ -242,6 +242,11 @@ What this says, and what it does not:
 real tree's boot completes in the v0.7.4 scenario (the regression this guards), and that the
 pre-fix footprint (`--shell-pages 397312 --worker-pages 45056`) ranks worse than the tree's.
 
+The Paf heap's side has a replay of its own that runs Rubi's code rather than a model of its sizes: the owner
+scenario (`docs/owner-scenario.md`, #528) replays the Paf heap and the games' free USER memory that
+the owner's console logged with 0.10.1 through the Shell's guard, the overlay's text arena, the worker's result
+arena and the game worker, and its ratchet (ctest `owner_scenario`) fails a change that makes them fail more.
+
 ## 5. Vita3K, precisely
 
 Vita3K gained a taiHEN HLE in its PR #3885 (wiki page "Using taiHEN plugins", revised May

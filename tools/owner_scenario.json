@@ -1,0 +1,938 @@
+{
+ "before": {
+  "game": {
+   "clannad-88MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 88080384,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4648960,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "clannad-88MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 88080384,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4653056,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "est-1.5MiB-box": {
+    "cascade": 0,
+    "failed": 1,
+    "free": 1572864,
+    "helpers": 0,
+    "lines": 0,
+    "lm": 0,
+    "peak": 61440,
+    "rc": -103,
+    "spot": 0,
+    "tier": 0,
+    "told": 1
+   },
+   "est-1.5MiB-full": {
+    "cascade": 0,
+    "failed": 1,
+    "free": 1572864,
+    "helpers": 0,
+    "lines": 0,
+    "lm": 0,
+    "peak": 61440,
+    "rc": -103,
+    "spot": 0,
+    "tier": 0,
+    "told": 1
+   },
+   "est-2.5MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 2621440,
+    "helpers": 0,
+    "lines": 3,
+    "lm": 0,
+    "peak": 1560576,
+    "rc": 0,
+    "spot": 1,
+    "tier": 2,
+    "told": 1
+   },
+   "est-2.5MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 2621440,
+    "helpers": 0,
+    "lines": 3,
+    "lm": 0,
+    "peak": 1572864,
+    "rc": 0,
+    "spot": 1,
+    "tier": 2,
+    "told": 1
+   },
+   "est-2MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 2097152,
+    "helpers": 0,
+    "lines": 3,
+    "lm": 0,
+    "peak": 1015808,
+    "rc": 0,
+    "spot": 0,
+    "tier": 1,
+    "told": 1
+   },
+   "est-2MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 2097152,
+    "helpers": 0,
+    "lines": 4,
+    "lm": 0,
+    "peak": 1019904,
+    "rc": 0,
+    "spot": 0,
+    "tier": 1,
+    "told": 1
+   },
+   "est-3MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 3145728,
+    "helpers": 0,
+    "lines": 3,
+    "lm": 1,
+    "peak": 2011136,
+    "rc": 0,
+    "spot": 0,
+    "tier": 2,
+    "told": 1
+   },
+   "est-3MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 3145728,
+    "helpers": 0,
+    "lines": 4,
+    "lm": 1,
+    "peak": 2015232,
+    "rc": 0,
+    "spot": 0,
+    "tier": 2,
+    "told": 1
+   },
+   "est-4MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 4194304,
+    "helpers": 0,
+    "lines": 3,
+    "lm": 0,
+    "peak": 2871296,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "est-4MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 4194304,
+    "helpers": 0,
+    "lines": 3,
+    "lm": 0,
+    "peak": 2875392,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "est-5MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 5242880,
+    "helpers": 0,
+    "lines": 3,
+    "lm": 2,
+    "peak": 3915776,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "est-5MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 5242880,
+    "helpers": 0,
+    "lines": 3,
+    "lm": 2,
+    "peak": 3919872,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "est-6MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 6291456,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4648960,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "est-6MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 6291456,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4653056,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "est-8MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 8388608,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4648960,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "est-8MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 8388608,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4653056,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "pcsg00402-10MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 10485760,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4648960,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "pcsg00402-10MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 10485760,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4653056,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "pcsg00402-12MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 12664832,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4648960,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "pcsg00402-12MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 12664832,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4653056,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "psp-28MiB-box": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 29360128,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4648960,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   },
+   "psp-28MiB-full": {
+    "cascade": 0,
+    "failed": 0,
+    "free": 29360128,
+    "helpers": 2,
+    "lines": 3,
+    "lm": 2,
+    "peak": 4653056,
+    "rc": 0,
+    "spot": 1,
+    "tier": 3,
+    "told": 1
+   }
+  },
+  "label": "Rubi 0.10.1 (API 57): main 1845471b, whose Shell and game memory code is 0.10.1's",
+  "shell": {
+   "all": {
+    "anki_ok": 239,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 124,
+    "not_opened": 34,
+    "peak": 225280,
+    "presses": 273,
+    "refused": 51,
+    "told": 0
+   },
+   "boot1-line1735": {
+    "anki_ok": 0,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 23,
+    "not_opened": 10,
+    "peak": 8192,
+    "presses": 10,
+    "refused": 23,
+    "told": 0
+   },
+   "boot10-line9633": {
+    "anki_ok": 16,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 4,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 16,
+    "refused": 0,
+    "told": 0
+   },
+   "boot11-line9789": {
+    "anki_ok": 2,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 2,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 2,
+    "refused": 0,
+    "told": 0
+   },
+   "boot12-line9969": {
+    "anki_ok": 1,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 1,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 1,
+    "refused": 0,
+    "told": 0
+   },
+   "boot13-line10075": {
+    "anki_ok": 16,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 4,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 16,
+    "refused": 0,
+    "told": 0
+   },
+   "boot14-line10307": {
+    "anki_ok": 5,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 1,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 5,
+    "refused": 0,
+    "told": 0
+   },
+   "boot15-line10343": {
+    "anki_ok": 32,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 5,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 32,
+    "refused": 0,
+    "told": 0
+   },
+   "boot16-line10512": {
+    "anki_ok": 12,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 4,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 12,
+    "refused": 0,
+    "told": 0
+   },
+   "boot17-line10661": {
+    "anki_ok": 2,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 1,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 2,
+    "refused": 0,
+    "told": 0
+   },
+   "boot18-line10733": {
+    "anki_ok": 2,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 1,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 2,
+    "refused": 0,
+    "told": 0
+   },
+   "boot19-line10813": {
+    "anki_ok": 5,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 3,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 5,
+    "refused": 0,
+    "told": 0
+   },
+   "boot2-line5418": {
+    "anki_ok": 18,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 4,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 18,
+    "refused": 0,
+    "told": 0
+   },
+   "boot20-line10892": {
+    "anki_ok": 23,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 6,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 23,
+    "refused": 0,
+    "told": 0
+   },
+   "boot21-line11156": {
+    "anki_ok": 6,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 17,
+    "not_opened": 5,
+    "peak": 225280,
+    "presses": 11,
+    "refused": 15,
+    "told": 0
+   },
+   "boot22-line11385": {
+    "anki_ok": 0,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 12,
+    "not_opened": 10,
+    "peak": 8192,
+    "presses": 10,
+    "refused": 12,
+    "told": 0
+   },
+   "boot23-line11446": {
+    "anki_ok": 1,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 2,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 1,
+    "refused": 1,
+    "told": 0
+   },
+   "boot24-line11563": {
+    "anki_ok": 0,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 0,
+    "not_opened": 9,
+    "peak": 8192,
+    "presses": 9,
+    "refused": 0,
+    "told": 0
+   },
+   "boot3-line5578": {
+    "anki_ok": 27,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 2,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 27,
+    "refused": 0,
+    "told": 0
+   },
+   "boot4-line5739": {
+    "anki_ok": 4,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 3,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 4,
+    "refused": 0,
+    "told": 0
+   },
+   "boot5-line5852": {
+    "anki_ok": 18,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 3,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 18,
+    "refused": 0,
+    "told": 0
+   },
+   "boot6-line6018": {
+    "anki_ok": 17,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 11,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 17,
+    "refused": 0,
+    "told": 0
+   },
+   "boot7-line6247": {
+    "anki_ok": 15,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 2,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 15,
+    "refused": 0,
+    "told": 0
+   },
+   "boot8-line9224": {
+    "anki_ok": 3,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 3,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 3,
+    "refused": 0,
+    "told": 0
+   },
+   "boot9-line9335": {
+    "anki_ok": 14,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 10,
+    "not_opened": 0,
+    "peak": 225280,
+    "presses": 14,
+    "refused": 0,
+    "told": 0
+   }
+  }
+ },
+ "limits": {
+  "game": {
+   "clannad-88MiB-box": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4648960
+   },
+   "clannad-88MiB-full": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4653056
+   },
+   "est-1.5MiB-box": {
+    "failed": 1,
+    "min_lm": 0,
+    "min_tier": 0,
+    "min_told": 1,
+    "peak": 61440
+   },
+   "est-1.5MiB-full": {
+    "failed": 1,
+    "min_lm": 0,
+    "min_tier": 0,
+    "min_told": 1,
+    "peak": 61440
+   },
+   "est-2.5MiB-box": {
+    "failed": 0,
+    "min_lm": 0,
+    "min_tier": 2,
+    "min_told": 1,
+    "peak": 1560576
+   },
+   "est-2.5MiB-full": {
+    "failed": 0,
+    "min_lm": 0,
+    "min_tier": 2,
+    "min_told": 1,
+    "peak": 1572864
+   },
+   "est-2MiB-box": {
+    "failed": 0,
+    "min_lm": 0,
+    "min_tier": 1,
+    "min_told": 1,
+    "peak": 1015808
+   },
+   "est-2MiB-full": {
+    "failed": 0,
+    "min_lm": 0,
+    "min_tier": 1,
+    "min_told": 1,
+    "peak": 1019904
+   },
+   "est-3MiB-box": {
+    "failed": 0,
+    "min_lm": 1,
+    "min_tier": 2,
+    "min_told": 1,
+    "peak": 2011136
+   },
+   "est-3MiB-full": {
+    "failed": 0,
+    "min_lm": 1,
+    "min_tier": 2,
+    "min_told": 1,
+    "peak": 2015232
+   },
+   "est-4MiB-box": {
+    "failed": 0,
+    "min_lm": 0,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 2871296
+   },
+   "est-4MiB-full": {
+    "failed": 0,
+    "min_lm": 0,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 2875392
+   },
+   "est-5MiB-box": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 3915776
+   },
+   "est-5MiB-full": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 3919872
+   },
+   "est-6MiB-box": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4648960
+   },
+   "est-6MiB-full": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4653056
+   },
+   "est-8MiB-box": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4648960
+   },
+   "est-8MiB-full": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4653056
+   },
+   "pcsg00402-10MiB-box": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4648960
+   },
+   "pcsg00402-10MiB-full": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4653056
+   },
+   "pcsg00402-12MiB-box": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4648960
+   },
+   "pcsg00402-12MiB-full": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4653056
+   },
+   "psp-28MiB-box": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4648960
+   },
+   "psp-28MiB-full": {
+    "failed": 0,
+    "min_lm": 2,
+    "min_tier": 3,
+    "min_told": 1,
+    "peak": 4653056
+   }
+  },
+  "shell": {
+   "boot1-line1735": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 10,
+    "peak": 8192,
+    "refused": 23
+   },
+   "boot10-line9633": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot11-line9789": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot12-line9969": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot13-line10075": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot14-line10307": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot15-line10343": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot16-line10512": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot17-line10661": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot18-line10733": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot19-line10813": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot2-line5418": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot20-line10892": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot21-line11156": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 5,
+    "peak": 225280,
+    "refused": 15
+   },
+   "boot22-line11385": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 10,
+    "peak": 8192,
+    "refused": 12
+   },
+   "boot23-line11446": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 1
+   },
+   "boot24-line11563": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 9,
+    "peak": 8192,
+    "refused": 0
+   },
+   "boot3-line5578": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot4-line5739": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot5-line5852": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot6-line6018": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot7-line6247": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot8-line9224": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   },
+   "boot9-line9335": {
+    "anki_refused": 0,
+    "held": 8192,
+    "not_opened": 0,
+    "peak": 225280,
+    "refused": 0
+   }
+  }
+ }
+}

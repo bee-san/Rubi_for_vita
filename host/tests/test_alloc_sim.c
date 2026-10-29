@@ -266,8 +266,12 @@ SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_us++; }
 int sceKernelDelayThread(unsigned us)
 { SceUID saved = caller; clock_us += us; caller = 0; game_ocr_model_tick(); caller = saved; return 0; }
-SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt) { return 20; }
-int sceKernelStartThread(SceUID uid, SceSize n, void *args) { return 0; }
+/* API 22: a helper thread (game_ocr/main.c pool_run) runs its line at once, in StartThread, as test_game_vocr.c's
+ * does (the owner scenario's jobs take helpers); any other thread is never run here. */
+static unsigned helper_threads;
+SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt)
+{ return entry == helper_entry ? 40 + (int)(++helper_threads % 64u) : 20; }
+int sceKernelStartThread(SceUID uid, SceSize n, void *args) { return uid > 40 ? helper_entry(n, args) : 0; }
 
 /* ocr-speed (API 22): the thread run time and the ARM clock; see test_game_vocr.c for the tested ones. */
 int sceKernelGetThreadInfo(SceUID thid, SceKernelThreadInfo *info) { (void)thid; (void)info; return -1; }
@@ -541,7 +545,117 @@ static void api55_pause_reads_one_frame_beside_a_spinner(void)
     spinner = 0; case_speed = 0;
 }
 
+/* The owner scenario (#528, docs/owner-scenario.md), the game's part: the owner's OCR job, as the Shell asks for it
+ * with his config.ini (Large, ocr_lm 1000k, ocr_cascade_ms 2000, ocr_threads 3, the spotter and the other defaults;
+ * shell/worker.c vocr_run_one packs it: keep the two in step, test_shell_worker.c's
+ * vocr_request_carries_the_job_policy holds that side), through the real worker and kernel, at the free USER sizes
+ * his games logged [measured: the debug builds' "game vocr memory: free USER=" lines] and at smaller ones (his native
+ * ports' are unmeasured: the normal build logs none) [estimate], on a textbox and on the full screen. Each case
+ * prints one `owner-scenario game NAME: key=value ...` line: rc, the tier, LM tier and cascade the memory check
+ * chose, whether the spotter found the lines, the helpers, and the USER peak of Rubi's blocks; told=1 when the job
+ * read text or its refusal carries the memory check's figures, which the Shell shows and logs (game_oom_detail,
+ * log_tier_checks). tools/owner_scenario.py holds them against tools/owner_scenario.json. */
+#include "../../core/config.h"
+static const char owner_config[] =
+    "vocr_tier = large\nocr_lm = 1000k\nocr_cascade_ms = 2000\nocr_refine_lines = psp\nocr_threads = 3\n"
+    "ocr_boost_clock = on\nocr_settle_ms = 150\nocr_settle_max_ms = 2000\nocr_skip_blank_lines = off\n"
+    "ocr_text_gate = off\nnon_japanese_filter = lines\ntext_source = auto\nocr_mode = auto\n";
+static void owner_request(VjoGameOcrRequest *q, const VjoConfig *c, uint32_t flags)
+{
+    uint32_t settle = (uint32_t)(c->ocr_settle_ms + 5) / 10u, casc = (uint32_t)(c->ocr_cascade_ms + 125) / 250u;
+    memset(q, 0, sizeof(*q));
+    q->size = sizeof(*q);
+    q->tiers = (1u << c->vocr_tier) - 1u;
+    q->flags = flags | (uint32_t)(c->ocr_lm & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT |
+               (uint32_t)(c->ocr_refine_lines & VJO_GAME_OCR_REFINE_MASK) << VJO_GAME_OCR_REFINE_SHIFT |
+               (casc > VJO_GAME_OCR_CASCADE_MASK ? VJO_GAME_OCR_CASCADE_MASK : casc ? casc : 1u)
+                   << VJO_GAME_OCR_CASCADE_SHIFT |
+               (settle ? settle : 1u) << VJO_GAME_OCR_SETTLE_SHIFT |
+               (uint32_t)(c->ocr_settle_max_ms + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    q->speed = (uint32_t)c->ocr_helpers | (uint32_t)c->ocr_boost_clock << 2 | (uint32_t)c->hook_trust << 20 |
+               (uint32_t)c->ocr_head_gate << VJO_GAME_OCR_S_HEAD_SHIFT |
+               (c->ocr_finder ? VJO_GAME_OCR_S_SPOT | (c->ocr_spotter_refine ? VJO_GAME_OCR_S_SPOT_REFINE : 0u) : 0u) |
+               (c->non_japanese_filter ? VJO_GAME_OCR_S_DROP_BORDERS : 0u) |
+               (uint32_t)c->ocr_vertical << VJO_GAME_OCR_S_VERTICAL_SHIFT |
+               (uint32_t)c->ocr_pause << VJO_GAME_OCR_S_PAUSE_SHIFT |
+               (c->ocr_line_fix ? VJO_GAME_OCR_S_LINE_FIX | (c->ocr_line_fix >= 2 ? VJO_GAME_OCR_S_LINE_JUNK : 0u) |
+                                      (c->ocr_line_fix == 3 ? VJO_GAME_OCR_S_LINE_VALLEY : 0u) : 0u);
+    q->hook_pick = VJO_HOOK_PICK_AUTO;
+    strcpy(q->model_dir, VJO_VOCR_MODEL_ROOT);
+    strcpy(q->model, VJO_VOCR_TIER3_NAME); /* the largest tier's, as the Shell names the job */
+}
+static void owner_scenario_game(void)
+{
+    static const struct { const char *name; int64_t free; } levels[] = {
+        {"clannad-88MiB", 88080384},   /* [measured] PCSG00415, API 31-36 */
+        {"psp-28MiB", 29360128},       /* [measured] Adrenaline, API 35 */
+        {"pcsg00402-12MiB", 12664832}, /* [measured] API 36 */
+        {"pcsg00402-10MiB", 10485760}, /* [measured] API 36 */
+        {"est-8MiB", 8 << 20}, {"est-6MiB", 6 << 20}, {"est-5MiB", 5 << 20}, {"est-4MiB", 4 << 20},
+        {"est-3MiB", 3 << 20}, {"est-2.5MiB", 5 << 19}, {"est-2MiB", 2 << 20}, {"est-1.5MiB", 3 << 19},
+    };
+    static const struct { const char *name; uint32_t flags; uint16_t r[4]; } regions[] = {
+        {"box", 0, {1536, 48188, 62600, 15059}}, {"full", VJO_GAME_OCR_F_FULL, {0, 0, 0, 0}},
+    };
+    VjoConfig c;
+    if (!have_models()) {
+        TEST_MSG("release weights absent (VJO_VOCR_MODEL_DIR): the owner scenario's game part is left out");
+        fprintf(stderr, "owner-scenario game: skipped (no release models)\n");
+        return;
+    }
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, owner_config, sizeof(owner_config) - 1);
+    TEST_ASSERT(c.vocr_tier == VJO_VOCR_TIER_LARGE && c.ocr_lm == 2 && c.ocr_helpers == 2 && c.ocr_finder);
+    make_frame();
+    kd_largest = KD_GRANTED_74;
+    for (unsigned li = 0; li < sizeof(levels) / sizeof(levels[0]); li++)
+        for (unsigned ri = 0; ri < sizeof(regions) / sizeof(regions[0]); ri++) {
+            VjoGameOcrRequest request;
+            unsigned tier = 0, lm = 0, casc = 0, spot = 0, helpers = 0;
+            int rc, told;
+            TEST_CHECK(drop_resident() == 0); /* a cold job: nothing kept from the case before */
+            reset_worker();
+            kd_taken = kd_peak = 0;
+            user_free = levels[li].free; cdram_free = 128 << 20; phycont_free = 16 << 20; refuse = 0;
+            hook_copy_fails = 0; spinner = 0;
+            user_used = cdram_used = phycont_used = user_peak = 0;
+            memset(&g, 0, sizeof(g));
+            game_ocr_init();
+            clock_us = 1000000;
+            g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME;
+            g.ocr_epoch = 1; g.fb_w = FB_W; g.fb_h = FB_H; g.done_seq = g.capture_seq = 11;
+            g.region = (VjoRect){regions[ri].r[0], regions[ri].r[1], regions[ri].r[2], regions[ri].r[3]};
+            caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
+            owner_request(&request, &c, regions[ri].flags);
+            TEST_ASSERT(vjoOcrSubmit(&request) > 0);
+            caller = 7;
+            TEST_ASSERT(!vjoOcrTake(&request));
+            rc = vjo_game_ocr_run_request(&request, &last_out);
+            TEST_CHECK(!vjoOcrComplete(&last_out));
+            for (unsigned i = 0; i < last_out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+                const VjoGameOcrStep *s = &last_out.step[i];
+                if (s->id == VJO_GSTEP_CHECK && !s->rc) {
+                    tier = VJO_GCHECK_TIER(s->kind); lm = s->kind & 7u; casc = !!(s->kind & VJO_GCHECK_CASCADE);
+                }
+                if (s->id == VJO_GSTEP_SPOT) spot = s->kind == 1 && !s->rc;
+                if (s->id == VJO_GSTEP_PAR) helpers = s->arg;
+            }
+            told = rc == 0 || (rc == VJO_E_OOM && last_out.reserve_bytes != 0);
+            fprintf(stderr, "owner-scenario game %s-%s: free=%lld rc=%d failed=%d tier=%u lm=%u cascade=%u spot=%u "
+                            "helpers=%u peak=%lld lines=%u told=%d\n", levels[li].name, regions[ri].name,
+                    (long long)levels[li].free, rc, rc != 0, rc ? 0u : tier, rc ? 0u : lm, rc ? 0u : casc, spot,
+                    helpers, (long long)user_peak, last_out.lines, told);
+            /* any policy: no block outlives the job but the resident ones, the kernel's pool untouched */
+            TEST_CHECK(kd_taken == 0 && cdram_used == 0 && phycont_used == 0);
+            TEST_CHECK_(user_peak <= levels[li].free, "%s: peak %lld over the free %lld", levels[li].name,
+                        (long long)user_peak, (long long)levels[li].free);
+        }
+    TEST_CHECK(drop_resident() == 0);
+    reset_worker();
+}
+
 TEST_LIST = {
+    {"owner scenario", owner_scenario_game}, /* #528: tools/owner_scenario.py runs it by this name */
     {"API 55 the pause reads one frame beside a spinner that tears every strip-by-strip read", api55_pause_reads_one_frame_beside_a_spinner},
     {"API 18 kernel capture refused at the full screen under #74's pool", api18_kernel_capture_is_refused_at_the_full_screen},
     {"API 19 OCR takes no kernel memory under #74's pools", api19_runs_with_no_kernel_memory},

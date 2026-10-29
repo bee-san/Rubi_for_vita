@@ -138,6 +138,8 @@ static int test_wait_event_flag(SceUID uid, unsigned int bits, unsigned int mode
 #include "../../core/stick_cursor.h" /* the overlay's left stick (#138): its close against this worker */
 #include "../../core/text_rows.h"
 #include "../../shell/lookup_shown.h" /* the overlay's press-to-screen figure (#360) */
+#include "../../shell/paf_guard.h" /* the Paf reserve guard (shell/memory.cpp's), which the owner scenario asks */
+#include "../../shell/overlay_mem.h" /* the overlay page's text arena (shell/overlay.cpp's), for the owner scenario */
 
 /* run_job and run_cursor_job as a test runs them, outside net_job: the debug build's lines they hold
  * (net_log_hold, #360) go out as net_job's end writes them after the result, so no batch is left open
@@ -203,20 +205,50 @@ void *vjo_shell_heap_alloc(size_t size)
 static uint8_t history_storage[VJO_BUDGET_PAF_HISTORY] __attribute__((aligned(16)));
 static unsigned history_allocs, history_frees;
 static int fail_history_alloc;
+/* The owner scenario (host/tests/owner_scenario.h, #528): while it runs, the Paf heap answers as the owner's console
+ * logged it, through the Shell's own guard (shell/paf_guard.h): scenario_others is what others held of its
+ * VJO_PAF_HEAP bytes, and the ledger's Paf pool what Rubi holds. The overlay page's arena and an Anki save's are
+ * its own requests (the worker takes neither). */
+static int scenario_on;
+static int64_t scenario_others;
+static uint32_t scenario_peak;
+static uint8_t scenario_ui_storage[VJO_BUDGET_PAF_UI] __attribute__((aligned(16)));
+static uint8_t scenario_anki_storage[VJO_BUDGET_PAF_ANKI] __attribute__((aligned(16)));
+static int scenario_grants(int item, size_t size)
+{
+    int64_t avail = (int64_t)VJO_PAF_HEAP - scenario_others -
+                    (int64_t)vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF);
+    return vjo_paf_guard(item, g_shell_ledger.defs[item].name, (size_t)(avail > 0 ? avail : 0), size);
+}
+static void *scenario_taken(int item, void *p, size_t size)
+{
+    uint32_t held;
+    if (!p) return NULL;
+    vjo_ledger_add(&g_shell_ledger, item, (uint32_t)size);
+    held = vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF);
+    if (held > scenario_peak) scenario_peak = held;
+    return p;
+}
 void *vjo_shell_heap_alloc_for(int item, size_t size)
 {
-    if (item == VJO_SL_PAF_RESULTS) {
-        void *p = vjo_shell_heap_alloc(size);
-        if (p) vjo_ledger_add(&g_shell_ledger, item, (uint32_t)size);
-        return p;
-    }
+    if (scenario_on && !scenario_grants(item, size))
+        return NULL;
+    if (item == VJO_SL_PAF_RESULTS)
+        return scenario_taken(item, vjo_shell_heap_alloc(size), size);
     if (item == VJO_SL_PAF_HISTORY) {
         TEST_CHECK(size == VJO_BUDGET_PAF_HISTORY && history_allocs == history_frees && !held_view && !held_cmd);
         if (fail_history_alloc) return NULL;
         history_allocs++;
         memset(history_storage, 0xA5, sizeof(history_storage));
-        vjo_ledger_add(&g_shell_ledger, item, (uint32_t)size);
-        return history_storage;
+        return scenario_taken(item, history_storage, size);
+    }
+    if (scenario_on && item == VJO_SL_PAF_UI) {
+        TEST_CHECK(size == sizeof(scenario_ui_storage));
+        return scenario_taken(item, scenario_ui_storage, size);
+    }
+    if (scenario_on && item == VJO_SL_PAF_ANKI) {
+        TEST_CHECK(size == sizeof(scenario_anki_storage));
+        return scenario_taken(item, scenario_anki_storage, size);
     }
     vocr_paf_allocs++;
     TEST_CHECK(0); /* game vocr must never borrow the Shell Paf heap */
@@ -224,11 +256,18 @@ void *vjo_shell_heap_alloc_for(int item, size_t size)
 }
 void vjo_shell_heap_free(int item, void *p, size_t bytes)
 {
+    if (!p) return; /* as shell/memory.cpp */
     if (p == history_storage) {
         TEST_CHECK(item == VJO_SL_PAF_HISTORY && bytes == VJO_BUDGET_PAF_HISTORY && history_frees < history_allocs);
         TEST_CHECK(!g_view.history_before && !g_view.history_after && !g_view.history); /* the view let it go */
         history_frees++;
         memset(history_storage, 0x5A, sizeof(history_storage));
+        vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
+        return;
+    }
+    if (p == scenario_ui_storage || p == scenario_anki_storage) {
+        TEST_CHECK(p == scenario_ui_storage ? item == VJO_SL_PAF_UI && bytes == sizeof(scenario_ui_storage)
+                                            : item == VJO_SL_PAF_ANKI && bytes == sizeof(scenario_anki_storage));
         vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
         return;
     }
@@ -9236,6 +9275,12 @@ static void test_reading_total_on_the_control_thread(void)
 }
 #endif
 
+#ifdef VJO_PAF_ALLOC
+/* The owner scenario (#528): Rubi's Paf requests against the Paf heap the owner's console logged
+ * (host/tests/owner_scenario.h, tools/owner_scenario.py, docs/owner-scenario.md). */
+#include "owner_scenario.h"
+#endif
+
 #ifdef VJO_VOCR_TIERS_TEST
 /* Two sizes, one model (host/tests/test_shared_tiers.h: Normal and Large
  * VOCR4-W20): a bad file leaves out both of its sizes at once, and the job goes on
@@ -9274,6 +9319,9 @@ TEST_LIST = {
 };
 #else
 TEST_LIST = {
+#ifdef VJO_PAF_ALLOC
+    {"owner scenario", test_owner_scenario_shell}, /* #528: tools/owner_scenario.py runs it by this name */
+#endif
     {"config_warnings_are_logged_once_per_change", test_config_warnings_are_logged_once_per_change},
     {"overlay_app_mismatch_is_logged_and_said_once", test_overlay_app_mismatch_is_logged_and_said_once},
     {"overlay_app_unknown_is_never_said", test_overlay_app_unknown_is_never_said},
