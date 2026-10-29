@@ -57,7 +57,10 @@ int vjo_json_obj_get(const VjoJson *j, int obj, const char *key)
     if (obj < 0 || obj >= j->n || j->t[obj].type != JSMN_OBJECT)
         return -1;
     i = obj + 1;
-    for (k = 0; k < j->t[obj].size; k++) {
+    /* (i < j->n: strict jsmn takes an object's string without a colon, {"a" "b"}, as one of its members, so the
+     * object's size is more than its pairs, and the walk in pairs reaches the last token before its size: #528,
+     * Maudit-mem-anki-queue-3-6) */
+    for (k = 0; k < j->t[obj].size && i < j->n; k++) {
         /* jsmn: key token has size 1, value follows. */
         if (tok_eq(j, i, key))
             return i + 1;

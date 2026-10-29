@@ -2632,27 +2632,28 @@ static void test_audit2_the_room_check_holds_for_long_and_dense_records(void)
         }
         TEST_ASSERT(n <= VJO_QUEUE_TEXT_MAX);
         vjo_queue_id(rec, n, name);
-        for (int restored = 0; restored < 2; restored++) {
-            int reads = 0;
+        for (int restored = 0; restored < 4; restored++) { /* (2, 3: without the game, as list_card, word_of and
+                                                            * archived_state read: audit-mem-anki-queue-3) */
+            int reads = 0, game = restored < 2;
             memcpy(stored, rec, n + 1);
-            ns = restored ? audit2_edit(stored, sizeof(stored), stored, "\"source\":\"Jiten\"", "\"source\":\"x\"") : n;
+            ns = restored & 1 ? audit2_edit(stored, sizeof(stored), stored, "\"source\":\"Jiten\"", "\"source\":\"x\"") : n;
             reset();
             snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
             put_file(path, stored, ns);
             for (size_t room = 0; ns + 1 + room <= sizeof(mem); room += room < 65536 ? 256 : 4096) {
                 VjoAnkiNote note;
-                int picture, rc, how = restored ? READ_RESTORED : READ_VERIFIED;
+                int picture, rc, how = restored & 1 ? READ_RESTORED : READ_VERIFIED;
                 vjo_arena_init(&A, mem, ns + 1 + room);
-                rc = read_card(&A, 0, name, &note, &picture, 1, REPORT_NONE);
-                TEST_CHECK_(rc == -2 || (rc == how && note.game && !strcmp(note.game, "CLANNAD") && note.source &&
-                                         !strcmp(note.source, "Jiten")),
-                            "record %d%s, %u B of room: %d (game %s)", c, restored ? " restored" : "", (unsigned)room, rc,
-                            rc >= 0 && note.game ? note.game : "none");
+                rc = read_card(&A, 0, name, &note, &picture, game, REPORT_NONE);
+                TEST_CHECK_(rc == -2 || (rc == how && (!game || (note.game && !strcmp(note.game, "CLANNAD"))) &&
+                                         note.source && !strcmp(note.source, "Jiten")),
+                            "record %d%s, game %d, %u B of room: %d (game %s)", c, restored & 1 ? " restored" : "", game,
+                            (unsigned)room, rc, rc >= 0 && note.game ? note.game : "none");
                 reads += rc == how;
                 if (rc == how)
                     break;
             }
-            TEST_CHECK_(reads == 1, "record %d%s never read", c, restored ? " restored" : "");
+            TEST_CHECK_(reads == 1, "record %d%s, game %d, never read", c, restored & 1 ? " restored" : "", game);
         }
     }
 }
@@ -2744,15 +2745,19 @@ static void test_audit2_red_export_all_holds_a_card_once(void)
 
 /* read_room's token count (json_tokens) is never below jsmn's own (vjo_json_parse's), and equals it for every record a
  * writer makes (#528's audit 2): the released writers' records, lists of numbers with and without commas, nested
- * containers, escapes, a primitive with a colon, a quote or a bracket in it, a NUL, cut records and garbage. */
+ * containers, escapes, a primitive with a colon, a quote or a bracket in it ([1[2] and [t{]: strict jsmn ends a
+ * primitive at neither, audit 3), a NUL, cut records and garbage (which jsmn refuses: they check nothing, so the
+ * count of the inputs it takes is checked too). */
 static void test_the_token_count_is_jsmns_or_more(void)
 {
     static const char *const odd[] = {
         "[0 0 0]", "[0\t0\r\n0,1]", "{\"a\":[1,2,{\"b\":[]}],\"c\":{}}", "{\"a\":\"x\\\"y\\\\\",\"b\":\"\\u0041\"}",
-        "[1:2,3]", "[1\"a,2,3\",4]", "[1[2]]", "[1{\"a\":2}]", "[true false null]", "{\"a\":1}\0[1,2,3]",
+        "[1:2,3]", "[1\"a,2,3\",4]", "[1[2]", "[t{]", "[true false null]", "{\"a\":1}\0[1,2,3]",
         "[\"a\" \"b\"]", "[[[[[[0]]]]]]", "{\"a\":[1,2", "[\"unterminated", "{]", "xyz", "", "[-1,-2e5,3.5]",
+        "[[0][0]]", "{\"a\":[0]\"b\":0}", /* a primitive at a closing bracket, the next token without a comma */
     };
-    static const size_t odd_len[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0}; /* 0: strlen (9: a NUL in it) */
+    static const size_t odd_len[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; /* 0: strlen (9: a NUL in it) */
+    int taken = 0;
     char json[1024];
     for (unsigned k = 0; k < sizeof(released) / sizeof(released[0]); k++) {
         size_t len = released_record(json, sizeof(json), released[k].picture, released[k].source);
@@ -2766,36 +2771,251 @@ static void test_the_token_count_is_jsmns_or_more(void)
         size_t len = odd_len[k] ? odd_len[k] : strlen(odd[k]);
         VjoJson j;
         vjo_arena_init(&A, mem, sizeof(mem));
-        if (vjo_json_parse(&A, odd[k], len, &j) == 0)
+        if (vjo_json_parse(&A, odd[k], len, &j) == 0) {
+            taken++;
             TEST_CHECK_(json_tokens(odd[k], len) >= (size_t)j.n, "input %u: %u, jsmn %d", k,
                         (unsigned)json_tokens(odd[k], len), j.n);
+        }
     }
+    TEST_CHECK_(taken == 15, "jsmn takes %d of the odd inputs, not 15: the others check nothing", taken);
 }
 
-/* A newer build's record archived beside the card's own queued one (a version this build cannot read: hand copies,
- * as IDs are checksums) is a whole record: neither is removed, the card stays queued. */
-static void test_a_newer_builds_archived_record_is_kept(void)
+/* (audit-mem-anki-queue-3) A version-4 archived copy that is no whole record (it parses, but the decoder refuses it:
+ * no spelling) beside the card's own queued one is damaged, not a newer build's: replaced by the queued one. */
+static void test_audit3_a_damaged_version_4_archived_copy_is_replaced(void)
 {
-    char own[1024], newer[1024], qpath[256], xpath[256], msg[300];
+    char own[1024], bad[1024], qpath[256], xpath[256], msg[300];
     uint8_t back[1024];
     const char *name = released[0].name;
-    size_t no = released_record(own, sizeof(own), 0, "\"Jiten\""), nn;
+    size_t no = released_record(own, sizeof(own), 0, "\"Jiten\""), nb;
     VjoExportResult r;
-    TEST_ASSERT(!strncmp(own, "{\"version\":4,", 13));
-    memcpy(newer, own, no + 1);
-    newer[11] = '9'; /* {"version":9, ... */
-    nn = no;
+    memcpy(bad, own, no + 1);
+    nb = audit2_edit(bad, sizeof(bad), bad, "\"spelling\":\"猫\"", "\"spelling\":\"\"");
     reset();
     snprintf(qpath, sizeof(qpath), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
     snprintf(xpath, sizeof(xpath), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
     put_file(qpath, own, no);
     TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
-    put_file(xpath, newer, nn);
+    put_file(xpath, bad, nb);
     TEST_ASSERT(run(0, &r, msg) == VJO_OK);
-    TEST_CHECK_(r.cards == 1 && r.kept == 1 && !r.moved && strstr(logs, "(a whole record), and neither replaces"),
+    TEST_CHECK_(r.cards == 1 && r.moved == 1 && !r.kept && strstr(logs, "the archived copy is damaged: replaced"),
                 "%s\n%s", msg, logs);
-    TEST_CHECK(get_bytes(qpath, back, sizeof(back)) == no && !memcmp(back, own, no));
-    TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == nn && !memcmp(back, newer, nn));
+    TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == no && !memcmp(back, own, no));
+}
+
+/* ---------------- #528 audit 3 (audit-mem-anki-queue-3): a card in both directories is one card ---------------- */
+
+/* Notes of the package at path with this time (their mod), with the duplicate tag (dup) or without. The notes table's
+ * record has mod, usn and the tags next to each other: mod in 4 bytes, big-endian, for these times, usn (-1) in one
+ * (core/sqlw.c: the smallest integer widths), then the tags (with released[]'s game tag). */
+static int audit3_notes(const char *path, int64_t t, int dup)
+{
+    static uint8_t pkg[1 << 20];
+    char needle[64];
+    size_t n = path[0] ? package_bytes(path, pkg, sizeof(pkg)) : 0, k; /* (no package: none) */
+    int found = 0;
+    needle[0] = (char)(t >> 24), needle[1] = (char)(t >> 16), needle[2] = (char)(t >> 8), needle[3] = (char)t;
+    needle[4] = (char)0xFF;
+    k = 5 + (size_t)snprintf(needle + 5, sizeof(needle) - 5, " vita-jp-overlay %s", dup ? "duplicate Game::" : "Game::");
+    for (size_t i = 0; i + k <= n; i++)
+        found += !memcmp(pkg + i, needle, k);
+    return found;
+}
+
+#define AUDIT3_T 1791158400 /* released[]'s time */
+
+/* Card X, released[0]: its own record archived (rank 1500, at AUDIT3_T), and queued under its name a hand edit of it
+ * dq seconds later (rank 1502: exported as it reads); with cached, the words' cache has the archived copy's word
+ * first (an export of the card before the edit was queued). With other, another card of its word (another sentence,
+ * rank 1503, its own name) queued at AUDIT3_T + dother: its name in other_name. */
+static void audit3_put(int64_t dq, int cached, int other, int64_t dother, char other_name[VJO_QUEUE_ID_SIZE])
+{
+    char own[1024], q[1024], y[1024], path[256], tq[32], ty[32];
+    size_t no = released_record(own, sizeof(own), 0, "\"Jiten\""), nq, ny;
+    reset();
+    TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, released[0].name);
+    put_file(path, own, no);
+    if (cached) {
+        VjoWords w;
+        TEST_ASSERT(words(&w, 0) == 0 && w.n == 1 && w.read == 1);
+    }
+    memcpy(q, own, no + 1);
+    snprintf(tq, sizeof(tq), "\"time\":%lld", (long long)(AUDIT3_T + dq));
+    audit2_edit(q, sizeof(q), q, "\"time\":1791158400", tq);
+    nq = audit2_edit(q, sizeof(q), q, "\"rank\":1500", "\"rank\":1502");
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, released[0].name);
+    put_file(path, q, nq);
+    if (other) {
+        memcpy(y, own, no + 1);
+        snprintf(ty, sizeof(ty), "\"time\":%lld", (long long)(AUDIT3_T + dother));
+        audit2_edit(y, sizeof(y), y, "\"time\":1791158400", ty);
+        audit2_edit(y, sizeof(y), y, "\"rank\":1500", "\"rank\":1503");
+        ny = audit2_edit(y, sizeof(y), y, "\"sentence\":\"猫が好き猫\"", "\"sentence\":\"猫を見た猫\"");
+        vjo_queue_id(y, ny, other_name);
+        snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, other_name);
+        put_file(path, y, ny);
+    }
+}
+
+static int audit3_earlier(const VjoWords *w, int64_t t, const char *hex)
+{
+    uint8_t id[16];
+    from_hex(hex, id);
+    return vjo_words_earlier(w, vjo_word_key("猫", "ねこ"), t, id);
+}
+
+/* Maudit-mem-anki-queue-3-2: a card whose queued copy is a hand edit of its archived one, 100 s later or earlier: its
+ * other copy is not "a word mined before" (docs/anki.md, Duplicates: the first card of a word is never a duplicate).
+ * With Tag it is not tagged, with Skip it is exported, and Export all holds it once, the queued copy (The package).
+ * Before, with its queued copy later, Tag tagged it, Skip kept it queued ("a word already mined") and Export all with
+ * Skip exported the older archived copy. */
+static void test_audit3_a_cards_other_copy_is_not_an_earlier_card(void)
+{
+    static const int dupes[] = {VJO_DUPLICATES_TAG, VJO_DUPLICATES_SKIP, VJO_DUPLICATES_KEEP};
+    static uint8_t pkg[1 << 20];
+    for (int later = 0; later < 2; later++)
+        for (int cached = 0; cached < 2; cached++) {
+            int64_t dq = later ? 100 : -100;
+            for (unsigned d = 0; d < sizeof(dupes) / sizeof(dupes[0]); d++)
+                for (int all = 0; all < 2; all++) {
+                    char msg[300];
+                    VjoExportResult r;
+                    VjoWords w;
+                    size_t np;
+                    audit3_put(dq, cached, 0, 0, NULL);
+                    if (!all && d == 0) { /* (the words themselves, once a case: the export reads them again) */
+                        TEST_ASSERT(words(&w, 0) == 0);
+                        TEST_CHECK_(w.n == 1 && w.queued == 1 && !w.duplicates &&
+                                    !audit3_earlier(&w, AUDIT3_T + dq, released[0].name) &&
+                                    !audit3_earlier(&w, AUDIT3_T, released[0].name),
+                                    "queued %s%s: %d words, %d already mined", later ? "later" : "earlier",
+                                    cached ? ", cached" : "", w.n, w.duplicates);
+                    }
+                    TEST_ASSERT(run_dupes(all, dupes[d], 0, &r, msg) == VJO_OK);
+                    np = r.path[0] ? package_bytes(r.path, pkg, sizeof(pkg)) : 0;
+                    TEST_CHECK_(r.cards == 1 && np && !r.duplicates && !strstr(msg, "already mined") &&
+                                notes_tagged(r.path, DUPLICATE_TAGS) == 0 && audit3_notes(r.path, AUDIT3_T + dq, 0) == 1 &&
+                                occurrences(pkg, np, "<li>Jiten: 1502</li>") == 1 && !occurrences(pkg, np, "Jiten: 1500"),
+                                "queued %s%s, Duplicates %d, %s: %s", later ? "later" : "earlier",
+                                cached ? ", cached" : "", dupes[d], all ? "Export all" : "Export", msg);
+                }
+        }
+}
+
+/* The same card with another card of its word between its copies' times: the card has one place, its queued copy's
+ * (the copy a package holds), and every copy of it says the same, as the Anki page counts it. Queued 100 s after its
+ * archived copy and the other card 50 s after it: the card is the duplicate (Tag: the queued copy tagged; Skip: it
+ * stays queued and neither copy is in Export all). Queued 100 s before and the other card 50 s before the archived
+ * copy: the other card is. */
+static void test_audit3_a_card_in_both_directories_has_one_place(void)
+{
+    for (int later = 0; later < 2; later++) {
+        int64_t dq = later ? 100 : -100, dy = later ? 50 : -50, tx = AUDIT3_T + dq, ty = AUDIT3_T + dy;
+        char other[VJO_QUEUE_ID_SIZE], msg[300], path[256];
+        const char *how = later ? "queued later" : "queued earlier";
+        VjoExportResult r;
+        VjoWords w;
+        audit3_put(dq, 0, 1, dy, other);
+        TEST_ASSERT(words(&w, 0) == 0);
+        TEST_CHECK_(w.n == 2 && w.queued == 2 && w.duplicates == 1, "%s: %d words, %d already mined", how, w.n,
+                    w.duplicates);
+        /* the card's two copies (the queued one, the archived one) and the other card */
+        TEST_CHECK_(audit3_earlier(&w, tx, released[0].name) == later && audit3_earlier(&w, AUDIT3_T, released[0].name) == later &&
+                    audit3_earlier(&w, ty, other) == !later, "%s: %d %d %d", how, audit3_earlier(&w, tx, released[0].name),
+                    audit3_earlier(&w, AUDIT3_T, released[0].name), audit3_earlier(&w, ty, other));
+        /* Tag, Export all: the card once (its queued copy), and the later of the two tagged */
+        TEST_ASSERT(run_dupes(1, VJO_DUPLICATES_TAG, 0, &r, msg) == VJO_OK);
+        TEST_CHECK_(r.cards == 2 && r.duplicates == 1 && audit3_notes(r.path, tx, later) == 1 &&
+                    audit3_notes(r.path, ty, !later) == 1 && !audit3_notes(r.path, AUDIT3_T, 0) &&
+                    !audit3_notes(r.path, AUDIT3_T, 1), "%s, Tag, Export all: %s", how, msg);
+        /* Skip, Export all: the later of the two is not in it, in neither copy */
+        audit3_put(dq, 0, 1, dy, other);
+        TEST_ASSERT(run_dupes(1, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK);
+        TEST_CHECK_(r.cards == 1 && r.duplicates == 1 && strstr(msg, " 1 already mined stays queued (Duplicates: Skip).") &&
+                    audit3_notes(r.path, later ? ty : tx, 0) == 1, "%s, Skip, Export all: %s", how, msg);
+        /* Skip, Export: the earlier of the two is exported, the later stays queued */
+        audit3_put(dq, 0, 1, dy, other);
+        TEST_ASSERT(run_dupes(0, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK);
+        snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, later ? released[0].name : other);
+        TEST_CHECK_(r.cards == 1 && r.duplicates == 1 && audit3_notes(r.path, later ? ty : tx, 0) == 1 && present(path) == 1,
+                    "%s, Skip, Export: %s", how, msg);
+    }
+}
+
+/* A newer build's record archived beside the card's own queued one (a version this build cannot read: hand copies,
+ * as IDs are checksums) is a whole record: neither is removed, the card stays queued. #528's audit 3 (-4): a version
+ * of 10 digits or more (vjo_json_int stops at 9) and a record over this build's 32 KiB (read_file refuses it) are
+ * such records too; an empty file and a negative version are damaged, replaced by the queued copy. */
+static void test_a_newer_builds_archived_record_is_kept(void)
+{
+    static const char *const versions[] = {"9", "1234567890", "99999999999999999999", "9", "", "-1234567890"};
+    static char own[1024], newer[40000], pad[33000];
+    static uint8_t back[40000];
+    char qpath[256], xpath[256], msg[300], head[64];
+    const char *name = released[0].name;
+    size_t no = released_record(own, sizeof(own), 0, "\"Jiten\""), nn;
+    TEST_ASSERT(!strncmp(own, "{\"version\":4,", 13));
+    snprintf(qpath, sizeof(qpath), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+    snprintf(xpath, sizeof(xpath), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
+    for (unsigned k = 0; k < sizeof(versions) / sizeof(versions[0]); k++) {
+        int kept = k < 4;
+        VjoExportResult r;
+        memcpy(newer, own, no + 1);
+        snprintf(head, sizeof(head), "{\"version\":%s,", versions[k]);
+        nn = k == 4 ? 0 : audit2_edit(newer, sizeof(newer), newer, "{\"version\":4,", head);
+        if (k == 3) { /* over 32 KiB: an unknown key of 32 KiB */
+            memset(pad, 'a', 32768);
+            memcpy(pad, "\"ocr_confidence\":null,\"x\":\"", 27);
+            memcpy(pad + 32768, "\"}", 3);
+            nn = audit2_edit(newer, sizeof(newer), newer, "\"ocr_confidence\":null}", pad);
+            TEST_ASSERT(nn > VJO_QUEUE_TEXT_MAX);
+        }
+        reset();
+        put_file(qpath, own, no);
+        TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+        put_file(xpath, newer, nn);
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+        TEST_CHECK_(kept ? r.cards == 1 && r.kept == 1 && !r.moved && strstr(logs, "(a whole record), and neither replaces")
+                         : r.cards == 1 && r.moved == 1 && !r.kept &&
+                               strstr(logs, "the archived copy is damaged: replaced by the queued one"),
+                    "version \"%s\"%s: %s\n%s", versions[k], k == 3 ? ", over 32 KiB" : "", msg, logs);
+        TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == (kept ? nn : no) && !memcmp(back, kept ? newer : own, kept ? nn : no));
+        TEST_CHECK(kept ? get_bytes(qpath, back, sizeof(back)) == no && !memcmp(back, own, no) : present(qpath) == 0);
+    }
+}
+
+/* (#528's audit 3, -4) A queued record over 32 KiB is no record this build reads (-1, as an empty one, while an
+ * archived one is kept as a newer build's: above): the Anki page names it once, then knows it (anki_words.bin), and
+ * an export leaves it queued. Never "not now" (-2), which the page would read and log again at every show. */
+static void test_audit3_a_record_over_the_limit_is_named_once(void)
+{
+    static char big[40000], pad[33000];
+    char path[256], name[VJO_QUEUE_ID_SIZE], msg[300];
+    size_t n = released_record(big, sizeof(big), 0, "\"Jiten\"");
+    VjoExportResult r;
+    VjoAnkiNote note;
+    VjoWords w;
+    int picture;
+    memset(pad, 'a', 32768);
+    memcpy(pad, "\"ocr_confidence\":null,\"x\":\"", 27);
+    memcpy(pad + 32768, "\"}", 3);
+    n = audit2_edit(big, sizeof(big), big, "\"ocr_confidence\":null}", pad);
+    TEST_ASSERT(n > VJO_QUEUE_TEXT_MAX);
+    vjo_queue_id(big, n, name);
+    reset();
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+    put_file(path, big, n);
+    vjo_arena_init(&A, mem, sizeof(mem));
+    TEST_CHECK(read_card(&A, 0, name, &note, &picture, 0, REPORT_NONE) == -1);
+    for (int show = 0; show < 3; show++) {
+        logs[0] = '\0';
+        TEST_ASSERT(words(&w, 64) == 0);
+        TEST_CHECK_(!w.n && w.unreadable == 1 && occurrences((const uint8_t *)logs, strlen(logs), "(limit 32768)") == !show,
+                    "show %d: %d words, %d unreadable\n%s", show, w.n, w.unreadable, logs);
+    }
+    TEST_CHECK(run(0, &r, msg) == VJO_E_PARSE && r.unreadable == 1 && present(path) == 1);
+    TEST_MSG("%s", msg);
 }
 
 static void test_screenshots_are_one_file_each(void)
@@ -3387,6 +3607,37 @@ static int write_packages(const char *dir)
         if (take_package(r.path, path))
             return 1;
     }
+    /* order (#528's audit 3, its MT20: the package without its time sort): Export all of three cards a minute apart
+     * whose IDs (their records' checksums: the words are tried until they are) are not in their times' order, the
+     * first one archived too (the same bytes: an export stopped between its moves). The package has each once, in
+     * their times' order, each note's ID its time in milliseconds (test_apkg.py). */
+    char order[3][VJO_QUEUE_ID_SIZE];
+    for (int k = 0;; k++) {
+        char word[3][24], sentence[3][32], from[300], to[300];
+        uint8_t bytes[4096];
+        size_t nb;
+        if (k == 64)
+            return fprintf(stderr, "order: no three cards out of their times' order\n"), 1;
+        reset();
+        for (int i = 0; i < 3; i++) {
+            snprintf(word[i], sizeof(word[i]), "順番%d", 3 * k + i);
+            snprintf(sentence[i], sizeof(sentence[i]), "順番%dだ", 3 * k + i);
+            snprintf(order[i], sizeof(order[i]), "%s", queue_word(word[i], "じゅんばん", sentence[i], 1200 + 60 * i));
+        }
+        if (strcmp(order[0], order[1]) < 0 && strcmp(order[1], order[2]) < 0)
+            continue;
+        snprintf(from, sizeof(from), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, order[0]);
+        snprintf(to, sizeof(to), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, order[0]);
+        mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777);
+        nb = get_bytes(from, bytes, sizeof(bytes));
+        put_file(to, bytes, nb);
+        break;
+    }
+    if (run(1, &r, msg) != VJO_OK || r.cards != 3)
+        return fprintf(stderr, "%s\n%s", msg, logs), 1;
+    snprintf(path, sizeof(path), "%s/order.apkg", dir);
+    if (take_package(r.path, path))
+        return 1;
     /* what the first two must hold: each card's ID (its GUID's source) */
     snprintf(path, sizeof(path), "%s/expected.json", dir);
     if (!(f = fopen(path, "w")))
@@ -3400,6 +3651,7 @@ static int write_packages(const char *dir)
     /* the cards whose notes have the duplicate tag (#314): 猫 (version 3) after version 1's, and 犬 again */
     fprintf(f, "],\"duplicates\":[\"%s\",\"%s\"]", saved[0], saved[e0 - 1]);
     fprintf(f, ",\"app\":[\"%s\",\"%s\"]", app_ids[0], app_ids[1]);
+    fprintf(f, ",\"order\":[\"%s\",\"%s\",\"%s\"]", order[0], order[1], order[2]); /* (their times' order) */
     fprintf(f, ",\"many\":700,\"notetype_id\":%lld,\"deck_id\":%lld,\"deck\":\"%s\",\"richer\":\"%s\","
                "\"readings\":%s}\n",
             vjo_lapis_notetype_id, vjo_lapis_deck_id, vjo_lapis_deck_name, richer, readings ? "true" : "false");
@@ -3790,6 +4042,10 @@ TEST_LIST = {
     {"#528 audit 2: Export all holds a card once", test_audit2_red_export_all_holds_a_card_once},
     {"#528 audit 2: the token count is jsmn's or more", test_the_token_count_is_jsmns_or_more},
     {"#528 audit 2: a newer build's archived record is kept", test_a_newer_builds_archived_record_is_kept},
+    {"#528 audit 3: a damaged version-4 archived copy is replaced", test_audit3_a_damaged_version_4_archived_copy_is_replaced},
+    {"#528 audit 3: a card's other copy is not an earlier card", test_audit3_a_cards_other_copy_is_not_an_earlier_card},
+    {"#528 audit 3: a card in both directories has one place", test_audit3_a_card_in_both_directories_has_one_place},
+    {"#528 audit 3: a record over the limit is named once", test_audit3_a_record_over_the_limit_is_named_once},
     {"screenshots_are_one_file_each", test_screenshots_are_one_file_each},
     {"missing_or_damaged_screenshots_export_the_text", test_missing_or_damaged_screenshots_export_the_text},
     {"good_screenshot_copy_survives_a_damaged_copy", test_good_screenshot_copy_survives_a_damaged_copy},

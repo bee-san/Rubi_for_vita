@@ -1,6 +1,8 @@
 #include <dirent.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include "acutest.h"
 #include "client.h"
@@ -151,6 +153,58 @@ static void test_json(void)
         TEST_ASSERT(vjo_json_parse(&A, js, strlen(js), &j) == 0);
         TEST_CHECK(!strcmp(vjo_json_str(&A, &j, vjo_json_obj_get(&j, 0, "surrogates")), "猫 😀"));
     }
+}
+
+/* #528 (Maudit-mem-anki-queue-3-6): strict jsmn takes an object's string without a colon ({"a" "b"}) as one of its
+ * members, so the object's size is more than its pairs, and vjo_json_obj_get, walking that size in pairs, read past
+ * the token array for a key the object does not have (ASan: a heap-buffer-overflow after the tokens of the audit's
+ * {"version" "4","x":1}). Here each object's tokens end where a page no read may touch begins, and every key of every
+ * object in it is looked up: each lookup stays within the tokens, and gives -1 or a token of the object (at most
+ * the token count, which every accessor takes as none). The Rubi app's export reads such records (a hand edit). */
+static void test_json_object_lookups_stay_in_the_tokens(void)
+{
+    static const char *const objects[] = {
+        "{\"version\" \"4\",\"x\":1}", /* the audit's record */
+        "{\"a\" \"b\"}", "{\"a\" \"b\" \"c\" \"d\"}", "{\"x\":1,\"a\"}", "{\"a\" \"version\":5}", "{\"x\":\"a\" \"b\"}",
+        "{\"more\":[{\"dictionary\" \"d\",\"meanings\":[]},{\"a\" \"b\"}],\"time\" \"1\"}",
+        "{\"version\":4,\"spelling\":\"x\",\"more\":[{\"dictionary\":\"d\"}]}", /* (well formed: the same as before) */
+    };
+    static const char *const keys[] = {"version", "x", "a", "b", "c", "d", "time", "more", "dictionary", "meanings",
+                                       "spelling", ""};
+    size_t page = (size_t)sysconf(_SC_PAGESIZE);
+    uint8_t *map = mmap(NULL, 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    TEST_ASSERT(map != MAP_FAILED);
+    TEST_ASSERT(mprotect(map + page, page, PROT_NONE) == 0);
+    for (unsigned o = 0; o < sizeof(objects) / sizeof(objects[0]); o++) {
+        const char *js = objects[o];
+        size_t bytes;
+        VjoArena edge;
+        VjoJson j;
+        setup();
+        TEST_ASSERT(vjo_json_parse(&A, js, strlen(js), &j) == 0);
+        bytes = sizeof(jsmntok_t) * (size_t)j.n;
+        TEST_ASSERT(bytes <= page);
+        vjo_arena_init(&edge, map + page - bytes, bytes); /* the tokens, then the page no read may touch */
+        TEST_ASSERT(vjo_json_parse(&edge, js, strlen(js), &j) == 0 && (uint8_t *)(j.t + j.n) == map + page);
+        for (int obj = 0; obj < j.n; obj++)
+            for (unsigned k = 0; j.t[obj].type == JSMN_OBJECT && k < sizeof(keys) / sizeof(keys[0]); k++) {
+                int v = vjo_json_obj_get(&j, obj, keys[k]);
+                TEST_CHECK_(v == -1 || (v > obj && v <= j.n), "%s, object %d, \"%s\": %d of %d tokens", js, obj,
+                            keys[k], v, j.n);
+            }
+        if (o == 0) { /* the audit's record: no "time", and "x" is 1 */
+            long x = 0;
+            TEST_CHECK(vjo_json_obj_get(&j, 0, "time") == -1);
+            TEST_CHECK(vjo_json_int(&j, vjo_json_obj_get(&j, 0, "x"), &x) == 0 && x == 1);
+        }
+        if (o == sizeof(objects) / sizeof(objects[0]) - 1) { /* a well-formed one */
+            long v = 0;
+            TEST_CHECK(vjo_json_int(&j, vjo_json_obj_get(&j, 0, "version"), &v) == 0 && v == 4);
+            TEST_CHECK(vjo_json_obj_get(&j, 0, "more") == 6 && vjo_json_obj_get(&j, 7, "dictionary") == 9 &&
+                       vjo_json_obj_get(&j, 0, "time") == -1);
+        }
+    }
+    TEST_CHECK(munmap(map, 2 * page) == 0);
 }
 
 /* ---------- dictionary results (as the local lookups make them) ---------- */
@@ -2740,6 +2794,7 @@ TEST_LIST = {
     {"utf_character_cursor", test_utf_character_cursor},
     {"japanese_character_cursor", test_japanese_character_cursor},
     {"json", test_json},
+    {"json_object_lookups_stay_in_the_tokens", test_json_object_lookups_stay_in_the_tokens},
     {"furigana_align", test_furigana_align},
     {"furigana_rubies", test_furigana_rubies},
     {"entries", test_entries},

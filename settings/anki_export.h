@@ -126,7 +126,9 @@ typedef struct {
  * cache (out has no words); VJO_E_LOCAL_IO when a directory cannot be read; VJO_E_OOM (no room in a for every card's
  * word); VJO_E_CANCELLED (ui->stopped). */
 int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords *out);
-/* 1 when an earlier card (by time, then ID) than this one (its word, time and ID) has its word. */
+/* 1 when another card than this one (its word, time and ID), earlier by time, then ID, has its word. A card in both
+ * directories is one card (#528's audit 3): its other copy never counts, and when the copies' times differ (a hand
+ * edit) each copy has the place of the card's word (the queued copy's when both were read). */
 int vjo_words_earlier(const VjoWords *w, uint64_t key, int64_t time, const uint8_t id[16]);
 
 /* ---- known words (#314 stage C) ---- */
