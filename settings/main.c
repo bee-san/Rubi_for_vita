@@ -1512,7 +1512,7 @@ static void draw(void)
             vita2d_draw_rectangle(38, y + 4, 32, 32, SELECTED);
             centered_text(38, y + 25, 32, ACCENT, 18, "JP");
         }
-        /* Titles and IDs have separate columns, including on two-line titles. */
+        /* Keep the list focused on titles; IDs are available on each game's own page. */
         vita2d_enable_clipping();
         vita2d_set_clip_rectangle(90, y + 2, 748, y + GAME_H - 2);
         draw_rows(90, y + 21, WHITE, 22, 24, g->title, title_rows(visible[index]));
@@ -1523,7 +1523,6 @@ static void draw(void)
             text(260, y + 36, ACCENT, 16, "PSP");
         else if ((hook = vjo_hook_title_listed(g->id)) != VJO_HOOK_TITLE_NONE)
             text(260, y + 36, ACCENT, 16, hook == VJO_HOOK_TITLE_RUBI ? "Hook" : "Luna hook");
-        text(90, y + 36, DIM, 16, g->id);
         /* #333: a line finder of the game's own (or a PSP game's shared row's), and how to reach its page */
         int lf = used_line_fix(g);
         if (lf >= 0) {

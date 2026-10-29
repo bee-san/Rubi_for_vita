@@ -710,6 +710,9 @@ foreach(_vjo_target IN ITEMS vjo_settings_catalog vjo-settings-games-tests vjo-s
   # As the app suites above: the harness's own sceKernelGetThreadId.
   target_compile_definitions(${_vjo_target} PRIVATE VJO_TEST_THREAD_INFO_STUBS=1)
 endforeach()
+foreach(_vjo_games_runner IN ITEMS vjo-settings-games-tests vjo-settings-bench)
+  target_link_options(${_vjo_games_runner} PRIVATE -Wl,--wrap=vjo_icon_cache_get)
+endforeach()
 target_link_libraries(vjo-settings-games-tests vjo_settings_main)
 if(VJO_SETTINGS_BENCH_MAIN STREQUAL ${CMAKE_SOURCE_DIR}/settings/main.c)
   target_link_libraries(vjo-settings-bench vjo_settings_main)

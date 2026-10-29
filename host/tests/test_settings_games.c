@@ -459,7 +459,8 @@ void vita2d_wait_rendering_done(void)
 int vita2d_init(void) { return 0; }
 int vita2d_fini(void) { return 0; }
 void vita2d_set_clear_color(unsigned int color) { (void)color; }
-void vita2d_start_drawing(void) { drawing = 1; if (vp.active) vp_begin(NULL); }
+static int drawn_game_rows;
+void vita2d_start_drawing(void) { drawn_game_rows = 0; drawing = 1; if (vp.active) vp_begin(NULL); }
 void vita2d_end_drawing(void) { drawing = 0; }
 void vita2d_swap_buffers(void) {}
 void vita2d_clear_screen(void) {}
@@ -498,6 +499,16 @@ int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
     cur.measures++;
     return (int)(stub_units(text, &cur.glyphs) * scale + 0.5f);
 }
+/* Track row identity from icon-cache requests instead of visible title IDs. This also covers placeholders. */
+#include "../../settings/icons.h"
+void *__real_vjo_icon_cache_get(VjoIconCache *cache, const char *id);
+void *__wrap_vjo_icon_cache_get(VjoIconCache *cache, const char *id)
+{
+    if (drawing && drawn_game_rows < ROWS)
+        copy(cur.id[drawn_game_rows++], sizeof(cur.id[0]), id);
+    return __real_vjo_icon_cache_get(cache, id);
+}
+
 /* What each card shows, by where main.c draws it. */
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text)
 {
@@ -510,7 +521,11 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
         else if (y == top + 36 && x == 260 && !strcmp(text, "PSP")) cur.tag[r] = color;
         else if (y == top + 36 && x == 260 && (!strcmp(text, "Hook") || !strcmp(text, "Luna hook")))
             copy(cur.hook[r], sizeof(cur.hook[r]), text);
-        else if (y == top + 36 && x == 90) copy(cur.id[r], sizeof(cur.id[r]), text);
+        else if (y == top + 36 && x == 90) {
+#ifndef VJO_SETTINGS_BENCH
+            TEST_CHECK_(0, "title IDs must not be drawn in the Games list");
+#endif
+        }
         else if (y == top + 25 && !strcmp(text, "JP")) copy(cur.icon[r], sizeof(cur.icon[r]), "JP");
         else if (y == top + 29 && x > 788) copy(cur.badge[r], sizeof(cur.badge[r]), text); /* badge(788, top + 7, 128, 38) */
         else if (y == top + 36 && x == 360) copy(cur.lf_tag[r], sizeof(cur.lf_tag[r]), text);       /* #333 */
