@@ -52,6 +52,7 @@ extern "C" {
 }
 #include "lookup_shown.h"
 #include "colour_widgets.h"
+#include "overlay_mem.h" /* the page's text arena: open_page, close_page (the host tests run it too) */
 
 #include "../core/region_select.h"
 #include "../core/stick_cursor.h"
@@ -233,8 +234,9 @@ static int s_square_clear_armed;
  * texts of HEADER_UNITS/BODY_UNITS UTF-16 units plus their spans, 18,016 B,
  * plus the entry ranges (VJO_HEADER_RANGE_BYTES), within the existing 20 KiB
  * (host test: test_budget_table_is_consistent). A refused
- * allocation means the page does not open this time (fail closed). */
-#define UI_MEM_BYTES VJO_BUDGET_PAF_UI
+ * allocation means the page does not open this time (fail closed). Taken and
+ * given back by overlay_mem.h, which the host tests' owner scenario runs. */
+#define UI_MEM_BYTES VJO_OVERLAY_MEM_BYTES
 static uint8_t *s_ui_mem;
 static VjoArena s_ui;
 
@@ -827,14 +829,8 @@ static void open_page(void)
 {
     Plugin::PageOpenParam param;
     read_buttons(); /* the setting can change between openings */
-    if (!s_ui_mem) {
-        s_ui_mem = (uint8_t *)vjo_shell_heap_alloc_for(VJO_SL_PAF_UI, UI_MEM_BYTES);
-        if (!s_ui_mem) {
-            static const char no_memory[] VJO_DATA_TABLE(overlay_no_memory) = "overlay not opened: no Paf memory for its text (%u KiB)";
-            vjo_log(no_memory, UI_MEM_BYTES >> 10);
-            return;
-        }
-    }
+    if (!vjo_overlay_mem_open(&s_ui_mem))
+        return;
     s_rng_start = (uint16_t *)s_ui_mem;
     s_rng_len = s_rng_start + MAX_RANGES;
     vjo_arena_init(&s_ui, s_ui_mem + VJO_HEADER_RANGE_BYTES, UI_MEM_BYTES - VJO_HEADER_RANGE_BYTES);
@@ -842,8 +838,7 @@ static void open_page(void)
     s_page = s_plugin->PageOpen("vjo_page_overlay", param);
     if (!s_page) {
         vjo_log("overlay page failed to open");
-        vjo_shell_heap_free(VJO_SL_PAF_UI, s_ui_mem, UI_MEM_BYTES);
-        s_ui_mem = NULL;
+        vjo_overlay_mem_close(&s_ui_mem);
         vjo_arena_init(&s_ui, NULL, 0);
         return;
     }
@@ -980,8 +975,7 @@ static void close_page(int handback)
     s_header_has_text = 0;
     s_hdr_wrap.frames = s_body_wrap.frames = s_hdr_nbrk = 0; /* their texts go with the arena */
     vjo_arena_init(&s_ui, NULL, 0);
-    vjo_shell_heap_free(VJO_SL_PAF_UI, s_ui_mem, UI_MEM_BYTES);
-    s_ui_mem = NULL;
+    vjo_overlay_mem_close(&s_ui_mem);
 }
 
 /* ▲/▼: the word on the nearest line above/below that has one, closest in x

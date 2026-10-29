@@ -115,7 +115,7 @@
  * would leave less than VJO_PAF_RESERVE free. */
 #define VJO_PAF_HEAP 5242880u                      /* [measured, docs/meiki-ocr.md on experiment/meiki-ocr] */
 #define VJO_PAF_FREE_MEASURED 2557952u             /* 2,498 KiB free beside CLANNAD, 2026-10-10 [measured, same] */
-#define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
+#define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/paf_guard.h vjo_paf_guard_reserve */
 #define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
 /* One result arena, the local dictionary's lookup (worker.c LOCAL_RESULT_ARENA_SIZE): the Shell's only result
  * memory. */
