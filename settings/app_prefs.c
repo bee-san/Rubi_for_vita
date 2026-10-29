@@ -7,6 +7,10 @@
 
 #define BACKUP VJO_APP_PREFS_PATH ".bak"
 #define VALUE_MAX 32 /* a value's name, NUL included */
+/* The appearance worker and Anki page may save different keys. A competing save fails promptly
+ * instead of waiting on a memory-card sync or racing the same .tmp/.bak publication. Each retry
+ * rereads the current file and preserves the other writer's keys. */
+static int saving;
 
 typedef struct {
     const char *key;             /* lowercase: a save compares it with each line's key, lowercased */
@@ -191,6 +195,7 @@ int vjo_app_prefs_save(const char *const *keys, const int *values, int n, VjoAre
         k[i] = r->key;
         v[i] = r->values[values[i]];
     }
+    if (__sync_lock_test_and_set(&saving, 1)) return -1;
     mark = vjo_arena_mark(a);
     if (current_text(a, &text, &bytes, &primary) < 0)
         goto done; /* never rewrite a file that could not be read */
@@ -204,6 +209,7 @@ int vjo_app_prefs_save(const char *const *keys, const int *values, int n, VjoAre
     rc = vjo_prefs_publish_file(VJO_APP_PREFS_PATH, next, len, primary);
 done:
     vjo_arena_release(a, mark);
+    __sync_lock_release(&saving);
     return rc;
 }
 

@@ -11,8 +11,8 @@
  * in app_prefs.c: its key, its field and its values' names; the field holds the index of its value (an on/off
  * setting's values are "off" and "on").
  *
- * Every call keeps its state in the caller's arena (no statics), so any thread may call it; the app's saves are made
- * by its main thread, one at a time. */
+ * Each call uses the caller's private arena. A save claims a nonblocking single-writer guard: another
+ * concurrent save returns -1 promptly and may be retried. No UI thread waits on another writer's sync. */
 #ifndef VJO_SETTINGS_APP_PREFS_H
 #define VJO_SETTINGS_APP_PREFS_H
 #include <stddef.h>

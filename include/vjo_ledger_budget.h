@@ -30,6 +30,10 @@
 #define VJO_APP_FONT_ATLAS_EDGE 1024u
 #define VJO_BUDGET_APP_FONT_ATLASES (4u * VJO_APP_FONT_ATLAS_EDGE * VJO_APP_FONT_ATLAS_EDGE)
 
+/* Standalone settings app only: private scratch for a slow appearance save. Its .bss is included
+ * in the SELF segments, and check_settings_self.py counts its third 64 KiB worker stack. */
+#define VJO_APP_APPEARANCE_SCRATCH (64u * 1024u)
+
 /* ---- SceShell's partition (ScePhyMemPartShell, 50 MiB; pool "shell pages") ----
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */

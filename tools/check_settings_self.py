@@ -57,12 +57,12 @@ MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # 256 KiB (settings/icons.h); 1024 x 1024 glyph atlases, four at most (settings/main.c, #313): the drawing font's and
 # the measuring font's, the drawing font a frame replaced (freed once the GPU is done with it) and, for a moment, a new
 # measuring font (the one it replaces, never drawn with, is freed at once); the main thread's default 256 KiB stack,
-# the Anki and Install workers' 64 KiB each (settings/anki_page.c, install_page.c; the Look up tab's tables, #313, are in
+# the Anki, Install and appearance workers' 64 KiB each (settings/anki_page.c, install_page.c, main.c; the Look up tab's tables, #313, are in
 # the segments) and the streak seed's 16 KiB (settings/streak_seed.c, once: its 64 KiB window is in the segments).
 APP_BUDGET = parse_budget(Path(__file__).resolve().parents[1] / "include/vjo_ledger_budget.h")
 FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024,
          "glyph_atlas": APP_BUDGET["VJO_BUDGET_APP_FONT_ATLASES"],
-         "stacks": 256 * 1024 + 2 * 64 * 1024 + 16 * 1024}
+         "stacks": 256 * 1024 + 3 * 64 * 1024 + 16 * 1024}
 # libvita2d's glyph atlas texture and the wrapper it is made through (settings/vita2d_textures.c).
 ATLAS_FUNCTION = "texture_atlas_create"
 TEXTURE_FUNCTION = "vita2d_create_empty_texture_format"
