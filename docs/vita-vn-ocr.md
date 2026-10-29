@@ -1915,6 +1915,9 @@ guard and hval pages, as the rule says, and were read once on the test sets:
   halved, as the spotter was trained). Its horizontal boxes, in its reading order (blocks top to bottom, each block's
   lines in order), are the lines, at most 16 (more are cut and counted as `truncated`). Every line's rows are read
   again, each checked, when it is recognized, so a screen that changes under a line starts the job over as with GRAD.
+  The stable-text wait reads every row again before that; with the wait off (`ocr_settle_ms = 0`) a region taller
+  than a strip is read once more after the spotter's pass instead, so that a change where it found no box is seen too
+  (#545's audit: before, such a job could read a torn screen).
 - **Dark flags.** Each line's flag (dark text on a light ground: the line is inverted for the recognizer) is the
   spotter's own rule, `vocr_line_dark` of the box, computed by the job on the pixels it fetches to read the line,
   before its refinement, its cache key and its recognition (`VOCR_TEXTSPOT_NO_DARK` to the spotter). Until #528's

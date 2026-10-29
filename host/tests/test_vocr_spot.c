@@ -13,6 +13,7 @@
 #include "vocr_lines_refine.h"
 #include "vocr_textspot6.h"
 #include "../../include/vjo_vocr_sizes.h"
+#include "../../core/fbgrey.h" /* vjo_grey: the counting source's rows */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -602,6 +603,87 @@ static void its_scratch_is_sized_exactly(void)
     TEST_CHECK(vjo_vocr_spot_bytes_max() == ALIGN16((size_t)VJO_VOCR_SPOT_ARENA_MAX) + ALIGN16(sizeof(VocrTextspot6Set)));
 }
 
+/* #545's audit, finding 6: with the stable-text wait off (and without the pause), every row of a region taller than a
+ * strip is read again after the spotter's pass, before its lines are recognized, so a change in rows where it found no
+ * box is seen: the job then reads the region again (a second try) and gives the new frame's boxes. Counted with a
+ * source that switches to a changed frame right after the first pass and records every read row. */
+static unsigned char rgba_b[MAX_W * MAX_H * 4];
+static unsigned row_reads[MAX_H], first_pass_reads, rows_read_total;
+static int switch_after_first; /* the frame changes once the first pass is in (the read with VJO_STRIP_LAST) */
+static int switched;
+static int counting_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
+{
+    const unsigned char *src = switched ? rgba_b : rgba;
+    (void)ud;
+    if (y >= frame_h || n > frame_h - y) return VJO_E_SOURCE;
+    for (unsigned r = 0; r < n; r++) {
+        const unsigned char *p = src + (size_t)(y + r) * frame_w * 4;
+        for (unsigned x = 0; x < frame_w; x++, p += 4) dst[(size_t)r * stride + x] = (unsigned char)vjo_grey(p[0], p[1], p[2]);
+        row_reads[y + r]++;
+    }
+    rows_read_total += n;
+    if (flags & VJO_STRIP_FIRST) first_pass_reads++;
+    if (switch_after_first && (flags & VJO_STRIP_LAST)) switched = 1;
+    return (int)n;
+}
+static int counting_job(const VjoVocrPolicy *pol, VjoVocrStats *st)
+{
+    VjoGreySource src;
+    VjoVocrResident model;
+    char text[256];
+    const size_t need = vjo_vocr_job_bytes_spot("FL10_w8.vocr", frame_w, frame_h,
+                                                vjo_vocr_spot_bytes(&res, frame_w, frame_h, 0, 0));
+    TEST_ASSERT(need && need <= sizeof(ws_mem) && vjo_vocr_capture_bytes(frame_w, frame_h) <= sizeof(capture));
+    memset(&src, 0, sizeof(src));
+    src.width = frame_w;
+    src.height = frame_h;
+    src.strip = counting_strip;
+    src.line_buffer = line_buffer;
+    memset(&model, 0, sizeof(model));
+    memset(row_reads, 0, sizeof(row_reads));
+    first_pass_reads = rows_read_total = 0;
+    switched = 0;
+    n_got = bad_pixels = 0;
+    return vjo_vocr_ocr_policy(&platform, "card", "FL10_w8.vocr", &src, &model, ws_mem, need, capture,
+                               vjo_vocr_capture_bytes(frame_w, frame_h), pol, text, sizeof(text), st);
+}
+static void without_the_wait_every_row_is_read_again(void)
+{
+    VjoVocrStats st;
+    VjoVocrPolicy p;
+    VocrLine want[VJO_VOCR_MAX_LINES];
+    unsigned more = 0, n;
+    load_blob();
+    load_textbox();
+    reset();
+    TEST_ASSERT(load(NULL) == VJO_OK);
+    p = policy();
+    /* the textbox twice, 852 x 270: five strips of 64 rows (vjo_vocr_strip_rows) */
+    make_frame(TB_W, 2u * TB_H, 0, 0, 0);
+    TEST_ASSERT(vjo_vocr_strip_rows(frame_w, frame_h) < frame_h);
+    switch_after_first = 0;
+    TEST_ASSERT(counting_job(&p, &st) == VJO_OK);
+    TEST_CHECK(st.spot_ran && st.tries == 1 && !st.settle_passes);
+    for (unsigned y = 0; y < frame_h; y++)
+        TEST_CHECK_(row_reads[y] >= 2, "row %u read %u time(s): the wait off, every row is read again", y, row_reads[y]);
+    /* a change in every row once the first pass is in (the frame inverted): the second read sees it, the job reads
+     * again and gives the changed frame's boxes, each crop its pixels */
+    {
+        static unsigned char plain[MAX_W * MAX_H * 4];
+        memcpy(plain, rgba, (size_t)frame_w * frame_h * 4);
+        make_frame(TB_W, 2u * TB_H, 0, 0, 1);     /* grey and rgba: the inverted frame, the one the job must give */
+        memcpy(rgba_b, rgba, (size_t)frame_w * frame_h * 4);
+        memcpy(rgba, plain, (size_t)frame_w * frame_h * 4); /* the job starts on the plain frame */
+    }
+    switch_after_first = 1;
+    TEST_ASSERT(counting_job(&p, &st) == VJO_OK);
+    TEST_CHECK_(st.tries == 2 && st.tears > 0, "%u tries, %u tears", st.tries, st.tears);
+    memcpy(rgba, rgba_b, (size_t)frame_w * frame_h * 4); /* record() compares each crop with grey: the inverted frame */
+    n = runtime_lines(VOCR_TEXTSPOT6_SCALE2, want, &more);
+    TEST_CHECK_(same_lines(got, n_got, want, n) && !bad_pixels, "%u lines against the changed frame's %u, %u bad crops",
+                n_got, n, bad_pixels);
+}
+
 TEST_LIST = {
     {"the_fixture_is_the_pinned_blob", the_fixture_is_the_pinned_blob},
     {"the_weights_are_read_checked_and_kept", the_weights_are_read_checked_and_kept},
@@ -615,5 +697,6 @@ TEST_LIST = {
     {"its_scratch_is_sized_exactly", its_scratch_is_sized_exactly},
     {"vertical_text_checks_hand_over_by_the_spotters_counts", vertical_text_checks_hand_over_by_the_spotters_counts},
     {"a_model_of_columns_takes_no_part_of_the_spotters_scratch", a_model_of_columns_takes_no_part_of_the_spotters_scratch},
+    {"without_the_wait_every_row_is_read_again", without_the_wait_every_row_is_read_again},
     {NULL, NULL}
 };

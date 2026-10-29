@@ -2468,9 +2468,9 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     /* A region inside one strip was read once: read it again, so that a screen
      * that changed while it was read is seen (the strips of a taller region are
      * all read twice by the finder's two passes already; the spotter's, API 54,
-     * once: the stable-text wait reads them again, and every line's rows are read
-     * again, each checked, when it is recognized; a frozen region, API 55, cannot
-     * change, so it is not). */
+     * once: the stable-text wait reads them again, or without it one more pass
+     * below, and every line's rows are read again, each checked, when it is
+     * recognized; a frozen region, API 55, cannot change, so it is not). */
     if (s->strip_rows >= im->height && !s->frozen && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
     /* #194's probe is GRAD's: the spotter's boxes are read as it gave them (API 54) */
     if (pol->short_lines && !cols && !st->spot_ran && !set.truncated && probe_short_lines(s, &set) < 0)
@@ -2485,8 +2485,16 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     if (!set.count) return VJO_OK; /* nothing to read: the model file is not opened */
     if (cancelled(im)) return VJO_E_CANCELLED;
 settle:
-    /* Nothing is recognized before the rows have held still for settle_us. */
-    if (settle_on(s) && settle_verify(s) < 0) return stream_error(s, VJO_E_SOURCE);
+    /* Nothing is recognized before the rows have held still for settle_us. Without that wait (ocr_settle_ms = 0, or
+     * its budget spent), the spotter's lines are read only after one more pass over a region taller than a strip
+     * (#545's audit, finding 6): the spotter reads the region once, and a line's fetch reads again only the rows
+     * around that line, so a change in rows where it found no box would not be seen. GRAD's second pass, and a
+     * one-strip region's re-read above, read every row again. */
+    if (settle_on(s)) {
+        if (settle_verify(s) < 0) return stream_error(s, VJO_E_SOURCE);
+    } else if (st->spot_ran && s->strip_rows < im->height && !s->frozen && stream_pass(s) < 0) {
+        return stream_error(s, VJO_E_SOURCE);
+    }
     if (reuse) return REUSE_LAST;
 
     memset(L, 0, sizeof(*L));

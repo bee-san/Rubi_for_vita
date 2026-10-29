@@ -31,6 +31,9 @@ been reported.
 
 ### Fixed
 
+- With `ocr_settle_ms = 0`, a job whose lines the text spotter found reads its region once more before recognizing
+  them (#528): the spotter reads the region once, so a change in rows where it found no box could otherwise be missed
+  and a torn screen read. One more pass a job, only with the stable-text wait off (the default waits).
 - A lookup reads less of the dictionary again (#528): since 0.10.1 the alternate readings and senses (#520) read the
   head of every entry under the shown word's key, homophones included; the dictionary's posting hints now pass over
   the ones spelled otherwise without reading them. 10.4 → 8.7 reads a cursor lookup with the bundled dictionary,
@@ -82,6 +85,15 @@ been reported.
   again after a menu; AFEJ00001's unchanging boot frame), each spending a median 131-373 ms in the finder and
   46-120 ms recognizing; that saving is an estimate, not a console run. The worker's pages are unchanged in both
   builds (788 B of its data page; its stream text decoder and profile loader built for size).
+- OCR with the default text spotter reads a screen with fewer display frames (#528, #545): each line's dark-text flag
+  is computed from the pixels the job already fetches to read that line, instead of a second read of every box's rows
+  after the spotter's pass. On 358 development regions a job reads 1.23 strips fewer at 60 fps, 8.5 ms sooner on
+  average (up to 133 ms; 32.6 ms and up to 267 ms at 30 fps); a full-screen job 4 strips fewer. The same text, byte
+  for byte (host bench; console times are estimates). Every strip not read is also a copy the game's display call
+  does not make.
+- Every OCR job does less of Rubi's own work (#528, #553): the LM is parsed once while it stays resident, and each
+  row's checksum takes about half the instructions: 3.6 M fewer instructions a job on the Cortex-A9 model (2.3% of a
+  Large job, 4.4% of a Small one; about 13-20 ms, estimate). The same text.
 
 ## [0.10.1] - 2026-10-29
 

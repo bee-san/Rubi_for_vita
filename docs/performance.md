@@ -45,7 +45,8 @@ the pixels the job fetches for each line, [below](#the-spotters-dark-flags-at-th
 Where Large's job's instructions go (A9 lane): the recognizer 80% (`mm_i16` 68%), the spotter 12% (`chain` 7.9%,
 `feed` 3.9%), the row checksums 3.2% (`stream_read`), the LM parsed again 1.1% (`vocr_lm_load`, every job, on bytes
 already resident and checked), the decoder's per-class tables 1.1% (`vocr_lm_init`, `one_code_point`,
-`vocr_lm_token`) and the spotter's dark flags 0.3% (`pix_dark`). Large's weights are larger than the 2 MiB L2: 214,314
+`vocr_lm_token`) and the spotter's dark flags 0.3% (`pix_dark`; since #545 the job's `vocr_line_dark`, the same work,
+at each line's fetch). Large's weights are larger than the 2 MiB L2: 214,314
 L2 misses a line, none for Small and Normal. Larger recognizer tiles (`vocr_opts.tile_frames` 8 and 16, which leave
 the output unchanged) bring Large nothing in the model (149.8-298.2 and 149.6-301.4 ms a line against 150.1-286.3)
 and Normal 6% on the high bound (97.6 against 104.4 ms), for 130 KB more arena per context at tile 8: not taken.
@@ -103,9 +104,13 @@ and the recognition): the same flag, bit for bit. Measured with this bench [host
 
 The display time is saved only where the job's finding runs past the stable-text wait's due time (many boxes, a
 large region, 30 fps); elsewhere the strips were read inside the wait anyway, and then the stable-text wait reads one
-early pass more instead (0.26 a job at 60 fps). Every strip not read is also a copy the display hook does not make in
+early pass more instead (0.26 a job at 60 fps). In some regions that early pass makes the job one display frame
+slower: its first pass now starts before the due time, so it does not count, and a second pass follows the sleep
+(of the 358 regions, 106 faster, 234 the same and 18 slower by 16-17 ms at 60 fps; 161, 159 and 38 slower by 33-67
+ms at 30 fps). Every strip not read is also a copy the display hook does not make in
 the game's own display call: 0.7-2.5 ms of the game's frame each (A9, `capture_abgr` above). A changed screen is still
-seen: the stable-text pass reads every row again, and each line's fetch reads its rows again, each checked.
+seen: the stable-text pass reads every row again (without the wait, one more pass does, since #545's audit), and
+each line's fetch reads its rows again, each checked.
 
 ### A job's CPU: the LM's parse kept, the rows' checksums
 
