@@ -701,10 +701,40 @@ static uint16_t fold16(uint32_t sum)
     return (uint16_t)(sum ^ (sum >> 16));
 }
 
-/* Checks (or records) the checksum of region row y, whose grey bytes are at p. */
-static void stream_check(Stream *s, unsigned y, const unsigned char *p, int first)
+/* FNV-1a of two rows of w bytes (w >= 1), a and b, into *ha and *hb: vjo_fnv1a(VJO_FNV_INIT, row, w) of each, the
+ * same values. Inlined in stream_read, the byte loop took 7 instructions a byte on the stage bench's A9 lane (the
+ * multiplier loaded and a branch out and back at every byte) and the rows' checksums 3.2% of a Large job; here a byte
+ * is a load, an exclusive or and a multiply, and the two rows' chains are independent, so the in-order core can issue
+ * one row's work while the other's multiply completes. A strip's odd last row is paired with itself. */
+static __attribute__((noinline)) void row_sums(const unsigned char *a, const unsigned char *b, unsigned w, uint32_t *ha,
+                                               uint32_t *hb)
 {
-    uint32_t sum = vjo_fnv1a(VJO_FNV_INIT, p, s->w);
+    const uint32_t prime = 16777619u;
+    const unsigned char *const end = a + w;
+    uint32_t x = VJO_FNV_INIT, y = VJO_FNV_INIT;
+    do {
+        x = (x ^ *a++) * prime;
+        y = (y ^ *b++) * prime;
+    } while (a != end);
+    *ha = x;
+    *hb = y;
+}
+#ifdef VJO_VOCR_TEST_MODELS
+/* Host tests: the n rows' checksums as stream_read takes them (row_sums, in pairs). */
+void vjo_vocr_test_row_sums(const unsigned char *rows, unsigned w, unsigned n, uint32_t *sums);
+void vjo_vocr_test_row_sums(const unsigned char *rows, unsigned w, unsigned n, uint32_t *sums)
+{
+    for (unsigned r = 0; r < n; r += 2u) {
+        uint32_t other;
+        const unsigned char *a = rows + (size_t)r * w;
+        row_sums(a, r + 1u < n ? a + w : a, w, &sums[r], r + 1u < n ? &sums[r + 1u] : &other);
+    }
+}
+#endif
+
+/* Checks (or records) the checksum of region row y, sum (row_sums: FNV-1a of its grey bytes). */
+static void stream_check(Stream *s, unsigned y, uint32_t sum, int first)
+{
     unsigned i = y >> 3, k, slots = s->slots;
     unsigned char bit = (unsigned char)(1u << (y & 7u));
     uint16_t *ring = s->ring + (size_t)y * slots, now = fold16(sum);
@@ -796,7 +826,14 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
             s->cover_next = 0;
         }
     }
-    for (unsigned r = 0; r < n; r++) stream_check(s, y + r, dst + (size_t)r * s->w, first);
+    for (unsigned r = 0; r < n; r += 2u) { /* the rows' checksums two at a time (row_sums), each row checked in order */
+        const unsigned char *a = dst + (size_t)r * s->w;
+        const int pair = r + 1u < n;
+        uint32_t ha, hb;
+        row_sums(a, pair ? a + s->w : a, s->w, &ha, &hb);
+        stream_check(s, y + r, ha, first);
+        if (pair) stream_check(s, y + r + 1u, hb, first);
+    }
     if (!s->err && !first && s->cover_next >= s->h) {
         s->verified_from = s->cover_from;
         s->verified = 1;
@@ -932,9 +969,36 @@ static int stream_error(const Stream *s, int fallback)
     return s->err ? s->err : fallback;
 }
 
+/* The LM's parse for the resident bytes it was made from (lm_setup): vocr_lm_load checks every index of the blob, which
+ * costs a job about 1.8 M instructions with the 1000k LM (the stage bench's A9 lane: 1.1% of a Large job), on bytes
+ * that resident_file verified when it read them and that stay in memory unchanged while it keeps them. A job that
+ * keeps them takes this copy of the parse instead of making it again: the same struct, field for field (pointers into
+ * those bytes). Made again when the bytes are read again; forgotten when their block is released. */
+static struct {
+    const unsigned char *data; /* the block the parse points into; NULL: none */
+    const VjoVocrLm *pin;
+    uint64_t size, stamp;
+    vocr_lm lm;
+} lm_kept;
+#ifdef VJO_VOCR_TEST_MODELS
+/* Host tests: how many jobs parsed the LM and how many took the kept parse, since the last call. */
+static unsigned test_lm_parses, test_lm_reuses;
+void vjo_vocr_test_lm_counts(unsigned *parses, unsigned *reuses);
+void vjo_vocr_test_lm_counts(unsigned *parses, unsigned *reuses)
+{
+    *parses = test_lm_parses;
+    *reuses = test_lm_reuses;
+    test_lm_parses = test_lm_reuses = 0;
+}
+#define TEST_LM_COUNT(n) ((n)++)
+#else
+#define TEST_LM_COUNT(n) ((void)0)
+#endif
+
 int vjo_vocr_resident_drop(VjoVocrResident *r)
 {
     if (!r) return 0;
+    if (r->data && r->data == lm_kept.data) lm_kept.data = NULL; /* the parse points into this block */
     r->model = NULL;
     r->size = r->stamp = 0;
     if (!r->data) return 0;
@@ -1358,9 +1422,22 @@ static int lm_setup(const VjoPlatform *p, const char *dir, const VjoGreySource *
     rc = resident_lm(p, dir, pol->lm, pol->lm_res, im, st);
     if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
     if (rc) return st->lm_rc = rc;
-    if (vocr_lm_load(lm, pol->lm_res->data, pol->lm->bytes) != VOCR_OK) {
-        rc = drop_with(pol->lm_res, VJO_E_OCR_MODEL); /* verified bytes the runtime refuses: every job would */
-        return rc == VJO_E_OCR_UNAVAILABLE ? rc : (st->lm_rc = rc);
+    if (!st->lm_loaded && lm_kept.data && lm_kept.data == pol->lm_res->data && lm_kept.pin == pol->lm &&
+        pol->lm_res->lm == pol->lm && lm_kept.size == pol->lm_res->size && lm_kept.stamp == pol->lm_res->stamp) {
+        *lm = lm_kept.lm; /* the bytes this job kept are the ones the parse was made from */
+        TEST_LM_COUNT(test_lm_reuses);
+    } else {
+        lm_kept.data = NULL;
+        TEST_LM_COUNT(test_lm_parses);
+        if (vocr_lm_load(lm, pol->lm_res->data, pol->lm->bytes) != VOCR_OK) {
+            rc = drop_with(pol->lm_res, VJO_E_OCR_MODEL); /* verified bytes the runtime refuses: every job would */
+            return rc == VJO_E_OCR_UNAVAILABLE ? rc : (st->lm_rc = rc);
+        }
+        lm_kept.lm = *lm;
+        lm_kept.pin = pol->lm;
+        lm_kept.size = pol->lm_res->size;
+        lm_kept.stamp = pol->lm_res->stamp;
+        lm_kept.data = pol->lm_res->data;
     }
     lm_opts(mi, pol->lm, &o);
     need = vocr_lm_workspace_bytes(model, lm, &o);
