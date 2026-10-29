@@ -111,9 +111,11 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
               -DVJO_VOCR_GATE_DOWNLOAD=OFF) # (no gate test runs here: nothing to download)
   [ -z "${VJO_VOCR_MODEL_DIR:-}" ] || CMAKE_VOCR+=(-DVJO_VOCR_MODEL_DIR="$VJO_VOCR_MODEL_DIR")
   TESTS+=(capture_parity)
-  # #528: the soaks on the A9's 32-bit layout (audit-mem-leak-1 F2): the game process (its jobs end at their model
-  # without VJO_VOCR_MODEL_DIR) and a Shell session (its dictionary tests skip without VJO_PLAINTEXT_DIR)
-  TESTS+=(game_soak shell_worker)
+  # #528: the soaks on the A9's 32-bit layout (audit-mem-leak-1 F2): a Shell session (its dictionary tests skip
+  # without VJO_PLAINTEXT_DIR) and the game process without the models (its jobs end at their model; with them it
+  # takes minutes under qemu, and the fast gate's models lane runs it natively: audit-mem-leak-3 F6)
+  TESTS+=(shell_worker)
+  [ -n "${VJO_VOCR_MODEL_DIR:-}" ] || TESTS+=(game_soak)
 fi
 CONFIG=$OUT/host-config
 # CMAKE_LINK_DEPENDS_USE_LINKER: the link lines as CI's newer CMake writes them (3.29 on: -Wl,--dependency-file, which

@@ -1427,8 +1427,8 @@ OOM recovery, failed joins, 50 local OCR-only lifetimes, cursor coalescing,
 close/reopen during lookup, scene/region invalidation, Unicode navigation and
 100 game-worker
 allocation/free cycles, bounded model reads and stale-job isolation. Soaks run a game session, Anki
-mining and screenshots, history writes, process starts and 18 game-worker scenarios (hooked reads and PS
-suspend/resume among them) cycle after cycle, with every pool
+mining and screenshots, history writes, process starts and 19 game-worker scenarios (hooked reads, PS
+suspend/resume and vertical text among them) cycle after cycle, with every pool
 counted, and fail on any net growth per cycle ([offline testing](offline-testing.md#2-what-ci-runs-and-why-it-is-real-code)). The Shell
 Anki miner is tested with its offline queue on real files: saves, restarts,
 Japanese text and escaping, failed and short writes, temp and damaged files,
