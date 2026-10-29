@@ -364,7 +364,7 @@ vjo_suite(app_queue SOURCES host/tests/test_app_queue.c settings/app_queue.c INC
   LIBS vjo_host)
 # (#311: its sentence readings' files)
 vjo_suite(apkg SOURCES host/tests/test_apkg.c settings/app_queue.c settings/app_platform.c
-  INCLUDES host/tests/vita_stubs UNUSED LIBS vjo_host)
+  INCLUDES host/tests/vita_stubs DEFINES VJO_KNOWN_WORDS_ENABLED=1 UNUSED LIBS vjo_host)
 # Real shell control policy, with host-only substitutes for Vita SDK I/O.
 # shell/log_vita.c on an in-memory file system: a batch of lines (vjo_log_batch_begin/end)
 # writes the same bytes in the same order as line by line, with one append per file.
@@ -655,7 +655,7 @@ vjo_suite(app_prefs SOURCES host/tests/test_app_prefs.c settings/app_prefs.c set
 # page's suite and its bench below): object libraries, each unit compiled once. What the harnesses define besides
 # reaches only their own units: VJO_VOCR_MODEL_INFO_TEST core/vocr_models.c and test_settings_app.c, VJO_SETTINGS_BENCH
 # test_settings_games.c, VJO_TEST_ZLIB settings/psp.c and the Games page's suite (vjo_settings_catalog, below).
-add_library(vjo_settings_app OBJECT settings/model_size.c settings/preferences.c settings/icons.c settings/text_layout.c
+add_library(vjo_settings_app OBJECT settings/app_prefs.c settings/model_size.c settings/preferences.c settings/icons.c settings/text_layout.c
   settings/letter.c settings/app_check.c settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
   vita/games_storage.c vita/buttons_vita.c host/tests/settings_stubs/streak_seed_stub.c
   host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
@@ -740,7 +740,7 @@ vjo_suite(settings_install SOURCES host/tests/test_settings_install.c settings/i
 # Shell's own loader, shell/files.c), and its export (the real settings/anki_export.c) on a temporary
 # memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
 # settings_stubs/anki_page_stub.c.
-vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
+vjo_suite(settings_anki SOURCES host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c settings/text_layout.c
   settings/app_worker.c
   settings/app_prefs.c settings/app_platform.c settings/preferences.c shell/files.c vita/games_storage.c
   INCLUDES host/tests/settings_stubs host/tests/install_stubs host/tests/vita_stubs

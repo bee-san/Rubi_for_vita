@@ -11,13 +11,16 @@
 #include <string.h>
 #include "anki_page.h"
 #include "app_check.h"
+#include "app_prefs.h"
 #include "catalog.h"
+#include "chrome.h"
 #include "icons.h"
 #include "install_page.h"
 #include "letter.h"
 #include "lookup_page.h"
 #include "model_size.h"
 #include "preferences.h"
+#include "readability.h"
 #include "psp.h"
 #include "search.h"
 #include "streak_seed.h"
@@ -69,14 +72,10 @@
 #define CARD_HELP_Y 60
 #define CARD_BADGE_Y 6
 #define CARD_BADGE_H 34
-#define SOURCE_BADGE_X 440 /* API 31: Text source's three choices */
+#define SOURCE_BADGE_X 440 /* Vertical text's three choices */
 #define SOURCE_BADGE_W 152
 #define SOURCE_BADGE_PITCH 160
-/* The rows Up/Down select, the page's cards top to bottom: how text is read
- * (the Model size, Read text, Speed boost), then the two lookup cards. They
- * are more than the room between the tabs and the status line: the page
- * scrolls a card at a time, the selected card always whole; a card cut at the
- * bottom shows there is more, and a bar at the right where the view is. */
+/* Usual and advanced pages share semantic row IDs. Each page scrolls by a row to keep the selection whole. */
 #define PREF_SIZE 0
 #define PREF_READ 1
 #define PREF_BOOST 2
@@ -90,7 +89,8 @@
 #define PREF_VERTICAL 8 /* API 47: Vertical text (config.ini ocr_vertical) */
 #define PREF_SUGGEST 9 /* #358: Suggest a text box (region.ini's line for every game: preferences.h) */
 #define PREF_PAUSE 10   /* API 55: Pause the game to read (config.ini ocr_pause), the last card */
-#define PREFERENCES 11
+#define PREF_ADVANCED 11
+#define PREFERENCES 12
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -99,13 +99,16 @@
 /* The OCR page's one-line status sits below the cards. */
 #define PREFERENCE_FOOTER_Y (PREF_VIEW_END + 4)
 #define PREFERENCE_FOOTER_H 30
-#define BG RGBA8(9, 15, 23, 255)
-#define CARD RGBA8(21, 31, 44, 255)
-#define SELECTED RGBA8(35, 56, 70, 255)
-#define WHITE RGBA8(238, 244, 255, 255)
-#define DIM RGBA8(193, 207, 222, 255)
-#define ACCENT RGBA8(91, 220, 207, 255)
-#define OFF RGBA8(244, 160, 167, 255)
+static const VjoAppTheme *theme = &vjo_app_themes[VJO_THEME_DEFAULT];
+static int theme_writable, appearance_error;
+static char appearance_status[160];
+#define BG (theme->bg)
+#define CARD (theme->card)
+#define SELECTED (theme->selected)
+#define WHITE (theme->text)
+#define DIM (theme->dim)
+#define ACCENT (theme->accent)
+#define OFF (theme->off)
 static VjoInstalledGame library[VJO_GAMES_MAX];
 static VjoGames policy, saved;
 /* #333: ocr_line_fix.ini's table (each game's own line finder, core/games.h vjo_line_fix_parse), as last read or
@@ -271,13 +274,13 @@ static void font_tick(void)
 static void text(int x, int y, unsigned color, float pixels, const char *s)
 {
     glyphs_for(s);
-    vita2d_pvf_draw_text(font, x, y, color, text_scale(pixels), s);
+    vita2d_pvf_draw_text(font, x, y, color, text_scale(vjo_app_text_pixels(pixels)), s);
 }
 
 static int text_width(float pixels, const char *s)
 {
     vita2d_pvf *with = measured_for(s);
-    return vita2d_pvf_text_width(with, text_scale(pixels), s);
+    return vita2d_pvf_text_width(with, text_scale(vjo_app_text_pixels(pixels)), s);
 }
 
 static void draw_rows(int x, int y, unsigned color, float pixels, int line_height, const char *s,
@@ -305,20 +308,19 @@ static void centered_text(int x, int y, int width, unsigned color,
                           float pixels, const char *s)
 { text(x + (width - text_width(pixels, s)) / 2, y, color, pixels, s); }
 
+static void chrome_rect(int x, int y, int w, int h, unsigned colour)
+{ vita2d_draw_rectangle(x, y, w, h, colour); }
+
 static void focus_card(int y, int height, int focus)
 {
-    vita2d_draw_rectangle(24, y, 912, height, focus ? SELECTED : CARD);
-    if (focus) {
-        vita2d_draw_rectangle(24, y, 4, height, ACCENT);
-        vita2d_draw_rectangle(24, y, 912, 2, ACCENT);
-        vita2d_draw_rectangle(24, y + height - 2, 912, 2, ACCENT);
-        vita2d_draw_rectangle(932, y, 4, height, ACCENT);
-    }
+    vjo_chrome_panel(chrome_rect, 24, y, 912, height, theme, focus, 0);
 }
 
 static void badge(int x, int y, int width, int height, const char *label, int active)
 {
-    vita2d_draw_rectangle(x, y, width, height, active ? ACCENT : SELECTED);
+    vjo_chrome_button(chrome_rect, x, y, width, height, theme, active);
+    if ((!strcmp(label, "ON") || !strcmp(label, "OFF")) && (width == 108 || width == 128))
+        vjo_chrome_check(chrome_rect, x + 9, y + (height - 18) / 2, active ? BG : WHITE, active);
     centered_text(x, y + height / 2 + 9, width, active ? BG : WHITE, 26, label);
 }
 
@@ -333,96 +335,89 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 #define VJO_APP_VERSION "v" VJO_VERSION_STRING
 #endif
 
-/* The page tabs, left to right; Select goes to the next (docs/one-vpk-install.md has the Install page, #313 the
- * Look up page). A new page is an entry here and a label in tab_label: the tab bar lays itself out (tab_layout). */
-enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_LOOKUP, PAGE_INSTALL, PAGES };
-static const char *const tab_label[PAGES] = {"Games", "OCR & lookup", "Anki", "Look up", "Install"};
-/* The tab bar, from x 24 to 936 under the title row: tabs TAB_GAP apart, at the most TAB_PX pixels of label.
- * While every label fits an equal share (912 / PAGES, less the gap), the tabs are equal (four were 220 px at a
- * pitch of 228). Else each tab is its label's width with TAB_PAD each side, the room left shared out equally; and
- * when even that does not fit, the labels are smaller (TAB_MIN_PX at the least; past that the tabs are equal and
- * their labels cut at their edges). Laid out once the font is loaded, for the drawing and the touches both. */
+/* Two destinations at the top: the lookup tool and the settings menu. The settings categories are children,
+ * not additional tabs. Internal page IDs stay distinct so each page keeps its own input and lifecycle. */
+enum { PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_LOOKUP, PAGE_INSTALL, PAGE_APPEARANCE,
+       PAGE_SETTINGS, PAGE_ADVANCED };
+#define SETTINGS_CATEGORIES 5
+#define MENU_Y 112
+#define MENU_H 58
+#define MENU_PITCH 64
+static int settings_selected;
+static const int category_page[SETTINGS_CATEGORIES] = {
+    PAGE_GAMES, PAGE_OCR, PAGE_ANKI, PAGE_APPEARANCE, PAGE_INSTALL
+};
+static const char *const category_name[SETTINGS_CATEGORIES] = {
+    "Games", "Reading & dictionaries", "Anki", "Appearance", "Install & repair"
+};
+static const char *const category_help[SETTINGS_CATEGORIES] = {
+    "Enabled games and per-game choices.", "Text recognition, selection and dictionaries.",
+    "Card mining, card options and exports.", "Choose Default, Mint or Paper.",
+    "Install, update or repair Rubi."
+};
+#define TOP_TABS 2
 #define TAB_LEFT 24
-#define TAB_ROOM 912
 #define TAB_GAP 8
-#define TAB_PAD 10
-#define TAB_PX 28
-#define TAB_MIN_PX 20
-static int tab_x[PAGES], tab_w[PAGES];
-static float tab_px = TAB_PX;
-/* When this app and the overlay plugins do not match (app_check.h), a red
- * band in place of the title row says so on every page, in two rows. */
+#define TAB_W 452
+static const char *const tab_label[TOP_TABS] = {"Look up", "Settings"};
+static const int tab_page[TOP_TABS] = {PAGE_LOOKUP, PAGE_SETTINGS};
 #define BANNER_Y 4
 #define BANNER_H 46
 #define BANNER_TEXT_Y 24
 #define BANNER_LINE_H 22
 static char app_banner[192];
-static int tab_clip; /* a label is wider than its tab: the tabs' labels are cut at their edges */
 
-static void tab_layout(void)
-{
-    int share = TAB_ROOM / PAGES - TAB_GAP, room = TAB_ROOM - (PAGES - 1) * TAB_GAP, need = 0, equal = 1;
-    int label[PAGES];
-    for (float px = TAB_PX; px >= TAB_MIN_PX; px -= 2) {
-        tab_px = px;
-        need = 0;
-        equal = 1;
-        for (int i = 0; i < PAGES; i++) {
-            int width = text_width(px, tab_label[i]);
-            label[i] = width + 2 * TAB_PAD;
-            need += label[i];
-            equal &= width <= share;
-        }
-        if (equal || need <= room)
-            break;
-    }
-    if (need > room)
-        equal = 1; /* nothing fits: equal tabs, each label cut at its edges */
-    tab_clip = 0;
-    for (int i = 0, x = TAB_LEFT, left = room - need; i < PAGES; i++) {
-        /* equal shares, else the label's width and its part of what is left (the first ones a pixel more) */
-        int w = equal ? share : label[i] + left / PAGES + (i < left % PAGES);
-        tab_x[i] = x;
-        tab_w[i] = w;
-        tab_clip |= label[i] - 2 * TAB_PAD > w;
-        x += equal ? TAB_ROOM / PAGES : w + TAB_GAP;
-    }
-}
-
-/* The tab at x, y, or -1. */
 static int tab_at(int x, int y)
 {
-    if (y < TAB_Y || y >= TAB_Y + TAB_H)
-        return -1;
-    for (int i = 0; i < PAGES; i++)
-        if (x >= tab_x[i] && x < tab_x[i] + tab_w[i])
-            return i;
+    if (y >= TAB_Y && y < TAB_Y + TAB_H)
+        for (int i = 0; i < TOP_TABS; i++) {
+            int left = TAB_LEFT + i * (TAB_W + TAB_GAP);
+            if (x >= left && x < left + TAB_W) return tab_page[i];
+        }
     return -1;
+}
+
+static int settings_child(void) { return page != PAGE_SETTINGS && page != PAGE_LOOKUP; }
+static int reading_page(void) { return page == PAGE_OCR || page == PAGE_ADVANCED; }
+static int back_target(void) { return page == PAGE_ADVANCED ? PAGE_OCR : page == PAGE_GAMES && game_view >= 0 ? PAGE_GAMES : PAGE_SETTINGS; }
+static int back_at(int x, int y)
+{
+    return settings_child() && x >= 16 && x < 112 && y >= 504 && y < 544;
+}
+static int advanced_at(int x, int y)
+{
+    return page == PAGE_OCR && !app_banner[0] && x >= 744 && x < 936 && y >= 8 && y < 46;
 }
 
 static void header(void)
 {
-    static int version_x; /* after the title, measured once */
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
+    vjo_chrome_background(chrome_rect, theme);
+    vita2d_draw_rectangle(0, 4, 960, 44, BG);
     if (app_banner[0]) {
         vita2d_draw_rectangle(0, BANNER_Y, 960, BANNER_H, OFF);
         wrapped_text(24, BANNER_TEXT_Y, 912, BG, 20, BANNER_LINE_H, 2, app_banner);
-    } else {
-        wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "Rubi");
-        if (!version_x) version_x = 24 + text_width(32, "Rubi") + 14;
-        text(version_x, 34, DIM, 22, VJO_APP_VERSION);
-        text(744, 34, DIM, 24, "Select: page");
-    }
-    for (int i = 0; i < PAGES; i++) {
-        vita2d_draw_rectangle(tab_x[i], TAB_Y, tab_w[i], TAB_H, page == i ? ACCENT : CARD);
-        if (tab_clip) { /* a label wider than its tab, even at TAB_MIN_PX: cut at its edges */
-            vita2d_enable_clipping();
-            vita2d_set_clip_rectangle(tab_x[i], TAB_Y, tab_x[i] + tab_w[i], TAB_Y + TAB_H);
+    } else if (settings_child()) {
+        centered_text(24, 35, 912, WHITE, 28, page == PAGE_ADVANCED ? "Reading / Advanced" :
+                      page == PAGE_ANKI ? vjo_anki_page_title() : category_name[settings_selected]);
+        if (page == PAGE_OCR) {
+            vjo_chrome_toolbar(chrome_rect, 744, 8, 192, 38, theme, 0);
+            centered_text(744, 35, 192, DIM, 24, "Advanced");
         }
-        centered_text(tab_x[i], TAB_Y + (TAB_H + (int)(tab_px * 0.65f)) / 2, tab_w[i], page == i ? BG : WHITE, tab_px,
-                      tab_label[i]);
-        if (tab_clip)
-            vita2d_disable_clipping();
+    } else {
+        centered_text(24, 35, 912, WHITE, 32, "Rubi");
+        text(24, 34, DIM, 20, VJO_APP_VERSION);
+        text(724, 34, DIM, 24, "Select: switch");
+    }
+    for (int i = 0; i < TOP_TABS; i++) {
+        int x = TAB_LEFT + i * (TAB_W + TAB_GAP), active = i == (page == PAGE_LOOKUP ? 0 : 1);
+        vjo_chrome_toolbar(chrome_rect, x, TAB_Y, TAB_W, TAB_H, theme, active);
+        centered_text(x, TAB_Y + 33, TAB_W, WHITE, 28, tab_label[i]);
+    }
+    if (settings_child()) {
+        vjo_chrome_back(chrome_rect, theme);
+        text(25, 533, WHITE, 26, "←");
+        text(62, 533, WHITE, 20, "Back");
     }
 }
 
@@ -436,12 +431,14 @@ static void status_box(int y, int height, int text_y, int lines, const char *mes
     vita2d_disable_clipping();
 }
 
+static void hints_row(const char *controls);
+
 /* Status box and the control hints. */
 static void footer_at(int y, int height, int text_y, int lines, const char *message, int error,
                       const char *controls)
 {
     status_box(y, height, text_y, lines, message, error);
-    wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls);
+    hints_row(controls);
 }
 
 static void footer(const char *message, int error, const char *controls)
@@ -461,11 +458,11 @@ static char hold_hint[32], game_page_hints[96];
 static void read_buttons(void)
 {
     buttons = vjo_buttons_read();
-    snprintf(preference_hints, sizeof(preference_hints), "Up/Down: setting   Left/Right or %s: choose   %s: exit",
+    snprintf(preference_hints, sizeof(preference_hints), "Up/Down: setting   Left/Right or %s: choose   %s: back",
              buttons.enter_glyph, buttons.cancel_glyph);
-    snprintf(game_hints, sizeof(game_hints), "%s: toggle   L/R: page   Left/Right: letter   %s: exit",
+    snprintf(game_hints, sizeof(game_hints), "%s: toggle   L/R: page   Left/Right: letter   %s: back",
              buttons.enter_glyph, buttons.cancel_glyph);
-    snprintf(games_empty_hints, sizeof(games_empty_hints), "Square: filter   Start: refresh   Select: page   %s: exit",
+    snprintf(games_empty_hints, sizeof(games_empty_hints), "Square: filter   Start: refresh   Select: look up   %s: back",
              buttons.cancel_glyph);
     snprintf(hold_hint, sizeof(hold_hint), "Hold %s: settings", buttons.enter_glyph);
     snprintf(game_page_hints, sizeof(game_page_hints), "Up/Down: setting   Left/Right or %s: choose   %s: back",
@@ -473,7 +470,8 @@ static void read_buttons(void)
 }
 
 static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
-static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }
+static void hints_row(const char *controls)
+{ wrapped_text(settings_child() ? 128 : 24, 535, settings_child() ? 808 : 912, DIM, settings_child() ? 20 : 24, 26, 1, controls); }
 
 static void clip(int x0, int y0, int x1, int y1)
 {
@@ -485,8 +483,127 @@ static void clip(int x0, int y0, int x1, int y1)
     vita2d_set_clip_rectangle(x0, y0, x1, y1);
 }
 /* The other pages (Anki, Look up and Install: settings/page_ui.h) draw with these helpers. */
-static const VjoPageUi page_ui = {text, text_width, wrapped_text, rect, focus_card, badge, footer_at, hints_row, header,
-                                  clip, WHITE, DIM, ACCENT, OFF, CARD, SELECTED, &buttons};
+static VjoPageUi page_ui = {.text = text, .text_width = text_width, .wrapped = wrapped_text, .rect = rect,
+                            .card = focus_card, .badge = badge, .footer = footer_at, .hints = hints_row,
+                            .header = header, .clip = clip, .buttons = &buttons};
+
+/* Called after vita2d_init, and after each save. Every page shares these roles; Look up also uses the palette for
+ * its styled entries, so Paper has dark readings and meanings rather than the dark theme's pale colours. */
+static void apply_theme(const VjoAppPrefs *p)
+{
+    theme = vjo_app_theme(p->colour_scheme);
+    page_ui.white = WHITE;
+    page_ui.dim = DIM;
+    page_ui.accent = ACCENT;
+    page_ui.off = OFF;
+    page_ui.track = CARD;
+    page_ui.selected = SELECTED;
+    page_ui.highlight = theme->highlight;
+    page_ui.reading = theme->reading;
+    page_ui.rank = theme->rank;
+    page_ui.definition = theme->definition;
+    vita2d_set_clear_color(BG);
+}
+
+/* Independent of config.ini: an unreadable overlay configuration must not lock the app's own appearance. Reload
+ * after any attempted save, including a failed final sync, so the displayed choice is the one actually on disk. */
+static void set_theme(int index)
+{
+    VjoAppPrefs p;
+    const char *keys[] = {"colour_scheme"};
+    int rc, read_rc;
+    if (index < 0 || index >= VJO_THEMES || !theme_writable || theme == vjo_app_theme(index)) return;
+    rc = vjo_app_prefs_save(keys, &index, 1, &scratch);
+    read_rc = vjo_app_prefs_load(&p, &scratch);
+    theme_writable = read_rc >= 0;
+    /* An unreadable file keeps the currently visible palette, and locks further saves. */
+    if (theme_writable) apply_theme(&p);
+    appearance_error = rc < 0 || read_rc < 0;
+    snprintf(appearance_status, sizeof(appearance_status), "%s", appearance_error
+        ? "Save not confirmed. Check the displayed choice, then retry."
+        : "Saved. The app's colours change immediately.");
+}
+
+static void load_theme(void)
+{
+    VjoAppPrefs p;
+    int rc = vjo_app_prefs_load(&p, &scratch);
+    theme_writable = rc >= 0;
+    appearance_error = rc < 0;
+    apply_theme(&p);
+    snprintf(appearance_status, sizeof(appearance_status), "%s", rc < 0
+        ? "Cannot read app.ini. Press Start to retry."
+        : rc > 0 ? "Backup recovered. Changes save automatically."
+                 : "Choose a colour scheme. Changes save automatically.");
+}
+
+static void choose_theme(int dir)
+{
+    int current = (int)(theme - vjo_app_themes);
+    set_theme(dir ? current + dir : (current + 1) % VJO_THEMES);
+}
+
+/* Each choice is a small preview in its own palette. The surrounding page changes immediately; the selected
+ * choice is labelled as well as outlined, so selection does not depend on distinguishing colours. */
+#define THEME_Y 112
+#define THEME_X 24
+#define THEME_W 288
+#define THEME_PITCH 312
+#define THEME_H 278
+static void draw_appearance(void)
+{
+    static const char *const descriptions[VJO_THEMES] = {"Classic yellow", "Charcoal + mint", "Paper + forest"};
+    vita2d_start_drawing();
+    vita2d_clear_screen();
+    header();
+    for (int k = 0; k < VJO_THEMES; k++) {
+        const VjoAppTheme *t = vjo_app_theme(k);
+        int x = THEME_X + k * THEME_PITCH, chosen = theme_writable && theme == t;
+        rect(x, THEME_Y, THEME_W, THEME_H, t->bg);
+        rect(x + 4, THEME_Y + 4, THEME_W - 8, THEME_H - 8, t->card);
+        rect(x + 4, THEME_Y + 4, THEME_W - 8, 4, t->accent);
+        text(x + 20, THEME_Y + 43, t->text, 28, t->name);
+        text(x + 20, THEME_Y + 76, t->dim, 22, descriptions[k]);
+        text(x + 20, THEME_Y + 126, t->highlight, 32, "読む");
+        text(x + 20, THEME_Y + 157, t->reading, 24, "よむ");
+        text(x + 20, THEME_Y + 188, t->definition, 24, "to read");
+        rect(x + 20, THEME_Y + 216, THEME_W - 40, 42, chosen ? t->accent : t->selected);
+        centered_text(x + 20, THEME_Y + 245, THEME_W - 40, chosen ? t->bg : t->text, 24,
+                      !theme_writable ? "Unavailable" : chosen ? "Selected" : "Choose");
+        if (chosen) {
+            rect(x, THEME_Y, THEME_W, 2, ACCENT);
+            rect(x, THEME_Y + THEME_H - 2, THEME_W, 2, ACCENT);
+            rect(x, THEME_Y, 2, THEME_H, ACCENT);
+            rect(x + THEME_W - 2, THEME_Y, 2, THEME_H, ACCENT);
+        }
+    }
+    text(24, 424, DIM, 24, "App colour scheme: applies to every page in Rubi.");
+    char controls[96];
+    snprintf(controls, sizeof(controls), "Left/Right or %s: choose   %s: back", buttons.enter_glyph, buttons.cancel_glyph);
+    footer_at(438, 72, 466, 2, appearance_status, appearance_error, controls);
+    vita2d_end_drawing();
+    vita2d_swap_buffers();
+}
+
+static void draw_settings(void)
+{
+    char controls[96];
+    vita2d_start_drawing();
+    vita2d_clear_screen();
+    header();
+    for (int i = 0; i < SETTINGS_CATEGORIES; i++) {
+        int y = MENU_Y + i * MENU_PITCH;
+        vjo_chrome_panel(chrome_rect, 24, y, 912, MENU_H, theme, settings_selected == i, 1);
+        vjo_chrome_category_icon(chrome_rect, i, 42, y + 13, theme);
+        text(90, y + 25, WHITE, 26, category_name[i]);
+        text(90, y + 49, DIM, 20, category_help[i]);
+        text(896, y + 37, settings_selected == i ? ACCENT : DIM, 28, ">");
+    }
+    snprintf(controls, sizeof(controls), "Up/Down: category   %s: open   %s: exit", buttons.enter_glyph, buttons.cancel_glyph);
+    footer("Choose a category. Changes save automatically.", 0, controls);
+    vita2d_end_drawing();
+    vita2d_swap_buffers();
+}
 
 static void release_icon(void *texture) { vita2d_free_texture(texture); }
 
@@ -946,15 +1063,14 @@ static void set_reading(int ocr_mode, int boost_clock)
     preference_saved(vjo_preferences_save_reading(ocr_mode, boost_clock, &scratch));
 }
 
-/* API 31, Text source (config.ini text_source): its three choices left to right, Automatic, Hooks in
- * every game, OCR only; a game reads it as it starts, so the save says so. */
-static const int source_choice[3] = {VJO_SOURCE_AUTO, VJO_SOURCE_HOOKS, VJO_SOURCE_OCR};
+/* The old hooks value remains a readable alias for Automatic; it is no longer a separate UI choice. */
+static const int source_choice[2] = {VJO_SOURCE_AUTO, VJO_SOURCE_OCR};
 
-static int source_index(int source) { return source == VJO_SOURCE_HOOKS ? 1 : source == VJO_SOURCE_OCR ? 2 : 0; }
+static int source_index(int source) { return source == VJO_SOURCE_OCR ? 1 : 0; }
 
 static void set_text_source(int index)
 {
-    if (index < 0 || index > 2 || source_choice[index] == preferences.text_source) return;
+    if (index < 0 || index > 1 || source_index(preferences.text_source) == index) return;
     if (preferences_locked()) return;
     preference_saved(vjo_preferences_save_text_source(source_choice[index], &scratch));
     if (!preference_error)
@@ -1018,12 +1134,21 @@ static void set_tier(int tier)
 static int choice_step(int dir, int now, int round) { return dir ? now + dir : round; }
 static int choice_flip(int dir, int on) { return dir ? dir > 0 : !on; }
 
+static void show_page(int p);
+static const int usual_prefs[] = {PREF_READ, PREF_SELECTION, PREF_HIGHLIGHT, PREF_ADVANCED};
+static const int advanced_prefs[] = {PREF_SIZE, PREF_BOOST, PREF_SOURCE, PREF_TRUST, PREF_GATE,
+                                     PREF_VERTICAL, PREF_SUGGEST, PREF_PAUSE};
+static int pref_count(void) { return page == PAGE_ADVANCED ? 8 : 4; }
+static int pref_id(int row) { return page == PAGE_ADVANCED ? advanced_prefs[row] : usual_prefs[row]; }
+
 static void choose_preference(int dir)
 {
     const VjoConfig *p = &preferences;
-    switch (preference_selected) {
+    int id = pref_id(preference_selected);
+    switch (id) {
+    case PREF_ADVANCED: show_page(PAGE_ADVANCED); break;
     case PREF_SOURCE:
-        set_text_source(choice_step(dir, source_index(p->text_source), (source_index(p->text_source) + 1) % 3));
+        set_text_source(choice_step(dir, source_index(p->text_source), (source_index(p->text_source) + 1) % 2));
         break;
     case PREF_VERTICAL:
         set_vertical(choice_step(dir, vertical_index(p->ocr_vertical), (vertical_index(p->ocr_vertical) + 1) % 3));
@@ -1041,9 +1166,9 @@ static void choose_preference(int dir)
     case PREF_PAUSE: set_pause(choice_flip(dir, p->ocr_pause)); break;
     default: /* Japanese characters only, Highlight */
         change_preference(p->vocr_tier,
-            preference_selected == PREF_SELECTION ? choice_flip(dir, p->japanese_only_selection)
+            id == PREF_SELECTION ? choice_flip(dir, p->japanese_only_selection)
                                                   : p->japanese_only_selection,
-            preference_selected == PREF_HIGHLIGHT
+            id == PREF_HIGHLIGHT
                 ? (choice_flip(dir, p->highlight_mode) ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
                 : p->highlight_mode);
     }
@@ -1051,14 +1176,14 @@ static void choose_preference(int dir)
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
 static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H,
-                                             CARD_H, CARD_H};
+                                             CARD_H, CARD_H, 58};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
 static int pref_offset(int i)
 {
     int y = 0;
-    for (int k = 0; k < i; k++) y += pref_height[k] + PREF_GAP;
+    for (int k = 0; k < i; k++) y += pref_height[pref_id(k)] + PREF_GAP;
     return y;
 }
 
@@ -1066,20 +1191,20 @@ static int pref_offset(int i)
 static int pref_y(int i) { return PREF_VIEW_Y + pref_offset(i) - pref_offset(pref_top); }
 
 /* Card i is all in view. */
-static int pref_whole(int i) { return i >= pref_top && pref_y(i) + pref_height[i] <= PREF_VIEW_END; }
+static int pref_whole(int i) { return i >= pref_top && pref_y(i) + pref_height[pref_id(i)] <= PREF_VIEW_END; }
 
 /* Scrolls by the fewest cards that bring card i all into view. */
 static void pref_show(int i)
 {
     if (i < pref_top) pref_top = i;
-    while (pref_top < i && pref_y(i) + pref_height[i] > PREF_VIEW_END) pref_top++;
+    while (pref_top < i && pref_y(i) + pref_height[pref_id(i)] > PREF_VIEW_END) pref_top++;
 }
 
 /* The card shown at y in the cards' room, or -1 (a gap between two). */
 static int pref_card_at(int y)
 {
-    for (int i = pref_top; i < PREFERENCES && pref_y(i) < PREF_VIEW_END; i++)
-        if (y >= pref_y(i) && y < pref_y(i) + pref_height[i]) return i;
+    for (int i = pref_top; i < pref_count() && pref_y(i) < PREF_VIEW_END; i++)
+        if (y >= pref_y(i) && y < pref_y(i) + pref_height[pref_id(i)]) return i;
     return -1;
 }
 
@@ -1088,7 +1213,7 @@ static void size_button(int tier, int x, int y, int chosen)
 {
     const VjoVocrTierInfo *t = vjo_vocr_tier_info((unsigned)tier);
     char detail[32];
-    vita2d_draw_rectangle(x, y, OCR_SIZE_W, OCR_SIZE_H, chosen ? ACCENT : SELECTED);
+    vjo_chrome_button(chrome_rect, x, y, OCR_SIZE_W, OCR_SIZE_H, theme, chosen);
     vjo_model_size_detail(tier, detail, sizeof(detail));
     centered_text(x, y + 24, OCR_SIZE_W, chosen ? BG : WHITE, 24, t ? t->name : "?");
     centered_text(x, y + 47, OCR_SIZE_W, chosen ? BG : DIM, 22, detail);
@@ -1131,7 +1256,7 @@ static const char *open_buttons(int trigger)
 /* A Read text choice: its name and, smaller, what it means for the popup. */
 static void read_button(int x, int y, const char *name, const char *meaning, int chosen)
 {
-    vita2d_draw_rectangle(x, y, READ_BUTTON_W, READ_BUTTON_H, chosen ? ACCENT : SELECTED);
+    vjo_chrome_button(chrome_rect, x, y, READ_BUTTON_W, READ_BUTTON_H, theme, chosen);
     centered_text(x, y + 24, READ_BUTTON_W, chosen ? BG : WHITE, 22, name);
     centered_text(x, y + 47, READ_BUTTON_W, chosen ? BG : DIM, 20, meaning);
 }
@@ -1164,7 +1289,7 @@ static void draw_switch_card(int y, const char *title, int readable, int on, con
 
 static void draw_highlight_card(int y)
 {
-    text(42, y + CARD_TITLE_Y, WHITE, 28, "Highlight");
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Selection mode");
     badge(532, y + CARD_BADGE_Y, 176, CARD_BADGE_H, "Whole word",
           preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_WORD);
     badge(724, y + CARD_BADGE_Y, 196, CARD_BADGE_H, "Character",
@@ -1176,14 +1301,13 @@ static void draw_highlight_card(int y)
  * retained for compatibility; Automatic now tries the same native hooks in every enabled Vita game. */
 static void draw_source_card(int y)
 {
-    static const char *const names[3] = {"Automatic", "Every game", "OCR only"};
-    static const char *const help[3] = {"Try hooks in every enabled Vita game, else OCR. From the next start.",
-                                        "Same as Automatic. Applies when a game next starts.",
+    static const char *const names[2] = {"Automatic", "OCR only"};
+    static const char *const help[2] = {"Try hooks first, else OCR. Applies when a game next starts.",
                                         "Screenshots only, no hooks. Applies when a game next starts."};
     int chosen = source_index(preferences.text_source);
     text(42, y + CARD_TITLE_Y, WHITE, 28, "Text source");
-    for (int i = 0; i < 3; i++)
-        badge(SOURCE_BADGE_X + i * SOURCE_BADGE_PITCH, y + CARD_BADGE_Y, SOURCE_BADGE_W, CARD_BADGE_H, names[i],
+    for (int i = 0; i < 2; i++)
+        badge(532 + i * 200, y + CARD_BADGE_Y, 188, CARD_BADGE_H, names[i],
               preferences_writable && chosen == i);
     text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
 }
@@ -1208,6 +1332,10 @@ static void draw_card(int i, int y)
 {
     int w = preferences_writable;
     switch (i) {
+    case PREF_ADVANCED:
+        text(42, y + CARD_TITLE_Y, WHITE, 28, "Advanced reading");
+        text(42, y + 53, DIM, 18, "Model, speed and text-source options.");
+        break;
     case PREF_SIZE: draw_size_card(y); break;
     case PREF_READ: draw_read_card(y); break;
     /* Speed boost while reading: the game worker raises the ARM clock to 444 MHz while a job recognizes and puts it
@@ -1254,7 +1382,7 @@ static void draw_card(int i, int y)
 /* Where the view is in the column: a thin bar right of the cards. */
 static void draw_scrollbar(void)
 {
-    int room = PREF_VIEW_END - PREF_VIEW_Y, total = pref_offset(PREFERENCES - 1) + pref_height[PREFERENCES - 1];
+    int room = PREF_VIEW_END - PREF_VIEW_Y, total = pref_offset(pref_count() - 1) + pref_height[pref_id(pref_count() - 1)];
     int from = pref_offset(pref_top), shown = total - from < room ? total - from : room;
     if (total > room)
         vjo_page_scroll_bar(&page_ui, PREF_SCROLL_X, PREF_VIEW_Y, PREF_SCROLL_W, room, from, shown, total);
@@ -1266,17 +1394,17 @@ static void draw_preferences(void)
     vita2d_clear_screen();
     header();
     pref_show(preference_selected); /* the selected card all in view */
-    for (int i = pref_top; i < PREFERENCES && pref_y(i) < PREF_VIEW_END; i++) {
-        int y = pref_y(i), end = y + pref_height[i] < PREF_VIEW_END ? y + pref_height[i] : PREF_VIEW_END;
-        int whole = end == y + pref_height[i];
+    for (int i = pref_top; i < pref_count() && pref_y(i) < PREF_VIEW_END; i++) {
+        int y = pref_y(i), end = y + pref_height[pref_id(i)] < PREF_VIEW_END ? y + pref_height[pref_id(i)] : PREF_VIEW_END;
+        int whole = end == y + pref_height[pref_id(i)];
         if (!whole) { /* cut at the bottom of the room: its card as well as its text */
             vita2d_enable_clipping();
             vita2d_set_clip_rectangle(24, y, 936, end);
         }
-        focus_card(y, pref_height[i], preference_selected == i);
+        focus_card(y, pref_height[pref_id(i)], preference_selected == i);
         vita2d_enable_clipping();
         vita2d_set_clip_rectangle(28, y + 2, 932, whole ? end - 2 : end);
-        draw_card(i, y);
+        draw_card(pref_id(i), y);
         vita2d_disable_clipping();
     }
     draw_scrollbar();
@@ -1306,7 +1434,8 @@ static void touch_preference(int x, int y)
     dy = y - pref_y(i);
     preference_selected = i;
     if (!pref_whole(i)) return;
-    switch (i) {
+    switch (pref_id(i)) {
+    case PREF_ADVANCED: show_page(PAGE_ADVANCED); break;
     case PREF_SIZE:
         /* Touch a size to choose it; the row's title and the status line only focus. */
         if (dy >= OCR_SIZE_DY && dy < OCR_SIZE_DY + OCR_SIZE_H)
@@ -1336,7 +1465,7 @@ static void touch_preference(int x, int y)
     /* Text source and Vertical text: touch a choice to take it; the rest of the card only
      * focuses. */
     case PREF_SOURCE:
-        if ((k = badge_at(x, dy, SOURCE_BADGE_X, SOURCE_BADGE_PITCH, SOURCE_BADGE_W, 3)) >= 0) set_text_source(k);
+        if ((k = badge_at(x, dy, 532, 200, 188, 2)) >= 0) set_text_source(k);
         break;
     case PREF_VERTICAL:
         if ((k = badge_at(x, dy, SOURCE_BADGE_X, SOURCE_BADGE_PITCH, SOURCE_BADGE_W, 3)) >= 0) set_vertical(k);
@@ -1420,7 +1549,7 @@ static void draw(void)
         /* The counter changes on every move; drawn apart, the hints' layout is kept. */
         char counter[16];
         status_box(440, 64, 467, 2, status, status_error);
-        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1, game_hints);
+        wrapped_text(128, 535, 808 - COUNTER_W, DIM, 20, 26, 1, game_hints);
         snprintf(counter, sizeof(counter), "%d/%d", selected + 1, count);
         text(936 - text_width(24, counter), 535, DIM, 24, counter);
     } else footer(status, status_error, games_empty_hints);
@@ -1527,10 +1656,18 @@ static void search_games(VjoStickScroll *stick, uint32_t *previous, int *touched
 /* A page shown (Select, or its tab): the pages with a module of their own read again what they show. */
 static void show_page(int p)
 {
-    if (page == PAGE_LOOKUP && p != PAGE_LOOKUP) vjo_lookup_page_leave(); /* its dictionaries' files closed */
+    if (page == PAGE_LOOKUP && p != PAGE_LOOKUP) vjo_lookup_page_leave();
+    if (game_view >= 0) close_game_page();
+    if (p == PAGE_OCR || p == PAGE_ADVANCED) {
+        preference_selected = p == PAGE_OCR && page == PAGE_ADVANCED ? 6 : 0;
+        pref_top = 0;
+    }
     if (p == PAGE_ANKI) vjo_anki_page_show(&scratch);
     if (p == PAGE_LOOKUP) vjo_lookup_page_show(&scratch);
     if (p == PAGE_INSTALL) vjo_install_page_show();
+    for (int i = 0; i < SETTINGS_CATEGORIES; i++)
+        if (category_page[i] == p || (p == PAGE_ADVANCED && category_page[i] == PAGE_OCR)) settings_selected = i;
+    page = p;
 }
 
 /* Cancel is the page's own, not the app's exit: the Anki page's while a job runs (Cancel stops it), the Look up page's
@@ -1649,12 +1786,12 @@ int main(void)
         if (width > em_width) em_width = width;
     }
     if (em_width > 0) font_em = (float)em_width;
-    tab_layout(); /* by the labels' widths: the tab bar's drawing and its touches */
-    vita2d_set_clear_color(BG);
+    load_theme();
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG); /* the left stick scrolls, as in VitaShell */
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     scan();
-    if (open_install) page = PAGE_INSTALL;
+    page = open_install ? PAGE_INSTALL : PAGE_SETTINGS;
+    if (open_install) settings_selected = SETTINGS_CATEGORIES - 1;
     uint32_t previous = 0;
     uint64_t repeat_at = 0;
     int touched = 0;
@@ -1696,38 +1833,65 @@ int main(void)
             close_game_page();
             pressed &= ~buttons.cancel;
         }
-        if ((pressed & buttons.cancel) && !page_holds_cancel() && !installing) break;
-        if ((pressed & SCE_CTRL_SELECT) && !installing) {
-            int next = (page + 1) % PAGES;
-            repeat_at = now + 350000;
-            /* The new page takes no move from a stick still pushed, this frame or until it is let go. */
+        if ((pressed & buttons.cancel) && !page_holds_cancel() && !installing) {
+            if (!settings_child()) break;
+            show_page(back_target());
+            pressed = direction = 0;
             vjo_stick_latch(&stick_state);
             stick = 0;
             held_game = touched_game = -1;
-            if (game_view >= 0) close_game_page(); /* #333: the Games tab opens on its list again */
-            show_page(next); /* (it reads the page being left: Look up closes its dictionaries) */
-            page = next;
+        }
+        if ((pressed & SCE_CTRL_SELECT) && !installing) {
+            show_page(page == PAGE_LOOKUP ? PAGE_SETTINGS : PAGE_LOOKUP);
+            repeat_at = now + 350000;
+            vjo_stick_latch(&stick_state);
+            stick = 0;
+            held_game = touched_game = -1;
+            pressed = direction = 0;
+        }
+        if (page == PAGE_SETTINGS) {
+            if (pressed & SCE_CTRL_UP) settings_selected = (settings_selected + SETTINGS_CATEGORIES - 1) % SETTINGS_CATEGORIES;
+            if (pressed & SCE_CTRL_DOWN) settings_selected = (settings_selected + 1) % SETTINGS_CATEGORIES;
+            if (!(pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN)))
+                settings_selected = vjo_stick_step(settings_selected, SETTINGS_CATEGORIES, stick);
+            if (pressed & buttons.enter) {
+                show_page(category_page[settings_selected]);
+                pressed = direction = 0;
+                vjo_stick_latch(&stick_state);
+                stick = 0;
+            }
         }
         if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_INSTALL) {
             /* anki_page.c, lookup_page.c and install_page.c read their own buttons and touches */
-        } else if (page == PAGE_OCR) {
-            if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
-            if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
+        } else if (page == PAGE_APPEARANCE) {
+            if (pressed & buttons.enter) choose_theme(0);
+            if (pressed & SCE_CTRL_LEFT) choose_theme(-1);
+            if (pressed & SCE_CTRL_RIGHT) choose_theme(1);
+            if (pressed & SCE_CTRL_START) load_theme();
+        } else if (reading_page()) {
+            if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + pref_count() - 1) % pref_count();
+            if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % pref_count();
             /* The d-pad first; the stick stops at the first and last card. */
             if (!(pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN)))
-                preference_selected = vjo_stick_step(preference_selected, PREFERENCES, stick);
+                preference_selected = vjo_stick_step(preference_selected, pref_count(), stick);
+            int chosen_page = page;
             if (pressed & buttons.enter) choose_preference(0);
-            if (pressed & SCE_CTRL_LEFT) choose_preference(-1);
-            if (pressed & SCE_CTRL_RIGHT) choose_preference(1);
-            if (pressed & SCE_CTRL_START) load_preferences();
-        } else if (game_view >= 0) { /* #333: a game's own page */
+            if (page == chosen_page && (pressed & SCE_CTRL_LEFT)) choose_preference(-1);
+            if (page == chosen_page && (pressed & SCE_CTRL_RIGHT)) choose_preference(1);
+            if (page == chosen_page && (pressed & SCE_CTRL_START)) load_preferences();
+            if (page != chosen_page) {
+                pressed = direction = 0;
+                vjo_stick_latch(&stick_state);
+                stick = 0;
+            }
+        } else if (page == PAGE_GAMES && game_view >= 0) { /* #333: a game's own page */
             if (pressed & SCE_CTRL_UP) game_row = (game_row + GAME_SETTINGS - 1) % GAME_SETTINGS;
             if (pressed & SCE_CTRL_DOWN) game_row = (game_row + 1) % GAME_SETTINGS;
             if (!(pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN))) game_row = vjo_stick_step(game_row, GAME_SETTINGS, stick);
             if (pressed & buttons.enter) game_page_enter();
             if (pressed & SCE_CTRL_LEFT) game_page_step(0);
             if (pressed & SCE_CTRL_RIGHT) game_page_step(1);
-        } else {
+        } else if (page == PAGE_GAMES) {
             /* #333: Enter toggles the selected game as it is let go; held GAME_HOLD_US, it opens the game's page.
              * A selection moved meanwhile does neither. */
             if ((pressed & buttons.enter) && count) {
@@ -1759,21 +1923,34 @@ int main(void)
         if (touch.reportNum && !touched) {
             int x = touch.report[0].x / 2, y = touch.report[0].y / 2;
             int tab = installing ? -1 : tab_at(x, y);
-            if (tab >= 0) {
-                if (tab != page) { /* as Select */
-                    show_page(tab);
+            if (tab >= 0 || (!installing && (back_at(x, y) || advanced_at(x, y)))) {
+                int next = tab >= 0 ? tab : advanced_at(x, y) ? PAGE_ADVANCED : back_target();
+                int anki_back = back_at(x, y) && page == PAGE_ANKI && vjo_anki_page_back();
+                if (!anki_back && (next != page || back_at(x, y))) show_page(next);
+                vjo_stick_latch(&stick_state);
+                stick = 0;
+                pressed = 0;
+                held_game = touched_game = -1;
+            }
+            else if (page == PAGE_SETTINGS && x >= 24 && x < 936 && y >= MENU_Y) {
+                int row = (y - MENU_Y) / MENU_PITCH;
+                if (row < SETTINGS_CATEGORIES && (y - MENU_Y) % MENU_PITCH < MENU_H) {
+                    settings_selected = row;
+                    show_page(category_page[row]);
+                    pressed = 0;
                     vjo_stick_latch(&stick_state);
                     stick = 0;
-                    held_game = -1;
                 }
-                if (game_view >= 0) close_game_page(); /* #333: a tab leaves a game's page; the Games tab, for its list */
-                page = tab;
             }
             else if (page == PAGE_ANKI || page == PAGE_LOOKUP || page == PAGE_INSTALL) {
                 touch_x = x;
                 touch_y = y;
             }
-            else if (page == PAGE_OCR && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
+            else if (page == PAGE_APPEARANCE && y >= THEME_Y && y < THEME_Y + THEME_H) {
+                int k = (x - THEME_X) / THEME_PITCH;
+                if (x >= THEME_X && k < VJO_THEMES && (x - THEME_X) % THEME_PITCH < THEME_W) set_theme(k);
+            }
+            else if (reading_page() && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
                 touch_preference(x, y); /* the OCR & lookup page's cards */
             else if (page != PAGE_GAMES) { /* no game actions on the other pages */ }
             else if (game_view >= 0) touch_game_page(x, y); /* #333 */
@@ -1838,7 +2015,9 @@ int main(void)
                 continue;
             }
         }
-        else if (page == PAGE_OCR) draw_preferences();
+        else if (reading_page()) draw_preferences();
+        else if (page == PAGE_SETTINGS) draw_settings();
+        else if (page == PAGE_APPEARANCE) draw_appearance();
         else if (game_view >= 0) draw_game_page(); /* #333 */
         else draw();
         sceDisplayWaitVblankStart();

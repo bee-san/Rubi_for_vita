@@ -106,6 +106,8 @@ void vjo_log_enable(int on) { (void)on; }
 
 /* ---------------- what a frame draws ---------------- */
 
+#include "../../settings/themes.h"
+
 #define WHITE 1u
 #define DIM 2u
 #define ACCENT 3u
@@ -187,10 +189,11 @@ static void d_footer(int y, int height, int text_y, int lines, const char *messa
 static void d_header(void) { drawn.headers++; }
 static void d_clip(int x0, int y0, int x1, int y1) { (void)y0; (void)y1; clipping = x1 > x0; }
 static VjoButtons buttons;
-static const VjoPageUi ui = {.text = d_text, .text_width = stub_width, .wrapped = d_wrapped, .rect = d_rect,
+static VjoPageUi ui = {.text = d_text, .text_width = stub_width, .wrapped = d_wrapped, .rect = d_rect,
                              .card = d_card, .badge = d_badge, .footer = d_footer, .header = d_header, .clip = d_clip,
                              .white = WHITE, .dim = DIM, .accent = ACCENT, .off = OFF, .track = TRACK,
-                             .selected = SELECTED, .buttons = &buttons};
+                             .selected = SELECTED, .buttons = &buttons, .highlight = HIGHLIGHT, .reading = READING,
+                             .rank = RGBA8(0x8A, 0x94, 0xA6, 255), .definition = DEFINITION};
 
 static const Text *shown(const char *s)
 {
@@ -393,7 +396,7 @@ static void search_by_the_keyboard(void)
     TEST_CHECK(drawn.headers == 1 && badge_named("Search")->active && !badge_named("Earlier lines")->active);
     TEST_CHECK(shown("Triangle, or a tap here: type a word or a sentence.") != NULL);
     TEST_CHECK(shown_with("Type a word or a sentence (Triangle)") != NULL);
-    TEST_CHECK(!strcmp(drawn.controls, "Triangle or ×: type   L/R: earlier lines   Select: page   ○: exit"));
+    TEST_CHECK(!strcmp(drawn.controls, "Triangle or ×: type   L/R: earlier lines   Select: settings   ○: exit"));
     keyboard_types("猫が好き");
     TEST_CHECK(frame(SCE_CTRL_TRIANGLE) == 1); /* the keyboard ran in the frame */
     TEST_CHECK(vjo_test_ime_calls == 1 && vjo_test_ime_max == 128 && vjo_test_ime_languages == 0x1FFFF &&
@@ -428,7 +431,7 @@ static void search_by_the_keyboard(void)
     for (int i = 0; i < drawn.texts; i++)
         if (!strcmp(drawn.text[i].s, "猫") && drawn.text[i].color == WHITE) kanji = &drawn.text[i];
     const Text *meanings = shown("=cat, feline"), *name = shown("Neko, a character"), *names = shown("[VNDB names]");
-    TEST_CHECK(kanji && meanings && meanings->y == kanji->y && meanings->x == 42 + stub_width(26, "猫") &&
+    TEST_CHECK(kanji && meanings && meanings->y == kanji->y && meanings->x == 42 + stub_width(28, "猫") &&
                meanings->color == DEFINITION && name && names);
     TEST_CHECK(!shown("1. cat")); /* scrolled out */
     /* never past the last rows: more Down changes nothing */
@@ -621,7 +624,7 @@ static void no_history_yet_and_the_buttons_named(void)
     reset(VJO_BUTTON_ASSIGN_CIRCLE);
     show();
     frame(0);
-    TEST_CHECK(!strcmp(drawn.controls, "Triangle or ○: type   L/R: earlier lines   Select: page   ×: exit"));
+    TEST_CHECK(!strcmp(drawn.controls, "Triangle or ○: type   L/R: earlier lines   Select: settings   ×: exit"));
     frame(SCE_CTRL_RTRIGGER);
     settle();
     TEST_CHECK(shown_with("No earlier lines yet: Rubi keeps the lines it reads with Read text: Automatically") != NULL);
@@ -817,6 +820,31 @@ static void a_zero_width_is_measured_again(void)
                 42 + stub_width(26, "猫が好"));
 }
 
+/* Readable dictionary styling for every palette, especially Paper, whose text must be dark. These are actual
+ * lookup rows and their cached pieces, rebuilt on leaving/returning to the page after an appearance change. */
+static void dictionary_text_uses_the_app_palette(void)
+{
+    VjoPageUi original = ui;
+    for (int i = 0; i < VJO_THEMES; i++) {
+        const VjoAppTheme *t = vjo_app_theme(i);
+        reset(VJO_BUTTON_ASSIGN_CROSS);
+        ui.white = t->text; ui.dim = t->dim; ui.accent = t->accent; ui.off = t->off;
+        ui.track = t->card; ui.selected = t->selected;
+        ui.highlight = t->highlight; ui.reading = t->reading; ui.rank = t->rank; ui.definition = t->definition;
+        show();
+        frame(0);
+        keyboard_types("猫が好き");
+        frame(SCE_CTRL_TRIANGLE);
+        frame(0);
+        const Text *word = shown("猫"), *reading = shown(" (ねこ)"), *sense = shown("1. cat");
+        TEST_CHECK_(word && word->color == t->highlight, "%s: highlighted word", t->name);
+        TEST_CHECK_(reading && reading->color == t->reading, "%s: reading", t->name);
+        TEST_CHECK_(sense && sense->color == t->definition, "%s: meaning", t->name);
+        vjo_lookup_page_leave();
+    }
+    ui = original;
+}
+
 static void a_card_keeps_an_alternate_reading(void)
 {
     reset(VJO_BUTTON_ASSIGN_CROSS);
@@ -853,6 +881,7 @@ static void a_card_keeps_an_alternate_reading(void)
 }
 
 TEST_LIST = {
+    {"dictionary_text_uses_the_app_palette", dictionary_text_uses_the_app_palette},
     {"a card keeps an alternate reading", a_card_keeps_an_alternate_reading},
     {"a zero width is measured again", a_zero_width_is_measured_again},
     {"each mode keeps its text and cursor", each_mode_keeps_its_cursor},

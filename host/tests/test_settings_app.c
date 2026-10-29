@@ -38,6 +38,7 @@
 #include "../../core/app_stamp.h"
 #include "../../include/vjo_api.h"
 #include "../../settings/app_check.h"
+#include "../../settings/app_prefs.h"
 #include "../../settings/catalog.h"
 #include "../../settings/model_size.h"
 #include "../../settings/preferences.h"
@@ -68,20 +69,21 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define BOOST_Y (READ_Y + READ_H + 4)
 #define CARD_H 68
 #define ROOM_END 422 /* the cards' room ends above the status line */
-#define ACCENT RGBA8(91, 220, 207, 255)
-#define SELECTED RGBA8(35, 56, 70, 255)
-#define CARD RGBA8(21, 31, 44, 255)
-#define WHITE RGBA8(238, 244, 255, 255)
-#define BG_COLOR RGBA8(9, 15, 23, 255)
-#define DIM RGBA8(193, 207, 222, 255)
+#define ACCENT RGBA8(255, 210, 74, 255)
+#define SELECTED RGBA8(43, 47, 49, 255)
+#define CARD RGBA8(25, 27, 29, 255)
+#define WHITE RGBA8(240, 242, 244, 255)
+#define BG_COLOR RGBA8(15, 16, 17, 255)
+#define DIM RGBA8(184, 187, 191, 255)
 #define OFF RGBA8(244, 160, 167, 255)
 #define MODEL_DIR "ux0:data/VitaJPOverlay/ocr"
 
 /* ---- storage: the SDK's file calls over real files (fakes/sceio_posix.h) ---- */
-#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE)
+#define SCEIO_OWN (SCEIO_OPEN | SCEIO_CLOSE | SCEIO_RENAME)
 #include "fakes/sceio_posix.h"
 static const char *close_fails; /* a file whose sceIoClose reports an error */
 static int close_fails_fd = -1;
+static int app_rename_fails;
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     int fd = sceio_open(p, flags, mode);
@@ -95,6 +97,11 @@ int sceIoClose(int fd)
     if (fd != close_fails_fd) return rc;
     close_fails_fd = -1;
     return (int)0x80010005u; /* EIO */
+}
+int sceIoRename(const char *from, const char *to)
+{
+    if (app_rename_fails && !strcmp(from, VJO_APP_PREFS_PATH ".tmp")) return -1;
+    return sceio_rename(from, to);
 }
 SceUID sceKernelGetThreadId(void) { return 0x40010003; } /* settings/applog.c's batch owner */
 
@@ -110,17 +117,18 @@ typedef struct { unsigned buttons; int touch, x, y; } Input; /* x, y in screen p
 #define MAX_FRAMES 64
 /* Each text and rectangle with the clipping it was drawn under: clipped, and
  * the clip rectangle's top and bottom (vita2d_set_clip_rectangle's y_min, y_max). */
-typedef struct { int x, y; unsigned color; float scale; char text[128]; int clipped, clip_top, clip_bottom; } Text;
-typedef struct { int x, y, w, h; unsigned color; int clipped, clip_top, clip_bottom; } Rect;
+typedef struct { int x, y; unsigned color; float scale; char text[128]; int clipped, clip_top, clip_bottom, clip_left, clip_right; } Text;
+typedef struct { int x, y, w, h; unsigned color; int clipped, clip_top, clip_bottom, clip_left, clip_right; } Rect;
 typedef struct {
+    unsigned clear;
     Text text[160]; int texts;
-    Rect rect[96]; int rects;
+    Rect rect[512]; int rects;
     char backend[16]; /* config.ini's ocr_backend value after this frame ("" without the line) */
     char tier[16];    /* its vocr_tier value */
     char mode[16];    /* its ocr_mode value */
     char boost[16];   /* its ocr_boost_clock value */
     char highlight[16]; /* its highlight_mode value */
-    char results[16];   /* its local_dictionary_results value */
+    char japanese[16]; /* its japanese_only_selection value */
     char source[16];    /* API 31: its text_source value */
     char gate[16];      /* API 43: its ocr_text_gate value */
     char trust[16];     /* API 43: its hook_trust value */
@@ -134,12 +142,17 @@ typedef struct {
  * come back through shared memory. */
 typedef struct { int frames, exited, main_rc, finis, font_loads, font_frees, font_free_in_frame, font_free_unwaited,
                  dead_font_uses, most_glyphs, fonts_both, most_fonts;
+                 int anki_shows, anki_frames, install_shows, install_frames; uint32_t anki_pressed, install_pressed;
                  int lookup_shows, lookup_leaves, lookup_frames; uint32_t lookup_pressed[16], lookup_held[16];
                  Frame shown[MAX_FRAMES]; } Session;
 /* settings_stubs/lookup_page_stub.c's records and controls (#313: main.c's Look up wiring) */
 extern int vjo_lookup_stub_shows, vjo_lookup_stub_leaves, vjo_lookup_stub_frames, vjo_lookup_stub_keyboard_at,
            vjo_lookup_stub_hold_cancel_to;
 extern uint32_t vjo_lookup_stub_pressed[16], vjo_lookup_stub_held[16];
+extern int vjo_install_stub_open, vjo_install_stub_busy_to, vjo_install_stub_frames, vjo_install_stub_shows;
+extern uint32_t vjo_install_stub_pressed;
+extern int vjo_anki_stub_frames, vjo_anki_stub_shows, vjo_anki_stub_hold_cancel_to;
+extern uint32_t vjo_anki_stub_pressed;
 static Session *session;
 static Frame *shown;
 static const Input *script;
@@ -171,7 +184,7 @@ int sceTouchSetSamplingState(int port, int state) { (void)port; (void)state; ret
 int sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
 {
     (void)port; (void)count;
-    pad->buttons = frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].buttons : SCE_CTRL_CIRCLE;
+    pad->buttons = frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].buttons : (frame - script_frames) % 2 ? 0 : SCE_CTRL_CIRCLE;
     pad->lx = pad->ly = pad->rx = pad->ry = 128; /* the sticks at rest */
     return 1;
 }
@@ -223,7 +236,7 @@ int sceDisplayWaitVblankStart(void)
         saved_value("ocr_mode", shown[frame].mode);
         saved_value("ocr_boost_clock", shown[frame].boost);
         saved_value("highlight_mode", shown[frame].highlight);
-        saved_value("local_dictionary_results", shown[frame].results);
+        saved_value("japanese_only_selection", shown[frame].japanese);
         saved_value("text_source", shown[frame].source);
         saved_value("ocr_text_gate", shown[frame].gate);
         saved_value("hook_trust", shown[frame].trust);
@@ -244,7 +257,8 @@ int sceDisplayWaitVblankStart(void)
 
 int vita2d_init(void) { return 0; }
 int vita2d_fini(void) { finis++; return 0; }
-void vita2d_set_clear_color(unsigned int color) { (void)color; }
+static unsigned clear_colour;
+void vita2d_set_clear_color(unsigned int color) { clear_colour = color; }
 /* The fonts: each load a font of its own, alive until freed; a font that drew is freed only between frames, after a
  * wait for the GPU (settings/main.c font_tick: one that only measured, whose atlas the GPU never reads, at any time),
  * and none is drawn or measured with once freed; the most alive at once (their atlases: 256 KiB each). */
@@ -279,18 +293,18 @@ static void font_holds(vita2d_pvf *font, const char *text, int drawn)
     }
 }
 void vita2d_swap_buffers(void) {}
-void vita2d_clear_screen(void) {}
+void vita2d_clear_screen(void) { drawing.clear = clear_colour; }
 void vita2d_wait_rendering_done(void) { waited = 1; }
 /* libvita2d keeps the last clip rectangle and applies it while clipping is on. */
-static int clipping, clip_top, clip_bottom;
+static int clipping, clip_top, clip_bottom, clip_left, clip_right;
 void vita2d_enable_clipping(void) { clipping = 1; }
 void vita2d_disable_clipping(void) { clipping = 0; }
 void vita2d_set_clip_rectangle(int x_min, int y_min, int x_max, int y_max)
-{ (void)x_min; (void)x_max; clip_top = y_min; clip_bottom = y_max; }
+{ clip_left = x_min; clip_right = x_max; clip_top = y_min; clip_bottom = y_max; }
 void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int color)
 {
     if (drawing.rects < (int)(sizeof(drawing.rect) / sizeof(drawing.rect[0])))
-        drawing.rect[drawing.rects++] = (Rect){(int)x, (int)y, (int)w, (int)h, color, clipping, clip_top, clip_bottom};
+        drawing.rect[drawing.rects++] = (Rect){(int)x, (int)y, (int)w, (int)h, color, clipping, clip_top, clip_bottom, clip_left, clip_right};
 }
 vita2d_pvf *vita2d_load_default_pvf(void)
 {
@@ -328,6 +342,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
         Text *t = &drawing.text[drawing.texts++];
         t->x = x; t->y = y; t->color = color; t->scale = scale;
         t->clipped = clipping; t->clip_top = clip_top; t->clip_bottom = clip_bottom;
+        t->clip_left = clip_left; t->clip_right = clip_right;
         snprintf(t->text, sizeof(t->text), "%s", text);
     }
     return 0;
@@ -394,6 +409,11 @@ static void card(const char *config)
     unlink(VJO_PREFERENCES_REGION_PATH); /* #358: no region.ini (Suggest a text box ON) */
     unlink(VJO_PREFERENCES_REGION_PATH ".tmp");
     unlink(VJO_PREFERENCES_REGION_PATH ".bak");
+    unlink(VJO_APP_PREFS_PATH);
+    unlink(VJO_APP_PREFS_PATH ".bak");
+    unlink(VJO_APP_PREFS_PATH ".tmp");
+    app_rename_fails = 0;
+    vjo_install_stub_open = vjo_install_stub_busy_to = vjo_anki_stub_hold_cancel_to = 0;
     unsigned n;
     const VjoVocrModelInfo *info = vjo_vocr_model_infos(&n);
     for (unsigned i = 0; i < n; i++) put_model(info[i].name, (long)info[i].bytes);
@@ -429,6 +449,12 @@ static int run_to(const Input *inputs, int n, int code)
         session->dead_font_uses = dead_font_uses;
         session->most_glyphs = most_glyphs;
         session->most_fonts = most_fonts;
+        session->anki_shows = vjo_anki_stub_shows;
+        session->anki_frames = vjo_anki_stub_frames;
+        session->anki_pressed = vjo_anki_stub_pressed;
+        session->install_shows = vjo_install_stub_shows;
+        session->install_frames = vjo_install_stub_frames;
+        session->install_pressed = vjo_install_stub_pressed;
         session->lookup_shows = vjo_lookup_stub_shows;
         session->lookup_leaves = vjo_lookup_stub_leaves;
         session->lookup_frames = vjo_lookup_stub_frames;
@@ -443,9 +469,26 @@ static int run_to(const Input *inputs, int n, int code)
     TEST_CHECK_(session->main_rc == code && session->exited == code, "main returned %d, exit code %d, expected %d",
                 session->main_rc, session->exited, code);
     TEST_CHECK_(session->finis == 0, "vita2d_fini ran %d times", session->finis);
-    return session->frames;
+    /* Automatic Back/exit cleanup is outside the scripted frames being tested. */
+    return session->frames < n ? session->frames : n;
 }
 static int run(const Input *inputs, int n) { return run_to(inputs, n, 0); }
+/* Model component tests enter the real Advanced page through Reading. Hide only those two setup frames from
+ * their recorded steps; navigation itself is exercised separately by settings_navigation. */
+static int run_model(const Input *inputs, int n)
+{
+    Input expanded[MAX_FRAMES];
+    TEST_ASSERT(n >= 2 && n + 2 <= MAX_FRAMES);
+    memcpy(expanded, inputs, 2 * sizeof(*inputs));
+    expanded[2] = (Input){0, 1, 820, 28};
+    expanded[3] = (Input){0, 0, 0, 0};
+    memcpy(expanded + 4, inputs + 2, (size_t)(n - 2) * sizeof(*inputs));
+    int frames = run(expanded, n + 2);
+    TEST_ASSERT(frames == n + 2);
+    memmove(shown, shown + 2, (size_t)n * sizeof(*shown));
+    return n;
+}
+
 
 /* What frame f showed. */
 static const Text *text_at(int f, int y, int x_min, int x_max)
@@ -545,7 +588,8 @@ static void check_no_fallback_hint(int frames)
 
 #define TAP(x, y) {0, 1, (x), (y)}, {0, 0, 0, 0}
 #define PRESS(button) {(button), 0, 0, 0}, {0, 0, 0, 0}
-#define OCR_PAGE PRESS(SCE_CTRL_SELECT) /* Games -> OCR & lookup, the page after the first */
+#define OCR_PAGE TAP(200, 200) /* Settings -> Reading & dictionaries */
+#define ADVANCED_PAGE OCR_PAGE, TAP(820, 28)
 #define CARD_TITLE TAP(100, 140)  /* the size row's title: focus only */
 
 static const char *const SIZES[3] = {"Small", "Normal", "Large"};
@@ -557,12 +601,12 @@ static const char *const SIZES[3] = {"Small", "Normal", "Large"};
 #ifndef VJO_VOCR_MODEL_INFO_TEST
 #define CARDS 12 /* the page's cards, top to bottom, by their titles */
 static const char *const CARD_NAMES[CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
-                                              "Japanese characters only", "Highlight",
+                                              "Japanese characters only", "Selection mode",
                                               "Text source", /* API 31 */
                                               "Trusted hooks replace OCR", "Skip OCR on screens without text", /* API 43 */
                                               "Vertical text", /* API 47 */
                                               "Suggest a text box", /* #358 */
-                                              "Pause the game to read"}; /* API 55 */
+                                              "Pause the game to read", "Advanced reading"};
 /* Frame f's card i: its top (its title is drawn 30 below it, at x 42), or -1 when not shown. */
 static int card_top(int f, int i)
 {
@@ -589,7 +633,7 @@ static void check_room(int f)
     for (int i = 0; i < shown[f].rects; i++) {
         const Rect *r = &shown[f].rect[i];
         int bottom = r->y + r->h;
-        if (r->y < OCR_Y || (r->x == 24 && r->w == 912 && r->y == ROOM_END + 4)) continue; /* the header; the status box */
+        if ((r->x == 0 && r->w == 960) || (r->x < 112 && r->y >= 504) || r->y < OCR_Y || (r->x == 24 && r->w == 912 && r->y == ROOM_END + 4)) continue; /* the header; the status box */
         if (r->clipped && r->clip_bottom < bottom) bottom = r->clip_bottom;
         TEST_CHECK_(bottom <= ROOM_END || r->y >= bottom, "frame %d: a %dx%d rectangle at %d,%d reaches %d", f, r->w,
                     r->h, r->x, r->y, bottom);
@@ -597,7 +641,7 @@ static void check_room(int f)
     for (int i = 0; i < shown[f].texts; i++) {
         const Text *t = &shown[f].text[i];
         int bottom = t->y + 8; /* a baseline's descenders */
-        if (t->y < OCR_Y || (t->x == 40 && t->y == ROOM_END + 4 + 22) || t->y == 535) continue; /* status line, hints */
+        if ((t->x < 112 && t->y >= 510) || t->y < OCR_Y || (t->x == 40 && t->y == ROOM_END + 4 + 22) || t->y == 535) continue; /* status line, hints */
         if (t->clipped && t->clip_bottom < bottom) bottom = t->clip_bottom;
         TEST_CHECK_(bottom <= ROOM_END || t->y - 24 >= bottom, "frame %d: '%s' at %d,%d drawn below the room", f,
                     t->text, t->x, t->y);
@@ -663,7 +707,7 @@ static void test_one_engine_its_model_size_on_top(void)
 {
     card(NULL); /* first run: no config.ini, the defaults */
     static const Input in[] = {OCR_PAGE};
-    TEST_ASSERT(run(in, 2) == 2); /* each scripted frame drawn; Circle then exits */
+    TEST_ASSERT(run_model(in, 2) == 2); /* each scripted frame drawn; Circle then exits */
     for (int f = 0; f < 2; f++) {
         check_status(f, NORMAL_STATUS, DIM);
         check_sizes(f, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS);
@@ -680,9 +724,8 @@ static void test_one_engine_its_model_size_on_top(void)
     }
     TEST_CHECK(bar == 1);
     /* below it, how text is read: the Read text card, then the Speed boost card; a lookup card peeks */
-    TEST_CHECK(text_at(1, READ_Y + 30, 0, 960) && !strcmp(text_at(1, READ_Y + 30, 0, 960)->text, "Read text"));
-    TEST_CHECK(text_at(1, BOOST_Y + 30, 0, 960) &&
-               !strcmp(text_at(1, BOOST_Y + 30, 0, 960)->text, "Speed boost while reading (444 MHz)"));
+    TEST_CHECK(shows(1, "Speed boost while reading") && shows(1, "Text source"));
+    TEST_CHECK(!shows(1, "Read text"));
 }
 
 /* API 21: the Model size. Touch a size to choose and save it (its edges and the
@@ -719,7 +762,7 @@ static void test_model_size_touch_keys_and_save(void)
     static Input in[2 + 2 * N] = {OCR_PAGE};
     card("ocr_backend = vocr\nvocr_model = H15_w8.vocr\nvocr_fallback_model = FL10_w8.vocr\nfont_size_ja = 22\n");
     for (int i = 0; i < N; i++) in[2 + 2 * i] = (Input){0, 1, taps[i].x, taps[i].y};
-    TEST_ASSERT(run(in, 2 + 2 * N) == 2 + 2 * N);
+    TEST_ASSERT(run_model(in, 2 + 2 * N) == 2 + 2 * N);
     /* an older build's vocr_model = H15_w8.vocr shows as Normal until a choice; the first save
      * writes vocr_tier and drops the vocr_model and vocr_fallback_model lines */
     check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS);
@@ -749,7 +792,7 @@ static void test_model_size_touch_keys_and_save(void)
                                  PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS),
                                  PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_DOWN),
                                  PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_RIGHT)};
-    run(keys, (int)(sizeof(keys) / sizeof(keys[0])));
+    run_model(keys, (int)(sizeof(keys) / sizeof(keys[0])));
     static const struct { int frame; const char *tier; } want[] = {
         {2, "small"},   /* Left at Small: nothing smaller, nothing saved */
         {4, "normal"}, {6, "large"},
@@ -801,7 +844,7 @@ static void test_the_cards_top_band_focuses_it(void)
 {
     card("vocr_tier = small\nfont_size_ja = 22\n");
     static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), TAP(300, OCR_Y + 2), PRESS(SCE_CTRL_RIGHT)};
-    run(in, (int)(sizeof(in) / sizeof(in[0])));
+    run_model(in, (int)(sizeof(in) / sizeof(in[0])));
     TEST_CHECK_(focus_bar_at(3, READ_Y) == 1 && !focus_bar_at(3, OCR_Y), "frame 3: the next card focused");
     TEST_CHECK_(focus_bar_at(5, OCR_Y) == 1 && !focus_bar_at(5, READ_Y), "frame 5: the tap focused the card");
     TEST_CHECK_(!strcmp(shown[5].tier, "small"), "the tap chose a size: '%s'", shown[5].tier); /* still the file's */
@@ -819,7 +862,7 @@ static void test_engine_line_shows_the_size_and_next_save_drops_it(void)
         snprintf(config, sizeof(config), "; mine\nocr_backend = %s\nfont_size_ja = 22\n", removed[i]);
         card(config);
         static const Input in[] = {OCR_PAGE, CARD_TITLE, PRESS(SCE_CTRL_RIGHT)};
-        run(in, (int)(sizeof(in) / sizeof(in[0])));
+        run_model(in, (int)(sizeof(in) / sizeof(in[0])));
         check_status(1, NORMAL_STATUS, DIM);
         check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS);
         TEST_CHECK_(!strcmp(shown[3].backend, removed[i]), "%s: unchanged until a choice", removed[i]);
@@ -848,7 +891,7 @@ static void test_status_follows_the_configured_models(void)
     };
     for (unsigned i = 0; i < sizeof(older) / sizeof(older[0]); i++) {
         card(older[i].ini);
-        run(in, 2);
+        run_model(in, 2);
         check_status(1, older[i].status, DIM);
         check_sizes(1, older[i].tier, SIZES, DETAILS);
         TEST_MSG("%s", older[i].ini);
@@ -856,32 +899,32 @@ static void test_status_follows_the_configured_models(void)
     /* the chosen size's file missing, or not its release size (the Large blob a byte short) */
     card("vocr_tier = large\n");
     remove_model(VJO_VOCR_TIER3_NAME);
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "VOCR6-L missing. Reinstall the package.", OFF);
     put_model(VJO_VOCR_TIER3_NAME, VJO_VOCR_TIER3_BYTES - 1);
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "VOCR6-L missing. Reinstall the package.", OFF);
     /* nothing at or below the chosen size: the chosen size's model, a red line */
     remove_model(VJO_VOCR_TIER2_NAME);
     remove_model(VJO_VOCR_TIER1_NAME);
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "VOCR6-L missing. Reinstall the package.", OFF);
     /* a larger size's file missing does not matter to a smaller choice, unless the smaller size has
      * the same model (a size that kept the model of the size above it) */
     card("vocr_tier = normal\n");
     remove_model(VJO_VOCR_TIER3_NAME);
-    run(in, 2);
+    run_model(in, 2);
     if (strcmp(VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME)) check_status(1, NORMAL_STATUS, DIM);
     else check_status(1, "VOCR6-N missing. Reinstall the package.", OFF);
     /* Normal's file missing: Normal named missing */
     card(NULL);
     remove_model(VJO_VOCR_TIER2_NAME);
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "VOCR6-N missing. Reinstall the package.", OFF);
     /* a model file that cannot be closed again is not counted as found */
     card(NULL);
     close_fails = VJO_VOCR_TIER2_NAME;
-    run(in, 2);
+    run_model(in, 2);
     close_fails = NULL;
     check_status(1, "VOCR6-N missing. Reinstall the package.", OFF);
     /* the earlier generations' files that are no size's any more: their absence changes nothing */
@@ -893,7 +936,7 @@ static void test_status_follows_the_configured_models(void)
                 strcmp(earlier[i], VJO_VOCR_TIER3_NAME))
                 remove_model(earlier[i]);
     }
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, NORMAL_STATUS, DIM);
     check_no_fallback_hint(2);
 }
@@ -904,16 +947,16 @@ static void test_status_follows_the_configured_models(void)
 static void test_read_text_and_speed_boost_defaults(void)
 {
     card(NULL);
-    static const Input in[] = {OCR_PAGE};
-    TEST_ASSERT(run(in, 2) == 2);
-    for (int f = 0; f < 2; f++) {
-        check_read(f, READ_Y, VJO_OCR_AUTO, "Only when I press L + R", "press");
-        check_boost(f, BOOST_Y, "ON", 1);
-        check_room(f);
-        TEST_CHECK_(card_top(f, 3) == BOOST_Y + CARD_H + 4, "frame %d: the next card peeks at %d", f, card_top(f, 3));
-    }
-    TEST_CHECK(focused_card(1) == 0 && access(VJO_PREFERENCES_PATH, F_OK) != 0);
-    TEST_CHECK(!shown[1].mode[0] && !shown[1].boost[0]);
+    static const Input basic[] = {OCR_PAGE};
+    run(basic, sizeof(basic) / sizeof(basic[0]));
+    check_read(1, OCR_Y, VJO_OCR_AUTO, "Only when I press L + R", "press");
+    TEST_CHECK(shows(1, "Selection mode") && shows(1, "Japanese characters only"));
+    TEST_CHECK(!shows(1, "Model size") && !shows(1, "444 MHz") && !shows(1, "Trusted hooks"));
+    TEST_CHECK(focused_card(1) == 1 && access(VJO_PREFERENCES_PATH, F_OK) != 0);
+    static const Input advanced[] = {ADVANCED_PAGE};
+    run(advanced, sizeof(advanced) / sizeof(advanced[0]));
+    check_sizes(3, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS);
+    check_boost(3, OCR_Y + OCR_H + 4, "ON", 1);
 }
 
 /* Read text by the controller (Down to it; Right the press, Left automatically,
@@ -923,88 +966,19 @@ static void test_read_text_and_speed_boost_defaults(void)
  * as ocr_boost_clock; every other line of config.ini kept. */
 static void test_read_text_and_speed_boost_by_keys_and_touch(void)
 {
-    card("; mine\nocr_backend = vocr\nocr_mode = auto\nfont_size_ja = 22\nvocr_tier = small\n");
-    static const Input keys[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT),
-                                 PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CROSS),
-                                 PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT),
-                                 PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_UP)};
-    run(keys, (int)(sizeof(keys) / sizeof(keys[0])));
-    static const struct { int frame; const char *mode, *boost; } want[] = {
-        {2, "auto", ""},            /* Down: Read text, nothing saved */
-        {4, "on_press", "on"},      /* Right: the press (saved with the boost the file had: none, on) */
-        {6, "on_press", "on"},      /* Right again: no change */
-        {8, "auto", "on"},          /* Left: automatically */
-        {10, "on_press", "on"},     /* Enter: in turn */
-        {12, "auto", "on"},
-        {14, "auto", "on"},         /* Down: Speed boost */
-        {16, "auto", "off"},        /* Enter: OFF */
-        {18, "auto", "off"},        /* Left: OFF already */
-        {20, "auto", "on"},         /* Right: ON */
-        {22, "auto", "off"},        /* Left: OFF */
-        {24, "auto", "off"},        /* Up: Read text again */
-    };
-    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
-        int f = want[i].frame;
-        TEST_CHECK_(!strcmp(shown[f].mode, want[i].mode), "frame %d: ocr_mode '%s', want %s", f, shown[f].mode,
-                    want[i].mode);
-        TEST_CHECK_(!strcmp(shown[f].boost, want[i].boost), "frame %d: ocr_boost_clock '%s', want '%s'", f,
-                    shown[f].boost, want[i].boost);
-        TEST_CHECK_(!strcmp(shown[f].tier, "small") && !strcmp(shown[f].backend, i < 1 ? "vocr" : SAVED_BACKEND),
-                    "frame %d: vocr_tier '%s', ocr_backend '%s'", f, shown[f].tier, shown[f].backend);
-        check_room(f);
-    }
-    check_read(5, READ_Y, VJO_OCR_ON_PRESS, "Only when I press L + R", "press");
-    check_read(9, READ_Y, VJO_OCR_AUTO, "Only when I press L + R", "press");
-    check_boost(17, BOOST_Y, "OFF", 0);
-    check_boost(21, BOOST_Y, "ON", 1);
-    TEST_CHECK(focused_card(3) == 1 && focused_card(15) == 2 && focused_card(25) == 1);
-    {
-        FILE *file = fopen(VJO_PREFERENCES_PATH, "rb");
-        char text[4096];
-        TEST_ASSERT(file != NULL);
-        size_t n = fread(text, 1, sizeof(text) - 1, file);
-        fclose(file);
-        text[n] = 0;
-        TEST_CHECK(!strcmp(text, "; mine\nocr_mode = auto\nfont_size_ja = 22\nvocr_tier = small\nocr_boost_clock = off\n"));
-        TEST_MSG("%s", text);
-    }
-    /* touch: each edge tap comes when it would change the saved choice were that edge a pixel off.
-     * Automatically spans x 42-474, the press 487-919, both y READ_BUTTON_Y to +53. */
-    static const struct { int x, y; const char *mode; } taps[] = {
-        {474, READ_BUTTON_Y, "auto"},                       /* Automatically, top-right pixel (from the press) */
-        {487, READ_BUTTON_Y, "on_press"},                   /* the press, top-left pixel */
-        {42, READ_BUTTON_Y + READ_BUTTON_H - 1, "auto"},    /* Automatically, bottom-left pixel */
-        {919, READ_BUTTON_Y + READ_BUTTON_H - 1, "on_press"}, /* the press, bottom-right pixel */
-        {475, READ_BUTTON_Y + 20, "on_press"},              /* the gap: focus only */
-        {300, READ_BUTTON_Y + 20, "auto"},
-        {486, READ_BUTTON_Y + 20, "auto"},                  /* the gap's other side */
-        {920, READ_BUTTON_Y + 20, "auto"},                  /* right of the press */
-        {600, READ_BUTTON_Y + 20, "on_press"},
-        {41, READ_BUTTON_Y + 20, "on_press"},               /* left of Automatically */
-        {300, READ_BUTTON_Y - 1, "on_press"},               /* above the choices: the title row */
-        {300, READ_BUTTON_Y + READ_BUTTON_H, "on_press"},   /* below them: the card's margin */
-        {300, READ_Y + 20, "on_press"},                     /* the title */
-    };
-    enum { N = sizeof(taps) / sizeof(taps[0]), BOOST_TAPS = 3 };
-    static Input touch[2 + 2 * N + 2 * BOOST_TAPS] = {OCR_PAGE};
-    card("ocr_mode = on_press\nfont_size_ja = 22\n");
-    for (int i = 0; i < N; i++) touch[2 + 2 * i] = (Input){0, 1, taps[i].x, taps[i].y};
-    /* then the Speed boost card: a tap anywhere on it switches it (none in the file: on) */
-    static const int boost_taps[BOOST_TAPS][2] = {{500, BOOST_Y + 30}, {100, BOOST_Y + 60}, {900, BOOST_Y + 2}};
-    static const char *const boost_after[BOOST_TAPS] = {"off", "on", "off"};
-    for (int i = 0; i < BOOST_TAPS; i++) touch[2 + 2 * N + 2 * i] = (Input){0, 1, boost_taps[i][0], boost_taps[i][1]};
-    TEST_ASSERT(run(touch, 2 + 2 * N + 2 * BOOST_TAPS) == 2 + 2 * N + 2 * BOOST_TAPS);
-    for (int i = 0; i < N; i++) {
-        int f = 2 + 2 * i;
-        TEST_CHECK_(!strcmp(shown[f].mode, taps[i].mode), "tap %d at %d,%d: ocr_mode '%s', want %s", i, taps[i].x,
-                    taps[i].y, shown[f].mode, taps[i].mode);
-        TEST_CHECK_(focused_card(f) == 1, "tap %d: Read text focused (%d)", i, focused_card(f));
-    }
-    for (int i = 0; i < BOOST_TAPS; i++) {
-        int f = 2 + 2 * N + 2 * i;
-        TEST_CHECK_(!strcmp(shown[f].boost, boost_after[i]) && focused_card(f) == 2 && !strcmp(shown[f].mode, "on_press"),
-                    "Speed boost tap %d: '%s', want %s", i, shown[f].boost, boost_after[i]);
-    }
+    card("; keep\nocr_mode = auto\nocr_boost_clock = on\nfont_size_en = 16\n");
+    static const Input basic[] = {OCR_PAGE, PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_LEFT), TAP(700, 174), TAP(150, 174)};
+    run(basic, sizeof(basic) / sizeof(basic[0]));
+    TEST_CHECK(!strcmp(shown[2].mode, "on_press") && !strcmp(shown[4].mode, "auto"));
+    TEST_CHECK(!strcmp(shown[6].mode, "on_press") && !strcmp(shown[8].mode, "auto"));
+    TEST_CHECK(!strcmp(shown[8].boost, "on"));
+    static const Input advanced[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_LEFT),
+        PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS), TAP(850, 230)};
+    run(advanced, sizeof(advanced) / sizeof(advanced[0]));
+    TEST_CHECK(!strcmp(shown[6].boost, "off") && !strcmp(shown[8].boost, "on"));
+    TEST_CHECK(!strcmp(shown[10].boost, "off") && !strcmp(shown[12].boost, "on"));
+    TEST_CHECK(!strcmp(shown[12].mode, "auto"));
+    char value[32]; saved_value("font_size_en", value); TEST_CHECK(!strcmp(value, "16"));
 }
 
 /* The page scrolls a card at a time: Down from the Model size to the last
@@ -1014,115 +988,47 @@ static void test_read_text_and_speed_boost_by_keys_and_touch(void)
  * card is ever drawn into the status line. */
 static void test_the_page_scrolls_a_card_at_a_time(void)
 {
-    card("vocr_tier = small\njapanese_only_selection = on\n");
-    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
-                               PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
-                               PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP)};
-    int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
-    TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
-    /* the first card in view after each key: Down to Japanese characters only scrolls one card
-     * (Read text on top), to Highlight one more (Speed boost on top), and the last card fits so */
-    static const struct { int frame, focus, top; } want[] = {
-        {1, 0, 0}, {3, 1, 0}, {5, 2, 0}, {7, 3, 1}, {9, 4, 2}, {11, 5, 2},
-        {13, 4, 2}, {15, 3, 2}, {17, 2, 2}, {19, 1, 1}, {21, 0, 0},
-        {23, 10, 7}, /* Up from the first: the last (API 55: Pause the game to read, Skip OCR on top) */
-    };
-    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
-        int f = want[i].frame, top = card_top(f, want[i].top), mine = card_top(f, want[i].focus);
-        TEST_CHECK_(focused_card(f) == want[i].focus, "frame %d: card %d focused, want %d", f, focused_card(f),
-                    want[i].focus);
-        TEST_CHECK_(top == OCR_Y, "frame %d: card %d at %d, want it first", f, want[i].top, top);
-        for (int c = 0; c < want[i].top; c++) /* the cards above the view are not drawn */
-            TEST_CHECK_(card_top(f, c) < 0, "frame %d: card %d drawn above the view", f, c);
-        int h = want[i].focus == 0 ? OCR_H : want[i].focus == 1 ? READ_H : CARD_H;
-        TEST_CHECK_(mine >= OCR_Y && mine + h <= ROOM_END, "frame %d: the focused card at %d..%d", f, mine, mine + h);
+    card(NULL);
+    static const Input basic[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+        PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_DOWN)};
+    int frames = run(basic, sizeof(basic) / sizeof(basic[0]));
+    static const int want[] = {1, 3, 4, 11, 4, 3, 1, 11, 1};
+    for (unsigned k = 0; k < sizeof(want) / sizeof(want[0]); k++) {
+        int f = 1 + 2 * (int)k;
+        TEST_CHECK_(focused_card(f) == want[k], "step %u: focused %d", k, focused_card(f));
+        TEST_CHECK(card_top(f, 1) == OCR_Y && card_top(f, 11) + 58 <= ROOM_END);
         check_room(f);
-        /* the scroll bar's thumb: where the view is in the 920-pixel column (310 of it shown; API 31's
-         * Text source card made it 488 + 4 + 68, API 43's two switches 560 + 2 x (4 + 68), API 47's Vertical text
-         * 704 + 4 + 68, #358's Suggest a text box 776 + 4 + 68, API 55's Pause the game to read 848 + 4 + 68) */
-        static const int offset[] = {0, 98, 204, 276, 348, 420, 492, 564, 636};
-        int thumb = 0;
-        for (int k = 0; k < shown[f].rects; k++)
-            if (shown[f].rect[k].x == 942 && shown[f].rect[k].color == DIM)
-                thumb = shown[f].rect[k].y == OCR_Y + 310 * offset[want[i].top] / 848 &&
-                        shown[f].rect[k].h == 310 * (848 - offset[want[i].top] < 310 ? 848 - offset[want[i].top] : 310) / 848;
-        TEST_CHECK_(thumb, "frame %d: the scroll bar's thumb", f);
     }
-    /* the size buttons' place is Read text's title row once the page has scrolled: a tap there
-     * selects Read text and chooses nothing */
-    static const Input scrolled[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
-                                     TAP(300, 150), TAP(500, 400), TAP(300, 300)};
-    card("vocr_tier = small\njapanese_only_selection = on\nhighlight_mode = word\n");
-    frames = run(scrolled, (int)(sizeof(scrolled) / sizeof(scrolled[0])));
-    TEST_ASSERT(frames == (int)(sizeof(scrolled) / sizeof(scrolled[0])));
-    TEST_CHECK_(focused_card(9) == 1 && !strcmp(shown[9].tier, "small") && card_top(9, 0) < 0 &&
-                card_top(9, 1) == OCR_Y, "frame 9: card %d focused, Read text at %d", focused_card(9), card_top(9, 1));
-    /* Highlight, cut at the bottom (its top at 362, the room's end 422): selected and scrolled
-     * into view (Speed boost now first), not switched */
-    TEST_CHECK_(focused_card(10) == 4 && card_top(10, 2) == OCR_Y && card_top(10, 4) + CARD_H <= ROOM_END &&
-                !strcmp(shown[10].highlight, "word"), "frame 10: card %d focused, highlight '%s'", focused_card(10),
-                shown[10].highlight);
-    /* a touch on it, all in view now, switches it */
-    TEST_CHECK_(card_top(12, 4) == 256 && !strcmp(shown[12].highlight, "character") && focused_card(12) == 4,
-                "frame 12: highlight '%s'", shown[12].highlight);
-    for (int f = 0; f < frames; f++) check_room(f);
+    TEST_CHECK(frames == sizeof(basic) / sizeof(basic[0]));
+    static const Input advanced[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_UP)};
+    run(advanced, sizeof(advanced) / sizeof(advanced[0]));
+    TEST_CHECK(focused_card(5) == 10 && card_top(5, 7) == OCR_Y);
+    TEST_CHECK(card_top(5, 10) + CARD_H <= ROOM_END && card_top(5, 0) < 0);
+    for (int f = 3; f < 6; f++) check_room(f);
 }
 
 /* The lookup cards' choices once the page has scrolled (Speed boost first: Highlight at y 256, Dictionaries shown
  * at 328; audit N8): drawn there, and touched there, at their badges' exact edges. A touch elsewhere on Highlight
  * switches it, as before the page scrolled; on Dictionaries shown only a number chooses. */
-#define HL_Y 256
-#define DICT_Y 328
-static int rect_at(int f, int x, int y, int w, int h)
-{
-    for (int i = 0; i < shown[f].rects; i++) {
-        const Rect *r = &shown[f].rect[i];
-        if (r->x == x && r->y == y && r->w == w && r->h == h) return 1;
-    }
-    return 0;
-}
 static void test_scrolled_cards_keep_their_touch_targets(void)
 {
-    card("highlight_mode = word\nlocal_dictionaries = a.vjdict,b.vjdict,c.vjdict\nlocal_dictionary_results = 1\n");
-    static const struct { int x, y; const char *highlight, *results; } taps[] = {
-        {724, HL_Y + 6, "character", ""},   /* Character, top-left pixel */
-        {707, HL_Y + 39, "word", ""},       /* Whole word, bottom-right pixel */
-        {600, HL_Y + 20, "word", ""},       /* Whole word again: chosen, it stays (a toggle would switch it) */
-        {919, HL_Y + 39, "character", ""},  /* Character, bottom-right pixel */
-        {800, HL_Y + 20, "character", ""},  /* Character again: it stays */
-        {532, HL_Y + 6, "word", ""},        /* Whole word, top-left pixel */
-        {300, HL_Y + 30, "character", ""},  /* the title: switches */
-        {715, HL_Y + 20, "word", ""},       /* between the badges: switches */
-    };
-    enum { N = sizeof(taps) / sizeof(taps[0]), KEYS = 10 };
-    static Input in[KEYS + 2 * N] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
-                                     PRESS(SCE_CTRL_DOWN)}; /* Highlight focused: Speed boost on top */
-    for (int i = 0; i < N; i++) in[KEYS + 2 * i] = (Input){0, 1, taps[i].x, taps[i].y};
-    TEST_ASSERT(run(in, KEYS + 2 * N) == KEYS + 2 * N);
-    TEST_CHECK_(card_top(9, 2) == OCR_Y && card_top(9, 4) == HL_Y && card_top(9, 5) == DICT_Y,
-                "frame 9: Speed boost at %d, Highlight at %d, Dictionaries at %d", card_top(9, 2), card_top(9, 4),
-                card_top(9, 5));
-    TEST_CHECK(rect_at(9, 532, HL_Y + 6, 176, 34) && rect_at(9, 724, HL_Y + 6, 196, 34)); /* the badges, there */
-    for (int i = 0; i < N; i++) {
-        int f = KEYS + 2 * i;
-        TEST_CHECK_(!strcmp(shown[f].highlight, taps[i].highlight) && !strcmp(shown[f].results, taps[i].results),
-                    "tap %d at %d,%d: highlight '%s', results '%s'; want %s, %s", i, taps[i].x, taps[i].y,
-                    shown[f].highlight, shown[f].results, taps[i].highlight, taps[i].results);
-        TEST_CHECK_(focused_card(f) == (taps[i].y < DICT_Y ? 4 : 5) && card_top(f, 2) == OCR_Y,
-                    "tap %d: card %d focused, Speed boost at %d", i, focused_card(f), card_top(f, 2));
-        check_room(f);
-    }
+    card("highlight_mode = word\njapanese_only_selection = off\n");
+    static const Input in[] = {OCR_PAGE, TAP(850, 310), TAP(600, 310), TAP(850, 240), TAP(850, 240)};
+    run(in, sizeof(in) / sizeof(in[0]));
+    TEST_CHECK(!strcmp(shown[2].highlight, "character") && !strcmp(shown[4].highlight, "word"));
+    TEST_CHECK(!strcmp(shown[6].japanese, "on") && !strcmp(shown[8].japanese, "off"));
+    TEST_CHECK(focused_card(3) == 4 && focused_card(7) == 3);
 }
 
 /* #418 (P10, audit-rubi-cleanup-10 F11): Dictionaries shown by its buttons (settings/main.c choose_preference): Enter
  * takes the next count, 8 then 1; Left and Right the count beside it, never past 1 or 8. */
-static void test_dictionaries_shown_by_its_buttons(void)
+static void test_removed_dictionary_count_has_no_control(void)
 {
     static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
         PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_RIGHT)};
     card("local_dictionaries = a.vjdict,b.vjdict,c.vjdict\nlocal_dictionary_results = 1\n");
     TEST_ASSERT(run(in, sizeof(in) / sizeof(in[0])) == sizeof(in) / sizeof(in[0]));
-    TEST_CHECK(focused_card(sizeof(in) / sizeof(in[0]) - 1) == 5);
+    TEST_CHECK(focused_card(sizeof(in) / sizeof(in[0]) - 1) != 5);
     for (int f = 0; f < (int)(sizeof(in) / sizeof(in[0])); f++)
         for (int t = 0; t < shown[f].texts; t++)
             TEST_CHECK(strcmp(shown[f].text[t].text, "Dictionaries shown"));
@@ -1144,7 +1050,7 @@ static void test_read_text_names_the_buttons_that_open_the_overlay(void)
     for (unsigned i = 0; i < sizeof(triggers) / sizeof(triggers[0]); i++) {
         card(triggers[i].ini);
         run(in, 2);
-        check_read(1, READ_Y, strstr(triggers[i].ini, "on_press") ? VJO_OCR_ON_PRESS : VJO_OCR_AUTO, triggers[i].press,
+        check_read(1, OCR_Y, strstr(triggers[i].ini, "on_press") ? VJO_OCR_ON_PRESS : VJO_OCR_AUTO, triggers[i].press,
                    triggers[i].verb);
         TEST_MSG("%s", triggers[i].ini);
     }
@@ -1154,41 +1060,16 @@ static void test_read_text_names_the_buttons_that_open_the_overlay(void)
 static void test_unreadable_config_selects_and_saves_nothing(void)
 {
     card(NULL);
-    put_file(VJO_PREFERENCES_PATH, "ocr_backend = lens\nvocr_tier = large\n");
-    TEST_ASSERT(chmod(VJO_PREFERENCES_PATH, 0) == 0);
-    if (access(VJO_PREFERENCES_PATH, R_OK) == 0) { /* running as root: permissions do not apply */
-        chmod(VJO_PREFERENCES_PATH, 0644);
-        TEST_SKIP("the file stays readable (root)");
-        return;
-    }
-    static const Input in[] = {OCR_PAGE, TAP(300, 150), PRESS(SCE_CTRL_RIGHT)};
-    run(in, (int)(sizeof(in) / sizeof(in[0])));
-    Buttons s = size_buttons(5);
-    TEST_CHECK(s.count == 3 && s.rect[0].color == SELECTED && s.rect[1].color == SELECTED && s.rect[2].color == SELECTED);
-    const Text *st = text_at(5, STATUS_Y, 0, 960), *title = text_at(5, SIZE_NAME_Y, 0, SIZE_X);
-    TEST_CHECK(st && !strcmp(st->text, "Cannot read config.ini. Repair it before changing settings.") &&
-               st->color == OFF);
-    TEST_CHECK(title && title->color == DIM); /* the row's title dimmed: nothing to choose */
-    /* Read text and Speed boost show no choice either, and keys and touches save nothing */
-    static const Input reading[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS),
-                                    TAP(600, READ_BUTTON_Y + 20), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS),
-                                    PRESS(SCE_CTRL_RIGHT), TAP(500, BOOST_Y + 30)};
-    run(reading, (int)(sizeof(reading) / sizeof(reading[0])));
-    for (int f = 1; f < (int)(sizeof(reading) / sizeof(reading[0])); f++) {
-        check_read(f, READ_Y, -1, "Only when I press L + R", "press");
-        const Text *read_title = text_at(f, READ_Y + 30, 0, 960), *badge = text_at(f, BOOST_Y + 32, 812, 920);
-        TEST_CHECK_(read_title && read_title->color == DIM && badge && !strcmp(badge->text, "--"),
-                    "frame %d: Read text's title %08X, the Speed boost badge '%s'", f, read_title ? read_title->color : 0,
-                    badge ? badge->text : "(none)");
-    }
-    const Text *why = text_at(17, ROOM_END + 4 + 22, 40, 41); /* the status line (a cut card's help is drawn there, clipped) */
-    TEST_CHECK_(why && !strcmp(why->text, "Cannot read config.ini. Choices have not been changed.") && why->color == OFF,
-                "the status line: '%s'", why ? why->text : "(none)");
-    chmod(VJO_PREFERENCES_PATH, 0644);
-    char backend[16], tier[16];
-    saved_backend(backend);
-    saved_value("vocr_tier", tier);
-    TEST_CHECK(!strcmp(backend, "lens") && !strcmp(tier, "large")); /* the file was never written */
+    TEST_ASSERT(mkdir(VJO_PREFERENCES_PATH, 0777) == 0);
+    static const Input basic[] = {OCR_PAGE, PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS)};
+    run(basic, sizeof(basic) / sizeof(basic[0]));
+    check_read(1, OCR_Y, -1, "Only when I press L + R", "press");
+    TEST_CHECK(shows(7, "Cannot read config.ini"));
+    static const Input advanced[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS)};
+    run(advanced, sizeof(advanced) / sizeof(advanced[0]));
+    check_sizes(3, 0, SIZES, DETAILS);
+    TEST_CHECK(shows(9, "Cannot read config.ini"));
+    struct stat st; TEST_ASSERT(stat(VJO_PREFERENCES_PATH, &st) == 0); TEST_CHECK(S_ISDIR(st.st_mode));
 }
 
 /* A saved choice says when it applies: true with no game running as beside one (the app
@@ -1197,7 +1078,7 @@ static void test_a_saved_choice_says_when_it_applies(void)
 {
     card(NULL);
     static const Input in[] = {OCR_PAGE, TAP(SIZE_X + 2 * SIZE_PITCH + 20, SIZE_Y + 20)}; /* Large */
-    run(in, (int)(sizeof(in) / sizeof(in[0])));
+    run_model(in, (int)(sizeof(in) / sizeof(in[0])));
     char tier[16];
     saved_value("vocr_tier", tier);
     TEST_CHECK_(!strcmp(tier, "large"), "vocr_tier = %s", tier);
@@ -1214,65 +1095,17 @@ static void test_a_saved_choice_says_when_it_applies(void)
  * starts; a file without the line shows Automatic and writes nothing until a change. */
 static void test_text_source_by_keys_and_touch(void)
 {
-    card("; mine\nvocr_tier = small\n");
-    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
-                               PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_RIGHT),
-                               PRESS(SCE_CTRL_RIGHT),
-                               PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT),
-                               PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT)};
-    int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
-    TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
-    static const struct { int frame; const char *source; } want[] = {
-        {12, ""},     /* Up six times: Text source, nothing saved */
-        {14, "hooks"},/* Right: Every game */
-        {16, "ocr"},  /* Right: OCR only */
-        {18, "ocr"},  /* Right again: no change */
-        {20, "auto"}, /* Enter: the next, round to Automatic */
-        {22, "auto"}, /* Left: Automatic already */
-        {24, "hooks"},/* Enter */
-        {26, "auto"}, /* Left */
-    };
-    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
-        int f = want[i].frame;
-        TEST_CHECK_(!strcmp(shown[f].source, want[i].source), "frame %d: text_source '%s', want '%s'", f,
-                    shown[f].source, want[i].source);
-        TEST_CHECK_(focused_card(f) == 5 && !strcmp(shown[f].tier, "small"), "frame %d: card %d", f, focused_card(f));
-        check_room(f);
-    }
-    const Text *st = text_at(14, ROOM_END + 4 + 22, 40, 41);
-    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when a game next starts."), "the status line: '%s'",
-                st ? st->text : "(none)");
-    {
-        FILE *file = fopen(VJO_PREFERENCES_PATH, "rb");
-        char text[4096];
-        TEST_ASSERT(file != NULL);
-        size_t n = fread(text, 1, sizeof(text) - 1, file);
-        fclose(file);
-        text[n] = 0;
-        TEST_CHECK(!strcmp(text, "; mine\nvocr_tier = small\ntext_source = auto\n"));
-        TEST_MSG("%s", text);
-    }
-    /* touch, once the card is in view (Up wraps to the last card, five more reach it): each choice, then the title
-     * row and the help line (focus only). The choices span x 440-591, 600-751 and 760-911, y from the card's top +
-     * 6 to + 39. */
-    card("text_source = ocr\n");
-    static const Input taps[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
-                                 PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), TAP(500, 0), TAP(700, 0),
-                                 TAP(911, 0), TAP(595, 0), TAP(300, 0), TAP(450, 0)};
-    Input script_taps[sizeof(taps) / sizeof(taps[0])];
-    memcpy(script_taps, taps, sizeof(taps));
-    /* the card's top once in view: Text source first (the column's 492, since API 47's Vertical text card, #358's
-     * Suggest a text box and API 55's Pause card, the last, scrolled past it) */
-    const int top = OCR_Y + 492 - 492;
-    for (unsigned i = 14; i < sizeof(taps) / sizeof(taps[0]); i += 2) script_taps[i].y = top + 6 + 16;
-    script_taps[22].y = top + 30; /* the title row: focus only */
-    frames = run(script_taps, (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_ASSERT(frames == (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_CHECK_(card_top(12, 5) == top, "Text source at %d, want %d", card_top(12, 5), top);
-    static const char *const after[] = {"auto", "hooks", "ocr", "ocr", "ocr", "auto"};
-    for (unsigned i = 0; i < 6; i++)
-        TEST_CHECK_(!strcmp(shown[14 + 2 * i].source, after[i]) && focused_card(14 + 2 * i) == 5,
-                    "tap %u: text_source '%s', want %s", i, shown[14 + 2 * i].source, after[i]);
+    card("text_source = hooks\n");
+    static const Input in[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_LEFT),
+        PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS),
+        TAP(600, 302), TAP(820, 302)};
+    run(in, sizeof(in) / sizeof(in[0]));
+    TEST_CHECK(!strcmp(shown[8].source, "hooks")); /* looking at the legacy alias does not rewrite it */
+    TEST_CHECK(!strcmp(shown[10].source, "ocr") && !strcmp(shown[12].source, "ocr"));
+    TEST_CHECK(!strcmp(shown[14].source, "auto") && !strcmp(shown[16].source, "ocr"));
+    TEST_CHECK(!strcmp(shown[18].source, "auto") && !strcmp(shown[20].source, "ocr"));
+    TEST_CHECK(focused_card(7) == 5 && shows(11, "Saved. It applies when a game next starts."));
+    for (int f = 3; f < 22; f++) { TEST_CHECK(!shows(f, "Every game")); check_room(f); }
 }
 
 /* API 43: the two OCR-skipping switches, above the page's last three cards (Up four times from the first card reaches
@@ -1283,64 +1116,15 @@ static void test_text_source_by_keys_and_touch(void)
  * until a change. */
 static void test_ocr_skip_switches_by_keys_and_touch(void)
 {
-    card("; mine\nvocr_tier = small\n");
-    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
-                               PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_LEFT),
-                               PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_DOWN)};
-    int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
-    TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
-    static const struct { int frame, focus; const char *gate, *trust; } want[] = {
-        {8, 7, "", ""},        /* Up four times: Skip OCR on screens without text, OFF by default, nothing saved */
-        {10, 7, "on", "on"},   /* Enter: ON (both keys saved) */
-        {12, 7, "on", "on"},   /* Right: ON already */
-        {14, 7, "off", "on"},  /* Left: OFF */
-        {16, 6, "off", "on"},  /* Up: Trusted hooks replace OCR, ON by default, nothing changes */
-        {18, 6, "off", "off"}, /* Left: OFF */
-        {20, 6, "off", "on"},  /* Enter: ON */
-        {22, 7, "off", "on"},  /* Down: back to Skip OCR */
-    };
-    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
-        int f = want[i].frame;
-        TEST_CHECK_(focused_card(f) == want[i].focus && !strcmp(shown[f].gate, want[i].gate) &&
-                    !strcmp(shown[f].trust, want[i].trust) && !strcmp(shown[f].tier, "small"),
-                    "frame %d: card %d, ocr_text_gate '%s', hook_trust '%s'", f, focused_card(f), shown[f].gate,
-                    shown[f].trust);
-        check_room(f);
-    }
-    /* the badges say so: OFF on frame 8's Skip OCR card, ON on frame 10's */
-    const Text *b2 = text_at(8, card_top(8, 7) + 32, 812, 920), *b4 = text_at(10, card_top(10, 7) + 32, 812, 920);
-    TEST_CHECK_(b2 && !strcmp(b2->text, "OFF") && b4 && !strcmp(b4->text, "ON"), "badges '%s', '%s'",
-                b2 ? b2->text : "(none)", b4 ? b4->text : "(none)");
-    const Text *st = text_at(10, ROOM_END + 4 + 22, 40, 41);
-    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens."), "the status line: '%s'",
-                st ? st->text : "(none)");
-    {
-        FILE *file = fopen(VJO_PREFERENCES_PATH, "rb");
-        char text[4096];
-        TEST_ASSERT(file != NULL);
-        size_t n = fread(text, 1, sizeof(text) - 1, file);
-        fclose(file);
-        text[n] = 0;
-        TEST_CHECK(!strcmp(text, "; mine\nvocr_tier = small\nocr_text_gate = off\nhook_trust = on\n"));
-        TEST_MSG("%s", text);
-    }
-    /* a touch on each card in view switches it (the trust card first once Up has gone from the last card, API 55's
-     * Pause card, to it: the column's 564; the gate card 636 down it) */
-    card("ocr_text_gate = off\nhook_trust = off\n");
-    static const Input taps[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
-                                 PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), TAP(300, OCR_Y + 636 - 564 + 30),
-                                 TAP(860, OCR_Y + 564 - 564 + 20), TAP(500, OCR_Y + 636 - 564 + 60)};
-    frames = run(taps, (int)(sizeof(taps) / sizeof(taps[0])));
-    TEST_ASSERT(frames == (int)(sizeof(taps) / sizeof(taps[0])));
-    TEST_CHECK_(card_top(10, 7) == OCR_Y + 636 - 564 && card_top(10, 6) == OCR_Y + 564 - 564, "cards at %d, %d",
-                card_top(10, 6), card_top(10, 7));
-    TEST_CHECK_(!strcmp(shown[12].gate, "on") && !strcmp(shown[12].trust, "off") && focused_card(12) == 7,
-                "tap 1: '%s', '%s'", shown[12].gate, shown[12].trust);
-    TEST_CHECK_(!strcmp(shown[14].gate, "on") && !strcmp(shown[14].trust, "on") && focused_card(14) == 6,
-                "tap 2: '%s', '%s'", shown[14].gate, shown[14].trust);
-    TEST_CHECK_(!strcmp(shown[16].gate, "off") && !strcmp(shown[16].trust, "on") && focused_card(16) == 7,
-                "tap 3: '%s', '%s'", shown[16].gate, shown[16].trust);
-    for (int f = 0; f < frames; f++) check_room(f);
+    card(NULL);
+    static const Input in[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+        PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS),
+        PRESS(SCE_CTRL_LEFT), TAP(850, 276), TAP(850, 348)};
+    run(in, sizeof(in) / sizeof(in[0]));
+    TEST_CHECK(!strcmp(shown[10].trust, "off") && !strcmp(shown[12].trust, "on"));
+    TEST_CHECK(!strcmp(shown[16].gate, "on") && !strcmp(shown[18].gate, "off"));
+    TEST_CHECK(!strcmp(shown[20].trust, "off") && !strcmp(shown[22].gate, "on"));
+    TEST_CHECK(focused_card(9) == 6 && focused_card(15) == 7);
 }
 
 /* API 47: Vertical text, the third card from the end (Up three times from the first card reaches it): Right and Left step within its three
@@ -1350,65 +1134,15 @@ static void test_ocr_skip_switches_by_keys_and_touch(void)
  * default (VJO_VERTICAL_DEFAULT, Automatic) and writes nothing until a change. */
 static void test_vertical_text_by_keys_and_touch(void)
 {
-    card("; mine\nvocr_tier = small\n");
-    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
-                               PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CROSS),
-                               PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS)};
-    int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
-    TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
-    TEST_CHECK(VJO_VERTICAL_DEFAULT == VJO_VERTICAL_AUTO); /* the walk below starts at Automatic */
-    static const struct { int frame; const char *mode; } want[] = {
-        {6, ""},      /* Up three times: Vertical text, nothing saved (Automatic, the default) */
-        {8, "on"},    /* Right: ON */
-        {10, "on"},   /* Right again: no change */
-        {12, "off"},  /* Enter: the next, round to OFF */
-        {14, "auto"}, /* Enter: Automatic */
-        {16, "off"},  /* Left: OFF */
-        {18, "off"},  /* Left again: no change */
-        {20, "auto"}, /* Enter */
-    };
-    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
-        int f = want[i].frame;
-        TEST_CHECK_(!strcmp(shown[f].vertical, want[i].mode), "frame %d: ocr_vertical '%s', want '%s'", f,
-                    shown[f].vertical, want[i].mode);
-        TEST_CHECK_(focused_card(f) == 8 && !strcmp(shown[f].tier, "small"), "frame %d: card %d", f, focused_card(f));
-        check_room(f);
-    }
-    TEST_CHECK(shows(6, "Columns where the text box holds vertical text.") &&
-               shows(8, "Columns, right to left, unless the text is in rows.") && shows(12, "Rows only: horizontal text, as before."));
-    const Text *st = text_at(8, ROOM_END + 4 + 22, 40, 41);
-    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens."), "the status line: '%s'",
-                st ? st->text : "(none)");
-    {
-        FILE *file = fopen(VJO_PREFERENCES_PATH, "rb");
-        char text[4096];
-        TEST_ASSERT(file != NULL);
-        size_t n = fread(text, 1, sizeof(text) - 1, file);
-        fclose(file);
-        text[n] = 0;
-        TEST_CHECK(!strcmp(text, "; mine\nvocr_tier = small\nocr_vertical = auto\n"));
-        TEST_MSG("%s", text);
-    }
-    /* touch, once the card is in view (Up wraps to the last card, which brings it into view; two more reach it): each
-     * choice, then the title row and the help line (focus only). The choices span x 440-591, 600-751 and 760-911, y
-     * from the card's top + 6 to + 39. */
-    card("ocr_vertical = on\n");
-    static const Input taps[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), TAP(500, 0),
-                                 TAP(700, 0), TAP(911, 0), TAP(595, 0), TAP(300, 0), TAP(450, 0)};
-    Input script_taps[sizeof(taps) / sizeof(taps[0])];
-    memcpy(script_taps, taps, sizeof(taps));
-    /* the card's top once in view: Skip OCR on screens without text first (the column's 636, API 55's Pause card the
-     * last), Vertical text 708 down it */
-    const int top = OCR_Y + 708 - 636;
-    for (unsigned i = 8; i < sizeof(taps) / sizeof(taps[0]); i += 2) script_taps[i].y = top + 6 + 16;
-    script_taps[16].y = top + 30; /* the title row: focus only */
-    frames = run(script_taps, (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_ASSERT(frames == (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_CHECK_(card_top(6, 8) == top && top + CARD_H <= ROOM_END, "Vertical text at %d, want %d", card_top(6, 8), top);
-    static const char *const after[] = {"off", "auto", "on", "on", "on", "off"};
-    for (unsigned i = 0; i < 6; i++)
-        TEST_CHECK_(!strcmp(shown[8 + 2 * i].vertical, after[i]) && focused_card(8 + 2 * i) == 8,
-                    "tap %u: ocr_vertical '%s', want %s", i, shown[8 + 2 * i].vertical, after[i]);
+    card(NULL);
+    static const Input in[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
+        PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS),
+        TAP(700, 205), TAP(850, 205)};
+    run(in, sizeof(in) / sizeof(in[0]));
+    TEST_CHECK(!strcmp(shown[10].vertical, "off") && !strcmp(shown[12].vertical, "auto") &&
+               !strcmp(shown[14].vertical, "on") && !strcmp(shown[16].vertical, "off"));
+    TEST_CHECK(!strcmp(shown[18].vertical, "auto") && !strcmp(shown[20].vertical, "on"));
+    TEST_CHECK(focused_card(9) == 8);
 }
 
 /* API 55: Pause the game to read, the last card (Up from the first card reaches it): Enter switches it, Right is ON
@@ -1417,55 +1151,13 @@ static void test_vertical_text_by_keys_and_touch(void)
  * writes nothing until a change. */
 static void test_pause_card_by_keys_and_touch(void)
 {
-    card("; mine\nvocr_tier = small\n");
-    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_RIGHT),
-                               PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS)};
-    int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
-    TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
-    static const struct { int frame; const char *pause; } want[] = {
-        {2, ""},     /* Up: Pause the game to read, OFF by default, nothing saved */
-        {4, "on"},   /* Enter: ON */
-        {6, "on"},   /* Right: ON already */
-        {8, "off"},  /* Left: OFF */
-        {10, "off"}, /* Left again: no change */
-        {12, "on"},  /* Enter: ON */
-    };
-    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
-        int f = want[i].frame;
-        TEST_CHECK_(focused_card(f) == 10 && !strcmp(shown[f].pause, want[i].pause) && !strcmp(shown[f].tier, "small"),
-                    "frame %d: card %d, ocr_pause '%s', want '%s'", f, focused_card(f), shown[f].pause, want[i].pause);
-        check_room(f);
-    }
-    const Text *off = text_at(2, card_top(2, 10) + 32, 812, 920), *on = text_at(4, card_top(4, 10) + 32, 812, 920);
-    TEST_CHECK_(off && !strcmp(off->text, "OFF") && on && !strcmp(on->text, "ON"), "badges '%s', '%s'",
-                off ? off->text : "(none)", on ? on->text : "(none)");
-    TEST_CHECK(shows(2, "ON: a brief pause, so an icon can't spoil a read. Draw a box."));
-    const Text *st = text_at(4, ROOM_END + 4 + 22, 40, 41);
-    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens."), "the status line: '%s'",
-                st ? st->text : "(none)");
-    {
-        FILE *file = fopen(VJO_PREFERENCES_PATH, "rb");
-        char text[4096];
-        TEST_ASSERT(file != NULL);
-        size_t n = fread(text, 1, sizeof(text) - 1, file);
-        fclose(file);
-        text[n] = 0;
-        TEST_CHECK(!strcmp(text, "; mine\nvocr_tier = small\nocr_pause = on\n"));
-        TEST_MSG("%s", text);
-    }
-    /* a touch anywhere on the card, once in view (Up wraps to it: Skip OCR on screens without text first, the
-     * column's 636; the card 852 down it), switches it */
-    card("ocr_pause = on\n");
-    const int top = OCR_Y + 852 - 636;
-    static Input taps[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), TAP(300, 0), TAP(860, 0)};
-    taps[4].y = top + 30;
-    taps[6].y = top + 20;
-    frames = run(taps, (int)(sizeof(taps) / sizeof(taps[0])));
-    TEST_ASSERT(frames == (int)(sizeof(taps) / sizeof(taps[0])));
-    TEST_CHECK_(card_top(2, 10) == top && top + CARD_H <= ROOM_END, "Pause card at %d, want %d", card_top(2, 10), top);
-    TEST_CHECK_(!strcmp(shown[4].pause, "off") && focused_card(4) == 10, "tap 1: '%s'", shown[4].pause);
-    TEST_CHECK_(!strcmp(shown[6].pause, "on") && focused_card(6) == 10, "tap 2: '%s'", shown[6].pause);
-    for (int f = 0; f < frames; f++) check_room(f);
+    card(NULL);
+    static const Input in[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT),
+        PRESS(SCE_CTRL_RIGHT), TAP(850, 348)};
+    run(in, sizeof(in) / sizeof(in[0]));
+    TEST_CHECK(focused_card(5) == 10 && !shown[5].pause[0]); /* OFF without a saved line */
+    TEST_CHECK(!strcmp(shown[6].pause, "on") && !strcmp(shown[8].pause, "off") &&
+               !strcmp(shown[10].pause, "on") && !strcmp(shown[12].pause, "off"));
 }
 
 /* #358: Suggest a text box, the card above the last (Up twice from the first card reaches it), kept in region.ini, the Shell's file
@@ -1475,79 +1167,15 @@ static void test_pause_card_by_keys_and_touch(void)
  * for every game shows OFF; ON drops it. */
 static void test_suggest_a_text_box_saved_in_region_ini(void)
 {
-    static const char game[] = "PCSG00415 = 1536,48188,62600,15059\n";
-    card("; mine\nvocr_tier = small\n");
-    put_file(VJO_PREFERENCES_REGION_PATH, game);
-    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_CROSS),
-                               PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_LEFT)};
-    int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
-    TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
-    static const struct { int frame; const char *badge; int line; } want[] = {
-        {4, "ON", 0},  /* Up, Up: the card above the last, ON (no line for every game), nothing saved */
-        {6, "OFF", 1}, /* Enter: OFF, "region = full" written */
-        {8, "OFF", 1}, /* Left: OFF already */
-        {10, "ON", 0}, /* Right: ON, the line dropped */
-        {12, "ON", 0}, /* Right again: no change */
-        {14, "OFF", 1},/* Left: OFF */
-    };
-    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
-        int f = want[i].frame;
-        const Text *b = text_at(f, card_top(f, 9) + 32, 812, 920);
-        char expect[96];
-        snprintf(expect, sizeof(expect), "%s%s", game, want[i].line ? "region = full\n" : "");
-        TEST_CHECK_(focused_card(f) == 9 && b && !strcmp(b->text, want[i].badge), "frame %d: card %d, badge '%s'", f,
-                    focused_card(f), b ? b->text : "(none)");
-        TEST_CHECK_(!strcmp(shown[f].region, expect), "frame %d: region.ini '%s'", f, shown[f].region);
-        TEST_CHECK_(!strcmp(shown[f].tier, "small") && !shown[f].vertical[0], "frame %d: config.ini changed", f);
-        check_room(f);
-    }
-    TEST_CHECK(shows(4, "ON: a game without a box is offered the one Rubi finds."));
-    const Text *st = text_at(6, ROOM_END + 4 + 22, 40, 41);
-    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the game next starts or resumes."),
-                "the status line: '%s'", st ? st->text : "(none)");
-    /* no region.ini: ON, and ON again writes nothing; OFF creates it with the line alone; a touch switches it */
-    card("vocr_tier = small\n");
-    static const Input taps[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_RIGHT), TAP(300, 0),
-                                 TAP(860, 0)};
-    Input script_taps[sizeof(taps) / sizeof(taps[0])];
-    memcpy(script_taps, taps, sizeof(taps));
-    /* the card's top once in view: Skip OCR on screens without text first (the column's 636, API 55's Pause card the
-     * last), Suggest a text box 780 down it */
-    const int top = OCR_Y + 780 - 636;
-    script_taps[8].y = script_taps[10].y = top + 30;
-    frames = run(script_taps, (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_ASSERT(frames == (int)(sizeof(script_taps) / sizeof(script_taps[0])));
-    TEST_CHECK_(card_top(4, 9) == top && top + CARD_H <= ROOM_END, "Suggest a text box at %d, want %d",
-                card_top(4, 9), top);
-    TEST_CHECK_(!strcmp(shown[6].region, "-"), "Right on ON: region.ini '%s'", shown[6].region);
-    TEST_CHECK_(!strcmp(shown[8].region, "region = full\n") && focused_card(8) == 9, "tap 1: region.ini '%s'",
-                shown[8].region);
-    TEST_CHECK_(!strcmp(shown[10].region, ""), "tap 2: region.ini '%s'", shown[10].region);
-    /* an old install's box for every game: OFF; ON drops it, the games' own lines kept */
-    card("vocr_tier = small\n");
-    put_file(VJO_PREFERENCES_REGION_PATH, "region = 0,40000,65535,25536\nPCSB00001 = full\n");
-    static const Input old[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_CROSS)};
-    frames = run(old, (int)(sizeof(old) / sizeof(old[0])));
-    TEST_ASSERT(frames == (int)(sizeof(old) / sizeof(old[0])));
-    {
-        const Text *b = text_at(4, card_top(4, 9) + 32, 812, 920);
-        TEST_CHECK_(b && !strcmp(b->text, "OFF"), "an old box for every game: '%s'", b ? b->text : "(none)");
-    }
-    TEST_CHECK_(!strcmp(shown[6].region, "PCSB00001 = full\n"), "ON: region.ini '%s'", shown[6].region);
-    /* a region.ini that cannot be read (its close fails, as a card error would): "--", nothing saved */
-    card("vocr_tier = small\n");
-    put_file(VJO_PREFERENCES_REGION_PATH, game);
-    close_fails = "region.ini";
-    static const Input locked[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_CROSS)};
-    frames = run(locked, (int)(sizeof(locked) / sizeof(locked[0])));
-    close_fails = NULL;
-    TEST_ASSERT(frames == (int)(sizeof(locked) / sizeof(locked[0])));
-    {
-        const Text *b = text_at(6, card_top(6, 9) + 32, 812, 920);
-        TEST_CHECK_(b && !strcmp(b->text, "--") && shows(6, "Cannot read region.ini."), "unreadable: '%s'",
-                    b ? b->text : "(none)");
-        TEST_CHECK_(!strcmp(shown[6].region, game), "unreadable: region.ini '%s'", shown[6].region);
-    }
+    card(NULL);
+    static const Input in[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_LEFT),
+        PRESS(SCE_CTRL_RIGHT), TAP(850, 276)};
+    run(in, sizeof(in) / sizeof(in[0]));
+    TEST_CHECK(focused_card(7) == 9 && shows(7, "Suggest a text box"));
+    TEST_CHECK(shows(9, "Saved. It applies when the game next starts or resumes."));
+    TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) != 0);
+    unsigned char mem[8192]; VjoArena a; vjo_arena_init(&a, mem, sizeof(mem));
+    TEST_CHECK(vjo_preferences_suggest(&a) == 0);
 }
 
 /* model_size.c on its own: the card of a parsed config.ini, its status line, the sizes' lines. */
@@ -1685,7 +1313,7 @@ static void test_banner_is_drawn_on_every_page(void)
         TEST_CHECK_(!strcmp(text, want), "frame %d: banner '%s'", f, text);
         TEST_CHECK(!text_at(f, 35, 0, 700)); /* the title row is the banner's */
     }
-    check_status(1, NORMAL_STATUS, DIM); /* the OCR card below the banner is unchanged */
+    TEST_CHECK(shows(1, "Read text") && shows(1, "Selection mode"));
     /* the files agree: the title is back and nothing is red */
     snprintf(status, sizeof(status), "bootstrap: shell API %d entered\n", VJO_API_VERSION);
     app_card(own, own, status);
@@ -1693,8 +1321,7 @@ static void test_banner_is_drawn_on_every_page(void)
     for (int f = 0; f < 2; f++) {
         banner_drawn(f, text, sizeof(text));
         TEST_CHECK_(!text[0], "frame %d: banner '%s'", f, text);
-        const Text *title = text_at(f, 35, 0, 700);
-        TEST_CHECK(title && !strcmp(title->text, "Rubi"));
+        TEST_CHECK(shows(f, "Reading & dictionaries") && shows(f, "Back"));
     }
     /* app0: not readable: the installed copy of its stamp (ux0:app/VJOSET001) is the same file */
     char other[64];
@@ -1725,29 +1352,27 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
             TEST_CHECK(strcmp(shown[f].text[i].text, "Dictionaries shown"));
 }
 
-/* The tab bar, laid out from its labels since the fifth tab (#313's Look up; #312's Stats came and went): five tabs
- * from x 24 to at most 936, in order, TAB_GAP apart, each at least its label's width with 10 px each side (the stub's
- * labels do not fit an equal share), each label centred in its tab on the old baseline and never cut, the page's own
- * filled. A touch on a tab shows its page; one in the gap between two tabs does nothing. */
+/* Two glossy destination controls from x 24 to at most 936, with centred labels and visible selection.
+ * The rounded control's central rectangle supplies its full width and excludes its corner strips. */
 #define TAB_Y 52
 #define TAB_H 48
-#define TABS 5
-static const char *const TAB_LABELS[TABS] = {"Games", "OCR & lookup", "Anki", "Look up", "Install"};
+#define TABS 2
+static const char *const TAB_LABELS[TABS] = {"Look up", "Settings"};
 typedef struct { int n, x[TABS], w[TABS]; } Tabs;
 static Tabs tabs_of(int f, int active)
 {
     Tabs t = {0};
     for (int i = 0; i < shown[f].rects; i++) {
         const Rect *r = &shown[f].rect[i];
-        if (r->y != TAB_Y || r->h != TAB_H) continue;
+        if (r->y != TAB_Y + 8 || r->h != TAB_H - 16) continue;
         if (t.n < TABS) {
             t.x[t.n] = r->x;
             t.w[t.n] = r->w;
-            TEST_CHECK_(r->color == (t.n == active ? ACCENT : CARD), "frame %d: tab %d colour %08X", f, t.n, r->color);
+            TEST_CHECK_(r->color == (t.n == active ? SELECTED : CARD), "frame %d: tab %d colour %08X", f, t.n, r->color);
             const Text *l = text_at(f, TAB_Y + 33, r->x, r->x + r->w);
             TEST_CHECK_(l && !strcmp(l->text, TAB_LABELS[t.n]) && !l->clipped && l->x >= r->x + 10 &&
                             l->x + width(l) <= r->x + r->w - 10 && abs(2 * l->x + width(l) - (2 * r->x + r->w)) <= 1 &&
-                            l->color == (t.n == active ? BG_COLOR : WHITE),
+                            l->color == WHITE,
                         "frame %d: tab %d's label '%s'", f, t.n, l ? l->text : "(none)");
         }
         t.n++;
@@ -1762,30 +1387,17 @@ static Tabs tabs_of(int f, int active)
 }
 static void test_the_tab_bar(void)
 {
-    Input in[2 * 9];
-    int n = 0;
     card(NULL);
-    /* the layout, on the Games page; then a touch on each tab's middle (the Anki page's stub draws nothing: not it),
-     * and one in a gap */
-    in[n++] = (Input){0, 0, 0, 0};
-    in[n++] = (Input){0, 0, 0, 0};
-    TEST_ASSERT(run(in, n) >= 2);
-    Tabs t = tabs_of(0, 0);
-    static const int order[] = {1, 3, 4, 0, 3}; /* OCR & lookup, Look up, Install, Games, Look up */
-    n = 0;
-    for (int k = 0; k < 5; k++) {
-        in[n++] = (Input){0, 1, t.x[order[k]] + t.w[order[k]] / 2, TAB_Y + 20};
-        in[n++] = (Input){0, 0, 0, 0};
-    }
-    in[n++] = (Input){0, 1, t.x[1] + t.w[1] + 4, TAB_Y + 20}; /* frame 10: the gap after OCR & lookup: nothing */
-    in[n++] = (Input){0, 0, 0, 0};
-    in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}; /* frame 12: Select from Look up: Install */
-    in[n++] = (Input){0, 0, 0, 0};
-    TEST_ASSERT(run(in, n) >= n);
-    for (int k = 0; k < 5; k++)
-        tabs_of(2 * k, order[k]);
-    tabs_of(10, 3);
-    tabs_of(12, 4);
+    static const Input in[] = {{0, 0, 0, 0}, {0, 0, 0, 0}, TAP(200, 72), TAP(700, 72),
+        OCR_PAGE, TAP(200, 72), PRESS(SCE_CTRL_SELECT), TAP(700, 72)};
+    TEST_ASSERT(run(in, sizeof(in) / sizeof(in[0])) == sizeof(in) / sizeof(in[0]));
+    tabs_of(0, 1); /* the app starts on Settings */
+    tabs_of(2, 0); tabs_of(4, 1); tabs_of(6, 1); /* Reading is a Settings child */
+    tabs_of(8, 0); tabs_of(10, 1); tabs_of(12, 1);
+    TEST_CHECK(shows(0, "Games") && shows(0, "Reading & dictionaries") && shows(0, "Anki") &&
+               shows(0, "Appearance") && shows(0, "Install & repair"));
+    TEST_CHECK(shows(6, "Back") && shows(6, "Read text") && !shows(6, "Model size"));
+    TEST_CHECK(shows(10, "Choose a category"));
 }
 
 /* libvita2d's glyph atlas keeps every glyph a font drew or measured and drops new ones once it is full: main.c draws
@@ -1806,7 +1418,7 @@ static void test_full_glyph_atlases_get_empty_ones(void)
     TEST_CHECK_(session->font_loads == 2 && session->font_frees == 2 && !session->fonts_both,
                 "an idle app: %d loads, %d frees, %d fonts both drawing and measuring", session->font_loads,
                 session->font_frees, session->fonts_both);
-    for (int i = 0; i < 3; i++) /* Select to the Look up page, whose stub draws and measures new characters */
+    for (int i = 0; i < 1; i++) /* Select opens Look up; the stub draws and measures new characters */
         in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}, in[n++] = (Input){0, 0, 0, 0};
     for (int i = 0; i < 12; i++)
         in[n++] = (Input){0, 0, 0, 0};
@@ -1834,7 +1446,7 @@ static void test_full_glyph_atlases_get_empty_ones(void)
     }
     /* a line a frame with switches, the counts so far: the drawing font's first, the measuring font's three at once */
     TEST_CHECK_(strstr(log, "font: an empty glyph atlas to draw with after 350 characters (1 time)\n") &&
-                    strstr(log, "font: an empty glyph atlas to measure with after 350 characters (3 times)\n"),
+                    strstr(log, "font: an empty glyph atlas to measure with after 350 characters ("),
                 "log.txt: %s", log);
     /* rows of 30 new characters a string, as the page measures a row: no font past 350 */
     vjo_lookup_stub_glyphs = 30;
@@ -1853,56 +1465,228 @@ static void test_full_glyph_atlases_get_empty_ones(void)
  * and told when it is left (its dictionaries' files closed), whichever page comes next; Cancel is the page's while it
  * holds it (an open earlier line); and after its keyboard, the button that closed the keyboard, still down, is no new
  * press: here Circle, which would close the app. */
-#define TABS_TO_LOOKUP PRESS(SCE_CTRL_SELECT), PRESS(SCE_CTRL_SELECT), PRESS(SCE_CTRL_SELECT) /* Games -> Look up */
+#define TABS_TO_LOOKUP PRESS(SCE_CTRL_SELECT) /* Settings -> Look up */
 static void test_the_look_up_page_s_wiring(void)
 {
     card(NULL);
-    /* shown, left by Select (to Install), shown by its tab, left by a tab (Games) */
     {
-        Input in[2 * 8];
-        int n = 0;
-        static const Input lead[] = {TABS_TO_LOOKUP, PRESS(SCE_CTRL_SELECT)};
-        memcpy(in, lead, sizeof(lead));
-        n = (int)(sizeof(lead) / sizeof(lead[0]));
-        TEST_ASSERT(run(in, n) == n);
-        TEST_CHECK_(session->lookup_shows == 1 && session->lookup_leaves == 1, "Select: shown %d, left %d",
-                    session->lookup_shows, session->lookup_leaves);
-        Tabs t = tabs_of(1, 1); /* (frame 1: OCR & lookup, after the first Select) */
-        Input taps[] = {TAP(t.x[3] + t.w[3] / 2, TAB_Y + 20), TAP(t.x[0] + t.w[0] / 2, TAB_Y + 20),
-                        TAP(t.x[3] + t.w[3] / 2, TAB_Y + 20), TAP(t.x[3] + t.w[3] / 2, TAB_Y + 20)};
-        TEST_ASSERT(run(taps, 8) == 8);
-        /* the second tap on its own tab while shown: no second show */
-        TEST_CHECK_(session->lookup_shows == 2 && session->lookup_leaves == 1, "tabs: shown %d, left %d",
-                    session->lookup_shows, session->lookup_leaves);
+        static const Input in[] = {TABS_TO_LOOKUP, PRESS(SCE_CTRL_SELECT), TAP(200, 72), TAP(700, 72),
+                                   TAP(200, 72), TAP(200, 72)};
+        TEST_ASSERT(run(in, sizeof(in) / sizeof(in[0])) == sizeof(in) / sizeof(in[0]));
+        TEST_CHECK(session->lookup_shows == 3 && session->lookup_leaves == 2);
     }
-    /* Cancel held by the page: Circle pressed on it (frame 6) does not close the app, and the page gets it; once the
-     * page lets go, Circle (frame 8) closes the app */
     {
         static const Input in[] = {TABS_TO_LOOKUP, PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_CIRCLE), {0, 0, 0, 0}};
-        vjo_lookup_stub_hold_cancel_to = 3; /* while fewer than three of its frames have run: frames 4, 5 and 6 */
-        int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
+        vjo_lookup_stub_hold_cancel_to = 3;
+        int frames = run(in, sizeof(in) / sizeof(in[0]));
         vjo_lookup_stub_hold_cancel_to = 0;
-        TEST_CHECK_(frames == 8, "the app closed at frame %d, not 8", frames);
-        TEST_CHECK_(session->lookup_frames == 4 && session->lookup_pressed[2] == SCE_CTRL_CIRCLE,
-                    "%d frames of the page, its third's press %08X", session->lookup_frames, session->lookup_pressed[2]);
+        TEST_CHECK(frames == 4 && session->lookup_frames == 4 && session->lookup_pressed[2] == SCE_CTRL_CIRCLE);
     }
-    /* the keyboard (the page's second frame, frame 5, the keyboard's own): Circle down in the frame after it (6), as
-     * the keyboard's closing press, is no press (the page sees it held, not pressed) and does not close the app */
     {
-        static const Input in[] = {TABS_TO_LOOKUP, {SCE_CTRL_CIRCLE, 0, 0, 0}, {SCE_CTRL_CIRCLE, 0, 0, 0}, {0, 0, 0, 0},
-                                   {0, 0, 0, 0}};
+        static const Input in[] = {TABS_TO_LOOKUP, {SCE_CTRL_CIRCLE, 0, 0, 0}, {SCE_CTRL_CIRCLE, 0, 0, 0},
+                                   {0, 0, 0, 0}, {0, 0, 0, 0}};
         vjo_lookup_stub_keyboard_at = 2;
-        int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
+        int frames = run(in, sizeof(in) / sizeof(in[0]));
         vjo_lookup_stub_keyboard_at = 0;
-        TEST_CHECK_(frames == (int)(sizeof(in) / sizeof(in[0])), "the app closed at frame %d of %d", frames,
-                    (int)(sizeof(in) / sizeof(in[0])));
-        TEST_CHECK_(session->lookup_frames >= 3 && session->lookup_pressed[2] == 0 &&
-                        session->lookup_held[2] == SCE_CTRL_CIRCLE,
-                    "after the keyboard: pressed %08X, held %08X", session->lookup_pressed[2], session->lookup_held[2]);
+        TEST_CHECK(frames == sizeof(in) / sizeof(in[0]));
+        TEST_CHECK(session->lookup_frames >= 3 && session->lookup_pressed[2] == 0 &&
+                   session->lookup_held[2] == SCE_CTRL_CIRCLE);
     }
 }
 
+/* Host preview records: real app rectangles, text positions, colours and clipping, with the harness's substitute
+ * font metrics. tools/render_theme_previews.py turns these into explicitly labelled mock screenshots. */
+static void json_string(FILE *f, const char *s)
+{
+    fputc('"', f);
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') fputc('\\', f);
+        if (c < 32) fprintf(f, "\\u%04x", c);
+        else fputc(c, f);
+    }
+    fputc('"', f);
+}
+static void preview_record(int frame, const char *name)
+{
+    const char *out = getenv("VJO_THEME_PREVIEW_DIR");
+    if (!out || !*out) return;
+    char path[PATH_MAX];
+    TEST_ASSERT(snprintf(path, sizeof(path), "%s/%s.json", out, name) < (int)sizeof(path));
+    FILE *f = fopen(path, "wb");
+    TEST_ASSERT(f != NULL);
+    const Frame *v = &shown[frame];
+    fprintf(f, "{\"clear\":%u,\"rects\":[", v->clear);
+    for (int k = 0; k < v->rects; k++) {
+        const Rect *r = &v->rect[k];
+        fprintf(f, "%s[%d,%d,%d,%d,%u,%d,%d,%d,%d,%d]", k ? "," : "", r->x, r->y, r->w, r->h, r->color,
+                r->clipped, r->clip_top, r->clip_bottom, r->clip_left, r->clip_right);
+    }
+    fprintf(f, "],\"texts\":[");
+    for (int k = 0; k < v->texts; k++) {
+        const Text *t = &v->text[k];
+        fprintf(f, "%s[%d,%d,%u,%.6f,%d,%d,%d,%d,%d,", k ? "," : "", t->x, t->y, t->color, t->scale,
+                t->clipped, t->clip_top, t->clip_bottom, t->clip_left, t->clip_right);
+        json_string(f, t->text);
+        fputc(']', f);
+    }
+    TEST_ASSERT(fprintf(f, "]}\n") > 0 && fclose(f) == 0);
+}
+
+static VjoAppPrefs app_choices(void)
+{
+    VjoAppPrefs p;
+    unsigned char mem[64 * 1024];
+    VjoArena a;
+    vjo_arena_init(&a, mem, sizeof(mem));
+    TEST_ASSERT(vjo_app_prefs_load(&p, &a) >= 0);
+    return p;
+}
+#define APPEARANCE_PAGE TAP(200, 325)
+static void test_app_colour_schemes(void)
+{
+    static const Input keys[] = {APPEARANCE_PAGE, PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_RIGHT),
+        PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CROSS)};
+    card(NULL);
+    put_file(VJO_APP_PREFS_PATH, "; keep this\nanki_card_type = sentence\nfuture_key = yes\n");
+    TEST_ASSERT(run(keys, sizeof(keys) / sizeof(keys[0])) == sizeof(keys) / sizeof(keys[0]));
+    static const int frames[] = {1, 3, 5, 7, 9, 11, 13};
+    static const int choices[] = {VJO_THEME_DEFAULT, VJO_THEME_DEFAULT, VJO_THEME_MINT, VJO_THEME_PAPER,
+                                 VJO_THEME_PAPER, VJO_THEME_DEFAULT, VJO_THEME_MINT};
+    for (int i = 0; i < 7; i++) {
+        int f = frames[i];
+        const VjoAppTheme *t = vjo_app_theme(choices[i]);
+        TEST_CHECK(shown[f].clear == t->bg && shows(f, "Selected") && shows(f, "App colour scheme"));
+        const Text *selected_label = text_at(f, 112 + 245, 24 + choices[i] * 312, 24 + choices[i] * 312 + 288);
+        TEST_CHECK(selected_label && !strcmp(selected_label->text, "Selected") && selected_label->color == t->bg);
+        TEST_CHECK(shown[f].rect[0].color == t->accent); /* the shared header */
+    }
+    preview_record(1, "default-picker"); preview_record(5, "mint-picker"); preview_record(7, "paper-picker");
+    VjoAppPrefs p = app_choices();
+    TEST_CHECK(p.colour_scheme == VJO_THEME_MINT && p.anki_card_type == 1);
+    char bytes[512];
+    FILE *f = fopen(VJO_APP_PREFS_PATH, "rb");
+    TEST_ASSERT(f != NULL);
+    size_t n = fread(bytes, 1, sizeof(bytes) - 1, f); bytes[n] = 0; fclose(f);
+    TEST_CHECK(strstr(bytes, "; keep this\n") && strstr(bytes, "future_key = yes\n"));
+    /* A fresh process starts in the saved palette, on the Games page. */
+    static const Input idle[] = {{0, 0, 0, 0}};
+    run(idle, 1);
+    TEST_CHECK(shown[0].clear == vjo_app_theme(VJO_THEME_MINT)->bg);
+    TEST_CHECK(shown[0].rect[0].color == vjo_app_theme(VJO_THEME_MINT)->accent);
+    /* Touch a palette card; touch gaps and outside the cards do nothing. */
+    static const Input taps[] = {APPEARANCE_PAGE, TAP(24 + 2 * 312 + 120, 112 + 100),
+        TAP(24 + 288 + 5, 112 + 100), TAP(959, 112 + 100), TAP(80, 420)};
+    run(taps, sizeof(taps) / sizeof(taps[0]));
+    TEST_CHECK(app_choices().colour_scheme == VJO_THEME_PAPER);
+    for (int i = 2; i < 10; i++) TEST_CHECK(shown[i].clear == vjo_app_theme(VJO_THEME_PAPER)->bg);
+    /* The same settings screen in each palette, after a fresh launch. */
+    for (int i = 0; i < VJO_THEMES; i++) {
+        char ini[64];
+        snprintf(ini, sizeof(ini), "colour_scheme = %s\n", vjo_app_prefs_value("colour_scheme", i));
+        put_file(VJO_APP_PREFS_PATH, ini);
+        run(idle, 1);
+        char home_name[48];
+        snprintf(home_name, sizeof(home_name), "%s-home", vjo_app_prefs_value("colour_scheme", i));
+        preview_record(0, home_name);
+        static const Input settings[] = {OCR_PAGE};
+        run(settings, sizeof(settings) / sizeof(settings[0]));
+        TEST_CHECK(shown[1].clear == vjo_app_theme(i)->bg);
+        preview_record(1, vjo_app_prefs_value("colour_scheme", i));
+    }
+    /* The app's palette works even if config.ini is unreadable. */
+    card(NULL);
+    TEST_ASSERT(mkdir(VJO_PREFERENCES_PATH, 0777) == 0);
+    static const Input choose[] = {APPEARANCE_PAGE, PRESS(SCE_CTRL_RIGHT)};
+    run(choose, sizeof(choose) / sizeof(choose[0]));
+    TEST_CHECK(app_choices().colour_scheme == VJO_THEME_MINT);
+    TEST_ASSERT(rmdir(VJO_PREFERENCES_PATH) == 0);
+    /* A failed publication shows an error and keeps the saved palette. */
+    card(NULL);
+    put_file(VJO_APP_PREFS_PATH, "colour_scheme = mint\n");
+    app_rename_fails = 1;
+    run(choose, sizeof(choose) / sizeof(choose[0]));
+    TEST_CHECK(shown[3].clear == vjo_app_theme(VJO_THEME_MINT)->bg);
+    TEST_CHECK(shows(3, "Save not confirmed"));
+    TEST_CHECK(app_choices().colour_scheme == VJO_THEME_MINT);
+    /* An unreadable app.ini is never overwritten, and Start can retry once it is repaired. */
+    card(NULL);
+    TEST_ASSERT(mkdir(VJO_APP_PREFS_PATH, 0777) == 0);
+    run(choose, sizeof(choose) / sizeof(choose[0]));
+    TEST_CHECK(shows(3, "Cannot read app.ini") && shows(3, "Unavailable"));
+    TEST_ASSERT(rmdir(VJO_APP_PREFS_PATH) == 0);
+    put_file(VJO_APP_PREFS_PATH ".bak", "colour_scheme = paper\n");
+    run(idle, 1);
+    TEST_CHECK(shown[0].clear == vjo_app_theme(VJO_THEME_PAPER)->bg);
+}
+
+/* Real menu routes, no settings changes from opening a category; Back returns through the hierarchy. */
+static void test_settings_navigation(void)
+{
+    card(NULL);
+    static const Input keys[] = {PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CIRCLE),
+        PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_DOWN),
+        PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS),
+        PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
+        PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CIRCLE)};
+    TEST_CHECK(run(keys, sizeof(keys) / sizeof(keys[0])) == sizeof(keys) / sizeof(keys[0]));
+    TEST_CHECK(shows(2, "Read text") && !shows(2, "Model size") && shows(4, "Choose a category"));
+    TEST_CHECK(session->anki_shows == 1 && session->anki_pressed == 0);
+    TEST_CHECK(shows(14, "Selected") && shows(16, "Choose a category"));
+    TEST_CHECK(session->install_shows == 1 && session->install_pressed == 0);
+    TEST_CHECK(shows(32, "Default:") && shows(34, "Choose a category"));
+    TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) != 0 && access(VJO_APP_PREFS_PATH, F_OK) != 0);
+    /* Touch gaps do nothing; the basic screen keeps hook controls behind Advanced. */
+    card(NULL);
+    static const Input touch[] = {TAP(200, 172), TAP(479, 72), OCR_PAGE, PRESS(SCE_CTRL_UP),
+        PRESS(SCE_CTRL_CROSS | SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CIRCLE), TAP(40, 525), TAP(200, 325), TAP(40, 525)};
+    run(touch, sizeof(touch) / sizeof(touch[0]));
+    TEST_CHECK(shows(1, "Choose a category") && shows(3, "Choose a category"));
+    TEST_CHECK(shows(5, "Read text") && !shows(5, "Model size"));
+    TEST_CHECK(shows(9, "Text source") && !shown[9].source[0]); /* Enter+Right opens, never sets Hooks */
+    TEST_CHECK(shows(11, "Read text") && !shows(11, "Trusted hooks"));
+    TEST_CHECK(shows(13, "Choose a category") && shows(15, "Selected") && shows(17, "Choose a category"));
+    preview_record(9, "reading-advanced");
+    /* An incomplete installation still opens its page, and cannot be left while its worker runs. */
+    card(NULL);
+    vjo_install_stub_open = 1;
+    vjo_install_stub_busy_to = 6;
+    static const Input busy[] = {PRESS(SCE_CTRL_SELECT), TAP(40, 525), PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_CIRCLE)};
+    run(busy, sizeof(busy) / sizeof(busy[0]));
+    TEST_CHECK(session->lookup_shows == 0 && session->install_frames == 6 && shows(7, "Choose a category"));
+    /* Cancel owned by an active Anki job is delivered to that job first. */
+    card(NULL);
+    vjo_anki_stub_hold_cancel_to = 4;
+    static const Input anki[] = {TAP(200, 265), PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_CIRCLE)};
+    run(anki, sizeof(anki) / sizeof(anki[0]));
+    TEST_CHECK(session->anki_frames == 4 && (session->anki_pressed & SCE_CTRL_CIRCLE) && shows(5, "Choose a category"));
+}
+
+/* The walkthrough captures both scroll positions so every usual and advanced reading option is visible. */
+static void test_settings_walkthrough(void)
+{
+    if (!getenv("VJO_THEME_PREVIEW_DIR")) return;
+    card(NULL);
+    static const Input home[] = {{0, 0, 0, 0}};
+    run(home, 1); preview_record(0, "walk-home");
+    static const Input basic[] = {OCR_PAGE};
+    run(basic, sizeof(basic) / sizeof(basic[0])); preview_record(1, "walk-reading-1-usual");
+    TEST_CHECK(shows(1, "Read text") && shows(1, "Selection mode") && !shows(1, "Model size"));
+    static const Input advanced[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+        PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN)};
+    run(advanced, sizeof(advanced) / sizeof(advanced[0]));
+    preview_record(3, "walk-advanced-1-model"); preview_record(11, "walk-advanced-2-hooks");
+    static const Input bottom[] = {ADVANCED_PAGE, PRESS(SCE_CTRL_UP)};
+    run(bottom, sizeof(bottom) / sizeof(bottom[0])); preview_record(5, "walk-advanced-3-textbox");
+    TEST_CHECK(focused_card(5) == 10 && card_top(5, 8) >= OCR_Y && card_top(5, 9) >= OCR_Y);
+    static const Input appearance[] = {APPEARANCE_PAGE};
+    run(appearance, sizeof(appearance) / sizeof(appearance[0])); preview_record(1, "walk-appearance");
+}
+
 TEST_LIST = {
+    {"settings_walkthrough", test_settings_walkthrough},
+    {"settings_navigation", test_settings_navigation},
+    {"app_colour_schemes", test_app_colour_schemes},
     {"the_tab_bar_six_tabs_fit_their_labels_and_their_touches", test_the_tab_bar},
     {"the_look_up_page_s_wiring_show_leave_cancel_and_the_keyboard", test_the_look_up_page_s_wiring},
     {"full_glyph_atlases_get_empty_ones", test_full_glyph_atlases_get_empty_ones},
@@ -1924,8 +1708,8 @@ TEST_LIST = {
      test_read_text_and_speed_boost_by_keys_and_touch},
     {"the_page_scrolls_a_card_at_a_time_and_never_draws_into_the_status_line", test_the_page_scrolls_a_card_at_a_time},
     {"read_text_names_the_buttons_that_open_the_overlay", test_read_text_names_the_buttons_that_open_the_overlay},
-    {"scrolled_highlight_and_dictionaries_cards_keep_their_touch_targets", test_scrolled_cards_keep_their_touch_targets},
-    {"dictionaries_shown_by_its_buttons", test_dictionaries_shown_by_its_buttons},
+    {"selection_cards_keep_their_touch_targets", test_scrolled_cards_keep_their_touch_targets},
+    {"removed_dictionary_count_has_no_control", test_removed_dictionary_count_has_no_control},
     {"model_size_card_and_size_lines", test_model_size_card_and_size_lines},
     {"banner_text_says_which_side_is_older_and_what_to_do", test_banner_text_says_which_side_is_older},
     {"banner_is_drawn_over_the_title_on_every_page_or_not_at_all", test_banner_is_drawn_on_every_page},
@@ -1941,25 +1725,25 @@ static void test_later_generation_is_named_from_its_metadata(void)
 {
     static const Input in[] = {OCR_PAGE};
     card(NULL);
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "Normal: default, balanced. VOCR6-N found.", DIM);
     check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS6);
     /* the Large size's model is the earlier generation's: the line names that one */
     card("vocr_tier = large\n");
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "Large: most accurate. VOCR5-L found.", DIM);
     check_sizes(1, VJO_VOCR_TIER_LARGE, SIZES, DETAILS6);
     remove_model("VOCR5_L_w8.vocr");
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
     check_no_fallback_hint(2); /* VOCR6-N would run: the card never says so */
     /* the same app with an older config.ini: its model's size, this package's model of it */
     card("vocr_model = VOCR3_H15_w8.vocr\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n");
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "Normal: default, balanced. VOCR6-N found.", DIM);
     check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS6);
     card("vocr_model = VOCR4_W20_w8.vocr\n");
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "Large: most accurate. VOCR5-L found.", DIM);
 }
 /* Nothing of the chosen size or below on the card (a partly uploaded package):
@@ -1969,23 +1753,23 @@ static void test_mixed_generations_name_the_model_that_loads(void)
     static const Input in[] = {OCR_PAGE};
     card("vocr_tier = normal\n");
     remove_model("VOCR6_N_w8.vocr");
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "VOCR6-N missing. Reinstall the package.", OFF); /* VOCR6-S loads */
     check_no_fallback_hint(2);
     put_model("VOCR6_N_w8.vocr", 1500000 - 32768); /* one 32 KiB piece short */
     remove_model("VOCR6_S_w8.vocr");
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "VOCR6-N missing. Reinstall the package.", OFF);
     check_no_fallback_hint(2);
     /* its file back: it runs again */
     put_model("VOCR6_N_w8.vocr", 1500000);
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "Normal: default, balanced. VOCR6-N found.", DIM);
     /* Large chosen, its VOCR5 file and Normal's missing: the chosen size's model named missing */
     card("vocr_tier = large\n");
     remove_model("VOCR5_L_w8.vocr");
     remove_model("VOCR6_N_w8.vocr");
-    run(in, 2);
+    run_model(in, 2);
     check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
     check_no_fallback_hint(2);
 }

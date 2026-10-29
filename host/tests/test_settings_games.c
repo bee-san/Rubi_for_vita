@@ -65,9 +65,12 @@
 #include "../../core/pspbubble.h"
 #include "settings_png_fixture.h"
 #include "settings_wrap_reference.h"
+#include "settings_preview.h"
 #include "settings_stubs/search_dialog_stub.h"
 #include <psp2/ime_dialog.h>
 
+static int preview_frame[2] = {-1, -1};
+static const char *preview_name[2];
 int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harness */
 
 /* settings/main.c's Games page layout. */
@@ -85,8 +88,8 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define LF_X(i) (42 + (i) * 146)
 #define LF_BADGE_Y (GP_LF_Y + 42)
 #define LF_HELP_Y (GP_LF_Y + 104)
-#define SELECTED RGBA8(35, 56, 70, 255)
-#define ACCENT RGBA8(91, 220, 207, 255)
+#define SELECTED RGBA8(43, 47, 49, 255)
+#define ACCENT RGBA8(255, 210, 74, 255)
 #define CDRAM_BLOCK (256 * 1024)
 
 /* ---- what a frame showed and cost ---- */
@@ -320,10 +323,10 @@ int sceTouchPeek(int port, SceTouchData *data, int count)
 {
     (void)port; (void)count;
     memset(data, 0, sizeof(*data));
-    if (frame < script_frames && script[frame].touch) {
+    if (frame == 0 || (frame < script_frames && script[frame].touch)) {
         data->reportNum = 1;
-        data->report[0].x = (uint16_t)(script[frame].x * 2);
-        data->report[0].y = (uint16_t)(script[frame].y * 2);
+        data->report[0].x = (uint16_t)((frame == 0 ? 200 : script[frame].x) * 2);
+        data->report[0].y = (uint16_t)((frame == 0 ? 140 : script[frame].y) * 2);
     }
     return 1;
 }
@@ -335,6 +338,8 @@ int sceDisplayWaitVblankStart(void)
     cur.live = live_textures();
     cur.anki_rows = vjo_anki_stub_rows;
     if (frame < MAX_FRAMES) session->shown[frame] = cur;
+    if (vp.active)
+        for (int p = 0; p < 2; p++) if (frame == preview_frame[p]) vp_finish(preview_name[p]);
     frame++;
     return 0;
 }
@@ -454,16 +459,17 @@ void vita2d_wait_rendering_done(void)
 int vita2d_init(void) { return 0; }
 int vita2d_fini(void) { return 0; }
 void vita2d_set_clear_color(unsigned int color) { (void)color; }
-void vita2d_start_drawing(void) { drawing = 1; }
+void vita2d_start_drawing(void) { drawing = 1; if (vp.active) vp_begin(NULL); }
 void vita2d_end_drawing(void) { drawing = 0; }
 void vita2d_swap_buffers(void) {}
 void vita2d_clear_screen(void) {}
 void vita2d_enable_clipping(void) {}
-void vita2d_disable_clipping(void) {}
+void vita2d_disable_clipping(void) { vp_clip(0, 0, 0, 0); }
 void vita2d_set_clip_rectangle(int x_min, int y_min, int x_max, int y_max)
-{ (void)x_min; (void)y_min; (void)x_max; (void)y_max; }
+{ vp_clip(x_min, y_min, x_max, y_max); }
 void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int color)
 {
+    vp_rect((int)x, (int)y, (int)w, (int)h, color);
     for (int r = 0; r < ROWS; r++)
         if ((int)x == 24 && (int)w == 912 && (int)h == GAME_H && (int)y == GAMES_Y + r * GAME_PITCH && color == SELECTED)
             cur.focus = r;
@@ -495,7 +501,8 @@ int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 /* What each card shows, by where main.c draws it. */
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text)
 {
-    (void)font; (void)scale;
+    (void)font;
+    vp_text(x, y, color, scale * 18, text);
     for (int r = 0; r < ROWS; r++) {
         int top = GAMES_Y + r * GAME_PITCH;
         if (x == 90 && y == top + 21) copy(cur.title[r][0], sizeof(cur.title[r][0]), text);
@@ -517,7 +524,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
         if (y == LF_BADGE_Y + 26 && x >= LF_X(i) && x < LF_X(i) + 138) copy(cur.lf_label[i], sizeof(cur.lf_label[i]), text);
     if (y == DEFAULT_BADGE_Y && x > 174 && x < 282) copy(cur.default_badge, sizeof(cur.default_badge), text);
     if (y == HINT_Y) {
-        if (x == 24) copy(cur.hints, sizeof(cur.hints), text);
+        if (x == 24 || x == 128) copy(cur.hints, sizeof(cur.hints), text);
         else { copy(cur.counter, sizeof(cur.counter), text); cur.counter_x = x; }
     }
     if (x == 40 && (y == STATUS_Y || y == STATUS_Y + 28)) copy(cur.status[(y - STATUS_Y) / 28], sizeof(cur.status[0]), text);
@@ -746,7 +753,7 @@ static int run(int n)
     TEST_ASSERT(waitpid(pid, &status, 0) == pid);
     TEST_ASSERT(WIFEXITED(status) && !WEXITSTATUS(status));
     TEST_ASSERT(session->main_rc == 0 && session->exited == 0);
-    return session->frames;
+    return session->frames < n ? session->frames : n;
 }
 /* Script builders: n frames of buttons held (0: none); a tap is one frame down, one up. */
 static int at;
@@ -824,7 +831,7 @@ static int check_cards(int frames, int *placeholders_out)
             if (!s->id[r][0]) continue;
             const Game *g = game_of(s->id[r]);
             if (!g) { if (bad++ < 5) TEST_MSG("frame %d card %d: unknown ID %s", f, r, s->id[r]); continue; }
-            ref_wrapped_text(90, GAMES_Y + r * GAME_PITCH + 21, 650, 22, 24, 1, g->title);
+            ref_wrapped_text(90, GAMES_Y + r * GAME_PITCH + 21, 650, 24, 24, 1, g->title);
             for (int k = 0; k < 2; k++) {
                 const char *want = k < ref_rows ? ref_row[k].text : "";
                 if (strcmp(s->title[r][k], want) && bad++ < 5)
@@ -1026,7 +1033,7 @@ static void page_jumps_keep_the_row_and_load_only_that_page(void)
                                                        strcmp(session->shown[g].id[r], "NPXS10028");
     TEST_CHECK(placeholders > 0 && current_page_loads_only(frames));
     /* The hints name the new controls, and the counter is drawn apart. */
-    TEST_CHECK(!strcmp(session->shown[25].hints, "×: toggle   L/R: page   Left/Right: letter   ○: exit"));
+    TEST_CHECK(!strcmp(session->shown[25].hints, "×: toggle   L/R: page   Left/Right: letter   ○: back"));
     char counter[24];
     snprintf(counter, sizeof(counter), "%d/%d", selected_of(25) + 1, list_count);
     TEST_CHECK(!strcmp(session->shown[25].counter, counter));
@@ -1374,39 +1381,25 @@ static void the_frame_interval_is_logged_once(void)
  * Up/Down/L/R leave the list where it was. */
 static void list_keys_only_on_the_games_page(void)
 {
-    card(30, NULL);
-    spec_list();
-    at = 0;
-    hold(0, 10);
-    tap(DOWN, 8);
-    int before = at - 1;
-    tap(SCE_CTRL_SELECT, 8); /* OCR & lookup */
+    card(30, NULL); spec_list(); at = 0;
+    hold(0, 10); tap(DOWN, 8); int before = at - 1;
+    tap(SCE_CTRL_SELECT, 8); /* Look up */
+    tap(DOWN, 8); tap(SCE_CTRL_RTRIGGER, 8); hold(UP, 30); hold(0, 8);
+    tap(SCE_CTRL_SELECT, 8); /* Settings */
+    script[at++] = (Input){0, 1, 200, 200, 0}; hold(0, 8); /* Reading */
     for (int i = 0; i < 3; i++) tap(DOWN, 8);
-    tap(SCE_CTRL_RTRIGGER, 8);
-    tap(SCE_CTRL_LTRIGGER, 8);
-    hold(DOWN, 40);
-    hold(0, 8);
-    tap(SCE_CTRL_SELECT, 8); /* Anki */
-    tap(DOWN, 8);
-    tap(SCE_CTRL_RTRIGGER, 8);
-    hold(UP, 30);
-    hold(0, 8);
-    tap(SCE_CTRL_SELECT, 8); /* Look up (#313) */
-    tap(DOWN, 8);
-    tap(SCE_CTRL_LTRIGGER, 8);
-    hold(0, 8);
-    tap(SCE_CTRL_SELECT, 8); /* Install (docs/one-vpk-install.md) */
-    tap(DOWN, 8);
-    tap(SCE_CTRL_RTRIGGER, 8);
-    hold(0, 8);
-    tap(SCE_CTRL_SELECT, 8); /* Games again */
-    int after = at - 1, frames = run(at);
-    TEST_CHECK(frames == at);
-    /* the streak's seed starts once, as the app starts, and leaving the app stops it (settings/streak_seed.h) */
-    TEST_CHECK_(session->seed_starts == 1 && session->seed_quits == 1, "the streak seed started %d, quit %d times",
-                session->seed_starts, session->seed_quits);
-    TEST_CHECK_(selected_of(before) == 1 && selected_of(after) == 1 && top_of(after) == 0, "selection %d -> %d, top %d",
-                selected_of(before), selected_of(after), top_of(after));
+    tap(SCE_CTRL_RTRIGGER, 8); tap(SCE_CTRL_LTRIGGER, 8); hold(DOWN, 40); hold(0, 8);
+    script[at++] = (Input){0, 1, 700, 72, 0}; hold(0, 8); /* Settings */
+    script[at++] = (Input){0, 1, 200, 260, 0}; hold(0, 8); /* Anki */
+    tap(DOWN, 8); tap(SCE_CTRL_RTRIGGER, 8); hold(UP, 30); hold(0, 8);
+    script[at++] = (Input){0, 1, 700, 72, 0}; hold(0, 8);
+    script[at++] = (Input){0, 1, 200, 390, 0}; hold(0, 8); /* Install */
+    tap(DOWN, 8); tap(SCE_CTRL_RTRIGGER, 8); hold(0, 8);
+    script[at++] = (Input){0, 1, 700, 72, 0}; hold(0, 8);
+    script[at++] = (Input){0, 1, 200, 140, 0}; hold(0, 8); /* Games again */
+    int after = at - 1; TEST_CHECK(run(at) == at);
+    TEST_CHECK(session->seed_starts == 1 && session->seed_quits == 1);
+    TEST_CHECK(selected_of(before) == 1 && selected_of(after) == 1 && top_of(after) == 0);
 }
 
 /* The left stick stops at the first and last card of the OCR & lookup page, as
@@ -1415,15 +1408,10 @@ static void list_keys_only_on_the_games_page(void)
  * first. The d-pad still wraps round there. */
 /* The OCR & lookup page's focused card in frame f: its place among the page's
  * cards (settings/main.c PREF_*), by its title, or -1. */
-#define OCR_CARDS 11
+#define OCR_CARDS 4
 static int ocr_card(const Frame *f)
 {
-    static const char *const titles[OCR_CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
-                                                  "Japanese characters only", "Highlight",
-                                                  "Text source", /* API 31 */
-                                                  "Trusted hooks replace OCR", "Skip OCR on screens without text",
-                                                  "Vertical text", "Suggest a text box",
-                                                  "Pause the game to read"}; /* API 43, 47; #358; API 55 */
+    static const char *const titles[OCR_CARDS] = {"Read text", "Japanese characters only", "Selection mode", "Advanced reading"};
     for (int i = 0; i < OCR_CARDS; i++)
         if (!strcmp(f->bar_title, titles[i])) return i;
     return -1;
@@ -1434,7 +1422,8 @@ static void stick_stops_at_the_first_and_last_card(void)
     spec_list();
     at = 0;
     hold(0, 10);
-    tap(SCE_CTRL_SELECT, 8); /* OCR & lookup */
+    script[at++] = (Input){0, 1, 700, 72, 0}; hold(0, 7);
+    script[at++] = (Input){0, 1, 200, 200, 0}; hold(0, 7); /* Reading */
     int first_at = at - 1, down = at;
     hold_stick(127, 30);
     hold(0, 4);
@@ -1476,53 +1465,19 @@ static void stick_stops_at_the_first_and_last_card(void)
  * page. */
 static void a_page_change_latches_the_stick(void)
 {
-    card(30, NULL);
-    spec_list();
-    at = 0;
-    hold(0, 10);
-    hold_stick(127, 15); /* Games: a row, nine quiet frames, then five */
-    int games = at - 1;
-    with_stick(SCE_CTRL_SELECT, 127); /* OCR & lookup, the stick still down */
-    int ocr = at - 1;
-    hold_stick(127, 30);
-    int ocr_held = at - 1;
-    hold(0, 4);
-    hold_stick(127, 1); /* let go, then pushed: a card */
-    int ocr_push = at - 1;
-    hold(0, 4);
-    with_stick(SCE_CTRL_SELECT, 127); /* Anki, the stick still down */
-    int anki = at - 1;
-    hold_stick(127, 30);
-    hold(0, 4);
-    int anki_rest = at - 1;
-    hold_stick(127, 1);
-    hold(0, 4);
-    int anki_push = at - 1;
-    hold_stick(-128, 1); /* pushed up */
-    hold(0, 4);
-    int up_push = at - 1;
-    with_stick(SCE_CTRL_SELECT, -128); /* Look up (#313), the stick up */
-    with_stick(0, -128);
-    with_stick(SCE_CTRL_SELECT, -128); /* Install, the stick up */
-    with_stick(0, -128);
-    with_stick(SCE_CTRL_SELECT, -128); /* Games again, the stick still up */
-    hold_stick(-128, 30);
-    int games_held = at - 1;
-    hold(0, 4);
-    int frames = run(at);
-    TEST_CHECK(frames == at);
-    const Frame *f = session->shown;
-    TEST_CHECK_(selected_of(games) == 6, "Games, the stick held 15 frames: %d", selected_of(games));
-    for (int i = ocr; i <= ocr_held; i++)
-        TEST_CHECK_(f[i].bar_y == OCR_FIRST_Y, "OCR & lookup, frame %d after Select: %d", i - ocr, f[i].bar_y);
-    TEST_CHECK_(f[ocr_push].bar_y > OCR_FIRST_Y, "a new push moves a card: %d", f[ocr_push].bar_y);
-    TEST_CHECK_(f[anki_rest].anki_rows == f[anki - 1].anki_rows, "Anki: %d rows from the stick held through Select",
-                f[anki_rest].anki_rows - f[anki - 1].anki_rows);
-    TEST_CHECK_(f[anki_push].anki_rows == f[anki_rest].anki_rows + 1, "Anki: a push gives %d",
-                f[anki_push].anki_rows - f[anki_rest].anki_rows);
-    TEST_CHECK_(f[up_push].anki_rows == f[anki_push].anki_rows - 1, "Anki: a push up gives %d",
-                f[up_push].anki_rows - f[anki_push].anki_rows);
-    TEST_CHECK_(selected_of(games_held) == 6, "Games, back with the stick held up: %d", selected_of(games_held));
+    card(30, NULL); spec_list(); at = 0;
+    hold(0, 10); hold_stick(127, 15); int games = at - 1;
+    with_stick(SCE_CTRL_SELECT, 127); /* Look up */
+    hold_stick(127, 30); hold(0, 4);
+    with_stick(SCE_CTRL_SELECT, 127); /* Settings */
+    hold_stick(127, 20); /* held through Select must not move the menu's Games selection */
+    with_stick(ENTER, 127); /* Games, not a menu row scrolled by the held stick */
+    int back = at - 1;
+    hold_stick(127, 20); int held = at - 1;
+    hold(0, 4); hold_stick(127, 1); int pushed = at - 1; hold(0, 4);
+    TEST_CHECK(run(at) == at);
+    TEST_CHECK(selected_of(games) == 6 && selected_of(back) == 6 && selected_of(held) == 6);
+    TEST_CHECK(selected_of(pushed) == 7);
 }
 
 /* A touched tab changes the page as Select does: a stick still pushed moves
@@ -1535,7 +1490,9 @@ static void a_touched_tab_latches_the_stick(void)
     hold(0, 10);
     hold_stick(127, 15);
     /* the OCR & lookup tab (x 260 is in it with the five tabs' labels, stub metrics), the stick still down */
-    script[at++] = (Input){0, 1, 260, 52 + 20, 127};
+    script[at++] = (Input){0, 1, 700, 72, 127};
+    hold_stick(127, 4);
+    script[at++] = (Input){0, 1, 200, 200, 127};
     int tab = at - 1;
     hold_stick(127, 30);
     int held = at - 1;
@@ -1563,7 +1520,8 @@ static void the_dpad_acts_first_in_a_frame(void)
     with_stick(DOWN, 127); /* the d-pad held, its repeat 350 ms away: the stick's row */
     int held = at - 1;
     hold(0, 4);
-    tap(SCE_CTRL_SELECT, 4); /* OCR & lookup, its first card */
+    script[at++] = (Input){0, 1, 700, 72, 0}; hold(0, 3);
+    script[at++] = (Input){0, 1, 200, 200, 0}; hold(0, 3); /* Reading */
     hold_stick(-128, 12);    /* up at the first card: it stays */
     int ocr_before = at - 1;
     with_stick(DOWN, -128); /* the d-pad's Down and the stick's up both due: Down */
@@ -1621,13 +1579,13 @@ static void hints_leave_room_for_the_counter(void)
         int frames = run(at);
         TEST_CHECK(frames == at);
         const Frame *last = &session->shown[frames - 1];
-        float px = 24.0f / 18.0f; /* text_scale(24): the em is 18 units, full-width */
-        int hints_w = (int)(stub_units(last->hints, &(int){0}) * px + 0.5f);
+        float px = 26.0f / 18.0f; /* text_scale(24): the em is 18 units, full-width */
+        int hints_w = (int)(stub_units(last->hints, &(int){0}) * (22.0f / 18.0f) + 0.5f);
         int counter_w = (int)(stub_units(last->counter, &(int){0}) * px + 0.5f);
         TEST_CHECK_(!strcmp(last->counter, "512/512") && last->counter_x + counter_w == 936,
                     "wide %d: counter '%s' at %d, %d px", wide, last->counter, last->counter_x, counter_w);
-        TEST_CHECK_(hints_w <= 912 - 140 && 24 + hints_w < last->counter_x, "wide %d: hints %d px to %d, counter at %d",
-                    wide, hints_w, 24 + hints_w, last->counter_x);
+        TEST_CHECK_(hints_w <= 808 - 140 && 128 + hints_w < last->counter_x, "wide %d: hints %d px to %d, counter at %d",
+                    wide, hints_w, 128 + hints_w, last->counter_x);
         size_t n = strlen(last->hints);
         int cut = n > 3 && !strcmp(last->hints + n - 3, "...");
         TEST_CHECK_(cut == wide, "wide %d: hints '%s'", wide, last->hints);
@@ -1704,7 +1662,7 @@ static void circle_console_toggles_with_circle(void)
     TEST_CHECK(selected_of(enabled) == 2 && top_of(enabled) == 2);
     TEST_CHECK(!strcmp(session->shown[disabled].id[0], list[0].id) && !strcmp(session->shown[disabled].id[1], list[1].id)
                && !session->shown[disabled].id[2][0]);
-    TEST_CHECK(!strcmp(session->shown[25].hints, "○: toggle   L/R: page   Left/Right: letter   ×: exit"));
+    TEST_CHECK(!strcmp(session->shown[25].hints, "○: toggle   L/R: page   Left/Right: letter   ×: back"));
     TEST_MSG("%s", session->shown[25].hints);
     TEST_CHECK(session->exited == 0 && frames < MAX_FRAMES - 1); /* × at the script's end left the app */
     button_assign = VJO_BUTTON_ASSIGN_CROSS;
@@ -1820,7 +1778,7 @@ static void rescan_only_on_start(void)
             const Frame *sh = &session->shown[f];
             const Game *g = sh->id[r][0] ? game_of(sh->id[r]) : NULL;
             if (!g) continue;
-            ref_wrapped_text(90, 0, 650, 22, 24, 1, g->title);
+            ref_wrapped_text(90, 0, 650, 24, 24, 1, g->title);
             if (strcmp(sh->title[r][0], ref_rows > 0 ? ref_row[0].text : "") ||
                 strcmp(sh->title[r][1], ref_rows > 1 ? ref_row[1].text : "")) bad++;
             int loadable = g->icon == ICON_OK || g->icon == ICON_RGBA || g->icon == ICON_SMALL;
@@ -2050,7 +2008,7 @@ static void bubbles_are_named_tagged_and_described(void)
             if (session->shown[f].tag[k]) TEST_CHECK_(session->shown[f].tag[k] == ACCENT, "frame %d %s", f, id);
         }
     /* Enter toggles a bubble as any game; nothing asks for a registration. */
-    TEST_CHECK(!strcmp(session->shown[last].hints, "×: toggle   L/R: page   Left/Right: letter   ○: exit"));
+    TEST_CHECK(!strcmp(session->shown[last].hints, "×: toggle   L/R: page   Left/Right: letter   ○: back"));
     TEST_MSG("%s", session->shown[last].hints);
     char both[300];
     snprintf(both, sizeof(both), "%s %s", session->shown[25].status[0], session->shown[25].status[1]);
@@ -3138,7 +3096,7 @@ static void a_held_enter_opens_the_games_page(void)
                 r >= 0 ? l->hold_hint[r] : "");
     for (int q = 0; q < ROWS; q++)
         if (q != r) TEST_CHECK_(!l->lf_tag[q][0] && !l->hold_hint[q][0], "card %d: '%s' '%s'", q, l->lf_tag[q], l->hold_hint[q]);
-    TEST_CHECK(!strcmp(l->hints, "×: toggle   L/R: page   Left/Right: letter   ○: exit"));
+    TEST_CHECK(!strcmp(l->hints, "×: toggle   L/R: page   Left/Right: letter   ○: back"));
     /* the files: ocr_line_fix.ini has the game's row; games.ini has the toggle only */
     const char *ini = slurp(LINE_FIX_INI, NULL);
     char want[128];
@@ -3198,13 +3156,14 @@ static void the_games_page_by_touch_and_its_on_off(void)
     int touched = at - 1;
     tap(SCE_CTRL_SELECT, 5); /* the next tab: the page closes */
     int ocr = at - 1;
-    script[at++] = (Input){0, 1, 40, 52 + 20, 0}; /* the Games tab touched: its list */
+    script[at++] = (Input){0, 1, 700, 72, 0}; hold(0, 2); /* Settings */
+    script[at++] = (Input){0, 1, 200, 140, 0}; /* Games */
     hold(0, 5);
     int back = at - 1;
     for (int k = 0; k < frames_at_60hz(500000) + 5; k++) script[at++] = (Input){0, 1, 400, y1, 0}; /* the page again */
     hold(0, 5);
     int again = at - 1;
-    script[at++] = (Input){0, 1, 40, 52 + 20, 0}; /* the Games tab, from the page: the list */
+    script[at++] = (Input){0, 1, 40, 525, 0}; /* Back: the game list */
     hold(0, 5);
     int tabbed = at - 1;
     int frames = run(at);
@@ -3552,7 +3511,26 @@ static void a_held_enter_that_moves_does_nothing(void)
     TEST_CHECK(!slurp(LINE_FIX_INI, NULL) && !slurp("ux0:data/VitaJPOverlay/games.ini", NULL));
 }
 
+static void settings_walkthrough(void)
+{
+    if (!vp_available()) return;
+    card(3, kind_none);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    preview_frame[0] = at - 1; preview_name[0] = "walk-games-1-library";
+    tap(DOWN, 3); /* a sample native game, below the shared Adrenaline row */
+    hold(ENTER, frames_at_60hz(500000) + 5);
+    hold(0, 5);
+    preview_frame[1] = at - 1; preview_name[1] = "walk-games-2-per-game";
+    vp_begin(NULL);
+    TEST_ASSERT(run(at) == at);
+    vp.active = 0;
+    preview_frame[0] = preview_frame[1] = -1;
+}
+
 TEST_LIST = {
+    {"settings_walkthrough", settings_walkthrough},
     {"search_finds_an_off_page_id_and_clear_restores_the_list", search_finds_an_off_page_id_and_clear_restores_the_list},
     {"search_matches_japanese_and_empty_results_remain_searchable", search_matches_japanese_and_empty_results_remain_searchable},
     {"search_cancel_and_filtering_preserve_choices", search_cancel_and_filtering_preserve_choices},

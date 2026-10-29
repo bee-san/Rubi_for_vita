@@ -5,6 +5,25 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## Compact suffix table (PR #518 merge-gate repair)
+
+The generated deinflection suffix pool stores its 1,494 BMP characters as `uint16_t` codepoints instead of
+three-byte UTF-8: 4,483 -> 2,988 B, including the old string's trailing NUL. Rule offsets, lengths, order, labels
+and flags are unchanged. A rule expands into the candidate buffer the lookup already uses; no allocation,
+static workspace, thread, dictionary format or memory limit changes. The generated-table test decodes every
+rule against the vendored inputs, and the ARM lane now also runs the synthetic cursor-lookup suite.
+
+Measured from packaged Shell segments with the gate's pinned VitaSDK GCC 15.2.0, Release/LTO, against `main`
+`2365f956`'s Shell sources (the settings-only PR head has the same Shell inputs):
+
+| Build | Code segment before -> after | Data/bss | Loaded pages before -> after | Existing budget |
+| --- | ---: | ---: | ---: | ---: |
+| Debug | 99,420 -> 97,956 B | 69,184 B | 172,032 -> 167,936 B | 167,936 B |
+| Normal | 87,204 -> 85,756 B | 69,108 B | 159,744 -> 155,648 B | 155,648 B |
+
+Both builds fit their unchanged declared page budgets again. These are binary measurements, not console
+measurements; the encoding change's console timing is unmeasured.
+
 ## Rear double-tap full-screen OCR (API 57)
 
 The open overlay's rear double tap submits the existing `VJO_GAME_OCR_F_FULL` job through the game's

@@ -76,8 +76,10 @@ class PackedTable(unittest.TestCase):
 
     def test_every_rule_decodes(self):
         text = (ROOT / "core/deinflect.inc").read_text(encoding="utf-8")
-        blob = "".join(json.loads(s) for s in re.findall(r'^    ("(?:[^"\\]|\\.)*")$', text.split("static const uint8_t")[0],
-                                                           re.M))
+        pool = re.search(r"deinflect_strings\[\] = \{(.*?)\};", text, re.S).group(1)
+        codepoints = [int(x, 16) for x in re.findall(r"0x[0-9a-f]+", pool)]
+        self.assertTrue(all(0x800 <= cp <= 0xffff for cp in codepoints))
+        blob = "".join(map(chr, codepoints))
         rules_in = [int(x) for x in re.search(r"deinflect_rules_in\[\d+\] = \{([^}]*)\}", text).group(1).split(",")]
         rows = [tuple(map(int, m)) for m in re.findall(r"^    \{(\d+), (\d+), (\d+)\},$", text, re.M)]
         bits = {"v1": 1, "v5": 2, "vs": 4, "vk": 8, "vz": 16, "adj-i": 32, "iru": 64}

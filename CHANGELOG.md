@@ -13,12 +13,36 @@ been reported.
 
 ### Changed
 
+- Store the deinflection suffix pool as 16-bit codepoints, restoring both Shell builds to their existing
+  module-page budgets without changing lookup rules or adding memory. Source-installer fixtures now include
+  the hook-profile builder; self-test fixtures check the live API header separately from historical report bodies.
 - Native Vita hooks load only the current game's profile from an indexed disk archive, including its
   filters and version/signature checks. The worker uses 12 KiB fewer loaded pages in both builds
   (measured from the packaged binaries); CALL discovery and OCR remain available if a profile is missing
   or invalid. Full updates include the archive. API 57; console startup timing is unmeasured.
 
+- Settings cleanup: everyday Reading controls fit on one screen; model size, 444 MHz boost, trusted hooks and
+  text-source tuning live under Advanced. Automatic and OCR only are the two source choices. Pause remains OFF.
+  Small app text grows by 2 px. Highlight is named **Selection mode** and Click is **Reveal sentence**.
+- Anki card options appear only with mining ON. Screenshot cropping is automatic; Export all moves to
+  **Anki actions**. Known-word import and use of its index are disabled, with the implementation and tests retained
+  for [duplicate detection #521](https://github.com/bee-san/Rubi_for_vita/issues/521). All games remain ON by default;
+  [#522](https://github.com/bee-san/Rubi_for_vita/issues/522) tracks explaining per-game OFF choices.
+
 ### Added
+
+- **A consolidated Settings menu.** The two top-level destinations are Look up and Settings; Settings opens first
+  and groups Games, Reading & dictionaries, Anki, Appearance, and Install & repair. Cancel/Back returns to the
+  category menu. Technical reading options are under Advanced reading, and installation problems still open their
+  repair screen automatically.
+- **Three app colour schemes** in **Settings → Appearance**: Default (Rubi's yellow accent), Mint (charcoal and mint), and
+  Paper (warm light with green). Touch a preview card or use Left/Right and Enter; every app page changes immediately,
+  including dictionary text, and the choice is kept in `app.ini` across launches.
+- **Sony Reader-inspired app styling:** a soft charcoal vignette, silver glossy toolbars, divided lists with
+  category icons, centered page titles, checkbox-style switches, and a round lower-left Back button.
+  A [17-picture settings walkthrough](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/WALKTHROUGH.md)
+  shows every category, the options further down each page, and the state-dependent installer actions; the pictures
+  are host-rendered previews with sample data and substitute fonts.
 
 - **Alternate word readings and senses**: the popup and Look up tab show the other stored
   entries for the selected spelling below each dictionary's best match. The existing dictionary

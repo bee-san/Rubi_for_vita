@@ -99,8 +99,8 @@ static uint64_t stat_now_ns(void)
 
 /* Six bytes a rule (tools/gen_deinflect.py), inside the Shell's module pages:
  * in and out, a string of deinflect_strings each, as its offset (bits 0-10)
- * and length (bits 11-15), in characters (every rule string is three-byte
- * UTF-8, and the strings share bytes, without NULs); bits, the rule's reason
+ * and length (bits 11-15), in BMP codepoints (two bytes each, expanded to
+ * three-byte UTF-8 only while applying a rule, without NULs); bits, the rule's reason
  * (its conjugation label, bits 0-5), its output rule bits (6-12) and its
  * input rule bits' index in deinflect_rules_in (13-15). */
 typedef struct {
@@ -1125,6 +1125,19 @@ static int find_matches_timed(Workspace *w, int di, int c, const char *raw, size
 #define find_matches find_matches_timed
 #endif
 
+/* The generated suffix pool stores BMP codepoints compactly. Every rule character is three-byte UTF-8
+ * (checked by the generator). Reuse deinflect's existing candidate buffer; no new scratch or allocation. */
+static void deinflect_copy(char *dst, uint16_t span)
+{
+    const uint16_t *src = deinflect_strings + (span & 0x7ffu);
+    for (unsigned n = span >> 11; n; n--) {
+        unsigned cp = *src++;
+        *dst++ = (char)(0xe0u | (cp >> 12));
+        *dst++ = (char)(0x80u | ((cp >> 6) & 0x3fu));
+        *dst++ = (char)(0x80u | (cp & 0x3fu));
+    }
+}
+
 static int deinflect(Workspace *w, const char *key)
 {
     int count = 1;
@@ -1145,17 +1158,17 @@ static int deinflect(Workspace *w, const char *key)
         if (suffix > 63u) continue;
         for (unsigned r = deinflect_offsets[suffix]; r < deinflect_offsets[suffix + 1]; r++) {
             const DeinflectRule *rule = &deinflect_rules[r];
-            const char *in = deinflect_strings + (rule->in & 0x7ffu) * 3u, *out = deinflect_strings + (rule->out & 0x7ffu) * 3u;
             size_t in_len = (size_t)(rule->in >> 11) * 3u, out_len = (size_t)(rule->out >> 11) * 3u, stem, n;
             unsigned rules_out = rule->bits >> 6 & RULE_MASK;
             char next[VJO_LOCAL_MAX_KEY + 1];
             int duplicate = 0;
             if ((c[i].rules && !(c[i].rules & deinflect_rules_in[rule->bits >> 13])) || c[i].len < in_len) continue;
             stem = c[i].len - in_len;
-            if (memcmp(c[i].key + stem, in, in_len)) continue;
+            deinflect_copy(next, rule->in);
+            if (memcmp(c[i].key + stem, next, in_len)) continue;
             n = stem + out_len;
             if (!n || n > VJO_LOCAL_MAX_KEY) continue;
-            memcpy(next, c[i].key, stem); memcpy(next + stem, out, out_len); next[n] = 0;
+            memcpy(next, c[i].key, stem); deinflect_copy(next + stem, rule->out); next[n] = 0;
             for (int j = 0; j < count; j++)
                 if (c[j].rules == rules_out && !strcmp(next, c[j].key)) duplicate = 1;
             if (duplicate) continue;

@@ -40,8 +40,7 @@ AnkiConnect or AnkiWeb sync.
 
 Text is recognized on the Vita, offline, by the local engine, named after the
 generation of the model it runs (**VOCR6** for all three sizes in this package), automatically or
-when the overlay opens. In the **Rubi** app (press **Select** for the
-OCR & lookup page), **Model size** chooses its recognizer: **Small**
+when the overlay opens. In the **Rubi** app (**Settings → Reading & dictionaries**), **Model size** chooses its recognizer: **Small**
 (fastest), **Normal** (the default, balanced) or **Large** (most accurate), each
 shown with its estimated time per textbox and the game memory it takes
 ([model sizes](vita-vn-ocr.md#model-sizes-small-normal-large-api-21)). When
@@ -346,7 +345,7 @@ reported console run. The behaviour below is checked on the host.
   Seven titles that the table lists have no ported site (PCSB00985, PCSG00291, PCSG00451, PCSG00595,
   PCSG00663, PCSG01081, PCSG01152): Automatic still tries their string-copy hooks, as it does in games
   with no table entry, and falls back to OCR if they provide no usable dialogue.
-  **Every game** (`hooks`) is retained for existing configurations and now makes the same attempts as
+  The old **Every game** (`hooks`) value is a readable configuration alias, removed from the app picker; it makes the same attempts as
   Automatic; **OCR only** (`ocr`) installs none. PSP games still use OCR only.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
@@ -456,9 +455,13 @@ yet.
 The **Rubi** app shows five games per page, with compact titles, visible
 IDs and ON/OFF badges. The last page may have fewer games. Games are listed by letter (#,
 A–Z, kana by row, then other characters), alphabetically within it, capital
-and small letters together. Tap the **Games**, **OCR & lookup**, **Anki**, **Look up**
-or **Install** tab, or press Select, to change pages. Choices save automatically to
+and small letters together. The app opens on **Settings**, whose five categories are **Games**,
+**Reading & dictionaries**, **Anki**, **Appearance**, and **Install & repair**. Choose with Up/Down and Enter,
+or tap a category. Cancel or the lower-left **Back** button returns to the menu. Select switches between **Look up** and
+**Settings**; tapping Settings from a category also returns to the menu. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
+The [settings walkthrough](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/WALKTHROUGH.md)
+shows each category and every option further down its page, with menu paths beside the pictures.
 Icons load one per frame for the current page only, with at most five textures
 kept. Changing pages releases the previous page's icons; a card
 shows **JP** until its icon is loaded, or for good when the icon is missing or
@@ -477,24 +480,21 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
-| Select or touch a page tab | Switch between the Games, OCR & lookup, [Anki](anki.md#setup-and-use), [Look up](#look-up) and Install pages |
-| Cancel | Exit |
+| Select | Switch to Look up; Select there returns to Settings |
+| Cancel or Back | Return from a game's own page to the Games list, then to Settings; Cancel on Settings exits |
 
-On the **OCR & lookup** page, select a row with Up/Down. Enter
-or touch a row changes its choice: the Model size, **Read text**, the **Speed boost while
-reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, how many
-dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
-switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
-and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
-**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)),
-**Suggest a text box** (ON by default: [the box Rubi suggests](#the-box-rubi-suggests); kept in
-`region.ini`, so it applies when a game next starts or resumes), and **Pause the game to read** (`ocr_pause`,
-OFF by default, the last card: [pause](game-pause.md)).
+In **Settings → Reading & dictionaries**, the everyday controls are **Read text**, **Japanese characters only**,
+and **Selection mode** (Whole word or Character). These and the Advanced entry fit on one screen. Small app text
+is 2 px larger. Open **Advanced reading** (the last row, or the Advanced button) for **Model size**, **Speed boost
+while reading (444 MHz)**, **Text source** ([native text hooks](#native-text-hooks)), **Trusted hooks replace OCR**
+(`hook_trust`, ON by default), **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default),
+**Vertical text** (`ocr_vertical`: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)), **Suggest a text box**
+(ON by default; [the box Rubi suggests](#the-box-rubi-suggests); kept in `region.ini`, applies when a game next starts
+or resumes), and **Pause the game to read** (`ocr_pause`, OFF by default pending console testing; [pause](game-pause.md)).
 Touch a size, a Read text choice, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
 Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection, two skip, Suggest and pause cards,
-Whole word/Character on the Highlight card, Automatic/Every
-game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
+Whole word/Character on the Selection mode card, Automatic/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
 overlay's next open: Automatic, the default, reads columns where the text box holds vertical text
 and rows elsewhere; ON reads columns, but rows where the box plainly holds lines of text). The page is taller
@@ -518,17 +518,16 @@ rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
 API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and the
 removed engine choice's `ocr_backend` line goes).
 
-On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
-Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), then the
-exported cards' **Card type** (Word, Sentence, Both or Click: Enter takes the next, Left/Right the one beside it,
-a touch the one touched), **Game tag** and **Sentence readings** (ON/OFF), **Duplicates** (Tag, Skip or Keep: as
-Card type: [duplicates](anki.md#duplicates)), all four the Rubi app's own, in `app.ini`, which the overlay never
-reads (`anki_card_type`, `anki_game_tag`, `anki_sentence_readings`, `anki_duplicates`;
-[card type, game tag and sentence readings](anki.md#card-type-game-tag-and-sentence-readings)), **Known words**
-(Import: `known_words.txt`, which `tools/known_words.py` writes from Anki; [known words](anki.md#known-words)), then
-**Export cards** and **Export all cards**. Ten rows are more than the room above the page's status
-box: they scroll a row at a time as the OCR page's cards do, a bar at the right shows where the view is,
-and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
+In **Settings → Anki**, **Card mining** is OFF by default. Turn it ON to show **Screenshots**, **Card type**
+(Word, Sentence, Both or Reveal sentence), **Game tag**, **Sentence readings**, and **Duplicates** (Tag, Skip or
+Keep). Enter cycles choices, Left/Right selects the adjacent choice, and touch selects a badge or toggles a switch.
+Screenshot black-bar trimming is automatic. Card type, game tag, readings and duplicates are the app's own
+`app.ini` settings; the next export uses them ([Anki options](anki.md#card-type-game-tag-and-sentence-readings)).
+**Export cards** remains available with mining OFF. **Anki actions** opens a child page containing **Export all
+cards**; Cancel/Back returns to Anki. Known-word import is disabled and old imported indexes are ignored, with
+its implementation retained for [duplicate detection #521](https://github.com/bee-san/Rubi_for_vita/issues/521).
+The mining-ON list scrolls above a fixed status panel; a touch on a partly visible row brings it fully into view
+([Anki](anki.md#setup-and-use)).
 
 Japanese-only selection (**Japanese characters only**) is **OFF by default** (the
 owner's choice, 2026-10-20; ON before): every visible character is selectable, the
@@ -701,6 +700,8 @@ auto, ocr_finder grad, ocr_line_fix on` (with the spotter, `ocr_line_fix` is its
 yet.
 
 ## Settings and dictionaries
+
+
 
 `ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens. A line
 the plugins do not know or cannot use is listed in red in the open overlay and
@@ -974,6 +975,18 @@ The subtitle strip (Select + R) shows the recognized text, without readings,
 and adds no lookups for it. Recognition and dictionary lookup make no network
 request and have no cloud fallback: the local dictionaries are the only ones.
 
+### App colour schemes
+
+Open Rubi's **Settings → Appearance** category. Choose **Default** (charcoal with Rubi's yellow accent),
+**Mint** (charcoal and mint), or **Paper** (warm light with forest green). Tap a preview card,
+press Left/Right, or press Enter to cycle through the three. The labelled **Selected** card is the saved choice.
+Colours change immediately on every app page, including Look up's dictionary text, and stay after closing the app.
+The in-game overlay keeps its existing colours.
+
+The choice is `colour_scheme = default | mint | paper` in `ux0:data/VitaJPOverlay/app.ini`. A missing or unknown
+value uses Default. An unreadable file is kept, the choices say **Unavailable**, and Start retries after the file is
+repaired. [Preview screenshots and how to recreate them](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/colour-schemes/README.md).
+
 ### Removed features
 
 Rubi is offline and has one OCR engine. What earlier versions had, and what becomes of a setting they saved:
@@ -1022,11 +1035,11 @@ with the word's offsets (as recognized; the exported Sentence joins the lines
 the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
-The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Trim black bars** ON/OFF, the cards' **Card type**, **Game tag** and **Sentence readings**
-([card type, game tag and sentence readings](anki.md#card-type-game-tag-and-sentence-readings)), **Duplicates**
-(Tag, Skip or Keep), **Known words** (Import), **Export cards (N queued, M already mined)** and **Export all cards**
-(ten rows, which scroll a row at a time). An export writes the cards as
+The Rubi app's **Settings → Anki** page has **Card mining**, **Export cards (N queued, M already mined)**,
+and **Anki actions → Export all cards**. With mining ON it also shows **Screenshots**, **Card type**, **Game tag**,
+**Sentence readings**, and **Duplicates** (Tag, Skip or Keep). Screenshot cropping is automatic. Known-word
+import is disabled pending [#521](https://github.com/bee-san/Rubi_for_vita/issues/521).
+An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into
@@ -1071,7 +1084,7 @@ and lookup, and saves them as Anki cards: a word you type, or a word of an earli
 | Control | Action |
 | --- | --- |
 | Triangle | Search: type a word or a sentence |
-| Left / Right | Move the cursor by the matched word (a character with **Highlight: Character**); held, it repeats and stops at the text's ends |
+| Left / Right | Move the cursor by the matched word (a character with **Selection mode: Character**); held, it repeats and stops at the text's ends |
 | Left stick | Left/right: a character a step, the word looked up once the cursor rests (`stick_lookup_ms`); up/down: scroll the entry |
 | Touch the text | Look up the word that starts at the character touched |
 | Up / Down, right stick | Scroll the entry (in the list: choose a line; Left/Right a page of lines) |

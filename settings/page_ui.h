@@ -23,6 +23,7 @@ typedef struct {
     unsigned track;            /* an unfocused card's colour (a scroll bar's track, an empty bar) */
     unsigned selected;         /* a focused card's colour */
     const VjoButtons *buttons; /* the console's enter and cancel buttons */
+    unsigned highlight, reading, rank, definition; /* Look up: theme-specific dictionary text */
 } VjoPageUi;
 
 /* A scroll bar: its track at x, y (w wide, room tall) and its thumb, where the part from..from + shown of total is

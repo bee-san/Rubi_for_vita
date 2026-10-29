@@ -19,7 +19,10 @@ static const char *const duplicates[] = {"tag", "skip", "keep", NULL}; /* VJO_DU
 static const char *const card_types[] = {"word", "sentence", "word_sentence", "click", NULL}; /* VJO_CARD_*'s */
 static const char *const off_on[] = {"off", "on", NULL};
 
+static const char *const colour_schemes[] = {"default", "mint", "paper", NULL}; /* VJO_THEME_* */
+
 static const Row rows[] = {
+    {"colour_scheme", offsetof(VjoAppPrefs, colour_scheme), colour_schemes},
     {"anki_duplicates", offsetof(VjoAppPrefs, anki_duplicates), duplicates},
     {"anki_card_type", offsetof(VjoAppPrefs, anki_card_type), card_types},
     {"anki_game_tag", offsetof(VjoAppPrefs, anki_game_tag), off_on},

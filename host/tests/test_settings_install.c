@@ -40,6 +40,8 @@
 #include "../../include/vjo_vocr_sizes.h"
 #include "../../settings/install.h"
 #include "../../settings/install_page.h"
+#include "../../core/local_dict.h"
+#include "settings_preview.h"
 #include "config_golden.h" /* #418: the install plan's golden file */
 
 #ifndef VJO_SOURCE_DIR
@@ -1750,7 +1752,7 @@ static void the_page_shows_the_plan_and_runs_it(void)
     frame(0);
     for (int i = 0; i < drawn_count; i++) TEST_MSG("%s", drawn[i]);
     TEST_CHECK(shown(VJO_DEBUG ? "Install the overlay (v0.8.0, debug build)" : "Install the overlay (v0.8.0)"));
-    TEST_CHECK(shown("[Install*]") && shown("hints: ×: Install   Left/Right: action   Up/Down: scroll   ○: exit"));
+    TEST_CHECK(shown("[Install*]") && shown("hints: ×: Install   Left/Right: action   Up/Down: scroll   ○: settings"));
     TEST_CHECK(shown("1. Copy the 3 plugins"));
     frame(SCE_CTRL_CROSS); /* the stubs run the thread at once */
     frame(0);
@@ -2158,7 +2160,7 @@ static void the_page_pages_through_a_long_plan(void)
     /* its thumb: at the track's top first, shorter than it, inside it at every step, at its bottom at the end */
     TEST_CHECK_(bar_y[1] == bar_y[0] && bar_h[1] >= 12 && bar_h[1] < bar_h[0], "track %d+%d, thumb %d+%d", bar_y[0], bar_h[0],
                 bar_y[1], bar_h[1]);
-    TEST_CHECK(shown("Left/Right: action   Up/Down: scroll   ○: exit"));
+    TEST_CHECK(shown("Left/Right: action   Up/Down: scroll   ○: settings"));
     /* the first frame lays out only what the box shows and the first entry past it, as main's page did (the
      * bar counts entries: counting every entry's rows laid out the whole plan at once) */
     TEST_CHECK_(first_rows <= 16, "%d rows laid out in the first frame", first_rows);
@@ -2191,7 +2193,7 @@ static void the_page_pages_through_a_long_plan(void)
     frame(SCE_CTRL_RIGHT); /* Uninstall's plan: one short block */
     frame(0);
     TEST_CHECK_(bar_rects == 0, "%d", bar_rects);
-    TEST_CHECK(shown("hints: ×: Uninstall   Left/Right: action   ○: exit"));
+    TEST_CHECK(shown("hints: ×: Uninstall   Left/Right: action   ○: settings"));
 }
 
 /* N24: the page shows a reason a sentence a line: each sentence starts a row. */
@@ -2856,7 +2858,36 @@ static void the_install_plans_every_config_ini_record_as_its_golden_file(void)
     free(o.p);
 }
 
+/* A synthetic memory card, never a device: show install, repair, uninstall and update plans. */
+static void settings_walkthrough(void)
+{
+    if (!vp_available()) return;
+    fresh_card(1);
+    TEST_ASSERT(vjo_install_page_start() == 1);
+    VjoPageUi preview = vp_ui(&glyphs);
+    vp_begin("Install & repair");
+    vjo_install_page_frame(&preview, 0, -1, -1);
+    vp_finish("walk-install-1-plan");
+    VjoInstallScan scan = scan_now();
+    VjoInstallResult result;
+    TEST_ASSERT(run(&scan, VJO_INSTALL_ACT_INSTALL, &result) == 0);
+    vjo_install_page_show();
+    vp_begin("Install & repair");
+    vjo_install_page_frame(&preview, 0, -1, -1);
+    vp_finish("walk-install-2-repair");
+    vp_begin("Install & repair");
+    vjo_install_page_frame(&preview, SCE_CTRL_RIGHT, -1, -1);
+    vp_finish("walk-install-3-uninstall");
+    install_app(2, "0.8.1", NULL);
+    TEST_ASSERT(vjo_install_page_start() == 1);
+    vp_begin("Install & repair");
+    vjo_install_page_frame(&preview, 0, -1, -1);
+    vp_finish("walk-install-4-update");
+    vp.active = 0;
+}
+
 TEST_LIST = {
+    {"settings_walkthrough", settings_walkthrough},
     {"the_install_plans_every_config_ini_record_as_its_golden_file", the_install_plans_every_config_ini_record_as_its_golden_file},
     {"a_payload_the_folder_refuses_is_installed_from_app0", a_payload_the_folder_refuses_is_installed_from_app0},
     {"the_diff_at_its_line_bound", the_diff_at_its_line_bound},

@@ -1,10 +1,9 @@
 /* The Rubi app's Anki page: card mining on/off, the cards' screenshots
- * on/off (anki_screenshot, API 23) and their black bars trimmed or kept
- * (anki_screenshot_trim_bars, API 32), what the export makes of each card
+ * on/off (anki_screenshot, API 23), with automatic black-bar cropping, what the export makes of each card
  * (#311: Card type, Game tag and Sentence readings, app.ini's anki_card_type,
  * anki_game_tag and anki_sentence_readings), what it does with a word mined
  * before (#314: Duplicates, app.ini's anki_duplicates: tag, skip or keep), the
- * known words' import (#314 stage C), and the export of the queued cards
+ * retained, disabled known-word importer (#521), and the export of the queued cards
  * (or all of them; "N queued, M already mined") as Lapis notes in a new .apkg file under
  * ux0:data/VitaJPOverlay/anki/ (settings/anki_export.h), which Anki imports
  * on any computer or phone; a card's screenshot goes into its Picture field.
@@ -18,7 +17,7 @@
 #include "anki_export.h"
 #include "page_ui.h"
 
-/* The page is shown (Select or its tab): reloads the settings and counts the cards. */
+/* The category is shown: reloads the settings and counts the cards. */
 void vjo_anki_page_show(VjoArena *scratch);
 /* One frame of the page: the buttons pressed and a new touch (x, y; -1 when
  * none), then drawing. */
@@ -30,8 +29,11 @@ void vjo_anki_page_stick(int move);
 /* An export or the known words' import is running (the page's worker: 64 KiB stack, CPU3, the page's 2 MiB arena
  * VJO_EXPORT_MEM). */
 int vjo_anki_page_busy(void);
-/* Cancel is the page's, not the app's exit: a job runs (cancel stops it). */
+/* Cancel belongs to the Actions page or a running job (cancel stops it). */
 int vjo_anki_page_holds_cancel(void);
+/* The actions subpage goes back to Anki, consuming this Back. A running job retains Cancel to stop it. */
+int vjo_anki_page_back(void);
+const char *vjo_anki_page_title(void);
 /* Leaving the app: cancels and joins a running export or import (the queue is left as it was). */
 void vjo_anki_page_quit(void);
 

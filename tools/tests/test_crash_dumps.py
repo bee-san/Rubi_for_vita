@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ftp_mock import FtpMock  # noqa: E402
+from profile_fixture import stage_profile_builder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -881,6 +882,7 @@ class Archive(unittest.TestCase):
         for name in ("install_ftp.sh", "collect_vita.py", "analyse_selftest.py", "analyse_timeline.py",
                      "model_tiers.json"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
+        stage_profile_builder(self.package)
         self.device = self.root / "device"
         data = self.device / "ux0/data/VitaJPOverlay"
         data.mkdir(parents=True)

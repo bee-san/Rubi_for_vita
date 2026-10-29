@@ -189,18 +189,19 @@ through `.vjo-old`, so a file is missing between two renames for one call at mos
 
 ## The app: an Install page
 
-A fourth tab: **Games | OCR & lookup | Anki | Install**. At start the app reads its
+The **Settings → Install & repair** category. The app normally opens on Settings, and opens this category
+automatically when installation needs attention. At start the app reads its
 `payload/manifest.txt` and works out a state, evaluated in this order (nothing is written):
 
 | state | when | start page |
 |---|---|---|
 | interrupted | a `config.txt.vjo-new` or `config.txt.vjo-old` left by a stopped swap (step 5), beside a missing `config.txt`, or beside one that came back (h-encore and h-encore2 write their stock text into both configurations when both are missing, h-encore-2 c59a248 `bootstrap/bootstrap.c:372-379,574-581`) or never left (a stop while `.vjo-new` was written) | Install, offering to put a whole file back and to keep the current one (step 5) |
 | cannot | Unsafe Homebrew is off; or the package is damaged (R4); or a configuration the editor refuses (below) | Install, with the reason and what to do |
-| no payload | the zip's `Rubi.vpk`, or a source build: the app carries no overlay | Games; Install offers Uninstall (when a configuration has the overlay's lines) and says `install-vita.sh` installs this build; no Check: without a manifest there is nothing to check the files against |
+| no payload | the zip's `Rubi.vpk`, or a source build: the app carries no overlay | Settings; Install & repair offers Uninstall (when a configuration has the overlay's lines) and says `install-vita.sh` installs this build; no Check: without a manifest there is nothing to check the files against |
 | not installed | no configuration loads the overlay's kernel and Shell plugins | Install |
 | update | `installed.txt` (below) names another build, or there is none | Install |
 | repair | this build (`installed.txt`), but a plugin file is not the payload's (size and SHA-256), the plugins' record (`ux0:data/VitaJPOverlay/vjo_app.txt`, #122) is missing or another app build's, a data file is missing or has the wrong size, or a configuration does not load both plugins (config.ini is not part of it: over this build it is the user's, below) | Install |
-| installed | every plugin file is the payload's, every data file has its size, every configuration loads both plugins, and both records are this build's | Games |
+| installed | every plugin file is the payload's, every data file has its size, every configuration loads both plugins, and both records are this build's | Settings |
 
 At start only the four small files (the three plugins and the RCO, about 180 KB) are hashed; the
 models and the dictionary are checked by size. Install and **Check and repair** hash everything.
