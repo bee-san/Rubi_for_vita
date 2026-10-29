@@ -128,9 +128,21 @@ int sceIoGetstat(const char *p, SceIoStat *out)
     if (refused_payload(p)) return (int)0x80010016u;
     return sceio_getstat(p, out);
 }
+/* more rename faults in one run (#531's audit): each its own pattern, the nth rename that names it fails */
+static struct { const char *pattern; int nth, calls; } more_renames[4];
+static int more_rename_fault(const char *a, const char *b)
+{
+    int fail = 0;
+    for (int i = 0; i < 4; i++)
+        if (more_renames[i].pattern && ((a && strstr(a, more_renames[i].pattern)) || (b && strstr(b, more_renames[i].pattern))) &&
+            ++more_renames[i].calls == more_renames[i].nth)
+            fail = 1;
+    return fail;
+}
 int sceIoRename(const char *a, const char *b)
 {
     struct stat st;
+    if (more_rename_fault(a, b)) return (int)(0x80010000u | EIO);
     if (app_readonly && (in_app(a) || in_app(b))) return (int)0x80010013u;
     if ((matches(a) || matches(b)) && hit(fault.rename)) return (int)(0x80010000u | EIO);
     if (!stat(b, &st)) return (int)0x80010011u; /* the Vita's rename refuses an existing destination */
@@ -316,6 +328,7 @@ static void fresh_card(int with_ux0)
     TEST_ASSERT(vjo_test_tmpdir_new(card, sizeof(card)) != NULL);
     TEST_ASSERT(chdir(card) == 0);
     memset(&fault, 0, sizeof(fault));
+    memset(more_renames, 0, sizeof(more_renames));
     unsafe_off = umount_rc = app_readonly = locked = lock_calls = 0;
     payload_locked = app0_unmounted = 0;
     free_space[0] = free_space[1] = 1LL << 34;
@@ -1552,6 +1565,112 @@ static void a_missing_plugin_comes_back_from_its_vjo_old(void)
     char want[300];
     snprintf(want, sizeof(want), "install: %s put in place from an earlier run's .vjo-old", shell);
     TEST_CHECK_(strstr(log_text, want) != NULL, "%s", log_text);
+}
+
+/* path holds payload file i's bytes of version */
+static int file_is(const char *path, int i, int version)
+{
+    static unsigned char bytes[1 << 20];
+    size_t n = payload_bytes(i, version, bytes, sizeof(bytes)), m;
+    char *have = slurp(path, &m);
+    return have && m == n && !memcmp(have, bytes, n);
+}
+
+/* Install the same action again after a stop: the scan offers it, and it ends with version 1 installed. */
+static void install_finishes(const char *what)
+{
+    VjoInstallResult r;
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.actions & VJO_INSTALL_ACT_INSTALL, "%s: state %d", what, s.state);
+    TEST_CHECK_(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0, "%s: Install again", what);
+    TEST_CHECK_(installed_files(1) && plugins_of(1), "%s", what);
+    TEST_CHECK_(scan_now().state == VJO_INSTALL_INSTALLED, "%s: state %d", what, scan_now().state);
+}
+
+/* #531's audit (P1): the kernel missing, the package's own kernel beside it as .vjo-old (EARLIER_OLD), and the
+ * Shell's rename fails: the undo puts the kernel aside again as its .vjo-old, so no new kernel stays beside the old
+ * Shell, OCR worker and RCO. */
+static void a_failed_rename_puts_an_earlier_old_plugin_aside_again(void)
+{
+    static unsigned char bytes[1 << 20];
+    VjoInstallResult r;
+    char old[300];
+    fresh_card(1);
+    install_app(0, "0.7.99", NULL);
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    install_app(1, "0.8.0", NULL);
+    const char *kernel = vjo_payload_dest(VJO_PAYLOAD_KERNEL_INDEX);
+    snprintf(old, sizeof(old), "%s.vjo-old", kernel);
+    TEST_ASSERT(remove(kernel) == 0);
+    put(old, bytes, payload_bytes(VJO_PAYLOAD_KERNEL_INDEX, 1, bytes, sizeof(bytes)));
+    fault.pattern = "VitaJPOverlay_Shell.suprx";
+    fault.rename = 1;
+    s = scan_now();
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) < 0);
+    TEST_CHECK(fault.calls >= 1);
+    memset(&fault, 0, sizeof(fault));
+    TEST_CHECK(has_line(r.lines, r.count, "could not be put in place: every plugin is as it was"));
+    TEST_CHECK_(!there(kernel) && file_is(old, VJO_PAYLOAD_KERNEL_INDEX, 1), "the kernel aside again as its .vjo-old");
+    for (int i = VJO_PAYLOAD_KERNEL_INDEX + 1; i < VJO_PAYLOAD_KERNEL_INDEX + VJO_PAYLOAD_PLUGINS; i++)
+        TEST_CHECK_(file_is(vjo_payload_dest(i), i, 0), "%s", vjo_payload_dest(i));
+    install_finishes("P1");
+}
+
+/* #531's audit (P2): only the kernel differs, and the run stops after the plugins (step 7's installed.txt): the boot
+ * guard's record is already reset, because a new kernel is in place (run_install's own reset is never reached). */
+static void a_stop_after_the_plugins_still_resets_the_boot_record(void)
+{
+    static unsigned char bytes[1 << 20];
+    VjoInstallResult r;
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    put(vjo_payload_dest(VJO_PAYLOAD_KERNEL_INDEX), bytes, payload_bytes(VJO_PAYLOAD_KERNEL_INDEX, 0, bytes, sizeof(bytes)));
+    TEST_ASSERT(remove(VJO_INSTALLED_RECORD) == 0);
+    put_text("ur0:data/VitaJPOverlay/boot.txt", "safe");
+    fault.pattern = "installed.txt";
+    fault.rename = 1;
+    s = scan_now();
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) < 0);
+    TEST_CHECK(fault.calls >= 1);
+    memset(&fault, 0, sizeof(fault));
+    TEST_CHECK(plugins_of(1));
+    size_t bn = 99;
+    TEST_CHECK_(slurp("ur0:data/VitaJPOverlay/boot.txt", &bn) && bn == 0, "boot.txt %zu B", bn);
+}
+
+/* #531's audit (P3): the Shell's rename fails, then a rename of the kernel's undo too: (a) the new one aside, (b) the
+ * old one back (the new one is put in again), (c) both of those (the kernel missing, its new and old copies beside).
+ * The stop says not every plugin is back, and Install finishes the job. */
+static void a_failed_undo_says_not_every_plugin_is_back(void)
+{
+    /* the kernel's renames in the run: 1 aside, 2 in, then the undo's 3 the new one aside, 4 the old one back, 5 the
+     * new one in again */
+    static const struct { const char *what; int nth1, nth2; } cases[] = {{"a", 3, 0}, {"b", 4, 0}, {"c", 4, 5}};
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        VjoInstallResult r;
+        TEST_CASE_("undo case %s", cases[c].what);
+        fresh_card(1);
+        install_app(0, "0.7.99", NULL);
+        VjoInstallScan s = scan_now();
+        TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+        install_app(1, "0.8.0", NULL);
+        fault.pattern = "VitaJPOverlay_Shell.suprx";
+        fault.rename = 1;
+        more_renames[0].pattern = more_renames[1].pattern = "VitaJPOverlay_Kernel";
+        more_renames[0].nth = cases[c].nth1;
+        more_renames[1].nth = cases[c].nth2;
+        s = scan_now();
+        TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) < 0);
+        TEST_CHECK_(fault.calls >= 1 && more_renames[0].calls >= cases[c].nth1, "renames seen: Shell %d, kernel %d",
+                    fault.calls, more_renames[0].calls);
+        memset(&fault, 0, sizeof(fault));
+        memset(more_renames, 0, sizeof(more_renames));
+        TEST_CHECK(has_line(r.lines, r.count, "not every plugin could be put back as it was"));
+        TEST_CHECK(every_file_old_or_new(0, 1));
+        install_finishes(cases[c].what);
+    }
 }
 
 static void an_interrupted_swap_is_finished(void)
@@ -3168,6 +3287,9 @@ TEST_LIST = {
     {"a_failed_rename_puts_the_plugins_back", a_failed_rename_puts_the_plugins_back},
     {"a_failed_rename_in_a_first_install_leaves_no_plugin", a_failed_rename_in_a_first_install_leaves_no_plugin},
     {"a_missing_plugin_comes_back_from_its_vjo_old", a_missing_plugin_comes_back_from_its_vjo_old},
+    {"a_failed_rename_puts_an_earlier_old_plugin_aside_again", a_failed_rename_puts_an_earlier_old_plugin_aside_again},
+    {"a_stop_after_the_plugins_still_resets_the_boot_record", a_stop_after_the_plugins_still_resets_the_boot_record},
+    {"a_failed_undo_says_not_every_plugin_is_back", a_failed_undo_says_not_every_plugin_is_back},
     {"an_interrupted_swap_is_finished", an_interrupted_swap_is_finished},
     {"a_swap_healed_by_hencore_is_still_interrupted", a_swap_healed_by_hencore_is_still_interrupted},
     {"a_stopped_write_of_vjo_new_keeps_config_txt", a_stopped_write_of_vjo_new_keeps_config_txt},
