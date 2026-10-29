@@ -2529,6 +2529,38 @@ static void weights_refused_after_the_check_retry_the_next_smaller_model(void)
     }
     TEST_CHECK(!drop_resident());
 
+    /* audit-mem-game-1 F2: the console's own path for #324's retry. The figure is whole MiB and Normal's weights take
+     * the probe (their need falls in the figure's last MiB: resident_alloc), but at the job's workspace the game took
+     * more than the probe can absorb: Normal's block, taken, leaves the game less than the reserve and goes back, the
+     * job gives its blocks back, and Small, checked again on the live figure, reads beside the reserve (a probe that
+     * kept the block would read Normal and leave the game 4 KiB under it) */
+    r = setup();
+    r.tiers = 1u << (VJO_VOCR_TIER_NORMAL - 1u) | 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+    line();
+    free_mib = 1;
+    available = (int)(f + 4096u);
+    TEST_ASSERT((tier_need(&r, 2, 0) - 4096u) / mib * mib >= tier_need(&r, 1, 0)); /* Small fits after the drop */
+    drop_at_allocation = allocations + 1u; /* at this job's first workspace: then the game has Normal's need - 4 KiB */
+    drop_once = (int)(f + 8192u - tier_need(&r, 2, 0));
+    rc = vjo_game_ocr_run_request(&r, &out);
+    drop_at_allocation = 0; drop_once = 0;
+    TEST_CHECK_(rc == VJO_OK, "free %u, then %u B taken: rc %d", f + 4096u, f + 8192u - tier_need(&r, 2, 0), rc);
+    TEST_CHECK_(out.lines >= 1 && out.fallback == 1u, "%u lines, fallback %u", out.lines, out.fallback);
+    TEST_CHECK_(weights_live && weights_block == small && weight_allocations == 2 && weight_frees == 1,
+                "weights %u B, %u taken, %u given back", weights_block, weight_allocations, weight_frees);
+    TEST_CHECK_(available - (int)live_bytes >= (int)VJO_GAME_RESERVE_SMALL, "the game keeps %d B",
+                available - (int)live_bytes);
+    TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_SMALL && !memory_live && !capture_live && !out.cleanup_status);
+    {
+        const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
+        unsigned n = check_steps(&out, s);
+        TEST_CHECK_(n == 2 && VJO_GCHECK_TIER(s[0]->kind) == 2 && !s[0]->rc && VJO_GCHECK_TIER(s[1]->kind) == 1 &&
+                    s[1]->arg == 1u && !s[1]->rc, "%u checks", n); /* Normal passed, then Small, the retry's */
+    }
+    free_mib = 0;
+    TEST_CHECK(!drop_resident());
+
     /* a game with Normal's exact need, which takes a page of its own as the job's workspace is taken: Normal's
      * weights no longer fit beside the reserve, the job gives its blocks back and Small, checked again, reads */
     r = setup();
@@ -2547,7 +2579,7 @@ static void weights_refused_after_the_check_retry_the_next_smaller_model(void)
     {
         const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
         unsigned n = check_steps(&out, s);
-        TEST_CHECK_(n >= 2 && VJO_GCHECK_TIER(s[0]->kind) == 2 && !s[0]->rc && VJO_GCHECK_TIER(s[n - 1]->kind) == 1 &&
+        TEST_CHECK_(n == 2 && VJO_GCHECK_TIER(s[0]->kind) == 2 && !s[0]->rc && VJO_GCHECK_TIER(s[n - 1]->kind) == 1 &&
                     s[n - 1]->arg == 1u && !s[n - 1]->rc, "%u checks", n); /* Normal passed, then Small, the retry's */
     }
     TEST_CHECK(!drop_resident());

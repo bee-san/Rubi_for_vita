@@ -55,6 +55,8 @@ static uint32_t kd_taken, kd_peak, kd_refusals;
 static int64_t user_free, cdram_free, phycont_free;
 static int64_t user_used, cdram_used, phycont_used, user_peak;
 static unsigned refuse;          /* bits: 1 USER capture, 2 CDRAM capture, 4 PHYCONT capture */
+/* audit-mem-game-1: the least the game had while its own threads ran (a display frame, a model read's wait) */
+static int64_t frames_headroom_min = INT64_MAX;
 /* #528: the console reports the game's free USER memory in whole MiB (#324: all 78 samples of あおかな were 1-4 MiB;
  * every "free USER=" in the owner's logs is a whole MiB): report_mib rounds it down so. The sweep below (mem-game)
  * also tracks the least true free memory the worker left the game beside a block of its that stayed
@@ -248,6 +250,7 @@ int ksceKernelDelayThread(SceUInt us) { clock_us += us; return 0; }
 int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *out, SceUInt *timeout)
 {
     (void)uid; (void)wait; (void)out;
+    if (user_free - user_used < frames_headroom_min) frames_headroom_min = user_free - user_used; /* audit */
     if (bits == MEV_ROWS) { /* the game shows its next frame: the display hook runs in its thread */
         if (spinner) { /* 24 x 24 px right of the last line, inside the text box: never a shade it showed before */
             uint32_t v = 40u + (++spinner_frames * 37u) % 200u;
@@ -304,9 +307,25 @@ int sceKernelDelayThread(unsigned us)
 /* API 22: a helper thread (game_ocr/main.c pool_run) runs its line at once, in StartThread, as test_game_vocr.c's
  * does (the owner scenario's jobs take helpers); any other thread is never run here. */
 static unsigned helper_threads;
+/* audit-mem-game-1: with model_stacks, a helper's stack and TLS (VJO_BUDGET_GAME_HELPER_STACK) are the game's USER
+ * memory, as on the console (docs/vita-memory.md 3.2): refused when the game has no room, and the least the game kept
+ * beside one (stack_headroom_min) */
+static int model_stacks;
+static int64_t stack_headroom_min = INT64_MAX;
 SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt)
-{ return entry == helper_entry ? 41 + (int)(helper_threads++ % 64u) : 20; } /* 41-104: every one > 40 */
-int sceKernelStartThread(SceUID uid, SceSize n, void *args) { return uid > 40 ? helper_entry(n, args) : 0; }
+{
+    if (entry == helper_entry && model_stacks) {
+        if (user_used + VJO_BUDGET_GAME_HELPER_STACK > user_free) return (int)0x80024302u;
+        user_used += VJO_BUDGET_GAME_HELPER_STACK;
+    }
+    return entry == helper_entry ? 41 + (int)(helper_threads++ % 64u) : 20; /* 41-104: every one > 40 */
+}
+int sceKernelStartThread(SceUID uid, SceSize n, void *args)
+{
+    /* audit-mem-game-1: the least the game kept beside a helper's stack that runs (one the worker started) */
+    if (uid > 40 && model_stacks && user_free - user_used < stack_headroom_min) stack_headroom_min = user_free - user_used;
+    return uid > 40 ? helper_entry(n, args) : 0;
+}
 
 /* ocr-speed (API 22): the thread run time and the ARM clock; see test_game_vocr.c for the tested ones. */
 int sceKernelGetThreadInfo(SceUID thid, SceKernelThreadInfo *info) { (void)thid; (void)info; return -1; }
@@ -314,7 +333,7 @@ SceUID sceKernelGetThreadId(void) { return 21; }
 int scePowerGetArmClockFrequency(void) { return 333; }
 int scePowerSetArmClockFrequency(int mhz) { (void)mhz; return 0; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return 0; }
-int sceKernelDeleteThread(SceUID uid) { return 0; }
+int sceKernelDeleteThread(SceUID uid) { if (model_stacks && uid > 40) user_used -= VJO_BUDGET_GAME_HELPER_STACK; return 0; }
 int sceKernelGetProcessTitleId(SceUID pid, char *out, SceSize size) { snprintf(out, size, "PCSG00415"); return 0; }
 int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize size) { return -1; }
 int vjoGetVersion(void) { return VJO_API_VERSION; }
@@ -591,6 +610,7 @@ static void api55_pause_reads_one_frame_beside_a_spinner(void)
  * second beside what the first left resident. The worker's own step log says what ran: the check that passed last
  * (its tier, LM and cascade), the LM's and the spotter's own steps, the helpers. Not device evidence: the pool is a
  * model of the logs' numbers. */
+static uint32_t sim_speed; /* speed bits added to game_job's requests (game_grows_between_jobs: the pause) */
 typedef struct {
     int rc;
     unsigned tier, lm, lm_rc_bad, cascade, spot, spot_oom, helpers, checks, passed, loads, lm_loads, probes;
@@ -642,7 +662,7 @@ static GameJob game_job(unsigned lm_tier, const uint16_t rect[4], uint32_t flags
     VjoGameOcrRequest request = {.size = sizeof(request), .tiers = VJO_VOCR_TIERS_ALL};
     request.flags = flags | (lm_tier & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT |
                     (2000u + 125u) / 250u << VJO_GAME_OCR_CASCADE_SHIFT | 2u << VJO_GAME_OCR_REFINE_SHIFT;
-    request.speed = 2u | VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_TRUST | VJO_GAME_OCR_S_SPOT |
+    request.speed = sim_speed | 2u | VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_TRUST | VJO_GAME_OCR_S_SPOT |
                     VJO_GAME_OCR_S_DROP_BORDERS | VJO_GAME_OCR_S_HEAD_GATE | VJO_GAME_OCR_S_TWO_LEVEL |
                     (uint32_t)VJO_GAME_OCR_VERTICAL_AUTO << VJO_GAME_OCR_S_VERTICAL_SHIFT | VJO_GAME_OCR_S_LINE_FIX;
     strcpy(request.model_dir, VJO_VOCR_MODEL_ROOT);
@@ -802,9 +822,10 @@ static void game_memory_sweep(void)
                                 "%s at %lld B%s: probes %u / %u, %lld / %lld B under the reserve", what, (long long)f,
                                 mode ? " (MiB)" : "", a.probes, b.probes, (long long)a.dip, (long long)b.dip);
                     /* A job never fails for memory while Small fits beside the reserve as its check sees the game,
-                     * and one that does fail leaves the game nothing of ours. */
+                     * and one that does fail leaves the game nothing of ours; nor does the second job beside what the
+                     * first kept, in whole MiB too since #528's check_free (audit-mem-game-1 F2) */
                     if (seen >= small)
-                        TEST_CHECK_(!a.rc && (mode || !b.rc), "%s at %lld B%s (Small needs %lld): rc %d / %d", what,
+                        TEST_CHECK_(!a.rc && !b.rc, "%s at %lld B%s (Small needs %lld): rc %d / %d", what,
                                     (long long)f, mode ? " (MiB)" : "", (long long)small, a.rc, b.rc);
                     if (f < small)
                         TEST_CHECK_(a.rc == VJO_E_OOM && b.rc == VJO_E_OOM, "%s at %lld B, under Small's %lld: rc %d / %d",
@@ -821,6 +842,89 @@ static void game_memory_sweep(void)
         }
     }
     report_mib = 0;
+    cdram_free = 128 << 20; phycont_free = 16 << 20;
+    game_sim_reset();
+}
+
+/* audit-mem-game-1 F1 (#528): the game takes memory between two jobs, less than a MiB, on a console that reports whole
+ * MiB. The worker's figure carried from the first job (check_free) can then be more than the game has, and every block
+ * the second job takes must still leave the game the reserve once the worker has given back a block that took it: the
+ * workspace's re-check covers the capture and the workspace, carried_short the blocks taken after that check (a
+ * helper's stack, which on the console is the game's USER memory: model_stacks; the pause's frame block; the gate's).
+ * One case: a cold job on the CLANNAD box with the 1000k LM at f free, then the game takes d, then a job on new text. 0
+ * when the game itself is under the reserve as the second job begins (its own doing); else 1, with the least the game
+ * had in the second job's display frames (frames) and beside a helper's stack in either job (stack), INT64_MAX where
+ * none ran. */
+static int grow_case(int64_t f, int64_t d, uint32_t speed, int64_t *frames, int64_t *stack, GameJob *second)
+{
+    static const uint16_t box[4] = {3619, 49996, 56866, 15299};
+    int64_t first_stack;
+    user_free = f; report_mib = 0;
+    game_sim_reset();
+    report_mib = 1;
+    sim_speed = speed;
+    stack_headroom_min = INT64_MAX;
+    (void)game_job(2u, box, 0);
+    first_stack = stack_headroom_min;
+    user_free -= d; /* the game takes d between the two jobs */
+    if (user_free - user_used < VJO_GAME_RESERVE) return 0;
+    stack_headroom_min = frames_headroom_min = INT64_MAX;
+    vjo_game_ocr_cache_clear(); /* the next text: its lines are recognized again (with the helpers) */
+    *second = game_job(2u, box, 0);
+    *frames = frames_headroom_min;
+    *stack = first_stack < stack_headroom_min ? first_stack : stack_headroom_min;
+    return 1;
+}
+
+/* The cases are the audit's grid's (GAME_SIM_GROW=1 below) that left the game under the reserve on main 6cf932fb: a
+ * helper's stack (1,032,192 B) and the pause's frame block (942,080 and 1,007,616 B); and two that do so without the
+ * workspace's re-check, with the re-check keeping game_room or with carried always 0 (946,176 and 815,104 B). With
+ * GAME_SIM_GROW=1 the whole grid runs instead: f from 2 to 8 MiB in 256 KiB steps, d from 16 KiB to 1 MiB in 16 KiB
+ * steps, with and without the pause (2,502 cases, some minutes). */
+static void game_grows_between_jobs(void)
+{
+    static const struct { int64_t f, d; int pause; } cases[] = {
+        {6291456, 589824, 0}, {6553600, 851968, 0}, {5242880, 278528, 1},
+        {5767168, 737280, 1}, {4456448, 638976, 0}, {4718592, 1032192, 1},
+    };
+    unsigned run = 0, under = 0;
+    int64_t least = INT64_MAX;
+    if (!have_models()) { TEST_MSG("release weights absent (VJO_VOCR_MODEL_DIR): skipped"); return; }
+    make_frame();
+    kd_largest = KD_GRANTED_74; refuse = 0; hook_copy_fails = 0; spinner = 0;
+    cdram_free = phycont_free = 0; /* every block in the game's USER memory */
+    model_stacks = 1;
+    for (int pause = 0; pause < 2; pause++) {
+        const int grid = getenv("GAME_SIM_GROW") != NULL;
+        const unsigned n = grid ? 25u * 64u : sizeof(cases) / sizeof(cases[0]);
+        for (unsigned i = 0; i < n; i++) {
+            const int64_t f = grid ? (2 << 20) + (int64_t)(i / 64u) * (256 << 10) : cases[i].f;
+            const int64_t d = grid ? (int64_t)(i % 64u + 1u) * (16 << 10) : cases[i].d;
+            int64_t frames = INT64_MAX, stack = INT64_MAX;
+            GameJob b;
+            if (!grid && cases[i].pause != pause) continue;
+            if (grid && d >= (1 << 20)) continue;
+            if (!grow_case(f, d, pause ? VJO_GAME_OCR_S_PAUSE : 0u, &frames, &stack, &b)) continue;
+            run++;
+            if (frames < VJO_GAME_RESERVE || stack < VJO_GAME_RESERVE) {
+                under++;
+                if (frames < least) least = frames;
+                if (stack < least) least = stack;
+            }
+            if (!grid || frames < VJO_GAME_RESERVE || stack < VJO_GAME_RESERVE)
+                fprintf(stderr, "game grows: f %lld d %lld pause %d: 2nd job rc %d %s %s h%u checks %u; least in its frames "
+                                "%lld B, beside a helper's stack %lld B (reserve %u)\n", (long long)f, (long long)d, pause,
+                        b.rc, tier_id[b.tier & 3u], lm_id[b.lm <= 4u ? b.lm : 0u], b.helpers, b.passed,
+                        (long long)(frames == INT64_MAX ? -1 : frames), (long long)(stack == INT64_MAX ? -1 : stack),
+                        VJO_GAME_RESERVE);
+            if (!grid) TEST_CHECK_(b.rc == 0, "f %lld d %lld pause %d: rc %d", (long long)f, (long long)d, pause, b.rc);
+        }
+    }
+    fprintf(stderr, "game grows: %u cases, the game under the reserve in %u (least %lld B)\n", run, under,
+            (long long)(under ? least : 0));
+    TEST_CHECK_(run > 0 && !under, "%u of %u cases left the game under the reserve, least %lld B", under, run,
+                (long long)least);
+    model_stacks = 0; sim_speed = 0; report_mib = 0;
     cdram_free = 128 << 20; phycont_free = 16 << 20;
     game_sim_reset();
 }
@@ -1031,6 +1135,7 @@ TEST_LIST = {
     {"owner scenario", owner_scenario_game}, /* #528: tools/owner_scenario.py runs it by this name */
     {"#528 the spotter's part over the job's extras reads the same text with less workspace", spot_overlap_reads_the_same_text},
     {"#528 the game's memory swept: every tier, the LM and the spotter, exact and in whole MiB", game_memory_sweep},
+    {"#528 the game grows by less than a MiB between two jobs: every block leaves it the reserve", game_grows_between_jobs},
     {"API 55 the pause reads one frame beside a spinner that tears every strip-by-strip read", api55_pause_reads_one_frame_beside_a_spinner},
     {"API 18 kernel capture refused at the full screen under #74's pool", api18_kernel_capture_is_refused_at_the_full_screen},
     {"API 19 OCR takes no kernel memory under #74's pools", api19_runs_with_no_kernel_memory},

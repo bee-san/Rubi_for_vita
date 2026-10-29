@@ -905,8 +905,14 @@ static uint32_t resident_user(void)
  * figure plus those blocks), and plans with that less what it holds now, while the figure stays within a MiB of it;
  * a figure a MiB or more under it says the game took memory, and replaces it. A figure that is no whole MiB is exact
  * (no console reports one) and is used as it is. Each block a job takes is checked against the reserve by a figure
- * read after it (resident_alloc, the workspace's check), so a game that took memory meanwhile is never left less. */
+ * read after it (resident_alloc, the workspace's check, and carried_short for the blocks taken after that check), so
+ * a game that took memory meanwhile is never left less once the worker has given back the block that took it. */
 static int64_t game_room;
+/* audit-mem-game-1 F1: the job's check planned with more than the figure it read (check_free), so each block it takes
+ * after the workspace's re-check (the pause's frame block, a helper's stack, the gate's block) is checked once taken,
+ * exactly (whole-MiB figure and reserve), and goes back short of the reserve */
+static int carried;
+static __attribute__((noinline)) int carried_short(void) { return carried && free_user_after_reserve() < 0; }
 static int32_t check_free(void)
 {
     int32_t live = free_user();
@@ -943,8 +949,9 @@ static int spot_fits(const VjoGameOcrRequest *r, int32_t figure)
  * MiB under what is free, so a sample whose room beside the reserve is short of the block by less than a MiB cannot
  * tell: the block may fit (#324: Normal's weights at "3 MiB" in あおかな, refused, cost the job its model). There the
  * block is taken and the reserve checked after it: every reserve is a whole MiB (below), so "the game still keeps the
- * reserve" is then exact; a block that leaves less goes back at once (while the game held that block for one sample,
- * it had less than the reserve, by at most the block). Elsewhere the sample decides before the block, as before. */
+ * reserve" is then exact; a block that leaves less goes back (from its allocation until the worker gives it back the
+ * game has less than the reserve, by at most the block; a game thread can preempt the worker in between: it runs at
+ * the lowest user priority). Elsewhere the sample decides before the block, as before. */
 _Static_assert(VJO_GAME_RESERVE % MIB == 0 && VJO_GAME_RESERVE_SMALL % MIB == 0 && VJO_GAME_RESERVE_NORMAL % MIB == 0 &&
                    VJO_GAME_RESERVE_LARGE % MIB == 0 && VJO_GAME_RESERVE_HOOK_ONLY % MIB == 0,
                "a reserve is a whole MiB, the unit of the console's free-memory figure (resident_alloc's test)");
@@ -962,6 +969,7 @@ static void *resident_alloc(void *ud, size_t bytes)
      * second look at the game's free memory, as the job's workspace and capture blocks take none */
     if (d == &gate_desc) {
         if (!gate_room) return NULL;
+        probe = carried; /* F1 */
     } else if ((seen = free_user()) < 0 || (int64_t)seen - job_reserve < (int64_t)rounded) {
         if (seen < 0 || seen % (int32_t)MIB || (int64_t)seen + MIB - job_reserve <= (int64_t)rounded) return NULL;
         probe = 1;
@@ -1569,7 +1577,7 @@ static int pool_run(void *ud, unsigned slot, void (*fn)(void *arg), void *arg)
                               WORKER_AFFINITY, NULL);
     if (t < 0) { helper_create_failures++; return -1; }
     vjo_ledger_add(&g_game_ledger, GL_HELPERS, VJO_BUDGET_GAME_HELPER_STACK);
-    if (sceKernelStartThread(t, sizeof(slot), &slot) < 0) {
+    if (carried_short() || sceKernelStartThread(t, sizeof(slot), &slot) < 0) { /* F1: its stack left too little */
         helper_create_failures++;
         if (sceKernelDeleteThread(t) >= 0) vjo_ledger_sub(&g_game_ledger, GL_HELPERS, VJO_BUDGET_GAME_HELPER_STACK);
         else blocked = 1; /* a thread object we cannot delete: no more jobs */
@@ -2384,7 +2392,7 @@ again:
      * checked in turn, its cascade and LM first (check_with_lm); the first that
      * fits runs. The first one's need stays in model_need_* when another runs. */
     unsigned used = 0, try_from = 0;
-    int fits = 0, carried = 0, reverified = 0;
+    int fits = 0, reverified = 0;
     uint32_t first_workspace = 0, first_weights = 0, first_release = 0;
 retry_smaller:
     /* #528: the figure the game's free memory has shown beside the worker's resident blocks (check_free); carried: it
@@ -2591,6 +2599,10 @@ retry_smaller:
             pz.mem = mem;
             frame_base = fb;
             pz.held = 1;
+            if (carried_short()) { /* F1: the game kept less than the reserve beside it: read as without the pause */
+                pz.rc = VJO_E_OOM;
+                if (frame_release() < 0) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+            }
         }
     }
     VjoPlatform platform = {.file_open=file_open, .now_us=now_us};

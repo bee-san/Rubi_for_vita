@@ -31,6 +31,14 @@ been reported.
 
 ### Fixed
 
+- A game whose free memory shrank by less than a MiB between two OCR reads keeps its 1 MiB reserve beside every
+  block of the second read (#528, audit-mem-game-1 F1). #556's memory check plans with the most the console's
+  whole-MiB figure has shown, and checked the capture and the workspace once taken, but not the blocks taken after
+  them: a helper's stack, the pause's frame block (`ocr_pause = on`) and the text gate's block. Each is now checked
+  once taken and given back short of the reserve: the line runs on the worker's own thread, the read goes on without
+  the pause or the gate. On the host model the game ran 16,384 B under the reserve beside a helper's stack and
+  106,496 B under it in its own frames with the pause; now in none of 2,502 cases. Normal reads and text are
+  unchanged where the game did not shrink. Not yet run on a console.
 - The release zip's README.md shows its screenshots again: the six images it links (`docs/screenshots/`, 482,185 B)
   are in the zip, as tools/tests/test_zip_docs.py requires of every file README.md links.
 - The two-level head's re-read of a doubtful counter line now follows the model (#528, Mmem-game-8): a line whose
@@ -109,10 +117,12 @@ been reported.
 - OCR in games short of memory reads with the model the game has room for (#528). The console reports a game's free
   memory in whole MiB, rounded down (#324), and the worker's own blocks moved that figure a whole MiB at a time: a
   job's check passed Normal, the figure read after its first blocks refused the weights, and Small read instead
-  (#324's あおかな); the spotter's 57,344 B block cost a 2 MiB game its only model; and a job beside its resident
+  (#324's あおかな); the spotter's 57,344 B block (on the Vita; 61,440 B on the host) cost a 2 MiB game its only
+  model; and a job beside its resident
   weights was refused where the job before it read, so every other read failed. Now the worker plans with the most
   the figure has shown free beside its own blocks, checks a block whose need falls in that last MiB after taking it
-  (the reserve, a whole MiB, is then tested exactly; a block that leaves less goes back at once), and skips the
+  (the reserve, a whole MiB, is then tested exactly; a block that leaves less goes back, the game short of the
+  reserve by less than a MiB until then), and skips the
   spotter where it cannot fit beside the smallest model. On the host model of the console's figures (the owner
   scenario, the owner's config): 2 MiB reads Small instead of failing, 2.5 MiB's second job reads instead of
   failing, 3 MiB reads Normal with the 500k LM instead of Small, 4 MiB Large instead of Normal, 5 MiB Large with
