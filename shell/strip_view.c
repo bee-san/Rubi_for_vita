@@ -24,7 +24,10 @@ static void bump(void)
 
 void vjo_strip_show(const char *text, int kind, int busy)
 {
-    size_t n = sceClibStrnlen(text, sizeof(g_view.strip_text) - 1);
+    size_t n;
+    if (!text) /* an error whose text had no room (vjo_err_text's NULL, #528): an empty strip, not a fault in SceShell */
+        text = "";
+    n = sceClibStrnlen(text, sizeof(g_view.strip_text) - 1);
     if (n == sizeof(g_view.strip_text) - 1)
         while (n && ((uint8_t)text[n] & 0xC0) == 0x80)
             n--;
