@@ -30,6 +30,7 @@
 #include "vocr_lines_rows.h"
 #include "vocr_lines_fix.h"
 #include "vocr_ocr.h"
+#include "vocr_textspot6.h"
 #include "../../kernel/scene.h"
 
 #define MAX_W 960u
@@ -47,7 +48,7 @@ static unsigned char strip[ROWS_MAX * MAX_W];
 static unsigned char workspace[2u << 20] __attribute__((aligned(64)));
 static unsigned char capture_block[64u * 1024u] __attribute__((aligned(64)));
 static unsigned char line_block[VJO_VOCR_LINE_MAX_BYTES] __attribute__((aligned(64)));
-static unsigned char weights[2u << 20] __attribute__((aligned(64)));
+static unsigned char weights[3u << 20] __attribute__((aligned(64))); /* VOCR6-L's 2,475,680 B */
 static unsigned char finder_arena[1u << 20] __attribute__((aligned(16)));
 static unsigned char lookup_mem[LOOKUP_ARENA] __attribute__((aligned(16)));
 static unsigned char big_mem[4u << 20] __attribute__((aligned(16)));
@@ -282,11 +283,70 @@ static int stage_find(const BenchIn *in, unsigned iters, BenchOut *out)
     return 0;
 }
 
+/* ---- API 54: the text spotter (vita-vn-ocr runtime/vocr_textspot6.c), the default finder ---- */
+
+/* Its weights as the game worker keeps them (VjoVocrSpotResident: the blob, then its parsed form), and the scale its
+ * blob's rule gives the frame the region is cut from (core/vocr_ocr.c spot_flags: every 960 x 544 frame halved). */
+static unsigned char spot_blob[VJO_VOCR_SPOT_MAX_BYTES] __attribute__((aligned(16)));
+static vocr_textspot6 smodel;
+static VocrTextspot6Set sset;
+
+static unsigned spot_scale(const vocr_textspot6 *m, const BenchIn *in)
+{
+    return (m->half_above && in->fb_w > m->half_above) || (m->half_above_h && in->fb_h > m->half_above_h)
+           ? VOCR_TEXTSPOT6_SCALE2 : VOCR_TEXTSPOT6_SCALE1;
+}
+
+/* vocr_textspot6_find_rows on the region's grey rows (core/vocr_ocr.c spot_find's call), the boxes with their dark
+ * flags (mode bit 1: VOCR_TEXTSPOT_NO_DARK, none). The checksum is every box's fields and the set's counts. */
+static int stage_spot(const BenchIn *in, unsigned iters, BenchOut *out)
+{
+    RowSrc src = {in, 0};
+    VocrLinesRows rows = {in->w, in->h, VOCR_LINES_GREY, plane_row, &src};
+    unsigned flags, horizontal = 0;
+    size_t need;
+    uint64_t t0 = 0, calls = 0;
+    if (!region_ok(in) || !in->spot || !in->spot_bytes || in->spot_bytes > sizeof(spot_blob)) return -1;
+    memcpy(spot_blob, in->spot, in->spot_bytes);
+    if (vocr_textspot6_load(&smodel, spot_blob, in->spot_bytes) != VOCR_LINES_OK) return -1;
+    flags = spot_scale(&smodel, in) | ((in->mode & 1u) ? VOCR_TEXTSPOT_NO_DARK : 0u);
+    need = vocr_textspot6_arena_bytes_flags(&smodel, in->w, in->h, flags & ~VOCR_TEXTSPOT_NO_DARK);
+    if (!need || need > sizeof(finder_arena)) return -1;
+    grey_plane(in);
+    for (unsigned it = 0; it <= iters; it++) {
+        if (it == 1) { t0 = now_ns(in); calls = src.calls; }
+        if (vocr_textspot6_find_rows(&smodel, &rows, flags, finder_arena, need, &sset) != VOCR_LINES_OK) return -2;
+    }
+    out->ns = now_ns(in) - t0;
+    for (unsigned i = 0; i < sset.count; i++) {
+        const VocrTextspot6Box *b = &sset.boxes[i];
+        const uint32_t f[10] = {b->x, b->y, b->w, b->h, b->vertical, b->conf, b->dark, b->block, b->tag, b->tconf};
+        out->check = fnv64(out->check, f, sizeof(f));
+        horizontal += !b->vertical;
+    }
+    {
+        const uint32_t f[5] = {sset.count, sset.block_count, (uint32_t)sset.pick, sset.truncated, sset.presence};
+        out->check = fnv64(out->check, f, sizeof(f));
+    }
+    out->ops = 1;
+    out->c[0] = sset.count;
+    out->c[1] = horizontal;
+    out->c[2] = sset.truncated;
+    out->c[3] = iters ? (src.calls - calls) / iters : 0;
+    out->c[4] = need;
+    out->c[5] = flags;
+    return 0;
+}
+
 /* ---- recognition (vita-vn-ocr runtime/vocr.c), resident weights ---- */
 
 static vocr_model rmodel;
 static vocr_ctx rctx;
 
+/* mode bit 1: the options a job reads with on the defaults (ocr_head_gate = on, core/vocr_ocr.c run_opts): the head
+ * gate where the blob carries one, the two-level head where it carries one; 0: the plain head on every frame.
+ * Bits 8-15 and 16-23: vocr_opts.tile_frames and head_frames (0: the runtime's defaults, 4 and 16, as every job runs;
+ * vocr.h: larger tiles and head batches trade arena bytes for speed, and the output does not change). */
 static int load_model(const BenchIn *in, size_t *arena)
 {
     vocr_opts opts;
@@ -295,6 +355,10 @@ static int load_model(const BenchIn *in, size_t *arena)
     if (vocr_load(&rmodel, weights, in->model_bytes) != VOCR_OK) return -1;
     memset(&opts, 0, sizeof(opts));
     opts.mode = VOCR_MODE_W8I;
+    opts.tile_frames = (in->mode >> 8) & 0xFFu;
+    opts.head_frames = (in->mode >> 16) & 0xFFu;
+    if ((in->mode & 1u) && vocr_has_gate(&rmodel)) opts.head_gate = VOCR_HEAD_GATE_ON;
+    if ((in->mode & 1u) && vocr_has_two_level(&rmodel)) opts.two_level = 1;
     *arena = vocr_arena_bytes(&rmodel, &opts);
     if (!*arena || *arena > sizeof(workspace)) return -1;
     return vocr_init(&rctx, &rmodel, &opts, workspace, *arena) == VOCR_OK ? 0 : -1;
@@ -355,16 +419,17 @@ typedef struct {
 } StripSrc;
 
 /* The hook's rows, as already measured by the capture stage: a copy from the
- * grey plane stands in for them here. */
+ * grey plane stands in for them here. A first-pass strip also costs its share of in->first_us (the finder's or the
+ * spotter's compute, which runs as the first pass's rows arrive: an estimate the caller gives, 0 by default). */
 static int plane_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
 {
     StripSrc *s = (StripSrc *)ud;
-    (void)flags;
     if (y >= s->in->h || n > s->in->h - y) return VJO_E_SOURCE;
     for (unsigned r = 0; r < n; r++) memcpy(dst + (size_t)r * stride, grey + (size_t)(y + r) * s->in->w, s->in->w);
     s->strips++;
     s->rows += n;
     sim_us += sim_frame_us;
+    if ((flags & VJO_STRIP_FIRST) && s->in->first_us) sim_us += (uint64_t)s->in->first_us * n / s->in->h;
     return (int)n;
 }
 
@@ -391,7 +456,7 @@ typedef struct {
     const uint8_t *data;
     uint32_t bytes;
 } MemFile;
-static MemFile mem_files[3];
+static MemFile mem_files[4];
 static int mem_read(void *ctx, uint64_t off, void *dst, size_t n)
 {
     const MemFile *f = (const MemFile *)ctx;
@@ -408,9 +473,9 @@ static int ends_with(const char *path, const char *name)
 }
 static int mem_open(void *ud, const char *path, VjoFile *f)
 {
-    const char *names[3] = {mem_in->model_name, mem_in->lm_name, mem_in->cascade_name};
+    const char *names[4] = {mem_in->model_name, mem_in->lm_name, mem_in->cascade_name, VJO_VOCR_SPOT_NAME};
     (void)ud;
-    for (unsigned i = 0; i < 3; i++)
+    for (unsigned i = 0; i < 4; i++)
         if (mem_files[i].data && ends_with(path, names[i])) {
             *f = (VjoFile){&mem_files[i], mem_files[i].bytes, mem_read, mem_close, 1};
             return 0;
@@ -420,10 +485,12 @@ static int mem_open(void *ud, const char *path, VjoFile *f)
 
 /* The resident blocks' memory (the game's USER_RW blocks), static here. */
 static unsigned char lm_mem[1u << 20] __attribute__((aligned(64)));
-static unsigned char cascade_mem[2u << 20] __attribute__((aligned(64)));
+static unsigned char cascade_mem[3u << 20] __attribute__((aligned(64))); /* Normal's cascade: VOCR6-L */
+static unsigned char spot_mem[256u * 1024u] __attribute__((aligned(64)));
 static void *weights_alloc(void *ud, size_t bytes) { (void)ud; return bytes <= sizeof(weights) ? weights : NULL; }
 static void *lm_alloc(void *ud, size_t bytes) { (void)ud; return bytes <= sizeof(lm_mem) ? lm_mem : NULL; }
 static void *cascade_alloc(void *ud, size_t bytes) { (void)ud; return bytes <= sizeof(cascade_mem) ? cascade_mem : NULL; }
+static void *spot_alloc(void *ud, size_t bytes) { (void)ud; return bytes <= sizeof(spot_mem) ? spot_mem : NULL; }
 static int no_release(void *ud) { (void)ud; return 0; }
 
 /* mode: the game worker's job policy (game_ocr/main.c vjo_game_ocr_run_request,
@@ -436,18 +503,29 @@ static int no_release(void *ud) { (void)ud; return 0; }
  *      lines under VJO_VOCR_CASCADE_CONF read again);
  *   8: the stable-text wait (ocr_settle_ms = 150, ocr_settle_max_ms = 2000), on
  *      the simulated clock at in->fps;
- *  16: the finder's boxes refined (ocr_refine_lines: a PSP game by default).
- * 2 | 4 | 8 is a Vita game's job on main's defaults; 0 is API 19's job. */
+ *  16: the finder's boxes refined (ocr_refine_lines: a PSP game by default);
+ *  32: API 54's finder, the text spotter (ocr_finder = spotter, the default), with in->spot: its weights read and
+ *      checked once (every iteration with bit 1), its arena in the job's scratch (vjo_vocr_job_bytes_spot), the
+ *      region read at the scale its blob gives the in->fb_w x in->fb_h frame (game_ocr/main.c: spot_frame_w/h);
+ *  64: the rest of the game worker's request_policy on the defaults: the head gate and the two-level head where
+ *      the blob carries them (ocr_head_gate = on), the counter re-decode, #194's short-line probe and ocr_vertical =
+ *      auto's check of the rows (a region it takes for vertical text fails the stage: the bench reads no columns).
+ * 2 | 4 | 8 is a Vita game's job on main's defaults before API 54; 2 | 4 | 8 | 32 | 64 is the default job since API
+ * 54 (with a size's model and the next size up as the cascade: VOCR6-N and VOCR6-L; Large has no cascade); 0 is API
+ * 19's job. */
 #define JOB_FIRST 1u
 #define JOB_LM 2u
 #define JOB_CASCADE 4u
 #define JOB_SETTLE 8u
 #define JOB_REFINE 16u
+#define JOB_SPOT 32u
+#define JOB_WORKER 64u
 static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
 {
     VjoPlatform p;
     static VjoVocrResident res, cres;
     static VjoVocrLmResident lres;
+    static VjoVocrSpotResident sres;
     static VjoVocrStats st;
     VjoVocrPolicy pol;
     static char raw[VJO_OCR_TEXT_CAP];
@@ -462,12 +540,43 @@ static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
     if (!region_ok(in) || !mi || !in->model || in->model_bytes != mi->bytes) return -1;
     if ((mode & JOB_LM) && (!lm || !in->lm || in->lm_bytes != lm->bytes)) return -1;
     if ((mode & JOB_CASCADE) && (!ci || !in->cascade || in->cascade_bytes != ci->bytes)) return -1;
+    if ((mode & JOB_SPOT) && (!in->spot || in->spot_bytes != VJO_VOCR_SPOT_BYTES)) return -1;
     memset(&pol, 0, sizeof(pol));
     pol.line_fix = VOCR_FIX_DEFAULT; /* API 50: main's default, ocr_line_fix = on */
+    sim_frame_us = 1000000u / (in->fps ? in->fps : 60u);
+    grey_plane(in);
+    memset(&p, 0, sizeof(p));
+    p.file_open = mem_open;
+    p.now_us = sim_now;
+    mem_in = in;
+    mem_files[0] = (MemFile){in->model, in->model_bytes};
+    mem_files[1] = (MemFile){mode & JOB_LM ? in->lm : NULL, in->lm_bytes};
+    mem_files[2] = (MemFile){mode & JOB_CASCADE ? in->cascade : NULL, in->cascade_bytes};
+    mem_files[3] = (MemFile){mode & JOB_SPOT ? in->spot : NULL, in->spot_bytes};
+    memset(&sres, 0, sizeof(sres));
+    sres.alloc = spot_alloc;
+    sres.release = no_release;
     ws = vjo_vocr_job_bytes(mi->name, in->w, in->h);
+    if (mode & JOB_SPOT) { /* game_ocr/main.c: its weights before the memory check, its part of the scratch */
+        if (vjo_vocr_spot_load(&p, "bench", &sres, &src, NULL)) return -1;
+        ws = vjo_vocr_job_bytes_spot(mi->name, in->w, in->h,
+                                     vjo_vocr_spot_bytes(&sres, in->w, in->h, in->fb_w, in->fb_h));
+        pol.spot = 1;
+        pol.spot_res = &sres;
+        pol.spot_frame_w = in->fb_w;
+        pol.spot_frame_h = in->fb_h;
+    }
     if (mode & JOB_REFINE) {
         pol.refine = VJO_VOCR_REFINE_ALL;
         ws += vjo_vocr_refine_bytes(in->w, in->h);
+    }
+    if (mode & JOB_WORKER) { /* game_ocr/main.c request_policy and the job's set-up, on the defaults */
+        pol.head_gate = 1;
+        pol.two_level = 1;
+        pol.counter_tau = VJO_VOCR_COUNTER_TAU;
+        pol.counter_open = VJO_VOCR_COUNTER_OPEN;
+        pol.short_lines = 1;
+        pol.vertical_check = VJO_VOCR_CHECK_AUTO;
     }
     if (mode & (JOB_LM | JOB_CASCADE)) /* game_ocr/main.c extra_job_bytes, the greedy text aside */
         ws += vjo_vocr_lm_job_bytes(mi->name) + (mode & JOB_CASCADE ? vjo_vocr_cascade_job_bytes(ci->name) : 0);
@@ -489,15 +598,6 @@ static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
         pol.settle_max_us = 2000000u;
         pol.sleep = sim_sleep;
     }
-    sim_frame_us = 1000000u / (in->fps ? in->fps : 60u);
-    grey_plane(in);
-    memset(&p, 0, sizeof(p));
-    p.file_open = mem_open;
-    p.now_us = sim_now;
-    mem_in = in;
-    mem_files[0] = (MemFile){in->model, in->model_bytes};
-    mem_files[1] = (MemFile){mode & JOB_LM ? in->lm : NULL, in->lm_bytes};
-    mem_files[2] = (MemFile){mode & JOB_CASCADE ? in->cascade : NULL, in->cascade_bytes};
     memset(&res, 0, sizeof(res));
     memset(&cres, 0, sizeof(cres));
     memset(&lres, 0, sizeof(lres));
@@ -514,6 +614,10 @@ static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
             vjo_vocr_resident_drop(&res);
             vjo_vocr_resident_drop(&cres);
             vjo_vocr_lm_drop(&lres);
+            if (mode & JOB_SPOT) { /* the worker reads the spotter's weights before the job (game_ocr/main.c) */
+                vjo_vocr_resident_drop(&sres);
+                if (vjo_vocr_spot_load(&p, "bench", &sres, &src, NULL)) return -1;
+            }
         }
         rc = vjo_vocr_ocr_policy(&p, "bench", mi->name, &src, &res, workspace, ws, capture_block, cap, &pol, out->text,
                                  sizeof(out->text), &st);
@@ -521,6 +625,8 @@ static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
         /* with lines, the LM must have decoded them and the cascade been usable */
         if ((mode & JOB_LM) && st.lines && (st.lm != lm || st.lm_rc)) return -3;
         if ((mode & JOB_CASCADE) && st.lines && st.cascade_rc) return -4;
+        /* the spotter found the lines (its refusal would be GRAD's job, which the other modes measure) */
+        if ((mode & JOB_SPOT) && (!st.spot_ran || st.spot_rc)) return -5;
     }
     out->ns = now_ns(in) - t0;
     out->check = fnv64s(0, out->text);
@@ -546,6 +652,14 @@ static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
     out->c[17] = st.lm_loaded;
     out->c[18] = iters ? (sim_us - sim0) / iters / 1000u : 0; /* simulated ms per job: the display frames */
     out->c[19] = st.refine_lines;
+    out->c[20] = st.spot_ran;
+    out->c[21] = st.spot_boxes;
+    out->c[22] = st.spot_bytes;
+    out->c[23] = st.head_gated;
+    out->c[24] = st.head_rereads;
+    out->c[25] = st.counter_lines;
+    out->c[26] = st.dark;
+    out->c[27] = st.truncated;
     return 0;
 }
 
@@ -1095,10 +1209,13 @@ static const Stage stages[] = {
     {"scene_sig", stage_scene_sig, {"sig_w", "sig_h", "grid_cols"}},
     {"scene_update", stage_scene_update, {"events"}},
     {"find", stage_find, {"lines", "row_reads", "arena_bytes"}},
+    {"spot", stage_spot, {"boxes", "horizontal", "truncated", "row_reads", "arena_bytes", "flags"}},
     {"recognize", stage_recognize, {"lines", "frames", "text_bytes", "arena_bytes", "params"}},
     {"job", stage_job, {"strips", "lines", "frames", "tears", "tries", "tall", "workspace_bytes", "capture_bytes",
                         "rows_read", "strip_rows", "model_loaded", "model_cached", "settle_passes", "lm_lines",
-                        "lm_changed", "cascade_lines", "cascade_frames", "lm_loaded", "display_ms", "refine_lines"}},
+                        "lm_changed", "cascade_lines", "cascade_frames", "lm_loaded", "display_ms", "refine_lines",
+                        "spot_ran", "spot_boxes", "spot_bytes", "head_gated", "head_rereads", "counter_lines", "dark",
+                        "truncated"}},
     {"sha256", stage_sha256, {"bytes"}},
     {"postproc", stage_postproc, {"texts", "bytes_in", "bytes_out"}},
     {"lookup", stage_lookup, {"lookups", "entries", "opens", "reads", "read_bytes", "repeat_reads", "pages",

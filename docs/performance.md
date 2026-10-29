@@ -15,6 +15,65 @@ A9 figures are estimates from vita-vn-ocr's cost model. The console figures are 
 v0.8.0-test.1 (API 19's job; [console calibration](#console-calibration)); nothing of main's
 API 20 job has run on a console yet, so its total is an estimate built from both.
 
+## The default read since API 54: the spotter and the VOCR6 sizes
+
+Since Rubi 0.10.0 a job finds its lines with the text spotter (`ocr_finder = spotter`) and reads them with a VOCR6
+size, Normal by default, whose cascade reads doubtful lines again with Large (Large has none). The worker's per-job
+policy comes with it: the head gate and the two-level head where a blob carries them, the counter re-decode, the
+short-line probe and `ocr_vertical = auto`'s check. Everything below this section is the earlier GRAD + VOCR3 job.
+The stage bench runs this path too: `stage_job`'s modes 32 (the spotter, with its weights) and 64 (the policy), the
+`spot` stage, and the workloads `spot_*`, `recognize_vocr6_*`, `job_vocr6_*` and `sha256_vocr6_l`; the dev lane reads
+it with `--size S|N|L`. Measured on main `1845471` (host: x86-64; A9: the Vita compiler's code under qemu-arm,
+vita-vn-ocr's cost model at the pin, estimates):
+
+| workload | per | host | A9 insns | A9 at 444 MHz | A9 at 333 MHz | parity |
+|---|---|---:|---:|---:|---:|:-:|
+| `spot_textbox`: the sample's 896×156 box, read halved | region | 8.22 ms | 19,599,868 | 36.6-49.6 ms | 48.7-66.1 ms | yes |
+| `spot_full`: 960×544 | region | 31.62 ms | 75,075,424 | 141.9-189.6 ms | 189.2-252.8 ms | yes |
+| `recognize_vocr6_s` | line (54 frames) | 21.28 ms | 28,019,846 | 58.7-85.2 ms | 78.3-113.7 ms | yes |
+| `recognize_vocr6_n` | line | 24.06 ms | 30,446,526 | 64.2-104.4 ms | 85.6-139.2 ms | yes |
+| `recognize_vocr6_l` | line | 62.29 ms | 69,494,278 | 150.1-286.3 ms | 200.2-373.8 ms | yes |
+| `job_vocr6_n`: the default job, resident files | job | 108.46 ms | 147,978,360 | 287.8-554.2 ms | 383.7-727.1 ms | yes |
+| `job_vocr6_l`: Large, no cascade | job | 126.93 ms | 159,590,544 | 320.1-622.9 ms | 426.8-814.1 ms | yes |
+| `sha256_vocr6_l`: Large's 2,475,680 B weights | model | 7.07 ms | 94,155,682 | 106.6-237.4 ms | 142.1-313.7 ms | yes |
+
+A job row is its compute at one clock; on the console the spotter runs at the game's clock (before the boost, which
+starts at the first recognized line) and the recognition at 444 MHz. On the sample the default job reads 13 strips:
+the spotter's pass, its boxes' dark flags, two stable-text passes and the lines.
+
+Where Large's job's instructions go (A9 lane): the recognizer 80% (`mm_i16` 68%), the spotter 12% (`chain` 7.9%,
+`feed` 3.9%), the row checksums 3.2% (`stream_read`), the LM parsed again 1.1% (`vocr_lm_load`, every job, on bytes
+already resident and checked), the decoder's per-class tables 1.1% (`vocr_lm_init`, `one_code_point`,
+`vocr_lm_token`) and the spotter's dark flags 0.3% (`pix_dark`). Large's weights are larger than the 2 MiB L2: 214,314
+L2 misses a line, none for Small and Normal. Larger recognizer tiles (`vocr_opts.tile_frames` 8 and 16, which leave
+the output unchanged) bring Large nothing in the model (149.8-298.2 and 149.6-301.4 ms a line against 150.1-286.3)
+and Normal 6% on the high bound (97.6 against 104.4 ms), for 130 KB more arena per context at tile 8: not taken.
+
+**On the console** (#528's `history.csv`, Rubi 0.10.1's normal build with VOCR6.2-L and the spotter; aggregates):
+in an 833×127 dialogue box (CLANNAD) a 1-line job (45 CTC frames) took 492-687 ms from the Shell's request to its
+result (11 jobs), its finding (the spotter and its strips) 73-102 ms and its recognition 265-267 ms, of which the
+line's own run and decode 226-228 ms: 5.02-5.06 ms a frame, against the model's high bound of 5.30 ms a frame for
+Large at 444 MHz on the sample's lines (the console sits near the high bound, as #81's did). Jobs whose spotter
+returned 7-9 boxes there took 243-269 ms to find them, with 14-40 strips (10 jobs). Full-screen jobs (960×544) with
+an 18-frame line took 673-690 ms (find 364-384 ms, 24 strips; 6 jobs), and 1.25-1.30 s when the weights were read
+(4 jobs): `load` 392-399 ms, of which the SHA-256 is 107-237 ms at 444 MHz (estimate).
+
+**The dev regions** (358 of the 372 linefind dev regions; the other 14 shots are not on the machine that measured
+this), with the spotter's compute put on the simulated clock at 550 ms a megapixel (its A9 estimate at 333 MHz,
+vita-vn-ocr `eval/textspot6_a9_20261026.json`): Normal's default job reads 8.17 strips at 60 fps (median 10, p90 14)
+in 200.7 ms of simulated display (p90 274), and 7.42 strips in 288.4 ms (p90 460) at 30 fps; 74.7 CTC frames and 2.52
+lines a job. The cascade reads 19.8% of the LM-decoded lines again (13.9 frames a job; 128 of the 358 jobs), against
+43% for VOCR3-H15 → VOCR4-W20 below; the LM changes 11.6% of the lines it decodes (Large's: 10.1%).
+
+So Normal's default job at the dev means is about 329-419 ms before the Shell's part (estimate, 60 fps): 200.7 ms of
+strips, waits and the spotter, 74.7 frames × 1.19-1.93 ms (Normal at 444 MHz) = 89-144 ms, and the cascade's 13.9
+frames × 2.78-5.30 ms = 39-74 ms. Large's is about 408-597 ms (74.7 frames × 2.78-5.30 ms).
+
+Reproduce: the commands in [Reproduce](#reproduce); the dev lane with `--size N --first-ms-per-mpx 550
+--skip-missing`, and the A9 lane on a Vita build configured `-DVJO_CORE_LTO=OFF` (a release build's core library
+holds LTO objects that ARM_CC cannot link; the game worker's and the kernel's code is the same either way) with
+`VJO_VOCR_SPOT_SOURCE_DIR` set as for the build.
+
 ## The job, end to end (estimate)
 
 The baseline: one Auto OCR job on main's defaults at bcb780e (the stable-text wait of 150 ms, beam
