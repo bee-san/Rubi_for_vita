@@ -764,6 +764,11 @@ vjo_suite(streak_seed_files SOURCES host/tests/test_streak_seed_files.c settings
 # depth buffer, so that a font freed while the app runs frees nothing else.
 vjo_suite(settings_textures SOURCES host/tests/test_settings_textures.c settings/vita2d_textures.c
   INCLUDES host/tests/settings_stubs)
+# libvita2d's font initialization in a separate object: the real link wrappers
+# must change firmware raster size, packer AND texture bounds, and minification.
+vjo_suite(settings_font_raster SOURCES host/tests/test_settings_font_raster.c host/tests/font_raster_model.c
+  settings/font_raster.c INCLUDES host/tests/font_stubs host/tests/settings_stubs
+  LINK_OPTIONS -Wl,--wrap=scePvfSetCharSize,--wrap=texture_atlas_create,--wrap=vita2d_texture_set_filters)
 # The Rubi app's Look up page itself (settings/lookup_page.c, #313): its frames recorded through the helpers main.c
 # gives it, on a temporary memory card with config.ini, two small dictionaries, history.csv and the Anki queue; the
 # keyboard is settings_stubs/search_dialog_stub.c's. The harnesses that drive main.c keep settings_stubs/lookup_page_stub.c.

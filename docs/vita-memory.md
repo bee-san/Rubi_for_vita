@@ -447,8 +447,12 @@ close first, is an inference [inference].
 - **Heap.** newlib's default heap is 128 MiB [measured: `_init_vita_heap` in the toolchain's
   `libc.a`], which does not fit; `settings/sysapp.c` fixes it at 8 MiB. The app's own code does
   not `malloc`; the heap serves libvita2d's structures and GXM host memory, libpng and ScePvf's
-  library. The PVF glyph atlas is a 512 x 512 one-byte texture, a 256 KiB `USER_RW` block, not
-  heap [source: libvita2d a8f15ab `vita2d_pvf.c`, `texture_atlas.c`].
+  library. The app wraps libvita2d's PVF initialization to rasterize at 36 px and create a
+  1024 x 1024 one-byte glyph atlas, a 1 MiB `USER_RW` block, not heap. Doubling both the packer
+  bounds and texture retains the estimated Japanese glyph capacity of the original 18 px /
+  512-square atlas [source: libvita2d a8f15ab `vita2d_pvf.c`, `texture_atlas.c`,
+  `settings/font_raster.c`]. Drawing and measurement use the same raster size; linear
+  minification reduces it to the UI's sizes. The overlay's PAF font is separate.
 - **Graphics.** libvita2d detects the system-application budget (`sceAppMgrGetBudgetInfo`), draws
   to the shared framebuffer through `sceGxmVshInitialize`, and allocates its textures in
   `USER_RW` [source: libvita2d a8f15ab `vita2d.c`, `vita2d_init_internal`]. The app's icon textures (at most 9 of
@@ -472,8 +476,8 @@ measured on the console]:
 | The Games page's scan (`settings/catalog.c`, `settings/psp.c`): one PARAM.SFO buffer (64 KiB), which every title's read and each bubble's target read share (the scan reads one at a time, on the main thread), a bubble target's blocks (`VjoPspWork`, 100,352 B) and its boot.inf (1,024 B) [measured: `arm-vita-eabi-size` of the two objects, the normal build of #431: catalog.c's 65,536 B + psp.c's 101,376 B of `.bss`] | 166,912 B |
 | Look up tab (#313, `settings/lookup*.c`): a lookup block as the Shell's (64 KiB: the dictionary session, then the lookup's arena), its scratch (48 KiB), a card's arena (128 KiB), the history window (64 KiB), the 200 lines' table (30,400 B), the entry's rows and the glyph widths (49,984 B), the text, and the two fonts' glyph sets in `settings/main.c` (8,200 B): 439,188 B of tables [measured: the objects' `.bss`, `arm-vita-eabi-size` and `nm`, the debug build of #313's audit follow-up: `lookup.c` 251,821, `lookup_history.c` 117,269, `lookup_page.c` 61,898 B]; with its code the app's segments grew by 477,704 B at #313 (`tools/check_settings_self.py`, `18cf1ab` → `b128ef0`: 7,013,424 → 7,491,128 B in the debug build, 7,012,944 → 7,490,696 B in the normal one) and by 6,600 B (debug) and 6,728 B (normal) with its audit's follow-up (`73db61e`: 8,142,716 → 8,149,316 B and 8,142,220 → 8,148,948 B) | about 0.45 MiB |
 | The streak's seed ([ocr-history.md](ocr-history.md#streak), `settings/streak_seed.c`): its window of `history.csv` (65,537 B, static) and, only while it runs, its thread's stack (16 KiB) [source: `settings/streak_seed.c`] | 81,921 B |
-| Code, stacks, PVF atlases (256 KiB each, four at most: the drawing font's and the measuring font's, the drawing font a frame replaced, freed once the GPU is done with it, and for a moment a new measuring font, as the one it replaces is never drawn with and so freed at once: `settings/main.c` `glyphs_for`, `measured_for`, `font_tick`, #313; each replaced font leaves its glyph table in the heap, 4 KiB at the switch's 350 characters, libvita2d's `int_htab_free` [source: libvita2d a8f15ab]; the code: 651,172 B of text in the normal build since the Stats tab, the Cards page and libjpeg-turbo's decoder, which only the page called, went (2026-10-28; 993,814 B on main `52eb948`) [measured: arm-vita-eabi-size]) | about 2.8 MiB |
-| **Total** | **about 25 MiB of 50 MiB** |
+| Code, stacks, PVF atlases (1 MiB each, four at most: the drawing font's and the measuring font's, the drawing font a frame replaced, freed once the GPU is done with it, and for a moment a new measuring font, as the one it replaces is never drawn with and so freed at once: `settings/main.c` `glyphs_for`, `measured_for`, `font_tick`, #313; each replaced font leaves its glyph table in the heap, 4 KiB at the switch's 350 characters, libvita2d's `int_htab_free` [source: libvita2d a8f15ab]; the code: 651,172 B of text in the normal build since the Stats tab, the Cards page and libjpeg-turbo's decoder, which only the page called, went (2026-10-28; 993,814 B on main `52eb948`) [measured: arm-vita-eabi-size]) | about 5.8 MiB |
+| **Total** | **about 28 MiB of 50 MiB** |
 
 The Games search and the Look up tab's keyboard (#313) share one bounded dialog (`settings/search.c`
 `vjo_ime_dialog`): two 129-unit UTF-16 buffers and a 513-byte UTF-8 text on the app's stack (about 1 KiB), with the

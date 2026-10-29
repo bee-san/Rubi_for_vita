@@ -32,6 +32,19 @@ GFX_WRAP_SIZE = 0x40
 # libvita2d's texture_atlas_create, settings/vita2d_textures.c's wrapper of vita2d_create_empty_texture_format, and
 # the function itself (#313: a font's atlas freed while the app runs frees nothing else)
 ATLAS, TEX_WRAP, TEX_FN = 0x810001C0, 0x81000200, 0x81000340
+FONT_WRAPS = {"scePvfSetCharSize": 0x81000010, "texture_atlas_create": 0x81000030,
+              "vita2d_texture_set_filters": 0x81000050}
+
+
+def font_symbols():
+    return {**{"__wrap_" + name: (at | 1, 0x20, ".text") for name, at in FONT_WRAPS.items()},
+            "scePvfSetCharSize": (0x81000360, 16, ".text"),
+            "vita2d_texture_set_filters": (0x81000370, 16, ".text")}
+
+
+def font_relocations():
+    return [r for i, (name, at) in enumerate(FONT_WRAPS.items())
+            for r in ((at + 8, name, 10), (CODE + 0x260 + i * 0x10, "__wrap_" + name, 10))]
 
 
 def code_segment(priority=0x10000100, mask=0x80000, pointers=True, magic=b"PSP2"):
@@ -61,7 +74,7 @@ def gfx_symbols():
             "sceGxmVshInitialize": (GXM_STUB, 16, ".text"),
             "__wrap_sceSharedFbGetInfo": (FB_WRAP | 1, GFX_WRAP_SIZE, ".text"),
             "sceSharedFbGetInfo": (FB_STUB, 16, ".text"),
-            **atlas_symbols()}
+            **atlas_symbols(), **font_symbols()}
 
 
 def atlas_symbols():
@@ -82,7 +95,7 @@ def gfx_relocations():
     return [(GXM_WRAP + 0x08, "sceGxmVshInitialize", 30), (GXM_WRAP + 0x20, "sceGxmVshInitialize", 30),
             (FB_WRAP + 0x08, "sceSharedFbGetInfo", 30),
             (GXM_CALL, "__wrap_sceGxmVshInitialize", 10), (FB_CALL, "__wrap_sceSharedFbGetInfo", 10),
-            *atlas_relocations()]
+            *atlas_relocations(), *font_relocations()]
 
 
 def make_elf(symbols=None, relocations=None, heap=HEAP, heap_section=".data", gfx=True):
@@ -168,6 +181,7 @@ class SettingsSelf(unittest.TestCase):
         self.assertEqual(report["segment_bytes"], len(code_segment()) + 0x186C30)
         self.assertEqual(report["thread_creations_through_the_wrapper"], 1)
         self.assertEqual(report["at_least_bytes"], HEAP + report["segment_bytes"] + sum(check.FIXED.values()))
+        self.assertEqual(report["estimated"]["glyph_atlas"], 4 * 1024 * 1024)
         # vita-make-fself without -c stores the segments as they are
         self.assertEqual(self.run_check(make_self(compress=False))["result"], "pass")
 
@@ -227,8 +241,10 @@ class SettingsSelf(unittest.TestCase):
         report = self.run_check()
         self.assertEqual(report["graphics_calls_through_the_wrappers"],
                          {"sceGxmVshInitialize": 1, "sceSharedFbGetInfo": 1,
+                          **{name: 1 for name in FONT_WRAPS},
                           "vita2d_create_empty_texture_format (the glyph atlas)": 1})
-        for name, place in (("sceGxmVshInitialize", GXM_CALL), ("sceSharedFbGetInfo", FB_CALL)):
+        for name, place in (("sceGxmVshInitialize", GXM_CALL), ("sceSharedFbGetInfo", FB_CALL),
+                            *((name, CODE + 0x260 + i * 0x10) for i, name in enumerate(FONT_WRAPS))):
             with self.subTest(name):
                 # the link without --wrap=name: libvita2d calls the import, and the wrapper is gc'd
                 symbols = {k: v for k, v in gfx_symbols().items() if k != "__wrap_" + name}
@@ -262,7 +278,8 @@ class SettingsSelf(unittest.TestCase):
                 **{k: v for k, v in gfx_symbols().items() if k not in atlas_symbols()}, **symbols,
                 "__wrap_sceKernelCreateThread": (WRAP | 1, WRAP_SIZE, ".text"), "sceKernelCreateThread": (STUB, 16, ".text"),
                 check.HEAP_SYMBOL: (DATA + 0x24, 4, ".data")},
-                relocations=[r for r in gfx_relocations() if r not in atlas_relocations()] + relocations +
+                relocations=[r for r in gfx_relocations() if r not in atlas_relocations() and
+                             (r[1] != "texture_atlas_create" or r[1] in symbols)] + relocations +
                 [(WRAP + 0x18, "sceKernelCreateThread", 30)])
         # the link without --wrap=vita2d_create_empty_texture_format: the atlas calls the function, the wrapper is gc'd
         no_wrap = {k: v for k, v in atlas_symbols().items() if not k.startswith("__wrap_")}
