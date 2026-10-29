@@ -25,6 +25,8 @@ been reported.
   unchanged (241,664 B); module pages unchanged (both builds 16 B less code). The page itself (about 95-103 KB of
   the heap while open) opens only with 103,296 B and a 64 KiB margin for SceShell free, so it never leaves SceShell
   with almost nothing (the logs' lowest free, 131,432 B, would have left about 8 KB). Not yet run on a console.
+- The memory ledger counts the overlay page's own Paf blocks (103,296 B, the most measured in #528's logs) in the
+  Shell's Paf worst case: 241,664 → 344,960 B. Accounting only: no code or memory changes.
 
 ## [0.10.1] - 2026-10-29
 
