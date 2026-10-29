@@ -1177,7 +1177,7 @@
     "min_helpers": 0,
     "min_lines": 3,
     "min_lm": 1,
-    "min_spot": 0,
+    "min_spot": 1,
     "min_tier": 2,
     "min_told": 1,
     "peak": 2072576
@@ -1197,7 +1197,7 @@
     "min_helpers": 0,
     "min_lines": 3,
     "min_lm": 1,
-    "min_spot": 0,
+    "min_spot": 1,
     "min_tier": 2,
     "min_told": 1,
     "peak": 2080768
@@ -1504,20 +1504,20 @@
    },
    "tier-normal-88MiB": {
     "failed": 0,
-    "min_helpers": 0,
+    "min_helpers": 2,
     "min_lines": 3,
     "min_lm": 2,
-    "min_spot": 0,
+    "min_spot": 1,
     "min_tier": 2,
     "min_told": 1,
     "peak": 5922816
    },
    "tier-small-88MiB": {
     "failed": 0,
-    "min_helpers": 0,
+    "min_helpers": 2,
     "min_lines": 3,
     "min_lm": 2,
-    "min_spot": 0,
+    "min_spot": 1,
     "min_tier": 1,
     "min_told": 1,
     "peak": 4014080

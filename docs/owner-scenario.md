@@ -65,7 +65,7 @@ a session runs). `tier-SIZE-88MiB` is the owner's config with `vocr_tier` set to
 `tier`, `lm` tier and `cascade` the memory check chose, `spot` (the spotter found the lines), `helpers`, `lines`,
 `peak` (the USER bytes of Rubi's blocks, a warm job's resident ones included) and `told` (it read text, or its
 refusal carries the memory check's figures, which the Shell shows and logs). The request is
-`host/tests/owner_request.h`'s, which `test_shell_worker.c`'s `owner scenario request` holds against the Shell's own.
+`host/tests/owner_request.h`'s, which `test_shell_worker.c`'s `owner scenario request` holds against the Shell's own. `spot` and `helpers` come from the job's whole stats, which the host build of the worker keeps (`host_last_stats`): a cold job's 20-entry step log is full before its spotter and helper steps (Mmem-game-7).
 
 ## The model's limits
 
