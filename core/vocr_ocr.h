@@ -255,9 +255,11 @@ int vjo_vocr_spot_load(const VjoPlatform *platform, const char *model_dir, VjoVo
  * the arena is over VJO_VOCR_SPOT_ARENA_MAX (the job then reads with GRAD). */
 size_t vjo_vocr_spot_bytes(const VjoVocrSpotResident *res, unsigned width, unsigned height, unsigned frame_w,
                            unsigned frame_h);
-/* vjo_vocr_job_bytes() with the spotter's scratch of spot_bytes (vjo_vocr_spot_bytes; 0: without it): the scratch
- * is the largest of the finder's arena, the spotter's and the recognizer's, which use it one after the other. The
- * refinement's arena, the LM extras, the cascade's and the helpers' follow it as without the spotter. */
+/* vjo_vocr_job_bytes() with the spotter's part of spot_bytes (vjo_vocr_spot_bytes; 0: without it). #528: the part
+ * runs from the scratch's start (after the runtime's structs) over every part after it, which the job writes only
+ * after the spotter's boxes are copied out: the refinement's arena, the LM extras, the cascade's and the helpers' line
+ * slots, laid out after the job as without the spotter. So the whole workspace from the job's start must hold
+ * max(this, the job and its extras); this is the larger of the job and the structs plus the part. */
 size_t vjo_vocr_job_bytes_spot(const char *model, unsigned width, unsigned height, size_t spot_bytes);
 /* The most vjo_vocr_spot_bytes() gives for any pin this build admits (VJO_VOCR_SPOT_ARENA_MAX and the result): the
  * memory ledger's worst case (host/tests/test_ledger.c, include/vjo_ledger_budget.h VJO_BUDGET_GAME_WORKSPACE). */

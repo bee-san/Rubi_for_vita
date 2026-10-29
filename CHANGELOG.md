@@ -31,6 +31,13 @@ been reported.
 
 ### Fixed
 
+- A Small or Normal OCR job with the text spotter takes 114,688 B (Small) or 57,344 B (Normal) less of the game's
+  memory at a textbox with the LM (host build; #528, Mmem-regress-2): the spotter's arena runs over the parts of the
+  job's workspace that wait for its boxes (the LM's and the cascade's extras, the helpers' line slots, the
+  refinement's arena) instead of growing the scratch, and the runtime's structs now lead the workspace so it never
+  covers them. Large's jobs are unchanged; at 3 MiB free the job now keeps the spotter beside Normal and the 500k LM.
+  The workspace budget falls to 1,216,512 B (the game's worst case 11,026,432 → 10,944,512 B). Texts are the
+  same in every host test. Not yet run on a console.
 - Anki cards queued while the overlay looked up another word now export (#528: at least 31 of the owner's cards,
   `checksum mismatch (edited or damaged)`, some queued since 10-17; the Anki page had read 64 of about 260). Every
   Shell from 0.8.0 to 0.10.1 kept a card's frequency source (`Jiten`) as a pointer into the overlay's lookup memory,

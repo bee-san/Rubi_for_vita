@@ -257,12 +257,14 @@ const VjoVocrModel *vjo_vocr_model(const char *name)
     return NULL;
 }
 
-/* Job workspace: [finder, then recognizer arena | vocr_model, vocr_ctx], a
+/* Job workspace: [vocr_model, vocr_ctx | finder, then recognizer arena], a
  * model of columns' rotation buffer, then the refinement's arena, the LM
  * extras and the cascade's (each when the job has them), and last the line
  * slots of parallel lines (API 22: the caller's own and one per helper). The
  * one-shot form puts the weights in front of it. The region's pixels are not
- * in it: they live one strip at a time in the capture block. */
+ * in it: they live one strip at a time in the capture block. #528: the structs
+ * lead, so the text spotter's part (API 54), which runs from the scratch's start
+ * over every part after it (run_job), never covers them. */
 typedef struct {
     size_t scratch_off, structs_off, total;
     size_t scratch, finder;
@@ -273,7 +275,8 @@ typedef struct {
     size_t gate_off, gate_bytes;     /* the gate's arena, inside the scratch after the finder's (0 bytes: off) */
     vocr_textgate_model gate;        /* its weights (VjoVocrPolicy.gate_res), loaded for the job */
     /* API 54: the text spotter (VjoVocrPolicy.spot) finds the lines: its arena at the scratch's start, its result
-     * after it (spot_arena, 16-byte aligned), the recognizer's arena over both once the boxes are taken */
+     * after it (spot_arena, 16-byte aligned), the recognizer's arena over both once the boxes are taken; #528: both
+     * may run past the scratch over every part after it, which recognize writes only after the boxes are taken */
     int spot;
     const vocr_textspot6 *spot_m;    /* its parsed weights, in VjoVocrPolicy.spot_res's block */
     unsigned spot_flags;             /* VOCR_TEXTSPOT6_SCALE1 or _SCALE2: the frame's scale */
@@ -385,9 +388,9 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     if (columns_of(m) && vocr_columns_arena_bytes(w, h) > l->finder)
         l->finder = vocr_columns_arena_bytes(w, h); /* the larger of the two finders' (83,619 B at 960x544) */
     l->scratch = ALIGN16(l->finder > m->arena_bytes ? l->finder : m->arena_bytes);
-    l->scratch_off = 0;
-    l->structs_off = l->scratch;
-    l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
+    l->structs_off = 0;
+    l->scratch_off = ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx)); /* 16-byte aligned, as every part */
+    l->total = l->scratch_off + l->scratch;
     l->rot_off = 0;
     if (columns_of(m)) { /* a column turned 90 degrees, the line the recognizer reads */
         l->rot_off = l->total;
@@ -405,15 +408,6 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     return 0;
 }
 
-/* API 54: the scratch with the spotter's part (its arena and result, vjo_vocr_spot_bytes): the largest of the
- * finder's, the spotter's and the recognizer's, which use it one after the other; the runtime's structs follow it. */
-static void layout_spot(Layout *l, size_t spot_bytes) /* a model of rows' only: a model of columns has none */
-{
-    if (ALIGN16(spot_bytes) <= l->scratch) return;
-    l->scratch = ALIGN16(spot_bytes);
-    l->structs_off = l->scratch_off + l->scratch;
-    l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
-}
 
 /* The LM extras, after the job's workspace (VjoVocrPolicy.lm): the top-K of
  * every frame of a line, the line's greedy text, the decoder's structs and its
@@ -564,9 +558,11 @@ size_t vjo_vocr_job_bytes_spot(const char *model, unsigned width, unsigned heigh
     const VjoVocrModel *m = vjo_vocr_model(model);
     Layout l;
     if (layout(m, width, height, &l) < 0) return 0;
-    /* a model of columns reads without the spotter (recognize): its job is vjo_vocr_job_bytes' */
-    if (!columns_of(m)) layout_spot(&l, spot_bytes);
-    return l.total;
+    /* a model of columns reads without the spotter (recognize): its job is vjo_vocr_job_bytes'. #528: the spotter's
+     * part runs from the scratch's start over every part after it (run_job): the job's own need is the larger of the
+     * two, and the extras a caller lays out after the job (refinement, LM, cascade, helpers) are its room too */
+    return !columns_of(m) && l.scratch_off + ALIGN16(spot_bytes) > l.total ? l.scratch_off + ALIGN16(spot_bytes)
+                                                                          : l.total;
 }
 
 size_t vjo_vocr_spot_bytes_max(void)
@@ -2960,14 +2956,18 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
         size_t sb = m ? vjo_vocr_spot_bytes(policy->spot_res, image->width, image->height, policy->spot_frame_w,
                                             policy->spot_frame_h)
                       : 0;
-        Layout t = l;
-        layout_spot(&t, sb);
+        /* #528: its part runs from the scratch's start over the scratch and every part after it: the refinement's
+         * arena, the LM's and the cascade's extras, the helpers' line slots. recognize writes none of them before
+         * spot_find has copied the boxes out (the recognizer's arena at the first line's load_model, the extras at
+         * their setup, the slots at dispatch, the refinement on the copied boxes), and the runtime's structs lead the
+         * workspace (layout), so the part needs room from the scratch's start to the workspace's end, not a scratch
+         * grown for it: Small's and Normal's arenas are smaller than the part, and their jobs grew by the difference */
         if (!m) {
             stats->spot_rc = VJO_E_OCR_MODEL;
-        } else if (!sb || !workspace || workspace_size < front + t.total) {
+        } else if (!sb || !workspace || workspace_size < front + (l.total > l.scratch_off + sb ? l.total
+                                                                                            : l.scratch_off + sb)) {
             stats->spot_rc = VJO_E_OOM;
         } else {
-            l = t;
             l.spot = 1;
             l.spot_m = m;
             l.spot_flags = spot_flags(m, policy->spot_frame_w, policy->spot_frame_h);
@@ -3014,6 +3014,8 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
             l.slots_off = end - front;
         }
         stats->workspace = end + vjo_vocr_helpers_bytes(model, l.helpers);
+        if (l.spot && front + l.scratch_off + ALIGN16(l.spot_arena) + ALIGN16(sizeof(VocrTextspot6Set)) > stats->workspace)
+            stats->workspace = front + l.scratch_off + ALIGN16(l.spot_arena) + ALIGN16(sizeof(VocrTextspot6Set));
     }
     stats->capture = need_capture;
     stats->columns = (unsigned)columns_of(mi);
