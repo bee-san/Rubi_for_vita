@@ -27,6 +27,7 @@
 #include "../include/vjo_vocr_sizes.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/ledger.h"
+#include "../core/port.h" /* VJO_DATA_TABLE */
 #define WORKER_STACK_BYTES VJO_STACK_GAME
 /* The lowest user priority (SDK: default 0x10000100 + 31) on every game core
  * (SCE_KERNEL_CPU_MASK_USER_ALL, which the SDK says the default mask equals;
@@ -60,6 +61,7 @@
 #define ROUND_TO(x, unit) (((uint32_t)(x) + ((unit) - 1u)) & ~((unit) - 1u))
 #define CDRAM_UNIT (256u * 1024u)     /* SDK: USER_CDRAM_RW sizes are multiples of 256 KB */
 #define PHYCONT_UNIT (1024u * 1024u)  /* SDK: USER_MAIN_PHYCONT_NC_RW sizes are multiples of 1 MB */
+#define MIB (1024u * 1024u)           /* #528: the unit of the console's free-memory figure (#324) */
 #ifdef VJO_HOST
 #define IMPORT_READY(fn) 1
 #ifndef VJO_TEST_HOOK_CACHE
@@ -119,19 +121,38 @@ enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, G
  * module's VjoLedger, SceShell's too, for an item the worker never logs; its step-log item (VJO_GITEM_GATE), its name
  * and its budget (VJO_BUDGET_GAME_GATE) are its own. */
 #define GL_GATE GL_SPOT
-static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
-    [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
-    [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
-    [GL_WEIGHTS] = {"VjoGameVocrWeights", VJO_LEDGER_POOL_GAME},
-    [GL_WORKSPACE] = {"VjoGameVocr workspace", VJO_LEDGER_POOL_GAME},
-    [GL_CAPTURE] = {"VjoGameVocrCapture", VJO_LEDGER_POOL_GAME},
-    [GL_LINE] = {"VjoGameVocrLine", VJO_LEDGER_POOL_GAME}, /* and API 55's VjoGameVocrFrame (GL_FRAME) */
-    [GL_LM] = {"VjoGameVocrLM", VJO_LEDGER_POOL_GAME},
-    [GL_CASCADE] = {"VjoGameVocrCascade", VJO_LEDGER_POOL_GAME},
-    [GL_HELPERS] = {"VjoGameVocrHelper stacks+TLS", VJO_LEDGER_POOL_GAME},
-    [GL_SHOT] = {"VjoGameShot", VJO_LEDGER_POOL_GAME},
-    [GL_SC3] = {"VjoGameSc3", VJO_LEDGER_POOL_GAME},
-    [GL_SPOT] = {"VjoGameVocrSpot", VJO_LEDGER_POOL_GAME},
+/* #528: this table, the resident blocks' descriptors (below) and the blocks' and threads' names are kept in the data
+ * segment (VJO_DATA_TABLE, core/port.h), whose last page has room, as hook_luna.c's tables are: with #528's memory
+ * check the normal build's code was 180 B over its last page */
+static const char nm_module[] VJO_DATA_TABLE(gn_module) = "OCR worker pages";
+static const char nm_stack[] VJO_DATA_TABLE(gn_stack) = "VjoGameVocr stack+TLS";
+static const char nm_weights[] VJO_DATA_TABLE(gn_weights) = "VjoGameVocrWeights";
+static const char nm_workspace[] VJO_DATA_TABLE(gn_workspace) = "VjoGameVocr workspace";
+static const char nm_capture[] VJO_DATA_TABLE(gn_capture) = "VjoGameVocrCapture";
+static const char nm_line[] VJO_DATA_TABLE(gn_line) = "VjoGameVocrLine";
+static const char nm_lm[] VJO_DATA_TABLE(gn_lm) = "VjoGameVocrLM";
+static const char nm_cascade[] VJO_DATA_TABLE(gn_cascade) = "VjoGameVocrCascade";
+static const char nm_helpers[] VJO_DATA_TABLE(gn_helpers) = "VjoGameVocrHelper stacks+TLS";
+static const char nm_shot[] VJO_DATA_TABLE(gn_shot) = "VjoGameShot";
+static const char nm_sc3[] VJO_DATA_TABLE(gn_sc3) = "VjoGameSc3";
+static const char nm_spot[] VJO_DATA_TABLE(gn_spot) = "VjoGameVocrSpot";
+static const char nm_gate[] VJO_DATA_TABLE(gn_gate) = "VjoGameVocrGate";
+static const char nm_job[] VJO_DATA_TABLE(gn_job) = "VjoGameVocr"; /* the worker's thread and the job's workspace */
+static const char nm_helper[] VJO_DATA_TABLE(gn_helper) = "VjoGameVocrHelper";
+static const char nm_frame[] VJO_DATA_TABLE(gn_frame) = "VjoGameVocrFrame";
+static const VjoLedgerItemDef ledger_defs[GL_COUNT] VJO_DATA_TABLE(game_ledger_defs) = {
+    [GL_MODULE] = {nm_module, VJO_LEDGER_POOL_GAME},
+    [GL_STACK] = {nm_stack, VJO_LEDGER_POOL_GAME},
+    [GL_WEIGHTS] = {nm_weights, VJO_LEDGER_POOL_GAME},
+    [GL_WORKSPACE] = {nm_workspace, VJO_LEDGER_POOL_GAME},
+    [GL_CAPTURE] = {nm_capture, VJO_LEDGER_POOL_GAME},
+    [GL_LINE] = {nm_line, VJO_LEDGER_POOL_GAME}, /* and API 55's VjoGameVocrFrame (GL_FRAME) */
+    [GL_LM] = {nm_lm, VJO_LEDGER_POOL_GAME},
+    [GL_CASCADE] = {nm_cascade, VJO_LEDGER_POOL_GAME},
+    [GL_HELPERS] = {nm_helpers, VJO_LEDGER_POOL_GAME},
+    [GL_SHOT] = {nm_shot, VJO_LEDGER_POOL_GAME},
+    [GL_SC3] = {nm_sc3, VJO_LEDGER_POOL_GAME},
+    [GL_SPOT] = {nm_spot, VJO_LEDGER_POOL_GAME},
 };
 typedef char vjo_game_ledger_items_fit[GL_COUNT <= VJO_LEDGER_MAX_ITEMS ? 1 : -1];
 VjoLedger g_game_ledger;
@@ -159,14 +180,18 @@ typedef struct {
 } ResidentBlock;
 static BlockState weights_blk = {-1, 0}, lm_blk = {-1, 0}, cascade_blk = {-1, 0}, spot_blk = {-1, 0}, sc3_blk = {-1, 0};
 static BlockState gate_blk = {-1, 0};
-static const ResidentBlock weights_desc = {&weights_blk, GL_WEIGHTS, VJO_GITEM_WEIGHTS, "VjoGameVocrWeights",
-                                           VJO_VOCR_MAX_BYTES};
-static const ResidentBlock lm_desc = {&lm_blk, GL_LM, VJO_GITEM_LM, "VjoGameVocrLM", VJO_VOCR_LM_MAX_BYTES};
-static const ResidentBlock cascade_desc = {&cascade_blk, GL_CASCADE, VJO_GITEM_CASCADE, "VjoGameVocrCascade",
-                                           VJO_VOCR_MAX_BYTES};
-static const ResidentBlock spot_desc = {&spot_blk, GL_SPOT, VJO_GITEM_SPOT, "VjoGameVocrSpot", VJO_BUDGET_GAME_SPOT};
-static const ResidentBlock sc3_desc = {&sc3_blk, GL_SC3, VJO_GITEM_SC3, "VjoGameSc3", VJO_BUDGET_GAME_SC3};
-static const ResidentBlock gate_desc = {&gate_blk, GL_GATE, VJO_GITEM_GATE, "VjoGameVocrGate", VJO_VOCR_GATE_BYTES};
+static const ResidentBlock weights_desc VJO_DATA_TABLE(game_weights_desc) = {
+    &weights_blk, GL_WEIGHTS, VJO_GITEM_WEIGHTS, nm_weights, VJO_VOCR_MAX_BYTES};
+static const ResidentBlock lm_desc VJO_DATA_TABLE(game_lm_desc) = {&lm_blk, GL_LM, VJO_GITEM_LM, nm_lm,
+                                                                  VJO_VOCR_LM_MAX_BYTES};
+static const ResidentBlock cascade_desc VJO_DATA_TABLE(game_cascade_desc) = {
+    &cascade_blk, GL_CASCADE, VJO_GITEM_CASCADE, nm_cascade, VJO_VOCR_MAX_BYTES};
+static const ResidentBlock spot_desc VJO_DATA_TABLE(game_spot_desc) = {&spot_blk, GL_SPOT, VJO_GITEM_SPOT,
+                                                                      nm_spot, VJO_BUDGET_GAME_SPOT};
+static const ResidentBlock sc3_desc VJO_DATA_TABLE(game_sc3_desc) = {&sc3_blk, GL_SC3, VJO_GITEM_SC3, nm_sc3,
+                                                                    VJO_BUDGET_GAME_SC3};
+static const ResidentBlock gate_desc VJO_DATA_TABLE(game_gate_desc) = {&gate_blk, GL_GATE, VJO_GITEM_GATE,
+                                                                      nm_gate, VJO_VOCR_GATE_BYTES};
 typedef char vjo_gate_budget_check[PAGE_ROUND(VJO_VOCR_GATE_BYTES) <= VJO_BUDGET_GAME_GATE ? 1 : -1];
 
 /* ---- the job's step log (VjoGameOcrResult.step) ---- */
@@ -687,7 +712,7 @@ static void *line_buffer(void *ud, size_t bytes)
             to_come += PAGE_ROUND(job_lm->bytes);
         if (free_user_after_reserve() < to_come) return NULL;
     }
-    line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, "VjoGameVocrLine", (uint32_t)bytes, LADDER_ALL,
+    line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, LADDER_ALL,
                                    &base, &leaked, &held, &mem);
     if (line_uid < 0) {
         line_uid = leaked;
@@ -861,9 +886,68 @@ static int64_t free_user_after_reserve(void)
     return free_bytes < 0 ? -1 : (int64_t)free_bytes - (int64_t)job_reserve;
 }
 
+/* #528: the USER bytes of the blocks the worker keeps between jobs (the weights', the LM's, the cascade model's, the
+ * spotter's, the gate's, an SC3 charset's): every block it holds at a memory check. */
+static uint32_t resident_user(void)
+{
+    const BlockState *const all[] = {&weights_blk, &lm_blk, &cascade_blk, &spot_blk, &gate_blk, &sc3_blk};
+    uint32_t sum = 0;
+    for (unsigned i = 0; i < sizeof(all) / sizeof(all[0]); i++)
+        if (all[i]->uid >= 0) sum += all[i]->held;
+    return sum;
+}
+
+/* #528: the game's free USER memory as a memory check plans with it. The console reports it in whole MiB (#324, and
+ * every figure the owner's logs hold), up to a MiB under what is free, and the worker's own blocks move it a whole MiB
+ * at a time: a job beside its resident weights read a MiB less than the job before it, and was refused, or stepped
+ * down a size, though nothing but those blocks had changed (host/tests/test_alloc_sim.c, "#528 the game's memory
+ * swept"). So the worker keeps the most a whole-MiB figure has shown free beside its resident blocks (game_room: the
+ * figure plus those blocks), and plans with that less what it holds now, while the figure stays within a MiB of it;
+ * a figure a MiB or more under it says the game took memory, and replaces it. A figure that is no whole MiB is exact
+ * (no console reports one) and is used as it is. Each block a job takes is checked against the reserve by a figure
+ * read after it (resident_alloc, the workspace's check), so a game that took memory meanwhile is never left less. */
+static int64_t game_room;
+static int32_t check_free(void)
+{
+    int32_t live = free_user();
+    int64_t held = resident_user(), now = (int64_t)live + held;
+    if (live < 0 || live % (int32_t)MIB) return live;
+    if (game_room < now || game_room >= now + MIB) game_room = now;
+    return (int32_t)(game_room - held);
+}
+
+/* #528: whether the spotter's block (not yet held) fits beside the smallest model request r allows, its job and its
+ * weights at r's region, in `figure` (check_free's) and every model block the worker holds (a check would give them
+ * back), beside the job's reserve. It does not where the job could not keep it after its check: the job then reads
+ * with GRAD without reading the spotter, which it read and gave back before at every job of a game that short. */
+static uint32_t held_bytes(const VjoVocrResident *r);
+static int spot_fits(const VjoGameOcrRequest *r, int32_t figure)
+{
+    const VjoVocrModel *m = NULL;
+    size_t job;
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS && !m; t++)
+        if (r->tiers & (1u << (t - 1u))) m = vjo_vocr_model(tier_names[t - 1u]);
+    if (!r->tiers) m = vjo_vocr_model(r->fallback[0] ? r->fallback : r->model);
+    if (!m) m = vjo_vocr_model(r->model);
+    job = m ? vjo_vocr_job_bytes(m->name, r->width, r->height) : 0;
+    if (figure < 0 || !job) return figure >= 0; /* nothing to size it by: the load and the check decide, as before */
+    return (int64_t)figure + held_bytes(&resident) + held_bytes(&lm_res) + held_bytes(&cascade_res) -
+               (int64_t)GAME_RESERVE >=
+           (int64_t)PAGE_ROUND(job) + PAGE_ROUND(vjo_vocr_capture_bytes(r->width, r->height)) + PAGE_ROUND(m->bytes) +
+               PAGE_ROUND(vjo_vocr_spot_block_bytes());
+}
+
 /* VjoVocrResident.alloc (ud its ResidentBlock): one page-rounded USER_RW block for the weights, the LM, the
  * cascade's model or (API 54) the spotter's weights and their parsed form (vjo_vocr_spot_block_bytes), under the
- * same reserve as the job workspace. */
+ * same reserve as the job workspace. #528: the console reports the game's free memory in whole MiB (#324), up to a
+ * MiB under what is free, so a sample whose room beside the reserve is short of the block by less than a MiB cannot
+ * tell: the block may fit (#324: Normal's weights at "3 MiB" in あおかな, refused, cost the job its model). There the
+ * block is taken and the reserve checked after it: every reserve is a whole MiB (below), so "the game still keeps the
+ * reserve" is then exact; a block that leaves less goes back at once (while the game held that block for one sample,
+ * it had less than the reserve, by at most the block). Elsewhere the sample decides before the block, as before. */
+_Static_assert(VJO_GAME_RESERVE % MIB == 0 && VJO_GAME_RESERVE_SMALL % MIB == 0 && VJO_GAME_RESERVE_NORMAL % MIB == 0 &&
+                   VJO_GAME_RESERVE_LARGE % MIB == 0 && VJO_GAME_RESERVE_HOOK_ONLY % MIB == 0,
+               "a reserve is a whole MiB, the unit of the console's free-memory figure (resident_alloc's test)");
 static void *resident_alloc(void *ud, size_t bytes)
 {
     const ResidentBlock *d = ud;
@@ -871,15 +955,25 @@ static void *resident_alloc(void *ud, size_t bytes)
     uint32_t rounded = PAGE_ROUND(bytes), mem;
     void *base = NULL;
     SceUID leaked;
+    int32_t seen;
+    int probe = 0;
     if (b->uid >= 0 || !bytes || bytes > d->max) return NULL; /* never two blocks */
     /* #418's audit F1: the gate's block only where the job's memory check counted it (gate_room), and then without a
-     * second look at the game's free memory, as the job's workspace and capture blocks take none: the console reports
-     * it in whole MiB (#324), so a second look after the job's own blocks can see a whole MiB less than the check did */
-    if (d == &gate_desc ? !gate_room : free_user_after_reserve() < (int64_t)rounded) return NULL;
+     * second look at the game's free memory, as the job's workspace and capture blocks take none */
+    if (d == &gate_desc) {
+        if (!gate_room) return NULL;
+    } else if ((seen = free_user()) < 0 || (int64_t)seen - job_reserve < (int64_t)rounded) {
+        if (seen < 0 || seen % (int32_t)MIB || (int64_t)seen + MIB - job_reserve <= (int64_t)rounded) return NULL;
+        probe = 1;
+    }
     b->uid = game_memblock_alloc(d->item, d->gitem, d->name, rounded, LADDER_USER, &base, &leaked, &b->held, &mem);
     if (b->uid < 0) {
         /* A block that cannot be released stays recorded; cleanup retries it. */
         b->uid = leaked;
+        return NULL;
+    }
+    if (probe && free_user_after_reserve() < 0) { /* the game kept less than the reserve beside it */
+        (void)resident_release(ud); /* a free that fails keeps the block recorded: cleanup's */
         return NULL;
     }
     return base;
@@ -1359,7 +1453,7 @@ static int run_shot(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     rc = out->free_user < 0 || (int64_t)out->free_user - GAME_RESERVE < (int64_t)need;
     step_add(VJO_GSTEP_CHECK, 0, 0, rc, need, 0, 0, 0);
     if (rc) return VJO_E_OOM;
-    shot_uid = game_memblock_alloc(GL_SHOT, VJO_GITEM_SHOT, "VjoGameShot", need, LADDER_ALL, &base, &leaked, &held,
+    shot_uid = game_memblock_alloc(GL_SHOT, VJO_GITEM_SHOT, nm_shot, need, LADDER_ALL, &base, &leaked, &held,
                                    &mem);
     if (shot_uid < 0) {
         shot_uid = leaked;
@@ -1469,7 +1563,7 @@ static int pool_run(void *ud, unsigned slot, void (*fn)(void *arg), void *arg)
     if (slot < 1 || slot > VJO_VOCR_HELPERS_MAX || helper_uid[slot] >= 0 || blocked) return -1;
     helper_job[slot].fn = fn;
     helper_job[slot].arg = arg;
-    t = sceKernelCreateThread("VjoGameVocrHelper", helper_entry, WORKER_PRIORITY, HELPER_STACK_BYTES, 0,
+    t = sceKernelCreateThread(nm_helper, helper_entry, WORKER_PRIORITY, HELPER_STACK_BYTES, 0,
                               WORKER_AFFINITY, NULL);
     if (t < 0) { helper_create_failures++; return -1; }
     vjo_ledger_add(&g_game_ledger, GL_HELPERS, VJO_BUDGET_GAME_HELPER_STACK);
@@ -1839,7 +1933,7 @@ static int run_hook_pass(const VjoGameOcrRequest *r, VjoGameOcrResult *out, Capt
     out->need_workspace = PAGE_ROUND(bytes);
     if (out->free_user < 0 || (int64_t)out->free_user - (int64_t)job_reserve < (int64_t)PAGE_ROUND(bytes))
         return VJO_E_OOM;
-    capture_uid = game_memblock_alloc(GL_CAPTURE, VJO_GITEM_CAPTURE, "VjoGameVocrCapture", bytes, LADDER_ALL, &base,
+    capture_uid = game_memblock_alloc(GL_CAPTURE, VJO_GITEM_CAPTURE, nm_capture, bytes, LADDER_ALL, &base,
                                       &leaked, &held, &mem);
     if (capture_uid < 0) {
         capture_uid = leaked;
@@ -2172,7 +2266,13 @@ again:
     if (!want_spot && drop_one(&spot_res)) { rc = VJO_E_OCR_UNAVAILABLE; goto done; } /* a no-op: it holds nothing */
     /* API 26: the gate's block is kept while the jobs ask for the gate (#418) */
     if (!(r->speed & VJO_GAME_OCR_S_GATE) && drop_one(&gate_res)) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
-    if (want_spot && !vertical) {
+    /* #528: the game's free memory before this try's spotter block, for the memory check's figure (check_free): on a
+     * console reporting whole MiB (#324) a figure read after that block alone can show a whole MiB less, and refused
+     * the smallest model at 2 MiB free (host/tests/test_alloc_sim.c, "#528 the game's memory swept"). */
+    const int32_t figure = check_free();
+    if (want_spot && !vertical && spot_blk.uid < 0 && !spot_fits(r, figure)) {
+        spot_rc = VJO_E_OOM; /* no room for it beside the smallest job: GRAD, the spotter not read */
+    } else if (want_spot && !vertical) {
         VjoPlatform spot_platform = {.file_open = file_open, .now_us = now_us};
         VjoGreySource spot_cancel = {&capture, r->width, r->height, strip_source, cancelled, line_buffer, NULL};
         uint64_t s0 = now_wide();
@@ -2253,10 +2353,13 @@ again:
      * checked in turn, its cascade and LM first (check_with_lm); the first that
      * fits runs. The first one's need stays in model_need_* when another runs. */
     unsigned used = 0, try_from = 0;
-    int fits = 0;
+    int fits = 0, carried = 0, reverified = 0;
     uint32_t first_workspace = 0, first_weights = 0, first_release = 0;
 retry_smaller:
-    out->free_user = free_user();
+    /* #528: the figure the game's free memory has shown beside the worker's resident blocks (check_free); carried: it
+     * is more than the figure read now, so the workspace's block is checked after it is taken (below) */
+    out->free_user = check_free();
+    carried = out->free_user > free_user();
     for (unsigned i = try_from; i < n; i++) {
         casc = cascade_of(&cand[i], r, top, casc_us);
         fits = check_with_lm(out, cand[i].m, cand[i].bytes, capture_bytes, lm_max, cand[i].tier, &casc, &lm);
@@ -2415,22 +2518,34 @@ retry_smaller:
     void *capture_base = NULL, *base = NULL;
     SceUID leaked;
     uint32_t held, mem;
-    capture_uid = game_memblock_alloc(GL_CAPTURE, VJO_GITEM_CAPTURE, "VjoGameVocrCapture", (uint32_t)capture_bytes,
+    capture_uid = game_memblock_alloc(GL_CAPTURE, VJO_GITEM_CAPTURE, nm_capture, (uint32_t)capture_bytes,
                                       LADDER_ALL, &capture_base, &leaked, &held, &mem);
     if (capture_uid < 0) { capture_uid = leaked; rc = VJO_E_OOM; goto done; }
     capture_bytes_held = held;
     capture_memory = mem;
-    workspace_uid = game_memblock_alloc(GL_WORKSPACE, VJO_GITEM_WORKSPACE, "VjoGameVocr",
+    workspace_uid = game_memblock_alloc(GL_WORKSPACE, VJO_GITEM_WORKSPACE, nm_job,
                                         PAGE_ROUND(use_bytes + lm_extra + helper_bytes), LADDER_ALL, &base, &leaked, &held,
                                         &mem);
     if (workspace_uid < 0) { workspace_uid = leaked; rc = VJO_E_OOM; goto done; }
     workspace_bytes_held = held;
     workspace_memory = mem;
+    /* #528: a check that planned with more than the figure it read (check_free: a whole MiB the worker's own blocks hid)
+     * holds the reserve only while the game took no memory since: the figure read now, after the job's own blocks, says
+     * (exact on the console: it and the reserve are whole MiB). Short of it, the blocks go back, the figure that showed
+     * it is the one kept, and the check runs again on it, once. */
+    if (carried && !reverified && free_user_after_reserve() < 0) {
+        reverified = 1;
+        game_room = 0;
+        if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+        steps_drop_blocks(try_steps, 0);
+        try_from = used;
+        goto retry_smaller;
+    }
     if (frame_need) { /* API 55: refused, the job reads as without the pause */
         void *fb = NULL;
         SceUID fu;
         steps_quiet = 1;
-        fu = game_memblock_alloc(GL_FRAME, VJO_GITEM_FRAME, "VjoGameVocrFrame", (uint32_t)r->width * r->height,
+        fu = game_memblock_alloc(GL_FRAME, VJO_GITEM_FRAME, nm_frame, (uint32_t)r->width * r->height,
                                  LADDER_ALL, &fb, &leaked, &held, &mem);
         steps_quiet = 0;
         if (fu < 0) {
@@ -2518,12 +2633,11 @@ retry_smaller:
     /* #324: the check passed, yet the model's weights could not be had: out of memory before any were read or
      * held (every job-level VJO_E_OOM comes before them: core/vocr_ocr.c's weights block, the finder's arena, the
      * workspace or the capture; an LM's or the cascade's only sets lm_rc / cascade_rc). resident_alloc checks the
-     * game's free memory again once this job's own blocks are taken, and the console reports that memory in whole
-     * MiB (every sample of あおかな, PCSG00700, 2026-10-26: 1, 2, 3 or 4 MiB), so the second look can see a whole MiB
-     * less than the check did: a job that passed with less than 1 MiB to spare finds its weights refused, whatever
-     * its tier's reserve. A smaller model may still fit: give back this job's blocks and check again from the next
-     * one (retry_smaller), each at most once, as a model that did not fit the check would have been. A job of
-     * columns has one model: its rows instead (API 53, #379, below). */
+     * game's free memory again once this job's own blocks are taken: the game took memory since the check (before
+     * #528 the console's whole-MiB figure alone refused the weights where they fitted, #324). A smaller model may still
+     * fit: give back this job's blocks and check again from the next one (retry_smaller), each at most once, as a
+     * model that did not fit the check would have been. A job of columns has one model: its rows instead (API 53,
+     * #379, below). */
     const int smaller = rc == VJO_E_OOM && !stats.stuck && !forced && used + 1u < n && !cancelled(NULL);
     /* API 47, auto: the rows looked like vertical text (nothing was read: no weights, no line); API 53, on (#379):
      * the rows did not look like horizontal text (the same); or the columns' model cannot be read here (absent,
@@ -2538,6 +2652,7 @@ retry_smaller:
                                      (rc == VJO_E_OOM && vertical && !cancelled(NULL))))) {
         if (smaller) {
             try_from = used + 1u;
+            game_room = 0; /* #528: the weights refused beside the reserve: the game took memory since the figure */
         } else if (rc == VJO_E_VERTICAL) {
             step_add(VJO_GSTEP_FIND, 2, stats.lines, 0, 0, stats.dark, stats.find_us, 0);
             /* API 54: why the spotter left the rows to auto's check, for the columns' try's spot step */
@@ -2574,15 +2689,13 @@ retry_smaller:
         goto again;
     }
     /* #280's audit F1: the check passed, yet the last model's weights could not be had (no smaller model is left to
-     * retry). With every size's reserve 1 MiB (#280), アマツツミ's measured 2 MiB (PCSG01198, 2026-10-23) passes Small's
-     * check at the full screen (2,068,480 B), and on a console that reports free memory in whole MiB (#324) its weights
-     * can then be refused once the job's blocks are taken (while less than 2 MiB and those blocks, 192 KiB at the full
-     * screen, is really free; or the game took memory meanwhile): no OCR can run in this game now, as when the check
-     * fails, so a Rubi verified site's newest text answers unconfirmed here too (with the 4 MiB reserve before #280 the
-     * check failed there). This try's blocks and the resident ones go back to the game first, as on that path; its
-     * captures and finder time stay the job's, and its blocks' steps leave the log (steps_drop_blocks). Never while a
-     * block may still be written (a stuck helper: blocked; a capture the display hook may still own: hook_owns_capture,
-     * which a VJO_E_OOM never follows in one job, as its rows call ended the job). */
+     * retry): the game took memory since the check (#528: a whole-MiB figure no longer refuses them where they fit,
+     * as it did at アマツツミ's measured 2 MiB, PCSG01198, 2026-10-23). No OCR can run in this game now, as when the
+     * check fails, so a Rubi verified site's newest text answers unconfirmed here too (with the 4 MiB reserve before
+     * #280 the check failed there). This try's blocks and the resident ones go back to the game first, as on that
+     * path; its captures and finder time stay the job's, and its blocks' steps leave the log (steps_drop_blocks). Never
+     * while a block may still be written (a stuck helper: blocked; a capture the display hook may still own:
+     * hook_owns_capture, which a VJO_E_OOM never follows in one job, as its rows call ended the job). */
     if (rc == VJO_E_OOM && !stats.stuck && !blocked && !hook_owns_capture && hk.installed && !cancelled(NULL)) {
         uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
         if (id) {
@@ -2946,7 +3059,7 @@ int vjo_game_ocr_worker_start(void)
      * thread of the same priority wait for a core. At the lowest user
      * priority every game thread preempts this one [SDK: Kernel-Overview,
      * 'Notes on Priority and CPU Affinity Mask Combinations']. */
-    worker = sceKernelCreateThread("VjoGameVocr", worker_main, WORKER_PRIORITY, WORKER_STACK_BYTES, 0,
+    worker = sceKernelCreateThread(nm_job, worker_main, WORKER_PRIORITY, WORKER_STACK_BYTES, 0,
                                    WORKER_AFFINITY, NULL);
     if (worker < 0) return VJO_E_OCR_UNAVAILABLE;
     vjo_ledger_add(&g_game_ledger, GL_STACK, VJO_BUDGET_GAME_STACK);

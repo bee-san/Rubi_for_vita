@@ -56,10 +56,15 @@ Each scenario prints a line, `owner-scenario shell NAME: …`:
 **The game's USER memory** (ctest `alloc_sim`, test `owner scenario`, with the release models). The owner's job as
 the Shell asks for it with his `config.ini` (Large, `ocr_lm = 1000k`, `ocr_cascade_ms = 2000`, `ocr_threads = 3`,
 the spotter and the other defaults) runs through the real worker and kernel (`game_ocr/main.c`, `kernel/`) on a
-textbox and on the full screen, at the free USER sizes his games logged and at smaller ones. Each case prints a
-line, `owner-scenario game LEVEL-REGION: …`: `rc`, `failed`, the `tier`, `lm` tier and `cascade` the memory check
-chose, `spot` (the spotter found the lines), `helpers`, `lines`, `peak` (the USER bytes of Rubi's blocks) and `told`
-(it read text, or its refusal carries the memory check's figures, which the Shell shows and logs). The request is
+textbox and on the full screen, at the free USER sizes his games logged and at smaller ones. The game's free memory
+is reported as the console reports it: in whole MiB, rounded down (#324: all 78 samples of あおかな were 1-4 MiB; every
+`free USER=` the owner's debug builds logged is a whole MiB). Each level runs the job twice: cold (nothing of Rubi's
+resident) and warm (`LEVEL-REGION-warm`: beside the weights, LM and spotter the cold job left, as every later job of
+a session runs). `tier-SIZE-88MiB` is the owner's config with `vocr_tier` set to each size, at CLANNAD's measured
+88,080,384 B, on the textbox, cold. Each case prints a line, `owner-scenario game NAME: …`: `rc`, `failed`, the
+`tier`, `lm` tier and `cascade` the memory check chose, `spot` (the spotter found the lines), `helpers`, `lines`,
+`peak` (the USER bytes of Rubi's blocks, a warm job's resident ones included) and `told` (it read text, or its
+refusal carries the memory check's figures, which the Shell shows and logs). The request is
 `host/tests/owner_request.h`'s, which `test_shell_worker.c`'s `owner scenario request` holds against the Shell's own.
 
 ## The model's limits
@@ -96,17 +101,27 @@ holds 8,192 B at every start and exit of 0.10.1's code. Since #534 keeps the tex
 holds 28,672 B there, and `held` and, in the three scenarios that took nothing else, `peak` are 28,672 B: the
 ratchet's two deliberate raises.
 
-| Game, free USER | Tier | LM | Spotter | Helpers | Peak B (textbox) |
-| --- | --- | --- | --- | ---: | ---: |
-| 88,080,384 (CLANNAD), 29,360,128 (Adrenaline), 12,664,832 and 10,485,760 (PCSG00402) [measured]; 8 and 6 MiB [estimate] | Large | 1000k | yes | 2 | 4,648,960 |
-| 5 MiB [estimate] | Large | 1000k | yes | 0 | 3,915,776 |
-| 4 MiB [estimate] | Large | off | yes | 0 | 2,871,296 |
-| 3 MiB [estimate] | Normal | 500k | no | 0 | 2,011,136 |
-| 2.5 MiB [estimate] | Normal | off | yes | 0 | 1,560,576 |
-| 2 MiB [estimate] | Small | off | no | 0 | 1,015,808 |
-| 1.5 MiB [estimate] | refused, with the check's figures | | | | 61,440 |
+The game part as recorded with whole-MiB reports and a warm job (#528, mem-game, `--reset-limits`; main `cb1449d2`,
+whose game memory code gives the same 51 rows as 0.10.1's at main `1d698559`), textbox (the full screen takes 4,096 B
+more at every level that reads):
 
-The full screen takes 4,096 B more at every level that reads (12,288 B at 2.5 MiB).
+| Game, free USER | Cold: tier, LM, spotter, helpers | Peak B | Warm: tier, LM, spotter, helpers | Peak B |
+| --- | --- | ---: | --- | ---: |
+| 88,080,384 (CLANNAD), 29,360,128 (Adrenaline), 12,664,832 and 10,485,760 (PCSG00402) [measured]; 8 MiB [estimate] | Large, 1000k, yes, 2 | 4,648,960 | the same | 4,648,960 |
+| 6 MiB [estimate] | Large, 1000k, yes, 0 | 3,915,776 | Large, 1000k, yes, 1 | 4,317,184 |
+| 5 MiB [estimate] | Large, off, yes, 0 | 2,871,296 | Large, 500k, yes, 0 | 3,436,544 |
+| 4 MiB [estimate] | Normal, 500k, no, 0 | 2,125,824 | Normal, 1000k, yes, 0 | 2,605,056 |
+| 3 MiB [estimate] | Small, off, no, 0 | 1,015,808 | the same | 1,015,808 |
+| 2.5 MiB [estimate] | Small, off, no, 0 | 1,015,808 | refused, with the check's figures | 823,296 |
+| 2 MiB [estimate] | refused, with the check's figures | 61,440 | refused | 61,440 |
+| 1.5 MiB [estimate] | refused | 0 | refused | 0 |
+
+Each size at CLANNAD's 88,080,384 B (textbox, cold): Small with the 1000k LM and Normal's model for the cascade,
+4,128,768 B; Normal with the 1000k LM and Large's for the cascade, 5,980,160 B; Large with the 1000k LM, the spotter
+and two helpers (Large has no cascade), 4,648,960 B.
+
+With exact figures (the model before #528's whole-MiB reports) 3 MiB read Normal with the 500k LM, 2.5 MiB Normal
+and 2 MiB Small: on a console those games got a smaller model, or none (main `b024c93b`'s table).
 
 ## Running it
 

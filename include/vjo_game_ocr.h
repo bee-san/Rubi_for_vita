@@ -481,7 +481,9 @@ typedef struct {
      * bytes (or a negative native error, or -1 when unavailable), what the
      * job had to allocate (page-rounded workspace, plus weights unless they
      * were resident) and the reserve always left to the game. 0/0/0 when the
-     * job ended before the check. */
+     * job ended before the check. #528: free_user is the figure the check planned
+     * with: the console's, a whole MiB, or up to a MiB more where an earlier figure
+     * beside the worker's own resident blocks showed it (game_ocr/main.c check_free). */
     int32_t free_user;
     uint32_t need_workspace, need_weights, reserve_bytes;
     /* 1: the request's model did not fit the memory check, so the check (and

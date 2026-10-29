@@ -400,12 +400,20 @@ Facts:
   Kernel-Reference, 'sceKernelAllocMemBlock'].
 - The game worker today: free `sizeMain` − the fixed 1 MiB reserve
   must cover the page-rounded weights and workspace, or that size is refused before anything is
-  allocated and the next smaller one is tried [`game_ocr/main.c`]. A size that passed can still
-  have its weights refused: the weights' block checks the free memory again once the job's own
-  blocks are taken, and the console reports it in whole MiB (every one of 78 samples in あおかな,
-  `PCSG00700`, on a PCH-2000 was 1, 2, 3 or 4 MiB [measured: #324]), so the second look can see a
-  whole MiB less. The job then gives its blocks back and checks the next smaller size, each size
-  at most once, within the same job's stable-text wait (#324 and its audit).
+  allocated and the next smaller one is tried [`game_ocr/main.c`]. The console reports the free
+  memory in whole MiB, rounded down (every one of 78 samples in あおかな, `PCSG00700`, on a PCH-2000
+  was 1, 2, 3 or 4 MiB [measured: #324]; every `free USER=` in the owner's logs of #528 is a whole
+  MiB [measured]), so a figure read beside the worker's own blocks can show up to a MiB less than
+  the game has. Since #528 the worker plans with the most the figure has shown free beside its
+  resident blocks (while it stays within a MiB of that), and it checks a block whose need falls in
+  that last MiB after taking it: the reserve is a whole MiB too, so "the game still keeps 1 MiB"
+  is then exact, and a block that leaves less goes back at once (for the time of one sample the
+  game had less than the reserve, by less than a MiB). Before #528 the second figure refused
+  weights that fitted, and a job beside its resident weights could be refused where the job before
+  it read (host model: `host/tests/test_alloc_sim.c`, "#528 the game's memory swept"). Weights the
+  game really leaves no room for, because it took memory since the check, are still refused: the
+  job then gives its blocks back and checks the next smaller size, each size at most once, within
+  the same job's stable-text wait (#324 and its audit).
 
 Rules:
 
