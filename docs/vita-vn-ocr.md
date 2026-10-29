@@ -1920,8 +1920,9 @@ guard and hval pages, as the rule says, and were read once on the test sets:
   before its refinement, its cache key and its recognition (`VOCR_TEXTSPOT_NO_DARK` to the spotter). Until #528's
   speed pass the spotter read every box's rows once more for it after its pass, through the strip: a display frame for
   each box outside the strip the pass ended on. The flags are the same bit for bit (the same rule on the same rows,
-  each checked against its first read); on the 358 linefind dev regions the texts are byte-identical and a job reads
-  1.03 strips fewer at 60 fps (8.17 → 7.15) [measured, host: [performance.md](performance.md#the-default-read-since-api-54-the-spotter-and-the-vocr6-sizes)].
+  each checked against its first read); on the 358 linefind dev regions (the PSP ones at 960×544, as Adrenaline shows
+  them) the texts are byte-identical and a job reads 1.23 strips fewer at 60 fps (10.45 → 9.22) [measured, host:
+  [performance.md](performance.md#the-spotters-dark-flags-at-the-lines-fetch)].
 - **Vertical text.** With `ocr_vertical = auto` (the default), a region whose boxes the spotter calls vertical more
   often than horizontal goes to GRAD's rows, which auto's rule checks as without the spotter (the columns are then read
   with the vertical model). Measured in vita-vn-ocr on the spotter's crop decode with the shipped weights: 0 of
