@@ -2,7 +2,7 @@
  * VJO_OVERLAY_MEM_BYTES of SceShell's Paf heap (#59: it was a 96 KiB static buffer). #528: it is taken once as the
  * Shell starts, through the same reserve guard, while the heap is at its fullest (3,725,976-3,744,264 B free at all
  * 90 Shell starts in #528's logs [measured]), and kept, so an open asks for no memory of ours. Taken at every open
- * before, beside another plugin's 2,187,264 B buffer (202,296-426,872 B free) the guard refused it 34 times and the
+ * before, beside another plugin's buffer (202,296-426,872 B free) the guard refused it 34 times and the
  * overlay did not open, with nothing on screen. The host tests open and close the overlay through these same
  * functions under the free sizes the owner's console logged (the owner scenario, docs/owner-scenario.md,
  * tools/owner_scenario.py), so what the overlay needs in order to open is measured there.
