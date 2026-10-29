@@ -356,7 +356,9 @@ if [ $STATUS = 1 ]; then
   done
   # #528: one line on the memory of the two boots above (docs/vita-memory.md section 4.5)
   echo "=== memory"
-  python3 tools/analyse_selftest.py --status build/device/status 2>/dev/null || echo "(none)"
+  memory_rc=0
+  python3 tools/analyse_selftest.py --status build/device/status 2>/dev/null || memory_rc=$?
+  case $memory_rc in 0) ;; 2) echo "(none)" ;; *) echo "(no memory line: the analysis failed, $memory_rc)" ;; esac
   exit 0
 fi
 

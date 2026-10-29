@@ -296,7 +296,8 @@ any more since VOCR is the only engine: a removed engine's value, which an older
 and that today's app or installer deletes the line), where taiHEN loads
 each plugin (the worker under `*TITLEID` only, a line #138's kernel no longer needs), the boot record, one `memory` line
 (#528: SceShell's PAF free at the game starts and its lowest; each drop of the heap's free size of 1.5 MiB or more
-between two of the Shell's samples that Rubi's own ledger does not show, named as another plugin's with where it is,
+between two of the Shell's samples that Rubi's own ledger does not show, named as not Rubi's with where it is (and as
+vita-agent-use's screenshot buffer when its size matches),
 and whether it was held to its boot's end; what Rubi held there at the game starts and exits and at most; its
 refused requests by ledger item; the threads SceShell refused; the game's free USER at the logged memory checks (every
 check in the debug build, a refused one only in the normal build) and the model sizes that did not fit; Rubi's largest
@@ -357,8 +358,10 @@ only when nothing points the other way, because those dumps can be archived off 
   start by the clock at that write. test.3's `kernel.txt`, last written at 07:15 and ending at
   878,340 ms, puts its start at 07:00:21–07:01:21, inside its window.
   - A final `game exit` may follow a game's exit or suspend line, as the worker's own line for
-    that event. A `game exit` alone, though, comes from any app that exits without a line of its own
-    (the Rubi app closed, VitaShell), at any later time. And the hook raises the worker's flag
+    that event (in the normal build after the activation's `game memory:` line, which the worker
+    logs just before it in the same wake, #528: the analysis reads the two as one). A `game exit`
+    alone, though, comes from any app that exits without a line of its own (the Rubi app closed,
+    VitaShell), at any later time. And the hook raises the worker's flag
     before it logs its own line (`kernel/lifecycle.c` `fg_store`), so the event's `game exit` can
     come first: test.3's `kernel.txt` has that order at lines 104–105.
   - The kernel logs every foreground line, and every `game pid … active` and `pid … gone` or

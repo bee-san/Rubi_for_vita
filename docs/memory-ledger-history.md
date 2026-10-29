@@ -2405,8 +2405,9 @@ it now has main `f3719fb2`'s: 98,148 + 69,632 B (156 B of code room, 0 B of data
 The normal build logged the game's free memory only when a job's memory check refused it, so the owner's 0.10.1
 logs have no free USER figure for the native ports he played (#528, finding Mmem-plugins-3). The kernel already
 copies every job's result (`kernel/game_ocr.c` `vjoOcrComplete`): it now keeps, per activation, the jobs' memory
-checks (counted once, as a job's claim is released), those refused (as the Shell's own line decides it), the least
-and the last free USER they read and the most recognizer weights kept and workspace, and the kernel worker writes
+checks (counted once, as a job's claim is released), those refused (by the Shell's own test, `shell/worker.c`
+`vocr_headroom`, although the Shell writes no line for a cancelled job or a screenshot), the least and the last
+free USER they read and the most recognizer weights kept and workspace, and the kernel worker writes
 them in one `game memory:` line as the game leaves the front (`kernel/main.c`), then starts afresh. 28 B of `.bss`,
 no allocation, no thread, no new syscall or field (no API change); the normal build only.
 

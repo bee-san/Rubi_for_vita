@@ -266,34 +266,41 @@ The owner's console ran these plugins beside Rubi from 2026-10-25 to 2026-10-29 
 in [#528](https://github.com/bee-san/Rubi_for_vita/issues/528)'s collection). What each takes, by
 pool, is read from its source at the commit named [source], or from its own log. None of their
 module pages was measured, so a plugin's total is an [estimate]. itls and yamt_helper were
-configured but not loaded.
+configured but not loaded. The owner's vita-agent-use is not a public build (its log has lines no
+public commit writes), so its row describes the public source, which its behaviour matches.
 
 | Plugin | Section | SceShell's PAF heap | SceShell's partition (pages) | Kernel pool (KD) | Source |
 | --- | --- | --- | --- | --- | --- |
-| vita-agent-use (remote control of the console from a PC) | `*KERNEL`, and `*main`: a loader that starts the agent's Shell runtime 2 s after boot | for each remote screenshot, the JPEG, 2,187,264 B (`VAU_FRAME_JPEG_LIMIT`), and the encoder's work area, at most 1 MiB, freed after the frame; the installed-app list (SQLite) at most 512 KiB; its package installer's buffers (two of 16 KiB, zlib's inflate state, the package's `param.sfo`). **Until e289d06 (2026-10-23) the JPEG buffer stayed allocated until the remote session ended or the console restarted** | its runtime's module pages, with a 128 KiB TLS arena in `.bss` [unmeasured]; threads VauService 96 KiB, VauContent 16 KiB, VauNotice 8 KiB, vau_perf and VauDiagnostics 4 KiB each, each with 4 KiB of TLS; VauLoader 32 KiB at boot only | a VauInput thread (8 KiB), and a block while it decrypts a SELF for a download | shoui520/vita-agent-use e3bcb56: `src/frame.h:9`, `src/frames_shell.c:50`, `src/shell_jpeg.c:123`, `src/native_vita.c:234-241`, `src/sqlite_memory.c:17`, `src/package_install.c:23,588-589`, `src/shell_loader.c:49-101`, `src/shell_runtime.c:938`, `src/tls_server.h:17-31`, `src/kernel.c:747` |
+| vita-agent-use (remote control of the console from a PC) | `*KERNEL`, and `*main`: a loader that starts the agent's Shell runtime 2 s after boot | for each remote screenshot, the JPEG, 2,187,264 B (`VAU_FRAME_JPEG_LIMIT`), and the encoder's work area, at most 1 MiB, freed after the frame; the installed-app list (SQLite) at most 512 KiB; 2 x 64 KiB while it decrypts a SELF for a download; its package installer's buffers (two of 16 KiB, zlib's inflate state, the package's `param.sfo`, a central-directory tail of up to 65,558 B). It allocates them with PAF's `operator new` (NID 0xFC5CD359); that this is the global heap Rubi's guard reads is an [inference], which the drops below support. **Until e289d06 (2026-10-23) the JPEG buffer stayed allocated until the console restarted: ending the remote session only ended the frame's loan, and its only free was in the agent's reboot command** (e289d06^ `src/native_vita.c:132,231-235`) | its runtime's module pages, with a 128 KiB TLS arena and two 8 KiB credential buffers in `.bss` [unmeasured]; threads VauService 96 KiB, VauContent 16 KiB, VauNotice 8 KiB, vau_perf and VauDiagnostics 4 KiB each, each with 4 KiB of TLS; VauLoader 32 KiB at boot only; the system SQLite module, which the loader loads into SceShell when it is not loaded (520 KiB in the SDK's table for a game [estimate]) | a VauInput thread (8 KiB), and a block while it decrypts a SELF for a download | shoui520/vita-agent-use e3bcb56: `src/frame.h:9`, `src/frames_shell.c:50`, `src/shell_jpeg.c:123`, `src/native_vita.c:234-241`, `src/sqlite_memory.c:17`, `src/decrypt_vita.c:332`, `src/package_install.c:23,588-589,722-723`, `src/shell_loader.c:49-101`, `src/shell_runtime.c:34,50,938`, `src/tls_server.h:17-31`, `src/kernel.c:747`; `native365.yml:24` |
 | VitaDB Downloader's daemon (`vdb_daemon.suprx`: an hourly update check) | `*main` | none | 1,324,032 B from its start, for good: a 1,152 KiB download buffer and a 141 KiB network pool, kept as the stack of a thread that never runs (taipool); its own thread's 256 KiB stack; 8 s after boot it calls `sceHttpInit` and `sceSslInit` with 1 MiB each (whether they take new memory when SceShell has already started HTTP and SSL is not known) | none | Rinnegatamante/VitaDB-Downloader 5027e5d `daemon/main.c:8-9,186-197,255-257`; taipool's README ("create a new thread without starting it and using reserved stack memory as a mempool") |
 | PSVshell | `*KERNEL` | none | none | 425,984 B `KERNEL_RW` from its start, for good; a 12 KiB thread | [PSVshell.md](history/plugin-audit/notes/PSVshell.md) |
-| pngshot (until 2026-10-29 12:24Z) | `*main` | while a screenshot is encoded: zlib's deflate state, about 268 KiB, and a 3,840 B row, freed after | its code (libpng, zlib) | none | [pngshot.md](history/plugin-audit/notes/pngshot.md) |
+| pngshot (until 2026-10-29 12:24Z) | `*main` | while a screenshot is encoded: zlib's deflate state, about 268 KiB [estimate: zlib's formula], and a 3,840 B row, freed after | its code (libpng, zlib) | none | [pngshot.md](history/plugin-audit/notes/pngshot.md) |
 | storageturbo v0.2.0-alpha (from 2026-10-28) | `*KERNEL`, `*main` | not known | not known | buffers for three storage devices from its start (its log: "buffers sd2vita=ok internal=ok memcard=ok"), of a size it does not publish | its logs; the source is not public |
-| kubridge, nonpdrm, rePatch, NoPowerLimits, 0syscall6, shellbat, henkaku | `*KERNEL`; shellbat and henkaku `*main` | none | module pages only | small statics; nonpdrm takes a 16 KiB stack for each application launch; kubridge allocates, in a game, whatever that game asks it for (homebrew ports use it for their own memory) | the [audit notes](history/plugin-audit/notes/); dots-tb/rePatch-reDux0 a3139c8 `repatch.c`; Electry/NoPowerLimitsVita 6e0e921; nowrep/vita-shellbat 2b2fd3c |
+| wifiturbo v0.2.0-alpha (three boots on 2026-10-28) | a kernel and a user module | not known | not known | not known | its logs (`wifiturbo.log`, `wifiturbo_kernel.log`); the source is not public |
+| kubridge, nonpdrm, rePatch, NoPowerLimits, 0syscall6, shellbat, henkaku | `*KERNEL`; shellbat and henkaku `*main` | none | module pages only | small statics (0syscall6's for_hfw build keeps a 40 KiB block for good; which build the owner runs is not recorded); nonpdrm takes a 16 KiB stack for each application launch; kubridge allocates, in a game, whatever that game asks it for (homebrew ports use it for their own memory) | the [audit notes](history/plugin-audit/notes/); dots-tb/rePatch-reDux0 a3139c8 `repatch.c`; Electry/NoPowerLimitsVita 6e0e921; nowrep/vita-shellbat 2b2fd3c |
 
 What the owner's console measured beside them:
 
-- **SceShell's PAF heap.** In the boots with no remote screenshot, 2,305,592-2,574,586 B was free
-  at a game's start (5th to 95th percentile of 292 starts) [measured: the ledger's `ledger start
+- **SceShell's PAF heap.** In the 82 boots without such a drop, 2,305,592-2,574,586 B was free
+  at a game's start (5th to 95th percentile of their 292 starts) [measured: the ledger's `ledger start
   paf: … free=…` lines in #528's `log.txt`]. Eight boots show one drop of 2,064,832-2,214,432 B
   between two of Rubi's samples, which Rubi did not take (its own PAF stayed at 8,192 B), and from
   then on 131,432-463,176 B free until the restart [measured: the same lines]. Each of the eight
   had a vita-agent-use session [measured: the agent's log in the collection, aligned by uptime].
   Each drop is within -122 to +27 KB of the agent's 2,187,264 B JPEG buffer; that the buffer took
-  them is an [inference] from the agent's source (#528).
+  them is an [inference] from the agent's source (#528). The agent's own package installer, which
+  takes its buffers from the same heap, failed twice with `native_result` -28936 and nothing
+  extracted (#528's "native install OOM") in the first such boot of 0.10.1, with 131-260 KB free
+  [inference: the install records' order against log.txt]. The same installer had installed Rubi's
+  181 MB packages at 2.4-2.7 MB free, and installed again after the restart [measured: the
+  collection's install records and log.txt].
 - **SceShell's partition.** 9,486,336 B free when the Shell plugin started, and 180,224 B from
   3.7 s later on, a game's start included [measured: the self-test report in #528's collection,
   written by an API 22 build in mid-October 2026; the plugin set of that day is not recorded].
-- **The kernel pool.** 2,629,632 B free at boot, 2,428,928 B a minute later and 2,138,112 B with
-  CLANNAD in front [measured: the same report]. PSVshell's 425,984 B [source] is a fifth of the
-  last figure. A 2,088,960 B block would have left 49,152 B of it, so #74's five refusals of one on
-  this console are no surprise [inference].
+- **The kernel pool.** 2,629,632 B free at boot, 2,428,928 B from 3.7 s on, 2,138,112 B as CLANNAD
+  started and 2,076,672 B after the self-test's jobs in it [measured: the same report]. PSVshell's
+  425,984 B [source] is a fifth of that. A 2,088,960 B block would not have fitted after the jobs,
+  so #74's five refusals of one on this console are no surprise [inference].
 
 What it means for Rubi:
 
@@ -310,23 +317,30 @@ What it means for Rubi:
   and the page opens only with room for its own widgets (103,296 B) and a 64 KiB margin (section
   5.1): under such a drop the overlay opens while 168,832 B or more is free. The reserve is
   SceShell's own headroom: lowering it would hand that headroom to Rubi, not give SceShell more.
-- No plugin of the set takes the game's memory except through kubridge, at the game's own request,
+- No plugin of the set whose source is public takes the game's memory except through kubridge, at
+  the game's own request,
   so a game's free memory is the game's (section 6.2).
 - The kernel pool is shared with PSVshell's 416 KiB and storageturbo's buffers. Rubi's kernel
   worst case is 241,664 B (the debug build's, section 5.3), and each block Rubi's kernel plugin
   takes after boot (a game start's 24 KiB `games.ini` read, the capture ladder's 64 KiB strip)
   fails with a `kernel.txt` line, not a crash.
 - VitaDB's daemon holds about 1.5 MiB of SceShell's partition from boot, three quarters of the
-  expert's "genuinely under 2 MiB" for a whole Shell plugin (section 5.1). No log in the
+  expert's "genuinely under 2 MiB" for a whole Shell plugin (section 5.1); vita-agent-use about
+  0.3 MiB of stacks, TLS and `.bss` [source], with the SQLite module's pages [estimate] and its own
+  code [unmeasured] on top. No log in the
   collection shows a refused thread or partition page: the failures were all PAF.
 
 What to do when Rubi reports no PAF memory (`… Paf reserve guard: free=… requested=…` in
 `status.txt`):
 
 - Update vita-agent-use to e289d06 (2026-10-23) or later, which frees the JPEG buffer after every
-  frame. With an older one, end the remote session, or restart the console, before playing.
-- Compare the `ledger start paf` and `ledger exit paf` lines: a drop of `free=` between two of
-  them that Rubi's `current=` does not show is another plugin's. `tools/install_ftp.sh --status`
+  frame. With an older one, restart the console before playing: ending the remote session does
+  not give the buffer back (one boot of the owner's refused Rubi at 202-258 KB free 2-11 minutes
+  after its session ended [measured: the agent's log and log.txt]).
+- Compare the `ledger start paf` and `ledger exit paf` lines: a drop of `free=` of 1.5 MiB or more
+  (the reserve) between two of them that Rubi's `current=` does not show is not Rubi's; SceShell's
+  own use moved it by at most 1,041,152 B between two samples in the owner's logs (from the
+  Shell's start to its first game exit, while LiveArea is built). `tools/install_ftp.sh --status`
   and `--collect` do this in their `memory` line, with where each drop is in the log.
 
 ## 5. Safe budgets per context

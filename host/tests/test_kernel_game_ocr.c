@@ -3342,6 +3342,32 @@ static void activation_memory_line(void)
     game_ocr_activation_memory();
     TEST_CHECK(klogs == k0 + 2);
 }
+
+/* #528's audit (audit-mem-plugins-2): a job the Shell cancelled and an Anki screenshot are memory checks too, which the
+ * Shell's log never shows (its read answers VJO_ERR_CANCELLED; shell/anki.c take_shot logs no check line). */
+static void activation_memory_counts_what_the_shell_does_not_log(void)
+{
+    uint32_t seq;
+    unsigned k0;
+    VjoGameOcrResult out;
+    setup();
+    k0 = klogs;
+    seq = submit(); take(seq);
+    caller = 3; TEST_CHECK(vjoOcrCancel(seq) == 0); /* the overlay closed */
+    message.text[0] = 0; message.rc = -103;
+    message.free_user = 2097152; message.reserve_bytes = 1048576; message.need_workspace = 1056768;
+    message.need_weights = 823296;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    memset(&out, 0, sizeof(out)); out.size = sizeof(out);
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &out) == VJO_ERR_CANCELLED);
+    (void)shot_job_keep_files(SHOT_ID); /* game_ocr/main.c run_shot's check: GAME_RESERVE and the JPEG's block */
+    message.rc = -103; message.free_user = 1400000; message.reserve_bytes = 1048576; message.need_workspace = 450560;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    game_ocr_activation_memory();
+    TEST_CHECK(klogs == k0 + 1 && !strcmp(last_line, "game memory: 2 checks, 2 refused; free USER lowest 1400000 B, "
+                                                     "last 1400000 B; weights kept 0 B, workspace up to 0 B"));
+    TEST_MSG("%s", last_line);
+}
 #endif
 
 TEST_LIST = {
@@ -3434,6 +3460,7 @@ TEST_LIST = {
 #else
     {"the normal build adds no pacing step", normal_build_adds_no_pacing_step},
     {"#528: the normal build's game memory line, once per activation", activation_memory_line},
+    {"#528: the game memory line counts a cancelled job's and a screenshot's check", activation_memory_counts_what_the_shell_does_not_log},
 #endif
     {"registration and caller permissions", registration_and_permissions},
     {"completion and stale replacement", complete_and_replacement},

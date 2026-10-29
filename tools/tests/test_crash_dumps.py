@@ -64,6 +64,9 @@ def kernel_text(last_ms=5_400_000, extra=""):
 
 
 KERNEL = kernel_text()
+# #528: the normal build's line as a game leaves the front (kernel/game_ocr.c game_ocr_activation_memory)
+GAME_MEMORY = ("game memory: 3 checks, 0 refused; free USER lowest 10485760 B, last 12664832 B; weights kept 2478080 B, "
+               "workspace up to 1056672 B\n")
 KERNEL_PREV = "boot guard: stage shell\nshell registered: pid 0x11901 (was 0x0)\nboot guard: stage ok\ngame exit\n"
 BOOT_OK = "vjoboot1 seq=1 mode=0 stage=4 inert=0 fault=0 failures=0 api=22 prev=0/0/0/0\n"
 
@@ -514,6 +517,20 @@ class Placement(unittest.TestCase):
                 KERNEL_HEAD + "game exit\nforeground 0x20000 -> 0x0 (suspend) t=5400000 ms\n", "checked", None),
             "the suspend's game exit, then a lone one": (kernel_text() + "game exit\n", "unchecked",
                                                          "kernel.txt's last line carries no uptime (t=N ms)"),
+            # #528: the normal build's game memory line, the worker's own before its game exit, in any order with the
+            # suspend's line
+            "the suspend, the normal build's game memory line, its game exit": (
+                KERNEL_HEAD + "foreground 0x20000 -> 0x0 (suspend) t=5400000 ms\n" + GAME_MEMORY + "game exit\n",
+                "checked", None),
+            "the game memory line and game exit, then the suspend last": (
+                KERNEL_HEAD + GAME_MEMORY + "game exit\nforeground 0x20000 -> 0x0 (suspend) t=5400000 ms\n",
+                "checked", None),
+            "the game memory line, the suspend, its game exit": (
+                KERNEL_HEAD + GAME_MEMORY + "foreground 0x20000 -> 0x0 (suspend) t=5400000 ms\ngame exit\n",
+                "checked", None),
+            "the suspend's game exit, then a game memory line and a lone one": (
+                kernel_text() + GAME_MEMORY + "game exit\n", "unchecked",
+                "kernel.txt's last line carries no uptime (t=N ms)"),
             # audit-c N-1: lines the kernel logs without g.game_lock never end the scan, an uptime included: the debug
             # build's input block= (a Shell syscall), shell registered (g.lock only), ocr worker registered (a game's)
             "game exit, the debug build's input block=, the suspend, a lone game exit": (
