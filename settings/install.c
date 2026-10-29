@@ -1615,16 +1615,138 @@ static int drop_app_copy(Run *x, const VjoPayloadFile *f, const char *src, int m
     return -1;
 }
 
+static int is_plugin(int i) { return i >= VJO_PAYLOAD_KERNEL_INDEX && i < VJO_PAYLOAD_KERNEL_INDEX + VJO_PAYLOAD_PLUGINS; }
+
+/* The plugins and their RCO, after the data files (include/vjo_payload.h). Each one that differs from the package
+ * is first made ready beside itself: copied as .vjo-new and checked, or an earlier run's checked .vjo-new (or, when
+ * it is missing, the package's own file a stopped swap put aside as .vjo-old). Only then are they renamed in, one
+ * after another, each old one kept as .vjo-old until the last is in. So a stop while they are copied or checked
+ * (the app killed, a full or failing card) leaves every plugin as it was, never a new kernel beside an old Shell or
+ * worker (each refuses another API: no overlay until a Repair; two builds of one API side by side are untested,
+ * docs/one-vpk-install.md), and a rename that fails puts back the ones renamed in before it (Mmem-install-3,
+ * #528). 0, or -1 with r's lines. */
+static int install_plugins(Run *x, VjoInstallScan *s)
+{
+    enum { AS_IS, COPIED, EARLIER_NEW, EARLIER_OLD };
+    int staged[VJO_PAYLOAD_PLUGINS], had[VJO_PAYLOAD_PLUGINS];
+    char src[PATH], fresh[PATH], old[PATH];
+    uint8_t sha[32];
+    /* 1: every plugin that differs made ready beside itself; none renamed in yet */
+    for (int k = 0; k < VJO_PAYLOAD_PLUGINS; k++) {
+        int i = VJO_PAYLOAD_KERNEL_INDEX + k;
+        const VjoPayloadFile *f = &s->payload.file[i];
+        const char *name = strrchr(f->dest, '/') + 1;
+        staged[k] = AS_IS;
+        had[k] = 0;
+        payload_readable(i, src, sizeof(src));
+        snprintf(fresh, sizeof(fresh), "%s.vjo-new", f->dest);
+        snprintf(old, sizeof(old), "%s.vjo-old", f->dest);
+        step(x, "Checking %s", name);
+        int64_t have = size_of(f->dest);
+        if (have >= 0 && (uint64_t)have == f->bytes && hash_file(x, f->dest, sha, f->bytes) == have &&
+            !memcmp(sha, f->sha256, 32)) {
+            /* the overlay's own temporary files beside a file that is right: an earlier run's */
+            if (exists(fresh) && sceIoRemove(fresh) >= 0) x->r->written = 1;
+            if (exists(old) && sceIoRemove(old) >= 0) x->r->written = 1;
+            continue;
+        }
+        step(x, "Checking an earlier run's %s", name);
+        if (size_of(fresh) == (int64_t)f->bytes && hash_file(x, fresh, sha, f->bytes) == (int64_t)f->bytes &&
+            !memcmp(sha, f->sha256, 32)) {
+            staged[k] = EARLIER_NEW;
+            continue;
+        }
+        if (have < 0 && size_of(old) == (int64_t)f->bytes && hash_file(x, old, sha, f->bytes) == (int64_t)f->bytes &&
+            !memcmp(sha, f->sha256, 32)) {
+            staged[k] = EARLIER_OLD; /* missing, the package's own file put aside beside it by a stopped swap */
+            continue;
+        }
+        if (!exists(src)) return stop(x, "%s is missing from this app: install the VPK again in VitaShell.", name);
+        make_dirs(f->dest);
+        sceIoRemove(fresh); /* an earlier run's copy without the payload's SHA-256 (an interrupted copy) */
+        step(x, "Copying %s", name);
+        if (copy_verified(x, src, fresh, f) < 0) {
+            sceIoRemove(fresh);
+            return stop(x, "%s could not be copied and read back (a full card?).", name);
+        }
+        x->r->written = 1;
+        staged[k] = COPIED;
+    }
+    int ready = 0;
+    for (int k = 0; k < VJO_PAYLOAD_PLUGINS; k++) ready |= staged[k] != AS_IS;
+    if (!ready) return 0; /* every plugin already the package's */
+    /* 2: renamed in, one after another, each old one kept as .vjo-old until the last is in */
+    step(x, "Putting the plugins in place", NULL);
+    for (int k = 0; k < VJO_PAYLOAD_PLUGINS; k++) {
+        if (staged[k] == AS_IS) continue;
+        const char *dest = s->payload.file[VJO_PAYLOAD_KERNEL_INDEX + k].dest;
+        snprintf(fresh, sizeof(fresh), "%s.vjo-new", dest);
+        snprintf(old, sizeof(old), "%s.vjo-old", dest);
+        int in;
+        if (staged[k] == EARLIER_OLD) {
+            in = sceIoRename(old, dest) >= 0;
+        } else {
+            had[k] = exists(dest);
+            if (had[k] && exists(old)) sceIoRemove(old); /* an earlier swap's: dest exists */
+            in = (!had[k] || sceIoRename(dest, old) >= 0) && sceIoRename(fresh, dest) >= 0;
+            if (!in && had[k] && !exists(dest)) sceIoRename(old, dest); /* this one as it was */
+        }
+        if (in) continue;
+        /* the ones renamed in before it go back: each new one beside it again, its old one in place (none when there
+         * was none) */
+        int back = exists(dest) || !had[k];
+        for (int q = k - 1; q >= 0; q--) {
+            if (staged[q] == AS_IS) continue;
+            const char *dq = s->payload.file[VJO_PAYLOAD_KERNEL_INDEX + q].dest;
+            char fq[PATH], oq[PATH];
+            snprintf(fq, sizeof(fq), "%s.vjo-new", dq);
+            snprintf(oq, sizeof(oq), "%s.vjo-old", dq);
+            if (staged[q] == EARLIER_OLD || !had[q]) { /* there was none in place: aside again */
+                back &= sceIoRename(dq, staged[q] == EARLIER_OLD ? oq : fq) >= 0;
+                continue;
+            }
+            if (sceIoRename(dq, fq) < 0) { back = 0; continue; }
+            if (sceIoRename(oq, dq) < 0) {
+                back = 0;
+                sceIoRename(fq, dq); /* the new one again rather than none */
+            }
+        }
+        if (!back) x->r->written = 1;
+        sync_path(dest);
+        return stop(x, back ? "%s could not be put in place: every plugin is as it was."
+                            : "%s could not be put in place, and not every plugin could be put back as it was: one may "
+                              "be missing, or a new one beside an old one, until Install finishes.", dest);
+    }
+    /* 3: every one in: the old ones go */
+    int kernel_in = 0;
+    for (int k = 0; k < VJO_PAYLOAD_PLUGINS; k++) {
+        if (staged[k] == AS_IS) continue;
+        const VjoPayloadFile *f = &s->payload.file[VJO_PAYLOAD_KERNEL_INDEX + k];
+        snprintf(old, sizeof(old), "%s.vjo-old", f->dest);
+        if (exists(old)) sceIoRemove(old);
+        x->r->written = 1;
+        kernel_in |= k == 0;
+        if (staged[k] == COPIED)
+            vjo_log("install: %s written (%llu B)", f->dest, (unsigned long long)f->bytes);
+        else
+            vjo_log("install: %s put in place from an earlier run's %s", f->dest, staged[k] == EARLIER_OLD ? ".vjo-old" : ".vjo-new");
+    }
+    sync_path(s->payload.file[VJO_PAYLOAD_KERNEL_INDEX].dest);
+    if (kernel_in) reset_boot_record(); /* a new build starts with a clean record */
+    return 0;
+}
+
 static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note, size_t note_cap)
 {
     char src[PATH], fresh[PATH];
     uint8_t sha[32];
     dict_note[0] = '\0';
-    /* the dictionary first: when it cannot be satisfied, no other file is written */
+    /* the dictionary first: when it cannot be satisfied, no other file is written; the plugins last, together
+     * (install_plugins) */
     int order[VJO_PAYLOAD_COUNT], n = 0;
     if (s->dict_index >= 0) order[n++] = s->dict_index;
     for (int i = 0; i < VJO_PAYLOAD_COUNT; i++)
-        if (i != s->dict_index && s->payload.file[i].kind == VJO_PAYLOAD_COPY) order[n++] = i;
+        if (i != s->dict_index && s->payload.file[i].kind == VJO_PAYLOAD_COPY && !is_plugin(i)) order[n++] = i;
     for (int j = 0; j < n; j++) {
         int i = order[j];
         const VjoPayloadFile *f = &s->payload.file[i];
@@ -1673,7 +1795,6 @@ static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note
                              "app's copy was deleted (%.0f MB freed)." : "The dictionary was put in place from an earlier "
                              "run's copy; this app's copy could not be deleted (%.0f MB).", mb(f->bytes));
             }
-            if (i == VJO_PAYLOAD_KERNEL_INDEX) reset_boot_record();
             continue;
         }
         if (!exists(src))
@@ -1722,9 +1843,8 @@ static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note
         if (f->kind == VJO_PAYLOAD_MOVE && drop_app_copy(x, f, src, move_ok) > 0)
             snprintf(dict_note, note_cap, "The dictionary was copied (it could not be moved), then this app's copy was deleted "
                      "(%.0f MB freed).", mb(f->bytes));
-        if (i == VJO_PAYLOAD_KERNEL_INDEX) reset_boot_record(); /* a new build starts with a clean record */
     }
-    return 0;
+    return install_plugins(x, s);
 }
 
 static int run_install(Run *x, VjoInstallScan *s)

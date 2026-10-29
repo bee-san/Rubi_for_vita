@@ -24,8 +24,9 @@
 enum { VJO_PAYLOAD_COPY = 0, VJO_PAYLOAD_MOVE = 1, VJO_PAYLOAD_TEMPLATE = 2 };
 
 /* The destinations, in install order: the data first (the models, the dictionary), the plugins and
- * their RCO last (the shortest time with a new plugin beside an old one, which fails closed), then the
- * config template (written only when there is no config.ini). */
+ * their RCO last, together (each copied and checked before any is renamed in: settings/install.c
+ * install_plugins; a new plugin beside an old one fails closed), then the config template (written
+ * only when there is no config.ini). */
 #define VJO_PAYLOAD_DATA "ux0:data/VitaJPOverlay/"
 #define VJO_PAYLOAD_OCR VJO_PAYLOAD_DATA "ocr/"
 #define VJO_PAYLOAD_HOOKS VJO_PAYLOAD_DATA "hooks/" /* the SC3 hooks' charsets (vjo_game_ocr.h VJO_GAME_OCR_SC3_DIR) */

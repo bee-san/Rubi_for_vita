@@ -294,7 +294,11 @@ guard, below); in the interrupted state **Put it back** and **Keep the current o
    as the configuration from before the overlay.
 3. **Files.** Each copied file goes to `<destination>.vjo-new`, is synced, read back and hashed
    against the manifest; then the old file (if any) is renamed to `.vjo-old`, the new one into place,
-   and `.vjo-old` removed. The dictionary is moved and hashed (above). At most 256 KiB is read,
+   and `.vjo-old` removed. The dictionary is moved and hashed (above). The three plugins and their RCO
+   come last, together: every one that differs is first copied to its `.vjo-new` and checked, and only
+   then are they renamed in, one after another, each `.vjo-old` kept until the last is in. A stop
+   while they are copied or checked leaves every plugin as it was; a rename that fails puts back the
+   ones renamed in before it (#528, `settings/install.c` `install_plugins`). At most 256 KiB is read,
    written or hashed per call on the install's thread, so the page keeps drawing; the boot guard's
    record `ur0:data/VitaJPOverlay/boot.txt` is emptied with the plugins, as `install_ftp.sh`
    `reset_boot_record` does: a new build starts with a clean record (`docs/boot-safety.md`). The running
@@ -364,7 +368,8 @@ file and is replaced; beside a destination that is right, both are the overlay's
 |---|---|---|
 | steps 0-2 | nothing changed, at most a partial dated backup | as before |
 | step 3, between a file's two renames | that plugin missing, `.vjo-old` beside it | taiHEN skips the line it cannot load (`plugin.c:171-172`); a Shell without its kernel goes inert (`docs/boot-safety.md`) |
-| step 3, between two files | the new kernel with the old Shell, or the reverse | an API mismatch makes the Shell inert and the worker unavailable (`shell/worker.c:2226-2227`, `game_ocr/main.c:1492`); one API from two builds runs together [untested] |
+| step 3, while the plugins are copied and checked | every plugin as it was, the checked ones' `.vjo-new` beside them (the next Install uses them) | as before |
+| step 3, between two plugins' renames | the new kernel with the old Shell, or the reverse (a few renames' moment; a failed rename puts the others back) | an API mismatch makes the Shell inert and the worker unavailable (`shell/worker.c:2226-2227`, `game_ocr/main.c:1492`); one API from two builds runs together [untested] |
 | step 4 | `config.ini` old or new | the Shell runs on its defaults if the stop falls between the renames |
 | step 5, ux0's window | `ux0:tai/config.txt` missing | taiHEN reads ur0's file, as it was (`plugin.c:73-83`) |
 | step 5, ur0's window, no ux0 file | no configuration taiHEN can open | no HENkaku (`taihen.c:349-353`); hold L recovers (`taihen.c:346-357`) |
