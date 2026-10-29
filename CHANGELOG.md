@@ -11,6 +11,14 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Rubi app's Install, Update and Repair copy and check every plugin (and the RCO) before renaming any of them
+  in, keeping the old ones until the last is in. A stop while they are copied (the app closed, a full or failing card)
+  now leaves every plugin as it was instead of a new kernel beside an old Shell or OCR worker, which gave no overlay
+  until a Repair; a rename that fails puts back the ones renamed in before it (#528). No memory changes: the
+  install still copies 256 KiB at a time through its static buffer.
+
 ## [0.10.1] - 2026-10-29
 
 Settings now has Default, Mint and Paper colour schemes and simpler Reading and Anki controls. Dictionary

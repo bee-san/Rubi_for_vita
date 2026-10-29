@@ -1414,6 +1414,146 @@ static void faults_leave_old_or_new_files(void)
     }
 }
 
+/* Every plugin and the RCO (include/vjo_payload.h: VJO_PAYLOAD_PLUGINS from VJO_PAYLOAD_KERNEL_INDEX) is version's: one
+ * build's set, never a new kernel beside an old Shell or worker (docs/one-vpk-install.md, step 3). */
+static int plugins_of(int version)
+{
+    static unsigned char bytes[1 << 20];
+    for (int i = VJO_PAYLOAD_KERNEL_INDEX; i < VJO_PAYLOAD_KERNEL_INDEX + VJO_PAYLOAD_PLUGINS; i++) {
+        size_t n = payload_bytes(i, version, bytes, sizeof(bytes)), m;
+        char *have = slurp(vjo_payload_dest(i), &m);
+        if (!have || m != n || memcmp(have, bytes, n)) {
+            TEST_MSG("%s is not version %d's (%s)", vjo_payload_dest(i), version, have ? "other bytes" : "missing");
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* An update of version 0's install to 1 with the fault given, then the same Install again without it. */
+static int update_with_fault(const char *pattern, int open_write, int write, int rename, VjoInstallResult *r)
+{
+    fresh_card(1);
+    install_app(0, "0.7.99", NULL);
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, r) == 0);
+    install_app(1, "0.8.0", NULL);
+    fault.pattern = pattern;
+    fault.open_write = open_write;
+    fault.write = write;
+    fault.rename = rename;
+    fault.calls = 0;
+    s = scan_now();
+    int rc = run(&s, VJO_INSTALL_ACT_INSTALL, r);
+    TEST_CHECK_(fault.calls >= open_write + write + rename, "%s: %d matching calls", pattern, fault.calls);
+    memset(&fault, 0, sizeof(fault));
+    return rc;
+}
+
+/* Mmem-install-3 (#528): each plugin was copied, checked and renamed in before the next one was copied, so a stop
+ * while a later one was copied (the app killed, a full or failing card) left a new kernel beside an old Shell or
+ * worker: both refuse another API, so no overlay until a Repair. Now every plugin that differs is copied and checked
+ * first: a stop then leaves every plugin as it was, and the next Install uses the checked copies. */
+static void a_stop_while_the_plugins_are_copied_leaves_every_plugin_as_it_was(void)
+{
+    static const char *const names[] = {"VitaJPOverlay_Kernel.skprx.vjo-new", "VitaJPOverlay_Shell.suprx.vjo-new",
+                                        "VitaJPOverlay_OCR.suprx.vjo-new", "vitajpoverlay.rco.vjo-new"};
+    TEST_ASSERT(sizeof(names) / sizeof(names[0]) == VJO_PAYLOAD_PLUGINS);
+    for (int k = 0; k < VJO_PAYLOAD_PLUGINS; k++)
+        for (int at_open = 0; at_open < 2; at_open++) {
+            VjoInstallResult r;
+            TEST_CASE_("%s, a fault at its %s", names[k], at_open ? "open" : "first write");
+            TEST_CHECK(update_with_fault(names[k], at_open, !at_open, 0, &r) < 0);
+            TEST_CHECK(has_line(r.lines, r.count, "could not be copied and read back"));
+            TEST_CHECK(plugins_of(0));
+            TEST_CHECK(every_file_old_or_new(0, 1));
+            VjoInstallScan after = scan_now();
+            TEST_CHECK_(after.actions & VJO_INSTALL_ACT_INSTALL, "state %d", after.state);
+            log_used = 0;
+            TEST_CHECK(run(&after, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+            TEST_CHECK(installed_files(1) && plugins_of(1));
+            TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+            /* the copies checked before the stop are put in place, the rest written (log.txt names each) */
+            for (int q = 0; q < VJO_PAYLOAD_PLUGINS; q++) {
+                char want[300];
+                snprintf(want, sizeof(want), q < k ? "install: %s put in place from an earlier run's .vjo-new"
+                                                   : "install: %s written (", vjo_payload_dest(VJO_PAYLOAD_KERNEL_INDEX + q));
+                TEST_CHECK_(strstr(log_text, want) != NULL, "%s not in:\n%s", want, log_text);
+            }
+        }
+}
+
+/* The plugins go in one after another, each old one kept until the last is in: a rename that fails puts back the
+ * ones renamed in before it, so the set is still the old build's (the scan says Update, and Install finishes). */
+static void a_failed_rename_puts_the_plugins_back(void)
+{
+    static const char *const names[] = {"VitaJPOverlay_Shell.suprx", "VitaJPOverlay_OCR.suprx", "vitajpoverlay.rco"};
+    for (unsigned k = 0; k < sizeof(names) / sizeof(names[0]); k++)
+        for (int nth = 1; nth <= 2; nth++) { /* the old one aside, or the new one in */
+            VjoInstallResult r;
+            TEST_CASE_("%s, its rename %d", names[k], nth);
+            TEST_CHECK(update_with_fault(names[k], 0, 0, nth, &r) < 0);
+            TEST_CHECK(has_line(r.lines, r.count, "could not be put in place: every plugin is as it was"));
+            TEST_CHECK(plugins_of(0));
+            TEST_CHECK(every_file_old_or_new(0, 1));
+            for (int i = VJO_PAYLOAD_KERNEL_INDEX; i < VJO_PAYLOAD_KERNEL_INDEX + VJO_PAYLOAD_PLUGINS; i++) {
+                char old[300];
+                snprintf(old, sizeof(old), "%s.vjo-old", vjo_payload_dest(i));
+                TEST_CHECK_(!there(old), "%s left", old);
+            }
+            VjoInstallScan after = scan_now();
+            TEST_CHECK_(after.state == VJO_INSTALL_UPDATE, "state %d", after.state);
+            TEST_CHECK(run(&after, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+            TEST_CHECK(installed_files(1) && plugins_of(1));
+        }
+}
+
+/* A first install: no plugin was in place, so a rename that fails takes the ones renamed in before it out again (each
+ * beside its place as .vjo-new, checked), and no plugin of the overlay is on the card until Install finishes. */
+static void a_failed_rename_in_a_first_install_leaves_no_plugin(void)
+{
+    VjoInstallResult r;
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(s.state == VJO_INSTALL_NOT_INSTALLED);
+    fault.pattern = "VitaJPOverlay_OCR.suprx";
+    fault.rename = 1;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) < 0);
+    TEST_CHECK(fault.calls >= 1);
+    memset(&fault, 0, sizeof(fault));
+    TEST_CHECK(has_line(r.lines, r.count, "could not be put in place: every plugin is as it was"));
+    for (int i = VJO_PAYLOAD_KERNEL_INDEX; i < VJO_PAYLOAD_KERNEL_INDEX + VJO_PAYLOAD_PLUGINS; i++) {
+        char fresh[300];
+        snprintf(fresh, sizeof(fresh), "%s.vjo-new", vjo_payload_dest(i));
+        TEST_CHECK_(!there(vjo_payload_dest(i)) && there(fresh), "%s", vjo_payload_dest(i));
+    }
+    s = scan_now();
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    TEST_CHECK(installed_files(1) && scan_now().state == VJO_INSTALL_INSTALLED);
+}
+
+/* A plugin missing, with the package's own file beside it as .vjo-old (a stop between a swap's two renames when the
+ * file was already the package's): Repair puts it back in place with the others, from the .vjo-old. */
+static void a_missing_plugin_comes_back_from_its_vjo_old(void)
+{
+    VjoInstallResult r;
+    char old[300];
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    const char *shell = vjo_payload_dest(VJO_PAYLOAD_KERNEL_INDEX + 1);
+    snprintf(old, sizeof(old), "%s.vjo-old", shell);
+    TEST_ASSERT(rename(shell, old) == 0);
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_REPAIR, "state %d", s.state);
+    log_used = 0;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    TEST_CHECK(installed_files(1) && scan_now().state == VJO_INSTALL_INSTALLED);
+    char want[300];
+    snprintf(want, sizeof(want), "install: %s put in place from an earlier run's .vjo-old", shell);
+    TEST_CHECK_(strstr(log_text, want) != NULL, "%s", log_text);
+}
+
 static void an_interrupted_swap_is_finished(void)
 {
     for (int with_new = 0; with_new < 2; with_new++) {
@@ -2935,6 +3075,10 @@ TEST_LIST = {
     {"a_failed_delete_of_the_apps_copy_logs_its_error", a_failed_delete_of_the_apps_copy_logs_its_error},
     {"cannot_states", cannot_states},
     {"faults_leave_old_or_new_files", faults_leave_old_or_new_files},
+    {"a_stop_while_the_plugins_are_copied_leaves_every_plugin_as_it_was", a_stop_while_the_plugins_are_copied_leaves_every_plugin_as_it_was},
+    {"a_failed_rename_puts_the_plugins_back", a_failed_rename_puts_the_plugins_back},
+    {"a_failed_rename_in_a_first_install_leaves_no_plugin", a_failed_rename_in_a_first_install_leaves_no_plugin},
+    {"a_missing_plugin_comes_back_from_its_vjo_old", a_missing_plugin_comes_back_from_its_vjo_old},
     {"an_interrupted_swap_is_finished", an_interrupted_swap_is_finished},
     {"a_swap_healed_by_hencore_is_still_interrupted", a_swap_healed_by_hencore_is_still_interrupted},
     {"a_stopped_write_of_vjo_new_keeps_config_txt", a_stopped_write_of_vjo_new_keeps_config_txt},
