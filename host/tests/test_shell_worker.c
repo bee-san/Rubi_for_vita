@@ -2839,6 +2839,23 @@ static void test_subtitles_are_ocr_only(void)
     TEST_CHECK(g_view.strip_text_seq == seq && g_view.strip_busy);
     vjo_strip_show("次", VJO_STRIP_SENTENCE, 0);
     TEST_CHECK(g_view.strip_text_seq == seq + 1 && !strcmp(g_view.strip_text, "次"));
+    {
+        /* #528 (audit-mem-crash-1 F8): a failed job's error text with no room left in the scratch (vjo_err_text's
+         * NULL) shows an empty error strip; it used to reach sceClibStrnlen as NULL, in SceShell */
+        VjoOverlayData d;
+        size_t mark = vjo_arena_mark(&scratch);
+        memset(&d, 0, sizeof(d));
+        d.failed_stage = VJO_STAGE_DICT;
+        d.err.rc = VJO_E_OOM;
+        while (vjo_arena_alloc(&scratch, 64)) {}
+        while (vjo_arena_alloc(&scratch, 8)) {}
+        TEST_CHECK(vjo_err_text(&scratch, d.failed_stage, &d.err) == NULL);
+        strip_show_result(&d);
+        TEST_CHECK(g_view.strip_kind == VJO_STRIP_ERROR && !g_view.strip_text[0]);
+        vjo_arena_release(&scratch, mark);
+        strip_show_result(&d); /* with room: the error's own text */
+        TEST_CHECK(g_view.strip_kind == VJO_STRIP_ERROR && g_view.strip_text[0]);
+    }
     subtitles = 0;
     TEST_CHECK(!want_lookup());
     vjo_arena_reset(&scratch);
