@@ -1175,10 +1175,9 @@ static void backup_name(const char *path, const char *stamp, char *out, size_t c
 
 /* ---------------- the plans ---------------- */
 
-/* The name the page gives the action that installs (settings/install_page.c action_name). */
-static const char *install_action_name(const VjoInstallScan *s)
+const char *vjo_install_action_name(int state)
 {
-    switch (s->state) {
+    switch (state) {
     case VJO_INSTALL_UPDATE: return "Update";
     case VJO_INSTALL_REPAIR: return "Repair";
     case VJO_INSTALL_INSTALLED: return "Check and repair";
@@ -1189,27 +1188,32 @@ static const char *install_action_name(const VjoInstallScan *s)
 int vjo_install_safe_note(const VjoInstallScan *s, char *out, size_t cap)
 {
     const VjoBootRecord *b = &s->boot;
-    char why[160], then[200];
+    const char *name = vjo_install_action_name(s->state);
+    char why[200], then[200];
     int n;
     if (!cap) return 0;
     out[0] = '\0';
     if (!s->safe_mode) return 0;
+    /* why: the boot before this one (the record keeps one boot back) */
     if (b->prev_mode == VJO_BOOT_SAFE)
-        snprintf(why, sizeof(why), "%d normal boots in a row failed before this one.", b->failures);
+        snprintf(why, sizeof(why), "%d normal boot%s in a row failed before this one.", b->failures,
+                 b->failures == 1 ? "" : "s");
     else
         snprintf(why, sizeof(why), "%s: %d failed normal boot%s in a row.",
-                 b->prev_fault ? "SceShell stopped during the last boot (for Rubi or for another plugin: the guard cannot "
-                                 "tell which)"
-                               : "The last boot stopped before it had run for a minute",
+                 b->prev_fault ? "The Vita's home screen stopped during the last boot (Rubi or another plugin may have "
+                                 "caused it)"
+                               : "In the last boot the overlay never reported a good start (it does so a minute after "
+                                 "the start)",
                  b->failures, b->failures == 1 ? "" : "s");
-    if (!(s->actions & VJO_INSTALL_ACT_INSTALL))
-        snprintf(then, sizeof(then), "To try the overlay again, delete ur0:data/VitaJPOverlay/boot.txt in VitaShell, then "
-                 "restart the Vita.");
-    else if (b->failures >= VJO_BOOT_STICKY_FAILURES)
-        snprintf(then, sizeof(then), "It stays off until you choose %s, then restart the Vita.", install_action_name(s));
-    else
-        snprintf(then, sizeof(then), "The next restart tries the overlay again; %s also ends safe mode.",
-                 install_action_name(s));
+    /* what ends it: core/boot_guard.c vjo_boot_decide (below VJO_BOOT_STICKY_FAILURES the next boot is a normal one) */
+    if (b->failures < VJO_BOOT_STICKY_FAILURES)
+        snprintf(then, sizeof(then), s->actions & VJO_INSTALL_ACT_INSTALL
+                 ? "The next restart tries the overlay again; %s also ends safe mode." : "The next restart tries the "
+                 "overlay again.", name);
+    else if (s->actions & VJO_INSTALL_ACT_INSTALL)
+        snprintf(then, sizeof(then), "It stays off until you choose %s, then restart the Vita.", name);
+    else /* no restart here: the page's reason says what else must come first (audit-mem-crash-2 F1) */
+        snprintf(then, sizeof(then), "To end it, delete ur0:data/VitaJPOverlay/boot.txt in VitaShell.");
     n = snprintf(out, cap, "Safe mode: the overlay, its text hooks and OCR are off this boot. %s %s", why, then);
     return n < 0 ? 0 : n < (int)cap ? n : (int)cap - 1;
 }
@@ -1595,9 +1599,13 @@ static int swap_config(Run *x, int c, const char *text, int len)
 }
 
 /* 1 reset, 0 not yet (the Vita has run under BOOT_RECORD_FINAL_US). */
-static int reset_boot_record(void)
+static int reset_boot_record(const VjoInstallScan *s)
 {
     if ((uint64_t)sceKernelGetSystemTimeWide() < BOOT_RECORD_FINAL_US) return 0;
+    /* a safe boot's kernel writes its record last at its stable minute (stage ok), 60 s after its own start, which a
+     * late taiHEN start (h-encore by hand) can put past 70 s of uptime: until then a reset would be written over
+     * (audit-mem-crash-2 F6) */
+    if (s->safe_mode && s->boot.stage < VJO_BOOT_STAGE_OK) return 0;
     sceIoMkdir("ur0:data", 0777);
     sceIoMkdir("ur0:data/VitaJPOverlay", 0777);
     SceUID fd = sceIoOpen(BOOT_RECORD, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
@@ -1780,7 +1788,7 @@ static int install_plugins(Run *x, VjoInstallScan *s)
             vjo_log("install: %s put in place from an earlier run's %s", f->dest, staged[k] == EARLIER_OLD ? ".vjo-old" : ".vjo-new");
     }
     sync_path(s->payload.file[VJO_PAYLOAD_KERNEL_INDEX].dest);
-    if (kernel_in) reset_boot_record(); /* a new build starts with a clean record */
+    if (kernel_in) reset_boot_record(s); /* a new build starts with a clean record */
     return 0;
 }
 
@@ -1998,7 +2006,7 @@ static int run_install(Run *x, VjoInstallScan *s)
             r->written = 1;
         }
     }
-    int reset = reset_boot_record();
+    int reset = reset_boot_record(s);
     lock(0);
     /* what was done */
     r->rc = 0;
@@ -2007,10 +2015,12 @@ static int run_install(Run *x, VjoInstallScan *s)
     if (!overlay_written && s->state == VJO_INSTALL_INSTALLED) {
         say(r, reset ? "Every file and line is in place: nothing needed writing (the boot guard's record is reset)."
                      : "Every file and line is in place: nothing needed writing.");
+        if (reset && s->safe_mode) /* audit-mem-crash-2 F2: the overlay stays off until then */
+            say(r, "Safe mode ends at the next start: restart the Vita to turn the overlay on.");
         if (dict_note[0]) say(r, "%s", dict_note); /* what became of the app's copy (#194) */
         if (!reset)
-            say(r, "The boot guard's record was left as it is (the Vita has run for under a minute): if it is in safe "
-                "mode, choose Check and repair again in a minute.");
+            say(r, "The boot guard's record was left as it is (the Vita has run for under a minute, or a safe boot has "
+                "not had its first minute yet): if it is in safe mode, choose Check and repair again in a minute.");
         return 0;
     }
     say(r, "Installed the overlay v%s%s. Restart the Vita now: the new plugins load at its next start.",
@@ -2022,8 +2032,8 @@ static int run_install(Run *x, VjoInstallScan *s)
     for (int c = 0; c < 2; c++)
         if (names[c][0]) say(r, "Backup: %s (kept).", names[c]);
     if (!reset)
-        say(r, "The boot guard's record was left as it is (the Vita has run for under a minute): if it is in safe mode, "
-            "choose Check and repair again in a minute.");
+        say(r, "The boot guard's record was left as it is (the Vita has run for under a minute, or a safe boot has not "
+            "had its first minute yet): if it is in safe mode, choose Check and repair again in a minute.");
     say(r, VJO_INSTALL_RECOVERY_BOOT);
     say(r, VJO_INSTALL_RECOVERY_GAME);
     vjo_log("install: done (v%s %s)", s->payload.version, s->payload.variant);
@@ -2043,7 +2053,7 @@ static int run_uninstall(Run *x, VjoInstallScan *s)
         if (n < 0) { lock(0); return stop(x, "%s cannot be edited.", tai_path(c)); }
         if (swap_config(x, c, cfg_new[c], n) < 0) { lock(0); return -1; }
     }
-    reset_boot_record();
+    reset_boot_record(s);
     lock(0);
     x->r->rc = 0;
     say(x->r, "Uninstalled: the overlay's lines are gone. Restart the Vita: the overlay no longer loads.");

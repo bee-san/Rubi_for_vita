@@ -63,12 +63,7 @@ static const char *action_name(int a)
     if (a == VJO_INSTALL_ACT_UNINSTALL) return "Uninstall";
     if (a == VJO_INSTALL_ACT_FINISH) return "Put it back";
     if (a == VJO_INSTALL_ACT_KEEP) return "Keep the current one";
-    switch (scan.state) {
-    case VJO_INSTALL_UPDATE: return "Update";
-    case VJO_INSTALL_REPAIR: return "Repair";
-    case VJO_INSTALL_INSTALLED: return "Check and repair";
-    default: return "Install";
-    }
+    return vjo_install_action_name(scan.state); /* the safe-mode note names it the same way */
 }
 
 /* text's sentences as lines, one each: a plan line holds VJO_INSTALL_LINE bytes in at most VJO_TEXT_ROWS rows */
@@ -94,11 +89,14 @@ static void set_lines(void)
     }
     line_count = 0;
     char note[480];
-    /* #528: safe mode first (the overlay is off this boot), then why an install cannot run */
+    /* #528: safe mode (the overlay is off this boot) and why an install cannot run; a stopped swap's or an install's
+     * reason comes first, as it says what must be done before any restart (audit-mem-crash-2 F1) */
+    int reason = scan.reason[0] && (scan.state == VJO_INSTALL_CANNOT || scan.state == VJO_INSTALL_NO_PAYLOAD ||
+                                    scan.state == VJO_INSTALL_INTERRUPTED);
+    int reason_first = reason && scan.state != VJO_INSTALL_NO_PAYLOAD;
+    if (reason_first) add_sentences(scan.reason);
     if (vjo_install_safe_note(&scan, note, sizeof(note))) add_sentences(note);
-    if (scan.reason[0] && (scan.state == VJO_INSTALL_CANNOT || scan.state == VJO_INSTALL_NO_PAYLOAD ||
-                           scan.state == VJO_INSTALL_INTERRUPTED))
-        add_sentences(scan.reason);
+    if (reason && !reason_first) add_sentences(scan.reason);
     if (action_count)
         line_count += vjo_install_plan(&scan, actions[action_index], lines + line_count, VJO_INSTALL_LINES - line_count);
 }
