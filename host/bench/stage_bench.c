@@ -298,7 +298,8 @@ static unsigned spot_scale(const vocr_textspot6 *m, const BenchIn *in)
 }
 
 /* vocr_textspot6_find_rows on the region's grey rows (core/vocr_ocr.c spot_find's call), the boxes with their dark
- * flags (mode bit 1: VOCR_TEXTSPOT_NO_DARK, none). The checksum is every box's fields and the set's counts. */
+ * flags (mode bit 1: VOCR_TEXTSPOT_NO_DARK, none). The checksum is every box's fields, every block's and the set's
+ * counts: the whole of its output. */
 static int stage_spot(const BenchIn *in, unsigned iters, BenchOut *out)
 {
     RowSrc src = {in, 0};
@@ -323,6 +324,11 @@ static int stage_spot(const BenchIn *in, unsigned iters, BenchOut *out)
         const uint32_t f[10] = {b->x, b->y, b->w, b->h, b->vertical, b->conf, b->dark, b->block, b->tag, b->tconf};
         out->check = fnv64(out->check, f, sizeof(f));
         horizontal += !b->vertical;
+    }
+    for (unsigned i = 0; i < sset.block_count; i++) { /* its blocks too: the whole of find_rows' output */
+        const VocrTextspot6Block *k = &sset.blocks[i];
+        const uint32_t f[8] = {k->x, k->y, k->w, k->h, k->vertical, k->first, k->count, k->tag};
+        out->check = fnv64(out->check, f, sizeof(f));
     }
     {
         const uint32_t f[5] = {sset.count, sset.block_count, (uint32_t)sset.pick, sset.truncated, sset.presence};

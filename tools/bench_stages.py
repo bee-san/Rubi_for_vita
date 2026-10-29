@@ -22,7 +22,10 @@ leaves out). This script runs it in four ways:
       the difference is one steady-state iteration), costed with vita-vn-ocr's own
       Cortex-A9 model (vita/a9_cycles.py at the pinned commit) as a cycle range at 444 and
       333 MHz. Estimates, not console measurements. The Vita build must be configured
-      -DVJO_CORE_LTO=OFF: a release build's core library holds LTO objects ARM_CC cannot link.
+      -DVJO_CORE_LTO=OFF: a release build's core library holds LTO objects ARM_CC cannot link. Such a
+      build ends in a memory-ledger FAIL (its Shell, without LTO, is larger than its budget) after the
+      libraries the lane links are built; the Shell's stages it counts (lookup_*, config, anki, furigana,
+      postproc) are then not the shipped Shell's code, which is LTO-built. The game worker's are.
   bench_stages.py dev --binary ... --models DIR --manifests DIR --shots DIR [--shots DIR] -o dev.json
                       [--size S|N|L [--first-ms-per-mpx MS]] [--skip-missing]
       the game worker's job on every region of vita-vn-ocr's linefind dev manifests
@@ -165,7 +168,7 @@ WORKLOADS = [
                   "wait, VOCR6-N with beam + 1000k LM, the cascade to VOCR6-L, the worker's policy), resident files"),
     spot_job("job_vocr6_n_first", VOCR6[1], mode=JOB_SPOT_DEFAULT | JOB_FIRST,
              what="the same as a game's first job: the spotter's weights, the model's and the LM read in 32 KiB pieces "
-                  "and SHA-256 checked (the cascade's are read at its first doubtful line: none on this sample)"),
+                  "and SHA-256 checked, and the cascade's (VOCR6-L) at its first doubtful line (1 of the sample's 2)"),
     spot_job("job_vocr6_l", VOCR6[2], what="the default job with VOCR6-L (Large: no cascade), resident files"),
     spot_job("job_vocr6_s", VOCR6[0], what="the default job with VOCR6-S (Small, the cascade to VOCR6-N)"),
     spot_job("job_vocr6_n_full", VOCR6[1], region=FULL,
@@ -379,11 +382,18 @@ def cmd_dev(args):
                     img = Image.fromarray(a)
                 if img.size[0] > 960 or img.size[1] > 544:
                     die(f"{shot} is larger than a Vita frame")
+                # A PSP game's 480x272 frame reaches the console's display hook as Adrenaline shows it: twice the
+                # size through the emulator's bilinear filter (docs/vita-vn-ocr.md), a 960x544 frame, so its region
+                # has twice the rows and the spotter reads it halved (#538's audit, finding 1). --psp-native: as shot.
+                scale = 2 if name.startswith("psp") and img.size == (480, 272) and not args.psp_native else 1
+                if scale == 2:
+                    img = img.resize((960, 544), Image.BILINEAR)
+                    out["psp_doubled"] = out.get("psp_doubled", 0) + 1
                 raw = Path(tmp) / f"{len(frames):04d}.rgba"
                 raw.write_bytes(img.convert("RGBA").tobytes())
-                frames[row["shot"]] = (raw, img.size)
-            raw, (fw, fh) = frames[row["shot"]]
-            x0, y0, x1, y1 = (int(v) for v in row["region"])
+                frames[row["shot"]] = (raw, img.size, scale)
+            raw, (fw, fh), scale = frames[row["shot"]]
+            x0, y0, x1, y1 = (int(v) * scale for v in row["region"])
             x0, y0, x1, y1 = max(0, x0), max(0, y0), min(fw, x1), min(fh, y1)
             if x1 <= x0 or y1 <= y0:
                 continue
@@ -428,6 +438,9 @@ def cmd_dev(args):
             out["regions"].append(reg)
     regs = out["regions"]
     out["summary"] = summarize(regs)
+    # the Vita and the PSP regions apart (the PSP ones as Adrenaline shows them, unless --psp-native)
+    out["summary_by_manifest"] = {m: summarize([r for r in regs if r["manifest"] == m])
+                                  for m in sorted({r["manifest"] for r in regs})}
     Path(args.out).write_text(json.dumps(out, indent=1) + "\n")
     print(json.dumps(out["summary"], indent=1))
     return 0
@@ -759,6 +772,8 @@ def main(argv=None):
                         "of the region (an A9 estimate the caller gives; 0: none, every strip a display frame only)")
     d.add_argument("--manifests", required=True)
     d.add_argument("--skip-missing", action="store_true", help="count and leave out the regions whose shot is not found")
+    d.add_argument("--psp-native", action="store_true",
+                   help="read the psp_dev shots at their 480x272, not as Adrenaline shows them (960x544, bilinear)")
     d.add_argument("--shots", action="append", required=True)
     d.add_argument("-o", "--out", required=True)
     r = sub.add_parser("report")

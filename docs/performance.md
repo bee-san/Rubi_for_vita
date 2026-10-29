@@ -50,25 +50,39 @@ L2 misses a line, none for Small and Normal. Larger recognizer tiles (`vocr_opts
 the output unchanged) bring Large nothing in the model (149.8-298.2 and 149.6-301.4 ms a line against 150.1-286.3)
 and Normal 6% on the high bound (97.6 against 104.4 ms), for 130 KB more arena per context at tile 8: not taken.
 
-**On the console** (#528's `history.csv`, Rubi 0.10.1's normal build with VOCR6.2-L and the spotter; aggregates):
+**On the console** (#528's `history.csv`, Rubi 0.10.0's and 0.10.1's normal builds, API 54 and 57, with VOCR6.2-L and
+the spotter; aggregates; for 0.10.1 alone the 1-line jobs below took 492-591 ms, 4 jobs, find 87-88 ms, recognition
+266 ms, 5.05-5.06 ms a frame):
 in an 833×127 dialogue box (CLANNAD) a 1-line job (45 CTC frames) took 492-687 ms from the Shell's request to its
 result (11 jobs), its finding (the spotter and its strips) 73-102 ms and its recognition 265-267 ms, of which the
 line's own run and decode 226-228 ms: 5.02-5.06 ms a frame, against the model's high bound of 5.30 ms a frame for
 Large at 444 MHz on the sample's lines (the console sits near the high bound, as #81's did). Jobs whose spotter
 returned 7-9 boxes there took 243-269 ms to find them, with 14-40 strips (10 jobs). Full-screen jobs (960×544) with
 an 18-frame line took 673-690 ms (find 364-384 ms, 24 strips; 6 jobs), and 1.25-1.30 s when the weights were read
-(4 jobs): `load` 392-399 ms, of which the SHA-256 is 107-237 ms at 444 MHz (estimate).
+(4 jobs): `load` 392-399 ms, of which the SHA-256 is 142-314 ms at 333 MHz and 107-237 ms at 444 (estimates): the load
+runs before the first recognized line, so at the game's clock (the boost starts at that line).
 
 **The dev regions** (358 of the 372 linefind dev regions; the other 14 shots are not on the machine that measured
 this), with the spotter's compute put on the simulated clock at 550 ms a megapixel (its A9 estimate at 333 MHz,
-vita-vn-ocr `eval/textspot6_a9_20261026.json`): Normal's default job reads 8.17 strips at 60 fps (median 10, p90 14)
-in 200.7 ms of simulated display (p90 274), and 7.42 strips in 288.4 ms (p90 460) at 30 fps; 74.7 CTC frames and 2.52
-lines a job. The cascade reads 19.8% of the LM-decoded lines again (13.9 frames a job; 128 of the 358 jobs), against
-43% for VOCR3-H15 → VOCR4-W20 below; the LM changes 11.6% of the lines it decodes (Large's: 10.1%).
+vita-vn-ocr `eval/textspot6_a9_20261026.json`) and the PSP regions read as the console sees them: each 480×272 psp_dev
+shot shown at 960×544 through a bilinear filter, as Adrenaline shows it, its region doubled (78 shots, 166 regions;
+before #538's audit the lane read them at 480×272, which `--psp-native` still does). Normal's default job on main
+`1845471` reads 10.45 strips at 60 fps (median 11, p90 15) in 230.4 ms of simulated display (p90 313), and 9.38 strips
+in 356.2 ms (p90 552) at 30 fps; 75.8 CTC frames and 2.53 lines a job. The Vita regions alone read 9.95 strips
+(220.1 ms at 60 fps), the PSP regions 11.02 (242.4 ms). The cascade reads 18.0% of the LM-decoded lines again (13.1
+frames a job; 122 of the 358 jobs), against 43% for VOCR3-H15 → VOCR4-W20 below; the LM changes 9.8% of the lines it
+decodes (Large's: 10.2%).
 
-So Normal's default job at the dev means is about 329-419 ms before the Shell's part (estimate, 60 fps): 200.7 ms of
-strips, waits and the spotter, 74.7 frames × 1.19-1.93 ms (Normal at 444 MHz) = 89-144 ms, and the cascade's 13.9
-frames × 2.78-5.30 ms = 39-74 ms. Large's is about 408-597 ms (74.7 frames × 2.78-5.30 ms).
+So Normal's default job at the dev means is about 357-446 ms before the Shell's part (estimate, 60 fps): 230.4 ms of
+strips, waits and the spotter, 75.8 frames × 1.19-1.93 ms (Normal at 444 MHz) = 90-146 ms, and the cascade's 13.1
+frames × 2.78-5.30 ms = 36-69 ms. Large's is about 441-632 ms (75.8 frames × 2.78-5.30 ms). With the spotter's dark
+flags at the line's fetch (below) they are 348-438 and 433-624 ms. Three things the worker does are not in the
+bench's job: its helper threads (`ocr_threads = 3`) read a job's lines at once where the game leaves cores free (in 14
+of the 15 multi-line VOCR6.2-L jobs of #528's `history.csv` the lines' own times add up to 1.10-1.77 times the job's
+recognition time), so these estimates, which add every line's frames, are upper bounds for jobs of several lines; the
+line cache's 64-bit key over each line's pixels (`line_key`, not counted); and the spotter's file opened and its stamp
+checked in every job (`vjo_vocr_spot_load` runs once before the bench's loop; the recognizer's, the LM's and the
+cascade's opens are in every iteration, as in every job).
 
 ### The spotter's dark flags at the line's fetch
 
@@ -82,14 +96,14 @@ and the recognition): the same flag, bit for bit. Measured with this bench [host
 |---|---:|---:|
 | sample's box (`job_vocr6_n`): strips | 13 | 11 |
 | full screen (`job_vocr6_n_full`): strips, simulated display at 60 / 30 fps (spotter 215 ms on the clock) | 28; 681 / 1,148 ms | 24; 614 / 1,014 ms |
-| 358 dev regions, Normal and Large, 60 fps: strips a job, simulated display (mean; p90; max) | 8.17; 200.7 ms | 7.15; −3.7 ms (−20; −67) |
-| the same at 30 fps | 7.42; 288.4 ms | 6.79; −20.4 ms (−67; −133) |
+| 358 dev regions, Normal and Large, 60 fps: strips a job, simulated display (mean; p90; max) | 10.45; 230.4 ms | 9.22; −8.5 ms (−34; −133) |
+| the same at 30 fps | 9.38; 356.2 ms | 8.40; −32.6 ms (−100; −267) |
 | texts (every byte, the shown and the greedy text) | | identical: 0 of 358 regions differ, at both rates, both sizes |
 | A9 instructions, `job_vocr6_l` / `job_vocr6_n_full` | 159,590,544 / 261,228,056 | 158,706,457 / 259,503,466 |
 
 The display time is saved only where the job's finding runs past the stable-text wait's due time (many boxes, a
 large region, 30 fps); elsewhere the strips were read inside the wait anyway, and then the stable-text wait reads one
-early pass more instead (0.13 a job at 60 fps). Every strip not read is also a copy the display hook does not make in
+early pass more instead (0.26 a job at 60 fps). Every strip not read is also a copy the display hook does not make in
 the game's own display call: 0.7-2.5 ms of the game's frame each (A9, `capture_abgr` above). A changed screen is still
 seen: the stable-text pass reads every row again, and each line's fetch reads its rows again, each checked.
 
@@ -120,7 +134,9 @@ checks `row_sums` against `vjo_fnv1a` at widths 1-961 and 1-64 rows, and that a 
 Reproduce: the commands in [Reproduce](#reproduce); the dev lane with `--size N --first-ms-per-mpx 550
 --skip-missing`, and the A9 lane on a Vita build configured `-DVJO_CORE_LTO=OFF` (a release build's core library
 holds LTO objects that ARM_CC cannot link; the game worker's and the kernel's code is the same either way) with
-`VJO_VOCR_SPOT_SOURCE_DIR` set as for the build.
+`VJO_VOCR_SPOT_SOURCE_DIR` set as for the build. Such a build ends in a memory-ledger FAIL (its Shell, without LTO, is
+larger than its budget) after the libraries the lane links are built, and the Shell's stages it counts (`lookup_*`,
+`config`, `anki`, `furigana`, `postproc`) are then not the shipped Shell's code, which is LTO-built.
 
 ## The job, end to end (estimate)
 
