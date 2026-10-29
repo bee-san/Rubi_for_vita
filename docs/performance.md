@@ -38,8 +38,9 @@ vita-vn-ocr's cost model at the pin, estimates):
 | `sha256_vocr6_l`: Large's 2,475,680 B weights | model | 7.07 ms | 94,155,682 | 106.6-237.4 ms | 142.1-313.7 ms | yes |
 
 A job row is its compute at one clock; on the console the spotter runs at the game's clock (before the boost, which
-starts at the first recognized line) and the recognition at 444 MHz. On the sample the default job reads 13 strips:
-the spotter's pass, its boxes' dark flags, two stable-text passes and the lines.
+starts at the first recognized line) and the recognition at 444 MHz. On the sample the default job reads 11 strips:
+the spotter's pass, two stable-text passes and the lines (13 before the spotter's boxes took their dark flags from
+the pixels the job fetches for each line, [below](#the-spotters-dark-flags-at-the-lines-fetch)).
 
 Where Large's job's instructions go (A9 lane): the recognizer 80% (`mm_i16` 68%), the spotter 12% (`chain` 7.9%,
 `feed` 3.9%), the row checksums 3.2% (`stream_read`), the LM parsed again 1.1% (`vocr_lm_load`, every job, on bytes
@@ -68,6 +69,29 @@ lines a job. The cascade reads 19.8% of the LM-decoded lines again (13.9 frames 
 So Normal's default job at the dev means is about 329-419 ms before the Shell's part (estimate, 60 fps): 200.7 ms of
 strips, waits and the spotter, 74.7 frames × 1.19-1.93 ms (Normal at 444 MHz) = 89-144 ms, and the cascade's 13.9
 frames × 2.78-5.30 ms = 39-74 ms. Large's is about 408-597 ms (74.7 frames × 2.78-5.30 ms).
+
+### The spotter's dark flags at the line's fetch
+
+The spotter's runtime gives each box a dark flag (`vocr_line_dark_rows` of the box), which read every box's rows
+again after its pass, through the strip: a display frame for each box outside the strip the pass ended on. The job
+now asks it for none (`VOCR_TEXTSPOT_NO_DARK`) and computes each box's flag with the same rule, `vocr_line_dark`, on
+the pixels it fetches to read the line anyway (`core/vocr_ocr.c` `recognize`, before the refinement, the cache key
+and the recognition): the same flag, bit for bit. Measured with this bench [host; console ms estimated]:
+
+| | before | after |
+|---|---:|---:|
+| sample's box (`job_vocr6_n`): strips | 13 | 11 |
+| full screen (`job_vocr6_n_full`): strips, simulated display at 60 / 30 fps (spotter 215 ms on the clock) | 28; 681 / 1,148 ms | 24; 614 / 1,014 ms |
+| 358 dev regions, Normal and Large, 60 fps: strips a job, simulated display (mean; p90; max) | 8.17; 200.7 ms | 7.15; −3.7 ms (−20; −67) |
+| the same at 30 fps | 7.42; 288.4 ms | 6.79; −20.4 ms (−67; −133) |
+| texts (every byte, the shown and the greedy text) | | identical: 0 of 358 regions differ, at both rates, both sizes |
+| A9 instructions, `job_vocr6_l` / `job_vocr6_n_full` | 159,590,544 / 261,228,056 | 158,706,457 / 259,503,466 |
+
+The display time is saved only where the job's finding runs past the stable-text wait's due time (many boxes, a
+large region, 30 fps); elsewhere the strips were read inside the wait anyway, and then the stable-text wait reads one
+early pass more instead (0.13 a job at 60 fps). Every strip not read is also a copy the display hook does not make in
+the game's own display call: 0.7-2.5 ms of the game's frame each (A9, `capture_abgr` above). A changed screen is still
+seen: the stable-text pass reads every row again, and each line's fetch reads its rows again, each checked.
 
 Reproduce: the commands in [Reproduce](#reproduce); the dev lane with `--size N --first-ms-per-mpx 550
 --skip-missing`, and the A9 lane on a Vita build configured `-DVJO_CORE_LTO=OFF` (a release build's core library

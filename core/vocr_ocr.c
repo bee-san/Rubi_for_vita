@@ -2179,18 +2179,21 @@ static void slot_line(Slot *sl, const unsigned char *pixels, size_t stride, unsi
     sl->img.format = VOCR_GREY8 | (dark ? VOCR_INVERT : 0);
 }
 
-/* API 54: the text spotter on the region's rows (stream_row: its one pass from row 0 is the capture's first, then
- * each box's rows for its dark flag, every row checked as always), at the frame's scale (l->spot_flags); its
- * horizontal boxes, in its reading order, with their dark flags, are the lines (VJO_VOCR_MAX_LINES at most:
- * truncated past them); *vertical and *horizontal count every box of each orientation (API 54: ocr_vertical = auto's
- * hand-over to GRAD's rows). VOCR_LINES_OK, or the runtime's error (VOCR_LINES_E_SOURCE: a row could not be read). */
+/* API 54: the text spotter on the region's rows (stream_row: its one pass from row 0 is the capture's first, every
+ * row checked as always), at the frame's scale (l->spot_flags); its horizontal boxes, in its reading order, are the
+ * lines (VJO_VOCR_MAX_LINES at most: truncated past them); *vertical and *horizontal count every box of each
+ * orientation (API 54: ocr_vertical = auto's hand-over to GRAD's rows). Their dark flags are left to the job
+ * (VOCR_TEXTSPOT_NO_DARK; recognize: each box's flag on the pixels the job fetches for it), so no box's rows are read
+ * again for them here: through the strip that would be a display frame for every box outside the strip the pass
+ * ended on. VOCR_LINES_OK, or the runtime's error (VOCR_LINES_E_SOURCE: a row could not be read). */
 static int spot_find(Stream *s, const Layout *l, unsigned char *ws, VocrLineSet *set, VjoVocrStats *st,
                      unsigned *vertical, unsigned *horizontal)
 {
     VocrLinesRows region = {s->w, s->h, VOCR_LINES_GREY, stream_row, s};
     VocrTextspot6Set *out = (VocrTextspot6Set *)(void *)(ws + l->scratch_off + ALIGN16(l->spot_arena));
     uint32_t t0 = clock_us(s->p);
-    int rc = vocr_textspot6_find_rows(l->spot_m, &region, l->spot_flags, ws + l->scratch_off, l->spot_arena, out);
+    int rc = vocr_textspot6_find_rows(l->spot_m, &region, l->spot_flags | VOCR_TEXTSPOT_NO_DARK, ws + l->scratch_off,
+                                      l->spot_arena, out);
     st->spot_us = clock_us(s->p) - t0;
     st->spot_bytes = ALIGN16(l->spot_arena) + ALIGN16(sizeof(*out));
     set->count = set->truncated = 0;
@@ -2365,9 +2368,9 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     /* A region inside one strip was read once: read it again, so that a screen
      * that changed while it was read is seen (the strips of a taller region are
      * all read twice by the finder's two passes already; the spotter's, API 54,
-     * once, and its boxes' rows again for their dark flags: every line's rows are
-     * read again, each checked, when it is recognized; a frozen region, API 55,
-     * cannot change, so it is not). */
+     * once: the stable-text wait reads them again, and every line's rows are read
+     * again, each checked, when it is recognized; a frozen region, API 55, cannot
+     * change, so it is not). */
     if (s->strip_rows >= im->height && !s->frozen && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
     /* #194's probe is GRAD's: the spotter's boxes are read as it gave them (API 54) */
     if (pol->short_lines && !cols && !st->spot_ran && !set.truncated && probe_short_lines(s, &set) < 0)
@@ -2496,6 +2499,18 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         }
         if (s->err) { rc = s->err; goto fail; }
         if (!box_pixels) continue; /* taller than a strip and no line buffer: left out */
+        if (st->spot_ran) {
+            /* API 54: the spotter's boxes come without their dark flags (spot_find, VOCR_TEXTSPOT_NO_DARK): each box's
+             * is vocr_line_dark on the pixels the job holds for it, which it reads only inside the box. The spotter's
+             * own flag, vocr_line_dark_rows of the box on the region's rows, is the same rule on the same pixels (each
+             * row checked against its first read), so the same flag, bit for bit; it is set here, before the
+             * refinement (which reads it), the line's cache key and its recognition. */
+            const VocrLinesImage bim = {box_pixels, box->w, box->h, box_stride, VOCR_LINES_GREY};
+            const int dark = vocr_line_dark(&bim, 0, 0, box->w, box->h);
+            if (dark < 0) { rc = VJO_E_OCR_REGION; goto fail; }
+            set.lines[i].dark = (unsigned)dark;
+            st->dark += (unsigned)dark;
+        }
         parts.count = 1;
         parts.truncated = 0;
         parts.lines[0] = *box;
