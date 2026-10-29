@@ -68,7 +68,10 @@
  * #528 (the game's whole-MiB free memory, mem-game): debug 168,808 + 29,544 B, normal 159,636 + 29,528 B, the same
  * pages (normal: 108 B of code room left; the ledger table, the resident descriptors and the blocks' and threads'
  * names moved to the data page) [measured: tools/check_memory_ledger.py, both builds, the gate's VitaSDK image, on
- * main e8b6abe3]. */
+ * main e8b6abe3]. The Deltarune capture reader keeps these page budgets by
+ * placing the existing 480 B model-descriptor table beside the LM descriptors
+ * in the spare data-page space: normal 159,540 B code + 31,016 B data/BSS,
+ * 192,512 B page-rounded [measured: local pinned gate VitaSDK build, 2026-10-29]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
 #else

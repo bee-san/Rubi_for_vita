@@ -76,7 +76,9 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 /* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
 #include VJO_VOCR_TEST_MODELS
 #else
-static const VjoVocrModel models[] = {
+/* Reuse space in the worker's existing data page for these descriptors, as
+ * for lms below. This keeps the dialogue reader within the same code pages. */
+static const VjoVocrModel models[] VJO_DATA_TABLE(vocr_models) = {
     /* The three tiers (include/vjo_vocr_sizes.h), VOCR6-S, VOCR6-N and VOCR6-L (vita-vn-ocr #125, docs/vocr6.md
      * "The follow-up", v0.4.1-vocr6.2), the arena each plans with ocr_head_gate's default, on, and the paths its
      * blob has (run_opts): Small's blob is plain, v0.3.0's VOCR5-S arena (no gate, no two-level head: the same with
