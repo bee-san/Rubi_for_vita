@@ -21,6 +21,11 @@ been reported.
 
 ### Fixed
 
+- A lookup reads less of the dictionary again (#528): since 0.10.1 the alternate readings and senses (#520) read the
+  head of every entry under the shown word's key, homophones included; the dictionary's posting hints now pass over
+  the ones spelled otherwise without reading them. 10.4 → 8.7 reads a cursor lookup with the bundled dictionary,
+  12.0 → 10.3 with the names dictionary too (host), about 5 ms a lookup on the console (estimate); the same entries,
+  no memory changes (#544).
 - The Rubi app's Install, Update and Repair copy and check every plugin (and the RCO) before renaming any of them
   in, keeping the old ones until the last is in. A stop while they are copied (the app closed, a full or failing card)
   now leaves every plugin as it was instead of a new kernel beside an old Shell or OCR worker, which gave no overlay

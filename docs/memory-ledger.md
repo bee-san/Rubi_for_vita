@@ -7,7 +7,8 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 
 Each change's measurements, newest first, are in [the ledger's history](memory-ledger-history.md), with the
 sections code comments cite by title ("Vertical text") and, at its end, the budget header's older comments
-("Budget history"); a change adds its section there and edits the table.
+("Budget history"); a change adds its section there and edits the table. What grew from 0.9.6 to 0.10.1, release by release and
+change by change, is in [the #528 bisect](history/memory-regress-0.9.6-0.10.1.md).
 
 ## The parts
 
