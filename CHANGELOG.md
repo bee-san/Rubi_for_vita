@@ -18,6 +18,12 @@ been reported.
   plugin's, with where it is in the log), what Rubi held there and which of its requests were refused, the game's
   free memory at the logged memory checks, Rubi's blocks in the game and the kernel plugin's ledger. It reads the
   lines both builds already write; no plugin changes.
+- The normal build's `kernel.txt` gets one `game memory:` line as a game leaves the front (#528): the activation's
+  memory checks, those refused, the least and the last free game memory they read and Rubi's largest weights and
+  workspace there. Until now the normal build wrote a game's free memory only when a check refused a job, so the
+  owner's 0.10.1 logs have none for the native ports. The `memory` line reads it. No allocation, thread or page:
+  the normal kernel's text +380 B and data +32 B (28 B of `.bss`), its pages unchanged; the debug build is
+  unchanged (its `log.txt` has every check). Not yet run on a console.
 
 ### Fixed
 

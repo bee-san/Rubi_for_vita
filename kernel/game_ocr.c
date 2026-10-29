@@ -13,6 +13,52 @@
 
 static VjoGameOcrRequest request;
 static VjoGameOcrResult result, incoming; /* Never put a 4 KiB result on syscall stacks. */
+#if !VJO_DEBUG
+/* #528: the game's memory over one activation (from the game's start or resume in front to its leaving it), for the
+ * normal build's kernel.txt; the debug build's log.txt has every job's memory check (shell/worker.c
+ * log_vocr_measurements). vjoOcrComplete adds each job's check once, as the job's claim is released; the kernel worker
+ * writes the line as the game leaves the front (game_ocr_activation_memory, kernel/main.c) and starts afresh. Under
+ * g.lock. low and last are free USER at the checks, valid when known > 0. */
+static struct {
+    uint32_t checks, refused, known, weights, workspace;
+    int32_t low, last;
+} act_mem;
+
+static void act_mem_note_locked(const VjoGameOcrResult *r)
+{
+    int64_t room;
+    if (!r->reserve_bytes) return; /* the job ended before its memory check */
+    act_mem.checks++;
+    /* refused as the Shell's own line says it (shell/worker.c vocr_headroom): free USER, with the worker's resident
+     * weights of another model it gives back first, against the reserve and what the job had to take */
+    room = (int64_t)r->free_user + r->release_bytes - r->reserve_bytes - r->need_workspace - r->need_weights;
+    if (r->free_user < 0 || room < 0) act_mem.refused++;
+    if (r->free_user >= 0) {
+        if (!act_mem.known++ || r->free_user < act_mem.low) act_mem.low = r->free_user;
+        act_mem.last = r->free_user;
+    }
+    if (r->resident_bytes > act_mem.weights) act_mem.weights = r->resident_bytes;
+    if (r->workspace_bytes > act_mem.workspace) act_mem.workspace = r->workspace_bytes;
+}
+
+void game_ocr_activation_memory(void)
+{
+    uint32_t checks, refused, weights, workspace;
+    int32_t low, last;
+    VJO_LOCK();
+    checks = act_mem.checks;
+    refused = act_mem.refused;
+    weights = act_mem.weights;
+    workspace = act_mem.workspace;
+    low = act_mem.known ? act_mem.low : -1;
+    last = act_mem.known ? act_mem.last : -1;
+    memset(&act_mem, 0, sizeof(act_mem));
+    VJO_UNLOCK();
+    if (checks)
+        klog("game memory: %u checks, %u refused; free USER lowest %d B, last %d B; weights kept %u B, workspace up "
+             "to %u B", checks, refused, low, last, weights, workspace);
+}
+#endif
 static SceUID worker_pid, worker_module, request_pid, request_shell;
 /* #138: the registered worker's thread. A game holds one worker (the kernel loads
  * it, game_ocr/main.c keeps one copy per process); should a second copy still run
@@ -215,6 +261,9 @@ void game_ocr_init(void)
     memset(&rows, 0, sizeof(rows));
     pause_off = 0;
     wd_copy = wd_held = wd_look = 0;
+#if !VJO_DEBUG
+    memset(&act_mem, 0, sizeof(act_mem));
+#endif
 }
 
 #ifdef VJO_HOST
@@ -898,6 +947,9 @@ int vjoOcrComplete(const VjoGameOcrResult *user_result)
         pace[0] = (Pace){0};
         pace_job = 0;
         if (!incoming.cleanup_status) claimed = 0;
+#if !VJO_DEBUG
+        if (!incoming.cleanup_status) act_mem_note_locked(&incoming); /* once a job: as its claim is released */
+#endif
         /* Failed cleanup retains the claim and may be retried. Completed
          * cancellation drains the reader but never republishes stale text. */
         rc = 0;

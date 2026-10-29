@@ -133,6 +133,9 @@ static int worker(SceSize args, void *argp)
         loader_tick();
         game_ocr_rows_tick();
         if (bits & IEV_GAME_EXIT) {
+#if !VJO_DEBUG
+            game_ocr_activation_memory(); /* #528: the activation's game memory, before its exit line */
+#endif
             klog("game exit");
             ksceKernelSetEventFlag(g.evf, VJO_EV_GAME_EXIT);
         }
