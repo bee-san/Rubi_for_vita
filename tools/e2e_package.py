@@ -84,7 +84,7 @@ def config_values(text):
 USER_TOOLS = {"convert_dictionary.py": "docs/local-dictionaries.md",  # a Yomitan dictionary to a .vjdict
               "install_dictionary.py": "docs/local-dictionaries.md",  # and onto the Vita
               "known_words.py": "docs/anki.md",                       # the words of an Anki collection
-              "reading_stats.py": "README.md",                        # history.csv's characters and hours
+              "reading_stats.py": "docs/ocr-history.md",                        # history.csv's characters and hours
               "analyse_timeline.py": "docs/first-ocr.md",             # a --collect zip's job timelines
               "analyse_selftest.py": "docs/self-test.md",             # a self-test report
               "hook_request.py": "docs/hook-requests.md"}             # a hooks.log's hook request

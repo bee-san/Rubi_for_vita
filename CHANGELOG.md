@@ -11,8 +11,16 @@ been reported.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-29
+
+Settings now has Default, Mint and Paper colour schemes and simpler Reading and Anki controls. Dictionary
+lookups show alternate readings and senses, and a rear double-tap reads the whole screen from the open
+overlay. Native hooks load only the current game's profile, and vertical OCR uses VOCR6-V. This release
+also includes the changes below since 0.10.0; the new features have not been tested on a console.
+
 ### Changed
 
+- Hide title IDs in the Games list; keep them on each game's settings page.
 - Store the deinflection suffix pool as 16-bit codepoints, restoring both Shell builds to their existing
   module-page budgets without changing lookup rules or adding memory. Source-installer fixtures now include
   the hook-profile builder; self-test fixtures check the live API header separately from historical report bodies.
@@ -118,6 +126,9 @@ been reported.
 
 ### Fixed
 
+- Packaged app checks, self-tests, log collection and uninstall no longer try to build hook profiles from
+  source files that are absent from the download. Only source installs build the archive; package installs
+  use the shipped one. Installer tests now stage source inputs only for source-install cases.
 - **The reading streak's seed and line** (#501's audit; [details](docs/ocr-history.md#streak)). When the overlay's
   own record and `history.csv`'s days both end on one day, or their runs of days overlap (`history.csv` moved away
   before the Rubi app's first start), the seed keeps the whole run, from the earlier start to the later end; it kept
@@ -1439,7 +1450,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.1
 [0.10.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.0
 [0.9.8]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.8
 [0.9.7]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.7

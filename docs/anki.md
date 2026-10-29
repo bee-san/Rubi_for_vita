@@ -1,7 +1,7 @@
 # Anki cards: an offline queue, exported as Lapis notes
 
 Enter and Cancel below are the Vita's own buttons: × and ○ on most consoles,
-○ and × on Japanese ones or after a HENkaku swap ([README](../README.md#use-in-a-game)).
+○ and × on Japanese ones or after a HENkaku swap ([README](guide.md#use-in-a-game)).
 
 With card mining on, Enter in the open overlay saves the shown dictionary entry
 as a card in a queue on the memory card, with a JPEG of the game's screen

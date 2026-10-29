@@ -38,7 +38,7 @@ class ReleaseInstall(unittest.TestCase):
                      "migrate_config.py", "patch_tai_config.py", "collect_vita.py", "analyse_selftest.py",
                      "model_tiers.json", "app_stamp.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
-        stage_profile_builder(self.package)
+        # A shipped package has profiles.vjhp, but none of the builder's source inputs.
         shutil.copyfile(ROOT / "tools/install-vita.sh", self.package / "install-vita.sh")
         for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
             shutil.copyfile(ROOT / "docs/config.example.ini", self.package / name)
@@ -481,6 +481,7 @@ class ReleaseInstall(unittest.TestCase):
         self.assertIn("config.ini: anki_audio_url removed (AnkiConnect was removed", result.stdout)
 
     def test_source_install_uses_the_checkout_template(self):
+        stage_profile_builder(self.package)
         # A source checkout has its template under docs, not at the package root.
         (self.package / "config.ini").unlink()
         (self.package / "docs").mkdir()
@@ -506,6 +507,7 @@ class ReleaseInstall(unittest.TestCase):
         self.assertNotIn("test-key", result.stdout)
 
     def test_source_install_drops_the_engine_choice(self):
+        stage_profile_builder(self.package)
         # VOCR is the only engine: the source installer drops a saved ocr_backend line, whatever
         # engine it names (vocr; Google Lens, removed as the overlay went offline; the VOCR2
         # trial; ncnn of the host tools), and says so once.
@@ -532,6 +534,7 @@ class ReleaseInstall(unittest.TestCase):
             self.assertNotIn("test-key", result.stdout)
 
     def test_source_install_rewrites_a_removed_dictionary_to_local(self):
+        stage_profile_builder(self.package)
         # jpdb.io and jiten.moe were removed: the source installer (it keeps the saved
         # dictionary, no --set dictionary) writes local, and drops their API keys, saying so
         # without their values.

@@ -73,7 +73,7 @@ What the table says:
   scale the refinement's box-fit gain measured at 480×272 was gone: mean IoU with the hand-marked lines 0.559 →
   0.591 at 480×272, 0.608 → 0.604 at 2× ([refine-20261015.json](../benchmarks/refine-20261015.json)). The detector
   has not been scored at 2×. The development PSP frames, without v27449, read slightly worse with it (the
-  intervals include 0). And PSP OCR recognition is still unverified on a console ([README](../../README.md#supported)).
+  intervals include 0). And PSP OCR recognition is still unverified on a console ([README](../guide.md#native-text-hooks)).
 - **Most of the development gain over GRAD + refine is one VN, v27449**, a translucent box over a busy scene:
   GRAD and GRAD + refine read 40-47% of its characters wrong, det+refine 6-9%. That is the "GRAD visibly
   fails" case the detector is good at. No title Rubi has run is known to be one.
