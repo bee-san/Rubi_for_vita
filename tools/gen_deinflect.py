@@ -9,8 +9,8 @@ dropped, and new ones follow; a reason's number lives only in one lookup's token
 never on storage, so the numbers may change with the table.
 
 The table is small because the Shell's pages are (docs/memory-ledger.md): every rule string is
-three-byte UTF-8, so the strings are packed into one blob without NULs, each string sharing the
-bytes of another that contains it or overlaps its end, and a rule is six bytes: its strings'
+three-byte UTF-8, so their BMP codepoints fit in uint16_t. They are packed without NULs, each
+string sharing characters of another that contains it or overlaps its end. A rule is six bytes: its strings'
 offsets and lengths in characters, its reason (the conjugation label) and its rule bits.
 """
 import json
@@ -95,12 +95,14 @@ def generate():
     check(len(blob) // 3 < 1 << OFFSET_BITS,
           f"the packed strings are {len(blob) // 3} characters, {1 << OFFSET_BITS} or more (an 11-bit offset)")
     text = blob.decode()
-    lines.append("static const char deinflect_strings[] =")
-    lines.extend("    " + json.dumps(text[i:i + 24], ensure_ascii=False) for i in range(0, len(text), 24))
+    lines.append("/* BMP codepoints: two bytes each instead of three-byte UTF-8; offsets stay in characters. */")
+    lines.append("static const uint16_t deinflect_strings[] = {")
+    lines.extend("    " + ", ".join(f"0x{ord(c):04x}" for c in text[i:i + 12]) + ","
+                 for i in range(0, len(text), 12))
     # Yomichan's one-step causative passive (買わされる -> 買う) counts as the two steps it contracts
     # (causative and passive, as Yomitan, which has no such rule, reaches it): a one-step reading
     # of the same text wins over it (かわされた: 交わす, passive, not 買う; #321).
-    lines.extend([";", "/* The reason whose rules count two steps (core/local_dict.c deinflect). */",
+    lines.extend(["};", "/* The reason whose rules count two steps (core/local_dict.c deinflect). */",
                   "#define DEINFLECT_TWO_STEPS %du" % (list(data).index("causative passive") + 1)])
     lines.extend(["/* A rule's input bits, by the index in its bits' top three. */",
                   "static const uint8_t deinflect_rules_in[%d] = {%s};" % (len(rules_in), ", ".join(map(str, rules_in))),

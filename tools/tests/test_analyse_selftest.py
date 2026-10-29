@@ -2,7 +2,8 @@
 
 v2 (API 19): tools/tests/fixtures/selftest-v2-*.txt, written by the real
 shell/selftest.c on the host (host/tests/selftest_writer.c, synthetic figures);
-with VJO_SELFTEST_WRITER set the writer runs again and must reproduce them.
+with VJO_SELFTEST_WRITER set the writer runs again and must reproduce their body. Its API header
+is checked against the current source separately; the stored reports also exercise older APIs.
 """
 import json
 import os
@@ -413,7 +414,14 @@ class AnalyseV2(unittest.TestCase):
                 done = subprocess.run([os.environ["VJO_SELFTEST_WRITER"], tmp, name], capture_output=True, text=True)
                 self.assertEqual(done.returncode, 0, done.stderr)
                 got = (Path(tmp) / "selftest-report.txt").read_text()
-                self.assertEqual(got, (FIXTURES / f"selftest-v2-{name}.txt").read_text(),
+                # Keep historical report headers for backwards-compatibility tests. The live writer must
+                # advertise this build's API; all remaining report bytes must still match the fixture.
+                api = re.search(r"^#define VJO_API_VERSION (\d+)$",
+                                (ROOT / "include/vjo_api.h").read_text(), re.M).group(1)
+                self.assertEqual(got.splitlines()[0], f"selftest v2 api={api}")
+                expected = (FIXTURES / f"selftest-v2-{name}.txt").read_text()
+                expected = re.sub(r"\Aselftest v2 api=\d+\n", f"selftest v2 api={api}\n", expected, count=1)
+                self.assertEqual(got, expected,
                                  f"selftest-v2-{name}.txt differs from shell/selftest.c's output: regenerate it with "
                                  f"vjo-selftest-writer DIR {name}")
                 # the marker is removed when (and only when) the run finished

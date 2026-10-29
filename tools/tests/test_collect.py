@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ftp_mock import FtpMock  # noqa: E402
+from profile_fixture import stage_profile_builder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -110,6 +111,7 @@ class Collect(unittest.TestCase):
                      "model_tiers.json", "package_release.py", "app_stamp.py",
                      "prepare_ocr.py", "prepare_plaintext.py", "migrate_config.py", "patch_tai_config.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
+        stage_profile_builder(self.package)
         shutil.copyfile(ROOT / "tools/install-vita.sh", self.package / "install-vita.sh")
         self.device = self.root / "device"
         data = self.device / "ux0/data/VitaJPOverlay"

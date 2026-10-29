@@ -13,6 +13,9 @@ been reported.
 
 ### Changed
 
+- Store the deinflection suffix pool as 16-bit codepoints, restoring both Shell builds to their existing
+  module-page budgets without changing lookup rules or adding memory. Source-installer fixtures now include
+  the hook-profile builder; self-test fixtures check the live API header separately from historical report bodies.
 - Native Vita hooks load only the current game's profile from an indexed disk archive, including its
   filters and version/signature checks. The worker uses 12 KiB fewer loaded pages in both builds
   (measured from the packaged binaries); CALL discovery and OCR remain available if a profile is missing
