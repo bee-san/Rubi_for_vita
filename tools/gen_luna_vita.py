@@ -628,9 +628,9 @@ def rubi_names(source):
     names = {}
     for c in re.findall(r"/\*.*?\*/", source, re.S):
         text = " ".join(line.strip().lstrip("*").strip() for line in c[2:-2].splitlines())
-        for m in re.finditer(r"\b(PCS[A-Z]\d{5}) (.+?) \(APP_VER", text):
+        for m in re.finditer(r"\b([A-Z]{4}\d{5}) (.+?) \(APP_VER", text):
             names.setdefault(m.group(1), m.group(2))
-        for m in re.finditer(r"(?:^|[.:;] )([^\s(][^().:;]*?) \((PCS[A-Z]\d{5})[,)]", text):
+        for m in re.finditer(r"(?:^|[.:;] )([^\s(][^().:;]*?) \(([A-Z]{4}\d{5})[,)]", text):
             names.setdefault(m.group(2), m.group(1))
     return names
 
@@ -641,7 +641,7 @@ def rubi_comments(source):
     said = {}
     for c in re.findall(r"/\*.*?\*/", source, re.S):
         text = " ".join(line.strip().lstrip("*").strip() for line in c[2:-2].splitlines())
-        marks = [(m.start(), m.group(0)) for m in re.finditer(r"\bPCS[A-Z]\d{5}\b", text)]
+        marks = [(m.start(), m.group(0)) for m in re.finditer(r"\b[A-Z]{4}\d{5}\b", text)]
         firsts = [(at, t) for k, (at, t) in enumerate(marks) if t not in {x for _, x in marks[:k]}]
         for k, (at, title) in enumerate(firsts):
             end = firsts[k + 1][0] if k + 1 < len(firsts) else len(text)
@@ -770,7 +770,9 @@ def render_doc():
                f"{sum(r['luna'] == 'its site' for r in rubi)} at the address of one of Luna's sites there (where "
                "Rubi's placement check refuses Luna's site, the entry's signature unlocks it; at one it accepts, the "
                "entry pins the game's bytes and gives the text Rubi's clean-up). "
-               "Each was proven in Vita3K, by the psandvita hook farm's pages (CLANNAD's by the PR #16 profile); "
+               "Commercial-game evidence comes from the psandvita hook farm's Vita3K pages "
+               "(CLANNAD's from the PR #16 profile). Experimental native-port checks are described in "
+               "[native-hooks.md](native-hooks.md#experimental-e-native-port). "
                "Console: what a console run showed. Site: the offset in the module the NID names, with the "
                "signature's length; Version: the game version (param.sfo's APP_VER) the entry is tried in.")
     out.append("")

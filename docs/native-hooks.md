@@ -8,9 +8,9 @@ copies bytes and lets the game's function run as before.
 
 
 The tables contain **175 Vita title IDs from LunaTranslator's table**, using 294 ported hook sites,
-and **61 more Vita title IDs with Rubi's own verified entries**. Of those entries, 36 are games of
+and **62 more Vita title IDs with Rubi's own verified entries**. Of those entries, 36 are games of
 Luna's table: for 20 of them the entry is at Luna's own site. Including CLANNAD and counting each
-title once, that is **201 Vita title IDs with game-specific hook entries**. These counts describe
+title once, that is **202 Vita title IDs with game-specific hook entries**. These counts describe
 available entries, not console compatibility; see the [full title list](hook-titles.md#vita-titles)
 for each game's checks and evidence.
 
@@ -19,6 +19,18 @@ Status: built and host-tested. The current CALL source (string-copy hooks) was v
 including CLANNAD's register site, remain unverified on a console; the register site was proven only in
 Vita3K. The normal release build has no reported console run. The remaining console checks are in
 [To test on a console](#to-test-on-a-console).
+
+## Experimental e+ native port
+
+The experimental native **どうぶつの森e＋ r4** port (`AFEJ00001`, `APP_VER 00.01`) has an entry for
+its visible-dialogue publisher: module NID `7FEE3308`, segment 0 offset `20F0`, Thumb, UTF-8 in `r0`.
+The first 16 bytes are a PUSH/MOV veneer with no SELF relocation; the call starts after them.
+With trusted hooks enabled this verified site supplies dialogue without OCR. Earlier experimental
+builds have another module NID and are refused. This entry is for that native port, not a GameCube
+image by itself. Placement, decoding and trusted selection pass host checks; live hook execution
+is still unverified. The exact r4 executable has SHA-256
+`acf744c9be46d5945676d4e41f4661ad75771797bcf65a09f34d177e1b207ff6` (recorded provenance; runtime
+installation checks the NID, version and instruction signature).
 
 ## Where it runs
 

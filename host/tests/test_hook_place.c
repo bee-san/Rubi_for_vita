@@ -211,6 +211,32 @@ static void test_verified(void)
     TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), SEG_BASE + 2, 0xC5187D60u) == VJO_PLACE_ALIGN);
 }
 
+/* The native e+ r4 observer's signature stays valid at different ASLR bases. */
+static void test_verified_eplus(void)
+{
+    static const uint8_t sig[16] = {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46,
+                                    0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46};
+    static uint8_t code[0x2100];
+    const VjoPlaceVerified *v;
+    TEST_ASSERT(vjo_place_verified("AFEJ00001", &v) == 1 && v);
+    TEST_CHECK(v->module_nid == 0x7FEE3308u && v->off == 0x20F0u && v->thumb == 1 && v->reg == 0);
+    TEST_CHECK(v->encoding == VJO_HOOK_ENC_UTF8 && v->sig_len == 16 && !memcmp(v->sig, sig, 16));
+    TEST_CHECK(v->padding == 0 && v->read == VJO_PLACE_READ_STRING && v->filter == 0);
+    TEST_CHECK(vjo_place_verified_version(v, 0x0001u));
+    TEST_CHECK(!vjo_place_verified_version(v, 0x0002u));
+    memcpy(code + 0x20F0, sig, sizeof(sig));
+    const uint32_t bases[] = {SEG_BASE, 0x81800000u};
+    for (unsigned i = 0; i < sizeof(bases) / sizeof(bases[0]); i++) {
+        TEST_CHECK(vjo_place_check(code, sizeof(code), bases[i], v->off, 1) == VJO_PLACE_OK);
+        TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), bases[i], 0x7FEE3308u) == VJO_PLACE_OK);
+        TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), bases[i], 0x52DEA492u) == VJO_PLACE_SIGNATURE);
+        code[v->off + 15] ^= 1;
+        TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), bases[i], 0x7FEE3308u) == VJO_PLACE_SIGNATURE);
+        code[v->off + 15] ^= 1;
+    }
+    TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code) - 1, SEG_BASE, 0x7FEE3308u) == VJO_PLACE_RANGE);
+}
+
 /* アマツツミ's entry (PCSG01198): Luna's site, which the placement check refuses as no entry (it is inside
  * a function), recorded with the 16 bytes of the decrypted eboot (APP_VER 01.00, NID 0x8AA413F2). */
 static void test_verified_amatsutsumi(void)
@@ -433,6 +459,7 @@ TEST_LIST = {
     {"range_align", test_range_align},
     {"isa", test_isa},
     {"verified", test_verified},
+    {"verified: Doubutsu no Mori e+ r4, relocation-free UTF-8 observer", test_verified_eplus},
     {"verified: アマツツミ, a site inside a function", test_verified_amatsutsumi},
     {"verified: every entry of the list", test_verified_table},
     {"verified: r15 entries only with segment 0 at its link address", test_verified_fixed_address},

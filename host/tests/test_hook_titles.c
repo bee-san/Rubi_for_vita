@@ -34,6 +34,7 @@ static void test_every_verified_entry(void)
 #endif
     }
     /* ones Rubi alone covers, and ones also in Luna's table (Rubi's tag wins) */
+    TEST_CHECK(vjo_hook_title_listed("AFEJ00001") == VJO_HOOK_TITLE_RUBI); /* native e+ r4 */
     TEST_CHECK(vjo_hook_title_listed("PCSG00007") == VJO_HOOK_TITLE_RUBI); /* リトルバスターズ！ CE */
     TEST_CHECK(vjo_hook_title_listed("PCSG00206") == VJO_HOOK_TITLE_RUBI); /* グリザイアの果実 */
     TEST_CHECK(vjo_hook_title_listed("PCSG00553") == VJO_HOOK_TITLE_RUBI); /* 剣が君 for V */
@@ -62,7 +63,7 @@ static void test_every_verified_entry(void)
     TEST_CHECK(vjo_hook_title_listed("PCSG01127") == VJO_HOOK_TITLE_RUBI); /* 千の刃濤、桃花染の皇姫 */
     TEST_CHECK(vjo_hook_title_listed("PCSG01282") == VJO_HOOK_TITLE_RUBI); /* 死神と少女 */
 #if VJO_HOOK_LUNA
-    TEST_CHECK_(only_rubi == 26u, "%u verified titles are not in Luna's table (CLANNAD, 24 of the farm's, あおかな)",
+    TEST_CHECK_(only_rubi == 27u, "%u verified titles are not in Luna's table (CLANNAD, 24 of the farm's, あおかな, native e+)",
                 only_rubi);
     TEST_CHECK(vjo_luna_title_ported("PCSG01198") && vjo_luna_title_ported("PCSG00469"));
 #endif
