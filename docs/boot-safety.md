@@ -78,12 +78,18 @@ boot guard: send status.txt and kernel.txt (install_ftp.sh --status). No boot at
   with every install and uninstall: a new build gets a fresh normal attempt, and safe mode
   never outlives the build that caused it.
 - The Rubi app's Install page reads this boot's record (#528). In safe mode the app opens on
-  that page and says that the overlay, its text hooks and OCR are off this boot, why (the
-  previous boot's end: SceShell stopped, or it ran under a minute; and the failed normal boots
-  in a row) and what ends it: the next restart while fewer than two normal boots failed in a
-  row, else Check and repair (or any install), which empties the record once the Vita has run
-  for 70 s. The guard cannot tell whose crash stopped SceShell, so the note says so. The page
-  also logs the record (`install page: boot guard: boot N safe (previous: ...)`).
+  that page and its title turns to the warning colour. The page says that the overlay, its text
+  hooks and OCR are off this boot and why: the previous boot's end (the home screen stopped,
+  for Rubi or another plugin, which the guard cannot tell apart; or the overlay never reported
+  its good start), and the failed normal boots in a row. It also says what ends it. With fewer
+  than two failures that is the next restart, in every state. From two on it is the page's
+  install action (Check and repair, Update, Repair or Install). Where the page has none (no
+  package, or a state that must be put right first, whose reason is drawn before the note),
+  it says to delete the record in VitaShell, with no word of a restart. Check and repair (or any
+  install) empties the record once the Vita has run for 70 s and, in a safe boot, once the
+  record has its first minute (stage ok: the kernel writes nothing after it); else the result
+  says to try again in a minute. After a reset in safe mode the result says to restart the
+  Vita. The page logs the record (`install page: boot guard: boot N safe (previous: ...)`).
 - By hand: delete `ur0:data/VitaJPOverlay/boot.txt` in VitaShell, or run the installer again.
 
 ### What is unchanged

@@ -103,9 +103,13 @@ typedef struct {
 /* Reads the card into s (writes nothing). */
 void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build);
 
-/* #528: what the page says first while the boot guard holds the overlay in safe mode (s->safe_mode): why, and what
- * ends it. Its length, 0 when s is not in safe mode. */
+/* #528: what the page says while the boot guard holds the overlay in safe mode (s->safe_mode): why, and what ends
+ * it. Its length, 0 when s is not in safe mode. */
 int vjo_install_safe_note(const VjoInstallScan *s, char *out, size_t cap);
+
+/* The name the page gives the action that installs in this state (Install, Update, Repair, Check and repair): the
+ * page's badge and the safe-mode note's (audit-mem-crash-2 F4: one mapping). */
+const char *vjo_install_action_name(int state);
 
 /* The plan of action, one entry per line (the page wraps them): their count (at most max). */
 int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTALL_LINE], int max);

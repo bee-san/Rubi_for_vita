@@ -1295,9 +1295,10 @@ A boot that does not complete (the Shell plugin not alive a minute after start,
 or SceShell exiting with the plugin loaded) makes the next boot a **safe boot**:
 the kernel plugin installs no hooks and the Shell and game plugins unload
 themselves, so the Vita starts as if the overlay were not installed, and
-`status.txt` says why. Reboot once to try again; after two failed boots in a
-row safe mode stays until you install a new build (the installer resets the
-record) or delete `ur0:data/VitaJPOverlay/boot.txt`. See
+`status.txt` says why. The Rubi app opens on **Install & repair** then and says so too.
+Reboot once to try again; after two failed boots in a row safe mode stays until you
+choose **Check and repair** there (or install a new build: the installer resets the
+record) and restart, or delete `ur0:data/VitaJPOverlay/boot.txt`. See
 [docs/boot-safety.md](boot-safety.md). If the Vita does not boot at all,
 hold L while turning it on (with h-encore or h-encore2: open its menu, holding R as
 h-encore starts, and choose Exit while holding L), so that taiHEN loads no plugin; then
