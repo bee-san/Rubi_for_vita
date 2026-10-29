@@ -109,7 +109,9 @@ void vjo_export_count(VjoExportCounts *c)
 }
 
 /* A whole file of at most max bytes into a (NUL-terminated), or NULL. error distinguishes an
- * absent/damaged image, whose card can export without it, from I/O or memory trouble to retry. */
+ * absent/damaged image, whose card can export without it, from I/O or memory trouble to retry: VJO_APP_MISSING, and
+ * VJO_E_PARSE for an empty file, VJO_E_TOO_LARGE for one over max (an archived record over this build's limit may be
+ * a newer build's: archived_state, #528's audit 3). */
 static char *read_file(VjoArena *a, const char *path, size_t max, size_t *len, int quiet_missing, int *error)
 {
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
@@ -135,7 +137,7 @@ static char *read_file(VjoArena *a, const char *path, size_t max, size_t *len, i
     if (!size || (uint64_t)size > max) {
         vjo_log("anki export: %s: size %d (limit %u)", path, (int)size, (unsigned)max);
         if (error)
-            *error = VJO_E_PARSE;
+            *error = size ? VJO_E_TOO_LARGE : VJO_E_PARSE;
         sceIoClose(fd);
         return NULL;
     }
@@ -190,7 +192,7 @@ static const uint8_t *read_jpeg(VjoArena *a, int archive, const char *hex, size_
             return p;
         if (p)
             vjo_log("anki export: %s: missing JPEG start or end marker", path);
-        else if (error != VJO_APP_MISSING && error != VJO_E_PARSE)
+        else if (error != VJO_APP_MISSING && error != VJO_E_PARSE && error != VJO_E_TOO_LARGE)
             retry = 1;
         vjo_arena_release(a, mark);
     }
@@ -342,8 +344,9 @@ static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *not
     size_t len, n;
     int version, how = READ_VERIFIED, error;
     card_path(path, archive, hex, "json");
+    /* (an empty file or one over the limit is no record this build reads) */
     if (!(json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, &error)))
-        return error == VJO_E_PARSE ? -1 : -2; /* (an empty file or one over the limit is no record) */
+        return error == VJO_E_PARSE || error == VJO_E_TOO_LARGE ? -1 : -2;
     if (vjo_arena_free(a) < read_room(json, len, game)) {
         vjo_log("anki export: %s: not enough memory to read it now", path);
         return -2;
@@ -693,14 +696,15 @@ int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords
     if (!b.w)
         b.n = 0;
     /* one word per card (a card in both directories, an export stopped between its moves, was read twice: a word
-     * before a copy that is no whole record) and, once both directories were read whole, none of a card that is
-     * gone; the cache then has what was read */
+     * before a copy that is no whole record, and of two words the queued copy's, the copy a package holds: #528's
+     * audit 3) and, once both directories were read whole, none of a card that is gone; the cache then has what was
+     * read */
     word_sort(b.w, b.n, 1);
     n = 0;
     for (int i = 0; i < b.n; i++) {
         if (n && b.w[n - 1].id == b.w[i].id) {
             uint32_t f = b.w[n - 1].flags | b.w[i].flags;
-            if (b.w[n - 1].time == WORD_DAMAGED)
+            if (b.w[n - 1].time == WORD_DAMAGED || (b.w[i].time != WORD_DAMAGED && (b.w[i].flags & VJO_WORD_QUEUED)))
                 b.w[n - 1] = b.w[i];
             b.w[n - 1].flags = f;
             dropped++;
@@ -757,7 +761,18 @@ int vjo_words_earlier(const VjoWords *w, uint64_t key, int64_t time, const uint8
     }
     if (lo >= w->n || w->w[lo].key != key)
         return 0;
-    return w->w[lo].time != t ? w->w[lo].time < t : w->w[lo].id < me;
+    /* Other cards only (#528's audit 3, -2). The words have one entry per card: a first word that is the card's own
+     * is its other copy (a card in both directories, its time edited), and no other card is earlier. */
+    if (w->w[lo].id == me)
+        return 0;
+    if (w->w[lo].time != t ? w->w[lo].time < t : w->w[lo].id < me)
+        return 1;
+    /* This copy is earlier than every other card of its word. If the card's own entry comes later in the word (its
+     * other copy's time), another card is earlier than the card: every copy says so, as the Anki page counts it. */
+    for (int k = lo + 1; k < w->n && w->w[k].key == key; k++)
+        if (w->w[k].id == me)
+            return 1;
+    return 0;
 }
 
 /* ---------------- known words (#314 stage C) ---------------- */
@@ -1497,14 +1512,17 @@ enum {
                            * names to one file's clusters) */
 };
 /* 1 when a record that read_card cannot read is a newer build's (a version this build does not know), not a damaged
- * one. In the room read_card's check gave (its own work given back first), so a refused parse is no record. */
+ * one. In the room read_card's check gave (its own work given back first), so a refused parse is no record. A version
+ * of 10 digits or more, which vjo_json_int refuses (its 9-digit stop), is newer too (#528's audit 3, -4). */
 static int newer_record(VjoArena *a, const char *json, size_t len)
 {
     size_t mark = vjo_arena_mark(a);
     VjoJson j;
     long v;
-    int newer = vjo_json_parse(a, json, len, &j) >= 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
-                vjo_json_int(&j, vjo_json_obj_get(&j, 0, "version"), &v) >= 0 && v > VJO_QUEUE_VERSION;
+    int t, newer = vjo_json_parse(a, json, len, &j) >= 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
+                   vjo_json_is_type(&j, (t = vjo_json_obj_get(&j, 0, "version")), JSMN_PRIMITIVE) &&
+                   json[j.t[t].start] >= '0' && json[j.t[t].start] <= '9' &&
+                   (vjo_json_int(&j, t, &v) < 0 || v > VJO_QUEUE_VERSION);
     vjo_arena_release(a, mark);
     return newer;
 }
@@ -1516,8 +1534,10 @@ static int archived_state(VjoArena *a, const char *hex)
     VjoAnkiNote note;
     int state, picture, error;
     card_path(path, 1, hex, "json");
+    /* (a record over this build's limit may be a newer build's, as one of a newer version: whole, kept; #528's audit
+     * 3, -4. An empty file is none.) */
     if (!(x = read_file(a, path, VJO_QUEUE_TEXT_MAX, &nx, 0, &error)))
-        return error == VJO_E_PARSE ? ARCHIVED_DAMAGED : ARCHIVED_UNREAD;
+        return error == VJO_E_TOO_LARGE ? ARCHIVED_WHOLE : error == VJO_E_PARSE ? ARCHIVED_DAMAGED : ARCHIVED_UNREAD;
     card_path(path, 0, hex, "json");
     q = read_file(a, path, VJO_QUEUE_TEXT_MAX, &nq, 0, NULL);
     read = vjo_arena_mark(a);

@@ -275,7 +275,12 @@ card **whose word an earlier card has**:
 - **Earlier** is the package's order: the record's time (to the minute), then its ID. Every card counts,
   queued or already exported (`anki_queue/exported/`), so a word mined again weeks after its first card was
   exported is found too. The first card of a word is never a duplicate; a record that cannot be read has
-  no word, unless it was read before it was damaged (the cache keeps that word: below).
+  no word, unless it was read before it was damaged (the cache keeps that word: below). A card in both
+  directories (an export stopped between its moves, or a copy put back by hand) is one card: its other copy
+  is never an earlier card. If a hand edit gave its two copies different times, both take the time of the
+  card's word in the cache, the queued copy's when both copies are read in one pass (the copy a package
+  holds), so both get the same answer (#528's audit 3; before, such a card's queued copy could be tagged a
+  duplicate of its own archived copy, or with Skip stay queued).
 - **Export all cards** follows the same rule: the same notes are tagged in it as in the packages before
   (with Skip, the duplicates are not in it).
 - **The Anki page** counts them: **Export cards (12 queued, 3 already mined)**. When it is shown it reads
@@ -383,9 +388,14 @@ no card names, unless a Cancel stopped its clearing
 archived is kept: the queued copy goes when the two are the same bytes or both are that card's (its checksum is its
 name, or its name with the frequency source its card was saved with: [#528](#a-record-that-is-not-its-names-528)).
 An archived copy that is no whole record is replaced by the queued one when that is the card's. When the two differ
-otherwise (a whole record edited in either place, or a newer build's record), neither is removed: the card stays
-queued, and `log.txt` says `kept queued: it differs from …`. **Export all cards**, which lists both directories,
-puts such a card in its package once (the queued copy).
+otherwise (a whole record edited in either place, or a newer build's record: a version above 4, of any length, or a
+record over this build's 32 KiB), neither is removed: the card stays queued, and `log.txt` says `kept queued: it
+differs from …`. **Export all cards**, which lists both directories, puts such a card in its package once (the
+queued copy). Past the 20,000 cards a package holds, the limit counts copies, not cards (it keeps the oldest copies,
+then makes each card's copies one): the card's archived copy can then be the one in the package, a card that would
+have fit can be left out, and the result's `N newer are not in it` counts copies. That takes more than 20,000 card
+files; counting cards there would need the queued cards' IDs in the export's memory beside the list (#528's audit 3,
+-3: not changed).
 When an intact record's screenshot is missing, empty, too large or lacks its JPEG start/end
 markers, the app tries the other directory first, then exports the text without the picture
 and reports how many cards did so. It never rewrites the original record or changes its ID;
@@ -486,9 +496,10 @@ The card now copies the source. The Rubi app reads a record whose name is not it
   its frequency source]`; the result says `N exported as they read`;
 - else (no whole record): queued, as before, and named once (above).
 
-Each read first checks that the arena has room for all of it (`read_room`, from the record's exact token count as
-the JSON parser counts them): with less, the record is left for a later read (`log.txt`: `not enough memory to read
-it now`), never taken for a damaged one. On a console whose dictionaries name another frequency list besides
+Each read first checks that the arena has room for all of it (`read_room`, from the record's token count as the JSON
+parser counts them: exact for a record without a NUL byte, more for one with it, which the decoder refuses anyway):
+with less, the record is left for a later read (`log.txt`: `not enough memory to read it now`), never taken for a
+damaged one. On a console whose dictionaries name another frequency list besides
 `Jiten`, a mismatched record that says `Jiten` keeps it, though its rank may be the other list's; Rubi's own
 dictionaries have no other list.
 

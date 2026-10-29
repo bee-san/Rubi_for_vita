@@ -4,8 +4,8 @@
     python3 host/tests/test_apkg.py BUILD/vjo-apkg-tests
 
 The C test binary writes the packages (`--write DIR`: first, second, all,
-many, app and richer, from records the overlay's Enter writes, the Rubi app's
-Look up page saves and earlier builds'), and
+many, app, richer and order, from records the overlay's Enter writes, the Rubi
+app's Look up page saves and earlier builds'), and
 this checks them with Python's zipfile and sqlite3: the ZIP (stored entries,
 CRC-32s, no `meta`, the media map), the SQLite collection (PRAGMA
 integrity_check, schema 11, the Lapis note type exactly as
@@ -161,7 +161,7 @@ class TestPackages(unittest.TestCase):
         subprocess.run([BINARY, "--write", str(cls.out)], check=True)
         cls.expected = json.loads((cls.out / "expected.json").read_text())
         cls.pkg = {name: Package(cls.out / f"{name}.apkg")
-                   for name in ("first", "second", "all", "many", "app", "richer")}
+                   for name in ("first", "second", "all", "many", "app", "richer", "order")}
 
     def test_zip(self):
         for name, p in self.pkg.items():
@@ -244,6 +244,25 @@ class TestPackages(unittest.TestCase):
             self.assertEqual(ids, sorted(ids))
             self.assertEqual([c[6] for c in cards], list(range(1, len(cards) + 1)))  # due: their order
         self.assertEqual(len(self.pkg["many"].notes()), self.expected["many"])
+
+    def test_notes_are_in_their_times_order(self):
+        """The package's order is its cards' times, then their IDs (core/apkg.c vjo_apkg_sort), and a note's ID is its
+        time in milliseconds, or one more than the note before for cards of the same second (vjo_apkg_note_id), in
+        every package. order.apkg (#528's audit 3, MT20: no time sort after Export all's one entry per card): three
+        cards whose IDs are not in their times' order, the first archived too, each once, in their times' order."""
+        for name, p in self.pkg.items():
+            notes = p.notes()  # by ID
+            mods = [n[3] for n in notes]
+            self.assertEqual(mods, sorted(mods), name)
+            previous = 0
+            for nid, guid, _mid, mod, *_ in notes:
+                self.assertEqual(nid, max(mod * 1000, previous + 1), (name, guid))
+                previous = nid
+        order = self.pkg["order"].notes()
+        self.assertEqual([n[1] for n in order], [guid_of(i) for i in self.expected["order"]])
+        self.assertEqual([n[0] for n in order], [n[3] * 1000 for n in order])
+        self.assertEqual([n[3] - order[0][3] for n in order], [0, 60, 120])
+        self.assertNotEqual(sorted(self.expected["order"]), self.expected["order"])  # IDs not in their times' order
 
     def test_duplicates_are_tagged(self):
         """#314: Duplicates (Tag, the default): the version 3 猫 after the version 1 one (no time: earlier), and 犬
