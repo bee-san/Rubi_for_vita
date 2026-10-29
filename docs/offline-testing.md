@@ -25,7 +25,12 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 72 ctest tests with
+failed joins, cancelled jobs and crashes between steps are injected there. The core's arenas are
+cut too (`oom_paths`, #528): each arena of the Shell's lookups, its overlay texts and its Anki
+card, of the Rubi app's sentence readings and of the line history's scan runs out at every block
+it gives, on the real VOCR lines in the bundled dictionary, and each run must return an error, its
+full result, or that result with only an omission it marks; `core/arena.c`'s cap for it exists in
+host builds only. 72 ctest tests with
 the release models (`VJO_VOCR_MODEL_DIR`), 71 in the normal build, which has no self-test memory
 routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 71 and 70,
 without `vocr_model`

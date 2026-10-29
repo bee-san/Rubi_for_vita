@@ -6,6 +6,26 @@
 
 #define ALIGN8(n) (((n) + 7u) & ~(size_t)7u)
 
+#ifdef VJO_HOST
+/* Host tests only (host/tests/test_oom_paths.c): the arena whose memory starts at vjo_test_arena_base holds only
+ * its first vjo_test_arena_cap bytes, as a smaller arena would, and the end of each block it gives (and each
+ * growth) is recorded, so that a test can make every one of them the first that does not fit. Not in Vita builds. */
+const void *vjo_test_arena_base;
+size_t vjo_test_arena_cap = (size_t)-1, vjo_test_arena_ends[4096];
+unsigned vjo_test_arena_n_ends;
+static int test_short(const VjoArena *a, size_t end)
+{
+    if (!vjo_test_arena_base || (const void *)a->base != vjo_test_arena_base) return 0;
+    if (end > vjo_test_arena_cap) return 1;
+    if (vjo_test_arena_n_ends < sizeof(vjo_test_arena_ends) / sizeof(vjo_test_arena_ends[0]))
+        vjo_test_arena_ends[vjo_test_arena_n_ends++] = end;
+    return 0;
+}
+#define TEST_SHORT(a, end) test_short((a), (end))
+#else
+#define TEST_SHORT(a, end) 0
+#endif
+
 void vjo_arena_init(VjoArena *a, void *mem, size_t size)
 {
     a->base = (uint8_t *)mem;
@@ -22,7 +42,7 @@ void vjo_arena_reset(VjoArena *a)
 void *vjo_arena_alloc(VjoArena *a, size_t n)
 {
     size_t off = ALIGN8(a->used);
-    if (n > a->size || off > a->size - n)
+    if (n > a->size || off > a->size - n || TEST_SHORT(a, off + n))
         return NULL;
     a->used = off + n;
     if (a->used > a->peak)
@@ -57,7 +77,7 @@ int vjo_arena_extend_last(VjoArena *a, void *p, size_t old_n, size_t new_n)
     off = (size_t)(u - a->base);
     if (off + old_n != a->used)
         return -1;
-    if (new_n > a->size - off)
+    if (new_n > a->size - off || TEST_SHORT(a, off + new_n))
         return -1;
     a->used = off + new_n;
     if (a->used > a->peak)
