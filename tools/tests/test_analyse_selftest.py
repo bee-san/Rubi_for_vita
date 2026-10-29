@@ -2958,5 +2958,156 @@ class PressesAndRereads(unittest.TestCase):
         self.assertTrue(a.PRESS_CLOSE.match("overlay close (game left) t=8 ms: input block off rc=0"))
 
 
+
+# #528: the memory line. The figures are the owner's (rubi-log.txt, API 57's first step boot); the lines are the
+# Shell's formats (shell/ledger.c, shell/memory.cpp, shell/worker.c), with no game text or identifiers.
+NORMAL_STARTED = "Rubi shell started (kernel API 57, the normal build: a short log)\n"
+DEBUG_STARTED = "Rubi shell started (kernel API 57)\n"
+
+
+def paf(when, free, current=8192, peak=8192):
+    return f"ledger {when} paf: current={current} peak={peak} limit=985088 free={free}\n"
+
+
+def guard(item, free, requested):
+    return f"{item} Paf reserve guard: free={free} requested={requested} reserve=1572864\n"
+
+
+STEP_BOOT = (NORMAL_STARTED + paf("boot", 3726536) + paf("exit", 2709112) + "game PCSG00415 started: trigger l+r, "
+             "subtitles select+r, ocr_mode auto, ocr_finder spotter, ocr_line_fix on\n" + paf("start", 2491704)
+             + guard("overlay text arena", 426872, 20480) + "overlay not opened: no Paf memory for its text (20 KiB)\n"
+             + guard("result arenas", 426872, 65536) + "result workspace Paf allocation failed (64 KiB)\n"
+             + paf("exit", 410312))
+QUIET_BOOT = (NORMAL_STARTED + paf("boot", 3726232) + paf("exit", 2702968) + paf("start", 2529512)
+              + paf("exit", 2558120, peak=28672))
+KERNEL_TXT = "Rubi kernel 57 started (normal mode, the normal build: a short log)\n" \
+             "ledger kernel: current=147456 peak=147456 limit=237568 (start)\n"
+
+
+class MemoryLine(unittest.TestCase):
+    """#528: one line, in --collect and --status, with SceShell's PAF free and the drops Rubi did not take, what Rubi
+    held there and had refused, the game's free memory and Rubi's blocks there, and the kernel's ledger."""
+
+    def line(self, text, kernel=None):
+        s = a.summarise_memory(text, kernel)
+        s["source"] = "log.txt"
+        return s, a.memory_line(s)
+
+    def test_a_drop_rubi_did_not_take_is_named_and_explains_the_refusals(self):
+        s, line = self.line(STEP_BOOT, KERNEL_TXT)
+        self.assertEqual([(d["bytes"], d["before"], d["after"], d["held"]) for d in s["drops"]],
+                         [(2064832, 2491704, 426872, True)])
+        self.assertEqual(s["refused"], {"overlay text arena": 1, "result arenas": 1})
+        self.assertEqual(s["after_drop"], 2)
+        self.assertIn("1 drop of 2,064,832 B that Rubi did not take (line 6; 1 held to the boot's end): another "
+                      "plugin's (docs/vita-memory.md section 4.5)", line)
+        self.assertIn("refused overlay text arena x1, result arenas x1 (2 after a drop)", line)
+        self.assertIn("Rubi held 8,192 B of PAF at 3 of 3 game starts and exit (at most 8,192 B)", line)
+        self.assertIn("lowest 410,312 B", line)
+        self.assertIn("kernel: Rubi 147,456 B, at most 147,456 B of its 237,568 B", line)
+        self.assertTrue(line.startswith("  memory (log.txt): Shell PAF free at 1 game start: median 2,491,704 B"), line)
+
+    def test_shell_paf_that_rubi_took_is_not_a_drop(self):
+        # Rubi's own ledger rose with the heap's loss: that much was Rubi's (a debug build's allocation line too)
+        text = (DEBUG_STARTED + paf("boot", 3726536) + paf("start", 2491704)
+                + "result arenas Paf allocation: free=2491704 requested=65536 reserve=1572864 success=1\n"
+                + paf("exit", 900000, current=1600000, peak=1600000))
+        s, line = self.line(text)
+        self.assertEqual(s["drops"], [])
+        self.assertEqual(s["refused"], {})
+        self.assertIn("refused nothing", line)
+        self.assertNotIn("did not take", line)
+
+    def test_a_refusal_with_no_drop_before_it_stays_undecided(self):
+        text = QUIET_BOOT + guard("result arenas", 1500000, 65536)  # under the reserve with no drop before it
+        s, _ = self.line(text)
+        self.assertEqual((s["drops"], s["after_drop"], s["refused"]), ([], 0, {"result arenas": 1}))
+        with tempfile.TemporaryDirectory() as d:
+            c = a.summarise_collect(log_collect(Path(d), text))
+        self.assertTrue(any(u.startswith("SceShell refused memory 1 time(s)") for u in c["undecided"]), c["undecided"])
+        with tempfile.TemporaryDirectory() as d:
+            c = a.summarise_collect(log_collect(Path(d), STEP_BOOT))
+        self.assertFalse(any(u.startswith("SceShell refused memory") for u in c["undecided"]), c["undecided"])
+
+    def test_a_drop_free_came_back_from_is_not_held(self):
+        text = (NORMAL_STARTED + paf("boot", 3726536) + paf("start", 2491704) + guard("result arenas", 300000, 65536)
+                + paf("exit", 2400000))  # a capture's buffer given back before the game's exit
+        s, line = self.line(text)
+        self.assertEqual([d["held"] for d in s["drops"]], [False])
+        self.assertIn("0 held to the boot's end", line)
+
+    def test_the_debug_builds_game_checks_and_blocks(self):
+        text = (DEBUG_STARTED + paf("boot", 3726536) + paf("start", 2491704)
+                + "game vocr rc=0 VOCR6.2_L_w8_2l.vocr: 833x127 at 64,400 of 960x544 fmt 0x00000000, lines=3 USER "
+                  "workspace=1056672 weights=read resident=2478080, find=104 ms load=395 ms recognize=120 ms frames=90 "
+                  "io=0x00000000 stat=0x00000000 cleanup=0\n"
+                + "game vocr memory: free USER=88080384, needs workspace 1056768 + weights 2478080 + reserve 1048576: "
+                  "check passed, headroom 83496960\n"
+                + "game vocr memory: free USER=10485760, needs workspace 1056768 + weights 2478080 + reserve 1048576: "
+                  "check passed, headroom 5902336\n"
+                + "game vocr memory: free USER=2097152 + own weights 2478080, needs workspace 1056768 + weights "
+                  "2478080 + reserve 1048576: check refused, headroom -8192\n"
+                + "tier large did not fit in PCSG00402 (need 19562496, free 12664832); using normal\n")
+        s, line = self.line(text)
+        self.assertIn("game free USER 2,097,152-88,080,384 B at 3 memory checks, 1 refused", line)
+        self.assertIn("model sizes that did not fit at 12,664,832 B free", line)
+        self.assertIn("Rubi in the game: workspace up to 1,056,672 B, weights kept up to 2,478,080 B", line)
+
+    def test_the_normal_build_says_what_it_does_not_log(self):
+        _, line = self.line(QUIET_BOOT)
+        self.assertIn("game free USER not logged (the normal build logs a refused memory check only: none)", line)
+        _, line = self.line(QUIET_BOOT + "game vocr memory: free USER=2097152 + own weights 0, needs workspace 1056768"
+                            " + weights 2478080 + reserve 1048576: check refused\n")
+        self.assertIn("game free USER 2,097,152 B at 1 refused memory check", line)
+
+    def test_threads_sceshell_refused_are_counted(self):
+        text = QUIET_BOOT + ("thread VjoAnki refused 0x80024302: 20480 B; SceShell free 12288 (0x00000000), "
+                             "held 196608\n")
+        _, line = self.line(text)
+        self.assertIn("SceShell refused 1 thread (free as low as 12,288 B)", line)
+
+    def test_collect_prints_the_line_beside_the_boot_records_and_in_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = log_collect(Path(d), QUIET_BOOT + STEP_BOOT)
+            (folder / "ux0/data/VitaJPOverlay/kernel.txt").write_text(KERNEL_TXT)
+            text = subprocess.run([sys.executable, str(SCRIPT), "--collect", str(folder)], capture_output=True,
+                                  text=True).stdout
+            js = json.loads(subprocess.run([sys.executable, str(SCRIPT), "--collect", str(folder), "--json"],
+                                           capture_output=True, text=True).stdout)
+        lines = text.splitlines()
+        i = next(n for n, l in enumerate(lines) if l.startswith("  memory (log.txt, 2 boots): "))
+        self.assertTrue(lines[i - 1].startswith("  boot.txt: "), lines[i - 1])
+        self.assertTrue(lines[i + 1].startswith("  kernel.txt: "), lines[i + 1])
+        self.assertIn("(log.txt:11; 1 held to the boot's end)", lines[i])
+        self.assertEqual(js["memory"]["drops"][0]["where"], "log.txt:11")
+        self.assertEqual(js["memory"]["kernel"], {"current": 147456, "peak": 147456, "limit": 237568})
+
+    def test_collect_without_log_txt_reads_the_status_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = log_collect(Path(d), "")
+            (folder / "ux0/data/VitaJPOverlay/status.prev.txt").write_text(STEP_BOOT)
+            (folder / "ux0/data/VitaJPOverlay/status.txt").write_text(QUIET_BOOT)
+            c = a.summarise_collect(folder)
+        self.assertEqual(c["memory"]["source"], "status.prev.txt + status.txt")
+        self.assertEqual(len(c["memory"]["drops"]), 1)
+
+    def test_status_mode_reads_both_boots_and_the_kernel(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            (folder / "status.prev.txt").write_text(STEP_BOOT)
+            (folder / "status.txt").write_text(QUIET_BOOT)
+            (folder / "kernel.txt").write_text(KERNEL_TXT)
+            r = subprocess.run([sys.executable, str(SCRIPT), "--status", str(folder)], capture_output=True, text=True)
+            empty = subprocess.run([sys.executable, str(SCRIPT), "--status", str(folder / "none")], capture_output=True,
+                                   text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.count("\n"), 1, r.stdout)
+        self.assertTrue(r.stdout.startswith("  memory (status.prev.txt + status.txt, 2 boots): Shell PAF free at 2 "
+                                            "game starts: median 2,529,512 B, 2,491,704-2,529,512 B"), r.stdout)
+        self.assertIn("(status.prev.txt:6; 1 held to the boot's end)", r.stdout)
+        self.assertIn("kernel: Rubi 147,456 B", r.stdout)
+        self.assertEqual(empty.returncode, 2)
+        self.assertIn("has no status.txt", empty.stderr)
+
 if __name__ == "__main__":
     unittest.main()

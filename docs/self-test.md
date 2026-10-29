@@ -41,7 +41,9 @@ normal build, the Shell says so once in `log.txt` and leaves the marker for a de
    for` line says why.
 4. Back in VitaShell: `bash tools/install_ftp.sh --collect VITA_IP` fetches the report with every
    log and record into one zip ([below](#collecting-everything---collect)); `--status VITA_IP` fetches
-   just `ux0:data/VitaJPOverlay/selftest-report.txt` (and `status.txt`, `kernel.txt`, `boot.txt`).
+   just `ux0:data/VitaJPOverlay/selftest-report.txt` (and `status.txt`, `kernel.txt`, `boot.txt`),
+   and ends with the collect's memory line for the previous and this boot (`tools/analyse_selftest.py
+   --status build/device/status`).
 5. `python3 tools/analyse_selftest.py build/device/status/selftest-report.txt` prints the run
    and its OCR, one PASS/FAIL row per stage, then the diagnostics (PASS/WARN), the free memory
    every route read at each step, the game worker's memory around each allocation, the findings
@@ -292,7 +294,13 @@ at a game start of the log's last boot answers for it, with where in `log.txt`, 
 with the same record), the configuration (with a note for any `ocr_backend` line, which is no setting
 any more since VOCR is the only engine: a removed engine's value, which an older app writes, or another,
 and that today's app or installer deletes the line), where taiHEN loads
-each plugin (the worker under `*TITLEID` only, a line #138's kernel no longer needs), the boot record, the kernel's start and hooks, every
+each plugin (the worker under `*TITLEID` only, a line #138's kernel no longer needs), the boot record, one `memory` line
+(#528: SceShell's PAF free at the game starts and its lowest; each drop of the heap's free size of 1.5 MiB or more
+between two of the Shell's samples that Rubi's own ledger does not show, named as another plugin's with where it is,
+and whether it was held to its boot's end; what Rubi held there at the game starts and exits and at most; its
+refused requests by ledger item; the threads SceShell refused; the game's free USER at the logged memory checks (every
+check in the debug build, a refused one only in the normal build) and the model sizes that did not fit; Rubi's largest
+workspace and kept weights in the game; the kernel plugin's ledger), the kernel's start and hooks, every
 OCR job (results, models and fallbacks, capture route, find/load/recognize times, per-line and
 per-frame times, free USER and headroom, failed worker steps), the ARM clock by game window (each
 window's clock before, during and after, a boost-off window's as assumed, and the time per CTC frame

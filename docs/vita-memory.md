@@ -326,7 +326,8 @@ What to do when Rubi reports no PAF memory (`… Paf reserve guard: free=… req
 - Update vita-agent-use to e289d06 (2026-10-23) or later, which frees the JPEG buffer after every
   frame. With an older one, end the remote session, or restart the console, before playing.
 - Compare the `ledger start paf` and `ledger exit paf` lines: a drop of `free=` between two of
-  them that Rubi's `current=` does not show is another plugin's.
+  them that Rubi's `current=` does not show is another plugin's. `tools/install_ftp.sh --status`
+  and `--collect` do this in their `memory` line, with where each drop is in the log.
 
 ## 5. Safe budgets per context
 

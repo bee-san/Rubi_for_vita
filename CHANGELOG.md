@@ -11,6 +11,14 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- One `memory` line in `tools/install_ftp.sh --status` and `--collect`'s summary (#528): SceShell's PAF free at the
+  game starts and its lowest, each drop of 1.5 MiB or more that Rubi's own ledger does not account for (another
+  plugin's, with where it is in the log), what Rubi held there and which of its requests were refused, the game's
+  free memory at the logged memory checks, Rubi's blocks in the game and the kernel plugin's ledger. It reads the
+  lines both builds already write; no plugin changes.
+
 ### Fixed
 
 - The Rubi app's Install, Update and Repair copy and check every plugin (and the RCO) before renaming any of them
