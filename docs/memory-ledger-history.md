@@ -5,6 +5,53 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## The Anki arena bounded by construction (#528)
+
+An Anki save's arena (`shell/anki.c` `ANKI_TEXT_MEM`, the ledger's `VJO_BUDGET_PAF_ANKI`) goes from 131,072 to
+90,112 B, sized from what a save can hold rather than from the one measured case. Every block of it is an 8-byte
+aligned `vjo_arena_alloc`, and a local dictionary's entry is one payload of at most `VJO_LOCAL_MAX_ENTRY` (8,192 B)
+with its spelling, reading and one meaning (an empty reading is its spelling again, so its strings are at most twice
+the payload). A save is fullest while `read_more` checks the card with one more entry (`fits`): the fixed part (the
+settings' copy, the dictionaries' locators, the `more[]` table, the other readings' locators), the card so far (at
+most a record, `VJO_QUEUE_TEXT_MAX`: each of its strings is in the record's JSON with more bytes around it than the
+arena adds), the entry just kept and the record being encoded (its buffer grows in place, doubling while the arena
+has room and else to the exact size, so a record that fits needs at most `VJO_QUEUE_TEXT_MAX` + 1 bytes). The
+compile-time checks in `shell/anki.c` add these up (`ANKI_FULLEST`) and check that every other moment holds less (the
+other readings' search with its workspace, at most `VJO_LOCAL_SCRATCH_BUDGET`; an entry's read; the screenshot's
+request and result):
+
+| part | host (LP64) | Vita (ILP32, the probe's 32-bit ARM sizes) |
+|---|---:|---:|
+| settings' copy (`VjoConfig`) | 1,364 | 1,364 |
+| locators (`VjoLocalPages`) | 208 | 208 |
+| `more[]` (7 `VjoAnkiGloss`) | 280 | 140 |
+| other readings' locators (128 `VjoLocalPage`) | 3,072 | 3,072 |
+| alignment of those four | 32 | 32 |
+| the card so far | 32,768 | 32,768 |
+| the entry just kept | 16,512 | 16,508 |
+| the record being encoded | 32,777 | 32,777 |
+| `ANKI_FULLEST` | **87,013** | **86,869** |
+
+The 128 KiB arena's 102,624 B peak (8 dictionaries' 7,000 B entries of kana) was the record's buffer doubling into
+room the arena had: capped at `ANKI_FULLEST`, the same save makes the same record. The new host test
+`the arena's bound keeps every card whatever its entries` (`host/tests/test_shell_anki.c`) saves 16 cards at the
+inputs' bounds (8 dictionaries; whole and half payloads of kana, of text JSON escaping doubles or grows sixfold, of an
+empty reading with a payload-long spelling; 63-byte titles or none; the overlay's longest text) twice, in the 88 KiB
+arena and in one capped at `ANKI_FULLEST` (core/arena.c's host-only cap), and checks each record, or its refusal,
+against the one the same steps make in 1 MiB, byte for byte: all 32 equal; the job's peak at most 87,008 B in the
+capped arena, 153,608 B in 1 MiB [measured, host].
+
+The Shell Paf pool's worst case goes from 344,960 to 304,000 B (the debug and the normal build), and the owner
+scenario's Shell peak from 225,280 to 184,320 B in the 22 of its 25 scenarios that save a card
+(`tools/owner_scenario.json`, `--lower --part shell` on main `cb1449d2`); no count changes. No module changes size: the packaged SELF segments are those of main
+`d4e4d54f` in both builds (the gate's pinned VitaSDK GCC 15.2.0, Release; not console measurements):
+
+| module | debug | normal |
+|---|---:|---:|
+| Shell | 98,148 + 69,632 B, 167,936 B of pages | 85,980 + 69,556 B, 155,648 B |
+| Kernel | 44,808 + 72,412 B, 118,784 B | 39,616 + 70,716 B, 114,688 B |
+| OCR worker | 168,280 + 28,840 B, 204,800 B | 159,156 + 28,824 B, 192,512 B |
+
 ## App colour schemes in the overlay
 
 The overlay and subtitle strip read `app.ini`'s colour scheme once per game process, using VjoControl's

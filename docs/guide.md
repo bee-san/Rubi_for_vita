@@ -1237,7 +1237,7 @@ local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.
 With `anki_mining = on`, saving a card (Enter) takes one
-bounded Paf allocation through the same reserve guard (128 KiB; a card's
+bounded Paf allocation through the same reserve guard (88 KiB; a card's
 screenshot is the game worker's, so it adds only its job's 5,404 B request and
 result, and no kernel capture) and a 16 KiB thread stack; both
 are released when the job is done. Counting the queue when the

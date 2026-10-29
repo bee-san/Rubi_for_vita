@@ -29,7 +29,7 @@ A press's own job's lookup is the `result arenas` refusal at the same free size 
 first one at the same free size after it, before the next press, ledger line or (debug build) `job start`. Line
 history's refusals are counted by `--extract` but not replayed; the visits that took its 16 KiB block are not logged
 in the normal build (the API 33 debug boot at line 4403 reached the ledger's 241,664 B worst case with one: the
-replay's peak there is 225,280 B).
+replay's peak there is 184,320 B since the Anki arena's bound, #548; 225,280 B with the 128 KiB arena).
 Every request goes through the Shell's own guard (`shell/paf_guard.h`, which `shell/memory.cpp` asks before every
 Paf allocation), against a model of the heap: 5,242,880 B (`VJO_PAF_HEAP`), of which others held what the log
 showed was neither free nor Rubi's (the heap less `free=` less Rubi's `current=`; at a refusal, Rubi's figure from the

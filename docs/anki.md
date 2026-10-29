@@ -811,8 +811,12 @@ In SceShell (the overlay, `shell/anki.c`):
   control thread joins once it ends. Enter during a count saves right after it.
 - Saving takes one bounded allocation from the Shell's Paf heap, through the
   same guard as the result workspace, which keeps the 1.5 MiB UI reserve:
-  128 KiB (`ANKI_TEXT_MEM`, the ledger's `VJO_BUDGET_PAF_ANKI`; the build checks
-  they agree). It is freed before the thread ends. Counting only reads the
+  88 KiB (`ANKI_TEXT_MEM`, the ledger's `VJO_BUDGET_PAF_ANKI`; the build checks
+  they agree), sized by construction (#528): at its fullest a save holds the
+  settings' copy, the locators, a record's worth of card, one more dictionary's
+  entry and the record being encoded (`ANKI_FULLEST`, 87,013 B on the host, less
+  on the Vita, which the build checks the arena holds), so a card is the same
+  record as in a larger arena (128 KiB until then). It is freed before the thread ends. Counting only reads the
   directory, on the thread's stack, with no heap allocation. Nothing
   Anki-related stays allocated between jobs, and the queue is never read into
   memory whole.
@@ -825,8 +829,12 @@ In SceShell (the overlay, `shell/anki.c`):
   kept. Measured on the host with 8 dictionaries
   (`what_enter_saves_whatever_the_dictionaries`): entries of 2,700 B of kana all
   kept (a 22,673 B record); 7,000 B, 3 of 7; text that JSON escaping grows keeps
-  fewer. The arena's peak was 102,624 B of the 128 KiB (7,000 B entries of kana; 102,616 B on main
-  `dcb7b31`, before `anki_screenshot` added a field to the settings' copy at the arena's start).
+  fewer. In the 128 KiB arena the peak was 102,624 B (7,000 B entries of kana): the record's buffer doubles while
+  the arena has room and grows to the exact size when it has not, so that peak was room it had, not room it
+  needed. `the arena's bound keeps every card whatever its entries` saves 16 cards at the inputs' bounds (whole
+  8,192 B payloads of kana, of text JSON escaping doubles or grows sixfold, empty readings, 63-byte titles, the
+  longest text) in the 88 KiB arena and in one capped at `ANKI_FULLEST`, and each record is the one a 1 MiB arena
+  makes, byte for byte [measured, host].
 - The note is copied out of the shown lookup under the view lock before
   anything is written; the result memory is never read during file I/O. If
   memory is refused or a write fails, only the Anki status line changes: the
@@ -834,7 +842,8 @@ In SceShell (the overlay, `shell/anki.c`):
   stay, and Enter can be pressed again.
 - A card's screenshot adds only its job's request and result to the arena,
   5,404 B: a one-word card's save peaks at 6,860 B with it, and the 8-dictionary
-  worst case is the same with it or without (102,624 B) [measured, host]. Its pixels and its JPEG
+  cases are the same with it or without [measured, host]; the bound counts it (it is smaller than the record it
+  replaces in the arena). Its pixels and its JPEG
   are the game's ([above](#the-screenshot)).
 - SceShell sends nothing and opens no socket for Anki.
 

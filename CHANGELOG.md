@@ -52,6 +52,10 @@ been reported.
   Shell's Paf worst case: 241,664 → 344,960 B. Accounting only: no code or memory changes.
 - The debug build logs SceShell's free Paf heap at every overlay open again (lost with #534), so a console run measures
   the page's own cost; the normal build is unchanged.
+- Saving an Anki card takes 40,960 B less of SceShell's PAF heap (#528): the save's arena is sized from what a card
+  can hold (88 KiB, 128 KiB before), checked when the plugin is built, and every card is the same as before (host
+  test: the largest cards byte for byte against a 1 MiB arena). Shell PAF worst case 344,960 → 304,000 B; module
+  pages unchanged. Not yet run on a console.
 - A screen copy that outlives its call (the game's display thread held for over 2 s inside the copy) no
   longer stops OCR in that game until it is restarted, nor keeps the model, LM and spotter loaded until then.
   The game worker keeps the copied-into block only until the next job, which gives it back before taking its own;
