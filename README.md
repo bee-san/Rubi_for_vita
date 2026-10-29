@@ -2,7 +2,7 @@
 
 https://github.com/user-attachments/assets/f9485d78-d3a1-40c2-894f-7cd2c7d4c727
 
-You can learn Japanese from your PS Vita :)
+You can learn Japanese from your PS Vita :) this is real time, local OCR on the Vita
 
 In a visual novel, press L + R: Rubi reads the dialogue off the screen, and you pick a word to see what it means and save it as an Anki card with a screenshot. Fully offline, on the Vita itself.
 
