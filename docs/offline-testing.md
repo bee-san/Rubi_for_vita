@@ -90,7 +90,9 @@ streak and the total (their descriptors); `game_shot` Anki screenshots (a card's
 cancelled, a failed write, a refused file: the shot's block, the kernel strip, the file's descriptor);
 `kernel_loader` process starts (the `VjoPolicy` block and `games.ini`'s descriptors). A soak runs a few cycles in ctest; `VJO_SOAK_CYCLES=N` runs N, and prints one
 line per scenario with each pool's bytes held, net bytes per cycle and blocks taken per cycle. Without the
-models the game soak's jobs end at their model, after the same check, blocks and capture. The suites also
+models the game soak's jobs end at their model, after the same check, blocks and capture: then no job holds the
+weights, the LM, the spotter, the cascade or the gate, nor starts a helper thread, so a leak of one of those shows
+only with the models, in the fast gate's models lane (CI's host job and the ARM lane have none). The suites also
 run under ASan with its leak check (`-DCMAKE_C_FLAGS=-fsanitize=address,undefined`, the same for C++ and the
 link): the soaks, and every other suite but those that map a segment at the console's fixed address
 (`hooks_engine`).

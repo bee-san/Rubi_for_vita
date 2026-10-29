@@ -746,17 +746,20 @@ static void weights_refused_job(unsigned i)
     (void)i;
 }
 /* another app in front of the game for over 5 s of its running time: worker_main's loop gives the resident blocks
- * back (inactive_long), then the game is in front again and reads */
+ * back (inactive_long), then the game is in front again and reads. Odd cycles hold Normal's (its Large cascade and
+ * the gate, the console's default size: audit-mem-leak-1 F1), even ones the owner's (the LM and the spotter). */
 static void left_for_long_job(unsigned i)
 {
-    owner_job(i);
+    if (i & 1u) normal_cascade_job(i);
+    else owner_job(i);
     g.game_active = 0;
     loop_sleeps = 60; /* 100 ms sleeps: 6 s of the game's time */
     worker_main(0, NULL);
     loop_sleeps = 0;
     __atomic_store_n(&quitting, 0, __ATOMIC_RELEASE);
-    TEST_CHECK_(weights_blk.uid < 0 && lm_blk.uid < 0 && spot_blk.uid < 0 && !blocked,
-                "the resident blocks went back to a game left for 6 s");
+    TEST_CHECK_(weights_blk.uid < 0 && lm_blk.uid < 0 && spot_blk.uid < 0 && cascade_blk.uid < 0 && gate_blk.uid < 0 &&
+                    !blocked,
+                "cycle %u: the resident blocks went back to a game left for 6 s", i);
     g.game_active = VJO_GAME;
     (void)inactive_long(0); /* the loop's next round, the game in front: its clock starts again */
 }
@@ -764,7 +767,8 @@ static void left_for_long_job(unsigned i)
  * everything but the module's pages goes, and the next game's jobs read their models again */
 static void stop_start_job(unsigned i)
 {
-    owner_job(i);
+    if (i & 1u) normal_cascade_job(i); /* Normal's cascade and gate on odd cycles, as left_for_long_job */
+    else owner_job(i);
     TEST_CHECK(vjo_game_ocr_worker_stop() == VJO_OK);
     caller = 0;
     game_ocr_process_gone(GAME_PID);
