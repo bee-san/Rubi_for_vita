@@ -74,12 +74,12 @@ See [OCR measurements and limits](vita-vn-ocr.md) and
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
 **Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.10.0/Rubi-0.10.0.zip)
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.10.1/Rubi-0.10.1.zip)
 and extract it.
 
 ### 1. Transfer modules
 
-Using VitaShell FTP, transfer the files from `Rubi-0.10.0/ur0/tai/` to `ur0:tai/` on the Vita:
+Using VitaShell FTP, transfer the files from `Rubi-0.10.1/ur0/tai/` to `ur0:tai/` on the Vita:
 
 - `VitaJPOverlay_Kernel.skprx`
 - `VitaJPOverlay_OCR.suprx`
@@ -106,13 +106,13 @@ If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the en
 
 ### 3. Transfer data files for the plugin
 
-Transfer `Rubi-0.10.0/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+Transfer `Rubi-0.10.1/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
 as `ur0:data/VitaJPOverlay`.
 
 ### 4. Transfer data files for OCR and the dictionary
 
 **This is a separate folder, not a duplicate of step 3.** Transfer
-`Rubi-0.10.0/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+`Rubi-0.10.1/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
 as `ux0:data/VitaJPOverlay`.
 
 If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
@@ -121,7 +121,7 @@ and keep your existing settings file when copying the data.
 ### 5. Transfer and install the VPK / companion app
 
 Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
-top-right corner of its LiveArea page. Transfer `Rubi-0.10.0/Rubi.vpk` to the Vita and install
+top-right corner of its LiveArea page. Transfer `Rubi-0.10.1/Rubi.vpk` to the Vita and install
 (promote) it with VitaShell. Accept the installation and extended-permissions prompts.
 
 ### 6. Reboot the Vita
@@ -289,7 +289,7 @@ game's dialogue changes. Closing returns to the saved dialogue box; this scan ne
 adds menus to the dialogue history or offers a replacement dialogue box. Two short taps are needed:
 holds, drags and fingers already held when the overlay opens are ignored. If rear double-tap is your
 configured opening or subtitle trigger, it keeps that action while closed; while open it scans, so use
-Cancel to close. This binding is on `main`, not in 0.10.0, and has not been tested on a console.
+Cancel to close. This binding is new in 0.10.1 and has not been tested on a console.
 
 **Earlier lines.** With **Read text** on **Automatically**, the overlay can go back through this game's
 earlier dialogue, the lines `history.csv` keeps ([ocr-history.md](ocr-history.md)): Up on the text's

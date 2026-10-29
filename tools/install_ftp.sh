@@ -144,13 +144,6 @@ PATCH_ARGS=(--worker "$WORKER")
 for title in ${TITLES[@]+"${TITLES[@]}"}; do PATCH_ARGS+=(--title "$title"); done
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-PROFILE_DB=$TMP/profiles.vjhp
-if [ -n "$PACKAGE_DIR" ]; then
-  PROFILE_DB=$PACKAGE_DIR/ux0/data/VitaJPOverlay/hooks/profiles.vjhp
-  [ -f "$PROFILE_DB" ] || { echo "package is missing hooks/profiles.vjhp"; exit 1; }
-else
-  python3 tools/hook_profiles.py --output "$PROFILE_DB"
-fi
 
 c() { curl --fail -s --show-error --max-time 300 "$@"; }
 exists() { c -o /dev/null "$FTP/$1" 2>/dev/null; }
@@ -455,6 +448,16 @@ for f in ${EXTRA_K[@]+"${EXTRA_K[@]}"}; do
   [ "$(head -c 3 "$f")" = "SCE" ] || { echo "$f is not a Vita plugin (no SCE header)"; exit 1; }
   PATCH_ARGS+=(--kernel-plugin "ur0:tai/$(basename "$f")")
 done
+
+# Only an install needs hook profiles. Package maintenance commands above run without
+# source files; a source install still builds its archive before any device writes.
+PROFILE_DB=$TMP/profiles.vjhp
+if [ -n "$PACKAGE_DIR" ]; then
+  PROFILE_DB=$PACKAGE_DIR/ux0/data/VitaJPOverlay/hooks/profiles.vjhp
+  [ -f "$PROFILE_DB" ] || { echo "package is missing hooks/profiles.vjhp"; exit 1; }
+else
+  python3 tools/hook_profiles.py --output "$PROFILE_DB"
+fi
 
 # Patch every config before anything is written to the Vita (CRLF-safe): the
 # kernel line after *KERNEL, the shell after *main, and the OCR worker under
