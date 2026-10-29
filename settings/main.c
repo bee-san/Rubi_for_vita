@@ -540,7 +540,7 @@ static void appearance_finished(void)
     appearance_error = appearance_rc < 0 || appearance_read_rc < 0;
     snprintf(appearance_status, sizeof(appearance_status), "%s", appearance_error
         ? "Save not confirmed. Check the displayed choice, then retry."
-        : "Saved. The app's colours change immediately.");
+        : "Saved. Restart your game to apply overlay colours.");
 }
 
 static void appearance_poll(void)
@@ -628,7 +628,7 @@ static void draw_appearance(void)
             rect(x + THEME_W - 2, THEME_Y, 2, THEME_H, ACCENT);
         }
     }
-    text(24, 424, DIM, 24, "App colour scheme: applies to every page in Rubi.");
+    text(24, 424, DIM, 24, "App and overlay colours. Restart your game to apply in-game.");
     char controls[96];
     snprintf(controls, sizeof(controls), "Left/Right or %s: choose   %s: back", buttons.enter_glyph, buttons.cancel_glyph);
     footer_at(438, 72, 466, 2, appearance_status, appearance_error, controls);

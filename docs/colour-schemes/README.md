@@ -10,7 +10,7 @@ headword is 28 px. Card options appear after Anki mining is enabled; **Anki acti
 
 **Settings → Appearance** offers exactly three schemes. Tap a preview card, use Left/Right, or press Enter to cycle.
 Every app page changes immediately; `colour_scheme` in `app.ini` keeps the choice after closing the app.
-Default preserves Rubi's yellow accent and is used for missing or unknown values. The in-game overlay keeps its existing colours.
+Default preserves Rubi's yellow accent and is used for missing or unknown values. The in-game overlay and subtitle strip use the same scheme after you **restart the game**. The selection tool keeps its dark game-facing mask and warning colours.
 
 ## Sony Reader-inspired appearance
 

@@ -975,13 +975,15 @@ The subtitle strip (Select + R) shows the recognized text, without readings,
 and adds no lookups for it. Recognition and dictionary lookup make no network
 request and have no cloud fallback: the local dictionaries are the only ones.
 
-### App colour schemes
+### App and overlay colour schemes
 
 Open Rubi's **Settings → Appearance** category. Choose **Default** (charcoal with Rubi's yellow accent),
 **Mint** (charcoal and mint), or **Paper** (warm light with forest green). Tap a preview card,
 press Left/Right, or press Enter to cycle through the three. The labelled **Selected** card is the saved choice.
 Colours change immediately on every app page, including Look up's dictionary text, and stay after closing the app.
-The in-game overlay keeps its existing colours.
+The in-game overlay and subtitle strip use the same colour scheme. After changing it, **restart your game**
+to apply the overlay colours; no Vita reboot is needed. The selection tool keeps its dark game-facing mask
+and warning colours so the game remains visible.
 
 The choice is `colour_scheme = default | mint | paper` in `ux0:data/VitaJPOverlay/app.ini`. A missing or unknown
 value uses Default. An unreadable file is kept, the choices say **Unavailable**, and Start retries after the file is

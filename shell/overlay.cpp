@@ -51,6 +51,7 @@ extern "C" {
 #include "history.h"
 }
 #include "lookup_shown.h"
+#include "colour_widgets.h"
 
 #include "../core/region_select.h"
 #include "../core/stick_cursor.h"
@@ -71,6 +72,36 @@ static void read_buttons(void)
 }
 
 using namespace paf;
+
+static __attribute__((noinline)) paf::math::v4 raw_rgba(uint32_t rgb, float alpha)
+{
+    return paf::math::v4(((rgb >> 16) & 255) / 255.0f, ((rgb >> 8) & 255) / 255.0f, (rgb & 255) / 255.0f, alpha);
+}
+
+__attribute__((noinline)) paf::math::v4 rgba(uint32_t rgb, float alpha)
+{
+    return raw_rgba(vjo_colour_scheme_rgb(__atomic_load_n(&g_view.colour_scheme, __ATOMIC_ACQUIRE), rgb), alpha);
+}
+
+/* IDParam builds and destroys a PAF string. Share it across every widget binding. */
+__attribute__((noinline)) ui::Widget *vjo_paf_child(ui::Scene *page, const char *name)
+{
+    return page->FindChild(name);
+}
+
+__attribute__((noinline)) void vjo_paf_pos(ui::Widget *w, float x, float y) { w->SetPos(x, y, 0.0f); }
+__attribute__((noinline)) void vjo_paf_size(ui::Widget *w, float width, float height) { w->SetSize(width, height, 0.0f); }
+
+struct ColourPage {
+    ui::Scene *page;
+    ui::Widget *FindChild(const char *name) { return vjo_paf_child(page, name); }
+};
+
+void vjo_colour_page(ui::Scene *page)
+{
+    ColourPage widgets = {page};
+    vjo_colour_widgets(&widgets, __atomic_load_n(&g_view.colour_scheme, __ATOMIC_ACQUIRE), raw_rgba);
+}
 
 /* The paf text info classes have virtual destructors, whose deleting
  * variants reference sized delete (no C++ runtime is linked; these objects
@@ -236,7 +267,7 @@ static __attribute__((noinline)) uint32_t header_shown(uint32_t unit)
  * close line's counts (core/stick_cursor.h). */
 static VjoStickCursor s_stick;
 
-static void set_rich(ui::RichText *w, const char *s)
+static __attribute__((noinline)) void set_rich(ui::RichText *w, const char *s)
 {
     if (w)
         w->SetCText(s, sce_paf_strlen(s));
@@ -255,7 +286,7 @@ static void pane_place(Pane *p)
     y = (p->h - h) / 2.0f + p->scroll;
     if (y != p->applied) {
         p->applied = y;
-        p->text->SetPos(0.0f, y, 0.0f);
+        vjo_paf_pos(p->text, 0.0f, y);
     }
 }
 
@@ -283,11 +314,11 @@ static void pane_size(Pane *p, float h, float top)
 {
     p->h = h;
     if (p->view) {
-        p->view->SetSize(BOX_W, h, 0.0f);
-        p->view->SetPos(0.0f, top - h / 2.0f, 0.0f);
+        vjo_paf_size(p->view, BOX_W, h);
+        vjo_paf_pos(p->view, 0.0f, top - h / 2.0f);
     }
     if (p->box)
-        p->box->SetSize(BOX_W, h, 0.0f);
+        vjo_paf_size(p->box, BOX_W, h);
     p->applied = NOT_PLACED;
 }
 
@@ -373,7 +404,7 @@ static void render(int new_content)
     static const char line_queue_count[] VJO_DATA_TABLE(line_queue_count) = "Anki queue: %d · export in the Rubi app";
     static const char line_queue_export[] VJO_DATA_TABLE(line_queue_export) = "Anki queue · export in the Rubi app";
     static const char line_queue_error[] VJO_DATA_TABLE(line_queue_error) = "Anki queue unavailable: check ux0 storage";
-    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "<font color=\"#8a94a6\">%s · %sR stick ↕ · □ box · rear ×2 full OCR · %s close</font>";
+    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "%s · %sR stick ↕ · □ box · rear ×2 full OCR · %s close";
     static const char line_nav_character[] VJO_DATA_TABLE(line_nav_character) = "Tap / pad / stick character";
     static const char line_nav_japanese[] VJO_DATA_TABLE(line_nav_japanese) = "Tap / pad / stick Japanese";
     static const char line_nav_word[] VJO_DATA_TABLE(line_nav_word) = "Tap / pad / stick word";
@@ -648,9 +679,9 @@ static void layout_apply(float header_h)
     pane_size(&s_body, body_top - BODY_BOTTOM, body_top);
     /* the mid band covers the gap between the boxes, centred on the separator */
     if (s_separator)
-        s_separator->SetPos(0.0f, sep, 0.0f);
+        vjo_paf_pos(s_separator, 0.0f, sep);
     if (s_band_mid)
-        s_band_mid->SetPos(0.0f, sep, 0.0f);
+        vjo_paf_pos(s_band_mid, 0.0f, sep);
     if (s_hl_len)
         s_follow_frames = LAYOUT_RETRY_FRAMES;
 }
@@ -689,15 +720,15 @@ static void show_region(void)
     if (same)
         return;
     if (s_region_cursor) /* its centre on the cursor pixel's centre */
-        s_region_cursor->SetPos(c[0] + 0.5f - SCREEN_W / 2, SCREEN_H / 2 - 0.5f - c[1], 0.0f);
+        vjo_paf_pos(s_region_cursor, c[0] + 0.5f - SCREEN_W / 2, SCREEN_H / 2 - 0.5f - c[1]);
     if (!s_region_rect)
         return;
     if (c[4] < 2 || c[5] < 2) {
         s_region_rect->Hide();
         return;
     }
-    s_region_rect->SetSize((float)c[4], (float)c[5], 0.0f);
-    s_region_rect->SetPos(c[2] + c[4] / 2.0f - SCREEN_W / 2, SCREEN_H / 2 - c[3] - c[5] / 2.0f, 0.0f);
+    vjo_paf_size(s_region_rect, (float)c[4], (float)c[5]);
+    vjo_paf_pos(s_region_rect, c[2] + c[4] / 2.0f - SCREEN_W / 2, SCREEN_H / 2 - c[3] - c[5] / 2.0f);
     s_region_rect->Show();
 }
 
@@ -706,6 +737,12 @@ static void show_region(void)
  * most ten times a second. */
 static void region_hint(int force)
 {
+    static const char short_box[] VJO_DATA_TABLE(region_short_box) =
+        "<font color=\"%s\">Box %d x %d (min. %d x %d)</font>"
+        "<font color=\"#ffffff\"> · stick / ◀▶▲▼ opposite corner · %s undo corner</font>";
+    static const char use_box[] VJO_DATA_TABLE(region_use_box) =
+        "<font color=\"#ffd24a\">Use this box? %d x %d</font><font color=\"#ffffff\">"
+        " · stick / ◀▶▲▼ opposite corner · %s save · %s undo corner</font>";
     static const char first_corner[] VJO_DATA_TABLE(region_first_corner) =
         "<font color=\"#ffffff\">Stick / ◀▶▲▼ move · %s first corner · "
         "or drag on screen · %s cancel · hold □ full screen</font>";
@@ -723,14 +760,12 @@ static void region_hint(int force)
         sceClibSnprintf(hint, sizeof(hint), first_corner,
                         s_btn.enter_glyph, s_btn.cancel_glyph);
     else if (w < VJO_RSEL_MIN || h < VJO_RSEL_MIN)
-        sceClibSnprintf(hint, sizeof(hint), "<font color=\"%s\">Box %d x %d (min. %d x %d)</font>"
-                        "<font color=\"#ffffff\"> · stick / ◀▶▲▼ opposite corner · %s undo corner</font>",
+        sceClibSnprintf(hint, sizeof(hint), short_box,
                         w == s_refused[0] && h == s_refused[1] ? "#ff8a80" : "#b8c0cc", w, h, VJO_RSEL_MIN,
                         VJO_RSEL_MIN, s_btn.cancel_glyph);
     else
         /* #358: a box drawn, the suggested one or the user's: the question enter answers */
-        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffd24a\">Use this box? %d x %d</font><font color=\"#ffffff\">"
-                        " · stick / ◀▶▲▼ opposite corner · %s save · %s undo corner</font>", w, h,
+        sceClibSnprintf(hint, sizeof(hint), use_box, w, h,
                         s_btn.enter_glyph, s_btn.cancel_glyph);
     set_rich(s_region_hint, hint);
 }
@@ -812,35 +847,37 @@ static void open_page(void)
         vjo_arena_init(&s_ui, NULL, 0);
         return;
     }
-    s_panel = s_page->FindChild("vjo_panel");
-    s_header.text = (ui::Text *)s_page->FindChild("vjo_header");
-    s_body.text = (ui::Text *)s_page->FindChild("vjo_body");
-    s_header.view = s_page->FindChild("vjo_header_view");
-    s_header.box = s_page->FindChild("vjo_header_box");
-    s_body.view = s_page->FindChild("vjo_body_view");
-    s_body.box = s_page->FindChild("vjo_body_box");
-    s_separator = s_page->FindChild("vjo_separator");
-    s_band_mid = s_page->FindChild("vjo_band_mid");
+    vjo_colour_page(s_page);
+    s_panel = vjo_paf_child(s_page, "vjo_panel");
+    s_header.text = (ui::Text *)vjo_paf_child(s_page, "vjo_header");
+    s_body.text = (ui::Text *)vjo_paf_child(s_page, "vjo_body");
+    s_header.view = vjo_paf_child(s_page, "vjo_header_view");
+    s_header.box = vjo_paf_child(s_page, "vjo_header_box");
+    s_body.view = vjo_paf_child(s_page, "vjo_body_view");
+    s_body.box = vjo_paf_child(s_page, "vjo_body_box");
+    s_separator = vjo_paf_child(s_page, "vjo_separator");
+    s_band_mid = vjo_paf_child(s_page, "vjo_band_mid");
     s_header.h = HEADER_H_INITIAL; /* the page opens with the RCO layout */
     s_body.h = BODY_H_INITIAL;
     pane_reset(&s_header);
     pane_reset(&s_body);
-    s_hint = (ui::RichText *)s_page->FindChild("vjo_hint");
+    s_hint = (ui::RichText *)vjo_paf_child(s_page, "vjo_hint");
+    if (s_hint) s_hint->SetColor(rgba(VJO_RGB_RANK));
     {
         /* The views get these empty scrollbars instead of their default
          * ones, which flashed whenever the text moved. */
         static const char *const sbars[] = {"vjo_header_sbar_v", "vjo_header_sbar_h", "vjo_body_sbar_v",
                                             "vjo_body_sbar_h"};
         for (unsigned i = 0; i < sizeof(sbars) / sizeof(sbars[0]); i++) {
-            ui::Widget *w = s_page->FindChild(sbars[i]);
+            ui::Widget *w = vjo_paf_child(s_page, sbars[i]);
             if (w)
                 w->Hide();
         }
     }
-    s_region_layer = s_page->FindChild("vjo_region_layer");
-    s_region_rect = s_page->FindChild("vjo_region_rect");
-    s_region_cursor = s_page->FindChild("vjo_region_cursor");
-    s_region_hint = (ui::RichText *)s_page->FindChild("vjo_region_hint");
+    s_region_layer = vjo_paf_child(s_page, "vjo_region_layer");
+    s_region_rect = vjo_paf_child(s_page, "vjo_region_rect");
+    s_region_cursor = vjo_paf_child(s_page, "vjo_region_cursor");
+    s_region_hint = (ui::RichText *)vjo_paf_child(s_page, "vjo_region_hint");
     if (s_region_layer)
         s_region_layer->Hide();
     /* Wrapped text with Japanese line-breaking rules. */
@@ -853,13 +890,7 @@ static void open_page(void)
             texts[i]->SetLayoutAttribute(graph::TextLayoutAttribute_Kinsoku, true);
         }
     }
-    {
-        char hint[128];
-        sceClibSnprintf(hint, sizeof(hint),
-                        "<font color=\"#8a94a6\">◀▶▲▼ word · R stick ↕ · □ box · rear ×2 full OCR · %s close</font>",
-                        s_btn.cancel_glyph);
-        set_rich(s_hint, hint);
-    }
+    /* frame_body always renders before this first frame is drawn, including the themed footer. */
     s_mode = MODE_OVERLAY;
     s_selected = 0;
     s_hl_len = 0;

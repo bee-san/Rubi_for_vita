@@ -5,6 +5,30 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## App colour schemes in the overlay
+
+The overlay and subtitle strip read `app.ini`'s colour scheme once per game process, using VjoControl's
+existing 24 KiB scratch and restoring its mark. The one selection integer is appended to `VjoView`;
+there are no new threads, buffers, PAF widgets, allocation sites or pool budgets. Paper recolours the
+existing surfaces; text roles are remapped only for display. The game-facing region selector stays dark.
+
+Repeated PAF widget lookup, position, size and colour construction now share compact helpers instead of
+being inlined at every call. The initial footer is rendered by the first frame's normal render, removing
+a duplicate format string. Two existing region hint strings and the small palette tables use the data
+segment's existing last page. No dictionary or OCR build flags change.
+
+Measured from packaged Shell SELF segments with the gate's pinned VitaSDK GCC 15.2.0, Release builds
+(`tools/check_memory_ledger.py`), **not console measurements**:
+
+| Shell | Text | Data/bss | Loaded pages | Room in last code / data pages |
+|---|---:|---:|---:|---:|
+| Normal | 85,956 B | 69,556 B | 155,648 B, unchanged | 60 / 76 B |
+| Debug | 98,156 B | 69,632 B | 167,936 B, unchanged | 148 / 0 B |
+
+Host tests cover parsing and storage errors, backup fallback, arena restoration, the per-process latch,
+shared app/text roles and the exact surface recolouring loop with missing widgets. Console appearance
+and timing remain unmeasured.
+
 ## Compact suffix table (PR #518 merge-gate repair)
 
 The generated deinflection suffix pool stores its 1,494 BMP characters as `uint16_t` codepoints instead of

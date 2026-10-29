@@ -237,6 +237,8 @@ void vjo_shell_heap_free(int item, void *p, size_t bytes)
     vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
 }
 uint32_t vjo_shell_heap_free_size(void) { return 2557952; }
+static int theme_loads, theme_choice;
+int vjo_colour_scheme_load(VjoArena *a) { (void)a; theme_loads++; return theme_choice; }
 void vjo_config_load(VjoConfig *out, VjoArena *a) { start_step('C'); *out = loaded; }
 static void configure_stub(const VjoConfig *c);
 void vjo_log_configure(const VjoConfig *c) { configure_stub(c); }
@@ -949,6 +951,7 @@ static void reset(void)
     full_screen = job_full_screen = 0;
     /* API 31: no game session's hook state, no hook fields in the results */
     hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
+    theme_loads = theme_choice = 0;
     game_static_fb = 0; /* API 55: a native game (the hint names the pause) until a test starts the PSP emulator's */
 #ifdef VJO_WITH_VOCR
     memset(fake_hook, 0, sizeof(fake_hook));
@@ -9185,6 +9188,20 @@ static void test_input_wins_the_worker_slot_after_one_prepared_word(void)
 #endif
 
 #ifdef VJO_WITH_VOCR
+static void test_theme_latched_for_game(void)
+{
+    reset();
+    theme_choice = 1;
+    activate(PS_GAME_PID, "PCSG00415", VJO_GAME);
+    TEST_CHECK(theme_loads == 1 && g_view.colour_scheme == 1);
+    theme_choice = 2;
+    activate(PS_GAME_PID, "PCSG00415", VJO_GAME);
+    TEST_CHECK(theme_loads == 1 && g_view.colour_scheme == 1);
+    activate(PS_GAME_PID + 1, "PCSG00415", VJO_GAME);
+    TEST_CHECK(theme_loads == 2 && g_view.colour_scheme == 2);
+    mem_free();
+}
+
 /* CSV windows are paced, deferred while open, and never cause immediate wakeups. Closing wins
  * over a due scan, while game exit still checkpoints incremental counters. */
 static void test_reading_total_on_the_control_thread(void)
@@ -9486,6 +9503,7 @@ TEST_LIST = {
     {"foreground_switch_gives_the_touch_region_back", test_foreground_switch_gives_the_touch_region_back},
     {"close_just_before_ps_leaves_touch_to_shell", test_close_just_before_ps_leaves_touch_to_shell},
 #ifdef VJO_WITH_VOCR
+    {"theme selection is latched until a new game process", test_theme_latched_for_game},
     {"reading_total_a_window_a_wakeup_kept_at_a_games_exit",
      test_reading_total_on_the_control_thread},
 #endif
