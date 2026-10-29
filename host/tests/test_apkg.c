@@ -2133,6 +2133,52 @@ static void test_an_archived_copy_is_kept_only_when_it_is_the_card(void)
     fclose(f);
     vjo_queue_id(json, n, actual);
     TEST_CHECK(!strcmp(actual, id)); /* the archive holds the good record now */
+    /* #528: when the queued and the archived record of a card differ and neither is no whole record for a provable
+     * one, neither is removed: the card is exported, it stays queued (kept) and both stay byte for byte. The pairs:
+     * an edited queued one beside the card's own or a damaged archived one, and the card's own beside an edited
+     * archived one (which #570 archives as it is). The same bytes in both: the queued copy goes. */
+    for (int pair = 0; pair < 3; pair++) {
+        static const char edited_tail[] = "\"time\":1791738661,\"ocr_confidence\":null}\n"; /* a minute's edit */
+        char own[2048], edited[2048], back[2048], apath[300];
+        const char *queued, *archived;
+        size_t no, ne, nq, na;
+        char *t;
+        reset();
+        snprintf(id, sizeof(id), "%s", queue_card(&cat, 0));
+        snprintf(path, sizeof(path), VJO_EXPORT_QUEUE_DIR "/%s.json", id);
+        snprintf(apath, sizeof(apath), VJO_EXPORT_ARCHIVE_DIR "/%s.json", id);
+        no = get_bytes(path, (uint8_t *)own, sizeof(own) - 1);
+        memcpy(edited, own, no);
+        edited[no] = '\0';
+        TEST_ASSERT((t = strstr(edited, "\"time\":")) != NULL);
+        strcpy(t, edited_tail);
+        ne = strlen(edited);
+        queued = pair < 2 ? edited : own;
+        nq = pair < 2 ? ne : no;
+        archived = pair == 0 ? own : pair == 1 ? "{\"damaged\":1}" : edited;
+        na = pair == 0 ? no : pair == 1 ? 13 : ne;
+        put_file(path, queued, nq);
+        TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+        put_file(apath, archived, na);
+        logs[0] = '\0';
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+        TEST_CHECK_(r.cards == 1 && r.mismatched == (pair < 2) && r.kept == 1 && !r.moved && strstr(msg, "1 stay queued"),
+                    "pair %d: %s", pair, msg);
+        TEST_CHECK_(strstr(logs, "kept queued: it differs from") && !strstr(logs, "the archived copy is damaged"),
+                    "pair %d:\n%s", pair, logs);
+        if (pair < 2) { /* an edit elsewhere: its stored "Jiten" stays (Maudit-mem-anki-queue-1-7 b) */
+            static uint8_t pkg[1 << 20];
+            size_t np = package_bytes(r.path, pkg, sizeof(pkg));
+            TEST_CHECK(occurrences(pkg, np, "<li>Jiten: 1234</li>") == 1 && strstr(logs, "a whole card: exported as it reads\n"));
+        }
+        TEST_CHECK(get_bytes(path, (uint8_t *)back, sizeof(back)) == nq && !memcmp(back, queued, nq));
+        TEST_CHECK(get_bytes(apath, (uint8_t *)back, sizeof(back)) == na && !memcmp(back, archived, na));
+        put_file(apath, queued, nq);
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK && r.moved == 1 && !r.kept);
+        TEST_MSG("pair %d: %s", pair, msg);
+        TEST_CHECK(count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 0 &&
+                   get_bytes(apath, (uint8_t *)back, sizeof(back)) == nq && !memcmp(back, queued, nq));
+    }
 }
 
 static void test_damaged_cards_stay_and_the_rest_are_exported(void)
@@ -2144,7 +2190,8 @@ static void test_damaged_cards_stay_and_the_rest_are_exported(void)
     Card pic = eat;
     reset();
     queue_card(&cat, 0);
-    /* an edited record: its checksum no longer matches its name */
+    /* a record edited out of shape: the byte lands in its "spelling" key, so it is no whole record (#528: a whole
+     * edited record is exported as it reads) */
     id = queue_card(&dog, 0);
     snprintf(path, sizeof(path), VJO_EXPORT_QUEUE_DIR "/%s.json", id);
     {
@@ -2222,6 +2269,10 @@ static const struct {
      "a8082df72c88e41522bdbe54d4f8a9a7", READ_RESTORED},
     {"during the screenshot: a NUL first", 1, "\"\"", "a2b2d1144804436112ac767bf55153f9",
      "0911ba6971fed42e30c3d27ba36129e0", READ_RESTORED},
+    /* during a screenshot that failed (the game's memory, a busy slot: the owner's 0.8.0 logs have them): the card
+     * saved without one, under the text-only record's name */
+    {"during a failed screenshot", 0, "\"to come; to arrive\"", "14a5848a63c19cfca6b2a457b5790e15",
+     "4f406bd5f550fb3b24ef22504c95bc22", READ_RESTORED},
     /* before its name and again during the screenshot: named with no list's name, so not proven */
     {"before its name and during the screenshot", 1, "\"来る\"", "92043a128784efee53e43ce1885fc685",
      "004688c4c52f24478b846626867f3c0b", READ_MISMATCHED},
@@ -2321,6 +2372,158 @@ static void test_a_damaged_record_stays_and_is_reported_once(void)
     TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 1 && r.moved == 1 && !r.unreadable);
     TEST_MSG("%s", msg);
     TEST_CHECK(words(&w, 64) == 0 && w.n == 2 && !w.unreadable && !w.read);
+}
+
+/* ---------------- #528 audit (audit-mem-anki-queue-1): the words cache's and the archive's #528 paths ---------------- */
+
+/* A record read in an arena of every size up to one that holds it all (Maudit-mem-anki-queue-1-4): it is read as what
+ * it is, or not now (-2); never as no whole record, nor a restorable one as mismatched, for want of memory. The
+ * records: one its name's, one a lookup during its screenshot misnamed (restorable), one cut short. */
+static void test_a_short_arena_never_reads_as_damage(void)
+{
+    static const struct { int k; size_t cut; int how; } cases[] = {{1, 0, READ_VERIFIED}, {5, 0, READ_RESTORED},
+                                                                  {1, 200, -1}};
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        char json[1024], path[256];
+        size_t len = released_record(json, sizeof(json), released[cases[c].k].picture, released[cases[c].k].source);
+        int reads = 0, now = 0;
+        reset();
+        snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, released[cases[c].k].name);
+        put_file(path, json, cases[c].cut ? cases[c].cut : len);
+        for (size_t size = 0; size <= 64 * 1024; size += size < 8192 ? 8 : 512) {
+            VjoAnkiNote note;
+            int picture, rc;
+            vjo_arena_init(&A, mem, size);
+            rc = read_card(&A, 0, released[cases[c].k].name, &note, &picture, 1, REPORT_NONE);
+            TEST_CHECK_(rc == -2 || rc == cases[c].how, "case %u, an arena of %u B: %d", c, (unsigned)size, rc);
+            if (rc == cases[c].how && cases[c].how >= 0) {
+                TEST_CHECK(!strcmp(note.spelling, "猫") && note.source && !strcmp(note.source, "Jiten") &&
+                           note.game && !strcmp(note.game, "CLANNAD"));
+                reads++;
+            }
+            now += rc == -2;
+        }
+        TEST_CHECK_(now > 0 && (cases[c].how < 0 || reads > 0), "case %u: %d not now, %d read", c, now, reads);
+    }
+}
+
+/* The cache file's entries (ID, key, time), or -1 without a file. */
+static int audit528_cache(uint64_t *ids, uint32_t *times, int cap)
+{
+    uint8_t b[1 << 16];
+    size_t n = get_bytes(VJO_EXPORT_DATA_DIR "/anki_words.bin", b, sizeof(b));
+    int k = 0;
+    if (n < 16)
+        return -1;
+    for (size_t at = 16; at + 20 <= n && k < cap; at += 20, k++) {
+        ids[k] = be_get(b + at, 8);
+        times[k] = (uint32_t)be_get(b + at + 16, 4);
+    }
+    return k;
+}
+
+static void audit528_put(const char *dir, const char *name, const void *data, size_t len)
+{
+    char path[256];
+    mkdir(dir, 0777);
+    snprintf(path, sizeof(path), "%s/%s.json", dir, name);
+    put_file(path, data, len);
+}
+
+/* A card in both directories (an export stopped between its moves, a copy put back by hand) whose one copy is no whole
+ * record: its word is the whole copy's, whichever directory has it, and the cache keeps that word. */
+static void test_audit528_a_damaged_and_a_whole_copy_give_the_word(void)
+{
+    char json[1024], name[VJO_QUEUE_ID_SIZE];
+    size_t len = released_record(json, sizeof(json), 0, "\"Jiten\"");
+    uint64_t ids[4];
+    uint32_t times[4];
+    VjoWords w;
+    vjo_queue_id(json, len, name);
+    for (int damaged_queued = 0; damaged_queued < 2; damaged_queued++) {
+        reset();
+        audit528_put(VJO_EXPORT_QUEUE_DIR, name, json, damaged_queued ? 100 : len);
+        audit528_put(VJO_EXPORT_ARCHIVE_DIR, name, json, damaged_queued ? len : 100);
+        TEST_ASSERT(words(&w, 64) == 0);
+        TEST_CHECK_(w.n == 1 && w.read == 1, "%s copy damaged: %d words, %d read", damaged_queued ? "queued" : "archived",
+                    w.n, w.read);
+        TEST_CHECK(audit528_cache(ids, times, 4) == 1 && times[0] != 0);
+    }
+}
+
+/* A record that cannot be read now (an I/O error) has no entry in the cache: the next show reads it. */
+static void test_audit528_a_record_not_read_now_is_not_cached(void)
+{
+    char json[1024], name[VJO_QUEUE_ID_SIZE];
+    size_t len = released_record(json, sizeof(json), 0, "\"Jiten\"");
+    uint64_t ids[4];
+    uint32_t times[4];
+    VjoWords w;
+    vjo_queue_id(json, len, name);
+    reset();
+    audit528_put(VJO_EXPORT_QUEUE_DIR, name, json, len);
+    io.fail_read = name;
+    TEST_ASSERT(words(&w, 64) == 0);
+    io.fail_read = NULL;
+    TEST_CHECK(w.n == 0 && w.unreadable == 1);
+    TEST_CHECK(audit528_cache(ids, times, 4) <= 0); /* no damaged entry */
+    TEST_ASSERT(words(&w, 64) == 0);
+    TEST_CHECK(w.n == 1 && w.read == 1 && audit528_cache(ids, times, 4) == 1 && times[0] != 0);
+}
+
+/* More records that are no whole records than a show reads (64): each is read and logged once, the next show reads
+ * the rest (the cached ones do not count toward its 64), and none is read again after that. */
+static void test_audit528_the_page_reads_every_damaged_record_once(void)
+{
+    char json[1024];
+    size_t len = released_record(json, sizeof(json), 0, "\"Jiten\"");
+    int lines[3], total = 0;
+    VjoWords w;
+    reset();
+    for (int i = 0; i < 70; i++) {
+        char nm[VJO_QUEUE_ID_SIZE];
+        snprintf(nm, sizeof(nm), "%08x%024x", 0x10000000u + (unsigned)i * 0x01010101u, 0);
+        audit528_put(VJO_EXPORT_QUEUE_DIR, nm, json, len / 2);
+    }
+    for (int i = 0; i < 5; i++) {
+        Card c = cat;
+        c.time += 60 * (i + 1);
+        queue_card(&c, 0);
+    }
+    for (int show = 0; show < 3; show++) {
+        int rc;
+        logs[0] = '\0';
+        rc = words(&w, 64);
+        lines[show] = occurrences((const uint8_t *)logs, strlen(logs), "checksum mismatch (edited or damaged)");
+        total += lines[show];
+        TEST_CHECK_(show ? rc == 0 : rc == 1, "show %d: rc %d", show, rc);
+    }
+    TEST_CHECK_(lines[0] + lines[1] == 75 - 5 && lines[2] == 0 && total == 70, "lines %d %d %d", lines[0], lines[1],
+                lines[2]);
+    TEST_CHECK(w.n == 5 && w.unreadable == 70);
+}
+
+/* A card exported with the source it was saved with (#528, as it reads) and queued again by hand: its archived record
+ * is that card's, so it stays as it is; the queued copy goes. */
+static void test_audit528_an_archived_restored_record_is_kept(void)
+{
+    char archived[1024], queued[1024], msg[300], path[256];
+    uint8_t back[1024];
+    const char *name = released[4].name; /* the screenshot card, named with Jiten */
+    size_t al = released_record(archived, sizeof(archived), 0, "\"来る\""), ql;
+    VjoExportResult r;
+    (void)al;
+    reset();
+    al = released_record(archived, sizeof(archived), 1, "\"来る\"");
+    ql = released_record(queued, sizeof(queued), 1, "\"x\"");
+    audit528_put(VJO_EXPORT_ARCHIVE_DIR, name, archived, al);
+    audit528_put(VJO_EXPORT_QUEUE_DIR, name, queued, ql);
+    logs[0] = '\0';
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 1 && r.restored == 1 && !strstr(logs, "the archived copy is damaged"));
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
+    TEST_CHECK_(get_bytes(path, back, sizeof(back)) == al && !memcmp(back, archived, al), "the archived record changed");
+    TEST_CHECK(count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 0);
 }
 
 static void test_screenshots_are_one_file_each(void)
@@ -3303,6 +3506,11 @@ TEST_LIST = {
     {"damaged_cards_stay_and_the_rest_are_exported", test_damaged_cards_stay_and_the_rest_are_exported},
     {"#528 every released writer's records export", test_every_released_writers_records_export},
     {"#528 a damaged record stays and is reported once", test_a_damaged_record_stays_and_is_reported_once},
+    {"#528 audit: a damaged and a whole copy give the word", test_audit528_a_damaged_and_a_whole_copy_give_the_word},
+    {"#528 audit: a record not read now is not cached", test_audit528_a_record_not_read_now_is_not_cached},
+    {"#528 audit: the page reads every damaged record once", test_audit528_the_page_reads_every_damaged_record_once},
+    {"#528 audit: an archived restored record is kept", test_audit528_an_archived_restored_record_is_kept},
+    {"#528 audit: a short arena never reads as damage", test_a_short_arena_never_reads_as_damage},
     {"screenshots_are_one_file_each", test_screenshots_are_one_file_each},
     {"missing_or_damaged_screenshots_export_the_text", test_missing_or_damaged_screenshots_export_the_text},
     {"good_screenshot_copy_survives_a_damaged_copy", test_good_screenshot_copy_survives_a_damaged_copy},

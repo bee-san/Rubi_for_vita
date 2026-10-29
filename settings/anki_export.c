@@ -233,42 +233,69 @@ static const char *record_game(VjoArena *a, const char *json, size_t len)
 #define BUNDLED_SOURCE "Jiten"
 #define BUNDLED_SOURCE_JSON "\"" BUNDLED_SOURCE "\""
 
-/* 1 when hex is this record's ID with its source (the frequency list's name) the bundled dictionary's. Until 0.10.2
- * the Shell's card kept its source as a pointer into the overlay's lookup memory (core/anki.c
- * vjo_anki_note_from_entry; every other field it copied), and named its record before its screenshot and wrote it
- * after (shell/anki_queue.c vjo_queue_save): a lookup meanwhile (the cursor moved, the text changed) left a record
- * whose source is that lookup's bytes, under the ID of the one with its own. The reconstruction is the record's
- * bytes with that value's, so the hash proves it: nothing else differs. */
-static int named_with_bundled_source(VjoArena *a, const char *json, size_t len, const char *hex)
+/* The record its writer named hex, when that is this record with its source (the frequency list's name) the bundled
+ * dictionary's: its bytes, in a (*n of them, NUL-terminated), else NULL (nothing left in a). Until 0.10.2 the Shell's
+ * card kept its source as a pointer into the overlay's lookup memory (core/anki.c vjo_anki_note_from_entry; every
+ * other field it copied), and named its record before its screenshot and wrote it after (shell/anki_queue.c
+ * vjo_queue_save): a lookup meanwhile (the cursor on another word, a dictionary page turned, a line-history step, a
+ * text a refresh replaced, or the next read or a game's exit giving that memory back) left a record whose source is
+ * other bytes, under the ID of the one with its own. The record's bytes with that one value replaced are the named
+ * record exactly when their hash is its name: nothing else differs. The caller has the room (read_room). */
+static char *as_named_with_bundled_source(VjoArena *a, const char *json, size_t len, const char *hex, size_t *n)
 {
     char actual[VJO_QUEUE_ID_SIZE], *alt;
-    size_t mark = vjo_arena_mark(a), from, to, n;
+    size_t mark = vjo_arena_mark(a), tokens, from, to;
     VjoJson j;
-    int t, ok = 0;
-    if (vjo_json_parse(a, json, len, &j) >= 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
-        (t = vjo_json_obj_get(&j, 0, "source")) >= 0 && vjo_json_is_type(&j, t, JSMN_STRING)) {
-        from = (size_t)j.t[t].start - 1; /* its quotes too */
-        to = (size_t)j.t[t].end + 1;
-        n = from + sizeof(BUNDLED_SOURCE_JSON) - 1 + (len - to);
-        if ((alt = (char *)vjo_arena_alloc(a, n))) {
-            memcpy(alt, json, from);
-            memcpy(alt + from, BUNDLED_SOURCE_JSON, sizeof(BUNDLED_SOURCE_JSON) - 1);
-            memcpy(alt + from + sizeof(BUNDLED_SOURCE_JSON) - 1, json + to, len - to);
-            vjo_queue_id(alt, n, actual);
-            ok = !strcmp(actual, hex);
-        }
+    int t;
+    /* (first, so that the tokens after it go: its longest is the record with "" for its source) */
+    if (!(alt = (char *)vjo_arena_alloc(a, len + sizeof(BUNDLED_SOURCE_JSON))))
+        return NULL;
+    tokens = vjo_arena_mark(a);
+    if (vjo_json_parse(a, json, len, &j) < 0 || !vjo_json_is_type(&j, 0, JSMN_OBJECT) ||
+        (t = vjo_json_obj_get(&j, 0, "source")) < 0 || !vjo_json_is_type(&j, t, JSMN_STRING)) {
+        vjo_arena_release(a, mark);
+        return NULL;
     }
-    vjo_arena_release(a, mark);
-    return ok;
+    from = (size_t)j.t[t].start - 1; /* its quotes too */
+    to = (size_t)j.t[t].end + 1;
+    vjo_arena_release(a, tokens);
+    *n = from + sizeof(BUNDLED_SOURCE_JSON) - 1 + (len - to);
+    memcpy(alt, json, from);
+    memcpy(alt + from, BUNDLED_SOURCE_JSON, sizeof(BUNDLED_SOURCE_JSON) - 1);
+    memcpy(alt + from + sizeof(BUNDLED_SOURCE_JSON) - 1, json + to, len - to);
+    alt[*n] = '\0';
+    vjo_queue_id(alt, *n, actual);
+    if (strcmp(actual, hex)) {
+        vjo_arena_release(a, mark);
+        return NULL;
+    }
+    return alt;
+}
+
+/* What reading a record of len bytes takes of an arena, at most: the record as its writer named it
+ * (as_named_with_bundled_source: the bytes, and the parse it releases), the decoder's parse and copies (every string
+ * once, with its NUL and alignment; the pointer arrays; the other dictionaries' entries) and record_game's parse and
+ * copy. A record has at most one token for each of its quotes, brackets and commas, and one more: each token starts
+ * with one (an object or array, a string) or a primitive ends at one (or at the end). With this room no allocation of
+ * a read is refused, so a record that cannot be read is no whole record, never a shortage of memory (#528). */
+static size_t read_room(const char *json, size_t len)
+{
+    size_t n = 1;
+    for (size_t i = 0; i < len; i++)
+        n += json[i] == '"' || json[i] == '{' || json[i] == '}' || json[i] == '[' || json[i] == ']' || json[i] == ',';
+    return 3u * len + n * (2u * sizeof(jsmntok_t) + 8u + sizeof(char *)) +
+           (3u + VJO_ANKI_MAX_MORE) * (sizeof(char *) + 8u) + (VJO_ANKI_MAX_MORE + 1u) * sizeof(VjoAnkiGloss) +
+           sizeof(BUNDLED_SOURCE_JSON) + 64u;
 }
 
 /* How read_card read a record (its name is its ID, the SHA-256 of the bytes its writer named it with). */
 enum {
     READ_VERIFIED = 0, /* its name is its checksum */
-    READ_RESTORED,     /* its checksum with the bundled dictionary's source (named_with_bundled_source): the note has
-                        * the source its card was saved with */
+    READ_RESTORED,     /* the record its writer named, with the bundled dictionary's source (as_named_with_bundled_source):
+                        * read from those bytes */
     READ_MISMATCHED,   /* neither, but a whole record (an edit, or a lookup during its save with another dictionary's
-                        * source): the note as it reads, without its source, the one field a Shell could change */
+                        * source): the note as it reads, without its source unless that is the bundled dictionary's, the
+                        * one field a Shell could change */
 };
 /* read_card's lines in log.txt: none, a record that is no whole record (the Anki page's, once: it is cached as one),
  * and also a record that is not its name's (the export's, as it takes the card) */
@@ -279,31 +306,40 @@ enum { REPORT_NONE, REPORT_DAMAGED, REPORT_ALL };
  * could not be read now (I/O, memory: logged). A record is never written: it stays as its writer left it. */
 static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *note, int *picture, int game, int report)
 {
-    char path[VJO_EXPORT_PATH_MAX], actual[VJO_QUEUE_ID_SIZE], *json;
-    size_t len;
+    char path[VJO_EXPORT_PATH_MAX], actual[VJO_QUEUE_ID_SIZE], *json, *named;
+    size_t len, n;
     int version, how = READ_VERIFIED, error;
     card_path(path, archive, hex, "json");
     if (!(json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, &error)))
         return error == VJO_E_PARSE ? -1 : -2; /* (an empty file or one over the limit is no record) */
+    if (vjo_arena_free(a) < read_room(json, len)) {
+        vjo_log("anki export: %s: not enough memory to read it now", path);
+        return -2;
+    }
     vjo_queue_id(json, len, actual);
-    if (strcmp(actual, hex))
-        how = named_with_bundled_source(a, json, len, hex) ? READ_RESTORED : READ_MISMATCHED;
+    if (strcmp(actual, hex)) {
+        if ((named = as_named_with_bundled_source(a, json, len, hex, &n))) {
+            json = named;
+            len = n;
+            how = READ_RESTORED;
+        } else {
+            how = READ_MISMATCHED;
+        }
+    }
     if ((version = vjo_queue_decode(a, json, len, note, picture)) < 0) {
         if (report != REPORT_NONE)
             vjo_log(how == READ_VERIFIED ? "anki export: %s: invalid or unsupported card format"
                                          : "anki export: %s: checksum mismatch (edited or damaged)", path);
         return -1;
     }
-    if (how == READ_RESTORED)
-        note->source = BUNDLED_SOURCE;
-    else if (how == READ_MISMATCHED)
+    if (how == READ_MISMATCHED && note->source && strcmp(note->source, BUNDLED_SOURCE))
         note->source = NULL;
     if (report == REPORT_ALL && how == READ_RESTORED)
         vjo_log("anki export: %s: saved while the overlay looked up another word (#528): exported with its frequency "
                 "source as it was", path);
     else if (report == REPORT_ALL && how == READ_MISMATCHED)
         vjo_log("anki export: %s: checksum mismatch (edited, or saved while the overlay looked up another word), but "
-                "a whole card: exported as it reads, without its frequency source", path);
+                "a whole card: exported as it reads%s", path, note->source ? "" : ", without its frequency source");
     if (game && version >= 3)
         note->game = record_game(a, json, len);
     return how;
@@ -1411,27 +1447,45 @@ static int package_name(const SceDateTime *t, int all, int cards, char *name, si
     return -1;
 }
 
-/* An archived record that is this card's, byte for byte: its checksum is its
- * name (a damaged or hand-copied file is not). */
-static int archived_copy_good(VjoArena *a, const char *hex)
+/* The card's archived record beside its queued one (archive_card): */
+enum {
+    ARCHIVED_UNREAD = -1, /* it could not be read now (I/O, memory: logged) */
+    ARCHIVED_DAMAGED,     /* no whole record (cut short, not a record) */
+    ARCHIVED_WHOLE,       /* a whole record, not provably this card's (edited) */
+    ARCHIVED_CARD,        /* this card's: its checksum is its name, or its name with the frequency source its card was
+                           * saved with (#528, read_card's READ_RESTORED) */
+    ARCHIVED_SAME,        /* the queued record's bytes (an export a power cut stopped in its rename can leave both
+                           * names to one file's clusters) */
+};
+static int archived_state(VjoArena *a, const char *hex)
 {
-    char path[VJO_EXPORT_PATH_MAX], actual[VJO_QUEUE_ID_SIZE];
-    size_t mark = vjo_arena_mark(a), len;
-    char *json;
-    int good;
+    char path[VJO_EXPORT_PATH_MAX], *q, *x;
+    size_t mark = vjo_arena_mark(a), nq = 0, nx = 0;
+    VjoAnkiNote note;
+    int state, picture, error;
     card_path(path, 1, hex, "json");
-    json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, NULL);
-    if (json)
-        vjo_queue_id(json, len, actual);
-    /* (#528: or this card's record as a Shell before 0.10.2 wrote it, named with the source it was saved with) */
-    good = json && (!strcmp(actual, hex) || named_with_bundled_source(a, json, len, hex));
+    if (!(x = read_file(a, path, VJO_QUEUE_TEXT_MAX, &nx, 0, &error)))
+        return error == VJO_E_PARSE ? ARCHIVED_DAMAGED : ARCHIVED_UNREAD;
+    card_path(path, 0, hex, "json");
+    q = read_file(a, path, VJO_QUEUE_TEXT_MAX, &nq, 0, NULL);
+    if (q && nq == nx && !memcmp(q, x, nx))
+        state = ARCHIVED_SAME;
+    else if ((state = read_card(a, 1, hex, &note, &picture, 0, REPORT_NONE)) == -2)
+        state = ARCHIVED_UNREAD;
+    else
+        state = state == READ_VERIFIED || state == READ_RESTORED ? ARCHIVED_CARD
+                : state == READ_MISMATCHED                         ? ARCHIVED_WHOLE
+                                                                   : ARCHIVED_DAMAGED;
     vjo_arena_release(a, mark);
-    return good;
+    return state;
 }
 
 /* Moves a card that is now in a verified package out of the queue: its
  * JPEG first, then its record (a card is in the queue while its record
- * is). 0, or -1 (it stays queued, harmlessly: its note's GUID is the same). */
+ * is). 0, or -1 (it stays queued, harmlessly: its note's GUID is the same).
+ * With a record of this card archived already, the queued one goes when it adds nothing (the same bytes, or both
+ * provably this card's), and replaces the archived one only when that is no whole record and the queued one is
+ * provably the card's; when they differ otherwise, neither is removed (#528: no whole record is ever deleted). */
 static int archive_card(VjoArena *a, const VjoApkgCard *c)
 {
     char hex[VJO_QUEUE_ID_SIZE], from[VJO_EXPORT_PATH_MAX], to[VJO_EXPORT_PATH_MAX];
@@ -1447,11 +1501,20 @@ static int archive_card(VjoArena *a, const VjoApkgCard *c)
     card_path(from, 0, hex, "json");
     card_path(to, 1, hex, "json");
     if (sceIoGetstat(to, &st) >= 0) {
-        /* the same record archived already: the queued copy goes; a damaged one there is replaced */
-        if (archived_copy_good(a, hex)) {
+        int provable = !(c->flags & CARD_MISMATCHED), archived = archived_state(a, hex);
+        if (archived == ARCHIVED_UNREAD)
+            return -1;
+        if (archived == ARCHIVED_SAME || (archived == ARCHIVED_CARD && provable)) {
+            /* the same record archived already: the queued copy goes */
             if ((rc = sceIoRemove(from)) < 0)
                 return io_fail("remove", from, rc);
             return 0;
+        }
+        if (archived != ARCHIVED_DAMAGED || !provable) {
+            vjo_log("anki export: %s: kept queued: it differs from %s (%s), and neither replaces the other", from, to,
+                    archived == ARCHIVED_DAMAGED ? "no whole record" : archived == ARCHIVED_WHOLE ? "a whole record"
+                                                                                               : "this card's");
+            return -1;
         }
         vjo_log("anki export: %s: the archived copy is damaged: replaced by the queued one", to);
         if ((rc = sceIoRemove(to)) < 0)
