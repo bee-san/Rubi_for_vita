@@ -1394,7 +1394,7 @@ static void run_opts(vocr_opts *opts, const vocr_model *model, int head_gate, in
  * planned in the scratch (the finder is done with it). */
 static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi, const VjoGreySource *im,
                       VjoVocrResident *res, unsigned char *ws, const Layout *l, VjoVocrStats *st,
-                      VjoVocrCache *cache, int head_gate, int two_level)
+                      VjoVocrCache *cache, int head_gate, int two_level, int *two_out)
 {
     vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
@@ -1408,6 +1408,7 @@ static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel 
     /* Verified bytes the runtime refuses would fail every job: release them. */
     if (vocr_load(model, res->data, mi->bytes) != VOCR_OK) return drop_with(res, VJO_E_OCR_MODEL);
     run_opts(&opts, model, head_gate, two_level);
+    *two_out = opts.two_level; /* Mmem-game-8: the job's two-level head is the parsed model's, as its context plans it */
     {
         size_t need = vocr_arena_bytes(model, &opts);
         if (!need || need > l->scratch) return drop_with(res, VJO_E_OCR_MODEL);
@@ -2507,7 +2508,6 @@ settle:
     L->mi = mi;
     L->model = model;
     L->ctx = ctx;
-    L->two_level = pol->two_level && vocr_has_two_level(model);
     L->im = im;
     L->pol = pol;
     L->l = l;
@@ -2562,7 +2562,7 @@ settle:
     /* With the blank-line check, the weights are read at the first line that
      * is not skipped: a box of blank lines opens no model file. */
     if (!pol->blank) {
-        rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache, pol->head_gate, pol->two_level);
+        rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache, pol->head_gate, pol->two_level, &L->two_level);
         if (rc) return rc;
         loaded = 1;
         if (l->lm && pol->lm) {
@@ -2733,7 +2733,8 @@ settle:
             }
             if (!loaded) {
                 uint32_t r0 = clock_us(p);
-                rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache, pol->head_gate, pol->two_level);
+                rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache, pol->head_gate, pol->two_level,
+                                &L->two_level);
                 if (rc) goto fail;
                 loaded = 1;
                 if (l->lm && pol->lm) {
@@ -2947,8 +2948,8 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
 
     if (policy && policy->spot && !columns_of(mi) && policy->vertical_check != VJO_VOCR_CHECK_ON) {
-        /* API 54: the spotter's arena and result in the scratch, before every other part: the job's own workspace
-         * as the caller sized it (vjo_vocr_job_bytes_spot). Without its parsed weights, an arena the build takes,
+        /* API 54: the spotter's arena and result from the scratch's start, before the job writes any other part
+         * (#528: over them, below): the job's own workspace as the caller sized it (vjo_vocr_job_bytes_spot). Without its parsed weights, an arena the build takes,
          * or room, the job finds its lines with GRAD (stats->spot_rc says why). A model of columns reads without
          * it, and so does on's job (ocr_vertical = on: GRAD's rows and on's check decide, #379's measured rule;
          * the spotter's boxes were not measured there: audit-vocr6-spotter2-rubi F1). */

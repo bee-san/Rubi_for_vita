@@ -1662,7 +1662,10 @@ above.
   context alone, as `docs/headgate.md` has it); it applies to the job's lines, the cascade's re-reads and, without
   the LM's top-K (no LM and no cascade: no counter re-decode), to the two-level head's kana lines still. A re-read
   whose text does not fit the room left in the job's text keeps the gated reading: the line is read gated once more
-  (the same bits). On real development lines the counter-context trigger read nothing again (0 in 8,233 reads per
+  (the same bits). The rule's two-level head is the job's model's, as `load_model` parsed it (#528, Mmem-game-8:
+  from API 42 until then the job read the flag from its workspace before the model was parsed into it, so a block
+  that came zero-filled left Normal and Large without the kana re-read, and other bytes could give Small one).
+  On real development lines the counter-context trigger read nothing again (0 in 8,233 reads per
   size, `docs/headgate.md`; vita-vn-ocr does not report the kana trigger on development lines, and this overlay's
   1,074 development jobs with `on`, below, read none again); on vita-vn-ocr's synthetic counter set the re-read
   leaves 76 (Normal) and 18 (Large) of 3,969 lines worse with the gate (96 and 32 without it; Small 14), nearly all
@@ -1977,9 +1980,11 @@ The scratch is shared, one after the other, with GRAD's arena and the recognizer
 lead the workspace and the spotter's part runs from the scratch's start over every part after it as well: the
 refinement's arena, the LM's and the cascade's extras and the helpers' line slots, which the job writes only after the
 spotter's boxes are copied out (`core/vocr_ocr.c` `run_job`). So a job grows only by what the part exceeds the job and
-its extras: a Small or Normal job with the LM not at all (114,688 and 57,344 B less than before at a textbox on the
-host build, `tier-small-88MiB` and `tier-normal-88MiB` in the owner scenario), Large's never did. Only a job with the
-spotter takes either, and only beside what its memory check chose.
+its extras. With the cascade, as Small and Normal read by default, it grows not at all (114,688 and 57,344 B less than
+before at a textbox on the host build, `tier-small-88MiB` and `tier-normal-88MiB` in the owner scenario), and Large's
+never did. With the LM alone Small's job still grows by 57,344 B at a textbox and Normal's by a page at the full
+screen; with neither, by 114,688 B (Small) and 53,248 B (Normal) [host: `reports/mem/mem-game-map.md` in #528's
+swarm]. Only a job with the spotter takes either, and only beside what its memory check chose.
 
 **Time (estimates: vita-vn-ocr `eval/textspot6_a9_20261026.json`, its forced-scale rows for this shape, t64n8c16:
 regions read halved as Rubi reads them, dark flags on, the Vita compiler's `-O2` code priced by the Cortex-A9 cycle

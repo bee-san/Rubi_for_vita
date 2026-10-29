@@ -967,10 +967,12 @@ static uint32_t job_figures(void)
 }
 static void spot_overlap_reads_the_same_text(void)
 {
-    static const struct { const char *name; int tier; uint32_t figures, workspace, before; } want[] = {
-        {"Small", VJO_VOCR_TIER_SMALL, 0xb5040dd3u, 884816u, 999920u},   /* 28 pages fewer: 114,688 B */
-        {"Normal", VJO_VOCR_TIER_NORMAL, 0x52440a6eu, 1141696u, 1197184u}, /* 14 pages fewer: 57,344 B */
-        {"Large", VJO_VOCR_TIER_LARGE, 0x79cb2282u, 1057952u, 1057952u},
+    /* peak: the most Rubi held in the job (audit-mem-game-2 F3: the peak catches a workspace grown by the part
+     * without the extras' room, which the core's own figure, workspace, does not show) */
+    static const struct { const char *name; int tier; uint32_t figures, workspace, before, peak; } want[] = {
+        {"Small", VJO_VOCR_TIER_SMALL, 0xb5040dd3u, 884816u, 999920u, 4014080u},    /* 28 pages fewer: 114,688 B */
+        {"Normal", VJO_VOCR_TIER_NORMAL, 0x52440a6eu, 1141696u, 1197184u, 5922816u}, /* 14 pages fewer: 57,344 B */
+        {"Large", VJO_VOCR_TIER_LARGE, 0x79cb2282u, 1057952u, 1057952u, 4648960u},
     };
     static const uint16_t textbox[4] = {1536, 48188, 62600, 15059}; /* owner_scenario_game's */
     VjoConfig c;
@@ -1005,6 +1007,8 @@ static void spot_overlap_reads_the_same_text(void)
             TEST_CHECK_(last_out.rc == 0 && last_out.recognized == 3 && job_figures() == want[si].figures,
                         "%s: rc %d, %u lines, figures 0x%08x, main's 0x%08x", name, (int)last_out.rc,
                         last_out.recognized, job_figures(), want[si].figures);
+            TEST_CHECK_(user_peak == (int64_t)want[si].peak, "%s: peak %lld B, want %u B", name, (long long)user_peak,
+                        want[si].peak);
             TEST_CHECK_(last_out.workspace_bytes == want[si].workspace, "%s: workspace %u B, want %u B (main's %u B)",
                         name, (unsigned)last_out.workspace_bytes, want[si].workspace, want[si].before);
             /* what the job took: both helpers, the LM on every line, the cascade where the size has one, and the
