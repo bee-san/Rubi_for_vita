@@ -128,11 +128,11 @@
  * (at most 7 KiB, compile-time checked), ahead of the resettable lookup arena. */
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u
 /* An Anki job (anki.c ANKI_TEXT_MEM): saving a card to the queue. The Shell takes no screenshot itself: the game
- * worker makes the card's JPEG in the game's memory (VJO_BUDGET_GAME_SHOT); here only its request and result, 5,404 B
+ * worker makes the card's JPEG in the game's memory (VJO_BUDGET_GAME_SHOT); here only its request and result, 5,440 B
  * in this arena while the shot runs, after the record's dry runs are released. #528: sized by construction from its
  * inputs' bounds (anki.c ANKI_FULLEST, checked at compile time: the settings, the locators, a record's worth of card,
- * one more dictionary's entry at VJO_LOCAL_MAX_ENTRY and the record being encoded, VJO_QUEUE_TEXT_MAX: 87,000 B on the
- * host, less on the Vita), so a card is the same as in a larger arena; 131,072 B until then, whose measured peak,
+ * one more dictionary's entry at VJO_LOCAL_MAX_ENTRY and the record being encoded, VJO_QUEUE_TEXT_MAX: 87,013 B on the
+ * host, 86,869 B on the Vita), so a card is the same as in a larger arena; 131,072 B until then, whose measured peak,
  * 102,624 B with 8 dictionaries' entries, was its record's buffer doubling into room it had [measured, host,
  * test_shell_anki.c]. */
 #define VJO_BUDGET_PAF_ANKI 90112u

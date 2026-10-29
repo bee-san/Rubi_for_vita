@@ -1262,6 +1262,7 @@ static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t
     v->spelling = payload; v->reading = *reading ? reading : payload; v->rank = rank;
     v->meanings = vjo_arena_alloc(out, sizeof(char *));
     if (!v->meanings) return VJO_E_TOO_LARGE;
+    /* one meaning, no parts of speech: shell/anki.c's ANKI_NOTE_MAX and ANKI_GLOSS_MAX count one pointer each (#528) */
     v->meanings[0] = meaning; v->n_meanings = 1;
     if (d->title[0] && !(v->dictionary = vjo_arena_strndup(out, d->title, strlen(d->title))))
         return VJO_E_TOO_LARGE;
