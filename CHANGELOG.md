@@ -108,11 +108,6 @@ been reported.
   average (up to 133 ms; 32.6 ms and up to 267 ms at 30 fps); a full-screen job 4 strips fewer. The same text, byte
   for byte (host bench; console times are estimates). Every strip not read is also a copy the game's display call
   does not make.
-- The stable-text wait reads its pass at its due time (#528): a job whose text spotter finds the lines before the
-  150 ms wait is due sleeps until then and re-reads the region once, instead of once at once (too early to count) and
-  again after the sleep. On 358 development regions a job reads 2.1 strips fewer at 60 fps, 5.7 ms sooner on average
-  (up to 67 ms; 19.4 ms and up to 100 ms at 30 fps), none slower; the same text. A screen that changes after the
-  spotter's pass is seen at the due time rather than at once (at most about 60 ms later, estimate).
 - Every OCR job does less of Rubi's own work (#528, #553): the LM is parsed once while it stays resident, and each
   row's checksum takes about half the instructions: 3.6 M fewer instructions a job on the Cortex-A9 model (2.3% of a
   Large job, 4.4% of a Small one; about 13-20 ms, estimate). The same text.

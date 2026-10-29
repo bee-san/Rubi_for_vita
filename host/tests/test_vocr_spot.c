@@ -609,6 +609,7 @@ static void its_scratch_is_sized_exactly(void)
  * source that switches to a changed frame right after the first pass and records every read row. */
 static unsigned char rgba_b[MAX_W * MAX_H * 4];
 static unsigned row_reads[MAX_H], first_pass_reads, rows_read_total;
+static uint64_t pass_t0; /* the clock as the job's first pass began (its row 0) */
 static int switch_after_first; /* the frame changes once the first pass is in (the read with VJO_STRIP_LAST) */
 static int switched;
 static int counting_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
@@ -623,6 +624,7 @@ static int counting_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, 
     }
     rows_read_total += n;
     if (flags & VJO_STRIP_FIRST) first_pass_reads++;
+    if ((flags & VJO_STRIP_FIRST) && !y && !pass_t0) pass_t0 = clock_now; /* the clock the job read as the pass began */
     if (switch_after_first && (flags & VJO_STRIP_LAST)) switched = 1;
     return (int)n;
 }
@@ -685,8 +687,11 @@ static void without_the_wait_every_row_is_read_again(void)
 }
 
 /* #528: with the stable-text wait on, a spotter job whose finding ends before the wait's due time (settle_us after its
- * first pass began) sleeps until then and reads the region once (one pass that counts), not at once and again after
- * the sleep; a change during the sleep is seen by that pass (a second try, the changed frame's boxes). */
+ * first pass began) re-reads the region at once (a change after the finding is seen then; this pass cannot count),
+ * sleeps until the due time, and reads the pass that counts exactly then; a change during the sleep is seen by that
+ * pass (a second try, the changed frame's boxes). With less of the wait's budget left than the sleep, the sleep stops
+ * at the budget, the job goes on without waiting (settle_timeout) and reads the screen. (#565 slept before the first
+ * re-read; restored after its audit.) */
 static unsigned sleeps;
 static uint64_t slept_until;
 static void test_sleep(uint32_t us)
@@ -696,7 +701,7 @@ static void test_sleep(uint32_t us)
     slept_until = clock_now;
     if (switch_after_first == 2) switched = 1; /* the screen changes while the job sleeps */
 }
-static void the_wait_reads_one_pass_at_its_due_time(void)
+static void the_wait_rereads_at_once_and_counts_at_its_due_time(void)
 {
     VjoVocrStats st;
     VjoVocrPolicy p;
@@ -713,11 +718,15 @@ static void the_wait_reads_one_pass_at_its_due_time(void)
     make_frame(TB_W, 2u * TB_H, 0, 0, 0); /* five strips; the clock moves 7 us a reading: the finding ends early */
     switch_after_first = 0;
     sleeps = 0;
+    slept_until = pass_t0 = 0;
     TEST_ASSERT(counting_job(&p, &st) == VJO_OK);
-    TEST_CHECK_(st.spot_ran && st.tries == 1 && st.settled && st.settle_passes == 1 && sleeps == 1,
+    TEST_CHECK_(st.spot_ran && st.tries == 1 && st.settled && !st.settle_timeout && st.settle_passes == 2 && sleeps == 1,
                 "spot %u, %u tries, settled %u, %u stable-text passes, %u sleeps", st.spot_ran, st.tries, st.settled,
                 st.settle_passes, sleeps);
-    for (unsigned y = 0; y < frame_h; y++) TEST_CHECK_(row_reads[y] >= 2, "row %u read %u time(s)", y, row_reads[y]);
+    /* the counting pass begins at the due time: the sleep ends exactly settle_us after the first pass began */
+    TEST_CHECK_(pass_t0 && slept_until == pass_t0 + p.settle_us, "first pass at %llu us, the sleep ended at %llu us",
+                (unsigned long long)pass_t0, (unsigned long long)slept_until);
+    for (unsigned y = 0; y < frame_h; y++) TEST_CHECK_(row_reads[y] >= 3, "row %u read %u time(s)", y, row_reads[y]);
     /* the screen changes during the sleep: the pass at the due time sees it, and the job gives the new frame */
     {
         static unsigned char plain[MAX_W * MAX_H * 4];
@@ -733,6 +742,21 @@ static void the_wait_reads_one_pass_at_its_due_time(void)
     TEST_CHECK_(st.tries == 2 && st.tears > 0, "%u tries, %u tears", st.tries, st.tears);
     n = runtime_lines(VOCR_TEXTSPOT6_SCALE2, want, &more);
     TEST_CHECK_(same_lines(got, n_got, want, n) && !bad_pixels, "%u lines against the changed frame's %u, %u bad crops",
+                n_got, n, bad_pixels);
+    /* the budget: 50 ms of wait left, less than the sleep would take: the sleep stops there, the wait ends without
+     * settling (settle_timeout) and the job reads the screen it has */
+    memcpy(rgba, rgba_b, (size_t)frame_w * frame_h * 4);
+    p.settle_max_us = 50000u;
+    sleeps = 0;
+    slept_until = pass_t0 = 0;
+    TEST_ASSERT(counting_job(&p, &st) == VJO_OK);
+    TEST_CHECK_(st.tries == 1 && st.settle_timeout && !st.settled && sleeps == 1 && slept_until < pass_t0 + p.settle_us &&
+                    st.settle_us <= p.settle_max_us + 1000u,
+                "%u tries, timeout %u, settled %u, %u sleeps, slept to %llu (first pass %llu), waited %u us", st.tries,
+                st.settle_timeout, st.settled, sleeps, (unsigned long long)slept_until, (unsigned long long)pass_t0,
+                st.settle_us);
+    n = runtime_lines(VOCR_TEXTSPOT6_SCALE2, want, &more);
+    TEST_CHECK_(same_lines(got, n_got, want, n) && !bad_pixels, "the budget spent: %u lines against %u, %u bad crops",
                 n_got, n, bad_pixels);
 }
 
@@ -750,6 +774,6 @@ TEST_LIST = {
     {"vertical_text_checks_hand_over_by_the_spotters_counts", vertical_text_checks_hand_over_by_the_spotters_counts},
     {"a_model_of_columns_takes_no_part_of_the_spotters_scratch", a_model_of_columns_takes_no_part_of_the_spotters_scratch},
     {"without_the_wait_every_row_is_read_again", without_the_wait_every_row_is_read_again},
-    {"the_wait_reads_one_pass_at_its_due_time", the_wait_reads_one_pass_at_its_due_time},
+    {"the_wait_rereads_at_once_and_counts_at_its_due_time", the_wait_rereads_at_once_and_counts_at_its_due_time},
     {NULL, NULL}
 };
