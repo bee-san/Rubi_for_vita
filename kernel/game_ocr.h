@@ -40,5 +40,11 @@ void game_ocr_process_gone(SceUID pid);
 void game_ocr_rows_hook(SceUID pid, uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, uint32_t h);
 /* ocr-speed: one of the game's frames (display hook, game context): the frame pacing per OCR job. */
 void game_ocr_frame(int64_t now_us);
+#if !VJO_DEBUG
+/* #528, the normal build: one kernel.txt line on the game's memory checks over the activation that ends (its jobs'
+ * count, those refused, the least and the last free USER they read, the most recognizer weights kept and workspace),
+ * then none until the next job's. Kernel worker, without g.lock. */
+void game_ocr_activation_memory(void);
+#endif
 
 #endif

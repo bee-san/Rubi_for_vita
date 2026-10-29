@@ -52,8 +52,8 @@ and had refused there, the game's free memory and Rubi's blocks there, and the k
 ledger.
 
 --status DIR prints that line alone for a folder `install_ftp.sh --status` wrote: its
-status.prev.txt and status.txt (the previous and this boot) and kernel.txt; exit 2 when
-the folder has neither status file.
+status.prev.txt, status.txt, kernel.prev.txt and kernel.txt (the previous and this boot);
+exit 2 when the folder has neither status file.
 
 Exit status follows the verdict: 0 PASS (diagnostic WARNs included), 1 FAIL,
 NO TEXT or INCOMPLETE, 2 for a file that is not a report. With --collect: the self-test's
@@ -2659,6 +2659,8 @@ def summarise_kernel(text, size):
         elif line.startswith("ocr rows ") and "->" in line:
             k = line.split("->")[-1].strip()
             s["rows_fail"][k] = s["rows_fail"].get(k, 0) + 1
+        elif KERNEL_GAME_MEMORY.match(line):
+            pass  # #528: an activation's game memory ("refused" and "kept" are counts there): the memory line's
         elif re.search(r"alloc .*failed|hook .*failed|timed out|refused|kept", line):
             if len(s["alloc_fail"]) < 20:
                 s["alloc_fail"].append(line)
@@ -3192,6 +3194,10 @@ PAF_REQUEST = re.compile(r"^(.+?) Paf (reserve guard|allocation refused|allocati
 THREAD_REFUSED = re.compile(r"^thread (\S+) refused 0x[0-9A-Fa-f]{8}: \d+ B; SceShell free (-?\d+)")
 # kernel/main.c: the kernel plugin's ledger at its start (kernel.txt)
 KERNEL_LEDGER = re.compile(r"^ledger kernel: current=(\d+) peak=(\d+) limit=(\d+)")
+# kernel/game_ocr.c game_ocr_activation_memory (the normal build, #528): the game's memory checks over one activation
+# (the game in front from its start or resume until it left), written as it left; -1: no free figure was read
+KERNEL_GAME_MEMORY = re.compile(r"^game memory: (\d+) checks, (\d+) refused; free USER lowest (-?\d+) B, last (-?\d+) B; "
+                                r"weights kept (\d+) B, workspace up to (\d+) B$")
 # A drop of the PAF heap's free size between two of the Shell's samples that Rubi's own ledger does not account for,
 # of the reserve's size or more: SceShell's own swings are far smaller (the start's LiveArea about 1.0 MB, a game
 # session's at most 486 KB in the owner's 293 sessions without one), and a drop that size, while it is held, leaves
@@ -3205,11 +3211,13 @@ def summarise_memory(shell_text, kernel_text=None):
     more between two samples that Rubi's ledger does not show, and whether free stayed under half of it back until
     the boot's last sample (held); what Rubi held between jobs and at most; the requests refused, by ledger item;
     the threads SceShell refused; the game's free USER memory at the jobs' memory checks (the debug build logs
-    every check, the normal build a refused one only), the sizes that did not fit, and Rubi's largest workspace and
-    kept weights there (the debug build's job lines); and the kernel's ledger, its last line."""
+    every check, the normal build a refused one only, and since #528 its kernel.txt one line an activation), the sizes
+    that did not fit, and Rubi's largest workspace and kept weights there (the debug build's job lines, the normal
+    build's kernel lines); and the kernel's ledger, its last line."""
     s = {"boots": 0, "normal_boots": 0, "debug_boots": 0, "starts": [], "frees": [], "drops": [], "held": [],
          "peak": 0, "refused": {}, "after_drop": 0, "threads": [],
-         "game": {"checks": 0, "refused": 0, "unknown": 0, "free": [], "tier_free": [], "workspace": 0, "resident": 0},
+         "game": {"checks": 0, "refused": 0, "unknown": 0, "free": [], "tier_free": [], "workspace": 0, "resident": 0,
+                  "activations": 0, "act_checks": 0, "act_refused": 0, "act_low": []},
          "kernel": None}
     samples = []  # this boot's PAF samples: (line, free, Rubi's PAF then)
     refusals = []  # this boot's refused requests' lines
@@ -3286,10 +3294,22 @@ def summarise_memory(shell_text, kernel_text=None):
             g["workspace"] = max(g["workspace"], int(m.group(9)))
             g["resident"] = max(g["resident"], int(m.group(11)))
     boot_end()
+    g = s["game"]
     for raw in (kernel_text or "").splitlines():
-        m = KERNEL_LEDGER.match(raw.strip())
+        line = raw.strip()
+        m = KERNEL_LEDGER.match(line)
         if m:
             s["kernel"] = {"current": int(m.group(1)), "peak": int(m.group(2)), "limit": int(m.group(3))}
+            continue
+        m = KERNEL_GAME_MEMORY.match(line)
+        if m:
+            g["activations"] += 1
+            g["act_checks"] += int(m.group(1))
+            g["act_refused"] += int(m.group(2))
+            if int(m.group(3)) >= 0:
+                g["act_low"].append(int(m.group(3)))
+            g["resident"] = max(g["resident"], int(m.group(5)))
+            g["workspace"] = max(g["workspace"], int(m.group(6)))
     return s
 
 
@@ -3325,10 +3345,16 @@ def memory_line(s):
                      f"{min(t['free'] for t in s['threads']):,} B)")
     g = s["game"]
     passed = g["checks"] - g["refused"]
+    if g["activations"]:  # the normal build's kernel.txt (#528): its game checks, an activation a line
+        parts.append((f"game free USER as low as {min(g['act_low']):,} B" if g["act_low"] else "game free USER unread")
+                     + f" over {_n(g['activations'], 'activation')} ({_n(g['act_checks'], 'memory check')}, "
+                       f"{g['act_refused']} refused; kernel.txt)")
     if passed:
         parts.append(f"game free USER {_one(g['free'])} B at {_n(g['checks'], 'memory check')}, {g['refused']} refused")
     elif g["checks"]:
         parts.append(f"game free USER {_one(g['free'])} B at {_n(g['checks'], 'refused memory check')}")
+    elif g["activations"]:
+        pass
     elif s["boots"] and not s["debug_boots"]:
         parts.append("game free USER not logged (the normal build logs a refused memory check only: none)")
     else:
@@ -3348,11 +3374,13 @@ def memory_line(s):
 
 def summarise_status(folder):
     """install_ftp.sh --status's folder (build/device/status): the memory line's figures over the previous and this
-    boot's status.txt, and this boot's kernel.txt."""
+    boot's status.txt and kernel.txt."""
     folder = Path(folder)
     prev, now = _read(folder, "status.prev.txt") or "", _read(folder, "status.txt") or ""
     k = len(prev.splitlines())
-    s = summarise_memory(prev + ("\n" if prev and not prev.endswith("\n") else "") + now, _read(folder, "kernel.txt"))
+    kprev, know = _read(folder, "kernel.prev.txt") or "", _read(folder, "kernel.txt") or ""
+    s = summarise_memory(prev + ("\n" if prev and not prev.endswith("\n") else "") + now,
+                         kprev + ("\n" if kprev and not kprev.endswith("\n") else "") + know)
     s["source"] = " + ".join(n for n, t in (("status.prev.txt", prev), ("status.txt", now)) if t) or "no status.txt"
     for d in s["drops"]:
         d["where"] = f"status.prev.txt:{d['line']}" if d["line"] <= k else f"status.txt:{d['line'] - k}"
@@ -3421,14 +3449,16 @@ def summarise_collect(folder):
     out["kernel"] = summarise_kernel(kt, (folder / (data + "kernel.txt")).stat().st_size) if kt is not None else None
     # the memory line (#528): log.txt's lines, which hold every boot's ledger lines, refusals and game checks, else
     # (log_file = off) the two status.txt files
+    kp = _read(folder, data + "kernel.prev.txt") or ""
+    kernels = kp + ("\n" if kp and not kp.endswith("\n") else "") + (kt or "")  # the previous boot's, then this one's
     if logs:
-        out["memory"] = summarise_memory(logs, kt)
+        out["memory"] = summarise_memory(logs, kernels)
         out["memory"]["source"] = "log.old.txt + log.txt" if old else "log.txt"
         for d in out["memory"]["drops"]:
             d["where"] = where(d["line"])
     else:
         prev, now = _read(folder, data + "status.prev.txt") or "", _read(folder, data + "status.txt") or ""
-        out["memory"] = summarise_memory(prev + ("\n" if prev and not prev.endswith("\n") else "") + now, kt)
+        out["memory"] = summarise_memory(prev + ("\n" if prev and not prev.endswith("\n") else "") + now, kernels)
         out["memory"]["source"] = "status.prev.txt + status.txt"
     st = _read(folder, data + "status.txt")
     out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", *(n + " shell started" for n in NAMES),

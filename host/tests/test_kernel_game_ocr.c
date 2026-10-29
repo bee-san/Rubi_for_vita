@@ -1,5 +1,7 @@
 /* Actual IPC and capture ownership code with bounded user-copy substitutes. */
 #include "acutest.h"
+#include <stdarg.h>
+#include <stdio.h>
 #include <psp2kern/host_stubs.h>
 typedef struct { size_t size; SceUID modid; } tai_module_info_t;
 int taiGetModuleInfoForKernel(SceUID, const char *, tai_module_info_t *);
@@ -87,7 +89,16 @@ static int big_rows_ok;
 static unsigned klogs, delays;
 static const char *last_klog = "";
 static void (*before_lock)(void); /* another thread, just before a syscall's lock */
-void klog(const char *format, ...) { klogs++; last_klog = format; }
+static char last_line[192]; /* the last line as klog formats it (kernel/log.c's 192 B) */
+void klog(const char *format, ...)
+{
+    va_list ap;
+    klogs++;
+    last_klog = format;
+    va_start(ap, format);
+    vsnprintf(last_line, sizeof(last_line), format, ap);
+    va_end(ap);
+}
 unsigned klog_ms(void) { return (unsigned)(model_clock / 1000); } /* kernel/log.c's */
 SceUID ksceKernelGetProcessId(void) { return caller; }
 /* The calling thread (#138: one registered worker thread per game process). */
@@ -3278,6 +3289,61 @@ static void startup_profile_is_not_a_stale_requests_file(void)
     TEST_CHECK(!memcmp(out, "current game", 12) && !model_io.seq);
 }
 
+#if !VJO_DEBUG
+/* #528: the normal build's line on the game's memory, once per activation (kernel/main.c writes it as the game leaves
+ * the front): each job's memory check counted once, as its claim is released (a failed cleanup's retry is not a second
+ * check), refused as the Shell's own line says (shell/worker.c vocr_headroom), and nothing per job; then nothing until
+ * the next job's check. The figures are the owner's (#528: CLANNAD's free USER, VOCR6.2 Large). */
+static void activation_memory_line(void)
+{
+    uint32_t seq;
+    unsigned k0;
+    setup();
+    k0 = klogs; /* the registration's own line */
+    game_ocr_activation_memory();
+    TEST_CHECK(klogs == k0); /* no job: no line */
+    seq = submit(); take(seq); /* a job that read */
+    message.free_user = 88080384; message.reserve_bytes = 1048576; message.need_workspace = 1056768;
+    message.need_weights = 2478080; message.resident_bytes = 2478080; message.workspace_bytes = 1056672;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    seq = submit(); take(seq); /* one its check refused, retried after a failed cleanup: one check */
+    message.text[0] = 0; message.rc = -103; message.cleanup_status = 1;
+    message.free_user = 2097152; message.reserve_bytes = 1048576; message.need_workspace = 1056768;
+    message.need_weights = 823296;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    message.cleanup_status = 0;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    seq = submit(); take(seq); /* one that ended before its check (no reserve): not a check */
+    message.text[0] = 0; message.rc = -108;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* another model's resident weights it gives back first count as free: passed */
+    seq = submit(); take(seq);
+    message.free_user = 3670016; message.release_bytes = 1191936; message.reserve_bytes = 1048576;
+    message.need_workspace = 1056768; message.need_weights = 2478080; message.resident_bytes = 2478080;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    TEST_CHECK(klogs == k0); /* nothing per job */
+    game_ocr_activation_memory();
+    TEST_CHECK(klogs == k0 + 1 && !strcmp(last_line, "game memory: 3 checks, 1 refused; free USER lowest 2097152 B, "
+                                                     "last 3670016 B; weights kept 2478080 B, workspace up to 1056672 B"));
+    TEST_MSG("%s", last_line);
+    game_ocr_activation_memory();
+    TEST_CHECK(klogs == k0 + 1); /* started afresh: no line until the next job's check */
+    seq = submit(); take(seq); /* free USER the query could not read: refused, no figure */
+    message.text[0] = 0; message.rc = -103; message.free_user = (int32_t)0x80020001u; message.reserve_bytes = 1048576;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    game_ocr_activation_memory();
+    TEST_CHECK(klogs == k0 + 2 && !strcmp(last_line, "game memory: 1 checks, 1 refused; free USER lowest -1 B, last -1 "
+                                                     "B; weights kept 0 B, workspace up to 0 B"));
+    TEST_MSG("%s", last_line);
+    seq = submit(); take(seq); /* a check, then the module's start: nothing carried over */
+    message.free_user = 10485760; message.reserve_bytes = 1048576;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    game_ocr_init();
+    game_ocr_activation_memory();
+    TEST_CHECK(klogs == k0 + 2);
+}
+#endif
+
 TEST_LIST = {
     {"hook profile: startup before a claimed job; cold card over 50ms", startup_profile_before_any_job},
     {"hook profile: permissions, bounds, missing and malformed archive", startup_profile_permissions_and_bad_files},
@@ -3367,6 +3433,7 @@ TEST_LIST = {
      pacing_windows_follow_the_claim},
 #else
     {"the normal build adds no pacing step", normal_build_adds_no_pacing_step},
+    {"#528: the normal build's game memory line, once per activation", activation_memory_line},
 #endif
     {"registration and caller permissions", registration_and_permissions},
     {"completion and stale replacement", complete_and_replacement},

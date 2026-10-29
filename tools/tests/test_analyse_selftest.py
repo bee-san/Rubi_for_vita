@@ -3091,6 +3091,33 @@ class MemoryLine(unittest.TestCase):
         self.assertEqual(c["memory"]["source"], "status.prev.txt + status.txt")
         self.assertEqual(len(c["memory"]["drops"]), 1)
 
+    def test_the_normal_builds_kernel_lines_give_the_games_free_memory(self):
+        # kernel/game_ocr.c game_ocr_activation_memory: one line an activation, the previous boot's file included
+        kernel = (KERNEL_TXT + "game memory: 12 checks, 0 refused; free USER lowest 10485760 B, last 12664832 B; "
+                  "weights kept 2478080 B, workspace up to 1056672 B\n"
+                  "game memory: 3 checks, 1 refused; free USER lowest 2097152 B, last 3145728 B; weights kept 823296 B, "
+                  "workspace up to 884736 B\n"
+                  "game memory: 1 checks, 1 refused; free USER lowest -1 B, last -1 B; weights kept 0 B, workspace up to "
+                  "0 B\n")
+        s, line = self.line(QUIET_BOOT, kernel)
+        self.assertEqual((s["game"]["activations"], s["game"]["act_checks"], s["game"]["act_refused"]), (3, 16, 2))
+        self.assertIn("game free USER as low as 2,097,152 B over 3 activations (16 memory checks, 2 refused; "
+                      "kernel.txt)", line)
+        self.assertNotIn("not logged", line)
+        self.assertIn("Rubi in the game: workspace up to 1,056,672 B, weights kept up to 2,478,080 B", line)
+        _, line = self.line(QUIET_BOOT, KERNEL_TXT + "game memory: 1 checks, 1 refused; free USER lowest -1 B, last -1 "
+                            "B; weights kept 0 B, workspace up to 0 B\n")
+        self.assertIn("game free USER unread over 1 activation (1 memory check, 1 refused; kernel.txt)", line)
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            (folder / "status.txt").write_text(QUIET_BOOT)
+            (folder / "kernel.prev.txt").write_text(kernel)
+            (folder / "kernel.txt").write_text(KERNEL_TXT)
+            s = a.summarise_status(folder)
+        self.assertEqual(s["game"]["activations"], 3)
+        # the kernel summary does not list it as a problem line ("refused" and "kept" are counts there)
+        self.assertEqual(a.summarise_kernel(kernel, len(kernel))["alloc_fail"], [])
+
     def test_status_mode_reads_both_boots_and_the_kernel(self):
         with tempfile.TemporaryDirectory() as d:
             folder = Path(d)

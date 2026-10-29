@@ -71,6 +71,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the ledger's per-item lines | `ledger.c` | **reduced**: the pool line stays |
 | foreground changes and the game's activation (`t=`) | `lifecycle.c` | **keep** (a few a session; #104-style problems need them) |
 | boot guard, hooks, start, shell registration, errors | `boot.c`, `main.c` | **keep** |
+| the game's memory over an activation (#528): one `game memory:` line as the game leaves the front, from its jobs' memory checks (count, refused, the least and the last free USER, the most recognizer weights kept and workspace) | `game_ocr.c`, `main.c` | **add**, the normal build only: the debug build's `log.txt` has every job's check |
 | `kernel.txt` (256 KB a boot, the previous boot's kept) | `main.c` | **keep**: shorter, the same file |
 
 ### Game worker (`VitaJPOverlay_OCR.suprx`)

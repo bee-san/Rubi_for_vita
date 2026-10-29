@@ -723,8 +723,9 @@ load; its cost is unmeasured (rule 8).
 | Stardew Valley | +109 MiB | about 56 MiB (309 of 365 MB used) | third-party PSVshell screenshot, PSVshell README; not our measurement |
 | other Japanese visual novels | — | unmeasured | — |
 
-Two samples are not a distribution. The self-test (vita-memory-deep item 5) and the per-job log
-line `game vocr memory: free USER=…` are how the table grows.
+Two samples are not a distribution. The self-test (vita-memory-deep item 5), the per-job log
+line `game vocr memory: free USER=…` (the debug build) and the normal build's `kernel.txt` line
+`game memory: … free USER lowest …`, one an activation (#528), are how the table grows.
 
 ### 6.3 PlayStation TV
 
