@@ -3,6 +3,8 @@
 #include "acutest.h"
 #undef main
 #include "test_tmpdir.h"
+#include "soak_track.h" /* #528 (mem-leak): soak_cycles */
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -1229,6 +1231,45 @@ static void test_total_counts_the_file_once_then_adds(void)
     TEST_CHECK(total_writes == 2);
 }
 
+/* This process's open file descriptors (history.csv, the streak's record and the total's cache are real files
+ * here: a leaked sceIo descriptor is a leaked host one), or -1 where /proc/self/fd cannot be read. */
+static int open_fds(void)
+{
+    DIR *d = opendir("/proc/self/fd");
+    int n = 0;
+    if (!d) return -1;
+    while (readdir(d)) n++;
+    closedir(d);
+    return n;
+}
+
+/* #528 (mem-leak): history and the streak soaked. A cycle: a game's jobs append their lines (each a history.csv
+ * record and the streak's day), the open overlay asks for the total and the control thread's background steps count
+ * what is new, the game's exit keeps it; every tenth cycle the Shell starts again (the total from its cache, then the
+ * rest counted). Each cycle must end with no file open (the count's own included), the scratch arena as it began,
+ * and the total equal to every line appended. VJO_SOAK_CYCLES=N runs N cycles (60 by default). */
+static void test_soak_history_holds_no_more_after_each_cycle(void)
+{
+    const unsigned cycles = soak_cycles(60);
+    int fds0 = -1;
+    uint64_t want = 0;
+    reset();
+    VjoHistoryRecord r = record("x");
+    for (unsigned i = 0; i <= cycles; i++) {
+        if (i && !(i % 10)) memset(&total, 0, sizeof(total)); /* the Shell starts again: the total not read yet */
+        want += append_total_lines(&r, 1 + (int)(i % 7));
+        count_total(); /* the open overlay's request, the background steps after its close */
+        TEST_CHECK_(total.state == TOTAL_KNOWN && total.chars == want, "cycle %u: total %llu, %llu appended", i,
+                    (unsigned long long)total.chars, (unsigned long long)want);
+        vjo_history_total_keep(); /* the game's exit */
+        TEST_CHECK_(!total.fd && !view_held, "cycle %u: the count's file open", i);
+        if (!i) fds0 = open_fds();
+        else if (fds0 >= 0) TEST_CHECK_(open_fds() == fds0, "cycle %u: %d descriptors open, %d after the first", i, open_fds(), fds0);
+    }
+    fprintf(stderr, "soak shell: history and streak %5u cycles: %u history.csv opens, %d streak record opens, %u total "
+            "writes, %d descriptors open after every cycle\n", cycles, opens, streak_opens, total_writes, fds0);
+}
+
 /* The Shell starts again: the total history_total.bin keeps, and only what was appended since counted, when
  * a press asks */
 static void test_total_kept_between_starts(void)
@@ -2311,6 +2352,7 @@ static void test_streak_failures(void)
 }
 
 TEST_LIST = {
+    {"#528 soak: history and the streak hold no more after each cycle", test_soak_history_holds_no_more_after_each_cycle},
     {"streak: a line's day, once a day; the next day, a gap, the clock set back", test_streak_a_day_a_line},
     {"streak: the Triangle view's line, the record as it is now", test_streak_in_the_triangle_view},
     {"streak: a record not readable now is kept; damaged ones replaced; no clock", test_streak_failures},

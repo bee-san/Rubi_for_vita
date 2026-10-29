@@ -17,11 +17,13 @@
 #define VJO_TEST_THREAD_INFO_STUBS 1
 #include <psp2/host_stubs.h>
 #include <pthread.h>
+#include "soak_track.h" /* #528 (mem-leak): what the Shell holds, by pool and item, for the soak */
 
 static VjoState state;
 static VjoConfig loaded;
 static uint64_t test_now;
 static unsigned posted, user_allocs, user_frees, heap_allocs, heap_frees;
+static unsigned user_block_bytes; /* the host's USER_RW result block (one at a time) */
 static int fail_alloc, fail_base, input_blocked, fail_input_block, game_enabled = 1;
 static uint8_t storage[2 * 1024 * 1024];
 /* Separate simulated game process workspace. Shell allocator must never own it. */
@@ -117,14 +119,24 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
 {
     TEST_CHECK(strcmp(name, "VjoVocr") && strcmp(name, "VjoGameVocr"));
     if (phases_checked) TEST_CHECK(!vocr_live && size == 64 * 1024);
-    user_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? -1 : 7;
+    user_allocs++; TEST_CHECK(size <= sizeof(storage));
+    if (fail_alloc) return -1;
+    user_block_bytes = size;
+    soak_take("shell pages", name, size);
+    return 7;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
 {
     if (uid == 9) { *base = vocr_storage; return 0; }
     *base = fail_base ? NULL : storage; return fail_base ? -1 : 0;
 }
-int sceKernelFreeMemBlock(SceUID uid) { if (uid == 9) { vocr_frees++; vocr_live = 0; } else user_frees++; return 0; }
+int sceKernelFreeMemBlock(SceUID uid)
+{
+    if (uid == 9) { vocr_frees++; vocr_live = 0; return 0; }
+    user_frees++;
+    TEST_CHECK(!soak_give("shell pages", "VjoShellMem", user_block_bytes));
+    return 0;
+}
 
 /* net_main itself in a test: its waits come from the test's script (test_wait_event_flag), not the
  * SDK stub's (which never wakes). */
@@ -220,11 +232,18 @@ static int scenario_grants(int item, size_t size)
                     (int64_t)vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF);
     return vjo_paf_guard(item, g_shell_ledger.defs[item].name, (size_t)(avail > 0 ? avail : 0), size);
 }
+/* #528 (mem-leak): the soak's name of a Paf item, as the ledger names it */
+static const char *soak_paf_item(int item)
+{
+    return item == VJO_SL_PAF_RESULTS ? "result arenas" : item == VJO_SL_PAF_HISTORY ? "line history"
+           : item == VJO_SL_PAF_UI ? "overlay text arena" : item == VJO_SL_PAF_ANKI ? "Anki arena" : "?";
+}
 static void *scenario_taken(int item, void *p, size_t size)
 {
     uint32_t held;
     if (!p) return NULL;
     vjo_ledger_add(&g_shell_ledger, item, (uint32_t)size);
+    soak_take("shell paf", soak_paf_item(item), (long long)size);
     held = vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF);
     if (held > scenario_peak) scenario_peak = held;
     return p;
@@ -263,16 +282,19 @@ void vjo_shell_heap_free(int item, void *p, size_t bytes)
         history_frees++;
         memset(history_storage, 0x5A, sizeof(history_storage));
         vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
+        TEST_CHECK(!soak_give("shell paf", soak_paf_item(item), (long long)bytes));
         return;
     }
     if (p == scenario_ui_storage || p == scenario_anki_storage) {
         TEST_CHECK(p == scenario_ui_storage ? item == VJO_SL_PAF_UI && bytes == sizeof(scenario_ui_storage)
                                             : item == VJO_SL_PAF_ANKI && bytes == sizeof(scenario_anki_storage));
         vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
+        TEST_CHECK(!soak_give("shell paf", soak_paf_item(item), (long long)bytes));
         return;
     }
     TEST_CHECK(p == storage || p == vocr_storage);
-    if (p == vocr_storage) { vocr_frees++; vocr_live = 0; } else heap_frees++;
+    if (p == vocr_storage) { vocr_frees++; vocr_live = 0; }
+    else { heap_frees++; TEST_CHECK(!soak_give("shell paf", soak_paf_item(item), (long long)bytes)); }
     vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
 }
 /* While the owner scenario runs, the heap's free size is its model's (owner_scenario.h scenario_free): the overlay's
@@ -3002,12 +3024,16 @@ static int cursor_file_read(void *ud, uint64_t off, void *dst, size_t n)
     memcpy(dst, cursor_dict + off, n); return 0;
 }
 static void cursor_file_close(void *ud)
-{ (void)ud; TEST_CHECK(cursor_handle_live == 1); cursor_handle_live = 0; cursor_closes++; }
+{
+    (void)ud; TEST_CHECK(cursor_handle_live == 1); cursor_handle_live = 0; cursor_closes++;
+    TEST_CHECK(!soak_give("shell fds", "dictionary file", 1));
+}
 static int cursor_file_open(void *ud, const char *path, VjoFile *out)
 {
     (void)ud;
     TEST_CHECK(strstr(path, "main.vjdict") != NULL && !cursor_handle_live);
     cursor_handle_live = 1; cursor_opens++;
+    soak_take("shell fds", "dictionary file", 1);
     *out = (VjoFile){NULL, cursor_dict_size, cursor_file_read, cursor_file_close, 0}; return 0;
 }
 static void cursor_setup(void)
@@ -3890,7 +3916,10 @@ static int paged_read(void *ud, uint64_t off, void *dst, size_t n)
     memcpy(dst, paged_dict[i] + off, n); return 0;
 }
 static void paged_close(void *ud)
-{ int i = *(int *)ud; TEST_CHECK(paged_live & (1u << i)); paged_live &= ~(1u << i); }
+{
+    int i = *(int *)ud; TEST_CHECK(paged_live & (1u << i)); paged_live &= ~(1u << i);
+    TEST_CHECK(!soak_give("shell fds", "dictionary file", 1));
+}
 static int paged_open(void *ud, const char *path, VjoFile *out)
 {
     (void)ud;
@@ -3898,6 +3927,7 @@ static int paged_open(void *ud, const char *path, VjoFile *out)
         if (!strstr(path, paged_names[i])) continue;
         TEST_CHECK(!(paged_live & (1u << i)));
         paged_live |= 1u << i; paged_opens[i]++;
+        soak_take("shell fds", "dictionary file", 1);
         *out = (VjoFile){&paged_index[i], paged_size[i], paged_read, paged_close, 0};
         return 0;
     }
@@ -9335,6 +9365,109 @@ static void test_overlay_page_needs_its_own_room(void)
 }
 #endif
 
+#ifdef VJO_WITH_VOCR
+/* #528 (mem-leak): a whole game session, cycle after cycle, with every Shell allocation counted by pool and item
+ * (host/tests/soak_track.h: the Paf heap's result arena and line history's visit, the host's USER_RW result block,
+ * the dictionaries' files) and the ledger and the control thread's scratch arena watched. One cycle: the game
+ * starts, Auto reads its settled screen and looks its first word up with the overlay closed, the overlay opens on it,
+ * the cursor moves, a dictionary page turns, line history goes back a line and returns, a settled new screen is
+ * refreshed quietly, the overlay closes, Auto reads the next screen, the game exits. Every cycle must end holding
+ * what the first ended with (every item counted, the ledger's pools, the result arena, the scratch arena), and no
+ * dictionary file or line-history visit once its game has exited. VJO_SOAK_CYCLES=N runs N cycles (40 by default). */
+static void soak_shell_cycle(unsigned i)
+{
+    uint32_t gen;
+    state.game_pid = PS_GAME_PID;
+    activate(PS_GAME_PID, "PCSG00415", VJO_GAME);
+    next_scene(100 + 4 * i);
+    state.stable = 1;
+    stable_pending = 1;
+    auto_prefetch();
+    TEST_ASSERT_(job_running && job_lookup && ov == OV_CLOSED, "cycle %u: Auto's job", i);
+    finish_current_job();
+    TEST_CHECK_(cache_ok && local_text_valid && !strcmp(local_text, "猫犬鳥"), "cycle %u: its text", i);
+    open_overlay();
+    if (job_running) finish_current_job();
+    TEST_CHECK_(g_view.open && g_view.list && g_view.list->n_entries == 1, "cycle %u: the overlay shows a word", i);
+    gen = local_text_generation;
+    vjo_post_cursor(3, gen);
+    on_command();
+    finish_current_job();
+    if (vjo_post_page(1, gen)) {
+        on_command();
+        finish_current_job();
+    }
+    vjo_post_cursor(6, gen);
+    on_command();
+    finish_current_job();
+    history_key(VJO_CMD_EARLIER);
+    if (job_running) finish_current_job();
+    TEST_CHECK_(g_view.history == 1, "cycle %u: an earlier line shown", i);
+    history_key(VJO_CMD_LATER);
+    if (job_running) finish_current_job();
+    TEST_CHECK_(!history && !g_view.history, "cycle %u: back on the current text", i);
+    /* a settled new screen with the overlay open, its lookups long done: the quiet refresh */
+    test_now += 3000000;
+    next_scene(101 + 4 * i);
+    control_tick(VJO_EV_REGION_STABLE);
+    if (job_running) finish_current_job();
+    close_overlay();
+    control_tick(0);
+    next_scene(102 + 4 * i);
+    stable_pending = 1;
+    auto_prefetch();
+    if (job_running) finish_current_job();
+    state.game_pid = 0;
+    control_tick(VJO_EV_GAME_EXIT);
+    control_tick(0);
+    test_now += 1000000;
+}
+
+static void test_soak_a_game_session_holds_no_more_after_each_cycle(void)
+{
+    const unsigned cycles = soak_cycles(40);
+    SoakSnap a, b;
+    unsigned grew;
+    int memory0;
+    uint32_t paf0, pages0;
+    size_t scratch0;
+    paged_setup(3); /* three dictionaries: their pages, their files */
+    vjo_ledger_shell_init();
+    history_csv_add("vita-PCSG00415", "鳥");
+    history_csv_add_from("vita-PCSG00415", "犬鳥", "hook");
+    history_csv_add("vita-PCSG00415", "猫犬鳥");
+    soak_shell_cycle(0);
+    soak_snap(&a);
+    /* what the first cycle ended with: every later one ends with the same (no file and no visit after a game's exit) */
+    memory0 = has_result_memory();
+    paf0 = g_shell_ledger.pool_current[VJO_LEDGER_POOL_SHELL_PAF];
+    pages0 = g_shell_ledger.pool_current[VJO_LEDGER_POOL_SHELL_PAGES];
+    scratch0 = scratch.used;
+    TEST_CHECK(!paged_live && !history);
+    for (unsigned i = 1; i <= cycles; i++) {
+        soak_shell_cycle(i);
+        TEST_CHECK_(!paged_live && !history && has_result_memory() == memory0,
+                    "cycle %u: a file %d, a visit %d, the result arena %d held after the game's exit", i, paged_live,
+                    history != NULL, has_result_memory());
+        TEST_CHECK_(g_shell_ledger.pool_current[VJO_LEDGER_POOL_SHELL_PAF] == paf0 &&
+                        g_shell_ledger.pool_current[VJO_LEDGER_POOL_SHELL_PAGES] == pages0,
+                    "cycle %u: the ledger's Paf pool %u B (%u after the first), its pages %u B (%u)", i,
+                    (unsigned)g_shell_ledger.pool_current[VJO_LEDGER_POOL_SHELL_PAF], (unsigned)paf0,
+                    (unsigned)g_shell_ledger.pool_current[VJO_LEDGER_POOL_SHELL_PAGES], (unsigned)pages0);
+        TEST_CHECK_(scratch.used == scratch0, "cycle %u: %u B in the control thread's scratch (%u after the first)", i,
+                    (unsigned)scratch.used, (unsigned)scratch0);
+    }
+    soak_snap(&b);
+    grew = soak_growth("shell", "a game session (lookups, pages, history)", &a, &b, cycles);
+    TEST_CHECK_(grew == 0, "%u items grew over %u cycles", grew, cycles);
+    TEST_CHECK_(heap_allocs + user_allocs >= cycles && history_allocs == history_frees && heap_allocs == heap_frees &&
+                    user_allocs == user_frees,
+                "result arenas %u/%u, USER_RW %u/%u, visits %u/%u", heap_allocs, heap_frees, user_allocs, user_frees,
+                history_allocs, history_frees);
+    soak_table("shell");
+}
+#endif
+
 #ifdef VJO_VOCR_TIERS_TEST
 /* Two sizes, one model (host/tests/test_shared_tiers.h: Normal and Large
  * VOCR4-W20): a bad file leaves out both of its sizes at once, and the job goes on
@@ -9609,6 +9742,7 @@ TEST_LIST = {
     {"theme selection is latched until a new game process", test_theme_latched_for_game},
     {"reading_total_a_window_a_wakeup_kept_at_a_games_exit",
      test_reading_total_on_the_control_thread},
+    {"#528 soak: a game session holds no more after each cycle", test_soak_a_game_session_holds_no_more_after_each_cycle},
 #endif
     {NULL, NULL}
 };

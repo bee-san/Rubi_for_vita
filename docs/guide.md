@@ -1411,7 +1411,9 @@ worker with platform stubs. It checks cancelled jobs, denied input blocking,
 OOM recovery, failed joins, 50 local OCR-only lifetimes, cursor coalescing,
 close/reopen during lookup, scene/region invalidation, Unicode navigation and
 100 game-worker
-allocation/free cycles, bounded model reads and stale-job isolation. The Shell
+allocation/free cycles, bounded model reads and stale-job isolation. Soaks run a game session, Anki
+mining and screenshots, history writes, process starts and 16 game-worker scenarios cycle after cycle, with every pool
+counted, and fail on any net growth per cycle ([offline testing](offline-testing.md#2-what-ci-runs-and-why-it-is-real-code)). The Shell
 Anki miner is tested with its offline queue on real files: saves, restarts,
 Japanese text and escaping, failed and short writes, temp and damaged files,
 every record version, other dictionaries' entries, duplicates, refused memory,
