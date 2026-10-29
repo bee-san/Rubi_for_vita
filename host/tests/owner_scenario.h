@@ -32,9 +32,10 @@ static uint8_t *scenario_ui; /* the open page's text arena: overlay.cpp's s_ui_m
 
 /* The page itself (overlay.cpp open_page's PageOpen): Paf's own blocks for its widgets, outside Rubi's ledger, while
  * it is open: 94,800 B in the median of the 81 opens of the owner's logs where Rubi allocated again before the page
- * closed, 103,296 B the most (Mmem-paf-3, reports/mem/findings.md) [measured, log]. The scenario takes the most:
- * PageOpen fails when the heap has less free, and overlay.cpp then logs it and gives the text arena back. */
-#define SCENARIO_PAGE_PAF 103296
+ * closed, 103,296 B the most (Mmem-paf-3, reports/mem/findings.md) [measured, log]: VJO_PAF_PAGE_MAX. The scenario
+ * takes the most: PageOpen fails when the heap has less free (overlay.cpp then logs it), which the page check before
+ * it (shell/paf_guard.h vjo_paf_page_fits, with SceShell's margin) should never let happen. */
+#define SCENARIO_PAGE_PAF VJO_PAF_PAGE_MAX
 
 static int64_t scenario_free(void)
 {
@@ -75,8 +76,12 @@ static void scenario_press(ScenarioCounts *c, int lookup_logged, int anki)
     int page = 0;
     c->presses++;
     if (!ui) {
+        /* no text block (its refusal is logged), or no room for the page beside SceShell's margin (the page check's
+         * guard line): the user sees nothing, as when PageOpen fails */
+        int page_room = strstr(scenario_last_log(), "overlay page Paf reserve guard") != NULL;
         c->not_opened++;
-        TEST_CHECK_(strstr(scenario_last_log(), "overlay not opened") != NULL, "not opened, logged: %s",
+        c->page_failed += page_room;
+        TEST_CHECK_(page_room || strstr(scenario_last_log(), "overlay not opened") != NULL, "not opened, logged: %s",
                     scenario_last_log());
     } else if (scenario_free() < SCENARIO_PAGE_PAF) { /* PageOpen refused: open_page's own failure path */
         vjo_log("overlay page failed to open");

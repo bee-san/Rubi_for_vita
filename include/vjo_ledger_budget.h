@@ -134,6 +134,17 @@
  * all 90 logged starts [measured, #528's logs]) and kept, so the overlay asks for no memory of ours when it opens: a
  * permanent item. Taken per open before, it was refused 34 times beside another plugin's 2.19 MB (free 202-427 KB). */
 #define VJO_BUDGET_PAF_UI 20480u
+/* The overlay page itself: Paf's own blocks for PageOpen's widgets while it is open, outside our ledger and not ours to
+ * size: 94,672-103,296 B (median 94,800 B) in the 81 opens of #528's logs where Rubi allocated again before the page
+ * closed [measured, log; reports/mem findings Mmem-paf-3]. With the text block held from the start (#528) the reserve
+ * guard no longer runs before PageOpen, so shell/paf_guard.h vjo_paf_page_fits opens the page only with the most of
+ * those free and VJO_PAF_PAGE_MARGIN beside them for SceShell: SceShell's own use moved the free figure by at most
+ * 17,712 B between two of our allocations within one open (12 pairs) and by a median 21,904 B over a whole game
+ * session (293 sessions, #528's logs) [measured, log]; 64 KiB is about 3x either, and the page still opens at every
+ * press the logs hold (the least, 202,296 B free with 0.10.1's 8,192 B held, leaves 181,816 B with the block) [the
+ * owner scenario]. A guess at what SceShell needs at the very bottom, not a measurement of it [estimate]. */
+#define VJO_PAF_PAGE_MAX 103296u
+#define VJO_PAF_PAGE_MARGIN 65536u
 /* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
  * first Up past its text's top row until the return to the current text (or the overlay's close): the
  * table (core/history_lines.h VjoHistory, 34 line pointers and two counts) and the worker's three words

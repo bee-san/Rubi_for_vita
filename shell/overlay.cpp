@@ -842,8 +842,7 @@ static void open_page(void)
     s_page = s_plugin->PageOpen("vjo_page_overlay", param);
     if (!s_page) {
         vjo_log("overlay page failed to open");
-        vjo_overlay_mem_close(&s_ui_mem);
-        vjo_arena_init(&s_ui, NULL, 0);
+        vjo_overlay_mem_close(&s_ui_mem); /* kept: s_ui, over it, is set afresh by the next open */
         return;
     }
     vjo_colour_page(s_page);
@@ -978,8 +977,7 @@ static void close_page(int handback)
     s_n_entries = 0;
     s_header_has_text = 0;
     s_hdr_wrap.frames = s_body_wrap.frames = s_hdr_nbrk = 0; /* their texts go with the arena */
-    vjo_arena_init(&s_ui, NULL, 0);
-    vjo_overlay_mem_close(&s_ui_mem);
+    vjo_overlay_mem_close(&s_ui_mem); /* kept (#528): s_ui, over it, is set afresh by the next open */
 }
 
 /* ▲/▼: the word on the nearest line above/below that has one, closest in x
@@ -1382,6 +1380,6 @@ extern "C" void vjo_overlay_init(void *plugin)
 {
     s_plugin = (Plugin *)plugin;
     read_buttons(); /* before Anki's first message names the enter button */
-    vjo_arena_init(&s_ui, NULL, 0); /* allocated when the page opens */
+    /* s_ui is empty (static) until a page opens over the text block (open_page) */
     common::MainThreadCallList::Register(frame, NULL);
 }

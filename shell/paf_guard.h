@@ -30,4 +30,19 @@ static inline int vjo_paf_guard(int item, const char *what, size_t available, si
     return 1;
 }
 
+/* 1: the overlay page may open with `available` bytes free: PageOpen's own blocks (at most VJO_PAF_PAGE_MAX measured)
+ * and VJO_PAF_PAGE_MARGIN left to SceShell (include/vjo_ledger_budget.h); 0: not now, logged with the guard's format
+ * ("overlay page Paf reserve guard: free=... requested=103296 reserve=65536"). #528: with the text block held from
+ * the Shell's start the 1.5 MiB guard no longer stands before PageOpen, which at the logs' lowest free (131,432 B)
+ * would have left SceShell about 8 KB. */
+static inline int vjo_paf_page_fits(size_t available)
+{
+    if (available < VJO_PAF_PAGE_MAX + VJO_PAF_PAGE_MARGIN) {
+        vjo_log("%s Paf reserve guard: free=%u requested=%u reserve=%u",
+                "overlay page", (unsigned)available, (unsigned)VJO_PAF_PAGE_MAX, (unsigned)VJO_PAF_PAGE_MARGIN);
+        return 0;
+    }
+    return 1;
+}
+
 #endif

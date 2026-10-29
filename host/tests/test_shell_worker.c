@@ -275,7 +275,14 @@ void vjo_shell_heap_free(int item, void *p, size_t bytes)
     if (p == vocr_storage) { vocr_frees++; vocr_live = 0; } else heap_frees++;
     vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
 }
-uint32_t vjo_shell_heap_free_size(void) { return 2557952; }
+/* While the owner scenario runs, the heap's free size is its model's (owner_scenario.h scenario_free): the overlay's
+ * page check (shell/paf_guard.h vjo_paf_page_fits) reads it as overlay.cpp does through shell/memory.cpp. */
+uint32_t vjo_shell_heap_free_size(void)
+{
+    int64_t avail = (int64_t)VJO_PAF_HEAP - scenario_others -
+                    (int64_t)vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF);
+    return !scenario_on ? 2557952u : avail > 0 ? (uint32_t)avail : 0u;
+}
 /* shell/overlay.cpp's take of its text block as the Shell starts (#528, vjo_worker_start's end): overlay.cpp is not
  * built here; the owner scenario runs the step itself (shell/overlay_mem.h vjo_overlay_mem_boot, at its boot event). */
 void vjo_overlay_boot(void) {}
@@ -9282,6 +9289,50 @@ static void test_reading_total_on_the_control_thread(void)
 /* The owner scenario (#528): Rubi's Paf requests against the Paf heap the owner's console logged
  * (host/tests/owner_scenario.h, tools/owner_scenario.py, docs/owner-scenario.md). */
 #include "owner_scenario.h"
+
+/* #528: the text block is held from the Shell's start, so the 1.5 MiB guard no longer stands before PageOpen; the page
+ * opens only with its own measured most (VJO_PAF_PAGE_MAX) and SceShell's margin free. At the logs' lowest free, a
+ * game start's 131,432 B, the page would have left SceShell about 8 KB: it does not open, says why in the guard's
+ * format, and keeps the block; one byte above the threshold it opens. The press levels of the logs all open. */
+static void test_overlay_page_needs_its_own_room(void)
+{
+    const uint32_t need = VJO_PAF_PAGE_MAX + VJO_PAF_PAGE_MARGIN;
+    reset();
+    vjo_ledger_shell_init();
+    scenario_on = 1;
+    scenario_level(3725976u, 8192u); /* the least of the 90 logged Shell starts */
+    vjo_overlay_mem_boot(&scenario_ui);
+    TEST_ASSERT(scenario_ui != NULL);
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_UI) == VJO_OVERLAY_MEM_BYTES);
+    /* 131,432 B free beside 0.10.1's 8,192 B: 110,952 B with the block held */
+    scenario_level(131432u, 8192u);
+    TEST_CHECK(vjo_shell_heap_free_size() == 131432u + 8192u - 28672u);
+    TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) == NULL);
+    TEST_CHECK_(logged("overlay page Paf reserve guard: free=110952 requested=103296 reserve=65536") != NULL, "%s",
+                scenario_last_log());
+    TEST_CHECK(scenario_ui && vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_UI) == VJO_OVERLAY_MEM_BYTES); /* kept */
+    /* the threshold, then one byte under it */
+    scenario_others = (int64_t)VJO_PAF_HEAP - need - 28672;
+    TEST_CHECK(vjo_shell_heap_free_size() == need && vjo_overlay_mem_open(&scenario_ui) == scenario_ui);
+    scenario_others++;
+    TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) == NULL);
+    /* the logs' lowest press: 202,296 B free beside 0.10.1's 8,192 B opens */
+    scenario_level(202296u, 8192u);
+    TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) == scenario_ui);
+    /* the start's take refused: an open takes the block itself, then still asks for the page's room */
+    vjo_shell_heap_free(VJO_SL_PAF_UI, scenario_ui, VJO_OVERLAY_MEM_BYTES);
+    scenario_ui = NULL;
+    scenario_level(1572864u + 20479u, 8192u); /* the text block itself refused by the 1.5 MiB guard */
+    TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) == NULL && !scenario_ui);
+    TEST_CHECK(logged("overlay not opened: no Paf memory for its text (20 KiB)") != NULL);
+    scenario_level(1572864u + 20480u + 8192u, 8192u);
+    TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) != NULL && scenario_ui);
+    vjo_shell_heap_free(VJO_SL_PAF_UI, scenario_ui, VJO_OVERLAY_MEM_BYTES);
+    scenario_ui = NULL;
+    scenario_on = 0;
+    scenario_others = 0;
+    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN);
+}
 #endif
 
 #ifdef VJO_VOCR_TIERS_TEST
@@ -9324,6 +9375,7 @@ TEST_LIST = {
 TEST_LIST = {
 #ifdef VJO_PAF_ALLOC
     {"owner scenario", test_owner_scenario_shell}, /* #528: tools/owner_scenario.py runs it by this name */
+    {"overlay_page_needs_its_own_room", test_overlay_page_needs_its_own_room}, /* #528 */
 #endif
     {"config_warnings_are_logged_once_per_change", test_config_warnings_are_logged_once_per_change},
     {"overlay_app_mismatch_is_logged_and_said_once", test_overlay_app_mismatch_is_logged_and_said_once},

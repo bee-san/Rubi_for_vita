@@ -22,7 +22,9 @@ been reported.
   202-427 KB free). Its 20 KiB text block is taken once as the Shell starts, through the same 1.5 MiB reserve
   guard, and kept, so an open asks for no memory of Rubi's; a refused dictionary arena then shows the recognized
   text and the memory message instead of nothing. Shell PAF held permanently: 8,192 → 28,672 B; worst case
-  unchanged (241,664 B); module pages unchanged (both builds 16 B less code). Not yet run on a console.
+  unchanged (241,664 B); module pages unchanged (both builds 16 B less code). The page itself (about 95-103 KB of
+  the heap while open) opens only with 103,296 B and a 64 KiB margin for SceShell free, so it never leaves SceShell
+  with almost nothing (the logs' lowest free, 131,432 B, would have left about 8 KB). Not yet run on a console.
 
 ## [0.10.1] - 2026-10-29
 

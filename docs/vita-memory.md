@@ -298,7 +298,8 @@ Rules:
   buffers allocated only while a page is open and freed when it closes.
 - No `sceKernelAllocMemBlock` from the Shell plugin after boot. The one block the overlay needs to
   show anything at all, its 20 KiB text block, is taken from the PAF heap as the Shell starts and
-  kept (#528: taken per open, another plugin's buffer had it refused 34 times). Transient needs go
+  kept (#528: taken per open, another plugin's buffer had it refused 34 times); the page itself, about
+  95-103 KB of the heap while open, opens only with 103,296 B and a 64 KiB margin free. Transient needs go
   through the PAF global heap behind the reserve guard (1.5 MiB today; carried over from the
   Shell-side Meiki and Lens builds, not measured; SceShell's own in-game swing was at most
   486,176 B in #528's 293 sessions), stay small (64 KiB) and are freed before
