@@ -369,7 +369,7 @@ file and is replaced; beside a destination that is right, both are the overlay's
 | steps 0-2 | nothing changed, at most a partial dated backup | as before |
 | step 3, between a file's two renames | that plugin missing, `.vjo-old` beside it | taiHEN skips the line it cannot load (`plugin.c:171-172`); a Shell without its kernel goes inert (`docs/boot-safety.md`) |
 | step 3, while the plugins are copied and checked | every plugin as it was, the checked ones' `.vjo-new` beside them (the next Install uses them) | as before |
-| step 3, between two plugins' renames | the new kernel with the old Shell, or the reverse (a few renames' moment; a failed rename puts the others back) | an API mismatch makes the Shell inert and the worker unavailable (`shell/worker.c:2226-2227`, `game_ocr/main.c:1492`); one API from two builds runs together [untested] |
+| step 3, between two plugins' renames | the new kernel with the old Shell, or the reverse (a few renames' moment; a failed rename puts the others back) | an API mismatch makes the Shell inert and the worker unavailable (`shell/worker.c` `vjo_worker_start`, `game_ocr/main.c` `vjo_game_ocr_worker_start`); one API from two builds runs together [untested] |
 | step 4 | `config.ini` old or new | the Shell runs on its defaults if the stop falls between the renames |
 | step 5, ux0's window | `ux0:tai/config.txt` missing | taiHEN reads ur0's file, as it was (`plugin.c:73-83`) |
 | step 5, ur0's window, no ux0 file | no configuration taiHEN can open | no HENkaku (`taihen.c:349-353`); hold L recovers (`taihen.c:346-357`) |
