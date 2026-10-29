@@ -316,282 +316,345 @@
   },
   "labels": {
    "game": "Rubi 0.10.1 (API 57): main 1845471b, whose Shell and game memory code is 0.10.1's",
-   "shell": "Rubi 0.10.1 (API 57): main 1845471b, whose Shell and game memory code is 0.10.1's"
+   "shell": "Rubi 0.10.1 (API 57): its Shell memory code (main 6881ece0's overlay_mem.h, the rest unchanged since), replayed by this harness"
   },
   "shell": {
    "all": {
-    "anki_ok": 239,
+    "anki_ok": 240,
     "anki_refused": 0,
     "held": 8192,
-    "lookups": 124,
+    "lookups": 291,
     "not_opened": 34,
+    "page_failed": 0,
     "peak": 225280,
-    "presses": 273,
+    "presses": 274,
     "refused": 51,
+    "silent": 51,
     "told": 0
    },
-   "boot1-line1735": {
+   "api31-line1735": {
     "anki_ok": 0,
     "anki_refused": 0,
     "held": 8192,
     "lookups": 23,
     "not_opened": 10,
+    "page_failed": 0,
     "peak": 8192,
     "presses": 10,
     "refused": 23,
+    "silent": 23,
     "told": 0
    },
-   "boot10-line9633": {
-    "anki_ok": 16,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 4,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 16,
-    "refused": 0,
-    "told": 0
-   },
-   "boot11-line9789": {
-    "anki_ok": 2,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 2,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 2,
-    "refused": 0,
-    "told": 0
-   },
-   "boot12-line9969": {
+   "api33-line4403": {
     "anki_ok": 1,
     "anki_refused": 0,
     "held": 8192,
     "lookups": 1,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 1,
     "refused": 0,
+    "silent": 0,
     "told": 0
    },
-   "boot13-line10075": {
-    "anki_ok": 16,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 4,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 16,
-    "refused": 0,
-    "told": 0
-   },
-   "boot14-line10307": {
-    "anki_ok": 5,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 1,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 5,
-    "refused": 0,
-    "told": 0
-   },
-   "boot15-line10343": {
-    "anki_ok": 32,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 5,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 32,
-    "refused": 0,
-    "told": 0
-   },
-   "boot16-line10512": {
-    "anki_ok": 12,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 4,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 12,
-    "refused": 0,
-    "told": 0
-   },
-   "boot17-line10661": {
-    "anki_ok": 2,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 1,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 2,
-    "refused": 0,
-    "told": 0
-   },
-   "boot18-line10733": {
-    "anki_ok": 2,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 1,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 2,
-    "refused": 0,
-    "told": 0
-   },
-   "boot19-line10813": {
-    "anki_ok": 5,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 3,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 5,
-    "refused": 0,
-    "told": 0
-   },
-   "boot2-line5418": {
+   "api33-line5418": {
     "anki_ok": 18,
     "anki_refused": 0,
     "held": 8192,
-    "lookups": 4,
+    "lookups": 18,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 18,
     "refused": 0,
+    "silent": 0,
     "told": 0
    },
-   "boot20-line10892": {
-    "anki_ok": 23,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 6,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 23,
-    "refused": 0,
-    "told": 0
-   },
-   "boot21-line11156": {
-    "anki_ok": 6,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 17,
-    "not_opened": 5,
-    "peak": 225280,
-    "presses": 11,
-    "refused": 15,
-    "told": 0
-   },
-   "boot22-line11385": {
-    "anki_ok": 0,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 12,
-    "not_opened": 10,
-    "peak": 8192,
-    "presses": 10,
-    "refused": 12,
-    "told": 0
-   },
-   "boot23-line11446": {
-    "anki_ok": 1,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 2,
-    "not_opened": 0,
-    "peak": 225280,
-    "presses": 1,
-    "refused": 1,
-    "told": 0
-   },
-   "boot24-line11563": {
-    "anki_ok": 0,
-    "anki_refused": 0,
-    "held": 8192,
-    "lookups": 0,
-    "not_opened": 9,
-    "peak": 8192,
-    "presses": 9,
-    "refused": 0,
-    "told": 0
-   },
-   "boot3-line5578": {
+   "api34-line5578": {
     "anki_ok": 27,
     "anki_refused": 0,
     "held": 8192,
-    "lookups": 2,
+    "lookups": 27,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 27,
     "refused": 0,
+    "silent": 0,
     "told": 0
    },
-   "boot4-line5739": {
+   "api34-line5739": {
     "anki_ok": 4,
     "anki_refused": 0,
     "held": 8192,
-    "lookups": 3,
+    "lookups": 4,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 4,
     "refused": 0,
+    "silent": 0,
     "told": 0
    },
-   "boot5-line5852": {
+   "api34-line5852": {
     "anki_ok": 18,
     "anki_refused": 0,
     "held": 8192,
-    "lookups": 3,
+    "lookups": 18,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 18,
     "refused": 0,
+    "silent": 0,
     "told": 0
    },
-   "boot6-line6018": {
+   "api36-line6018": {
     "anki_ok": 17,
     "anki_refused": 0,
     "held": 8192,
-    "lookups": 11,
+    "lookups": 17,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 17,
     "refused": 0,
+    "silent": 0,
     "told": 0
    },
-   "boot7-line6247": {
+   "api36-line6247": {
     "anki_ok": 15,
     "anki_refused": 0,
     "held": 8192,
-    "lookups": 2,
+    "lookups": 15,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 15,
     "refused": 0,
+    "silent": 0,
     "told": 0
    },
-   "boot8-line9224": {
+   "api36-line9224": {
     "anki_ok": 3,
     "anki_refused": 0,
     "held": 8192,
     "lookups": 3,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 3,
     "refused": 0,
+    "silent": 0,
     "told": 0
    },
-   "boot9-line9335": {
+   "api36-line9335": {
     "anki_ok": 14,
     "anki_refused": 0,
     "held": 8192,
-    "lookups": 10,
+    "lookups": 14,
     "not_opened": 0,
+    "page_failed": 0,
     "peak": 225280,
     "presses": 14,
     "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api36-line9633": {
+    "anki_ok": 16,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 16,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 16,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api36-line9789": {
+    "anki_ok": 2,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 2,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 2,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api41-line10075": {
+    "anki_ok": 16,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 16,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 16,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api41-line9969": {
+    "anki_ok": 1,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 1,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 1,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api50-line10307": {
+    "anki_ok": 5,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 5,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 5,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api50-line10343": {
+    "anki_ok": 32,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 32,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 32,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api50-line10512": {
+    "anki_ok": 12,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 12,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 12,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api54-line10661": {
+    "anki_ok": 2,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 2,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 2,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api54-line10733": {
+    "anki_ok": 2,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 2,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 2,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api54-line10813": {
+    "anki_ok": 5,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 5,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 5,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api54-line10892": {
+    "anki_ok": 23,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 23,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 23,
+    "refused": 0,
+    "silent": 0,
+    "told": 0
+   },
+   "api57-line11156": {
+    "anki_ok": 6,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 21,
+    "not_opened": 5,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 11,
+    "refused": 15,
+    "silent": 15,
+    "told": 0
+   },
+   "api57-line11385": {
+    "anki_ok": 0,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 12,
+    "not_opened": 10,
+    "page_failed": 0,
+    "peak": 8192,
+    "presses": 10,
+    "refused": 12,
+    "silent": 12,
+    "told": 0
+   },
+   "api57-line11446": {
+    "anki_ok": 1,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 2,
+    "not_opened": 0,
+    "page_failed": 0,
+    "peak": 225280,
+    "presses": 1,
+    "refused": 1,
+    "silent": 1,
+    "told": 0
+   },
+   "api57-line11563": {
+    "anki_ok": 0,
+    "anki_refused": 0,
+    "held": 8192,
+    "lookups": 0,
+    "not_opened": 9,
+    "page_failed": 0,
+    "peak": 8192,
+    "presses": 9,
+    "refused": 0,
+    "silent": 0,
     "told": 0
    }
   }
@@ -600,341 +663,420 @@
   "game": {
    "clannad-88MiB-box": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4648960
    },
    "clannad-88MiB-full": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4653056
    },
    "est-1.5MiB-box": {
     "failed": 1,
+    "min_helpers": 0,
+    "min_lines": 0,
     "min_lm": 0,
+    "min_spot": 0,
     "min_tier": 0,
     "min_told": 1,
     "peak": 61440
    },
    "est-1.5MiB-full": {
     "failed": 1,
+    "min_helpers": 0,
+    "min_lines": 0,
     "min_lm": 0,
+    "min_spot": 0,
     "min_tier": 0,
     "min_told": 1,
     "peak": 61440
    },
    "est-2.5MiB-box": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
     "min_lm": 0,
+    "min_spot": 1,
     "min_tier": 2,
     "min_told": 1,
     "peak": 1560576
    },
    "est-2.5MiB-full": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
     "min_lm": 0,
+    "min_spot": 1,
     "min_tier": 2,
     "min_told": 1,
     "peak": 1572864
    },
    "est-2MiB-box": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
     "min_lm": 0,
+    "min_spot": 0,
     "min_tier": 1,
     "min_told": 1,
     "peak": 1015808
    },
    "est-2MiB-full": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 4,
     "min_lm": 0,
+    "min_spot": 0,
     "min_tier": 1,
     "min_told": 1,
     "peak": 1019904
    },
    "est-3MiB-box": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
     "min_lm": 1,
+    "min_spot": 0,
     "min_tier": 2,
     "min_told": 1,
     "peak": 2011136
    },
    "est-3MiB-full": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 4,
     "min_lm": 1,
+    "min_spot": 0,
     "min_tier": 2,
     "min_told": 1,
     "peak": 2015232
    },
    "est-4MiB-box": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
     "min_lm": 0,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 2871296
    },
    "est-4MiB-full": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
     "min_lm": 0,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 2875392
    },
    "est-5MiB-box": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 3915776
    },
    "est-5MiB-full": {
     "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 3919872
    },
    "est-6MiB-box": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4648960
    },
    "est-6MiB-full": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4653056
    },
    "est-8MiB-box": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4648960
    },
    "est-8MiB-full": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4653056
    },
    "pcsg00402-10MiB-box": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4648960
    },
    "pcsg00402-10MiB-full": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4653056
    },
    "pcsg00402-12MiB-box": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4648960
    },
    "pcsg00402-12MiB-full": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4653056
    },
    "psp-28MiB-box": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4648960
    },
    "psp-28MiB-full": {
     "failed": 0,
+    "min_helpers": 2,
+    "min_lines": 3,
     "min_lm": 2,
+    "min_spot": 1,
     "min_tier": 3,
     "min_told": 1,
     "peak": 4653056
    }
   },
   "shell": {
-   "boot1-line1735": {
+   "api31-line1735": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 28672,
-    "refused": 25
+    "silent": 13
    },
-   "boot10-line9633": {
+   "api33-line4403": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot11-line9789": {
+   "api33-line5418": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot12-line9969": {
+   "api34-line5578": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot13-line10075": {
+   "api34-line5739": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot14-line10307": {
+   "api34-line5852": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot15-line10343": {
+   "api36-line6018": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot16-line10512": {
+   "api36-line6247": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot17-line10661": {
+   "api36-line9224": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot18-line10733": {
+   "api36-line9335": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot19-line10813": {
+   "api36-line9633": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot2-line5418": {
+   "api36-line9789": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot20-line10892": {
+   "api41-line10075": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 0
+    "silent": 0
    },
-   "boot21-line11156": {
+   "api41-line9969": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 15
+    "silent": 0
    },
-   "boot22-line11385": {
+   "api50-line10307": {
+    "anki_refused": 0,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 225280,
+    "silent": 0
+   },
+   "api50-line10343": {
+    "anki_refused": 0,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 225280,
+    "silent": 0
+   },
+   "api50-line10512": {
+    "anki_refused": 0,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 225280,
+    "silent": 0
+   },
+   "api54-line10661": {
+    "anki_refused": 0,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 225280,
+    "silent": 0
+   },
+   "api54-line10733": {
+    "anki_refused": 0,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 225280,
+    "silent": 0
+   },
+   "api54-line10813": {
+    "anki_refused": 0,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 225280,
+    "silent": 0
+   },
+   "api54-line10892": {
+    "anki_refused": 0,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 225280,
+    "silent": 0
+   },
+   "api57-line11156": {
+    "anki_refused": 0,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 225280,
+    "silent": 10
+   },
+   "api57-line11385": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 28672,
-    "refused": 12
+    "silent": 2
    },
-   "boot23-line11446": {
+   "api57-line11446": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 225280,
-    "refused": 1
+    "silent": 1
    },
-   "boot24-line11563": {
+   "api57-line11563": {
     "anki_refused": 0,
     "held": 28672,
     "not_opened": 0,
     "peak": 28672,
-    "refused": 9
-   },
-   "boot3-line5578": {
-    "anki_refused": 0,
-    "held": 28672,
-    "not_opened": 0,
-    "peak": 225280,
-    "refused": 0
-   },
-   "boot4-line5739": {
-    "anki_refused": 0,
-    "held": 28672,
-    "not_opened": 0,
-    "peak": 225280,
-    "refused": 0
-   },
-   "boot5-line5852": {
-    "anki_refused": 0,
-    "held": 28672,
-    "not_opened": 0,
-    "peak": 225280,
-    "refused": 0
-   },
-   "boot6-line6018": {
-    "anki_refused": 0,
-    "held": 28672,
-    "not_opened": 0,
-    "peak": 225280,
-    "refused": 0
-   },
-   "boot7-line6247": {
-    "anki_refused": 0,
-    "held": 28672,
-    "not_opened": 0,
-    "peak": 225280,
-    "refused": 0
-   },
-   "boot8-line9224": {
-    "anki_refused": 0,
-    "held": 28672,
-    "not_opened": 0,
-    "peak": 225280,
-    "refused": 0
-   },
-   "boot9-line9335": {
-    "anki_refused": 0,
-    "held": 28672,
-    "not_opened": 0,
-    "peak": 225280,
-    "refused": 0
+    "silent": 0
    }
   }
  }

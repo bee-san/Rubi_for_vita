@@ -136,7 +136,7 @@
  * permanent item. Taken per open before, it was refused 34 times beside another plugin's 2.19 MB (free 202-427 KB). */
 #define VJO_BUDGET_PAF_UI 20480u
 /* The overlay page itself: Paf's own blocks for PageOpen's widgets while it is open, outside our ledger and not ours to
- * size: 94,672-103,296 B (median 94,800 B) in the 81 opens of #528's logs where Rubi allocated again before the page
+ * size: 81,152-103,296 B (median 94,928 B) in the 81 opens of #528's logs where Rubi allocated again before the page
  * closed [measured, log; reports/mem findings Mmem-paf-3]. With the text block held from the start (#528) the reserve
  * guard no longer runs before PageOpen, so shell/paf_guard.h vjo_paf_page_fits opens the page only with the most of
  * those free and VJO_PAF_PAGE_MARGIN beside them for SceShell: SceShell's own use moved the free figure by at most

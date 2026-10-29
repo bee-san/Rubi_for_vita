@@ -53,6 +53,17 @@ class Extract(unittest.TestCase):
         self.assertEqual(osc.logged_counts(scenarios)[s["name"]],
                          {"presses_refused": 2, "arena_refusals": 2, "anki_saves": 1})
 
+    def test_a_later_builds_page_refusal_is_a_press_holding_the_ledgers_figure(self):
+        """Since #534 the text block is held from the Shell's start (the ledger says 28,672 B), and since #537 a press is
+        refused by the page's own guard line."""
+        log = Path(self.tmp.name) / "later.txt"
+        log.write_text("Rubi shell started (kernel API 58, the normal build: a short log)\n"
+                       "ledger boot paf: current=28672 peak=28672 limit=985088 free=3705656\n"
+                       "overlay page Paf reserve guard: free=150000 requested=103296 reserve=65536\n"
+                       "result arenas Paf reserve guard: free=300000 requested=65536 reserve=1572864\n", encoding="utf-8")
+        events = osc.extract([log], 31)[0]["events"]
+        self.assertEqual(events, [["boot", 3705656, 28672], ["press", 150000, 28672, 0], ["lookup", 300000, 28672]])
+
     def test_the_event_file_round_trips(self):
         scenarios = osc.extract([self.log], 31)
         out = Path(self.tmp.name) / "events.txt"
@@ -73,7 +84,44 @@ class Extract(unittest.TestCase):
             self.assertEqual(sum(c["arena_refusals"] for c in mine), arenas)
 
 
+DEBUG_LOG = """\
+Rubi shell started (kernel API 31)
+ledger boot paf: current=8192 peak=8192 limit=985088 free=3743528
+overlay text arena Paf reserve guard: free=274744 requested=20480 reserve=1572864
+overlay not opened: no Paf memory for its text (20 KiB)
+game vocr text 0: [REDACTED game text]
+overlay close (in game) t=2073918 ms: input block off rc=0
+result arenas Paf reserve guard: free=274744 requested=65536 reserve=1572864
+result workspace Paf allocation failed (64 KiB)
+job start (overlay opened)
+result arenas Paf reserve guard: free=275960 requested=65536 reserve=1572864
+anki: save [JAPANESE_TEXT_REDACTED] rc=0, 150 ms
+Anki arena Paf reserve guard: free=300000 requested=131072 reserve=1572864
+result arenas Paf allocation refused: free=1700000 requested=65536
+line history Paf reserve guard: free=310000 requested=16384 reserve=1572864
+"""
+
+
+class DebugLog(unittest.TestCase):
+    def test_a_press_pairs_with_its_jobs_arena_past_the_jobs_lines_and_debug_saves_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "log.txt"
+            log.write_text(DEBUG_LOG, encoding="utf-8")
+            (s,) = osc.extract([log], 31)
+            self.assertEqual(s["name"], "api31-line1")  # its API and first line: no other boot renames it
+            self.assertEqual(s["events"], [
+                ["boot", 3743528, 8192], ["press", 274744, 8192, 1],  # its arena 4 lines on, before the next job
+                ["lookup", 275960, 8192],                             # after "job start": a job of its own
+                ["anki", 275960, 8192], ["anki", 300000, 8192],       # the debug build's save; a refused save
+                ["lookup", 1700000, 8192]])                           # the normal build's allocation refusal
+            self.assertEqual(s["unreplayed"], 1)                      # line history: counted, not replayed
+
+
 class Lines(unittest.TestCase):
+    def test_an_older_binarys_line_gets_its_silent_count(self):
+        rows = osc.parse_lines("owner-scenario shell a: refused=5 told=2\n")
+        self.assertEqual(rows[("shell", "a")]["silent"], 3)
+
     def test_lines_parse_after_acutests_test_name(self):
         rows = osc.parse_lines("Test owner scenario...      owner-scenario shell boot1-line9: presses=3 not_opened=2 "
                                "peak=8192\nowner-scenario game est-2MiB-box: free=2097152 rc=-103 failed=1\n"
@@ -85,6 +133,21 @@ class Lines(unittest.TestCase):
 class Ratchet(unittest.TestCase):
     LIMITS = {"limits": {"shell": {"a": {"not_opened": 2, "peak": 100}},
                          "game": {"g": {"failed": 0, "peak": 50, "min_tier": 3, "min_told": 1}}}}
+
+    def test_a_held_counter_missing_from_the_run_fails(self):
+        rows = {("shell", "a"): {"peak": 100}, ("game", "g"): {"failed": 0, "peak": 40, "tier": 3, "told": 1}}
+        self.assertIn("no not_opened", "\n".join(osc.check(rows, self.LIMITS)))
+
+    def test_a_models_build_without_game_rows_fails(self):
+        rows = {("shell", "a"): {"not_opened": 0, "peak": 1}}
+        self.assertEqual(osc.check(rows, self.LIMITS), [])
+        self.assertIn("game: no rows", "\n".join(osc.check(rows, self.LIMITS, require_game=True)))
+
+    def test_rises_names_every_loosened_limit(self):
+        new = {"limits": {"shell": {"a": {"not_opened": 3, "peak": 100}}, "game": {"g": {"failed": 0, "peak": 50,
+                                                                                         "min_tier": 2}}}}
+        self.assertEqual(osc.rises(self.LIMITS, new), ["shell a: not_opened 2 -> 3", "game g: min_tier 3 -> 2",
+                                                       "game g: min_told no longer held"])
 
     def test_within_the_limits_passes(self):
         rows = {("shell", "a"): {"not_opened": 1, "peak": 100}, ("game", "g"): {"failed": 0, "peak": 40,
@@ -111,6 +174,7 @@ class Ratchet(unittest.TestCase):
         rows = {("shell", "a"): {"not_opened": 5, "peak": 10, "refused": 0, "anki_refused": 0, "held": 8},
                 ("game", "g"): {"failed": 0, "peak": 70, "tier": 2, "told": 1, "lm": 1}}
         out = osc.lowered(rows, self.LIMITS)["limits"]
+        self.assertEqual(out["game"]["g"]["min_lm"], 1)  # a floor new to the limits takes the run's value
         self.assertEqual(out["shell"]["a"]["not_opened"], 2)  # kept: the run is worse
         self.assertEqual(out["shell"]["a"]["peak"], 10)       # lowered: the run is better
         self.assertEqual(out["game"]["g"]["peak"], 50)

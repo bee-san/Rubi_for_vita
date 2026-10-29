@@ -936,6 +936,9 @@ endif()
 set(_vjo_owner_scenario --shell-bin $<TARGET_FILE:vjo-shell-worker-paf-tests>)
 if(TARGET vjo-alloc-sim-tests)
   list(APPEND _vjo_owner_scenario --game-bin $<TARGET_FILE:vjo-alloc-sim-tests>)
+  if(VJO_VOCR_MODEL_DIR)
+    list(APPEND _vjo_owner_scenario --require-game) # the models lane: a game part that prints nothing fails
+  endif()
 endif()
 add_test(NAME owner_scenario COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/owner_scenario.py --check
   ${_vjo_owner_scenario})

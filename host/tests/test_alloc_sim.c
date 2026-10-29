@@ -270,7 +270,7 @@ int sceKernelDelayThread(unsigned us)
  * does (the owner scenario's jobs take helpers); any other thread is never run here. */
 static unsigned helper_threads;
 SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt)
-{ return entry == helper_entry ? 40 + (int)(++helper_threads % 64u) : 20; }
+{ return entry == helper_entry ? 41 + (int)(helper_threads++ % 64u) : 20; } /* 41-104: every one > 40 */
 int sceKernelStartThread(SceUID uid, SceSize n, void *args) { return uid > 40 ? helper_entry(n, args) : 0; }
 
 /* ocr-speed (API 22): the thread run time and the ARM clock; see test_game_vocr.c for the tested ones. */
@@ -556,34 +556,7 @@ static void api55_pause_reads_one_frame_beside_a_spinner(void)
  * read text or its refusal carries the memory check's figures, which the Shell shows and logs (game_oom_detail,
  * log_tier_checks). tools/owner_scenario.py holds them against tools/owner_scenario.json. */
 #include "../../core/config.h"
-static const char owner_config[] =
-    "vocr_tier = large\nocr_lm = 1000k\nocr_cascade_ms = 2000\nocr_refine_lines = psp\nocr_threads = 3\n"
-    "ocr_boost_clock = on\nocr_settle_ms = 150\nocr_settle_max_ms = 2000\nocr_skip_blank_lines = off\n"
-    "ocr_text_gate = off\nnon_japanese_filter = lines\ntext_source = auto\nocr_mode = auto\n";
-static void owner_request(VjoGameOcrRequest *q, const VjoConfig *c, uint32_t flags)
-{
-    uint32_t settle = (uint32_t)(c->ocr_settle_ms + 5) / 10u, casc = (uint32_t)(c->ocr_cascade_ms + 125) / 250u;
-    memset(q, 0, sizeof(*q));
-    q->size = sizeof(*q);
-    q->tiers = (1u << c->vocr_tier) - 1u;
-    q->flags = flags | (uint32_t)(c->ocr_lm & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT |
-               (uint32_t)(c->ocr_refine_lines & VJO_GAME_OCR_REFINE_MASK) << VJO_GAME_OCR_REFINE_SHIFT |
-               (casc > VJO_GAME_OCR_CASCADE_MASK ? VJO_GAME_OCR_CASCADE_MASK : casc ? casc : 1u)
-                   << VJO_GAME_OCR_CASCADE_SHIFT |
-               (settle ? settle : 1u) << VJO_GAME_OCR_SETTLE_SHIFT |
-               (uint32_t)(c->ocr_settle_max_ms + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
-    q->speed = (uint32_t)c->ocr_helpers | (uint32_t)c->ocr_boost_clock << 2 | (uint32_t)c->hook_trust << 20 |
-               (uint32_t)c->ocr_head_gate << VJO_GAME_OCR_S_HEAD_SHIFT |
-               (c->ocr_finder ? VJO_GAME_OCR_S_SPOT | (c->ocr_spotter_refine ? VJO_GAME_OCR_S_SPOT_REFINE : 0u) : 0u) |
-               (c->non_japanese_filter ? VJO_GAME_OCR_S_DROP_BORDERS : 0u) |
-               (uint32_t)c->ocr_vertical << VJO_GAME_OCR_S_VERTICAL_SHIFT |
-               (uint32_t)c->ocr_pause << VJO_GAME_OCR_S_PAUSE_SHIFT |
-               (c->ocr_line_fix ? VJO_GAME_OCR_S_LINE_FIX | (c->ocr_line_fix >= 2 ? VJO_GAME_OCR_S_LINE_JUNK : 0u) |
-                                      (c->ocr_line_fix == 3 ? VJO_GAME_OCR_S_LINE_VALLEY : 0u) : 0u);
-    q->hook_pick = VJO_HOOK_PICK_AUTO;
-    strcpy(q->model_dir, VJO_VOCR_MODEL_ROOT);
-    strcpy(q->model, VJO_VOCR_TIER3_NAME); /* the largest tier's, as the Shell names the job */
-}
+#include "owner_request.h" /* the owner's config and the Shell's packing of his job, shared with test_shell_worker.c */
 static void owner_scenario_game(void)
 {
     static const struct { const char *name; int64_t free; } levels[] = {
@@ -626,7 +599,7 @@ static void owner_scenario_game(void)
             g.ocr_epoch = 1; g.fb_w = FB_W; g.fb_h = FB_H; g.done_seq = g.capture_seq = 11;
             g.region = (VjoRect){regions[ri].r[0], regions[ri].r[1], regions[ri].r[2], regions[ri].r[3]};
             caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
-            owner_request(&request, &c, regions[ri].flags);
+            owner_request(&request, &c, regions[ri].flags, VJO_VOCR_TIER3_NAME);
             TEST_ASSERT(vjoOcrSubmit(&request) > 0);
             caller = 7;
             TEST_ASSERT(!vjoOcrTake(&request));
