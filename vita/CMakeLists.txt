@@ -678,6 +678,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/check_adrenaline_vsh.py ${ROOT}/tools/vita_self.py ${STAGE}/tools/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/docs/img
+    ${STAGE}/docs/screenshots
     ${STAGE}/third_party/LunaTranslator
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/prepare_vndb.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/reading_stats.py ${ROOT}/tools/known_words.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/hook_profiles.py ${ROOT}/tools/hook_request.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
   # API 54: the text spotter's pins (tools/prepare_ocr.py reads them from this header, beside it in the zip)
@@ -712,6 +713,11 @@ add_custom_target(release
     ${ROOT}/docs/img/conjugation-after-chain-host.png ${ROOT}/docs/img/conjugation-after-exact-host.png
     ${STAGE}/docs/img/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/settings-dictionaries-vita3k.png ${STAGE}/docs/
+  # README.md's screenshots (its images show in the zip's README too: tools/tests/test_zip_docs.py)
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/screenshots/2026-10-29-223532.jpg
+    ${ROOT}/docs/screenshots/2026-10-29-223535.jpg ${ROOT}/docs/screenshots/2026-10-29-223538.jpg
+    ${ROOT}/docs/screenshots/2026-10-29-223544.jpg ${ROOT}/docs/screenshots/2026-10-29-223548.jpg
+    ${ROOT}/docs/screenshots/2026-10-29-223559.jpg ${STAGE}/docs/screenshots/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/refine-20261015.json
     ${ROOT}/docs/benchmarks/settings-gamelist-20261015.md ${STAGE}/docs/benchmarks/
