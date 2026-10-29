@@ -74,7 +74,8 @@ collection that has the earlier ones adds nothing twice.
 | --- | --- |
 | `Exported 12 cards (34 KB) to ….apkg.` | Written, read back and checked; those cards left the queue |
 | `… 2 exported without screenshots.` | The text was intact but the screenshots were missing or damaged. The cards exported with their original IDs; their original records and any damaged image files are preserved |
-| `… 2 stay queued; see log.txt.` | A damaged, edited or unsupported record, a read failure, or a note that could not fit in memory: retry after checking `log.txt` |
+| `… 2 stay queued; see log.txt.` | A record that is not a whole record (damaged, cut short) or of a newer build, a read failure, or a note that could not fit in memory: retry after checking `log.txt` |
+| `… 1 exported as it reads (see log.txt).` | A whole card whose record is not its name's in any way the app can prove ([below](#a-record-that-is-not-its-names-528)): edited by hand, or saved by a Shell before 0.10.2 while the overlay looked up other words twice. Exported as the record reads, without its frequency source; `log.txt` names it |
 | `… 1 stay queued (see log.txt).` | The package has the card, but moving it out of the queue failed; the next export has it again, harmlessly |
 | `… Stopped while clearing: 40 stay queued, for the next export too.` | Cancel after the package was made: it has every card, and those 40 are in the next one too (Anki adds no note twice) |
 | `… 5 newer stay queued: export again.` | A package holds 20,000 cards at most: the oldest went, the newest wait (**Export all cards**: `5 newer are not in it`) |
@@ -293,7 +294,9 @@ card **whose word an earlier card has**:
   later ones only the new cards'. A word once read stays while its card's file is there, even when the
   record is damaged later (edited by hand: the export leaves it queued and names it in `log.txt`): with
   Skip, a later card of that word then stays queued too, until the damaged record is fixed or removed. A
-  record that cannot be read is not cached: each count reads it again, and it counts toward the page's 64.
+  record that is not a whole record is cached as one (#528): the page reads it and names it in `log.txt` at its
+  first show, then neither reads nor counts it as a word again (it counts toward the page's 64 that once);
+  every export reads it again, so one put right is exported then. Before, each show read and logged it again.
 
 Nothing in the overlay changes: it marks a word only while its list is shown, as before (a mark in the
 popup for a word you have, #314's stage B, is not built: [below](#not-in-the-popup)). None
@@ -378,7 +381,8 @@ next, and an export that verified its package removes the queue's screenshots
 no card names, unless a Cancel stopped its clearing
 ([below](#the-queue-on-the-memory-card)). A record already
 archived is kept only when it is that card's (its
-checksum is its name); a damaged one there is replaced by the queued copy.
+checksum is its name, or its name with the frequency source its card was saved with: [#528](#a-record-that-is-not-its-names-528));
+a damaged one there is replaced by the queued copy.
 When an intact record's screenshot is missing, empty, too large or lacks its JPEG start/end
 markers, the app tries the other directory first, then exports the text without the picture
 and reports how many cards did so. It never rewrites the original record or changes its ID;
@@ -443,9 +447,39 @@ memory card (renamed from its own temp file, `<id>.jpg.tmp`; the record's
 own sync syncs it too, #194) before its record is written, so a record never names a picture that is not
 there. Files with other names,
 including leftover `.tmp` files, are ignored. Editing a record by hand changes its
-checksum, so the card is kept and reported as unreadable rather than exported.
+checksum: a whole record is still exported, as it reads (below); one that is no longer a whole
+record stays queued and is reported. No build writes or deletes a record to repair it.
 Delete a card's `.json` to drop it: its `.jpg`, which no record names then, goes
 with the sweep of the next export that writes a package (above).
+
+### A record that is not its name's (#528)
+
+Until 0.10.2 the Shell's card kept its frequency source (`source`, `Jiten` for the bundled dictionary) as a
+pointer into the overlay's lookup memory, where every other field was copied (`core/anki.c`
+`vjo_anki_note_from_entry`), and it names a record before its screenshot and writes it after
+(`shell/anki_queue.c` `vjo_queue_save`). A lookup in between (the cursor on another word, a refresh's new text,
+the next read) wrote over that memory: the record was written with the other lookup's bytes as its source, under
+the name of the record with its own. The Rubi app's export refused every such card as `checksum mismatch (edited
+or damaged)` and kept it queued; the owner's console had 31 (#528), 5 of them from 10-17..10-19. A lookup before
+the name was given (while the card read the other dictionaries' entries) left a card that matches its name, with
+the wrong source: those were exported, their Frequency field naming the other lookup's bytes. Every release from
+0.8.0 to 0.10.1 wrote the same bytes (each tag's own host harness, `host/tests/test_apkg.c` `released[]`).
+
+The card now copies the source. The Rubi app reads a record whose name is not its checksum
+(`settings/anki_export.c` `read_card`):
+
+- its checksum with `"source":"Jiten"` in place of its source is its name: the card that was saved, exported
+  with `Jiten` (the hash proves that nothing else differs). `log.txt`: `anki export: …: saved while the overlay
+  looked up another word (#528): exported with its frequency source as it was`;
+- else, a whole record: exported as it reads, without its frequency source (the one field a Shell could change
+  after naming it; FreqSort keeps the rank). `log.txt`: `… checksum mismatch (edited, or saved while the overlay
+  looked up another word), but a whole card: exported as it reads, without its frequency source`; the result
+  says `N exported as they read`;
+- else (no whole record): queued, as before, and named once (above).
+
+Each line is written by the export that takes the card, and the export's own line in `log.txt` counts them
+(`N restored, N mismatched`). The record is moved into `exported/` as it is, under its name, so its note's GUID
+is the one it always had.
 
 ### The record (version 4)
 

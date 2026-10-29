@@ -110,7 +110,8 @@ typedef struct {
 } VjoAnkiNote;
 
 /* The note of entry `entry` of the shown list (always with the sentence's
- * furigana when memory allows; without it the note is still made). */
+ * furigana when memory allows; without it the note is still made). Every
+ * string of it is a copy in a (the list's memory may go: #528). */
 int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoAnkiNote *out);
 
 /* The HTML of Lapis field f (VJO_LAPIS_*) for the note: "" when the card has

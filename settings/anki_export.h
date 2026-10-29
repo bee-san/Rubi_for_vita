@@ -58,9 +58,13 @@ typedef struct {
     int moved;       /* queued cards it took out of the queue */
     int kept;        /* exported, but still queued: a move failed (the next export has them again, harmlessly) */
     int stopped;     /* exported, but still queued: the user stopped the clearing (the same) */
-    int unreadable;  /* left in the queue: damaged/edited record, or an I/O failure (log.txt) */
+    int unreadable;  /* left in the queue: no whole record (damaged, cut short), or an I/O failure (log.txt) */
     int too_large;   /* left in the queue: no room in memory to make their note */
     int missing_picture; /* exported without an absent/damaged screenshot; original record preserved */
+    int restored;    /* #528: exported, their record named with another frequency source than it holds (a Shell
+                      * before 0.10.2 saved them while it looked up another word): with the one they were saved with */
+    int mismatched;  /* #528: exported, their record not their name's but whole (edited, or as above with another
+                      * dictionary's source): as they read, without their frequency source */
     int left;        /* over VJO_APKG_MAX_CARDS: the newest, left for the next export */
     int swept;       /* screenshots no card names, removed from the queue (#161) */
     int media;       /* screenshot files in it */
@@ -109,16 +113,18 @@ typedef struct {
     int queued;      /* the queue's cards with a word */
     int duplicates;  /* queued cards whose word an earlier card has (the Anki page's "already mined") */
     int read;        /* records read (the others' words came from the cache) */
-    int unreadable;  /* records that could not be read: no word (and not cached) */
+    int unreadable;  /* cards without a word: a record that is no whole record (#528: cached as one, so that the Anki
+                      * page reads and logs it once; an export reads it again), or one that could not be read now */
 } VjoWords;
 
 /* The words of every card in the queue and the archive (into a), from the records, and from the cache of them that
  * this keeps in ux0:data/VitaJPOverlay/anki_words.bin (written again when a word was read; a missing or damaged
  * cache is rebuilt from the records). ui may be NULL (no progress, no stop). max_reads: at most this many records
  * are read (0: every one), so that the Anki page can count on its own thread without waiting long; the words read
- * are kept in the cache all the same. 0; 1 when more records than max_reads are not in the cache (out has no words);
- * VJO_E_LOCAL_IO when a directory cannot be read; VJO_E_OOM (no room in a for every card's word); VJO_E_CANCELLED
- * (ui->stopped). */
+ * are kept in the cache all the same. A record whose name is not its checksum but which is a whole record is a
+ * word as it reads (#528, settings/anki_export.c read_card). 0; 1 when more records than max_reads are not in the
+ * cache (out has no words); VJO_E_LOCAL_IO when a directory cannot be read; VJO_E_OOM (no room in a for every card's
+ * word); VJO_E_CANCELLED (ui->stopped). */
 int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords *out);
 /* 1 when an earlier card (by time, then ID) than this one (its word, time and ID) has its word. */
 int vjo_words_earlier(const VjoWords *w, uint64_t key, int64_t time, const uint8_t id[16]);

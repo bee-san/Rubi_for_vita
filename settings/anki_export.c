@@ -226,28 +226,87 @@ static const char *record_game(VjoArena *a, const char *json, size_t len)
     return vjo_json_str(a, &j, t);
 }
 
-/* A card's record, checked against its name (the ID is its checksum) and
- * decoded into note, with (game) its game from version 3 on (record_game). 0, or -1 (logged). */
-static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *note, int *picture, int game)
+/* ---------------- a record and its name (#528) ---------------- */
+
+/* The frequency list the bundled dictionary names (bee-san/plaintext-dicts' Bee's Ultimate Dictionary: "Jiten" in its
+ * v3 header, docs/anki.md), as the Shell's writer encodes a source: the one a lookup of it gives every card. */
+#define BUNDLED_SOURCE "Jiten"
+#define BUNDLED_SOURCE_JSON "\"" BUNDLED_SOURCE "\""
+
+/* 1 when hex is this record's ID with its source (the frequency list's name) the bundled dictionary's. Until 0.10.2
+ * the Shell's card kept its source as a pointer into the overlay's lookup memory (core/anki.c
+ * vjo_anki_note_from_entry; every other field it copied), and named its record before its screenshot and wrote it
+ * after (shell/anki_queue.c vjo_queue_save): a lookup meanwhile (the cursor moved, the text changed) left a record
+ * whose source is that lookup's bytes, under the ID of the one with its own. The reconstruction is the record's
+ * bytes with that value's, so the hash proves it: nothing else differs. */
+static int named_with_bundled_source(VjoArena *a, const char *json, size_t len, const char *hex)
+{
+    char actual[VJO_QUEUE_ID_SIZE], *alt;
+    size_t mark = vjo_arena_mark(a), from, to, n;
+    VjoJson j;
+    int t, ok = 0;
+    if (vjo_json_parse(a, json, len, &j) >= 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
+        (t = vjo_json_obj_get(&j, 0, "source")) >= 0 && vjo_json_is_type(&j, t, JSMN_STRING)) {
+        from = (size_t)j.t[t].start - 1; /* its quotes too */
+        to = (size_t)j.t[t].end + 1;
+        n = from + sizeof(BUNDLED_SOURCE_JSON) - 1 + (len - to);
+        if ((alt = (char *)vjo_arena_alloc(a, n))) {
+            memcpy(alt, json, from);
+            memcpy(alt + from, BUNDLED_SOURCE_JSON, sizeof(BUNDLED_SOURCE_JSON) - 1);
+            memcpy(alt + from + sizeof(BUNDLED_SOURCE_JSON) - 1, json + to, len - to);
+            vjo_queue_id(alt, n, actual);
+            ok = !strcmp(actual, hex);
+        }
+    }
+    vjo_arena_release(a, mark);
+    return ok;
+}
+
+/* How read_card read a record (its name is its ID, the SHA-256 of the bytes its writer named it with). */
+enum {
+    READ_VERIFIED = 0, /* its name is its checksum */
+    READ_RESTORED,     /* its checksum with the bundled dictionary's source (named_with_bundled_source): the note has
+                        * the source its card was saved with */
+    READ_MISMATCHED,   /* neither, but a whole record (an edit, or a lookup during its save with another dictionary's
+                        * source): the note as it reads, without its source, the one field a Shell could change */
+};
+/* read_card's lines in log.txt: none, a record that is no whole record (the Anki page's, once: it is cached as one),
+ * and also a record that is not its name's (the export's, as it takes the card) */
+enum { REPORT_NONE, REPORT_DAMAGED, REPORT_ALL };
+
+/* A card's record, checked against its name and decoded into note, with (game) its game from version 3 on
+ * (record_game): READ_*; -1 for a record that is no whole record (damaged, cut short, or of a newer build); -2 when it
+ * could not be read now (I/O, memory: logged). A record is never written: it stays as its writer left it. */
+static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *note, int *picture, int game, int report)
 {
     char path[VJO_EXPORT_PATH_MAX], actual[VJO_QUEUE_ID_SIZE], *json;
     size_t len;
-    int version;
+    int version, how = READ_VERIFIED, error;
     card_path(path, archive, hex, "json");
-    if (!(json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, NULL)))
-        return -1;
+    if (!(json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, &error)))
+        return error == VJO_E_PARSE ? -1 : -2; /* (an empty file or one over the limit is no record) */
     vjo_queue_id(json, len, actual);
-    if (strcmp(actual, hex)) {
-        vjo_log("anki export: %s: checksum mismatch (edited or damaged)", path);
-        return -1;
-    }
+    if (strcmp(actual, hex))
+        how = named_with_bundled_source(a, json, len, hex) ? READ_RESTORED : READ_MISMATCHED;
     if ((version = vjo_queue_decode(a, json, len, note, picture)) < 0) {
-        vjo_log("anki export: %s: invalid or unsupported card format", path);
+        if (report != REPORT_NONE)
+            vjo_log(how == READ_VERIFIED ? "anki export: %s: invalid or unsupported card format"
+                                         : "anki export: %s: checksum mismatch (edited or damaged)", path);
         return -1;
     }
+    if (how == READ_RESTORED)
+        note->source = BUNDLED_SOURCE;
+    else if (how == READ_MISMATCHED)
+        note->source = NULL;
+    if (report == REPORT_ALL && how == READ_RESTORED)
+        vjo_log("anki export: %s: saved while the overlay looked up another word (#528): exported with its frequency "
+                "source as it was", path);
+    else if (report == REPORT_ALL && how == READ_MISMATCHED)
+        vjo_log("anki export: %s: checksum mismatch (edited, or saved while the overlay looked up another word), but "
+                "a whole card: exported as it reads, without its frequency source", path);
     if (game && version >= 3)
         note->game = record_game(a, json, len);
-    return 0;
+    return how;
 }
 
 /* ---------------- the words of every card (#314) ---------------- */
@@ -259,7 +318,11 @@ static int present(const char *path);
  * word, sorted by ID: its ID's first 8 bytes, its key (8 bytes) and its time (4), big-endian. A card's ID is its
  * record's checksum, so an entry never goes stale: it is only dropped once its card is gone from both directories.
  * The file is the app's alone (neither the Shell nor an export reads it otherwise), outside anki_queue/, and only
- * ever a copy of what the records say: a damaged, short or unknown one is rebuilt from them. */
+ * ever a copy of what the records say: a damaged, short or unknown one is rebuilt from them.
+ * #528: an entry whose time is WORD_DAMAGED (0, a time no word has: word_time) is a card whose record is no whole
+ * record, so that the Anki page neither reads it nor logs it again at every show; an export reads it again (it may
+ * have been put right since). Its key is its ID's 8 bytes, a key no word has: an older build reads it as a word of
+ * its own, which no other card shares. */
 #define WORDS_PATH VJO_EXPORT_DATA_DIR "/anki_words.bin"
 #define WORDS_TEMP WORDS_PATH ".tmp"
 #define WORDS_MAGIC "RubiWd1\n" /* 1: core/word_key.h's key; a new key would be a new magic */
@@ -267,6 +330,7 @@ static int present(const char *path);
 #define WORDS_ENTRY 20
 #define WORDS_CHUNK 128 /* entries a read or write takes, on the stack (2,560 B) */
 #define WORD_SEEN 0x100u /* (the build's own: the card is in a directory now) */
+#define WORD_DAMAGED 0u  /* an entry's time: no word, its record is no whole record (#528) */
 
 static uint64_t be_get(const uint8_t *p, int n)
 {
@@ -439,6 +503,8 @@ typedef struct {
     int nc, n;
     int queue;      /* the directory scanned is the queue */
     int seen, total, read, unreadable, oom;
+    int tried;      /* records read, whole or not (max_reads counts them) */
+    int changed;    /* an entry to write: a word read, a record found to be no whole record */
     int max_reads, more; /* more: a record to read past max_reads (the scan stopped there) */
     const VjoExportUi *ui;
 } Words;
@@ -467,38 +533,60 @@ static int word_of(void *ud, const char *hex)
     VjoAnkiNote note;
     VjoWord *slot;
     size_t before = vjo_arena_mark(b->a), mark;
-    int i, picture;
+    int i, picture, rc;
     if (b->ui && status_every(b->ui, "Checking for words mined before", ++b->seen, b->total) < 0)
         return -1;
     from_hex(hex, id);
-    if ((i = cached(b, be_get(id, 8))) >= 0) {
+    /* a cached word; or a record that is no whole record (#528), which the Anki page (max_reads) does not read
+     * again: an export does, into its entry */
+    if ((i = cached(b, be_get(id, 8))) >= 0 && (b->c[i].time != WORD_DAMAGED || b->max_reads)) {
         b->c[i].flags |= flags;
+        b->unreadable += b->c[i].time == WORD_DAMAGED;
         return 0;
     }
-    if (b->max_reads && b->read + b->unreadable >= b->max_reads) {
+    if (b->max_reads && b->tried >= b->max_reads) {
         b->more = 1;
         return -1;
     }
-    /* a word to read: its place after the others' (the record's work above it is released after it) */
-    if (!(slot = (VjoWord *)vjo_arena_alloc(b->a, sizeof(*slot))) || (b->n && slot != b->w + b->n)) {
-        b->oom = 1;
-        return -1;
+    if (i >= 0) {
+        slot = &b->c[i];
+    } else {
+        /* a word to read: its place after the others' (the record's work above it is released after it) */
+        if (!(slot = (VjoWord *)vjo_arena_alloc(b->a, sizeof(*slot))) || (b->n && slot != b->w + b->n)) {
+            b->oom = 1;
+            return -1;
+        }
+        if (!b->n)
+            b->w = slot;
+        slot->id = be_get(id, 8);
+        slot->flags = 0;
     }
-    if (!b->n)
-        b->w = slot;
     mark = vjo_arena_mark(b->a);
-    if (read_card(b->a, !b->queue, hex, &note, &picture, 0) < 0) {
+    b->tried++;
+    /* (the Anki page logs a record that is no whole record once: from then on it is cached as one; an export's list
+     * reports every card it cannot take, and those it takes although they are not their name's) */
+    rc = read_card(b->a, !b->queue, hex, &note, &picture, 0, b->max_reads ? REPORT_DAMAGED : REPORT_NONE);
+    if (rc == -2) { /* not read now (I/O, memory): no word; a cached entry stays as it was */
         b->unreadable++;
-        vjo_arena_release(b->a, before); /* its place too */
+        if (i >= 0)
+            slot->flags |= flags;
+        vjo_arena_release(b->a, before); /* (a new entry's place too) */
         return 0;
     }
-    slot->key = vjo_word_key(note.spelling, note.reading);
-    slot->id = be_get(id, 8);
-    slot->time = word_time(note.unix_time);
-    slot->flags = flags;
+    if (rc < 0) {
+        b->changed |= i < 0;
+        slot->key = slot->id; /* WORDS_PATH's note */
+        slot->time = WORD_DAMAGED;
+        b->unreadable++;
+    } else {
+        b->changed = 1;
+        slot->key = vjo_word_key(note.spelling, note.reading);
+        slot->time = word_time(note.unix_time);
+        b->read++;
+    }
+    slot->flags |= flags;
     vjo_arena_release(b->a, mark);
-    b->n++;
-    b->read++;
+    b->n += i < 0;
     return 0;
 }
 
@@ -536,13 +624,17 @@ int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords
         rc = 1;
     if (!b.w)
         b.n = 0;
-    /* one word per card (a card in both directories, an export stopped between its moves, was read twice) and, once
-     * both directories were read whole, none of a card that is gone; the cache then has what was read */
+    /* one word per card (a card in both directories, an export stopped between its moves, was read twice: a word
+     * before a copy that is no whole record) and, once both directories were read whole, none of a card that is
+     * gone; the cache then has what was read */
     word_sort(b.w, b.n, 1);
     n = 0;
     for (int i = 0; i < b.n; i++) {
         if (n && b.w[n - 1].id == b.w[i].id) {
-            b.w[n - 1].flags |= b.w[i].flags;
+            uint32_t f = b.w[n - 1].flags | b.w[i].flags;
+            if (b.w[n - 1].time == WORD_DAMAGED)
+                b.w[n - 1] = b.w[i];
+            b.w[n - 1].flags = f;
             dropped++;
             continue;
         }
@@ -552,13 +644,21 @@ int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords
         }
         b.w[n++] = b.w[i];
     }
-    if ((b.read || dropped) && rc != VJO_E_OOM && rc != VJO_E_LOCAL_IO)
+    if ((b.changed || dropped) && rc != VJO_E_OOM && rc != VJO_E_LOCAL_IO)
         words_save(b.w, n); /* (a stop keeps every word it had and every word it read) */
     if (rc) {
         vjo_arena_release(a, base);
         return rc;
     }
-    /* the words in (key, time, ID) order: the first of a key's run is its earliest card */
+    /* the words in (key, time, ID) order: the first of a key's run is its earliest card; a card whose record is no
+     * whole record has none (#528: its entry is the cache's only) */
+    {
+        int k = 0;
+        for (int i = 0; i < n; i++)
+            if (b.w[i].time != WORD_DAMAGED)
+                b.w[k++] = b.w[i];
+        n = k;
+    }
     word_sort(b.w, n, 0);
     for (int i = 0; i < n; i++) {
         b.w[i].flags &= VJO_WORD_QUEUED;
@@ -990,6 +1090,9 @@ typedef struct {
 /* VjoApkgCard.flags: its note's tags (export_tags) */
 #define CARD_DUPLICATE 1u
 #define CARD_KNOWN 2u
+/* #528 (no tag): how read_card read its record, when it was not its name's */
+#define CARD_RESTORED 4u   /* READ_RESTORED */
+#define CARD_MISMATCHED 8u /* READ_MISMATCHED */
 
 static int newer(const VjoApkgCard *x, const VjoApkgCard *y)
 {
@@ -1021,16 +1124,17 @@ static int list_card(void *ud, const char *hex)
     size_t mark = vjo_arena_mark(l->a);
     VjoAnkiNote note;
     VjoApkgCard c;
-    int picture = 0;
+    int picture = 0, how;
     if (status_every(l->ui, "Reading the cards", ++l->seen, l->total) < 0)
         return -1;
     memset(&c, 0, sizeof(c));
-    if (read_card(l->a, l->archive, hex, &note, &picture, 0) < 0) {
+    if ((how = read_card(l->a, l->archive, hex, &note, &picture, 0, REPORT_ALL)) < 0) {
         l->unreadable++;
         vjo_arena_release(l->a, mark);
         return 0;
     }
     from_hex(hex, c.id);
+    c.flags = how == READ_RESTORED ? CARD_RESTORED : how == READ_MISMATCHED ? CARD_MISMATCHED : 0u;
     c.time = note.unix_time > 0 ? note.unix_time : VJO_APKG_NO_TIME;
     /* #314: a word an earlier card has: Anki's duplicate tag, or (Skip) not in this package; a known word's (stage
      * C, by its key or, for a known word without a reading, by its spelling alone): the tag known */
@@ -1234,7 +1338,7 @@ static int load(void *ud, VjoArena *a, const VjoApkgCard *c, VjoAnkiNote *note, 
     to_hex(c->id, hex);
     *jpeg = NULL;
     *len = 0;
-    if (note && (read_card(a, c->exported, hex, note, &picture, 1) < 0 ||
+    if (note && (read_card(a, c->exported, hex, note, &picture, 1, REPORT_NONE) < 0 ||
                  !!picture != !!(c->picture || c->missing_picture)))
         return -1;
     if (c->picture && !(*jpeg = read_jpeg(a, c->exported, hex, len, NULL)))
@@ -1319,7 +1423,8 @@ static int archived_copy_good(VjoArena *a, const char *hex)
     json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, NULL);
     if (json)
         vjo_queue_id(json, len, actual);
-    good = json && !strcmp(actual, hex);
+    /* (#528: or this card's record as a Shell before 0.10.2 wrote it, named with the source it was saved with) */
+    good = json && (!strcmp(actual, hex) || named_with_bundled_source(a, json, len, hex));
     vjo_arena_release(a, mark);
     return good;
 }
@@ -1736,6 +1841,8 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
                 r->missing_picture += l.cards[i].missing_picture;
                 r->duplicates += !!(l.cards[i].flags & CARD_DUPLICATE); /* tagged */
                 r->known += !!(l.cards[i].flags & CARD_KNOWN);
+                r->restored += !!(l.cards[i].flags & CARD_RESTORED);
+                r->mismatched += !!(l.cards[i].flags & CARD_MISMATCHED);
                 if (!l.cards[i].exported)
                     to_move++;
             }
@@ -1799,6 +1906,9 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
         if (r->missing_picture)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d exported without %s.",
                      r->missing_picture, r->missing_picture == 1 ? "a screenshot" : "screenshots");
+        if (r->mismatched)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d exported as %s (see log.txt).",
+                     r->mismatched, r->mismatched == 1 ? "it reads" : "they read");
         if (r->unreadable + r->too_large)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d stay queued; see log.txt.",
                      r->unreadable + r->too_large);

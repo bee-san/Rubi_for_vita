@@ -175,11 +175,12 @@ static int worker_main(SceSize args, void *argp)
     vjo_export_run(&arena, what == JOB_ALL, &prefs, job_dicts_known ? &job_dicts : NULL, &ui, &r, msg, sizeof(msg));
     vjo_log("anki: export (%s) rc=%d: %d cards, %d moved, %d kept, %d unreadable, %d too large, %d left, "
             "%d stopped, %d swept, %u bytes, arena peak %u, %d without screenshots, %d duplicates (%s)%s, %d known%s, "
-            "%u ms",
+            "%d restored, %d mismatched, %u ms",
             what == JOB_ALL ? "all" : "queued", r.rc, r.cards, r.moved, r.kept, r.unreadable, r.too_large, r.left, r.stopped,
             r.swept, (unsigned)r.bytes, (unsigned)arena.peak, r.missing_picture, r.duplicates,
             vjo_app_prefs_value("anki_duplicates", prefs.anki_duplicates), r.unchecked ? ", not checked" : "", r.known,
-            r.known_unchecked ? ", known not checked" : "", (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u));
+            r.known_unchecked ? ", known not checked" : "", r.restored, r.mismatched,
+            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u));
     vjo_app_worker_lock(&worker);
     n = (size_t)snprintf(result, sizeof(result), "%s", msg);
     if (r.rc == 0 && r.cards && n < sizeof(result))

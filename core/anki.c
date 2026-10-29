@@ -302,7 +302,10 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoA
     out->rank = v->rank;
     out->hl_start = e->hl_start;
     out->hl_end = e->hl_end;
-    out->source = l->source;
+    /* The frequency list's name is the card's own copy too (#528): it is in the lookup's memory, which the next
+     * lookup writes over, and the Shell names a card's record before its screenshot and writes it after. */
+    if (l->source && !(out->source = dup(a, l->source)))
+        return -1;
     out->sf_hl_start = out->sf_hl_end = -1;
     /* The entry's dictionary: its file's title (Bee's Ultimate Dictionary), else
      * the name its definition's first line gives ("[JMdict Plain]"), else none. */
