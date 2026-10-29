@@ -165,23 +165,29 @@ cache, 788 B of the worker's data.
   lines are recognized only after that wait (a row that changes is a tear: the next try reads the new screen), and
   gives the last job's text, greedy text, lines and their stats: the same bytes a fresh read gives (host tests with
   the real runtime and with the release models). Its FIND step says kind 6; it has no refine, recognize, LM,
-  cascade, par or spot step, and no CTC frames, find or recognize time (`history.csv`: `find_us` and
-  `recognize_us` 0 with lines).
+  cascade, par or spot step, and no CTC frames, find or recognize time (`history.csv`: `find_us`, `recognize_us`
+  and each line's time 0 with lines). It reads no model file either: the warm-up a job with no line runs (ocr-first)
+  does not follow it, which had read and kept the cascade's weights the kept job never needed (#558's audit).
 - **When it is kept.** After a successful job whose text is the one an unhurried job gives, as a cached line is: no
   line left out for room, no doubtful line skipped for the cascade's time, nothing it asked for refused (the LM, the
   cascade, the refinement, the gate, the spotter), at most 8 lines and a text and greedy text within 576 B (a
   textbox's; a longer page is read again).
 - **When it goes.** With the line cache (the weights read from the file again); when the worker's loop sees the game
-  is not the active one (a suspend, another app in front, its title disabled, the Shell restarted); after a job that
+  is not the active one (another app in front, its title disabled, the Shell restarted; a suspend when the loop runs
+  between the resume and the Shell's activation of the game, which it may not); after a job that
   failed, other than cancelled or by a screen that changed under it (the Shell's own pacing); at the game's exit.
   A setting, a region or a text source changed is another salt.
 
-In the owner's `history.csv` (#528) 37 of 874 OCR jobs read the same region as the job before them, 28 of them in
-the same game process, the ones the worker's entry can serve (it does not outlive the process): 21 in CLANNAD (the
-same box again after a menu, say; 131 ms of finder and 46 ms of recognition in the median such job) and 7 in
-AFEJ00001, whose port kept submitting its boot frame (373 ms and 120 ms) [measured: the collection's history, finder
-and recognition times as the console logged them]. Such a job keeps its first pass, the wait and the memory check;
-what it no longer spends is an estimate from those medians, not a console run.
+In the owner's `history.csv` (#528) 37 of 874 OCR jobs read the same region as the job before them. The entry can
+serve fewer: it holds the last job that ran the OCR core (a job a hook answered after OCR included), in the same game
+process, with the weights still resident (trusted hook answers can drop them). Counted that way (each job that ran
+the core against the game's previous one in the same process, fewer than 8 trusted answers between), 19 of 1,167 core
+runs read the same region as the run before: 13 in CLANNAD (the same box again after a menu, say) and 6 in
+AFEJ00001, whose port kept submitting its boot frame. In the median such job CLANNAD spent 87 ms in the finder and
+0.7 ms recognizing (the line cache already served its lines), AFEJ00001 377 ms and 120 ms [measured: the collection's
+history, as the console logged them; #558's audit, `history_repeats.py`]. So a repeat saves about 0.09 s in CLANNAD's
+box and 0.5 s on AFEJ00001's full screen; it keeps its first pass, the wait and the memory check [estimate from those
+medians; no console run].
 
 ## The request (API 22)
 

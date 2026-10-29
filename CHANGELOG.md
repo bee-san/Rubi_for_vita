@@ -96,10 +96,12 @@ been reported.
 
 - The same screen read again is not found and recognized again: a job whose region's rows read the same as the last
   job's, asked for the same way, takes that job's text, lines and line stats once its rows have held still, the
-  same bytes a fresh read gives (#528). The owner's history had 28 such jobs in one game process (CLANNAD's box
-  again after a menu; AFEJ00001's unchanging boot frame), each spending a median 131-373 ms in the finder and
-  46-120 ms recognizing; that saving is an estimate, not a console run. The worker's pages are unchanged in both
-  builds (788 B of its data page; its stream text decoder and profile loader built for size).
+  same bytes a fresh read gives (#528). The owner's history had 19 such jobs the worker could have served (13 in
+  CLANNAD, its box again after a menu; 6 in AFEJ00001, whose boot frame never changed): about 0.09 s each in
+  CLANNAD, whose line cache already skipped their recognition, and 0.5 s in AFEJ00001 [estimate from the logged
+  times, not a console run]. Such a job reads no model file afterwards either (#558's audit: it had read and kept
+  the next model size up's weights, 2,478,080 B for Normal's cascade, Large, as a job with no line does). The worker's pages are unchanged
+  in both builds (784 B of its data page; its stream text decoder and profile loader built for size).
 - OCR with the default text spotter reads a screen with fewer display frames (#528, #545): each line's dark-text flag
   is computed from the pixels the job already fetches to read that line, instead of a second read of every box's rows
   after the spotter's pass. On 358 development regions a job reads 1.23 strips fewer at 60 fps, 8.5 ms sooner on

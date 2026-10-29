@@ -2750,11 +2750,12 @@ retry_smaller:
      * session's first job with text would otherwise read while the user waits
      * (docs/first-ocr.md), as its check allowed; not the self-test's forced
      * fallback, which would put the fallback in the user's model's place, nor (API 43) in a game whose trusted
-     * hook supplies its lines: nothing is read ahead there. Best
+     * hook supplies its lines: nothing is read ahead there; nor (#558's audit) after a job that reused the last
+     * job's region, which read no weights because it needed none (it would read and keep the cascade's). Best
      * effort, so its rc is not the job's: a cancellation ends the job below,
      * a block it could not release is cleanup()'s, a file it could not read the
      * next text job's (io_error says which). */
-    if (!rc && !stats.model_loaded && !stats.model_cached && !forced && !(trust && hk.trusted) &&
+    if (!rc && !stats.reused && !stats.model_loaded && !stats.model_cached && !forced && !(trust && hk.trusted) &&
         !(check && resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME))) /* auto keeps the columns' model */
         vjo_vocr_warm(&platform, r->model_dir, use->name, &image, &resident, &policy, &stats);
     /* A native capture error (the kernel's VJO_ERR_*, an SDK code) ends the job
@@ -2883,7 +2884,7 @@ done:
         out->line[i].height = stats.line[i].height;
         out->line[i].frames = stats.line[i].frames;
         out->line[i].flags = stats.line[i].flags;
-        out->line[i].us = stats.line[i].us;
+        out->line[i].us = stats.reused ? 0u : stats.line[i].us; /* a reused line was not recognized (#558's audit) */
     }
     if (!(r && (r->flags & (VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))) { /* (theirs are their own) */
         out->source = capture.pass_strips ? capture.mode : VJO_GAME_OCR_SRC_NONE;

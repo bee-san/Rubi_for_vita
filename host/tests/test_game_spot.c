@@ -509,8 +509,63 @@ static void autos_columns_try_keeps_the_block_and_says_why(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 
+/* #558's audit: the default finder (the spotter) on the same screen again: the job's first pass, read inside the
+ * spotter's own read, ends it, and the job takes the kept text: no spotter run past it, no GRAD, no recognizer, no spot
+ * step, the same text and lines. Another finder setting (GRAD) is another key: read again. The spotter refused for room
+ * on that screen (its block refused by the system) reads with GRAD, under GRAD's key: a job refused the same way takes
+ * it, a job the spotter reads does not (the audit's X8: the key holds whether the spotter found the lines). */
+static void a_spot_job_reuses_the_last_region(void)
+{
+    static VjoGameOcrResult first, out;
+    static unsigned char orig[W * H];
+    const VjoGameOcrStep *fs;
+    unsigned want = 0, r0;
+    load_fixtures();
+    memcpy(orig, grey, sizeof(orig));
+    for (unsigned k = 2; k <= 16 && !(want >= 1 && want <= 8); k++) { /* a region the random pin finds 1-8 lines in */
+        memcpy(grey, orig, sizeof(orig));
+        for (unsigned y = 0; y < H; y++) memset(grey + y * W + W / k, 255, W - W / k);
+        want = runtime_lines();
+    }
+    TEST_ASSERT(want >= 1 && want <= 8);
+    reset();
+    test_no_last = 0;
+    TEST_ASSERT(!run(VJO_GAME_OCR_S_SPOT, &first) && first.lines == want && !grad_calls && runs == want);
+    TEST_CHECK(step_of(&first, VJO_GSTEP_SPOT) != NULL && line_cache.last.salt);
+    r0 = runs;
+    TEST_ASSERT(!run(VJO_GAME_OCR_S_SPOT, &out));
+    fs = step_of(&out, VJO_GSTEP_FIND);
+    TEST_CHECK(fs && fs->kind == 6 && runs == r0 && !grad_calls && !step_of(&out, VJO_GSTEP_SPOT));
+    TEST_CHECK(!memcmp(out.text, first.text, sizeof(out.text)) && out.lines == first.lines &&
+               out.recognized == first.recognized && !out.find_us && !out.recognize_us);
+    for (unsigned i = 0; i < out.recognized; i++)
+        TEST_CHECK(out.line[i].width == first.line[i].width && out.line[i].height == first.line[i].height &&
+                   out.line[i].frames == first.line[i].frames && out.line[i].flags == first.line[i].flags);
+    /* another finder setting (GRAD): another key, read again */
+    TEST_CHECK(!run(0, &out) && grad_calls == 1 && (fs = step_of(&out, VJO_GSTEP_FIND)) && fs->kind == 0);
+    /* the spotter asked for but refused (its block): GRAD's reading, which no spotter job may take */
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+    reset();
+    test_no_last = 0;
+    blocks[14].fail = 1;
+    TEST_CHECK(!run(VJO_GAME_OCR_S_SPOT, &out) && grad_calls == 1 && step_of(&out, VJO_GSTEP_SPOT)->rc == VJO_E_OOM);
+    /* that job read with GRAD, under GRAD's key: the same refused job again takes it (the GRAD spy reads no row, so
+     * this harness's first pass ends at the job's next fetch, after the spy's call: no recognizer run), */
+    r0 = runs;
+    TEST_CHECK(!run(VJO_GAME_OCR_S_SPOT, &out) && grad_calls == 2 && runs == r0 &&
+               (fs = step_of(&out, VJO_GSTEP_FIND)) && fs->kind == 6);
+    blocks[14].fail = 0; /* and a job the spotter reads does not */
+    TEST_CHECK(!run(VJO_GAME_OCR_S_SPOT, &out) && (fs = step_of(&out, VJO_GSTEP_FIND)) && fs->kind == 0 &&
+               step_of(&out, VJO_GSTEP_SPOT) && step_of(&out, VJO_GSTEP_SPOT)->kind == 1);
+    memcpy(grey, orig, sizeof(orig));
+    test_no_last = 1;
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+}
+
 TEST_LIST = {
     {"a job with the spotter reads its boxes, keeps its weights and gives them back", a_spot_job_finds_its_lines_with_the_spotter},
+    {"#558's audit: a spotter job on the same screen reuses the last region; a refused spotter keeps none",
+     a_spot_job_reuses_the_last_region},
     {"a missing or wrong spotter reads with GRAD", a_missing_or_wrong_spotter_reads_with_grad},
     {"no memory for the spotter reads with GRAD", no_memory_for_the_spotter_reads_with_grad},
     {"the spotter's boxes are refined by its own bit", its_refinement_follows_its_own_bit},

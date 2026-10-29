@@ -2461,7 +2461,10 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         }
     }
     /* #528: the first pass read the last job's region (VjoVocrCache.last): its text (run_job, REUSE_LAST), once the
-     * rows have held still for settle_us, as a read's lines are recognized only then (a change: a tear, the next try) */
+     * rows have held still for settle_us, as a read's lines are recognized only then (a change: a tear, the next try).
+     * Every finder reads every row first (GRAD's passes, the spotter's, the columns'), so the first pass ends inside it;
+     * only a host test's spy, which reads none, ends it at a later fetch, whose error returns REUSE_LAST without the
+     * wait. */
     if (rc == VOCR_LINES_E_SOURCE && s->err == REUSE_LAST) {
         s->err = 0;
         reuse = 1;

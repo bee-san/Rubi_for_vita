@@ -1366,10 +1366,19 @@ static void an_identical_capture_reuses_the_real_read(void)
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &fresh) == 0);
     if (fresh.lines < 5) { test_no_last = 1; TEST_SKIP("the finder did not find five lines (%u)", fresh.lines); return; }
     TEST_CHECK(fresh.text[0] && fresh.text[strlen(fresh.text) + 1] && line_cache.last.salt);
+    /* no line was doubtful: the fresh job read the cascade's model nowhere */
+    TEST_CHECK(!cascade_opens && !cascade_live);
     rows = rows_calls;
+    const unsigned opens = cascade_opens + lm_opens, reads = reads_count;
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK_(rows_calls - rows == 5, "%u rows calls (a pass of the 272 rows is 5 strips)", rows_calls - rows);
     TEST_CHECK(!out.find_us && !out.recognize_us && !out.frames && helper_live == 0 && !memory_live);
+    /* #558's audit: no warm-up after it (which read and kept the cascade's 1.5 MB here, 2.4 MB with Normal's Large),
+     * no file read at all, and no time for lines it did not recognize */
+    TEST_CHECK_(cascade_opens + lm_opens == opens && reads_count == reads && !cascade_live && !out.load_us,
+                "%u model files opened, %u reads, cascade %s", cascade_opens + lm_opens - opens, reads_count - reads,
+                cascade_live ? "resident" : "not resident");
+    for (unsigned i = 0; i < out.recognized; i++) TEST_CHECK_(!out.line[i].us, "line %u: %u us", i, out.line[i].us);
     TEST_CHECK_(!memcmp(out.text, fresh.text, sizeof(out.text)), "\"%s\" vs \"%s\"", out.text, fresh.text);
     TEST_CHECK(out.lines == fresh.lines && out.recognized == fresh.recognized && out.region_sum == fresh.region_sum);
     for (unsigned i = 0; i < out.recognized; i++)
