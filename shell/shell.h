@@ -264,6 +264,8 @@ void vjo_anki_reap(void);
 
 /* overlay.cpp (paf main thread) */
 void vjo_overlay_init(void *plugin);
+/* Takes the overlay's text block (VJO_SL_PAF_UI) for good, as the Shell starts (vjo_worker_start; overlay_mem.h). */
+void vjo_overlay_boot(void);
 
 /* platform_vita.c: the local dictionaries' files and the process clock */
 void vjo_platform_vita(VjoPlatform *p);
@@ -287,7 +289,7 @@ enum VjoShellLedgerItem {
     VJO_SL_PAF_PLUGIN,      /* the RCO and the Paf plugin object (estimate) */
     VJO_SL_PAF_RESULTS,
     VJO_SL_PAF_ANKI,
-    VJO_SL_PAF_UI,          /* the overlay's text arena while its page is open */
+    VJO_SL_PAF_UI,          /* the overlay's text block: taken as the Shell starts and kept (#528) */
     VJO_SL_PAF_HISTORY,     /* a line-history visit's block, while the overlay shows an earlier line */
     VJO_SL_COUNT
 };

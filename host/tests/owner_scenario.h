@@ -11,12 +11,14 @@
  * thread's order) and an Anki save's arena (shell/anki.c's request, VJO_BUDGET_PAF_ANKI, through the same heap).
  * The page's own Paf, which PageOpen takes outside Rubi's ledger, is SCENARIO_PAGE_PAF while it is open.
  *
- * Events, one a line: boot|start|exit FREE HELD, press FREE HELD LOOKUP (the toggle: the page opens, the cursor's word
+ * Events, one a line: boot|start|exit FREE HELD (at boot the Shell's start step: shell/overlay_mem.h
+ * vjo_overlay_mem_boot, #528), press FREE HELD LOOKUP (the toggle: the page opens, the cursor's word
  * is looked up when it opened or when 0.10.1 asked for its arena too, LOOKUP 1, and it closes), lookup FREE HELD (a
  * background read's lookup: run_job gives the arena back, then takes one after OCR), anki FREE HELD (a press that
  * saved a card). Each scenario prints one `owner-scenario shell NAME: key=value ...` line; tools/owner_scenario.py
  * holds them against tools/owner_scenario.json. The checks here hold for any policy: every refusal is logged, the
- * overlay that did not open says so, and a scenario gives back all it took. */
+ * overlay that did not open says so, and a scenario gives back all it took but the overlay's text block, which is
+ * the plugin's from its start (#528). */
 #ifndef OWNER_SCENARIO_FILE
 #define OWNER_SCENARIO_FILE VJO_SOURCE_DIR "/tools/owner_scenario.txt"
 #endif
@@ -112,12 +114,19 @@ static void scenario_print(const char *name, const ScenarioCounts *c)
 
 static void scenario_end(const char *name, ScenarioCounts *c, ScenarioCounts *all, uint32_t start_held)
 {
+    /* #528: the page's text block is the plugin's from the Shell's start (shell/overlay_mem.h): it is all Rubi may
+     * still hold beside the plugin's own, once no game runs */
+    uint32_t kept = scenario_ui ? VJO_OVERLAY_MEM_BYTES : 0;
     c->peak = scenario_peak;
-    TEST_CHECK_(!scenario_ui, "%s: the page's arena is given back", name);
     if (has_result_memory()) mem_free(); /* the control thread's, once no game runs */
-    TEST_CHECK_(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == start_held,
-                "%s: everything given back (%u held, %u at the start)", name,
-                (unsigned)vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF), (unsigned)start_held);
+    TEST_CHECK_(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == start_held + kept,
+                "%s: everything but the kept text block given back (%u held, %u at the start, %u kept)", name,
+                (unsigned)vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF), (unsigned)start_held,
+                (unsigned)kept);
+    if (scenario_ui) { /* the next scenario is another boot: its Shell starts afresh */
+        vjo_shell_heap_free(VJO_SL_PAF_UI, scenario_ui, VJO_OVERLAY_MEM_BYTES);
+        scenario_ui = NULL;
+    }
     scenario_print(name, c);
     all->presses += c->presses; all->not_opened += c->not_opened; all->page_failed += c->page_failed;
     all->lookups += c->lookups;
@@ -158,7 +167,10 @@ static void test_owner_scenario_shell(void)
         TEST_ASSERT_(in_scenario && n >= 3, "%s", line);
         scenario_level(a, b);
         if (!strcmp(kind, "boot")) {
-            /* the Shell's start: 0.10.1 takes no Paf here beside the plugin's (a fix that does calls its code here) */
+            /* the Shell's start (shell/worker.c vjo_worker_start's end, overlay.cpp vjo_overlay_boot): the overlay's
+             * text block, kept from now on (#528; 0.10.1 took no Paf here beside the plugin's) */
+            vjo_overlay_mem_boot(&scenario_ui);
+            scenario_between_jobs(&c);
         } else if (!strcmp(kind, "start") || !strcmp(kind, "exit")) {
             /* No game was active (it left the front, or this one starts): on_game_exit, or the control thread's
              * idle rule (no game active, the page closed), gives the result arena back; 0.10.1's ledger lines show

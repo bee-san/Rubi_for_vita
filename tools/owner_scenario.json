@@ -770,168 +770,168 @@
   "shell": {
    "boot1-line1735": {
     "anki_refused": 0,
-    "held": 8192,
-    "not_opened": 10,
-    "peak": 8192,
-    "refused": 23
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 28672,
+    "refused": 25
    },
    "boot10-line9633": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot11-line9789": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot12-line9969": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot13-line10075": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot14-line10307": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot15-line10343": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot16-line10512": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot17-line10661": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot18-line10733": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot19-line10813": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot2-line5418": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot20-line10892": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot21-line11156": {
     "anki_refused": 0,
-    "held": 8192,
-    "not_opened": 5,
+    "held": 28672,
+    "not_opened": 0,
     "peak": 225280,
     "refused": 15
    },
    "boot22-line11385": {
     "anki_refused": 0,
-    "held": 8192,
-    "not_opened": 10,
-    "peak": 8192,
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 28672,
     "refused": 12
    },
    "boot23-line11446": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 1
    },
    "boot24-line11563": {
     "anki_refused": 0,
-    "held": 8192,
-    "not_opened": 9,
-    "peak": 8192,
-    "refused": 0
+    "held": 28672,
+    "not_opened": 0,
+    "peak": 28672,
+    "refused": 9
    },
    "boot3-line5578": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot4-line5739": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot5-line5852": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot6-line6018": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot7-line6247": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot8-line9224": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0
    },
    "boot9-line9335": {
     "anki_refused": 0,
-    "held": 8192,
+    "held": 28672,
     "not_opened": 0,
     "peak": 225280,
     "refused": 0

@@ -35,7 +35,7 @@ modules (`ctest -R memory_ledger` runs it locally):
 ```
   pool                              permanent   worst case        limit     headroom
   shell pages                         208,896      229,376    1,048,576      819,200
-  shell paf                             8,192      241,664      985,088      743,424
+  shell paf                            28,672      241,664      985,088      743,424
   kernel                              151,552      241,664      241,664            0
   game                                258,048   11,022,336   11,214,848      192,512
 ```
@@ -97,9 +97,11 @@ transient set that can be live at once.
 | Paf plugin+RCO | 8,192 | the RCO (6,368 B file, measured; 5,632 B before the region selector's cursor) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
 | result arenas | 65,536 (the local dictionary's lookup; the network paths' 2 × 262,144 B arenas and connection pool went with Google Lens and the Hachidori relay) | taken after a job's OCR, freed before the next job's | `shell/worker.c` `LOCAL_RESULT_ARENA_SIZE`; asserted equal in `test_shell_worker.c` |
 | Anki job arena | 131,072 | per job: saving a card to the queue. Its screenshot (API 23) is the game worker's: here only the job's request and result, 5,404 B (a one-word card's save peaks at 6,860 B with it); the Shell's own screenshot branch went with AnkiConnect (its 393,216 B arena and the kernel's 2,088,960 B full-frame capture), so the kernel capture is never taken for Anki; a save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B on main `dcb7b31`, before `anki_screenshot`'s `VjoConfig` field) [measured, host] | `shell/anki.c` `ANKI_TEXT_MEM`; checked against the budget at compile time and in `test_shell_anki.c` |
-| overlay text arena | 20,480 | the header and body texts and their spans (18,016 B needed, `test_ledger.c`: 17,952 B before line history's four header spans), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |
+| overlay text arena | 20,480 | the header and body texts and their spans (18,016 B needed, `test_ledger.c`: 17,952 B before line history's four header spans). Permanent since #528: taken once as the Shell starts (`shell/overlay_mem.h` `vjo_overlay_mem_boot`, called at the end of `vjo_worker_start`, through the same guard, while the heap is at its fullest: 3,725,976-3,744,264 B free at all 90 Shell starts in #528's logs [measured]) and kept, so the overlay asks for no memory of ours when it opens; before, it was taken at every open and given back at every close, and beside another plugin's 2,187,264 B buffer (free 202,296-426,872 B) the guard refused it 34 times: `overlay not opened`, with nothing on screen. Only if the start's take was refused does an open take it (and keep it); refused then, the page does not open that time | `shell/overlay.cpp` |
 | line history | 16,384 | one visit's block ([line history](line-history.md)): from the overlay's first Up past its text's top row until the current text is back (or the overlay closes, the game exits): the visit's table, the current text and up to 32 of this game's earlier lines from `history.csv`'s last 24,512 B (read into VjoControl's static scratch, not here); a refusal means no visit, Up does nothing | `shell/worker.c` `history_open`; `VJO_BUDGET_PAF_HISTORY`, its fit checked at compile time |
 | **limit** | **985,088** | the measured free heap, 2,557,952 B (2,498 KiB beside CLANNAD, 2026-10-10), minus the 1.5 MiB reserve the runtime guard keeps for firmware; the reserve is the headroom | `docs/meiki-ocr.md` on `experiment/meiki-ocr` [measured]; `shell/memory.cpp` |
+
+What the heap holds besides the items above, measured in #528's logs (Oct 10-29, PCH-1001, 3.65; the ledger's `free=` and the allocation lines): SceShell's own use moves the free figure by a median of 21,904 B within a game session, 149,728 B at the 95th percentile and 486,176 B at most (293 sessions without the outside buffer; the least free in them 1,977,448 B); the overlay's page itself (PageOpen's widgets) takes a median 94,800 B (94,672-103,296 B, 81 opens) while it is open, which no item here counts and the guard does not see. The 1.5 MiB reserve comes from the Shell-side Meiki and Google Lens builds (`9a6fd526`'s 2 MiB, `bf5a97e2`'s and the Lens build's 1,536 KiB, 2026-10-10), not from a measurement of SceShell's need; it is kept.
 
 Allocations here take no new pages from the partition; a failure is a `NULL`, never `0x80024302`
 (vita-memory.md 3.2). Later sessions saw 355-441 KiB and 190 KiB free [measured], which would
@@ -730,12 +732,18 @@ at each game exit (`tools/install_ftp.sh --status VITA_IP` fetches it):
 
 ```
 ledger boot pages: current=217088 peak=217088 limit=1048576
-ledger boot paf: current=8192 peak=8192 limit=985088 free=2557952
+ledger boot paf: current=28672 peak=28672 limit=985088 free=3705480
 ledger   Shell pages: current=176128 peak=176128
 ledger   VjoNet stack: current=20480 peak=20480
 ledger   VjoControl stack: current=20480 peak=20480
 ledger   Paf plugin (est.): current=8192 peak=8192
+ledger   overlay text arena: current=20480 peak=20480
 ```
+
+(The PAF line's `current` is 28,672 B from the start since #528, the Paf plugin's estimate and the overlay's text
+block, which the Shell takes before this line; 8,192 B before. Its `free=` is an [estimate]: the least of #528's 90
+logged starts, 3,725,976 B, less the block and the 16 B the heap adds to a block [measured: three back-to-back
+allocations in those logs].)
 
 `free=` is the PAF heap's free size as `GetFreeSize()` reports it (0 before Paf is ready). Stacks
 include their 4 KiB of TLS. The kernel writes `ledger kernel: current=… peak=… limit=…` and its

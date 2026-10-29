@@ -3426,6 +3426,7 @@ int vjo_worker_start(void)
         return -1;
     }
     threads_started |= 2;
+    vjo_overlay_boot(); /* #528: the overlay's text block, while the PAF heap is at its fullest; kept */
     vjo_ledger_shell_log("boot");
     return 0;
 }

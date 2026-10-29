@@ -1214,9 +1214,11 @@ Lens's removal; 266,240 B before the default `config.ini` template left it, #101
 before AnkiConnect was removed, 286,720 B before the Hachidori relay client's removal,
 294,912 B before the online dictionaries', of
 299,008 B declared then; 405,504 B in 0.7.12's successor builds): the
-overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
-returned when it closes, never a static buffer; if it is refused, the overlay
-does not open that time and the game keeps its input. Local OCR-only/subtitle
+overlay's text arena is a 20 KiB Paf allocation, never a static buffer, taken
+once as the Shell starts and kept (#528), so opening the overlay asks for no
+memory of ours; only if that first take was refused does an open take it, and
+if it is refused then, the overlay does not open that time and the game keeps
+its input. Local OCR-only/subtitle
 jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
 reads only the selected position, shows the best match, and stacks entries from every enabled

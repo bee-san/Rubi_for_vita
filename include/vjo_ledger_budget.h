@@ -129,7 +129,11 @@
  * anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_HEADER_RANGE_BYTES 2048u              /* 512 entry starts and lengths, uint16_t each, in the open page's UI block */
-#define VJO_BUDGET_PAF_UI 20480u                   /* text/spans 18,016 B + ranges 2,048 B (source bounds, test_ledger.c) */
+/* The overlay's text block: text/spans 18,016 B + ranges 2,048 B (source bounds, test_ledger.c). #528: taken once as
+ * the Shell starts (shell/overlay_mem.h vjo_overlay_mem_boot, through the reserve guard: 3,725,976-3,744,264 B free at
+ * all 90 logged starts [measured, #528's logs]) and kept, so the overlay asks for no memory of ours when it opens: a
+ * permanent item. Taken per open before, it was refused 34 times beside another plugin's 2.19 MB (free 202-427 KB). */
+#define VJO_BUDGET_PAF_UI 20480u
 /* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
  * first Up past its text's top row until the return to the current text (or the overlay's close): the
  * table (core/history_lines.h VjoHistory, 34 line pointers and two counts) and the worker's three words
@@ -139,9 +143,10 @@
  * control thread's static 24 KiB scratch, not here. Held beside an open overlay, its lookup and an Anki
  * save (a card from an earlier line). */
 #define VJO_BUDGET_PAF_HISTORY 16384u
-#define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
-/* The worst case: the 64 KiB result arena, the overlay open on an earlier line, and an Anki card being saved. */
-#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI + \
+#define VJO_WORST_SHELL_PAF_PERMANENT (VJO_BUDGET_PAF_PLUGIN + VJO_BUDGET_PAF_UI)
+/* The worst case: the 64 KiB result arena, the overlay open on an earlier line, and an Anki card being saved
+ * (the overlay's text block is in the permanent part since #528: the same sum). */
+#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + \
                              VJO_BUDGET_PAF_HISTORY)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free

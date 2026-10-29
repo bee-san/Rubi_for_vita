@@ -227,17 +227,21 @@ static int64_t s_hint_us;
 static int64_t s_square_down_us;
 static int s_square_clear_armed;
 
-/* The text-building arena, taken from the PAF heap while the overlay page is
- * open and given back when it closes, so no page of SceShell's partition is
- * held for a page that is closed almost all the time (#59; it was a 96 KiB
- * static buffer). Its size is what render() allocates from it: two styled
- * texts of HEADER_UNITS/BODY_UNITS UTF-16 units plus their spans, 18,016 B,
- * plus the entry ranges (VJO_HEADER_RANGE_BYTES), within the existing 20 KiB
- * (host test: test_budget_table_is_consistent). A refused
- * allocation means the page does not open this time (fail closed). Taken and
- * given back by overlay_mem.h, which the host tests' owner scenario runs. */
+/* The text-building arena, in SceShell's PAF heap, so no page of its partition
+ * is held for it (#59; it was a 96 KiB static buffer). Its size is what
+ * render() allocates from it: two styled texts of HEADER_UNITS/BODY_UNITS
+ * UTF-16 units plus their spans, 18,016 B, plus the entry ranges
+ * (VJO_HEADER_RANGE_BYTES), within the existing 20 KiB (host test:
+ * test_budget_table_is_consistent). #528: taken once as the Shell starts
+ * (vjo_overlay_boot) and kept; overlay_mem.h has the steps, which the host
+ * tests' owner scenario runs. */
 #define UI_MEM_BYTES VJO_OVERLAY_MEM_BYTES
 static uint8_t *s_ui_mem;
+
+extern "C" void vjo_overlay_boot(void)
+{
+    vjo_overlay_mem_boot(&s_ui_mem);
+}
 static VjoArena s_ui;
 
 /* paf breaks Japanese anywhere; a break it put where core/linebreak.h forbids is moved to the

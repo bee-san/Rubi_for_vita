@@ -41,6 +41,8 @@ def steps(v, shell_pages=None, worker_pages=None, anki=False):
         ("Paf plugin and RCO", 0, v["VJO_BUDGET_PAF_PLUGIN"]),
         ("VjoNet thread", v["VJO_BUDGET_SHELL_NET_STACK"], 0),
         ("VjoControl thread (boot complete)", v["VJO_BUDGET_SHELL_CTL_STACK"], 0),
+        # #528: the overlay's text block, taken at the end of the start and kept (shell/overlay_mem.h vjo_overlay_mem_boot)
+        ("overlay text block (from the start, kept)", 0, v["VJO_BUDGET_PAF_UI"]),
         ("game start: result memory (local: one arena)", 0, arena),
     ]
     if anki:
