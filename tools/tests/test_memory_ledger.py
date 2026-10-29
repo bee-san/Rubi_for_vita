@@ -57,7 +57,9 @@ class MemoryLedgerCheck(unittest.TestCase):
         paf = next(p for p in as_json["pools"] if p["pool"] == "shell paf")
         # the Paf plugin, the result arena, an Anki save, the overlay's text, a line-history visit and (#528) the
         # open page's own Paf blocks, the most measured (VJO_PAF_PAGE_MAX)
-        self.assertEqual(paf["worst"], 8192 + 65536 + 131072 + 20480 + 16384 + 103296)
+        self.assertEqual(paf["worst"], 8192 + 65536 + 90112 + 20480 + 16384 + 103296)
+        # #528: an Anki save's arena, bounded by construction (shell/anki.c ANKI_FULLEST; 131,072 B before)
+        self.assertEqual(paf["items"]["VJO_BUDGET_PAF_ANKI"], 90112)
         self.assertEqual(paf["items"]["VJO_BUDGET_PAF_PAGE"], 103296)
         # #528: the overlay's text block is held from the Shell's start (shell/overlay_mem.h vjo_overlay_mem_boot)
         self.assertEqual(paf["permanent"], 8192 + 20480)

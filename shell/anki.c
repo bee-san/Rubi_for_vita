@@ -41,9 +41,10 @@
 #include "game_ocr_client.h"
 
 /* A card: the settings and note copies, the other dictionaries' entries and
- * the record (at most VJO_QUEUE_TEXT_MAX). The ledger's
- * VJO_BUDGET_PAF_ANKI; anki.c checks its arena against it at compile time. */
-#define ANKI_TEXT_MEM (128 * 1024)
+ * the record (at most VJO_QUEUE_TEXT_MAX), in one Paf block: the ledger's
+ * VJO_BUDGET_PAF_ANKI. Its size is bounded by construction below (#528, after the
+ * table of what the job holds; 128 KiB until then, 102,624 B its measured peak). */
+#define ANKI_TEXT_MEM (88 * 1024)
 typedef char vjo_anki_ledger_check[ANKI_TEXT_MEM <= VJO_BUDGET_PAF_ANKI ? 1 : -1];
 #define ANKI_STACK VJO_STACK_SHELL_ANKI
 
@@ -71,6 +72,46 @@ static VjoPlatform plat;
 static void *mem;
 static size_t mem_size, last_peak; /* last_peak: the last job's arena peak */
 static VjoArena arena;
+
+/* What a save holds in its arena (do_save), at most, from the inputs' own bounds (#528): every block of it is an
+ * 8-byte-aligned vjo_arena_alloc (ANKI_ALIGN of padding each at most). A local dictionary's entry is one payload of
+ * at most VJO_LOCAL_MAX_ENTRY bytes holding its spelling, reading and one meaning, NUL-terminated (core/local_dict.c
+ * read_entry); an empty reading is its spelling again, so an entry's three strings are at most twice the payload,
+ * and its dictionary's name is its file's title or the "[name]" its meaning starts with, at most 96 bytes with its
+ * NUL. The card's text, the shown lines, is local_text: at most VJO_STRIP_MAX bytes with its NUL. */
+#define ANKI_ALIGN 8u
+/* The note (core/anki.c vjo_anki_note_from_entry): the entry's strings, the sentence, the dictionary's name and the
+ * meanings' and parts of speech's pointer arrays (one each): seven blocks. */
+#define ANKI_NOTE_MAX (2u * VJO_LOCAL_MAX_ENTRY + VJO_STRIP_MAX + 96u + 2u * sizeof(char *) + 7u * ANKI_ALIGN)
+/* The card's facts (card_facts): the game's name, its title ID and the model, copied. */
+#define ANKI_FACTS_MAX (sizeof(game_name) + sizeof(game_tid) + sizeof(ocr_model) + 3u * ANKI_ALIGN)
+/* Another dictionary's entry kept (keep_entry): its meaning's pointer and its strings in one block, after the
+ * alignment of its read, and its dictionary's name, when its file has no title, in another. */
+#define ANKI_GLOSS_MAX (sizeof(char *) + 2u * VJO_LOCAL_MAX_ENTRY + 96u + 3u * ANKI_ALIGN)
+/* The fixed part, from the job's start: the settings' copy, the dictionaries' locators, the table of the entries
+ * kept and the locators of the spelling's other readings (read_more). */
+#define ANKI_FIXED (sizeof(VjoConfig) + sizeof(VjoLocalPages) + VJO_ANKI_MAX_MORE * sizeof(VjoAnkiGloss) + \
+                    VJO_LOCAL_MAX_RESULTS * sizeof(VjoLocalPage) + 4u * ANKI_ALIGN)
+/* A record being encoded (vjo_queue_encode): its buffer is the arena's last block and grows in place, by doubling
+ * while the arena has room and else to the exact size, so a record that fits VJO_QUEUE_TEXT_MAX never needs more
+ * than these bytes, and one that does not is refused either way (too long, or out of memory). */
+#define ANKI_RECORD (VJO_QUEUE_TEXT_MAX + 1u + ANKI_ALIGN)
+/* The card so far (the note, its facts and the entries kept) is at most a record: each of its strings is in the
+ * record's JSON too, with more bytes around it there (its quotes and its key, the sentence a second time as
+ * sentence_furigana) than the arena adds (its NUL, its alignment, one pointer); the note alone always is. */
+typedef char vjo_anki_note_is_a_record[ANKI_NOTE_MAX + ANKI_FACTS_MAX <= VJO_QUEUE_TEXT_MAX ? 1 : -1];
+/* Its fullest moment: read_more's check of the card with one more entry (fits), the card so far beside the entry
+ * just kept and the record being encoded. Every other moment holds less: the other readings' search (the note, its
+ * facts and the search's workspace, at most VJO_LOCAL_SCRATCH_BUDGET), an entry's read (VJO_LOCAL_SELECTED_BUDGET
+ * and its copy instead of the record), the save (the record, or the screenshot's request and result, beside the
+ * card). At any size from this bound up, no request of a save is refused, so its card is the same. */
+#define ANKI_FULLEST (ANKI_FIXED + VJO_QUEUE_TEXT_MAX + ANKI_GLOSS_MAX + ANKI_RECORD)
+typedef char vjo_anki_arena_holds_the_fullest_card[ANKI_FULLEST <= ANKI_TEXT_MEM ? 1 : -1];
+typedef char vjo_anki_arena_holds_the_search[ANKI_FIXED + ANKI_NOTE_MAX + ANKI_FACTS_MAX + VJO_LOCAL_SCRATCH_BUDGET +
+                                             ANKI_ALIGN <= ANKI_FULLEST ? 1 : -1];
+typedef char vjo_anki_arena_holds_a_read[VJO_LOCAL_SELECTED_BUDGET + 2u * ANKI_ALIGN <= ANKI_RECORD ? 1 : -1];
+typedef char vjo_anki_arena_holds_the_shot[sizeof(VjoGameOcrRequest) + sizeof(VjoGameOcrResult) + 2u * ANKI_ALIGN <=
+                                           ANKI_RECORD ? 1 : -1]; /* (its struct's padding, its block's alignment) */
 
 static int64_t now_us(void)
 {

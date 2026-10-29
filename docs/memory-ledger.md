@@ -36,7 +36,7 @@ modules (`ctest -R memory_ledger` runs it locally):
 ```
   pool                              permanent   worst case        limit     headroom
   shell pages                         208,896      229,376    1,048,576      819,200
-  shell paf                            28,672      344,960      985,088      640,128
+  shell paf                            28,672      304,000      985,088      681,088
   kernel                              151,552      241,664      241,664            0
   game                                258,048   11,022,336   11,214,848      192,512
 ```
@@ -68,7 +68,7 @@ exact page check.
 Every Shell configuration is the shipped one since Google Lens and the Hachidori relay were
 removed: the overlay is offline, a job's lookup takes one 64 KiB arena, and there is no opt-in
 network row (it was 707,840 B with Google Lens alone, 731,632 B with the relay's second connection
-slot). An Anki card's screenshot (API 23) is made in the game: the Shell's 128 KiB Anki arena
+slot). An Anki card's screenshot (API 23) is made in the game: the Shell's 88 KiB Anki arena
 holds only its job's request and result, and the game's `VjoGameShot` block (450,560 B) is a job of
 the one job slot, never beside an OCR job's transient blocks, so neither pool's worst case moves.
 The shipped default (local JMdict) has 640,128 B of headroom (743,424 B before the overlay page's own blocks were counted, #528; 759,808 B before line history). The kernel row has no full-frame
@@ -97,7 +97,7 @@ transient set that can be live at once.
 |---|---|---|---|
 | Paf plugin+RCO | 8,192 | the RCO (6,368 B file, measured; 5,632 B before the region selector's cursor) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
 | result arenas | 65,536 (the local dictionary's lookup; the network paths' 2 × 262,144 B arenas and connection pool went with Google Lens and the Hachidori relay) | taken after a job's OCR, freed before the next job's | `shell/worker.c` `LOCAL_RESULT_ARENA_SIZE`; asserted equal in `test_shell_worker.c` |
-| Anki job arena | 131,072 | per job: saving a card to the queue. Its screenshot (API 23) is the game worker's: here only the job's request and result, 5,404 B (a one-word card's save peaks at 6,860 B with it); the Shell's own screenshot branch went with AnkiConnect (its 393,216 B arena and the kernel's 2,088,960 B full-frame capture), so the kernel capture is never taken for Anki; a save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B on main `dcb7b31`, before `anki_screenshot`'s `VjoConfig` field) [measured, host] | `shell/anki.c` `ANKI_TEXT_MEM`; checked against the budget at compile time and in `test_shell_anki.c` |
+| Anki job arena | 90,112 | per job: saving a card to the queue. Sized by construction (#528, [history](memory-ledger-history.md#the-anki-arena-bounded-by-construction-528)): at its fullest, while a card is checked with one more dictionary's entry, it holds the settings' copy, the locators, a record's worth of card (`VJO_QUEUE_TEXT_MAX`), that entry (twice `VJO_LOCAL_MAX_ENTRY` at most) and the record being encoded: `ANKI_FULLEST`, 87,013 B on the host, less on the Vita, checked at compile time; at any size from that up a card is the same record (host test: 16 cards at the inputs' bounds, the arena as it is and capped at the bound, against a 1 MiB arena). 131,072 B before, whose 102,624 B peak with 8 dictionaries' entries was its record's buffer doubling into room it had. Its screenshot (API 23) is the game worker's: here only the job's request and result, 5,404 B (a one-word card's save peaks at 6,860 B with it); the Shell's own screenshot branch went with AnkiConnect (its 393,216 B arena and the kernel's 2,088,960 B full-frame capture), so the kernel capture is never taken for Anki | `shell/anki.c` `ANKI_TEXT_MEM`, `ANKI_FULLEST`; checked against the budget at compile time and in `test_shell_anki.c` |
 | overlay text arena | 20,480 | the header and body texts and their spans (18,016 B needed, `test_ledger.c`: 17,952 B before line history's four header spans). Permanent since #528: taken once as the Shell starts (`shell/overlay_mem.h` `vjo_overlay_mem_boot`, called at the end of `vjo_worker_start`, through the same guard, while the heap is at its fullest: 3,725,976-3,744,264 B free at all 90 Shell starts in #528's logs [measured]) and kept, so the overlay asks for no memory of ours when it opens; before, it was taken at every open and given back at every close, and beside another plugin's 2,187,264 B buffer (free 202,296-426,872 B) the guard refused it 34 times: `overlay not opened`, with nothing on screen. Only if the start's take was refused does an open take it (and keep it); refused then, the page does not open that time. With the block held the 1.5 MiB guard no longer stands before `PageOpen`, so the page opens only with room for itself and SceShell beside it: `VJO_PAF_PAGE_MAX` (103,296 B, the most the page took in the logs) and `VJO_PAF_PAGE_MARGIN` (64 KiB) free (`shell/paf_guard.h` `vjo_paf_page_fits`; else `overlay page Paf reserve guard: free=… requested=103296 reserve=65536`) | `shell/overlay.cpp`, `shell/overlay_mem.h` |
 | line history | 16,384 | one visit's block ([line history](line-history.md)): from the overlay's first Up past its text's top row until the current text is back (or the overlay closes, the game exits): the visit's table, the current text and up to 32 of this game's earlier lines from `history.csv`'s last 24,512 B (read into VjoControl's static scratch, not here); a refusal means no visit, Up does nothing | `shell/worker.c` `history_open`; `VJO_BUDGET_PAF_HISTORY`, its fit checked at compile time |
 | overlay page (Paf's) | 103,296 | the page's own blocks, which `PageOpen` takes for its widgets while the page is open: a median 94,800 B and at most 103,296 B in the 81 opens of #528's logs where Rubi allocated again before the page closed (74 of them 92,368-103,296 B; audit-mem-lead-1's pairing of the same opens: 81,152-103,296 B, median 94,928 B) [measured, log]; Paf takes them, not our wrapper, so the run-time ledger cannot count them, but they are held because our page is open (#528). The page opens only with this and a 64 KiB margin free (`VJO_PAF_PAGE_MAX` + `VJO_PAF_PAGE_MARGIN`, `shell/paf_guard.h` `vjo_paf_page_fits`). The subtitle strip's page, never open with this one, is unmeasured [estimate: no larger] | `shell/overlay.cpp` `open_page`; `VJO_BUDGET_PAF_PAGE` |
@@ -112,7 +112,7 @@ What each item uses of its budget, from #528's logs (Oct 16-29, the owner's PCH-
 | Paf plugin and RCO | 8,192 | unmeasured (the RCO file is 6,368 B) [estimate] | the plugin's load at boot | never |
 | overlay text block | 20,480 | at most 18,016 B of texts and spans and 2,048 B of ranges (source bounds, `test_ledger.c`) | the Shell's start (#528) | never |
 | result arena | 65,536 | the dictionary session, 6,784 B [measured: `sizeof(VjoLocalSession)` with the Vita compiler], and the lookup's arena, 54,832 B at most over 979 jobs' `arena peak` [measured, log]: 61,616 B, 3,920 B left, so no room to shrink it | after a job's OCR when it looks up (in Auto, a background read's too), or a cursor's lookup | at the next read's start, a game's exit, with no game and the overlay closed |
-| Anki arena | 131,072 | 7,068 B at most over 20 saves [measured, log]; 102,624 B for a save with 8 dictionaries' entries [measured, host] | a save (Enter) | the save's end |
+| Anki arena | 90,112 (131,072 before #528's bound) | 7,068 B at most over 20 saves [measured, log]; at most `ANKI_FULLEST`, 87,013 B on the host, by construction, which 16 cards at the inputs' bounds use up to 87,008 B of when capped at it [measured, host] | a save (Enter) | the save's end |
 | line history | 16,384 | unmeasured on the console (two visits logged, sizes not logged); 2-6 KiB for 32 typical lines [estimate] | the overlay's first Up past its text's top row | the return to the current text, the close, the game's exit |
 | overlay page (Paf's) | 103,296 | a median 94,800 B, at most 103,296 B, over 81 opens (74 of them 92,368-103,296 B; the 7 smaller ones allocated before the page's layout) [measured, log] | the page's open | its close |
 
@@ -125,8 +125,9 @@ Allocations here take no new pages from the partition; a failure is a `NULL`, ne
 (vita-memory.md 3.2). Later sessions saw 355-441 KiB and 190 KiB free [measured], which would
 refuse everything above; the code survives a refusal (host tests), so this limit is the best
 measured case, not a guarantee. The worst case of the shipped default (one 64 KiB arena, the
-overlay open on an earlier line with its page's own 103,296 B, an Anki card being saved) is 344,960 B
-(241,664 B before the page's blocks were counted, #528; 225,280 B before line history's 16 KiB visit), the only
+overlay open on an earlier line with its page's own 103,296 B, an Anki card being saved) is 304,000 B
+(344,960 B before #528's Anki arena bound, 241,664 B before the page's blocks were counted, #528; 225,280 B before
+line history's 16 KiB visit), the only
 configuration since the network
 paths' removal (the opt-in network row was 707,840 B with Google Lens alone; with a 384 KiB
 picture card and the relay's second connection slot it was 993,776 B, 8,688 B over the limit,

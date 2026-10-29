@@ -125,10 +125,13 @@
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u
 /* An Anki job (anki.c ANKI_TEXT_MEM): saving a card to the queue. The Shell takes no screenshot itself: the game
  * worker makes the card's JPEG in the game's memory (VJO_BUDGET_GAME_SHOT); here only its request and result, 5,404 B
- * in this arena while the shot runs, after the record's dry runs are released. A save with 8 dictionaries' entries
- * peaks at 102,624 B, with a screenshot or without (102,616 B on main dcb7b31) [measured, host, test_shell_anki.c].
- * anki.c checks its arena against this at compile time. */
-#define VJO_BUDGET_PAF_ANKI 131072u
+ * in this arena while the shot runs, after the record's dry runs are released. #528: sized by construction from its
+ * inputs' bounds (anki.c ANKI_FULLEST, checked at compile time: the settings, the locators, a record's worth of card,
+ * one more dictionary's entry at VJO_LOCAL_MAX_ENTRY and the record being encoded, VJO_QUEUE_TEXT_MAX: 87,000 B on the
+ * host, less on the Vita), so a card is the same as in a larger arena; 131,072 B until then, whose measured peak,
+ * 102,624 B with 8 dictionaries' entries, was its record's buffer doubling into room it had [measured, host,
+ * test_shell_anki.c]. */
+#define VJO_BUDGET_PAF_ANKI 90112u
 #define VJO_HEADER_RANGE_BYTES 2048u              /* 512 entry starts and lengths, uint16_t each, in the open page's UI block */
 /* The overlay's text block: text/spans 18,016 B + ranges 2,048 B (source bounds, test_ledger.c). #528: taken once as
  * the Shell starts (shell/overlay_mem.h vjo_overlay_mem_boot, through the reserve guard: 3,725,976-3,744,264 B free at

@@ -26,6 +26,7 @@
 #include "soak_track.h" /* #528 (mem-leak): soak_cycles */
 #include "anki.h"
 #include "json.h"
+#include "local_dict.h" /* VJO_LOCAL_MAX_ENTRY: the dictionary fixtures' largest payload */
 #define VJO_TEST_MUTEX_STUBS 1
 #define VJO_TEST_THREAD_STUBS 1
 #define VJO_TEST_CREATE_STUBS 1
@@ -298,7 +299,7 @@ typedef struct {
 } DictRow;
 typedef struct {
     const char *name;
-    uint8_t bytes[16384];
+    uint8_t bytes[8192 + 256 + VJO_LOCAL_MAX_ENTRY]; /* the writer's 8 KiB of header and index, a key, a whole payload */
     size_t size;
     int active;
 } DictFile;
@@ -1315,6 +1316,155 @@ static void test_what_enter_saves_whatever_the_dictionaries(void)
     }
 }
 
+/* core/arena.c's host-only cap (test_oom_paths.c's): the arena whose memory starts at vjo_test_arena_base holds only
+ * its first vjo_test_arena_cap bytes, as a smaller one would. */
+extern const void *vjo_test_arena_base;
+extern size_t vjo_test_arena_cap;
+
+/* What the same steps as do_save's make of the shown entry in a 1 MiB arena (no request of them refused): the
+ * card's record (NULL when it makes none), and that arena's peak. The job's own statics (its arena, its settings'
+ * copy) are borrowed and given back. */
+static const char *reference_record(int entry, int picture, size_t *peak)
+{
+    static uint8_t ref_mem[1u << 20];
+    static char ref_json[VJO_QUEUE_TEXT_MAX + 1];
+    VjoAnkiNote note;
+    VjoLocalPages *pages = NULL;
+    char misc[sizeof(game_name) + 24];
+    const char *json;
+    VjoConfig *c;
+    int page = 0, ok;
+    vjo_arena_init(&arena, ref_mem, sizeof(ref_mem));
+    TEST_ASSERT((c = vjo_arena_alloc(&arena, sizeof(*c))) != NULL);
+    *c = next_cfg;
+    acfg = c;
+    vjo_view_lock();
+    const VjoLocalPages *p = vjo_view_pages(&page);
+    ok = vjo_anki_note_from_entry(&arena, g_view.list, entry, &note) == 0;
+    if (p && p->count > 1 && (pages = vjo_arena_alloc(&arena, sizeof(*p)))) *pages = *p;
+    vjo_view_unlock();
+    TEST_ASSERT(ok);
+    card_facts(&note, misc, sizeof(misc));
+    read_more(&note, pages, page);
+    json = vjo_queue_encode(&arena, &note, picture);
+    *peak = arena.peak;
+    if (json) snprintf(ref_json, sizeof(ref_json), "%s", json);
+    vjo_arena_init(&arena, NULL, 0);
+    acfg = NULL;
+    return json ? ref_json : NULL;
+}
+
+/* #528 (Mmem-lead-4): the arena at its bound by construction (ANKI_TEXT_MEM, then capped at ANKI_FULLEST itself):
+ * cards at the inputs' bounds are the very records a 1 MiB arena makes. 8 dictionaries, every entry a whole payload (VJO_LOCAL_MAX_ENTRY,
+ * the reader's largest) or half of one, shaped as kana, as text JSON escaping doubles (" \
+ * and line breaks) or grows sixfold (control characters), or as an empty reading with a spelling the length of the
+ * payload (an entry's strings twice); with a 63-byte title or with none (the "[name]" of the meaning), beside the
+ * longest text the overlay shows (VJO_STRIP_MAX - 1 bytes). Each card's queue record, or its refusal, is the
+ * reference's, byte for byte. */
+static void test_the_arena_bound_keeps_every_card_whatever_its_entries(void)
+{
+    static char text[VJO_STRIP_MAX];
+    static char spell[8][VJO_LOCAL_MAX_ENTRY], meaning[8][VJO_LOCAL_MAX_ENTRY], names[8][16], titles[8][64],
+        list_names[160];
+    static DictRow rows[8];
+    static uint8_t mem[256 * 1024];
+    static VjoLocalPages pages;
+    static const char *const shapes[] = {"kana", "doubled by escaping", "six times by escaping", "empty reading"};
+    const size_t whole = VJO_LOCAL_MAX_ENTRY; /* the reader's largest payload (core/local_dict.h) */
+    size_t worst_ref = 0, worst_job = 0;
+    unsigned cases = 0;
+    /* the overlay's longest text: the word, then 。 to its last byte */
+    size_t t = (size_t)snprintf(text, sizeof(text), "猫が好き猫");
+    while (t + 3 < sizeof(text)) { memcpy(text + t, "。", 3); t += 3; }
+    text[t] = '\0';
+    for (unsigned capped = 0; capped < 2; capped++) /* the arena as it is, then only its bound (#532's host hook) */
+    for (unsigned shape = 0; shape < 4; shape++)
+        for (unsigned half = 0; half < 2; half++)
+            for (unsigned titled = 0; titled < 2; titled++) {
+                size_t payload = half ? whole / 2 : whole, job_peak, ref_peak;
+                VjoArena a;
+                VjoPlatform p;
+                VjoDictResult res;
+                VjoErr err;
+                const char *json = NULL, *ref;
+                char id[VJO_QUEUE_ID_SIZE];
+                int saved;
+                reset();
+                list.header = text;
+                list_names[0] = '\0';
+                for (int k = 0; k < 8; k++) {
+                    /* the payload's three strings and their NULs: payload bytes in all */
+                    size_t room = payload - 3, o;
+                    int ns = snprintf(meaning[k], sizeof(meaning[k]), "[Dictionary %d]\n", k);
+                    if (shape == 3) { /* an empty reading: the spelling is most of the payload, the meaning short */
+                        o = (size_t)snprintf(spell[k], sizeof(spell[k]), "好き");
+                        while (o + 3 <= room - (size_t)ns) { memcpy(spell[k] + o, "す", 3); o += 3; }
+                        spell[k][o] = '\0';
+                    } else {
+                        snprintf(spell[k], sizeof(spell[k]), "好き");
+                        o = (size_t)ns;
+                        while (o + 3 <= room - strlen("好き") * 2) {
+                            const char *piece = shape == 0 ? "す" : shape == 1 ? "\"\n\\" : "\x01\x02\x03";
+                            memcpy(meaning[k] + o, piece, 3);
+                            o += 3;
+                        }
+                        meaning[k][o] = '\0';
+                    }
+                    snprintf(names[k], sizeof(names[k]), "d%d.vjdict", k);
+                    snprintf(titles[k], sizeof(titles[k]), "%.63s",
+                             "Bee's Ultimate Dictionary of very long titles for this card #528");
+                    rows[k] = (DictRow){"好き", spell[k], shape == 3 ? "" : "すき", meaning[k], titled ? titles[k] : NULL};
+                    dict_build(&dict_files[k], names[k], &rows[k]);
+                    strcat(list_names, k ? "," : "");
+                    strcat(list_names, names[k]);
+                }
+                snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
+                snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", list_names);
+                reconfigure();
+                vjo_arena_init(&a, mem, sizeof(mem));
+                vjo_platform_vita(&p);
+                TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 8, &pages, &res, &err) == VJO_OK);
+                TEST_ASSERT(pages.count == 8 && res.n_vocab == 1);
+                entries[1].vocab = &res.vocab[0];
+                view_pages = &pages;
+                view_page = 0;
+                if (capped) { /* the job's arena holds only ANKI_FULLEST bytes, the bound itself */
+                    vjo_test_arena_base = heap;
+                    vjo_test_arena_cap = ANKI_FULLEST;
+                }
+                enter(1);
+                vjo_test_arena_base = NULL;
+                vjo_test_arena_cap = (size_t)-1;
+                job_peak = last_peak;
+                saved = !strcmp(g_view.anki_status, "Saved for Anki");
+                if (saved) {
+                    only_id(id);
+                    json = queue_file(id, "json", NULL);
+                }
+                ref = reference_record(1, 0, &ref_peak);
+                TEST_CHECK_(saved == (ref != NULL), "%s, %s payload, %s: the job %s, the reference %s", shapes[shape],
+                            half ? "half a" : "a whole", titled ? "titled" : "no title", g_view.anki_status,
+                            ref ? "makes a record" : "makes none");
+                TEST_CHECK_(!saved || (json && ref && !strcmp(json, ref)),
+                            "%s, %s payload, %s: the record differs from the 1 MiB arena's (%u and %u B)", shapes[shape],
+                            half ? "half a" : "a whole", titled ? "titled" : "no title", json ? (unsigned)strlen(json) : 0u,
+                            ref ? (unsigned)strlen(ref) : 0u);
+                TEST_CHECK(job_peak <= (capped ? ANKI_FULLEST : ANKI_TEXT_MEM));
+                if (ref_peak > worst_ref) worst_ref = ref_peak;
+                if (job_peak > worst_job) worst_job = job_peak;
+                cases++;
+                printf("measure: bound, %s, %s payload of %u B, %s: %s, record %u B, peak %u in the job's %u B (%u in "
+                       "1 MiB)\n", shapes[shape], half ? "half a" : "a whole", (unsigned)payload,
+                       titled ? "titled" : "no title", saved ? "saved" : g_view.anki_status,
+                       json ? (unsigned)strlen(json) : 0u, (unsigned)job_peak,
+                       (unsigned)(capped ? ANKI_FULLEST : ANKI_TEXT_MEM), (unsigned)ref_peak);
+                finish();
+            }
+    printf("measure: the arena's bound by construction %u B of its %u B; %u cards at the inputs' bounds, in both: "
+           "the job's peak %u B, the 1 MiB arena's %u B\n", (unsigned)ANKI_FULLEST, (unsigned)ANKI_TEXT_MEM, cases,
+           (unsigned)worst_job, (unsigned)worst_ref);
+}
+
 /* The record format on its own: every value round-trips, the same note
  * gives the same bytes (its ID), and anything but an exact record fails. */
 static void test_record_format(void)
@@ -1811,6 +1961,7 @@ TEST_LIST = {
     {"enter_records_every_dictionary", test_enter_records_every_dictionary},
     {"enter_names_titled_dictionaries", test_enter_names_titled_dictionaries},
     {"what_enter_saves_whatever_the_dictionaries", test_what_enter_saves_whatever_the_dictionaries},
+    {"#528 the arena's bound keeps every card whatever its entries", test_the_arena_bound_keeps_every_card_whatever_its_entries},
     {"record_round_trip_stable_ids_and_strict_decoding", test_record_format},
     {"fifty_cards_release_memory_and_threads", test_fifty_cards_release_everything},
     {"#528 soak: mining holds no more after each card", test_soak_mining_holds_no_more_after_each_card},
