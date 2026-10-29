@@ -23,6 +23,13 @@
 #define VJO_LEDGER_TLS 4096u
 #define VJO_LEDGER_PAGE 4096u
 
+/* Standalone Rubi app, its own 50 MiB partition, never SceShell's plugin.
+ * Four 1024-square, one-byte PVF atlases: drawing, measuring, and at most
+ * one replacement of each. [source: settings/font_raster.c and main.c]
+ * tools/check_settings_self.py includes this worst case in the app budget. */
+#define VJO_APP_FONT_ATLAS_EDGE 1024u
+#define VJO_BUDGET_APP_FONT_ATLASES (4u * VJO_APP_FONT_ATLAS_EDGE * VJO_APP_FONT_ATLAS_EDGE)
+
 /* ---- SceShell's partition (ScePhyMemPartShell, 50 MiB; pool "shell pages") ----
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */

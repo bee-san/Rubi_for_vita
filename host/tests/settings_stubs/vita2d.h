@@ -33,6 +33,12 @@ void vita2d_free_pvf(vita2d_pvf *font);
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text);
 int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text);
 typedef unsigned int SceGxmTextureFormat;
+typedef unsigned int SceGxmTextureFilter;
+#define SCE_GXM_TEXTURE_FORMAT_U8_R111 0x00000000u
+#define SCE_GXM_TEXTURE_FILTER_POINT 0u
+#define SCE_GXM_TEXTURE_FILTER_LINEAR 1u
+SceGxmTextureFormat vita2d_texture_get_format(const vita2d_texture *texture);
+void vita2d_texture_set_filters(vita2d_texture *texture, SceGxmTextureFilter min, SceGxmTextureFilter mag);
 vita2d_texture *vita2d_create_empty_texture_format(unsigned int w, unsigned int h, SceGxmTextureFormat format);
 vita2d_texture *vita2d_load_PNG_file(const char *filename);
 vita2d_texture *vita2d_load_PNG_buffer(const void *buffer);

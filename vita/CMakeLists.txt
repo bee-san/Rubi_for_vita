@@ -426,7 +426,7 @@ set(VJO_SETTINGS_LOOKUP_SRC
 set(VJO_SETTINGS_SRC
   ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/model_size.c ${ROOT}/settings/app_prefs.c
   ${ROOT}/settings/icons.c ${ROOT}/settings/search.c ${ROOT}/settings/text_layout.c ${ROOT}/core/linebreak.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
-  ${ROOT}/settings/applog.c ${ROOT}/settings/app_worker.c ${ROOT}/settings/vita2d_textures.c
+  ${ROOT}/settings/applog.c ${ROOT}/settings/app_worker.c ${ROOT}/settings/vita2d_textures.c ${ROOT}/settings/font_raster.c
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
   ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
   ${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
@@ -481,6 +481,7 @@ target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffuncti
 # fields cleared, so that a font's glyph atlas, which main.c frees while the app runs, frees nothing else.
 set(VJO_SETTINGS_GFX_WRAP -Wl,--wrap=sceGxmVshInitialize,--wrap=sceSharedFbGetInfo,--wrap=vita2d_create_empty_texture_format)
 target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
+  -Wl,--wrap=scePvfSetCharSize,--wrap=texture_atlas_create,--wrap=vita2d_texture_set_filters
   -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority
   -Wl,--wrap=sceKernelCreateThread ${VJO_SETTINGS_GFX_WRAP} -Wl,--defsym,__sce_headroom=0x4000)
 target_link_libraries(VitaJPOverlay_Settings ${VJO_SETTINGS_LIBS})

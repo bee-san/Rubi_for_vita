@@ -129,7 +129,7 @@ static VjoArena scratch;
 static vita2d_pvf *font;
 /* Calibrated from full-width glyph advances, not PVF's nominal line height.
  * This is an em target; firmware glyph bearings/bitmap bounds can differ. */
-static float font_em = 18.0f;
+static float font_em = 36.0f;
 /* Icons are kept for the current five-game page only. A frame loads at most one; a game
  * whose icon cannot be loaded shows the placeholder until the next scan. */
 #define ICON_WINDOW ROWS
@@ -156,8 +156,8 @@ static int status_error, preference_error;
 
 static float text_scale(float pixels) { return pixels / font_em; }
 
-/* libvita2d's glyph atlas (vita2d_pvf.c, a8f15ab): one 512 x 512 texture per font holds every glyph the font has
- * drawn or measured, at its own 18-pixel em, and never lets one go; once it is full a new glyph is neither drawn nor
+/* libvita2d's glyph atlas (vita2d_pvf.c, a8f15ab), enlarged by font_raster.c: one 1024 x 1024 texture per font holds every glyph the font has
+ * drawn or measured, at a 36-pixel em, and never lets one go; once it is full a new glyph is neither drawn nor
  * measured (atlas_add_glyph fails: the character is skipped, its width 0). The Look up page lays out dictionary
  * entries and the starts of 200 earlier lines, kanji by the hundred. So the app draws with one font and measures with
  * another (`measure_font`, never drawn with), and counts the distinct characters each has had; before a text that
@@ -168,9 +168,10 @@ static float text_scale(float pixels) { return pixels / font_em; }
  * drawing font replaced this frame and, for a moment, a new measuring font. The drawing font switches once a frame at
  * most (a frame draws the screen's text: a few hundred characters); the measuring font as often as a layout needs, up
  * to MEASURE_SWITCHES times a frame (2,800 new characters: an entry of 8 KiB of kanji has fewer than 2,000 distinct
- * ones; past that the font goes on, its atlas full). The atlas holds 502 to 639 glyphs before it refuses one (an estimate:
+ * ones; past that the font goes on, its atlas full). The original 512-square atlas at 18 px holds 502 to 639 glyphs before it refuses one (an estimate:
  * libvita2d's packer simulated with the glyphs of host/fixtures/word_lookup's lines and English, at estimated glyph
- * sizes). A font's glyph table (libvita2d int_htab.c) starts at 256 entries of 8 B and doubles as its 182nd and
+ * sizes). The 1024-square atlas at 36 px keeps at least that estimated capacity (the glyph margins stay 2 px).
+ * A font's glyph table (libvita2d int_htab.c) starts at 256 entries of 8 B and doubles as its 182nd and
  * 364th glyphs come (its load past 70 %), and int_htab_free never frees it: each replaced font leaves its table in the
  * 8 MiB heap, 4 KiB at up to 363 glyphs (so the switch at 350), 8 KiB past that (a drawing font a frame overfills,
  * a measuring font past its switches for the frame) [source: libvita2d a8f15ab int_htab.c, and the pinned libvita2d.a's

@@ -36,6 +36,7 @@ import struct
 import sys
 
 import vita_self  # tools/vita_self.py: the SELF's headers, control infos and segments
+from check_memory_ledger import parse_budget
 
 ATTRIBUTE = 0x0E              # a system application (vita/CMakeLists.txt ATTRIBUTE)
 BUDGET_KIB = 0xC800           # 50 MiB (MEMSIZE)
@@ -53,12 +54,14 @@ MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # What the app holds besides its heap and its segments, by source (docs/vita-memory.md section
 # 5.4; estimates, not measured on a console): libvita2d a8f15ab's GXM rings, depth and stencil,
 # shader patcher, index and clear buffers, parameter buffer and pool; at most 5 icon textures of
-# 256 KiB (settings/icons.h); 512 x 512 glyph atlases, four at most (settings/main.c, #313): the drawing font's and
+# 256 KiB (settings/icons.h); 1024 x 1024 glyph atlases, four at most (settings/main.c, #313): the drawing font's and
 # the measuring font's, the drawing font a frame replaced (freed once the GPU is done with it) and, for a moment, a new
 # measuring font (the one it replaces, never drawn with, is freed at once); the main thread's default 256 KiB stack,
 # the Anki and Install workers' 64 KiB each (settings/anki_page.c, install_page.c; the Look up tab's tables, #313, are in
 # the segments) and the streak seed's 16 KiB (settings/streak_seed.c, once: its 64 KiB window is in the segments).
-FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024, "glyph_atlas": 4 * 512 * 512,
+APP_BUDGET = parse_budget(Path(__file__).resolve().parents[1] / "include/vjo_ledger_budget.h")
+FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024,
+         "glyph_atlas": APP_BUDGET["VJO_BUDGET_APP_FONT_ATLASES"],
          "stacks": 256 * 1024 + 2 * 64 * 1024 + 16 * 1024}
 # libvita2d's glyph atlas texture and the wrapper it is made through (settings/vita2d_textures.c).
 ATLAS_FUNCTION = "texture_atlas_create"
@@ -184,15 +187,15 @@ def graphics_calls(elf):
     """libvita2d's calls of each graphics import go to its wrapper, and the import is called only
     from there (the wrapper's __real_ call): {import: the calls of its wrapper}."""
     counts = {}
-    for name in GRAPHICS_IMPORTS:
+    for name in (*GRAPHICS_IMPORTS, "scePvfSetCharSize", "texture_atlas_create", "vita2d_texture_set_filters"):
         wrapper = "__wrap_" + name
         calls = sum(1 for _, symbol in elf["relocations"] if symbol == wrapper)
         if not calls:
             raise Invalid(f"nothing calls {wrapper}: the link's --wrap={name} is missing, so libvita2d's system start "
-                          "does not wait for SceShell (settings/sysapp_gfx.c)")
+                          "bypasses the app's graphics/font setup (settings/sysapp_gfx.c, font_raster.c)")
         found = elf["symbols"].get(wrapper)
         if not found:
-            raise Invalid(f"{wrapper} is called but not defined (settings/sysapp_gfx.c)")
+            raise Invalid(f"{wrapper} is called but not defined")
         start = found[0][0] & ~1
         end = start + found[0][1]
         outside = [place for place, symbol in elf["relocations"] if symbol == name and not start <= place < end]
