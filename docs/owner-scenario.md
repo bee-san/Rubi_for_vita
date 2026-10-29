@@ -120,6 +120,14 @@ Each size at CLANNAD's 88,080,384 B (textbox, cold): Small with the 1000k LM and
 4,128,768 B; Normal with the 1000k LM and Large's for the cascade, 5,980,160 B; Large with the 1000k LM, the spotter
 and two helpers (Large has no cascade), 4,648,960 B.
 
+Since the spotter's part runs over the job's extras (#528, Mmem-regress-2), Small's job there peaks at 4,014,080 B and
+Normal's at 5,922,816 B (114,688 and 57,344 B less, the same text: host/tests/test_alloc_sim.c
+`spot_overlap_reads_the_same_text`), and at 3 MiB the job keeps the spotter beside Normal and the 500k LM (61,440 B
+more, the host's spotter block; it finds the frame's three lines, where GRAD's full-screen job found a fourth box,
+928 × 26, across the text box). Small and Normal run the spotter and both helpers at 88 MiB too: the table's `spot`
+and `helpers` read the job's step log, whose 20 entries (`VJO_GAME_OCR_STEPS`) a cold job with the LM and the cascade
+fills before those steps, so they print 0 there [measured: the same runs with a 48-entry log].
+
 With exact figures (the model before #528's whole-MiB reports) 3 MiB read Normal with the 500k LM, 2.5 MiB Normal
 and 2 MiB Small: on a console those games got a smaller model, or none (main `b024c93b`'s table).
 

@@ -1180,9 +1180,19 @@
     "min_spot": 0,
     "min_tier": 2,
     "min_told": 1,
-    "peak": 2011136
+    "peak": 2072576
    },
    "est-3MiB-box-warm": {
+    "failed": 0,
+    "min_helpers": 0,
+    "min_lines": 3,
+    "min_lm": 1,
+    "min_spot": 1,
+    "min_tier": 2,
+    "min_told": 1,
+    "peak": 2072576
+   },
+   "est-3MiB-full": {
     "failed": 0,
     "min_helpers": 0,
     "min_lines": 3,
@@ -1190,27 +1200,17 @@
     "min_spot": 0,
     "min_tier": 2,
     "min_told": 1,
-    "peak": 2011136
-   },
-   "est-3MiB-full": {
-    "failed": 0,
-    "min_helpers": 0,
-    "min_lines": 4,
-    "min_lm": 1,
-    "min_spot": 0,
-    "min_tier": 2,
-    "min_told": 1,
-    "peak": 2015232
+    "peak": 2080768
    },
    "est-3MiB-full-warm": {
     "failed": 0,
     "min_helpers": 0,
-    "min_lines": 4,
+    "min_lines": 3,
     "min_lm": 1,
-    "min_spot": 0,
+    "min_spot": 1,
     "min_tier": 2,
     "min_told": 1,
-    "peak": 2015232
+    "peak": 2080768
    },
    "est-4MiB-box": {
     "failed": 0,
@@ -1510,7 +1510,7 @@
     "min_spot": 0,
     "min_tier": 2,
     "min_told": 1,
-    "peak": 5980160
+    "peak": 5922816
    },
    "tier-small-88MiB": {
     "failed": 0,
@@ -1520,7 +1520,7 @@
     "min_spot": 0,
     "min_tier": 1,
     "min_told": 1,
-    "peak": 4128768
+    "peak": 4014080
    }
   },
   "shell": {

@@ -260,7 +260,7 @@
  * helpers only when its memory check passes with them, one fewer at a time down to none.
  * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544).
  * API 54, the text spotter as the finder (ocr_finder = spotter, vita-vn-ocr #128): its arena and result take the
- * job's scratch, which the recognizer's arena reuses once the boxes are taken (core/vocr_ocr.c layout_spot), so the
+ * job's scratch, which the recognizer's arena reuses once the boxes are taken (core/vocr_ocr.c layout_spot, until #528), so the
  * scratch is the largest of the three: at most VJO_VOCR_SPOT_ARENA_MAX (262,144 B, the protocol's eligibility for a
  * 960 x 544 frame, include/vjo_vocr_sizes.h) and the 1,684 B result (VocrTextspot6Set), 263,840 B 16-byte aligned,
  * against the Normal tier's job of 189,424 B (VOCR6-N's arena and structs since v0.4.1-vocr6.2; 189,376 B before):
@@ -270,8 +270,16 @@
  * candidates' own arenas at a full 960 x 544 region, read halved: 244,607 B (t64n8c16) and 256,247 B (qS4, qM4, qL5) [vita-vn-ocr
  * eval/textspot6_a9_20261026.json, the runtime's vocr_textspot6_arena_bytes_flags; a 900 x 200 dialogue box:
  * 235,119 B and 168,239 B]. Only a job with the spotter takes it (a GRAD job's workspace is as before), and only in
- * the room its check leaves beside the tier, LM and cascade: 1,220,608 -> 1,298,432 B. */
-#define VJO_BUDGET_GAME_WORKSPACE 1298432u
+ * the room its check leaves beside the tier, LM and cascade: 1,220,608 -> 1,298,432 B.
+ * #528 (mem-game): the runtime's structs lead the workspace and the spotter's part runs from the scratch's start over
+ * every part after it (the refinement's arena, the LM's and the cascade's extras, the helpers' line slots), which the
+ * job writes only after the spotter's boxes are copied out (core/vocr_ocr.c run_job), so it grows a job only by what
+ * it passes the job and those extras by: the largest job is VOCR6-N's with VOCR6-L's cascade again, the spotter's part
+ * within it: 1,215,840 B with the Vita's 32-bit structs (the gate's ARM lane; the runtime's model and context are
+ * 1,872 and 2,048 B there [arm-vita-eabi-gcc], 2,912 and 2,064 B on a 64-bit host, whose figure is 1,218,192 B, a page
+ * more), so the budget is 297 pages, 1,216,512 B (exact on 32-bit builds: host/tests/test_ledger.c). A job's own
+ * workspace with the spotter: Small's 114,688 B and Normal's 57,344 B less at a textbox with the LM (host build). */
+#define VJO_BUDGET_GAME_WORKSPACE 1216512u
 /* API 22: one thread per line a helper recognizes, created for the line and deleted once it is
  * placed (game_ocr/main.c pool_run): at most VJO_VOCR_HELPERS_MAX at once, none between jobs.
  * Its deepest chain: vocr_run 600 + run_head 1,320 + mm_i16 616 = 2,536 B with the Vita compiler
@@ -410,8 +418,9 @@
  * A game with less runs fewer helpers, a smaller LM, no cascade or none of them, then a smaller
  * tier (game_ocr/main.c), never a smaller tier for the helpers. */
 #define VJO_LIMIT_GAME_WEIGHTS 2502656u
-/* API 54: raised from 1,220,608 B by the spotter's part of the scratch (VJO_BUDGET_GAME_WORKSPACE): +77,824 B. */
-#define VJO_LIMIT_GAME_WORKSPACE 1298432u
+/* API 54: raised from 1,220,608 B by the spotter's part of the scratch (VJO_BUDGET_GAME_WORKSPACE): +77,824 B; #528
+ * (mem-game): back to 1,220,608 B, the part running over the job's extras (the budget a page under it). */
+#define VJO_LIMIT_GAME_WORKSPACE 1220608u
 /* API 34 adds the measured 8192 B of worker module pages to the prior ceiling, and vita-vn-ocr #109's
  * counter re-decode its 4,096 B. API 42 (vita-vn-ocr #120's head gate, #122's two-level head) adds the Large
  * blob's page in the weights and cascade budgets (8,192 B), the workspace's two pages (8,192 B) and the worker's

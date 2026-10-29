@@ -2423,13 +2423,16 @@ retry_smaller:
      * before the helpers'; without that room the job reads with GRAD and gives the block back. */
     if (spot && fits) {
         const uint32_t held = held_bytes(&spot_res);
-        const size_t block = use_bytes + extra_job_bytes(use, lm, casc);
-        size_t with = vjo_vocr_job_bytes_spot(use->name, r->width, r->height, spot_rows ? spot_bytes : 0) + refine_bytes;
-        uint32_t grow = with > use_bytes ? PAGE_ROUND(block + (with - use_bytes)) - PAGE_ROUND(block) : 0u;
-        if (with > refine_bytes && out->release_bytes >= held &&
+        const size_t extra = extra_job_bytes(use, lm, casc), block = use_bytes + extra;
+        /* #528: the spotter's part runs over the job and the core's extras after it (core/vocr_ocr.c run_job): the
+         * workspace grows only by what the part passes them by (Large's, and every job with an LM: none) */
+        const size_t with = vjo_vocr_job_bytes_spot(use->name, r->width, r->height, spot_rows ? spot_bytes : 0),
+                     room = use_bytes + (extra ? extra - VJO_GAME_OCR_TEXT_BYTES : 0u), more = with > room ? with - room : 0u;
+        const uint32_t grow = more ? PAGE_ROUND(block + more) - PAGE_ROUND(block) : 0u;
+        if (with && out->release_bytes >= held &&
             (int64_t)out->free_user + out->release_bytes - held - (int64_t)out->reserve_bytes >=
                 (int64_t)out->need_workspace + out->need_weights + grow) {
-            use_bytes = with > use_bytes ? with : use_bytes;
+            use_bytes += more;
             out->need_workspace += grow;
             out->release_bytes -= held; /* kept: not given back */
         } else {

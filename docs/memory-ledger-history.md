@@ -5,6 +5,28 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## The spotter's part over the job's extras (#528, Mmem-regress-2; no API change)
+
+The text spotter's arena and result ran in the job's scratch, which grew to hold them when the recognizer's arena was
+the smaller (Small and Normal). They now run from the scratch's start over every part after it, which the job writes
+only after the spotter's boxes are copied out (the refinement's arena, the LM's and the cascade's extras, the helpers'
+line slots), and the runtime's structs lead the workspace (`core/vocr_ocr.c` `layout`, `run_job`;
+`vjo_vocr_job_bytes_spot` returns the larger of the job and the structs plus the part; `game_ocr/main.c` grows the
+workspace only by what the part passes the job and its core extras by). No new block or allocation site.
+
+| Item | Before | After |
+|---|---:|---:|
+| `VJO_BUDGET_GAME_WORKSPACE` (the largest full-screen job: 1,215,840 B with 32-bit structs, the ARM lane; 1,218,192 B on a 64-bit host) | 1,298,432 B | 1,216,512 B |
+| `VJO_LIMIT_GAME_WORKSPACE` | 1,298,432 B | 1,220,608 B (its value before API 54) |
+| the game's worst case (`VJO_WORST_GAME_JOB`) | 11,026,432 B | 10,944,512 B |
+| `tier-small-88MiB` peak (owner scenario, host) | 4,128,768 B | 4,014,080 B |
+| `tier-normal-88MiB` peak | 5,980,160 B | 5,922,816 B |
+| `tier-large-88MiB` peak | 4,648,960 B | 4,648,960 B |
+
+The worker's pages are unchanged in both builds: its text 159,732 → 159,684 B (normal; 12 → 60 B of the last page
+left) and 168,888 → 168,856 B (debug), its data 30,536 and 30,552 B as before (on main `8546fb8b`; the change removes
+`layout_spot`) [measured: `tools/check_memory_ledger.py`, the gate's VitaSDK image].
+
 ## An identical capture reuses the last result (#528)
 
 The game worker keeps the last job's reading of its whole region (`core/vocr_ocr.h` `VjoVocrCache.last`, inside the

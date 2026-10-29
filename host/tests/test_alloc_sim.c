@@ -940,8 +940,90 @@ static void owner_scenario_game(void)
     reset_worker();
 }
 
+/* #528 (mem-game, Mmem-regress-2): the spotter's part of the job's workspace runs over the parts after the scratch
+ * (the refinement's arena, the LM's and the cascade's extras, the helpers' line slots: core/vocr_ocr.c run_job), so a
+ * Small or Normal job with the spotter, the LM, the cascade and both helpers takes less workspace and reads exactly
+ * what it read before: the owner's job at each size at CLANNAD's free memory (textbox), cold and then warm (beside the
+ * weights, LM, cascade and spotter the cold job kept, the line cache emptied so every line is read again). Its text,
+ * each line's size, frames and LM / cascade flags hash to what main 8232cac8 (before the overlap) gives with the
+ * release models; the workspace is the overlap's, smaller than main's by the figures in want[]. Large's recognizer
+ * arena is larger than the part, so its job is the control: the same workspace and text. Helpers: one thread each
+ * line a helper reads (this file's sceKernelCreateThread). */
+static uint32_t job_figures(void)
+{
+    uint32_t h = 2166136261u;
+    for (const char *t = last_out.text;; t++) {
+        h = (h ^ (unsigned char)*t) * 16777619u;
+        if (!*t) break;
+    }
+    for (unsigned i = 0; i < last_out.recognized && i < VJO_GAME_OCR_LINES; i++) {
+        const uint16_t f[] = {last_out.line[i].width, last_out.line[i].height, last_out.line[i].frames,
+                              last_out.line[i].flags};
+        for (unsigned k = 0; k < sizeof(f); k++) h = (h ^ ((const unsigned char *)f)[k]) * 16777619u;
+    }
+    return h;
+}
+static void spot_overlap_reads_the_same_text(void)
+{
+    static const struct { const char *name; int tier; uint32_t figures, workspace, before; } want[] = {
+        {"Small", VJO_VOCR_TIER_SMALL, 0xb5040dd3u, 884816u, 999920u},   /* 28 pages fewer: 114,688 B */
+        {"Normal", VJO_VOCR_TIER_NORMAL, 0x52440a6eu, 1141696u, 1197184u}, /* 14 pages fewer: 57,344 B */
+        {"Large", VJO_VOCR_TIER_LARGE, 0x79cb2282u, 1057952u, 1057952u},
+    };
+    static const uint16_t textbox[4] = {1536, 48188, 62600, 15059}; /* owner_scenario_game's */
+    VjoConfig c;
+    char name[64];
+    if (!have_models()) { TEST_MSG("release weights absent (VJO_VOCR_MODEL_DIR): skipped"); return; }
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, owner_config, sizeof(owner_config) - 1);
+    make_frame();
+    kd_largest = KD_GRANTED_74;
+    report_mib = 1;
+    for (unsigned si = 0; si < sizeof(want) / sizeof(want[0]); si++) {
+        VjoConfig t = c;
+        t.vocr_tier = want[si].tier;
+        TEST_CHECK(drop_resident() == 0);
+        reset_worker();
+        user_free = 88080384; cdram_free = 128 << 20; phycont_free = 16 << 20; refuse = 0;
+        hook_copy_fails = 0; spinner = 0;
+        user_used = cdram_used = phycont_used = user_peak = 0;
+        for (int warm = 0; warm < 2; warm++) {
+            const unsigned threads = helper_threads;
+            unsigned lm = 0, casc = 0, spot_seen = 0;
+            snprintf(name, sizeof(name), "overlap %s%s", want[si].name, warm ? " warm" : "");
+            vjo_game_ocr_cache_clear(); /* every line recognized again, beside the blocks the cold job kept */
+            scenario_job(name, &t, 0, textbox, 88080384);
+            for (unsigned i = 0; i < last_out.recognized && i < VJO_GAME_OCR_LINES; i++) {
+                lm += !!(last_out.line[i].flags & VJO_VOCR_LINE_LM);
+                casc += !!(last_out.line[i].flags & VJO_VOCR_LINE_CASCADE);
+            }
+            fprintf(stderr, "spot-overlap %s: rc %d lines %u figures 0x%08x workspace %u helper threads %u lm lines %u "
+                            "cascade lines %u\n", name, (int)last_out.rc, last_out.recognized, job_figures(),
+                    (unsigned)last_out.workspace_bytes, helper_threads - threads, lm, casc);
+            TEST_CHECK_(last_out.rc == 0 && last_out.recognized == 3 && job_figures() == want[si].figures,
+                        "%s: rc %d, %u lines, figures 0x%08x, main's 0x%08x", name, (int)last_out.rc,
+                        last_out.recognized, job_figures(), want[si].figures);
+            TEST_CHECK_(last_out.workspace_bytes == want[si].workspace, "%s: workspace %u B, want %u B (main's %u B)",
+                        name, (unsigned)last_out.workspace_bytes, want[si].workspace, want[si].before);
+            /* what the job took: both helpers, the LM on every line, the cascade where the size has one, and the
+             * spotter's boxes (its step: kind 1, rc 0; a cold job's full step log drops it, and its boxes are in the
+             * figures: GRAD's differ) */
+            TEST_CHECK_(helper_threads - threads > 0 && lm == 3 && (want[si].tier == VJO_VOCR_TIER_LARGE || casc > 0),
+                        "%s: %u helper threads, %u LM lines, %u cascade lines", name, helper_threads - threads, lm, casc);
+            for (unsigned i = 0; i < last_out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+                if (last_out.step[i].id == VJO_GSTEP_SPOT) spot_seen = 1 + (last_out.step[i].kind == 1 && !last_out.step[i].rc);
+            TEST_CHECK_(spot_seen == 2 || (!warm && !spot_seen), "%s: the spotter's step %s", name,
+                        spot_seen ? "without its boxes" : "missing");
+        }
+    }
+    report_mib = 0;
+    TEST_CHECK(drop_resident() == 0);
+    reset_worker();
+}
+
 TEST_LIST = {
     {"owner scenario", owner_scenario_game}, /* #528: tools/owner_scenario.py runs it by this name */
+    {"#528 the spotter's part over the job's extras reads the same text with less workspace", spot_overlap_reads_the_same_text},
     {"#528 the game's memory swept: every tier, the LM and the spotter, exact and in whole MiB", game_memory_sweep},
     {"API 55 the pause reads one frame beside a spinner that tears every strip-by-strip read", api55_pause_reads_one_frame_beside_a_spinner},
     {"API 18 kernel capture refused at the full screen under #74's pool", api18_kernel_capture_is_refused_at_the_full_screen},

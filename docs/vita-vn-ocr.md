@@ -1973,9 +1973,13 @@ guard and hval pages, as the rule says, and were read once on the test sets:
 | its block: the weights and their parsed form (3,964 B on the Vita), page-rounded | 57,344 (at most 516,096, `VJO_BUDGET_GAME_SPOT`) |
 | its part of the job's scratch: its arena at the region's size, and its 1,684 B result, each 16-byte aligned | a 900×150 or 900×200 dialogue box: 235,119 B arena; a full 960×544 region: 244,607 B; at most 262,144 + 1,696 (`VJO_VOCR_SPOT_ARENA_MAX`) |
 
-The scratch is shared, one after the other, with GRAD's arena and the recognizer's, so a job grows only by what the
-spotter's part exceeds the larger of them. Only a job with the spotter takes either, and only beside what its memory
-check chose.
+The scratch is shared, one after the other, with GRAD's arena and the recognizer's. Since #528 the runtime's structs
+lead the workspace and the spotter's part runs from the scratch's start over every part after it as well: the
+refinement's arena, the LM's and the cascade's extras and the helpers' line slots, which the job writes only after the
+spotter's boxes are copied out (`core/vocr_ocr.c` `run_job`). So a job grows only by what the part exceeds the job and
+its extras: a Small or Normal job with the LM not at all (114,688 and 57,344 B less than before at a textbox on the
+host build, `tier-small-88MiB` and `tier-normal-88MiB` in the owner scenario), Large's never did. Only a job with the
+spotter takes either, and only beside what its memory check chose.
 
 **Time (estimates: vita-vn-ocr `eval/textspot6_a9_20261026.json`, its forced-scale rows for this shape, t64n8c16:
 regions read halved as Rubi reads them, dark flags on, the Vita compiler's `-O2` code priced by the Cortex-A9 cycle
