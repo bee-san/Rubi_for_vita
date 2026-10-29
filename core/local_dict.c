@@ -696,6 +696,7 @@ typedef struct {
     const VjoLocalPage *selected;
     VjoLocalPage *alternates;
     int capacity, count, full;
+    int hinted; /* v3's posting hints cover the written spelling (rank_posting's head window) */
 } Query;
 
 static const char *table_value(const char *table, const char *key)
@@ -875,14 +876,14 @@ static int take_postings(Workspace *w, int di, const Candidate *c, Query *q, int
         if ((rc = posting_at(w, d, group, key_len, j, &r, &hint))) return rc;
         if (q->selected) {
             char spelling[VJO_LOCAL_MAX_KEY + 1];
-            size_t bytes = r.entry_len - d->prefix;
             if (r.entry_off == q->selected->entry_off) continue;
-            if (bytes > sizeof(spelling)) bytes = sizeof(spelling);
+            /* A kana index also contains homophones with other spellings: the hints say which (a spelling that is
+             * the written one normalizes to the key); else, as for the rest, the written spelling and its NUL
+             * (q->written's, which ends it), from a payload long enough to hold them. */
+            if ((q->hinted && !(hint & HINT_NORMALIZED)) || r.entry_len - d->prefix <= q->written_len) continue;
             READ_KIND(VJO_READ_HEAD);
-            if ((rc = cached_read(w, d, r.entry_off + d->prefix, spelling, bytes))) return rc;
-            /* A kana index also contains homophones with other spellings. */
-            if (bytes <= q->written_len || memcmp(spelling, q->written, q->written_len) ||
-                spelling[q->written_len]) continue;
+            if ((rc = cached_read(w, d, r.entry_off + d->prefix, spelling, q->written_len + 1))) return rc;
+            if (memcmp(spelling, q->written, q->written_len + 1)) continue;
             int duplicate = 0;
             for (int i = 0; i < q->count; i++)
                 if (q->alternates[i].entry_off == r.entry_off) duplicate = 1;
@@ -1098,8 +1099,9 @@ int vjo_local_alternates(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg
             memcpy(key.key + key.len, enc, (size_t)size);
             key.len += (uint16_t)size;
         }
+        /* The hints see a spelling under HEAD_BYTES, rank_posting's head: a longer one reads every head. */
         Query q = {.written = spelling, .written_len = n, .selected = pg,
-            .alternates = out ? out + count : NULL, .capacity = cap - count};
+            .alternates = out ? out + count : NULL, .capacity = cap - count, .hinted = d->hints && n < HEAD_BYTES};
         STAT(candidates);
         STAT(probes);
         rc = d->version >= 2 ? find_matches_v2(w, pg->dict, &key, &q, 0)
