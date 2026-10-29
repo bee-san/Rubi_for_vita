@@ -314,7 +314,10 @@
     "told": 1
    }
   },
-  "label": "Rubi 0.10.1 (API 57): main 1845471b, whose Shell and game memory code is 0.10.1's",
+  "labels": {
+   "game": "Rubi 0.10.1 (API 57): main 1845471b, whose Shell and game memory code is 0.10.1's",
+   "shell": "Rubi 0.10.1 (API 57): main 1845471b, whose Shell and game memory code is 0.10.1's"
+  },
   "shell": {
    "all": {
     "anki_ok": 239,

@@ -116,6 +116,13 @@ class Ratchet(unittest.TestCase):
         self.assertEqual(out["game"]["g"]["peak"], 50)
         self.assertEqual(out["game"]["g"]["min_tier"], 3)
 
+    def test_lower_one_part_leaves_the_other(self):
+        rows = {("shell", "a"): {"not_opened": 0, "peak": 1, "refused": 0, "anki_refused": 0, "held": 1},
+                ("game", "g"): {"failed": 0, "peak": 1, "tier": 3, "told": 1, "lm": 2}}
+        out = osc.lowered(rows, self.LIMITS, ("game",))["limits"]
+        self.assertEqual(out["shell"]["a"], self.LIMITS["limits"]["shell"]["a"])
+        self.assertEqual(out["game"]["g"]["peak"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

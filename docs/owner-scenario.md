@@ -107,5 +107,9 @@ runs `--lower` in the same pull request, which writes the new limits (it never l
 in its body. Raising a limit is a deliberate edit the pull request explains, as raising a memory budget is
 ([memory-ledger.md](memory-ledger.md)).
 
+A change to the replay's model (what the console does that the replay did not yet model, such as how it reports free
+memory) records its part's baseline again with 0.10.1's code for that part, in a commit before the fix:
+`--set-before "LABEL" --part game` (or `shell`) replaces that part's 0.10.1 column and limits and leaves the other's.
+
 New console logs: `python3 tools/owner_scenario.py --extract LOG... --source "where they came from"` rewrites the
 events, then `--lower` adds the new scenarios' limits.
