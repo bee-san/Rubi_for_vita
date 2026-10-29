@@ -310,9 +310,11 @@ static void site_hit(unsigned i, const uint32_t *regs)
                     ? vjo_place_cells(scratch, word)
                     : 0u;
         } else {
-            n = read_game(NULL, si->ver->read ? word : addr, scratch, sizeof(scratch), unit);
+            n = read_game(NULL, si->ver->read == VJO_PLACE_READ_DEREF ? word : addr, scratch, sizeof(scratch), unit);
             /* the text without its NUL unit, as vjo_luna_capture counts it */
             if (n >= unit && !scratch[n - 1] && (unit == 1 || !scratch[n - 2])) n -= unit;
+            if (si->ver->read == VJO_PLACE_READ_DELTARUNE &&
+                (enc != VJO_HOOK_ENC_UTF8 || !vjo_place_deltarune_dialogue(scratch, n))) n = 0;
         }
     } else if (si->luna) {
         n = vjo_luna_capture(si->luna, regs, read_game, NULL, scratch, sizeof(scratch), &enc);

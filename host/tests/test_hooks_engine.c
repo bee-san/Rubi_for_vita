@@ -1635,6 +1635,52 @@ static void test_verified_takes_luna_text(void)
 /* A verified entry with VJO_PLACE_READ_DEREF reads the text through the pointer at its register + padding (one exact
  * 4-byte read; an unreadable pointer or pointee gives no text); its own filter (a Rubi VJO_RF_*) processes
  * the text, with or without a Luna site at its address, and replaces that site's filter. */
+static void test_deltarune_copies_preserve_page(void)
+{
+    static const char first[] = "\\E1＊ 日本語の本文^3&次の行。/";
+    static const char second[] = "* 次のページ。/";
+    static const char *const refused[] = {
+        "ux0:data/file.json", "設定メニュー", "* English only/", "\\", "^", "^x＊ 日本語。/",
+        "* \xC0\xAF", "* \xED\xA0\x80", "* 日本語\xE3\x81"
+    };
+    VjoPlaceVerified v;
+    VjoHookSnap s;
+    uint32_t frame[16] = {0}, seq;
+    reset();
+    put_site(0x100, 1, NULL);
+    v = verified_entry(0x100, mod.nid, 1, 0);
+    v.encoding = VJO_HOOK_ENC_UTF8;
+    v.read = VJO_PLACE_READ_DELTARUNE;
+    t_ver = &v; t_nver = 1;
+    add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_ASSERT(n_sites == 1 && mem_info_ok);
+    frame[1] = a32(data) + 0x40;
+    memcpy(data + 0x40, first, sizeof(first));
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.n == sizeof(first) - 1 && !memcmp(s.raw, first, s.n) && s.hits == 1);
+    seq = s.seq;
+    for (unsigned i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+        strcpy((char *)data + 0x40, refused[i]);
+        vjo_hooks_observe(0, frame);
+        TEST_ASSERT(vjo_hooks_snap(1, &s));
+        TEST_CHECK_(s.seq == seq && s.hits == 1 && s.n == sizeof(first) - 1 && !memcmp(s.raw, first, s.n),
+                    "unrelated or malformed copy %u must preserve the dialogue", i);
+    }
+    /* A truncated prefix at the readable block's last byte must not read past it. */
+    data[DATA_SIZE - 1] = '\\';
+    frame[1] = a32(data) + DATA_SIZE - 1;
+    vjo_hooks_observe(0, frame);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq == seq && s.hits == 1);
+    frame[1] = a32(data) + 0x40;
+    memcpy(data + 0x40, second, sizeof(second));
+    vjo_hooks_observe(0, frame);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.seq != seq && s.hits == 2 &&
+               s.n == sizeof(second) - 1 && !memcmp(s.raw, second, s.n));
+    TEST_CHECK(!vjo_hooks_stop());
+}
+
 static void test_verified_deref_and_filter(void)
 {
     /* <漢,かん>字 in CP932: the ruby filter keeps the base */
@@ -2509,6 +2555,7 @@ TEST_LIST = {
 #else
     {"a verified entry at a Luna site's address takes Luna's text processing", test_verified_takes_luna_text},
     {"a verified entry: deref, its own filter in place of a Luna site's", test_verified_deref_and_filter},
+    {"Deltarune: unrelated string copies preserve the dialogue page", test_deltarune_copies_preserve_page},
     {"a verified entry's APP_VER: only that version, read without Luna sites", test_verified_version},
     {"a verified entry's page record of cells; r15 only with segment 0 at 0x81000000", test_verified_cells},
     {"a verified entry's page-build record of cells: its own count and cells offsets", test_verified_build_cells},

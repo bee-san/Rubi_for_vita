@@ -479,6 +479,49 @@ unsigned vjo_place_cells(uint8_t *p, unsigned n)
     return w;
 }
 
+int vjo_place_deltarune_dialogue(const uint8_t *p, unsigned n)
+{
+    unsigned i = 0, japanese = 0;
+    if (!p || !n) return 0;
+    /* Only layout whitespace, expression/colour codes and numbered pauses
+     * may precede the dialogue bullet. Unknown prefixes are refused. */
+    while (i < n) {
+        if (p[i] == ' ' || p[i] == '\t') { i++; continue; }
+        if (p[i] == '^' || p[i] == '\\') {
+            unsigned c = p[i++];
+            if (i == n) return 0;
+            if (c == '\\') {
+                if (!((p[i] >= 'A' && p[i] <= 'Z') || (p[i] >= 'a' && p[i] <= 'z'))) return 0;
+                i++;
+            } else if (p[i] < '0' || p[i] > '9') return 0;
+            while (i < n && p[i] >= '0' && p[i] <= '9') i++;
+            continue;
+        }
+        break;
+    }
+    if (i < n && p[i] == '*') i++;
+    else if (n - i >= 3 && p[i] == 0xEF && p[i + 1] == 0xBC && p[i + 2] == 0x8A) i += 3;
+    else return 0;
+    /* Validate bounded UTF-8 and require Japanese. A later ASCII copy or a
+     * malformed string must not erase the dialogue captured earlier. */
+    while (i < n) {
+        unsigned c = p[i++], more;
+        if (c < 0x80) {
+            if (c < 0x20 && c != '\t' && c != '\r' && c != '\n') return 0;
+            continue;
+        }
+        if (c >= 0xC2 && c <= 0xDF) more = 1;
+        else if (c >= 0xE0 && c <= 0xEF) more = 2;
+        else if (c >= 0xF0 && c <= 0xF4) more = 3;
+        else return 0;
+        if (more > n - i || (c == 0xE0 && p[i] < 0xA0) || (c == 0xED && p[i] >= 0xA0) ||
+            (c == 0xF0 && p[i] < 0x90) || (c == 0xF4 && p[i] >= 0x90)) return 0;
+        if (c >= 0xE3 && c <= 0xE9) japanese = 1;
+        while (more--) if ((p[i++] & 0xC0) != 0x80) return 0;
+    }
+    return (int)japanese;
+}
+
 /* Text bytes that are neither ever in a line: C0 controls but tab, LF, CR; DEL. */
 static inline int ascii_ok(uint8_t b) { return (b >= 0x20u && b < 0x7Fu) || b == '\t' || b == '\n' || b == '\r'; }
 

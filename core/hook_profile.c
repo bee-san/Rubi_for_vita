@@ -110,7 +110,8 @@ int vjo_hook_profile_parse(VjoHookProfile *p, const char *title, unsigned n)
         v->thumb = x[12]; v->reg = x[13]; v->encoding = x[14]; v->sig_len = x[15];
         memcpy(v->sig, x + 16, 16); v->filter = x[32]; v->read = x[33]; v->app_ver = (uint16_t)u16(x + 34);
         if (v->thumb > 1 || v->reg > 15 || v->sig_len < 8 || v->sig_len > 16 ||
-            v->read > VJO_PLACE_READ_CELLS_B || !v->encoding ||
+            v->read > VJO_PLACE_READ_DELTARUNE || !v->encoding ||
+            (v->read == VJO_PLACE_READ_DELTARUNE && v->encoding != VJO_HOOK_ENC_UTF8) ||
             (v->filter && !filter_at(p, v->filter))) goto bad;
     }
     current = p;

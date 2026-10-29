@@ -296,7 +296,7 @@ static void test_verified_table(void)
         TEST_CHECK_(v->thumb <= 1 && !(v->off & (v->thumb ? 1u : 3u)), "%s +%X alignment", v->title, (unsigned)v->off);
         TEST_CHECK_(v->sig_len <= 16 && v->sig_len >= vjo_place_patch_bytes(0x81000000u + v->off, v->thumb),
                     "%s +%X: %u recorded bytes", v->title, (unsigned)v->off, v->sig_len);
-        TEST_CHECK_(v->read <= VJO_PLACE_READ_CELLS_B && vjo_luna_filter_known(v->filter), "%s +%X: filter 0x%02X",
+        TEST_CHECK_(v->read <= VJO_PLACE_READ_DELTARUNE && vjo_luna_filter_known(v->filter), "%s +%X: filter 0x%02X",
                     v->title, (unsigned)v->off, v->filter);
         TEST_CHECK_(vjo_place_verified(v->title, &first) >= 1 && first <= v && v < first + vjo_place_verified(v->title, &first),
                     "%s: its entries are contiguous", v->title);

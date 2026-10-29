@@ -88,7 +88,8 @@ typedef struct {
     uint8_t filter;
     /* How the text is read at the register's value + padding (VJO_PLACE_READ_*): the string there, through a
      * 32-bit pointer there (one more read, as Luna's DATA_INDIRECT), a page record of 16-bit cells (one of two
-     * layouts), or an SC3 string through its end token. */
+     * layouts), an SC3 string through its end token, or a direct UTF-8 Deltarune
+     * string gated before capture (VJO_PLACE_READ_DELTARUNE). */
     uint8_t read;
     /* The game version the entry was proven in, its param.sfo APP_VER as game_ocr/hooks.c reads it ("01.00" ->
      * 0x0100): another version refuses the entry; an APP_VER that cannot be read leaves it to the module NID and
@@ -118,6 +119,11 @@ typedef struct {
 #define VJO_PLACE_READ_CELLS_B 4u
 #define VJO_PLACE_CELLS_B_COUNT 0x20u
 #define VJO_PLACE_CELLS_B_DATA 0x2Eu
+/* Deltarune/Butterscotch string-copy observer: direct UTF-8, but only offer
+ * starred Japanese dialogue. Filtering at job time is too late: other copies
+ * would replace the page in the same stream. No allocation or retained state. */
+#define VJO_PLACE_READ_DELTARUNE 5u
+int vjo_place_deltarune_dialogue(const uint8_t *text, unsigned bytes);
 
 /* A read of cells (VJO_PLACE_READ_CELLS or VJO_PLACE_READ_CELLS_B): 1 and its record's count and cells offsets in
  * *count and *data; else 0. */
