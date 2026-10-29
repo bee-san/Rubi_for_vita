@@ -107,7 +107,7 @@ running out of pages.
 | System reservations in a game before `main()` | kernel 3 MiB; preloaded libc 312 KiB, libfios2 160 KiB, apputil 44 KiB; plus the program image | explains why a freshly started game never shows the full 256 MiB free | [SDK: Programming-Startup_Guide, 'Main Memory Size that Can Actually Be Allocated by Applications'] |
 | Thread stack and TLS | stack as requested, rounded up to 4 KiB; TLS at least 4 KiB (2 KiB reserved plus the module's `_thread` data, rounded to 4 KiB) | taken from the owning process's budget at `sceKernelCreateThread` time | [SDK: Kernel-Reference, 'sceKernelCreateThread' note]; [SDK: `SDK_doc__System__Kernel-Overview_e.txt`, 'Threads'] |
 | Modules loaded with libsysmodule | each module's steady-state size (for example libSceUlt 160 KiB, libScePgf 44 KiB, libSceSqlite 520 KiB, libSceJson 32 KiB) plus 128 KiB transiently while loading; Net, Http, Ssl and Np modules are outside the game budget | from the game's budget | [SDK: `SDK_doc__System__libsysmodule-Reference_e.txt`, 'Module IDs'] |
-| ScePaf global heap in SceShell | 5,242,880 B, mapped once at Shell start [measured]; 2.4 MiB free beside CLANNAD, 355-441 KiB and 190 KiB in later sessions [measured]. #528's logs (Oct 10-29, 90 Shell starts, 313 game sessions) [measured]: 3,725,976-3,744,264 B free as the Shell starts, a median 2,712,696 B at the first reading after it (the LiveArea built), a median 2,462,024 B at a game's start; within a game SceShell's own use moves it by a median 21,904 B, 149,728 B at the 95th percentile, 486,176 B at most (the least free 1,977,448 B); another plugin's retained 2,187,264 B buffer left 131,432-430 KB. The overlay's page itself takes about 95 KB (94,672-103,296 B, 81 opens) while it is open | `sce_paf_memalign` takes from this heap, not new pages. Exhausting it starves firmware's own PAF users (allocations return NULL); it does not produce `0x80024302`. Firmware heaps that *grow* do ask the kernel for pages, and that is what failed in #59 | [measured: `docs/meiki-ocr.md` on branch `experiment/meiki-ocr`; vita-vn-ocr `docs/vita-memory-budget.md` section 2]; [inference; PR #60, `docs/history/issue-59-root-cause.md` section 1] |
+| ScePaf global heap in SceShell | 5,242,880 B, mapped once at Shell start [measured]; 2.4 MiB free beside CLANNAD, 355-441 KiB and 190 KiB in later sessions [measured]. #528's logs (Oct 10-29, 90 Shell starts, 313 game sessions) [measured]: 3,725,976-3,744,264 B free as the Shell starts, a median 2,712,696 B at the first reading after it (the LiveArea built), a median 2,462,024 B at a game's start; within a game SceShell's own use moves it by a median 21,904 B, 149,728 B at the 95th percentile, 486,176 B at most (the least free 1,977,448 B); another plugin's retained 2,187,264 B buffer (section 4.5) left 131,432-430 KB. The overlay's page itself takes about 95 KB (94,672-103,296 B, 81 opens) while it is open | `sce_paf_memalign` takes from this heap, not new pages. Exhausting it starves firmware's own PAF users (allocations return NULL); it does not produce `0x80024302`. Firmware heaps that *grow* do ask the kernel for pages, and that is what failed in #59 | [measured: `docs/meiki-ocr.md` on branch `experiment/meiki-ocr`; vita-vn-ocr `docs/vita-memory-budget.md` section 2]; [inference; PR #60, `docs/history/issue-59-root-cause.md` section 1] |
 | libheap (`sceHeapCreateHeap`) | caller-chosen; `SCE_HEAP_AUTO_EXTEND` adds further `USER_RW` blocks and returns them when they empty | a libc `mspace` over a `USER_RW` memblock; all calls thread-safe; several small heaps resist fragmentation better than one | [SDK: `SDK_doc__System__libheap-Overview_e.txt`, 'Basic Usage Procedure'; `SDK_doc__System__libheap-Reference_e.txt`, 'sceHeapGetTotalFreeSize'] |
 | Kernel per-process heaps | created by SceProcessmgr for every process (one 256 KiB kernel heap among them) | kernel bookkeeping, not under plugin control | [wiki: SceProcessmgr, 'SceUIDProcessObject'] |
 
@@ -260,6 +260,74 @@ allocations during a game, dynamic kernel blocks and in-game allocations; the le
 move it toward the common pattern (zero worker pages in SceShell, the UI arena transient), and
 the follow-up (dictionary and Anki into the game process, `*TITLEID`) completes it.
 
+### 4.5 Other plugins beside Rubi: the owner's set (#528)
+
+The owner's console ran these plugins beside Rubi from 2026-10-25 to 2026-10-29 (the plugin lists
+in [#528](https://github.com/bee-san/Rubi_for_vita/issues/528)'s collection). What each takes, by
+pool, is read from its source at the commit named [source], or from its own log. None of their
+module pages was measured, so a plugin's total is an [estimate]. itls and yamt_helper were
+configured but not loaded.
+
+| Plugin | Section | SceShell's PAF heap | SceShell's partition (pages) | Kernel pool (KD) | Source |
+| --- | --- | --- | --- | --- | --- |
+| vita-agent-use (remote control of the console from a PC) | `*KERNEL`, and `*main`: a loader that starts the agent's Shell runtime 2 s after boot | for each remote screenshot, the JPEG, 2,187,264 B (`VAU_FRAME_JPEG_LIMIT`), and the encoder's work area, at most 1 MiB, freed after the frame; the installed-app list (SQLite) at most 512 KiB; its package installer's buffers (two of 16 KiB, zlib's inflate state, the package's `param.sfo`). **Until e289d06 (2026-10-23) the JPEG buffer stayed allocated until the remote session ended or the console restarted** | its runtime's module pages, with a 128 KiB TLS arena in `.bss` [unmeasured]; threads VauService 96 KiB, VauContent 16 KiB, VauNotice 8 KiB, vau_perf and VauDiagnostics 4 KiB each, each with 4 KiB of TLS; VauLoader 32 KiB at boot only | a VauInput thread (8 KiB), and a block while it decrypts a SELF for a download | shoui520/vita-agent-use e3bcb56: `src/frame.h:9`, `src/frames_shell.c:50`, `src/shell_jpeg.c:123`, `src/native_vita.c:234-241`, `src/sqlite_memory.c:17`, `src/package_install.c:23,588-589`, `src/shell_loader.c:49-101`, `src/shell_runtime.c:938`, `src/tls_server.h:17-31`, `src/kernel.c:747` |
+| VitaDB Downloader's daemon (`vdb_daemon.suprx`: an hourly update check) | `*main` | none | 1,324,032 B from its start, for good: a 1,152 KiB download buffer and a 141 KiB network pool, kept as the stack of a thread that never runs (taipool); its own thread's 256 KiB stack; 8 s after boot it calls `sceHttpInit` and `sceSslInit` with 1 MiB each (whether they take new memory when SceShell has already started HTTP and SSL is not known) | none | Rinnegatamante/VitaDB-Downloader 5027e5d `daemon/main.c:8-9,186-197,255-257`; taipool's README ("create a new thread without starting it and using reserved stack memory as a mempool") |
+| PSVshell | `*KERNEL` | none | none | 425,984 B `KERNEL_RW` from its start, for good; a 12 KiB thread | [PSVshell.md](history/plugin-audit/notes/PSVshell.md) |
+| pngshot (until 2026-10-29 12:24Z) | `*main` | while a screenshot is encoded: zlib's deflate state, about 268 KiB, and a 3,840 B row, freed after | its code (libpng, zlib) | none | [pngshot.md](history/plugin-audit/notes/pngshot.md) |
+| storageturbo v0.2.0-alpha (from 2026-10-28) | `*KERNEL`, `*main` | not known | not known | buffers for three storage devices from its start (its log: "buffers sd2vita=ok internal=ok memcard=ok"), of a size it does not publish | its logs; the source is not public |
+| kubridge, nonpdrm, rePatch, NoPowerLimits, 0syscall6, shellbat, henkaku | `*KERNEL`; shellbat and henkaku `*main` | none | module pages only | small statics; nonpdrm takes a 16 KiB stack for each application launch; kubridge allocates, in a game, whatever that game asks it for (homebrew ports use it for their own memory) | the [audit notes](history/plugin-audit/notes/); dots-tb/rePatch-reDux0 a3139c8 `repatch.c`; Electry/NoPowerLimitsVita 6e0e921; nowrep/vita-shellbat 2b2fd3c |
+
+What the owner's console measured beside them:
+
+- **SceShell's PAF heap.** In the boots with no remote screenshot, 2,305,592-2,574,586 B was free
+  at a game's start (5th to 95th percentile of 292 starts) [measured: the ledger's `ledger start
+  paf: … free=…` lines in #528's `log.txt`]. Eight boots show one drop of 2,064,832-2,214,432 B
+  between two of Rubi's samples, which Rubi did not take (its own PAF stayed at 8,192 B), and from
+  then on 131,432-463,176 B free until the restart [measured: the same lines]. Each of the eight
+  had a vita-agent-use session [measured: the agent's log in the collection, aligned by uptime].
+  Each drop is within -122 to +27 KB of the agent's 2,187,264 B JPEG buffer; that the buffer took
+  them is an [inference] from the agent's source (#528).
+- **SceShell's partition.** 9,486,336 B free when the Shell plugin started, and 180,224 B from
+  3.7 s later on, a game's start included [measured: the self-test report in #528's collection,
+  written by an API 22 build in mid-October 2026; the plugin set of that day is not recorded].
+- **The kernel pool.** 2,629,632 B free at boot, 2,428,928 B a minute later and 2,138,112 B with
+  CLANNAD in front [measured: the same report]. PSVshell's 425,984 B [source] is a fifth of the
+  last figure. A 2,088,960 B block would have left 49,152 B of it, so #74's five refusals of one on
+  this console are no surprise [inference].
+
+What it means for Rubi:
+
+- Rubi measures each pool when it takes memory, not at boot. `shell/memory.cpp` reads the PAF
+  heap's free size at every request and refuses one that would leave less than its 1,572,864 B
+  reserve; the game worker reads the game's free USER memory at every job (section 5.2).
+  `VJO_PAF_FREE_MEASURED` (2,557,952 B) is only the best case behind the memory ledger's CI limit,
+  never a figure the plugins act on.
+- Beside another plugin's ~2.1 MB of PAF, 131-463 KB is free. That is below the reserve, so every
+  PAF request of Rubi's is refused whatever its size. In 0.10.1 that was the 20 KiB overlay text
+  and the 64 KiB result arena alike: 24 overlays not opened and 28 lookups refused in the API 57
+  boots ([the owner scenario](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/owner-scenario.md)).
+  Since #528 the overlay's text block is taken as the Shell starts, when 3.7 MB is free, and kept,
+  and the page opens only with room for its own widgets (103,296 B) and a 64 KiB margin (section
+  5.1): under such a drop the overlay opens while 168,832 B or more is free. The reserve is
+  SceShell's own headroom: lowering it would hand that headroom to Rubi, not give SceShell more.
+- No plugin of the set takes the game's memory except through kubridge, at the game's own request,
+  so a game's free memory is the game's (section 6.2).
+- The kernel pool is shared with PSVshell's 416 KiB and storageturbo's buffers. Rubi's kernel
+  worst case is 241,664 B (the debug build's, section 5.3), and each block Rubi's kernel plugin
+  takes after boot (a game start's 24 KiB `games.ini` read, the capture ladder's 64 KiB strip)
+  fails with a `kernel.txt` line, not a crash.
+- VitaDB's daemon holds about 1.5 MiB of SceShell's partition from boot, three quarters of the
+  expert's "genuinely under 2 MiB" for a whole Shell plugin (section 5.1). No log in the
+  collection shows a refused thread or partition page: the failures were all PAF.
+
+What to do when Rubi reports no PAF memory (`… Paf reserve guard: free=… requested=…` in
+`status.txt`):
+
+- Update vita-agent-use to e289d06 (2026-10-23) or later, which frees the JPEG buffer after every
+  frame. With an older one, end the remote session, or restart the console, before playing.
+- Compare the `ledger start paf` and `ledger exit paf` lines: a drop of `free=` between two of
+  them that Rubi's `current=` does not show is another plugin's.
+
 ## 5. Safe budgets per context
 
 ### 5.1 SceShell (`*main`): there is no spare memory
@@ -268,7 +336,10 @@ Facts:
 
 - The partition is 50 MiB; the system owns it. Two console samples beside a running game:
   98,304 B free of 52,428,800 B, and 28,672 B free (ownership of the second sample not verified)
-  [measured: vita-vn-ocr `notes/26`, `notes/08`].
+  [measured: vita-vn-ocr `notes/26`, `notes/08`]. A third, on the owner's console: 9,486,336 B
+  free when the Shell plugin started and 180,224 B from 3.7 s later on, a game's start included
+  [measured: section 4.5]. Of the owner's other `*main` plugins, VitaDB Downloader's daemon alone
+  holds about 1.5 MiB of the partition from boot (section 4.5).
 - Our eager 2 × 384 KiB `USER_RW` result allocation in SceShell failed with `0x80024302` (fixed by
   #11) [measured: vita-vn-ocr `notes/06`].
 - Adding one 65,544 B static buffer to the Shell plugin hung the boot twice; removing it fixed it
@@ -381,8 +452,9 @@ the short platform note there is
 Facts:
 
 - Kernel module pages and `KERNEL_RW` blocks come from `ScePhyMemPartKD`, 36 MiB for all kernel
-  drivers together [wiki: Memory_budget; wiki: SceSysmem_Types]. How much is free on a retail
-  3.65 console is unmeasured.
+  drivers together [wiki: Memory_budget; wiki: SceSysmem_Types]. One sample of its free space on
+  a retail 3.65 console, the owner's: 2,629,632 B at boot and 2,138,112 B with a game in front,
+  with that day's plugins [measured: section 4.5]. More are needed.
 - Our 2,088,960 B full-frame capture buffer failed there once with `0x80024302` (fixed by the
   region-sized capture, #14) [measured: vita-vn-ocr `docs/vita-memory-budget.md` section 2], and
   again five times on the owner's PCH-1001 on 3.65 (#74) [measured]. Since API 19 OCR takes no
@@ -859,9 +931,11 @@ Don't:
 
 ## 14. Open questions
 
-- The free size of `ScePhyMemPartKD` on a retail 3.65 console with the usual plugin set.
+- The free size of `ScePhyMemPartKD` on a retail 3.65 console with the usual plugin set: one
+  sample so far, 2.1-2.6 MB (section 4.5).
 - SceShell's free pages at boot and at game launch, in both the API 13 and API 16 builds (the
-  measurement that would turn #59's explanation into a proof).
+  measurement that would turn #59's explanation into a proof); one API 22 sample: 9.0 MiB when
+  the Shell plugin starts, 176 KiB from a few seconds later on (section 4.5).
 - Free `sizeMain` across the owner's Japanese visual novels; today there is one title.
 - Whether CDRAM contents survive a system suspend.
 - PS TV budget sizes.
