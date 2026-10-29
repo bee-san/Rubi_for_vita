@@ -2753,11 +2753,14 @@ static void alternate_readings_and_senses_are_visible(void)
 
 /* The alternates pass (vjo_local_alternates, #520) of a v3 file with posting hints reads no head that its hint rules
  * out: a spelling that is the written one normalizes to the key, so a homophone spelled otherwise is passed over
- * unread (mem-regress, #528: 3.47 head reads a lookup on main's bundled dictionary, 1.80 with this). The same
- * alternates are found with and without the hints: a hiragana word's, a katakana word's (whose key, normalized, is
- * the hiragana one: both spellings are read and compared), and a spelling longer than the hints' 160-byte window
- * (no hint bit at all: every head is read, and both alternates are found). Each homophone's payload starts a page of
- * its own, so a head read is a file read. */
+ * unread (#544; #528: 3.47 head reads a lookup on the bundled dictionary, 1.80 with it). The same alternates are found
+ * with and without the hints, in four fixtures:
+ * - a hiragana word, with four homophones in pages of their own (a head read is a file read) and one spelled as the
+ *   written word and more (かみさま: the compare takes the written spelling's NUL too);
+ * - the same file's katakana word, whose key, normalized, is the hiragana one (both spellings are read and compared);
+ * - a spelling of exactly 160 bytes, the first length past the hints' window (no hint bit at all: every head is read);
+ * - a full-width word whose ASCII homophone, spelled as the key, is shorter than the written spelling and the file's
+ *   last payload (passed over before any read past it). */
 static int alternates_of(const VjoLocalPages *pages, VjoLocalPage *out, int *n_reads)
 {
     static uint8_t mem[64 * 1024]; /* not arena_mem: the lookup's result is in it */
@@ -2776,11 +2779,12 @@ static int alternates_of(const VjoLocalPages *pages, VjoLocalPage *out, int *n_r
 static void alternates_read_only_the_heads_their_hints_allow(void)
 {
     static char pad[4][4200];
-    static char long_spelling[60 * 3 + 1];
+    static char long_spelling[53 * 3 + 2];
     const char *const homophones[4] = {"紙", "神", "髪", "加味"};
     for (int i = 0; i < 4; i++) memset(pad[i], 'M', sizeof(pad[i]) - 1);
     long_spelling[0] = 0;
-    for (int i = 0; i < 60; i++) strcat(long_spelling, i & 1 ? "長" : "永"); /* 180 B: past the hints' 160 */
+    for (int i = 0; i < 53; i++) strcat(long_spelling, i & 1 ? "長" : "永");
+    strcat(long_spelling, "a"); /* 160 B: the first length past the hints' window */
     const Row kana[] = {
         {"かみ", "かみ", "", "the word as written", 0, 10},
         {"かみ", "かみ", "", "its other sense", 0, 20},
@@ -2788,49 +2792,55 @@ static void alternates_read_only_the_heads_their_hints_allow(void)
         {"かみ", "カミ", "", "katakana's other sense", 0, 40},
         {"かみ", homophones[0], "かみ", pad[0], 0, 50}, {"かみ", homophones[1], "かみ", pad[1], 0, 60},
         {"かみ", homophones[2], "かみ", pad[2], 0, 70}, {"かみ", homophones[3], "かみ", pad[3], 0, 80},
+        {"かみ", "かみさま", "かみ", "spelled as written, and more", 0, 90},
     };
     const Row longest[] = {
         {"ながい", long_spelling, "ながい", "the long spelling, by its reading", 0, 10},
-        {long_spelling, long_spelling, "ながい", "the long spelling's other sense", 0, 20},
+        {long_spelling, long_spelling, "ながい", "its other sense", 0, 20},
         {long_spelling, long_spelling, "ながい", "and a third", 0, 30},
     };
-    static const struct { const char *text, *meanings[2]; } cases[] = {
-        {"かみ", {"the word as written", "its other sense"}},
-        {"カミ", {"written in katakana", "katakana's other sense"}},
+    const Row wide[] = {
+        {"ID", "ＩＤ", "", "written in full width", 0, 10},
+        {"ID", "ＩＤ", "", "its other sense", 0, 20},
+        {"ID", "ID", "", "", 0, 30}, /* 9 B, the last payload: shorter than "ＩＤ" and its NUL */
     };
-    for (size_t c = 0; c <= sizeof(cases) / sizeof(cases[0]); c++) {
+    const struct {
+        const char *text, *spelling, *shown, *alternate;
+        const Row *rows;
+        int n_rows, alternates, fewer_reads;
+    } cases[] = {
+        {"かみ", "かみ", "the word as written", "its other sense", kana, 9, 1, 1},
+        {"カミ", "カミ", "written in katakana", "katakana's other sense", kana, 9, 1, 1},
+        {"ながい", long_spelling, "the long spelling, by its reading", NULL, longest, 3, 2, 0},
+        {"ＩＤ", "ＩＤ", "written in full width", "its other sense", wide, 3, 1, 0},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
         int found[2], n_reads[2];
         uint64_t at[2][VJO_LOCAL_MAX_RESULTS];
         for (int hinted = 0; hinted < 2; hinted++) {
             VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
             VjoLocalPage out[VJO_LOCAL_MAX_RESULTS];
-            const char *text = c < 2 ? cases[c].text : "ながい";
-            TEST_CASE_("%s, %s", text, hinted ? "posting hints" : "no hints");
+            TEST_CASE_("%s, %s", cases[c].text, hinted ? "posting hints" : "no hints");
             setup(&a, &p, &cfg);
-            if (c < 2) build(&fixtures[0], "main.vjdict", kana, 8, 3);
-            else build(&fixtures[0], "main.vjdict", longest, 3, 3);
+            build(&fixtures[0], "main.vjdict", cases[c].rows, cases[c].n_rows, 3);
             if (hinted) add_hints(&fixtures[0]);
-            TEST_ASSERT(!pages_lookup(&a, &p, &cfg, text, 0, 1, &pages, &r, &e) && pages.count == 1);
-            if (c < 2) TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], cases[c].meanings[0]), "shows %s", r.vocab[0].meanings[0]);
-            else TEST_CHECK(!strcmp(r.vocab[0].spelling, long_spelling));
+            TEST_ASSERT(!pages_lookup(&a, &p, &cfg, cases[c].text, 0, 1, &pages, &r, &e) && pages.count == 1);
+            TEST_CHECK_(!strcmp(r.vocab[0].spelling, cases[c].spelling) && !strcmp(r.vocab[0].meanings[0], cases[c].shown),
+                        "shows %s", r.vocab[0].meanings[0]);
             found[hinted] = alternates_of(&pages, out, &n_reads[hinted]);
-            TEST_ASSERT(found[hinted] >= 0 && found[hinted] <= VJO_LOCAL_MAX_RESULTS);
+            TEST_ASSERT_(found[hinted] >= 0 && found[hinted] <= VJO_LOCAL_MAX_RESULTS, "alternates rc %d", found[hinted]);
+            TEST_CHECK_(found[hinted] == cases[c].alternates, "%d alternates", found[hinted]);
             for (int i = 0; i < found[hinted]; i++) at[hinted][i] = out[i].entry_off;
-            if (c < 2) {
-                /* the shown entry and its one alternate: the other sense written so */
-                TEST_CHECK_(found[hinted] == 1, "%d alternates", found[hinted]);
-                for (int k = 0; k < fixtures[0].n_payload; k++)
-                    if (found[hinted] == 1 && fixtures[0].payload[k] == out[0].entry_off)
-                        TEST_CHECK_(!strcmp((const char *)fixtures[0].bytes + fixtures[0].payload[k] + 4 +
-                                                strlen(c ? "カミ" : "かみ") + 2, cases[c].meanings[1]),
-                                    "the alternate is the other sense");
-            } else {
-                TEST_CHECK_(found[hinted] == 2, "%d alternates of the long spelling", found[hinted]);
-            }
+            for (int k = 0; cases[c].alternate && k < fixtures[0].n_payload; k++)
+                if (found[hinted] == 1 && fixtures[0].payload[k] == out[0].entry_off)
+                    /* the payload: the rank word, the spelling and its NUL, an empty reading's NUL, the meaning */
+                    TEST_CHECK_(!strcmp((const char *)fixtures[0].bytes + fixtures[0].payload[k] + 4 +
+                                            strlen(cases[c].spelling) + 2, cases[c].alternate),
+                                "the alternate is the other sense");
         }
         TEST_CHECK_(found[0] == found[1] && !memcmp(at[0], at[1], sizeof(at[0][0]) * (size_t)found[0]),
                     "the same alternates with and without hints");
-        if (c < 2) /* the four homophones' pages are read without the hints only */
+        if (cases[c].fewer_reads) /* the four homophones' pages are read without the hints only */
             TEST_CHECK_(n_reads[1] < n_reads[0], "%d reads with hints, %d without", n_reads[1], n_reads[0]);
         else
             TEST_CHECK_(n_reads[1] == n_reads[0], "%d reads with hints, %d without", n_reads[1], n_reads[0]);
