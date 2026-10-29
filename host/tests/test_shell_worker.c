@@ -9385,6 +9385,9 @@ static void test_overlay_page_needs_its_own_room(void)
     /* the threshold, then one byte under it */
     scenario_others = (int64_t)VJO_PAF_HEAP - need - 28672;
     TEST_CHECK(vjo_shell_heap_free_size() == need && vjo_overlay_mem_open(&scenario_ui) == scenario_ui);
+    /* the debug build samples the heap at every open, in memory.cpp's debug format; the normal build logs no success */
+    TEST_CHECK((logged("overlay page Paf allocation: free=168832 requested=103296 reserve=65536 success=1") != NULL) ==
+               (VJO_DEBUG != 0));
     scenario_others++;
     TEST_CHECK(vjo_overlay_mem_open(&scenario_ui) == NULL);
     /* the logs' lowest press: 202,296 B free beside 0.10.1's 8,192 B opens */

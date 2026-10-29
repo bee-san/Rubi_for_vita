@@ -68,7 +68,7 @@ chose, `spot` (the spotter found the lines), `helpers`, `lines`, `peak` (the USE
   are not in the events. The replay covers where 0.10.1 failed, the game starts and exits and the saved cards,
   not every press.
 - Others' use is replayed as the log shows it; it does not react to Rubi's. The ~2.2 MB steps between one game's
-  exit and the next start (#528: consistent with the device agent's 2,187,264 B JPEG buffer) are such use.
+  exit and the next start (#528: consistent with the device agent's JPEG buffer, 2,187,264 B in its source [source]) are such use.
 - The game's free USER was logged by the debug builds only. The native ports the owner ran under 0.10.1 (normal
   build) logged none: their levels are estimates. A helper thread's stack (16 KiB and its TLS) is not in `peak`:
   threads take it from the game's budget outside the worker's memory blocks. The frame is the simulator's

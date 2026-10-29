@@ -2242,7 +2242,7 @@ are unchanged; the debug kernel remains 118,784 B (44,712 + 72,404 B), Shell 167
 
 #528's logs (Rubi 0.10.1, API 57, PCH-1001 on 3.65) hold 34 `overlay not opened: no Paf memory for its text (20 KiB)`
 lines (24 at API 57, 10 at API 31): the 20,480 B text block was taken at every open, through the 1.5 MiB reserve
-guard, while another plugin's retained 2,187,264 B buffer left the PAF heap 202,296-426,872 B free, and nothing
+guard, while another plugin's retained buffer (2,187,264 B in its source [source: #528]) left the PAF heap 202,296-426,872 B free, and nothing
 was shown. The block is now taken once, at the end of `vjo_worker_start` (`shell/overlay.cpp` `vjo_overlay_boot`,
 the seam's `shell/overlay_mem.h` `vjo_overlay_mem_boot`), through the same guard while the heap is at its fullest
 (3,725,976-3,744,264 B free at all 90 logged Shell starts), and kept (`vjo_overlay_mem_close` gives nothing back);
@@ -2279,8 +2279,10 @@ The follow-up: with the block held, the 1.5 MiB guard no longer stood before `Pa
 103,296 B). The page now opens only with `VJO_PAF_PAGE_MAX` (103,296 B, the most it took in 81 measured opens) and
 `VJO_PAF_PAGE_MARGIN` (64 KiB) free (`shell/paf_guard.h` `vjo_paf_page_fits`, run by `shell/overlay_mem.h`
 `vjo_overlay_mem_open`; the refusal is logged in the guard's format). The margin is about three times what SceShell
-was seen to take between two of our allocations within one open (at most 17,712 B, 12 pairs) and its median swing over
-a game session (21,904 B, 293 sessions) [measured, log]; whether it is enough at the very bottom is not measured
+was seen to take between two of our allocations within one open (at most 17,712 B, 12 pairs; the page's own layout
+between them included: 10 of them are a lookup's arena, then an Anki save) and its median swing over a game session
+with Rubi at 8 KiB and no page open (20,008 B, 286 sessions; 21,904 B over 293 with our blocks and the page in the
+samples) [measured, log]; whether it is enough at the very bottom is not measured
 [estimate]. Every press of the owner scenario still opens (the least room, 181,816 B, is above the 168,832 B it asks).
 The open's code takes 48 B more in the normal Shell (85,932 -> 85,980 B of text) and none in the debug one (98,148 B),
 as the arena resets at the close, at a failed `PageOpen` and at the start went: the block is never given back, so
@@ -2289,7 +2291,7 @@ as the arena resets at the close, at a failed `PageOpen` and at the start went: 
 ## The overlay page's own Paf, counted (#528)
 
 The page's widgets, which `PageOpen` takes from SceShell's Paf heap while the overlay is open, were the largest Paf use
-Rubi causes and were in no budget: 81,152-103,296 B (median 94,928 B) over the 81 opens of #528's logs where Rubi
+Rubi causes and were in no budget: a median 94,800 B, at most 103,296 B, over the 81 opens of #528's logs where Rubi
 allocated again before the page closed [measured, log]. `VJO_BUDGET_PAF_PAGE` (= `VJO_PAF_PAGE_MAX`, 103,296 B) puts
 the most measured into the pool's worst case; no code changes, and the run-time ledger still counts only our own
 blocks (Paf takes these).
@@ -2323,4 +2325,31 @@ and this change:
 | Normal | 39,616 + 70,716 B | 39,996 + 70,748 B | 114,688 B (unchanged, exact) |
 
 The Shell and the game worker are unchanged in both builds.
+
+## The overlay's Paf: audit-mem-paf-1's follow-up (#528)
+
+audit-mem-paf-1 (MERGE_OK for #534 and #537) asked for:
+
+- **The page's cost, measurable on the console again.** Until #534 the text block's allocation line at every open gave
+  the heap's free size as the page opened; with the block kept that line went. The debug build now logs the free size
+  at every open that passes the page check, in `shell/memory.cpp`'s own debug format (`overlay page Paf allocation:
+  free=… requested=103296 reserve=65536 success=1`; the module holds that string once). The normal build logs
+  nothing more. Debug Shell text 98,164 -> 98,180 B on main `cb1449d2` (124 B of code room left), normal 85,980 B
+  unchanged, data unchanged, pages unchanged in both [measured: `tools/check_memory_ledger.py`'s module rows, the
+  gate's image].
+- **The figures.** The page took a median 94,800 B and at most 103,296 B over its 81 measured opens (74 of them
+  92,368-103,296 B; the 7 smaller ones allocated before the page had laid out its text): "94,672-103,296 B" was
+  wrong. SceShell's own in-session swing, with Rubi at its 8 KiB and no page open, is a median 20,008 B, 117,888 B
+  at the 95th percentile and 370,272 B at most (286 sessions); the 21,904 / 149,728 / 486,176 B figures had our
+  blocks and the page in the samples. The 17,712 B between two of our allocations within one open include the page's
+  own layout. The logs are Oct 16-29 (v0.8.0-test.3 is their oldest build), not Oct 10-29. Under the outside buffer
+  the heap had 131,432-463,176 B free, not "131-430 KB", and its 2,187,264 B is the agent's source constant
+  [source: #528]; the logs show steps of 2,064,832-2,214,432 B [measured].
+- **The product's call.** `tools/tests/test_shell_paf.py` reads the sources: `vjo_worker_start` takes the block once,
+  after both threads started and before its boot ledger line; `open_page` checks before `PageOpen`; nothing in the
+  Shell frees `VJO_SL_PAF_UI`; the seam's close keeps the block.
+- **Below 168,832 B a press shows nothing** (logged): any message needs a page (the subtitle strip's or the
+  overlay's), which takes the heap SceShell has left, or code the normal Shell does not have (36 B of room). The
+  guide's troubleshooting says what the log line means. The subtitle strip's own `PageOpen` stays unchecked and
+  unmeasured, as in 0.10.1.
 

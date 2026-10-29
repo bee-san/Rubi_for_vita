@@ -1218,7 +1218,14 @@ overlay's text arena is a 20 KiB Paf allocation, never a static buffer, taken
 once as the Shell starts and kept (#528), so opening the overlay asks for no
 memory of ours; only if that first take was refused does an open take it, and
 if it is refused then, the overlay does not open that time and the game keeps
-its input. Local OCR-only/subtitle
+its input. The page itself takes about 95-103 KB of SceShell's Paf heap while it is
+open, so it opens only with 103,296 B and a 64 KiB margin for SceShell free. If
+L + R does nothing and `log.txt` says `overlay page Paf reserve guard: free=…`,
+another plugin holds nearly all of SceShell's Paf heap (#528: a remote-control
+agent's screenshot buffer left 131-463 KB free): showing anything then would
+take the memory SceShell has left, so the overlay stays closed, the game keeps
+its input, and restarting the Vita (or ending that plugin's work) brings it
+back. Local OCR-only/subtitle
 jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
 reads only the selected position, shows the best match, and stacks entries from every enabled
