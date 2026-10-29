@@ -1669,7 +1669,9 @@ static uint32_t shot_job_keep_files(const char *id)
 {
     VjoGameOcrRequest r = shot_request(), got = {0};
     int seq;
-    memcpy(r.shot, id, sizeof(r.shot));
+    TEST_ASSERT(strlen(id) < sizeof(r.shot));
+    memset(r.shot, 0, sizeof(r.shot));
+    memcpy(r.shot, id, strlen(id) + 1); /* the ID and its NUL: id is a string, not a whole field */
     snprintf(shot_tmp, sizeof(shot_tmp), VJO_GAME_OCR_SHOT_DIR "/%s.jpg.tmp", id);
     snprintf(shot_jpg, sizeof(shot_jpg), VJO_GAME_OCR_SHOT_DIR "/%s.jpg", id);
     caller = 3;

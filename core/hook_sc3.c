@@ -15,7 +15,10 @@
 
 const VjoSc3Pin *vjo_sc3_pin(const char *title_id)
 {
-    if (!title_id || title_id[9]) return NULL;
+    unsigned n = 0;
+    if (!title_id) return NULL;
+    while (n < 10 && title_id[n]) n++; /* a title ID is 9 characters; a shorter string is not read past its end */
+    if (n != 9) return NULL;
     for (unsigned i = 0; i < PINS_N; i++)
         if (!strncmp(sc3_pins[i].title, title_id, 9)) return &sc3_pins[i];
     return NULL;
