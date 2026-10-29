@@ -459,7 +459,7 @@ typedef struct {
     unsigned spot_boxes;     /* every box it returned, vertical ones too (no recognizer here reads those) */
     unsigned spot_truncated; /* 1: it had more candidates than VOCR_TEXTSPOT_MAX_BOXES */
     size_t spot_bytes;       /* its arena and result in the job's scratch (0: it did not run) */
-    uint32_t spot_us;        /* its time: its pass over the region, its decode and its boxes' dark flags */
+    uint32_t spot_us;        /* its time: its pass over the region and its decode (the dark flags are the job's) */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. A column (a model of
@@ -703,11 +703,11 @@ typedef struct {
     unsigned line_fix;
     /* API 54: the text spotter (vita-vn-ocr #128, runtime/vocr_textspot6.c, docs/vita-vn-ocr.md "The spotter finder")
      * as the job's finder in place of GRAD, and so of GRAD's short-line probe and text gate: vocr_textspot6_find_rows
-     * on the region's rows (stream_row: one pass from row 0, the capture's first, then each box's rows for its dark
-     * flag), at the scale its blob's rule gives the frame the region is cut from (spot_frame_w x spot_frame_h; 0: the
-     * Vita's 960 x 544, which a half-scale blob reads halved, VOCR_TEXTSPOT6_SCALE2, as it was trained). Its horizontal
-     * boxes, in its reading order, with their dark flags, are the lines (at most VJO_VOCR_MAX_LINES: truncated past
-     * them). Its weights are spot_res's, loaded before the job (vjo_vocr_spot_load: their parsed form sizes its arena),
+     * on the region's rows (stream_row: one pass from row 0, the capture's first), at the scale its blob's rule gives
+     * the frame the region is cut from (spot_frame_w x spot_frame_h; 0: the Vita's 960 x 544, which a half-scale blob
+     * reads halved, VOCR_TEXTSPOT6_SCALE2, as it was trained). Its horizontal boxes, in its reading order, are the lines
+     * (at most VJO_VOCR_MAX_LINES: truncated past them), each with its dark flag computed by the job on the pixels it
+     * fetches for the line (the spotter's own rule, vocr_line_dark, on the same rows: the same flag). Its weights are spot_res's, loaded before the job (vjo_vocr_spot_load: their parsed form sizes its arena),
      * and its arena and result take the job's scratch, which the recognizer's arena reuses after it: the workspace
      * must hold vjo_vocr_job_bytes_spot(). spot_refine: VOCR_REFINE_* steps on its boxes in place of refine, which is
      * GRAD's (ocr_spotter_refine; 0: as found). When it cannot run (no verified weights, an arena over

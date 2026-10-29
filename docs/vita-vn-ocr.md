@@ -1910,12 +1910,18 @@ guard and hval pages, as the rule says, and were read once on the test sets:
 
 **How it reads.**
 - **The region's rows.** `vocr_textspot6_find_rows` on the region's rows (`stream_row`): one pass from row 0, which
-  is the capture's first pass (the scene the Shell is told of), then each box's rows once, for its dark flag. The
-  region is read at the scale the blob's rule gives the frame it is cut from (`VOCR_TEXTSPOT6_SCALE2` for every
-  960×544 frame, Adrenaline's PSP picture included: halved, as the spotter was trained). Its horizontal boxes, in its
-  reading order (blocks top to bottom, each block's lines in order), with their dark flags, are the lines, at most 16
-  (more are cut and counted as `truncated`). Every line's rows are read again, each checked, when it is recognized,
-  so a screen that changes under a line starts the job over as with GRAD.
+  is the capture's first pass (the scene the Shell is told of). The region is read at the scale the blob's rule gives
+  the frame it is cut from (`VOCR_TEXTSPOT6_SCALE2` for every 960×544 frame, Adrenaline's PSP picture included:
+  halved, as the spotter was trained). Its horizontal boxes, in its reading order (blocks top to bottom, each block's
+  lines in order), are the lines, at most 16 (more are cut and counted as `truncated`). Every line's rows are read
+  again, each checked, when it is recognized, so a screen that changes under a line starts the job over as with GRAD.
+- **Dark flags.** Each line's flag (dark text on a light ground: the line is inverted for the recognizer) is the
+  spotter's own rule, `vocr_line_dark` of the box, computed by the job on the pixels it fetches to read the line,
+  before its refinement, its cache key and its recognition (`VOCR_TEXTSPOT_NO_DARK` to the spotter). Until #528's
+  speed pass the spotter read every box's rows once more for it after its pass, through the strip: a display frame for
+  each box outside the strip the pass ended on. The flags are the same bit for bit (the same rule on the same rows,
+  each checked against its first read); on the 358 linefind dev regions the texts are byte-identical and a job reads
+  1.03 strips fewer at 60 fps (8.17 → 7.15) [measured, host: [performance.md](performance.md#the-default-read-since-api-54-the-spotter-and-the-vocr6-sizes)].
 - **Vertical text.** With `ocr_vertical = auto` (the default), a region whose boxes the spotter calls vertical more
   often than horizontal goes to GRAD's rows, which auto's rule checks as without the spotter (the columns are then read
   with the vertical model). Measured in vita-vn-ocr on the spotter's crop decode with the shipped weights: 0 of
@@ -1988,7 +1994,7 @@ module rows in [memory-ledger.md](memory-ledger-history.md#the-spotter-finder-ap
 - bytes: its part of the scratch, with bit 31 (`VJO_GLM_READ`) when the job read its weights from the card, bit 30
   (`VJO_GLM_RESIDENT`) when they were kept from an earlier job;
 - sum: every box it returned (vertical ones too) | 0x8000 when it had more than it keeps (64), its weights' load in
-  ms from bit 16; us: its time (its pass, its decode and its boxes' dark flags).
+  ms from bit 16; us: its time (its pass and its decode; the dark flags are the job's, at each line's fetch).
 
 Its block's `alloc` and `free` steps name it `spot`. `tools/analyse_selftest.py --collect` counts its jobs, those it
 found the lines of, its lines and boxes, its time and its weights' reads.
