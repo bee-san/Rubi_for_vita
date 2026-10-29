@@ -168,7 +168,7 @@ that merge].
 - **Paf, `VJO_SL_PAF_HISTORY` (16,384 B)**: one block per visit, from the first Up past the top row to
   the return to the current text (or the close, the game's exit). `VJO_WORST_SHELL_PAF` adds it: the
   worst case (an Anki save from an earlier line, the overlay open, its lookup) goes from 225,280 to
-  241,664 B, of the 985,088 B limit. It holds the visit's table (`HistoryVisit`, 156 B on the Vita),
+  241,664 B, of the 985,088 B limit (344,960 B since #528 counts the open page's own Paf blocks). It holds the visit's table (`HistoryVisit`, 156 B on the Vita),
   the current text (at most 4,096 B, compile-time checked) and the lines, each at its own length;
   a line that does not fit ends the list there (the lines kept are the newest, without a gap).
   Typical lines (20-60 characters of 3 B) are 60-180 B, so 32 take 2-6 KiB [estimate]. A refused

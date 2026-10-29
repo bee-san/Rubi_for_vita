@@ -35,7 +35,7 @@ modules (`ctest -R memory_ledger` runs it locally):
 ```
   pool                              permanent   worst case        limit     headroom
   shell pages                         208,896      229,376    1,048,576      819,200
-  shell paf                            28,672      241,664      985,088      743,424
+  shell paf                            28,672      344,960      985,088      640,128
   kernel                              151,552      241,664      241,664            0
   game                                258,048   11,022,336   11,214,848      192,512
 ```
@@ -70,7 +70,7 @@ network row (it was 707,840 B with Google Lens alone, 731,632 B with the relay's
 slot). An Anki card's screenshot (API 23) is made in the game: the Shell's 128 KiB Anki arena
 holds only its job's request and result, and the game's `VjoGameShot` block (450,560 B) is a job of
 the one job slot, never beside an OCR job's transient blocks, so neither pool's worst case moves.
-The shipped default (local JMdict) has 743,424 B of headroom (759,808 B before line history). The kernel row has no full-frame
+The shipped default (local JMdict) has 640,128 B of headroom (743,424 B before the overlay page's own blocks were counted, #528; 759,808 B before line history). The kernel row has no full-frame
 capture since API 24 (2,088,960 B of its 2,248,704 B worst case until then): no Shell code took it
 after Google Lens's removal, and OCR and the screenshot read the screen in the game. Its worst case is
 now the permanent part, a kernel strip and a starting game's `games.ini` read.
@@ -99,16 +99,34 @@ transient set that can be live at once.
 | Anki job arena | 131,072 | per job: saving a card to the queue. Its screenshot (API 23) is the game worker's: here only the job's request and result, 5,404 B (a one-word card's save peaks at 6,860 B with it); the Shell's own screenshot branch went with AnkiConnect (its 393,216 B arena and the kernel's 2,088,960 B full-frame capture), so the kernel capture is never taken for Anki; a save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B on main `dcb7b31`, before `anki_screenshot`'s `VjoConfig` field) [measured, host] | `shell/anki.c` `ANKI_TEXT_MEM`; checked against the budget at compile time and in `test_shell_anki.c` |
 | overlay text arena | 20,480 | the header and body texts and their spans (18,016 B needed, `test_ledger.c`: 17,952 B before line history's four header spans). Permanent since #528: taken once as the Shell starts (`shell/overlay_mem.h` `vjo_overlay_mem_boot`, called at the end of `vjo_worker_start`, through the same guard, while the heap is at its fullest: 3,725,976-3,744,264 B free at all 90 Shell starts in #528's logs [measured]) and kept, so the overlay asks for no memory of ours when it opens; before, it was taken at every open and given back at every close, and beside another plugin's 2,187,264 B buffer (free 202,296-426,872 B) the guard refused it 34 times: `overlay not opened`, with nothing on screen. Only if the start's take was refused does an open take it (and keep it); refused then, the page does not open that time. With the block held the 1.5 MiB guard no longer stands before `PageOpen`, so the page opens only with room for itself and SceShell beside it: `VJO_PAF_PAGE_MAX` (103,296 B, the most the page took in the logs) and `VJO_PAF_PAGE_MARGIN` (64 KiB) free (`shell/paf_guard.h` `vjo_paf_page_fits`; else `overlay page Paf reserve guard: free=… requested=103296 reserve=65536`) | `shell/overlay.cpp`, `shell/overlay_mem.h` |
 | line history | 16,384 | one visit's block ([line history](line-history.md)): from the overlay's first Up past its text's top row until the current text is back (or the overlay closes, the game exits): the visit's table, the current text and up to 32 of this game's earlier lines from `history.csv`'s last 24,512 B (read into VjoControl's static scratch, not here); a refusal means no visit, Up does nothing | `shell/worker.c` `history_open`; `VJO_BUDGET_PAF_HISTORY`, its fit checked at compile time |
+| overlay page (Paf's) | 103,296 | the page's own blocks, which `PageOpen` takes for its widgets while the page is open: 94,672-103,296 B, median 94,800 B, in the 81 opens of #528's logs where Rubi allocated again before the page closed [measured, log]; Paf takes them, not our wrapper, so the run-time ledger cannot count them, but they are held because our page is open (#528). The page opens only with this and a 64 KiB margin free (`VJO_PAF_PAGE_MAX` + `VJO_PAF_PAGE_MARGIN`, `shell/paf_guard.h` `vjo_paf_page_fits`). The subtitle strip's page, never open with this one, is unmeasured [estimate: no larger] | `shell/overlay.cpp` `open_page`; `VJO_BUDGET_PAF_PAGE` |
 | **limit** | **985,088** | the measured free heap, 2,557,952 B (2,498 KiB beside CLANNAD, 2026-10-10), minus the 1.5 MiB reserve the runtime guard keeps for firmware; the reserve is the headroom | `docs/meiki-ocr.md` on `experiment/meiki-ocr` [measured]; `shell/memory.cpp` |
 
 What the heap holds besides the items above, measured in #528's logs (Oct 10-29, PCH-1001, 3.65; the ledger's `free=` and the allocation lines): SceShell's own use moves the free figure by a median of 21,904 B within a game session, 149,728 B at the 95th percentile and 486,176 B at most (293 sessions without the outside buffer; the least free in them 1,977,448 B); the overlay's page itself (PageOpen's widgets) takes a median 94,800 B (94,672-103,296 B, 81 opens) while it is open, which no item here counts; since the text block is held from the start the page itself is checked instead (`VJO_PAF_PAGE_MAX` + `VJO_PAF_PAGE_MARGIN` free, above). The 1.5 MiB reserve comes from the Shell-side Meiki and Google Lens builds (`9a6fd526`'s 2 MiB, `bf5a97e2`'s and the Lens build's 1,536 KiB, 2026-10-10), not from a measurement of SceShell's need; it is kept.
+
+What each item uses of its budget, from #528's logs (Oct 10-29, the owner's PCH-1001 on 3.65) and the Vita build:
+
+| Item | Budget | Used | Taken | Given back |
+|---|---:|---:|---|---|
+| Paf plugin and RCO | 8,192 | unmeasured (the RCO file is 6,368 B) [estimate] | the plugin's load at boot | never |
+| overlay text block | 20,480 | at most 18,016 B of texts and spans and 2,048 B of ranges (source bounds, `test_ledger.c`) | the Shell's start (#528) | never |
+| result arena | 65,536 | the dictionary session, 6,784 B [measured: `sizeof(VjoLocalSession)` with the Vita compiler], and the lookup's arena, 54,832 B at most over 979 jobs' `arena peak` [measured, log]: 61,616 B, 3,920 B left, so no room to shrink it | after a job's OCR when it looks up (in Auto, a background read's too), or a cursor's lookup | at the next read's start, a game's exit, with no game and the overlay closed |
+| Anki arena | 131,072 | 7,068 B at most over 20 saves [measured, log]; 102,624 B for a save with 8 dictionaries' entries [measured, host] | a save (Enter) | the save's end |
+| line history | 16,384 | unmeasured on the console (two visits logged, sizes not logged); 2-6 KiB for 32 typical lines [estimate] | the overlay's first Up past its text's top row | the return to the current text, the close, the game's exit |
+| overlay page (Paf's) | 103,296 | 94,672-103,296 B, median 94,800 B, over 81 opens [measured, log] | the page's open | its close |
+
+The dictionary's lookahead locators and its other per-text state are in the result arena; the fonts are the
+firmware's (Rubi allocates none); the reading statistics' window is VjoControl's static scratch (Shell pages, not
+Paf); the text spotter's and the hooks' text are the game worker's. The largest Rubi held in the logs was 225,280 B
+(the ledger's peak: the plugin, the text block, a result arena and an Anki save), beside about 95 KB of the page's.
 
 Allocations here take no new pages from the partition; a failure is a `NULL`, never `0x80024302`
 (vita-memory.md 3.2). Later sessions saw 355-441 KiB and 190 KiB free [measured], which would
 refuse everything above; the code survives a refusal (host tests), so this limit is the best
 measured case, not a guarantee. The worst case of the shipped default (one 64 KiB arena, the
-overlay open on an earlier line, an Anki card being saved) is 241,664 B (225,280 B before line
-history's 16 KiB visit), the only configuration since the network
+overlay open on an earlier line with its page's own 103,296 B, an Anki card being saved) is 344,960 B
+(241,664 B before the page's blocks were counted, #528; 225,280 B before line history's 16 KiB visit), the only
+configuration since the network
 paths' removal (the opt-in network row was 707,840 B with Google Lens alone; with a 384 KiB
 picture card and the relay's second connection slot it was 993,776 B, 8,688 B over the limit,
 which the checker reported as a warning).
@@ -757,9 +775,9 @@ declaration to the binary); stacks, blocks and arenas are counted as they are ma
 
 ## What is still an estimate
 
-- The Paf plugin and RCO (8,192 B) and whatever the overlay's widgets take from the PAF heap
-  while a page is open: unmeasured. The self-test (plan item 5) records `free=` before and after
-  opening the overlay.
+- The Paf plugin and RCO (8,192 B): unmeasured. The overlay page's own blocks were measured from
+  #528's logs (94,672-103,296 B over 81 opens) and are counted since (`VJO_BUDGET_PAF_PAGE`); the
+  subtitle strip's page is unmeasured.
 - The kernel pool's free space, hence its real limit.
 - The PAF limit is one console's best sample; the self-test records the free heap at boot and at
   game launch on every run.

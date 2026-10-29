@@ -2285,3 +2285,22 @@ a game session (21,904 B, 293 sessions) [measured, log]; whether it is enough at
 The open's code takes 48 B more in the normal Shell (85,932 -> 85,980 B of text) and none in the debug one (98,148 B),
 as the arena resets at the close, at a failed `PageOpen` and at the start went: the block is never given back, so
 `s_ui` never points into freed memory, and `open_page` sets it afresh. Pages and data unchanged in both builds.
+
+## The overlay page's own Paf, counted (#528)
+
+The page's widgets, which `PageOpen` takes from SceShell's Paf heap while the overlay is open, were the largest Paf use
+Rubi causes and were in no budget: 94,672-103,296 B (median 94,800 B) over the 81 opens of #528's logs where Rubi
+allocated again before the page closed [measured, log]. `VJO_BUDGET_PAF_PAGE` (= `VJO_PAF_PAGE_MAX`, 103,296 B) puts
+the most measured into the pool's worst case; no code changes, and the run-time ledger still counts only our own
+blocks (Paf takes these).
+
+| Pool "shell paf" | Before | After |
+|---|---:|---:|
+| permanent | 28,672 B | 28,672 B |
+| worst case | 241,664 B | 344,960 B |
+| limit / headroom | 985,088 / 743,424 B | 985,088 / 640,128 B |
+
+The budget header's Shell module comment had API 57's figures (97,996 + 69,184 B debug, 85,724 + 69,116 B normal);
+it now has main `f3719fb2`'s: 98,148 + 69,632 B (156 B of code room, 0 B of data room) and 85,980 + 69,556 B (36 B,
+76 B).
+

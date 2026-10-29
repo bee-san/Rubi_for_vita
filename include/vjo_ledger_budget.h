@@ -39,10 +39,11 @@
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
 /* VitaJPOverlay_Shell.suprx. The normal build (docs/release-variants.md) compiles out the self-test
  * (shell/selftest.c), the lines of the game worker's step log, of the recognized text and of every job and lookup,
- * and the timings and traces. Both builds' packaged segments, each rounded to pages: debug 97,996 + 69,184 B ->
- * 167,936 B (308 B of code room, 448 B of data room), normal 85,724 + 69,116 B -> 155,648 B (292 B, 516 B) [measured:
- * tools/check_memory_ledger.py's module rows, both local builds with VitaSDK GCC 15.2.0, API 57's rear-tap scan]. The
- * normal build's check is exact (--exact): its budget must equal its pages. How each change moved them: its own
+ * and the timings and traces. Both builds' packaged segments, each rounded to pages: debug 98,148 + 69,632 B ->
+ * 167,936 B (156 B of code room, 0 B of data room), normal 85,980 + 69,556 B -> 155,648 B (36 B, 76 B) [measured:
+ * tools/check_memory_ledger.py's module rows, tools/fast_gate.sh's vitasdk image, main f3719fb2 (#537); 97,996 + 69,184
+ * and 85,724 + 69,116 B at API 57's rear-tap scan]. The normal build's check is exact (--exact): its budget must equal
+ * its pages. How each change moved them: its own
  * section of docs/memory-ledger-history.md, and before #418 that file's "Budget history". */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 167936u
@@ -145,6 +146,11 @@
  * owner scenario]. A guess at what SceShell needs at the very bottom, not a measurement of it [estimate]. */
 #define VJO_PAF_PAGE_MAX 103296u
 #define VJO_PAF_PAGE_MARGIN 65536u
+/* The page's blocks, counted in the pool's worst case although Paf takes them, not our wrapper (the run-time ledger
+ * cannot see them): they are held because our page is open, beside everything else an open page can hold. The
+ * subtitle strip's page is never open with the overlay's (shell/overlay.cpp frame: the strip closes first); its own
+ * blocks are unmeasured, assumed no larger (one text, its box and a busy indicator) [estimate]. */
+#define VJO_BUDGET_PAF_PAGE VJO_PAF_PAGE_MAX
 /* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
  * first Up past its text's top row until the return to the current text (or the overlay's close): the
  * table (core/history_lines.h VjoHistory, 34 line pointers and two counts) and the worker's three words
@@ -155,10 +161,10 @@
  * save (a card from an earlier line). */
 #define VJO_BUDGET_PAF_HISTORY 16384u
 #define VJO_WORST_SHELL_PAF_PERMANENT (VJO_BUDGET_PAF_PLUGIN + VJO_BUDGET_PAF_UI)
-/* The worst case: the 64 KiB result arena, the overlay open on an earlier line, and an Anki card being saved
- * (the overlay's text block is in the permanent part since #528: the same sum). */
+/* The worst case: the 64 KiB result arena, the overlay open on an earlier line (its page's own blocks too), and an
+ * Anki card being saved (the overlay's text block is in the permanent part since #528). */
 #define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + \
-                             VJO_BUDGET_PAF_HISTORY)
+                             VJO_BUDGET_PAF_HISTORY + VJO_BUDGET_PAF_PAGE)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free
  * [measured]; under those every allocation is refused, which the code
