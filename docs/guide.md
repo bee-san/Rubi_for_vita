@@ -1234,7 +1234,14 @@ that same fixed allocation. If results do not fit, the popup says to look up a s
 ([details](local-dictionaries.md#dictionaries-shown)).
 The previous local result is retired before it is reused. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
-stays visible and only dictionary lookup backs off. Failed joins/frees keep
+stays visible and only dictionary lookup backs off. Another plugin can use up
+that heap: on the owner's console, vita-agent-use's remote screenshots held about
+2.1 MB of it until the Vita restarted (its builds before e289d06, 2026-10-23;
+ending the remote session does not give it back), and every lookup was refused
+(#528). Update such a plugin, or restart the Vita. `tools/install_ftp.sh --status` and
+`--collect` print a `memory` line that names a drop Rubi did not take; the
+plugins seen beside Rubi, and what each takes, are in
+[vita-memory.md](vita-memory.md) section 4.5. Failed joins/frees keep
 ownership for a safe stop retry.
 With `anki_mining = on`, saving a card (Enter) takes one
 bounded Paf allocation through the same reserve guard (88 KiB; a card's

@@ -3002,12 +3002,13 @@ class MemoryLine(unittest.TestCase):
                          [(2064832, 2491704, 426872, True)])
         self.assertEqual(s["refused"], {"overlay text arena": 1, "result arenas": 1})
         self.assertEqual(s["after_drop"], 2)
-        self.assertIn("1 drop of 2,064,832 B that Rubi did not take (line 6; 1 held to the boot's end): another "
-                      "plugin's (docs/vita-memory.md section 4.5)", line)
-        self.assertIn("refused overlay text arena x1, result arenas x1 (2 after a drop)", line)
-        self.assertIn("Rubi held 8,192 B of PAF at 3 of 3 game starts and exit (at most 8,192 B)", line)
+        self.assertIn("1 drop of 2,064,832 B that Rubi did not take (line 6; 1 held to the boot's end): not Rubi's; "
+                      "the size of vita-agent-use's 2,187,264 B screenshot buffer, which its builds before e289d06 keep "
+                      "until a restart (docs/vita-memory.md section 4.5)", line)
+        self.assertIn("refused overlay text arena x1, result arenas x1 (2 while a drop was held)", line)
+        self.assertIn("Rubi held 8,192 B of PAF at 3 of 3 game starts and exits (at most 8,192 B)", line)
         self.assertIn("lowest 410,312 B", line)
-        self.assertIn("kernel: Rubi 147,456 B, at most 147,456 B of its 237,568 B", line)
+        self.assertIn("kernel: Rubi 147,456 B at its start, of its 237,568 B", line)
         self.assertTrue(line.startswith("  memory (log.txt): Shell PAF free at 1 game start: median 2,491,704 B"), line)
 
     def test_shell_paf_that_rubi_took_is_not_a_drop(self):
@@ -3031,6 +3032,14 @@ class MemoryLine(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             c = a.summarise_collect(log_collect(Path(d), STEP_BOOT))
         self.assertFalse(any(u.startswith("SceShell refused memory") for u in c["undecided"]), c["undecided"])
+
+    def test_a_drop_of_another_size_is_not_named_as_the_agents(self):
+        text = (NORMAL_STARTED + paf("boot", 3726536) + paf("start", 2491704) + guard("result arenas", 700000, 65536))
+        s, line = self.line(text)
+        self.assertEqual([d["bytes"] for d in s["drops"]], [1791704])
+        self.assertIn("that Rubi did not take (line 4; 0 held to the boot's end, 1 at the boot's last sample): not "
+                      "Rubi's (docs/", line)
+        self.assertNotIn("vita-agent-use", line)
 
     def test_a_drop_free_came_back_from_is_not_held(self):
         text = (NORMAL_STARTED + paf("boot", 3726536) + paf("start", 2491704) + guard("result arenas", 300000, 65536)
@@ -3062,6 +3071,61 @@ class MemoryLine(unittest.TestCase):
         _, line = self.line(QUIET_BOOT + "game vocr memory: free USER=2097152 + own weights 0, needs workspace 1056768"
                             " + weights 2478080 + reserve 1048576: check refused\n")
         self.assertIn("game free USER 2,097,152 B at 1 refused memory check", line)
+
+    def test_a_boot_without_its_start_line_is_still_a_boot(self):
+        # a cut log's boots, or an older build's: each ledger boot line starts one, so the next boot's full heap is
+        # not read as the drop coming back
+        text = (paf("boot", 3726536) + paf("start", 2491704) + guard("result arenas", 426872, 65536)
+                + paf("exit", 410312) + paf("boot", 3726536) + paf("start", 2529512))
+        s, _ = self.line(text)
+        self.assertEqual(s["boots"], 2)
+        self.assertEqual([(d["bytes"], d["held"]) for d in s["drops"]], [(2064832, True)])
+        s, _ = self.line(NORMAL_STARTED + paf("boot", 3726536) + paf("start", 2491704))
+        self.assertEqual(s["boots"], 1)
+
+    def test_a_drop_at_the_boots_last_sample_is_not_called_held(self):
+        s, line = self.line(NORMAL_STARTED + paf("boot", 3726536) + paf("start", 2491704)
+                            + guard("result arenas", 426872, 65536))
+        self.assertEqual([d["held"] for d in s["drops"]], [None])
+        self.assertIn("(line 4; 0 held to the boot's end, 1 at the boot's last sample)", line)
+
+    def test_only_refusals_while_a_drop_is_held_are_explained(self):
+        # one before the drop, one while it is held, one after free came back: only the middle one is the drop's
+        text = (NORMAL_STARTED + paf("boot", 3726536) + paf("exit", 2709112) + guard("result arenas", 1600000, 65536)
+                + paf("start", 2491704) + guard("result arenas", 426872, 65536) + paf("exit", 2400000)
+                + guard("Anki arena", 1650000, 131072))
+        s, line = self.line(text)
+        self.assertEqual((len(s["drops"]), s["drops"][0]["held"], s["after_drop"]), (1, False, 1))
+        self.assertIn("(1 while a drop was held)", line)
+        with tempfile.TemporaryDirectory() as d:
+            c = a.summarise_collect(log_collect(Path(d), text))
+        self.assertTrue(any(u.startswith("SceShell refused memory 2 time(s)") for u in c["undecided"]), c["undecided"])
+
+    def test_mixed_builds_say_whose_checks_they_are(self):
+        text = (DEBUG_STARTED + paf("boot", 3726536) + "game vocr memory: free USER=88080384, needs workspace 1056768 "
+                "+ weights 2478080 + reserve 1048576: check passed, headroom 83496960\n" + QUIET_BOOT)
+        _, line = self.line(text)
+        self.assertIn("game free USER 88,080,384 B at 1 memory check (the debug build's boots: the normal build's log a "
+                      "refused check only), 0 refused", line)
+
+    def test_a_full_status_txt_is_named(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            body = STEP_BOOT + "".join(f"region: this game's {i}\n" for i in range(3300))
+            (folder / "status.prev.txt").write_text(body[:a.STATUS_TXT_CAP - 100])  # the Shell stopped near its cap
+            (folder / "status.txt").write_text(QUIET_BOOT)
+            s = a.summarise_status(folder)
+        self.assertEqual(s["full"], ["status.prev.txt"])
+        self.assertIn("status.prev.txt full: its later lines were not logged (--collect reads log.txt)",
+                      a.memory_line(s))
+
+    def test_collect_without_log_txt_names_the_status_files_lines(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = log_collect(Path(d), "")
+            (folder / "ux0/data/VitaJPOverlay/status.prev.txt").write_text(STEP_BOOT)
+            (folder / "ux0/data/VitaJPOverlay/status.txt").write_text(QUIET_BOOT)
+            c = a.summarise_collect(folder)
+        self.assertEqual([x["where"] for x in c["memory"]["drops"]], ["status.prev.txt:6"])
 
     def test_threads_sceshell_refused_are_counted(self):
         text = QUIET_BOOT + ("thread VjoAnki refused 0x80024302: 20480 B; SceShell free 12288 (0x00000000), "
@@ -3120,6 +3184,35 @@ class MemoryLine(unittest.TestCase):
         self.assertEqual(s["game"]["activations"], 3)
         # the kernel summary does not list it as a problem line ("refused" and "kept" are counts there)
         self.assertEqual(a.summarise_kernel(kernel, len(kernel))["alloc_fail"], [])
+
+    def test_the_kernels_game_memory_line_is_the_one_read(self):
+        # kernel/game_ocr.c's format, at the edges of its fields, is the line KERNEL_GAME_MEMORY reads, within klog's
+        # 190 characters (kernel/log.c); kernel/main.c writes it in the normal build, just before the activation's
+        # "game exit" (the crash dumps' clock check, kernel_facts, reads the two as one wake's)
+        src = (ROOT / "kernel/game_ocr.c").read_text(encoding="utf-8")
+        m = re.search(r'klog\("(game memory:[^"]*)"\s*"([^"]*)"', src)
+        self.assertIsNotNone(m, "kernel/game_ocr.c game_ocr_activation_memory's line changed: update KERNEL_GAME_MEMORY")
+        fmt = (m.group(1) + m.group(2)).replace("%u", "%d")
+        for values in ((1, 1, -1, -1, 0, 0), (4294967295, 4294967295, 2147483647, 2147483647, 4294967295, 4294967295)):
+            line = fmt % values
+            self.assertLessEqual(len(line), 190)
+            self.assertTrue(a.KERNEL_GAME_MEMORY.match(line), line)
+        main = (ROOT / "kernel/main.c").read_text(encoding="utf-8")
+        self.assertRegex(main, r"if \(bits & IEV_GAME_EXIT\) \{\n#if !VJO_DEBUG\n\s+game_ocr_activation_memory\(\);[^\n]*"
+                               r"\n#endif\n\s+klog\(\"game exit\"\);")
+
+    def test_collect_reads_the_previous_boots_kernel_lines(self):
+        line = ("game memory: 5 checks, 1 refused; free USER lowest 3145728 B, last 4194304 B; weights kept 2478080 B, "
+                "workspace up to 1056672 B\n")
+        for logs in (True, False):  # log.txt, or (log_file = off) the two status files
+            with self.subTest(logs=logs), tempfile.TemporaryDirectory() as d:
+                folder = log_collect(Path(d), QUIET_BOOT if logs else "")
+                if not logs:
+                    (folder / "ux0/data/VitaJPOverlay/status.txt").write_text(QUIET_BOOT)
+                (folder / "ux0/data/VitaJPOverlay/kernel.prev.txt").write_text(KERNEL_TXT + line)
+                (folder / "ux0/data/VitaJPOverlay/kernel.txt").write_text(KERNEL_TXT)
+                g = a.summarise_collect(folder)["memory"]["game"]
+            self.assertEqual((g["activations"], g["act_checks"], g["act_refused"], g["act_low"]), (1, 5, 1, [3145728]))
 
     def test_status_mode_reads_both_boots_and_the_kernel(self):
         with tempfile.TemporaryDirectory() as d:

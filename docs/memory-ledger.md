@@ -770,17 +770,20 @@ allocations in those logs].)
 `free=` is the PAF heap's free size as `GetFreeSize()` reports it (0 before Paf is ready). Stacks
 include their 4 KiB of TLS. `tools/install_ftp.sh --status` and `--collect` sum these lines up in one `memory` line
 (`tools/analyse_selftest.py`, #528): a drop of `free=` between two samples, of the reserve's size or more, that the
-lines' `current=` does not account for is named as another plugin's ([vita-memory.md](vita-memory.md) section 4.5). The kernel writes `ledger kernel: current=… peak=… limit=…` and its
+lines' `current=` does not account for is named as not Rubi's ([vita-memory.md](vita-memory.md) section 4.5). The kernel writes `ledger kernel: current=… peak=… limit=…` and its
 items to `kernel.txt` once a boot, at its start (`kernel/main.c`; until API 24 also at every
 full-frame capture, from the removed `VjoCapture` allocator). The normal build's kernel also writes, as a game leaves
-the front, one line on that activation's game memory checks, from the job results it hands the Shell (#528):
+the front, one line on that activation's game memory checks, from every job's result as the job's claim is released
+(#528): a cancelled job's and an Anki screenshot's too, which the Shell's log never shows; a trusted hook's answer
+runs no check. An example (its free figures are PCSG00402's in #528's logs; the line has not run on a console):
 
 ```
 game memory: 12 checks, 0 refused; free USER lowest 10485760 B, last 12664832 B; weights kept 2478080 B, workspace up to 1056672 B
 ```
 
-(`-1` for a free figure no check could read; the debug build writes no such line, its `log.txt` has every check). The game worker keeps its ledger in the
-game's process, which has no file access; its numbers reach the Shell log through the job result
+(`-1` for a free figure no check could read; the debug build writes no such line, its `log.txt` has the check of
+every job whose result the Shell read). The game worker keeps its ledger in the game's process, which has no file
+access; its numbers reach the Shell log through the job result
 (`game vocr memory: free USER=… need …`, `workspace_bytes`, `resident_bytes`).
 
 Module pages and the Paf plugin are counted from the declared budget (the CI check ties the

@@ -14,10 +14,10 @@ been reported.
 ### Added
 
 - One `memory` line in `tools/install_ftp.sh --status` and `--collect`'s summary (#528): SceShell's PAF free at the
-  game starts and its lowest, each drop of 1.5 MiB or more that Rubi's own ledger does not account for (another
-  plugin's, with where it is in the log), what Rubi held there and which of its requests were refused, the game's
-  free memory at the logged memory checks, Rubi's blocks in the game and the kernel plugin's ledger. It reads the
-  lines both builds already write; no plugin changes.
+  game starts and its lowest, each drop of 1.5 MiB or more that Rubi's own ledger does not account for (not Rubi's,
+  with where it is in the log, and vita-agent-use's screenshot buffer named when its size matches), what Rubi held
+  there and which of its requests were refused, the game's free memory at the logged memory checks, Rubi's blocks
+  in the game and the kernel plugin's ledger. It reads the lines both builds already write; no plugin changes.
 - The normal build's `kernel.txt` gets one `game memory:` line as a game leaves the front (#528): the activation's
   memory checks, those refused, the least and the last free game memory they read and Rubi's largest weights and
   workspace there. Until now the normal build wrote a game's free memory only when a check refused a job, so the

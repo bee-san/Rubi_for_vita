@@ -47,7 +47,7 @@ crash dumps (each dated against the boot: this boot's, an earlier boot's, or not
 analysis when a report is there, the tier from the lowest
 free game memory seen, and what this tool cannot decide, with where the data is. Its
 `memory` line (#528) sums up SceShell's PAF free and each drop of it that Rubi's own
-ledger does not show (another plugin's, docs/vita-memory.md section 4.5), what Rubi held
+ledger does not show (not Rubi's, docs/vita-memory.md section 4.5), what Rubi held
 and had refused there, the game's free memory and Rubi's blocks there, and the kernel's
 ledger.
 
@@ -742,6 +742,7 @@ def render(result):
 
 KERNEL_TXT_CAP = 256 * 1024          # kernel/main.c KFILE_CAP: kernel.txt per boot
 LOG_TXT_CAP = 1024 * 1024            # shell/log_vita.c LOG_FILE_CAP: log.txt before it rotates
+STATUS_TXT_CAP = 64 * 1024           # shell/log_vita.c STATUS_CAP: status.txt per boot
 LOG = {
     "job": re.compile(r"^game vocr rc=(-?\d+) (\S+?)( \(fallback(, refused too)?\))?: (\d+)x(\d+) at \d+,\d+ of \d+x\d+ "
                       r"fmt 0x([0-9A-Fa-f]+), lines=(\d+) USER workspace=(\d+) weights=(\w+) resident=(\d+), find=(\d+) ms "
@@ -2987,6 +2988,10 @@ def kernel_facts(folder, year):
     # line therefore lies after the last KERNEL_LOCKED line before it. So the last "game exit" is the line's own only
     # when no "game exit" lies between them (other threads' lines may).
     lines = [line.strip() for line in text.splitlines() if line.strip()]
+    # #528: the normal build's "game memory:" line is the worker's own, from the same wake as the "game exit" it logs
+    # next (kernel/main.c worker), so it never parts an event from that game exit
+    if len(lines) >= 2 and lines[-1] == "game exit" and KERNEL_GAME_MEMORY.match(lines[-2]):
+        del lines[-2]
     uptime_why = None
     if len(lines) >= 2 and lines[-1] == "game exit" and KERNEL_LEFT.match(lines[-2]):
         i = len(lines) - 3
@@ -3199,17 +3204,23 @@ KERNEL_LEDGER = re.compile(r"^ledger kernel: current=(\d+) peak=(\d+) limit=(\d+
 KERNEL_GAME_MEMORY = re.compile(r"^game memory: (\d+) checks, (\d+) refused; free USER lowest (-?\d+) B, last (-?\d+) B; "
                                 r"weights kept (\d+) B, workspace up to (\d+) B$")
 # A drop of the PAF heap's free size between two of the Shell's samples that Rubi's own ledger does not account for,
-# of the reserve's size or more: SceShell's own swings are far smaller (the start's LiveArea about 1.0 MB, a game
-# session's at most 486 KB in the owner's 293 sessions without one), and a drop that size, while it is held, leaves
-# every request of Rubi's under the reserve (docs/vita-memory.md section 4.5: another plugin's ~2.1 MB, #528).
+# of the reserve's size or more. SceShell's own use is smaller: in the owner's logs (#528, audit-mem-plugins-1) it
+# fell 324,512-1,041,152 B from the Shell's start to its first game exit (LiveArea's build) and at most 701,952 B
+# between two later samples, against 2,064,832-2,214,432 B for the 8 drops; and a drop that size, while it is held,
+# leaves every request of Rubi's under the reserve (docs/vita-memory.md section 4.5).
 PAF_DROP = PAF_RESERVE
+# vita-agent-use's remote-screenshot JPEG (VAU_FRAME_JPEG_LIMIT, from SceShell's PAF heap), which its builds before
+# e289d06 (2026-10-23) kept until the console restarted; #528's 8 drops were within -122/+27 KB of it
+# (docs/vita-memory.md section 4.5). A drop that close to it is named as most likely that buffer.
+AGENT_JPEG, AGENT_JPEG_NEAR = 2187264, 160 * 1024
 
 
 def summarise_memory(shell_text, kernel_text=None):
     """The memory line's figures (#528), from the Shell's lines (log.txt and log.old.txt, or status.prev.txt and
     status.txt) and kernel.txt: the PAF heap's free size at the game starts and its lowest; each drop of PAF_DROP or
     more between two samples that Rubi's ledger does not show, and whether free stayed under half of it back until
-    the boot's last sample (held); what Rubi held between jobs and at most; the requests refused, by ledger item;
+    the boot's last sample (held; None when the drop is the boot's last sample); what Rubi held at the game starts
+    and exits and at most; the requests refused, by ledger item, and how many came while a drop was held;
     the threads SceShell refused; the game's free USER memory at the jobs' memory checks (the debug build logs
     every check, the normal build a refused one only, and since #528 its kernel.txt one line an activation), the sizes
     that did not fit, and Rubi's largest workspace and kept weights there (the debug build's job lines, the normal
@@ -3223,21 +3234,23 @@ def summarise_memory(shell_text, kernel_text=None):
     refusals = []  # this boot's refused requests' lines
 
     def boot_end():
-        first = None
+        held_spans = []  # (from, until): lines while a drop was held (until the first sample back above half of it)
         for i, ((_, f1, c1), (n2, f2, c2)) in enumerate(zip(samples, samples[1:])):
             gone = (f1 - f2) - (c2 - c1)  # what the heap lost that Rubi did not take
             if gone >= PAF_DROP:
-                later = [f for _, f, _ in samples[i + 2:]]
+                later = samples[i + 2:]
+                back = next((n for n, f, _ in later if f >= f1 - gone // 2), None)
                 s["drops"].append({"line": n2, "bytes": gone, "before": f1, "after": f2,
-                                   "held": all(f < f1 - gone // 2 for f in later)})
-                first = n2 if first is None else first
-        # a refusal at or after the boot's first drop: the drop explains it (its line is the refusal's own when the
-        # refusal is the first sample after the drop)
-        s["after_drop"] += sum(first is not None and n >= first for n in refusals)
+                                   "held": None if not later else back is None})
+                held_spans.append((n2, back if back is not None else float("inf")))
+        # a refusal from a drop's sample (the refusal's own line when it is the first sample after the drop) until
+        # free came back: that drop explains it
+        s["after_drop"] += sum(any(a <= n < b for a, b in held_spans) for n in refusals)
         samples.clear()
         refusals.clear()
 
     current = 0  # Rubi's PAF as its last ledger line said (a refusal takes nothing)
+    named = False  # this boot's "shell started" line was read (its ledger boot line follows it)
     for n, raw in enumerate(shell_text.splitlines(), 1):
         line = raw.strip()
         m = SHELL_STARTED.match(line)
@@ -3245,12 +3258,15 @@ def summarise_memory(shell_text, kernel_text=None):
             boot_end()
             s["boots"] += 1
             s["normal_boots" if m.group(2) else "debug_boots"] += 1
-            current = 0
+            current, named = 0, True
             continue
         m = PAF_LEDGER.match(line)
         if m:
-            if m.group(1) == "boot" and samples:  # a boot that logged no start line (a cut log)
-                boot_end()
+            if m.group(1) == "boot":
+                if not named:  # a boot whose start line the log does not have (a cut or older log)
+                    boot_end()
+                    s["boots"] += 1
+                named = False
             current, free = int(m.group(2)), int(m.group(4))
             s["peak"] = max(s["peak"], int(m.group(3)))
             if m.group(1) != "boot":
@@ -3330,16 +3346,21 @@ def memory_line(s):
     d = s["drops"]
     if d:
         at = ", ".join(x.get("where") or f"line {x['line']}" for x in d[:4]) + (", ..." if len(d) > 4 else "")
-        held = sum(x["held"] for x in d)
+        held = sum(x["held"] is True for x in d)
+        unknown = sum(x["held"] is None for x in d)
+        agent = all(abs(x["bytes"] - AGENT_JPEG) <= AGENT_JPEG_NEAR for x in d)
         parts.append(f"{_n(len(d), 'drop')} of {_one([x['bytes'] for x in d])} B that Rubi did not take ({at}; "
-                     f"{held} held to the boot's end): another plugin's (docs/vita-memory.md section 4.5)")
+                     f"{held} held to the boot's end" + (f", {unknown} at the boot's last sample" if unknown else "")
+                     + "): not Rubi's"
+                     + (f"; the size of vita-agent-use's {AGENT_JPEG:,} B screenshot buffer, which its builds before "
+                        "e289d06 keep until a restart" if agent else "") + " (docs/vita-memory.md section 4.5)")
     if s["held"]:
         usual = max(set(s["held"]), key=s["held"].count)
-        parts.append(f"Rubi held {usual:,} B of PAF at {s['held'].count(usual)} of {_n(len(s['held']), 'game start')} "
-                     f"and exit (at most {max(s['held']):,} B), {s['peak']:,} B at its peak")
+        parts.append(f"Rubi held {usual:,} B of PAF at {s['held'].count(usual)} of {len(s['held'])} game starts and "
+                     f"exits (at most {max(s['held']):,} B), {s['peak']:,} B at its peak")
     ref = s["refused"]
     parts.append("refused " + (", ".join(f"{k} x{n}" for k, n in sorted(ref.items(), key=lambda kv: (-kv[1], kv[0])))
-                               + (f" ({s['after_drop']} after a drop)" if d else "") if ref else "nothing"))
+                               + (f" ({s['after_drop']} while a drop was held)" if d else "") if ref else "nothing"))
     if s["threads"]:
         parts.append(f"SceShell refused {_n(len(s['threads']), 'thread')} (free as low as "
                      f"{min(t['free'] for t in s['threads']):,} B)")
@@ -3350,7 +3371,9 @@ def memory_line(s):
                      + f" over {_n(g['activations'], 'activation')} ({_n(g['act_checks'], 'memory check')}, "
                        f"{g['act_refused']} refused; kernel.txt)")
     if passed:
-        parts.append(f"game free USER {_one(g['free'])} B at {_n(g['checks'], 'memory check')}, {g['refused']} refused")
+        parts.append(f"game free USER {_one(g['free'])} B at {_n(g['checks'], 'memory check')}"
+                     + (" (the debug build's boots: the normal build's log a refused check only)"
+                        if s["normal_boots"] else "") + f", {g['refused']} refused")
     elif g["checks"]:
         parts.append(f"game free USER {_one(g['free'])} B at {_n(g['checks'], 'refused memory check')}")
     elif g["activations"]:
@@ -3367,7 +3390,9 @@ def memory_line(s):
         parts.append(f"Rubi in the game: workspace up to {g['workspace']:,} B, weights kept up to {g['resident']:,} B")
     k = s["kernel"]
     if k:
-        parts.append(f"kernel: Rubi {k['current']:,} B, at most {k['peak']:,} B of its {k['limit']:,} B")
+        parts.append(f"kernel: Rubi {k['current']:,} B at its start, of its {k['limit']:,} B")
+    for name in s.get("full") or []:
+        parts.append(f"{name} full: its later lines were not logged (--collect reads log.txt)")
     boots = f", {_n(s['boots'], 'boot')}" if s["boots"] > 1 else ""
     return f"  memory ({s.get('source', '?')}{boots}): " + "; ".join(parts)
 
@@ -3384,6 +3409,9 @@ def summarise_status(folder):
     s["source"] = " + ".join(n for n, t in (("status.prev.txt", prev), ("status.txt", now)) if t) or "no status.txt"
     for d in s["drops"]:
         d["where"] = f"status.prev.txt:{d['line']}" if d["line"] <= k else f"status.txt:{d['line'] - k}"
+    # shell/log_vita.c STATUS_CAP: a boot writes at most 64 KiB to status.txt, then drops its later lines
+    s["full"] = [n for n in ("status.prev.txt", "status.txt")
+                 if (folder / n).is_file() and (folder / n).stat().st_size >= STATUS_TXT_CAP - 256]
     return s
 
 
@@ -3456,10 +3484,8 @@ def summarise_collect(folder):
         out["memory"]["source"] = "log.old.txt + log.txt" if old else "log.txt"
         for d in out["memory"]["drops"]:
             d["where"] = where(d["line"])
-    else:
-        prev, now = _read(folder, data + "status.prev.txt") or "", _read(folder, data + "status.txt") or ""
-        out["memory"] = summarise_memory(prev + ("\n" if prev and not prev.endswith("\n") else "") + now, kernels)
-        out["memory"]["source"] = "status.prev.txt + status.txt"
+    else:  # the --status folder's way, with its places and its cap check
+        out["memory"] = summarise_status(folder / data)
     st = _read(folder, data + "status.txt")
     out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", *(n + " shell started" for n in NAMES),
                                                                                 "worker start", "boot guard"))][:12]
