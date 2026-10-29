@@ -74,20 +74,25 @@ Seven of the suites' tests are soaks (#528): the same cycle many times in one pr
 cycles, with every allocator the code uses on the console counted where the suite stubs it, by pool and
 item (`host/tests/soak_track.h`). Each cycle must end holding exactly what the first one ended with:
 zero net bytes per cycle in every pool. `game_soak` (`test_game_soak.c`) runs the real game worker and
-kernel transport job after job, 16 scenarios (the owner's settings, the other sizes, a setting changed at
+kernel transport job after job, 18 scenarios (the owner's settings, the other sizes, a setting changed at
 every job, the pause, a blank box, cancellations during the capture and the model reads, the game short
 of memory and out of it, the weights refused after the check, the capture ladder, the kernel strip, the
-game left for 6 s, the worker stopped and started), and counts the game's USER, CDRAM and phycont blocks,
+game left for 6 s, the worker stopped and started, a hooked game whose verified site answers eight lines in
+a row after an OCR read, the game suspended with the PS button and resumed during its job), and counts the
+game's USER, CDRAM and phycont blocks,
 the kernel pool's strips, the worker's threads and the kernel's model files, and checks the worker's
 ledger against them. `shell_worker` and `shell_worker_paf` soak a game session (an Auto job, the overlay
-opened, the cursor, a dictionary page, line history, a quiet refresh, the close, the game's exit: the result
-arena, the visit's block, the dictionary files, the ledger, the scratch arena); `shell_anki` mining (the
+opened, the cursor, a dictionary page, line history, a quiet refresh, the close, PS with the overlay open and
+during a job, each resumed, the game's exit: the result arena, the visit's block, the dictionary files, the
+ledger, the scratch arena); `shell_anki` mining (the
 arena, the thread, the ledger and the queue's file descriptors); `shell_history` the history writer, the
 streak and the total (their descriptors); `game_shot` Anki screenshots (a card's, through the kernel strip,
 cancelled, a failed write, a refused file: the shot's block, the kernel strip, the file's descriptor);
 `kernel_loader` process starts (the `VjoPolicy` block and `games.ini`'s descriptors). A soak runs a few cycles in ctest; `VJO_SOAK_CYCLES=N` runs N, and prints one
 line per scenario with each pool's bytes held, net bytes per cycle and blocks taken per cycle. Without the
-models the game soak's jobs end at their model, after the same check, blocks and capture. The suites also
+models the game soak's jobs end at their model, after the same check, blocks and capture: then no job holds the
+weights, the LM, the spotter, the cascade or the gate, nor starts a helper thread, so a leak of one of those shows
+only with the models, in the fast gate's models lane (CI's host job and the ARM lane have none). The suites also
 run under ASan with its leak check (`-DCMAKE_C_FLAGS=-fsanitize=address,undefined`, the same for C++ and the
 link): the soaks, and every other suite but those that map a segment at the console's fixed address
 (`hooks_engine`).

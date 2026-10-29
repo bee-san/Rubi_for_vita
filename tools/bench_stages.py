@@ -299,11 +299,32 @@ def cmd_smoke(args):
                 print(f"FAIL {w['name']}: output checksum {r['check']}, recorded {want}")
             else:
                 print(f"ok {w['name']}: {r['check']} {json.dumps(r['counters'])}")
+        failed += error_exits(args.binary, frame, Path(tmp))
     if args.record:
         EXPECTED.write_text(json.dumps({"note": "output checksums of tools/bench_stages.py's workloads "
                                                 "(FNV-1a of each stage's output); a speed change must not alter them",
                                         "checks": expected}, indent=1, sort_keys=True) + "\n")
     return 1 if failed else 0
+
+
+def error_exits(binary, frame, tmp):
+    """The tool's ways out after it has read an input (audit-mem-leak-1 F4): a later input missing, an unknown stage.
+    Each must end with its own exit code; under ASan the leak check would turn a buffer left behind into LSan's."""
+    missing = tmp / "missing.bin"
+    region = ["--frame", str(frame), "--fb", f"{FB[0]}x{FB[1]}"]
+    runs = [("a missing model after the frame", ["find", *region, "--model", str(missing)], 2, "unreadable"),
+            ("a missing texts file after the frame", ["find", *region, "--texts", str(missing)], 2, "unreadable"),
+            ("an unknown stage after the frame", ["no-such-stage", *region], 2, "usage")]
+    failed = 0
+    for name, argv, want, text in runs:
+        p = subprocess.run([binary, *argv], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120,
+                           check=False)
+        if p.returncode != want or text not in p.stderr:
+            failed += 1
+            print(f"FAIL {name}: exit {p.returncode} (want {want}): {p.stderr[-400:]}")
+        else:
+            print(f"ok {name}: exit {want}")
+    return failed
 
 
 def cmd_host(args):

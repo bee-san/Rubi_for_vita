@@ -153,7 +153,11 @@ static char *read_texts(const char *path)
 {
     size_t len, used = 0;
     char *tsv = read_file(path, &len), *out, *line, *save = NULL;
-    if (!tsv || !(out = malloc(len + 2))) return NULL;
+    if (!tsv) return NULL;
+    if (!(out = malloc(len + 2))) {
+        free(tsv);
+        return NULL;
+    }
     for (line = strtok_r(tsv, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
         char *t = line;
         if (line[0] == '#') continue;
@@ -236,35 +240,38 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--mode")) in.mode = (uint32_t)strtoul(v, NULL, 10);
         else return usage();
     }
+    /* every way out from here frees what was read (done:, audit-mem-leak-1 F4) */
+    rc = 2;
     if (frame) {
         if (!(in.rgba = read_file(frame, &len)) || len != (size_t)in.fb_w * in.fb_h * 4) {
             fprintf(stderr, "%s: not a %ux%u RGBA frame\n", frame, in.fb_w, in.fb_h);
-            return 2;
+            goto done;
         }
         if (!in.w) { in.x = in.y = 0; in.w = in.fb_w; in.h = in.fb_h; }
     }
     if (model) {
-        if (!(in.model = read_file(model, &len))) { fprintf(stderr, "%s: unreadable\n", model); return 2; }
+        if (!(in.model = read_file(model, &len))) { fprintf(stderr, "%s: unreadable\n", model); goto done; }
         in.model_bytes = (uint32_t)len;
     }
     if (lm) {
-        if (!(in.lm = read_file(lm, &len))) { fprintf(stderr, "%s: unreadable\n", lm); return 2; }
+        if (!(in.lm = read_file(lm, &len))) { fprintf(stderr, "%s: unreadable\n", lm); goto done; }
         in.lm_bytes = (uint32_t)len;
     }
     if (cascade) {
-        if (!(in.cascade = read_file(cascade, &len))) { fprintf(stderr, "%s: unreadable\n", cascade); return 2; }
+        if (!(in.cascade = read_file(cascade, &len))) { fprintf(stderr, "%s: unreadable\n", cascade); goto done; }
         in.cascade_bytes = (uint32_t)len;
     }
     if (spot) {
-        if (!(in.spot = read_file(spot, &len))) { fprintf(stderr, "%s: unreadable\n", spot); return 2; }
+        if (!(in.spot = read_file(spot, &len))) { fprintf(stderr, "%s: unreadable\n", spot); goto done; }
         in.spot_bytes = (uint32_t)len;
     }
-    if (texts && !(in.text = text_buf = read_texts(texts))) { fprintf(stderr, "%s: unreadable\n", texts); return 2; }
-    if (config && !(in.config_text = read_file(config, NULL))) { fprintf(stderr, "%s: unreadable\n", config); return 2; }
+    if (texts && !(in.text = text_buf = read_texts(texts))) { fprintf(stderr, "%s: unreadable\n", texts); goto done; }
+    if (config && !(in.config_text = read_file(config, NULL))) { fprintf(stderr, "%s: unreadable\n", config); goto done; }
     rc = bench_stage(stage, &in, iters, &out);
     if (rc) {
         fprintf(stderr, "%s: failed (%d)\n", stage, rc);
-        return rc == -100 ? usage() : 1;
+        rc = rc == -100 ? usage() : 1;
+        goto done;
     }
     printf("{\"stage\": \"%s\", \"mode\": %u, \"iters\": %u, \"ops\": %" PRIu64 ", \"check\": \"%016" PRIx64 "\"", stage,
            in.mode, iters, out.ops, out.check);
@@ -281,7 +288,10 @@ int main(int argc, char **argv)
         json_string(out.text);
     }
     printf("}\n");
-    /* the inputs read above (LeakSanitizer reads a process's end: #528's ASan run of stage_bench_smoke) */
+    rc = 0;
+done:
+    /* the inputs read above, on every way out (LeakSanitizer reads a process's end: #528's ASan run of
+     * stage_bench_smoke) */
     free((void *)in.rgba);
     free((void *)in.model);
     free((void *)in.lm);
@@ -289,5 +299,5 @@ int main(int argc, char **argv)
     free((void *)in.spot);
     free((void *)in.config_text);
     free(text_buf);
-    return 0;
+    return rc;
 }
