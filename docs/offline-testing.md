@@ -74,14 +74,17 @@ Seven of the suites' tests are soaks (#528): the same cycle many times in one pr
 cycles, with every allocator the code uses on the console counted where the suite stubs it, by pool and
 item (`host/tests/soak_track.h`). Each cycle must end holding exactly what the first one ended with:
 zero net bytes per cycle in every pool. `game_soak` (`test_game_soak.c`) runs the real game worker and
-kernel transport job after job, 16 scenarios (the owner's settings, the other sizes, a setting changed at
+kernel transport job after job, 18 scenarios (the owner's settings, the other sizes, a setting changed at
 every job, the pause, a blank box, cancellations during the capture and the model reads, the game short
 of memory and out of it, the weights refused after the check, the capture ladder, the kernel strip, the
-game left for 6 s, the worker stopped and started), and counts the game's USER, CDRAM and phycont blocks,
+game left for 6 s, the worker stopped and started, a hooked game whose verified site answers eight lines in
+a row after an OCR read, the game suspended with the PS button and resumed during its job), and counts the
+game's USER, CDRAM and phycont blocks,
 the kernel pool's strips, the worker's threads and the kernel's model files, and checks the worker's
 ledger against them. `shell_worker` and `shell_worker_paf` soak a game session (an Auto job, the overlay
-opened, the cursor, a dictionary page, line history, a quiet refresh, the close, the game's exit: the result
-arena, the visit's block, the dictionary files, the ledger, the scratch arena); `shell_anki` mining (the
+opened, the cursor, a dictionary page, line history, a quiet refresh, the close, PS with the overlay open and
+during a job, each resumed, the game's exit: the result arena, the visit's block, the dictionary files, the
+ledger, the scratch arena); `shell_anki` mining (the
 arena, the thread, the ledger and the queue's file descriptors); `shell_history` the history writer, the
 streak and the total (their descriptors); `game_shot` Anki screenshots (a card's, through the kernel strip,
 cancelled, a failed write, a refused file: the shot's block, the kernel strip, the file's descriptor);

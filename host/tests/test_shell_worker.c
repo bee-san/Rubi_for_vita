@@ -9432,9 +9432,23 @@ static void test_overlay_page_needs_its_own_room(void)
  * the dictionaries' files) and the ledger and the control thread's scratch arena watched. One cycle: the game
  * starts, Auto reads its settled screen and looks its first word up with the overlay closed, the overlay opens on it,
  * the cursor moves, a dictionary page turns, line history goes back a line and returns, a settled new screen is
- * refreshed quietly, the overlay closes, Auto reads the next screen, the game exits. Every cycle must end holding
+ * refreshed quietly, the overlay closes, Auto reads the next screen, the overlay opens on it and the game is
+ * suspended (PS: SceShell's LiveArea in front) and resumed, the game is suspended again while Auto's next job runs and
+ * resumed, the game exits. Every cycle must end holding
  * what the first ended with (every item counted, the ledger's pools, the result arena, the scratch arena), and no
  * dictionary file or line-history visit once its game has exited. VJO_SOAK_CYCLES=N runs N cycles (40 by default). */
+/* The game resumed: the kernel's GAME_START with the game in front, then classify_pending's verdict. */
+static void soak_resume(unsigned i)
+{
+    test_now += 2000000;
+    state.game_pid = PS_GAME_PID;
+    control_tick(VJO_EV_GAME_START);
+    TEST_CHECK_(pending_pid == PS_GAME_PID && ov == OV_CLOSED, "cycle %u: the resumed game pending", i);
+    pending_pid = 0;
+    activate(PS_GAME_PID, "PCSG00415", VJO_GAME);
+    control_tick(0);
+    TEST_CHECK_(game_active() && ov == OV_CLOSED && !input_blocked, "cycle %u: the game active again", i);
+}
 static void soak_shell_cycle(unsigned i)
 {
     uint32_t gen;
@@ -9478,6 +9492,25 @@ static void soak_shell_cycle(unsigned i)
     stable_pending = 1;
     auto_prefetch();
     if (job_running) finish_current_job();
+    /* PS with the overlay open, then the resume (#104's path; test_ps_with_the_overlay_open_...) */
+    open_overlay();
+    if (job_running) finish_current_job();
+    TEST_CHECK_(ov == OV_OPEN && g_view.open, "cycle %u: the overlay open before PS", i);
+    state.game_pid = 0;
+    control_tick(VJO_EV_GAME_EXIT);
+    control_tick(0);
+    TEST_CHECK_(ov == OV_CLOSED && !g_view.open && !history && !paged_live, "cycle %u: PS closed the overlay", i);
+    soak_resume(i);
+    /* PS while Auto's job runs: its result comes back for a game no longer in front, then the resume */
+    next_scene(103 + 4 * i);
+    stable_pending = 1;
+    auto_prefetch();
+    TEST_ASSERT_(job_running && ov == OV_CLOSED, "cycle %u: Auto's job after the resume", i);
+    state.game_pid = 0;
+    control_tick(VJO_EV_GAME_EXIT);
+    if (job_running) finish_current_job();
+    control_tick(0);
+    soak_resume(i);
     state.game_pid = 0;
     control_tick(VJO_EV_GAME_EXIT);
     control_tick(0);

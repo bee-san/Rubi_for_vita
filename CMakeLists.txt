@@ -900,7 +900,7 @@ if(VJO_WITH_VOCR)
   # #528 (mem-leak): the same worker and kernel soaked, job after job in one game process, every pool counted
   # (host/tests/soak_track.h): no item may hold more after a scenario's cycles than after its first.
   # VJO_SOAK_CYCLES=N runs N cycles a scenario (a few by default).
-  vjo_suite(game_soak SOURCES host/tests/test_game_soak.c host/tests/hooks_none.c
+  vjo_suite(game_soak SOURCES host/tests/test_game_soak.c
     host/tests/kernel_model_broker_boundary.c core/hook_profile_file.c kernel/buffers.c kernel/capture.c kernel/scene.c
     kernel/ledger.c core/ledger.c INCLUDES host/tests/game_stubs host/tests/vita_stubs
     DEFINES VJO_HOST=1 VJO_TEST_MODEL_BROKER=1 VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}" UNUSED LIBS vjo_vocr)

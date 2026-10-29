@@ -2,13 +2,15 @@
  * transport (kernel/game_ocr.c, capture.c, buffers.c) run OCR job after job in one game process, as on the
  * console, never reset between jobs, with every allocator they use counted by pool and name
  * (host/tests/soak_track.h): the game's USER, CDRAM and phycont blocks, the kernel pool's blocks, the worker's
- * threads and the kernel's file descriptors. Each of the 16 scenarios is a cycle run many times (VJO_SOAK_CYCLES,
+ * threads and the kernel's file descriptors. Each of the 18 scenarios is a cycle run many times (VJO_SOAK_CYCLES,
  * else a few for ctest): the owner's settings (VOCR6.2 Large, the 1000k LM, the spotter, vertical auto, two
  * helpers; #528's config.ini), Normal with its cascade and the 4000k LM and the gate, Small with nothing, a setting
  * changed at every job, the pause, a blank text box, the same page again (the line cache), the Shell cancelling
  * during the capture and during the model reads, the game short of memory (a smaller size) and out of it (refused),
  * the weights refused after the check (#324), the capture's ladder (CDRAM, phycont), the kernel strip, the game
- * left for over 5 s of its running time (the resident blocks go back), and the worker stopped and started. After
+ * left for over 5 s of its running time (the resident blocks go back), the worker stopped and started, a hooked
+ * game (a verified site's eight trusted lines after an OCR read) and the game suspended (PS) and resumed during its
+ * job. After
  * the cycle's first run (which may read the resident models), every item must hold exactly what it held then: zero
  * net bytes per cycle in every pool. The game worker's ledger (g_game_ledger) must agree with the blocks counted
  * here, and the kernel's (g_kernel_ledger) with its strips.
@@ -51,6 +53,7 @@ static uint32_t kd_largest;
 static unsigned refuse_weights;   /* the next weights blocks refused (#324: after a passed check) */
 static unsigned refuse_capture;   /* bits: the capture block refused in 1 USER, 2 CDRAM, 4 phycont (its ladder) */
 static int hook_copy_fails;       /* the display hook cannot write the game's memory: the kernel strip's rung */
+static unsigned capture_takes;    /* VjoGameVocrCapture blocks taken (any pool) */
 typedef struct {
     SceUID uid;
     void *base;
@@ -109,6 +112,59 @@ static int drop_block(Block *b)
     return 0;
 }
 
+/* ---- the game's native hooks (game_ocr/hooks.h's job-time half; host/tests/hooks_none.c's answers but here) ----
+ * Nothing is installed but in the hooked game's scenario: there one Rubi verified table site (stream HOOK_SITE) holds
+ * the game's current line, as vjo_hooks_start installs it in such a game (host/tests/test_game_hooks.c has the
+ * engine's every case); while a game thread writes it (hook_busy) its snapshot fails and the job reads the screen.
+ * The engine itself allocates nothing (game_ocr/hooks.c, core/hook_*.c: static state; its taiHEN hooks are taken at
+ * the worker's start and released at its stop), so the soak counts what the worker takes around it. */
+#define HOOK_SITE 2u
+static int hooks_on, hook_busy;
+static uint32_t hook_seq;
+static const char *hook_text;
+static unsigned hook_snaps;
+void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
+{
+    *mode = hooks_on ? VJO_TEXT_SOURCE_AUTO : 0u;
+    *installed = hooks_on ? 1u << 16 | 1u : 0u;
+    *refused = 0;
+}
+int vjo_hooks_verified(uint32_t id) { return hooks_on && id == HOOK_SITE; }
+int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
+{
+    if (!hooks_on || id != HOOK_SITE || hook_busy || !hook_text) return 0;
+    hook_snaps++;
+    memset(out, 0, sizeof(*out));
+    out->id = id;
+    out->kind = VJO_HOOK_KIND_SITE;
+    out->seq = hook_seq;
+    out->hits = 1;
+    out->encoding = VJO_HOOK_ENC_UTF8;
+    out->n = (uint32_t)strlen(hook_text) < VJO_HOOK_RAW_BYTES ? (uint32_t)strlen(hook_text) : VJO_HOOK_RAW_BYTES;
+    memcpy(out->raw, &hook_text, sizeof(hook_text)); /* the fake's raw bytes: the text's address */
+    return 1;
+}
+uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *bytes)
+{
+    if (!hooks_on || id != HOOK_SITE || !hook_text) return 0;
+    *key = 0;
+    *kind = VJO_HOOK_KIND_SITE;
+    *bytes = (uint32_t)strlen(hook_text);
+    return hook_seq;
+}
+void vjo_hooks_keep(uint32_t id, uint32_t key) { (void)id; (void)key; }
+void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced) { *dropped = *replaced = 0; }
+size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
+{
+    const char *t;
+    size_t n;
+    memcpy(&t, s->raw, sizeof(t));
+    n = strlen(t) < cap ? strlen(t) : cap - 1u;
+    memcpy(out, t, n);
+    out[n] = '\0';
+    return n;
+}
+
 /* the game */
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 {
@@ -132,6 +188,7 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned n, void *opt)
     if (*used_of(type) + n > free_of(type)) return NO_PAGE;
     SceUID uid = add_block(name, n, type, 0);
     if (uid >= 0) *used_of(type) += n;
+    if (uid >= 0 && !strcmp(name, "VjoGameVocrCapture")) capture_takes++;
     return uid;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
@@ -224,18 +281,21 @@ uint64_t ksceKernelGetSystemTimeWide(void) { return clock_us; }
 int ksceKernelSetEventFlag(SceUID uid, unsigned bits) { (void)uid; (void)bits; return 0; }
 int ksceKernelClearEventFlag(SceUID uid, unsigned bits) { (void)uid; (void)bits; return 0; }
 int ksceKernelDelayThread(SceUInt us) { clock_us += us; return 0; }
-/* the Shell cancels the job at this display call of it (0: never) */
-static unsigned cancel_at_frame, frames_this_job;
+/* the Shell cancels the job at this display call of it (0: never); the game is suspended and resumed at this one */
+static unsigned cancel_at_frame, suspend_at_frame, frames_this_job;
+static void suspend_and_resume(void);
 int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *out, SceUInt *timeout)
 {
     (void)uid; (void)wait; (void)out;
     if (bits == MEV_ROWS) { /* the game shows its next frame: the display hook runs in its thread */
-        if (cancel_at_frame && ++frames_this_job == cancel_at_frame) {
+        ++frames_this_job;
+        if (cancel_at_frame && frames_this_job == cancel_at_frame) {
             SceUID saved = caller;
             caller = SHELL_PID;
             TEST_CHECK(vjoOcrCancel(job_seq) == 0);
             caller = saved;
         }
+        if (suspend_at_frame && frames_this_job == suspend_at_frame) suspend_and_resume();
         in_hook = 1;
         game_ocr_rows_hook(GAME_PID, (uintptr_t)frame, FB_W, 0x00000000u, FB_W, FB_H);
         in_hook = 0;
@@ -301,17 +361,20 @@ SceOff ksceIoLseek(SceUID fd, SceOff off, int whence)
     fseek(files[i], (long)off, whence);
     return (SceOff)ftell(files[i]);
 }
-static unsigned cancel_at_read, reads_this_job; /* the Shell cancels the job at this model read of it (0: never) */
+/* the Shell cancels the job at this model read of it (0: never); the game is suspended and resumed at this one */
+static unsigned cancel_at_read, suspend_at_read, reads_this_job;
 int ksceIoPread(SceUID fd, void *out, SceSize n, SceOff off)
 {
     int i = fd_index(fd);
     if (i < 0) return -1;
-    if (cancel_at_read && ++reads_this_job == cancel_at_read) {
+    ++reads_this_job;
+    if (cancel_at_read && reads_this_job == cancel_at_read) {
         SceUID saved = caller;
         caller = SHELL_PID;
         TEST_CHECK(vjoOcrCancel(job_seq) == 0);
         caller = saved;
     }
+    if (suspend_at_read && reads_this_job == suspend_at_read) suspend_and_resume();
     fseek(files[i], (long)off, SEEK_SET);
     return (int)fread(out, 1, n, files[i]);
 }
@@ -483,6 +546,7 @@ static VjoGameOcrRequest shell_request(unsigned tier, unsigned lm, unsigned casc
 /* One job, as the console runs it: the Shell submits, the worker takes, runs and completes it, the Shell reads the
  * result. The worker's state carries over from job to job. */
 static VjoGameOcrResult job_out;
+static unsigned shell_cancelled; /* jobs whose result the Shell read as cancelled */
 static int job(VjoGameOcrRequest request)
 {
     VjoGameOcrRequest taken;
@@ -512,6 +576,7 @@ static int job(VjoGameOcrRequest request)
         VjoGameOcrResult shell;
         int r = vjoOcrRead(job_seq, &shell);
         TEST_CHECK_(r == 0 || r == VJO_ERR_CANCELLED, "read: %d", r);
+        shell_cancelled += r == VJO_ERR_CANCELLED;
     }
     caller = GAME_PID;
     /* between jobs: no job block, no helper, no file, no kernel strip */
@@ -715,6 +780,112 @@ static void stop_start_job(unsigned i)
     TEST_CHECK(vjo_game_ocr_worker_start() == VJO_OK);
 }
 
+/* The game's frames between jobs, as the kernel samples them: a region signature every VJO_CHECK_EVERY_FRAMES frames
+ * (kernel/display.c on_frame) and the scene tracker's update with it (kernel/main.c change_detection), n frames of
+ * 1/60 s. The tracker then knows the region's screen, which a trusted answer's capture without pixels needs. */
+static void frames_shown(unsigned n)
+{
+    SceneSig sig;
+    for (unsigned k = 1; k <= n; k++) {
+        clock_us += 16667;
+        if (!g.game_active || k % VJO_CHECK_EVERY_FRAMES) continue;
+        if (region_sig_hook((uintptr_t)frame, FB_W, 0x00000000u, FB_W, FB_H, &sig)) continue;
+        VJO_LOCK();
+        (void)scene_update(&g.tracker, &sig, (int64_t)clock_us, 0, 0);
+        VJO_UNLOCK();
+    }
+}
+/* The Shell sets the region again (kernel/main.c reset_change_detection): a region without a screen yet. */
+static void region_set_again(void)
+{
+    VJO_LOCK();
+    scene_reset(&g.tracker);
+    g.hook_scene = 0;
+    g.seen_sig_seq = g.hook_sig_seq;
+    VJO_UNLOCK();
+}
+/* A hooked game: a Rubi verified table site holds the game's line (the config's trusted hooks, in SPEED_BASE). One
+ * cycle: the region set again, and the site busy at the snapshot (a game thread writing it), so OCR reads the screen
+ * with the owner's settings and reads or keeps the resident models; then TRUST_DROP_ANSWERS (8) new lines answered by
+ * the site alone, without OCR: the first while the region has no screen yet (its first pass, one strip's block,
+ * VjoGameVocrCapture), the others once the game has shown its frames (the kernel publishes the line without pixels,
+ * API 49: no block). After the 8th the resident blocks go back to the game. */
+static void hooked_job(unsigned i)
+{
+    static const char *const lines[] = {"「明日の朝、駅前の公園でもう一度会おうよ」",
+                                        "「そんなこと急に言われても、困るんだけどな」",
+                                        "「だったら今夜のうちに準備しておけばいいじゃない」"};
+    unsigned snaps0, takes0;
+    hooks_on = 1;
+    region_set_again();
+    hook_busy = 1;
+    hook_text = lines[i % 3u];
+    hook_seq++;
+    owner_job(i);
+    TEST_CHECK_(!job_out.text_from && job_out.hook_installed, "cycle %u: the busy site's job read the screen", i);
+    hook_busy = 0;
+    for (unsigned k = 1; k <= TRUST_DROP_ANSWERS; k++) {
+        make_frame(page_no++);
+        if (k > 1) frames_shown(4u * VJO_CHECK_EVERY_FRAMES); /* the new line's screen, settled */
+        hook_text = lines[(i + k) % 3u];
+        hook_seq++;
+        snaps0 = hook_snaps;
+        takes0 = capture_takes;
+        TEST_CHECK(job(shell_request(3, 2, 2000, SPEED_BASE | SPEED_SPOT | SPEED_VAUTO)) == VJO_OK);
+        TEST_CHECK_(job_out.text_from == HOOK_SITE && !strcmp(job_out.text, hook_text) && hook_snaps > snaps0 &&
+                        (job_out.hook_flags & VJO_HOOK_R_NO_OCR),
+                    "cycle %u, line %u: the site's line without OCR (from %u, flags 0x%x)", i, k,
+                    (unsigned)job_out.text_from, (unsigned)job_out.hook_flags);
+        TEST_CHECK_(capture_takes - takes0 == (k == 1 ? 1u : 0u), "cycle %u, line %u: %u capture blocks", i, k,
+                    capture_takes - takes0);
+    }
+    TEST_CHECK_(weights_blk.uid < 0 && lm_blk.uid < 0 && spot_blk.uid < 0,
+                "cycle %u: the resident blocks went back after %u trusted answers", i, TRUST_DROP_ANSWERS);
+    hooks_on = 0;
+}
+/* The game suspended (the PS button: SceShell's LiveArea in front) and resumed during its job: the kernel's foreground
+ * events as kernel/lifecycle.c applies them (each moves the epoch on; the resumed game is active again at the Shell's
+ * verdict, vjoSetGameActive). The game's process is frozen meanwhile, so its worker sees both at its next call. */
+static void kernel_foreground(SceUID pid, int active)
+{
+    VJO_LOCK();
+    __atomic_add_fetch(&g.ocr_epoch, 1, __ATOMIC_RELEASE);
+    g.game_pid = pid;
+    g.game_active = active;
+    game_ocr_foreground_changed_locked();
+    VJO_UNLOCK();
+}
+static unsigned suspensions, suspended_cancelled;
+static void suspend_and_resume(void)
+{
+    SceUID saved = caller;
+    caller = 0;
+    kernel_foreground(0, 0);                /* PROCEV_SUSPEND of the game in front */
+    kernel_foreground(GAME_PID, 0);         /* PROCEV_RESUME: in front, not yet the Shell's verdict */
+    kernel_foreground(GAME_PID, VJO_GAME);  /* the verdict */
+    caller = saved;
+    suspensions++;
+}
+/* at the job's 1st to 6th display call, or (the models to be read again) its 1st to 4th model read (without the
+ * model files no job reads one: a display call then too); the job ends cancelled and gives its blocks back, then a job
+ * of the owner's reads */
+static void suspended_job(unsigned i)
+{
+    unsigned before = suspensions, cancelled = shell_cancelled;
+    make_frame(page_no++);
+    if ((i & 1u) || !models_ok) {
+        suspend_at_frame = 1u + i % 6u;
+    } else {
+        TEST_CHECK(!drop_resident());
+        suspend_at_read = 1u + i % 4u;
+    }
+    (void)job(shell_request(3, 2, 2000, SPEED_BASE | SPEED_SPOT | SPEED_VAUTO));
+    TEST_CHECK_(suspensions == before + 1u, "cycle %u: the game was suspended during its job", i);
+    suspended_cancelled += shell_cancelled - cancelled;
+    suspend_at_frame = suspend_at_read = 0;
+    owner_job(i);
+}
+
 static const Scenario scenarios[] = {
     {"owner: Large, LM 1000k, spotter, vertical auto", owner_job},
     {"Normal, its cascade, LM 4000k, the gate", normal_cascade_job},
@@ -732,6 +903,8 @@ static const Scenario scenarios[] = {
     {"weights refused after the check (#324)", weights_refused_job},
     {"left for 6 s (the resident blocks go back)", left_for_long_job},
     {"the worker stopped and started", stop_start_job},
+    {"a hooked game: OCR, then 8 trusted answers", hooked_job},
+    {"the game suspended (PS) and resumed during its job", suspended_job},
 };
 
 static void the_game_process_holds_no_more_after_each_cycle(void)
@@ -759,6 +932,9 @@ static void the_game_process_holds_no_more_after_each_cycle(void)
         ledgers_agree(scenarios[s].name);
         soak_snap(&b);
         grew += soak_growth("game", scenarios[s].name, &a, &b, cycles);
+        if (scenarios[s].cycle == suspended_job)
+            printf("soak game: %u jobs suspended, %u of them read as cancelled by the Shell\n", suspensions,
+                   suspended_cancelled);
         if (models_ok && scenarios[s].cycle != cancelled_job && scenarios[s].cycle != blank_job &&
             scenarios[s].cycle != no_memory_job)
             TEST_CHECK_(recognized > 0, "%s: no job recognized a line", scenarios[s].name);
