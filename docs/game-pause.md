@@ -231,6 +231,11 @@ No kernel or system thread is ever paused. No game thread is suspended, and noth
   display call copies it. That is a race of a few ms against the strips' 150 ms or more today (inferred).
 - **PSP games.** They read exactly as with the setting off: the worker never asks for the pause there (above).
 - **The frame block.** It takes 4-512 KiB of the game's memory per job (below), only when it fits.
+- **The frame block in a game that shrank since its last read.** When the memory check plans with a figure the
+  console showed earlier (the whole-MiB reports, #528), the frame block keeps the 1 MiB reserve but can take the room
+  of the model's weights read after it, so the read fails (`not enough memory`) where it would read without the pause:
+  3 of 765 levels on the host model, all at 2 MiB, with the weights still to read (audit-mem-game-4 N2). The pause is
+  off by default; a game that tight should read without it.
 
 ## Memory
 

@@ -674,6 +674,7 @@ typedef char vjo_cascade_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDG
 static const VjoVocrModel *job_model;
 static const VjoVocrLm *job_lm;
 static int64_t free_user_after_reserve(void);
+static int carried_short(void);
 /* A tall-line block of at most this many bytes (a column's bound, the rotation buffer's: every block a job could ask
  * for before #379) is taken from the ladder as before; a larger one keeps the job's reserve (line_buffer). The host
  * tests lower it: their frames' rectangles are smaller. */
@@ -717,6 +718,18 @@ static void *line_buffer(void *ud, size_t bytes)
     if (line_uid < 0) {
         line_uid = leaked;
         return NULL;
+    }
+    /* audit-mem-game-4 N1: a block the job's check never counted, taken after the workspace's re-check: with a carried
+     * figure the game may have no room beside it, so a USER block keeps the reserve as the blocks after that check do
+     * (carried_short); short of it, it goes back and the ladder's other rungs are tried */
+    if (mem == VJO_GAME_OCR_MEM_USER && carried_short()) {
+        if (game_memblock_free(GL_LINE, VJO_GITEM_LINE, line_uid, held) < 0) { line_bytes_held = held; return NULL; }
+        line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, LADDER_ALL & ~LADDER_USER,
+                                       &base, &leaked, &held, &mem);
+        if (line_uid < 0) {
+            line_uid = leaked;
+            return NULL;
+        }
     }
     line_bytes_held = held;
     line_base = base;

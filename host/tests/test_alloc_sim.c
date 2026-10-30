@@ -877,11 +877,53 @@ static int grow_case(int64_t f, int64_t d, uint32_t speed, int64_t *frames, int6
     return 1;
 }
 
+/* audit-mem-game-4 N1: the tall-line block (line_buffer, at most VJO_GAME_LINE_UNCHECKED: 57,344 B on the Vita) is
+ * taken after the workspace's re-check and no check counted it; with a carried figure a USER one keeps the reserve
+ * (carried_short) or goes back for the ladder's other rungs, else the band is left out and counted (tall_skipped). The
+ * three cases are the audit's grid's (a CLANNAD box with one band of 76-px strokes, taller than its 64-row strip; the
+ * game's CDRAM and phycont taken) that left the game 20,480 B under the reserve on main 0aaea0ac. */
+static void the_tall_lines_block_keeps_the_reserve_beside_a_carried_figure(void)
+{
+    static const struct { int64_t f, d; } cases[] = {{4194304, 262144}, {5242880, 262144}, {6291456, 589824}};
+    unsigned run = 0, under = 0, tall = 0;
+    int64_t least = INT64_MAX;
+    if (!have_models()) { TEST_MSG("release weights absent (VJO_VOCR_MODEL_DIR): skipped"); return; }
+    make_frame();
+    box(20, 380, 940, 536, 0xFF221812u);
+    glyph_line(60, 430, 520, 76, 0xFFF0F0F0u); /* one band of 76-px strokes: taller than the box's 64-row strip */
+    kd_largest = KD_GRANTED_74; refuse = 0; hook_copy_fails = 0; spinner = 0;
+    cdram_free = phycont_free = 0; /* every block in the game's USER memory */
+    model_stacks = 1;
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        int64_t frames = INT64_MAX, stack = INT64_MAX;
+        GameJob b;
+        if (!TEST_CHECK(grow_case(cases[i].f, cases[i].d, 0u, &frames, &stack, &b))) continue;
+        run++;
+        tall += host_last_stats.tall != 0 || host_last_stats.tall_skipped != 0;
+        fprintf(stderr, "tall grows: f %lld d %lld: 2nd job rc %d, tall %u (%zu B), skipped %u; least in its frames %lld B, "
+                        "beside a stack %lld B\n", (long long)cases[i].f, (long long)cases[i].d, b.rc, host_last_stats.tall,
+                host_last_stats.line_bytes, host_last_stats.tall_skipped, (long long)(frames == INT64_MAX ? -1 : frames),
+                (long long)(stack == INT64_MAX ? -1 : stack));
+        if (frames < VJO_GAME_RESERVE || stack < VJO_GAME_RESERVE) {
+            under++;
+            if (frames < least) least = frames;
+            if (stack < least) least = stack;
+        }
+        TEST_CHECK_(b.rc == 0, "f %lld d %lld: rc %d", (long long)cases[i].f, (long long)cases[i].d, b.rc);
+    }
+    TEST_CHECK_(run == 3 && tall == 3, "%u cases ran, %u met the tall line", run, tall);
+    TEST_CHECK_(!under, "%u of %u cases left the game under the reserve, least %lld B", under, run, (long long)least);
+    model_stacks = 0; sim_speed = 0; report_mib = 0;
+    cdram_free = 128 << 20; phycont_free = 16 << 20;
+    make_frame();
+    game_sim_reset();
+}
+
 /* The cases are the audit's grid's (GAME_SIM_GROW=1 below) that left the game under the reserve on main 6cf932fb: a
  * helper's stack (1,032,192 B) and the pause's frame block (942,080 and 1,007,616 B); and two that do so without the
  * workspace's re-check, with the re-check keeping game_room or with carried always 0 (946,176 and 815,104 B). With
  * GAME_SIM_GROW=1 the whole grid runs instead: f from 2 to 8 MiB in 256 KiB steps, d from 16 KiB to 1 MiB in 16 KiB
- * steps, with and without the pause (2,502 cases, some minutes). */
+ * steps, with and without the pause (2,652 cases, some minutes). */
 static void game_grows_between_jobs(void)
 {
     static const struct { int64_t f, d; int pause; } cases[] = {
@@ -1133,7 +1175,9 @@ static void spot_overlap_reads_the_same_text(void)
 }
 
 TEST_LIST = {
-    {"owner scenario", owner_scenario_game}, /* #528: tools/owner_scenario.py runs it by this name */
+    {"owner scenario", owner_scenario_game},
+    {"the tall line's block keeps the reserve beside a carried figure (audit-mem-game-4)",
+     the_tall_lines_block_keeps_the_reserve_beside_a_carried_figure}, /* #528: tools/owner_scenario.py runs it by this name */
     {"#528 the spotter's part over the job's extras reads the same text with less workspace", spot_overlap_reads_the_same_text},
     {"#528 the game's memory swept: every tier, the LM and the spotter, exact and in whole MiB", game_memory_sweep},
     {"#528 the game grows by less than a MiB between two jobs: every block leaves it the reserve", game_grows_between_jobs},
