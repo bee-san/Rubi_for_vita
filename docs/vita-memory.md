@@ -428,9 +428,11 @@ Facts:
   gives it back, the game had less than the reserve, by less than a MiB: at least the whole MiB above
   the block less the block, which for the 1000k LM's 983,040 B is 65,536 B, for Small's weights
   (823,296 B) 225,280 B, for the 2000k LM's 1,974,272 B 122,880 B and for Large's (2,478,080 B)
-  667,648 B; this happens only when the game took memory after the job's check; a game thread can preempt the
+  667,648 B; this happens only when the job's plan was more than the game had: the game took memory after the
+  job's check, or before it while the check planned with a carried figure; a game thread can preempt the
   worker in between [inference: the worker runs at the lowest user priority; unmeasured]). The blocks a
-  job takes after its workspace (a helper's stack, the pause's frame block, the gate's) are checked the
+  job takes after its workspace (a helper's stack, the pause's frame block, the gate's, and a line taller than a strip, whose block of at most
+  57,344 B takes CDRAM or phycont instead, else the band is left out and counted) are checked the
   same way when the check planned with a carried figure (audit-mem-game-1 F1). Before #528 the second figure refused
   weights that fitted, and a job beside its resident weights could be refused where the job before
   it read (host model: `host/tests/test_alloc_sim.c`, "#528 the game's memory swept"). Weights the

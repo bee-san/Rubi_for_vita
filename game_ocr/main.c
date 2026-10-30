@@ -692,6 +692,9 @@ typedef char vjo_line_unchecked_check[VJO_GAME_LINE_UNCHECKED <= VJO_VOCR_ROTATE
  * own, as before #379; such a band of rows is left out and counted (tall_skipped), so a job of rows keeps no LM's or
  * cascade's room for it: those blocks keep the reserve themselves, and their refusal only costs the LM's or the
  * cascade's reading. */
+/* The rungs line_buffer may still ask in this job (audit-mem-lead-3 F1): LADDER_ALL; once a USER block went back
+ * under a carried figure, the others; 0 once they refused too, so each later tall band costs no step and no dip. */
+static unsigned line_ladder = LADDER_ALL;
 static void *line_buffer(void *ud, size_t bytes)
 {
     void *base = NULL;
@@ -713,21 +716,26 @@ static void *line_buffer(void *ud, size_t bytes)
             to_come += PAGE_ROUND(job_lm->bytes);
         if (free_user_after_reserve() < to_come) return NULL;
     }
-    line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, LADDER_ALL,
+    if (!line_ladder) return NULL;
+    line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, line_ladder,
                                    &base, &leaked, &held, &mem);
     if (line_uid < 0) {
         line_uid = leaked;
+        if (line_ladder != LADDER_ALL) line_ladder = 0;
         return NULL;
     }
     /* audit-mem-game-4 N1: a block the job's check never counted, taken after the workspace's re-check: with a carried
      * figure the game may have no room beside it, so a USER block keeps the reserve as the blocks after that check do
-     * (carried_short); short of it, it goes back and the ladder's other rungs are tried */
+     * (carried_short); short of it, it goes back and the ladder's other rungs are tried, for this band and the job's
+     * later ones (line_ladder) */
     if (mem == VJO_GAME_OCR_MEM_USER && carried_short()) {
         if (game_memblock_free(GL_LINE, VJO_GITEM_LINE, line_uid, held) < 0) { line_bytes_held = held; return NULL; }
-        line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, LADDER_ALL & ~LADDER_USER,
+        line_ladder = LADDER_ALL & ~LADDER_USER;
+        line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, line_ladder,
                                        &base, &leaked, &held, &mem);
         if (line_uid < 0) {
             line_uid = leaked;
+            line_ladder = 0;
             return NULL;
         }
     }
@@ -922,8 +930,8 @@ static uint32_t resident_user(void)
  * a game that took memory meanwhile is never left less once the worker has given back the block that took it. */
 static int64_t game_room;
 /* audit-mem-game-1 F1: the job's check planned with more than the figure it read (check_free), so each block it takes
- * after the workspace's re-check (the pause's frame block, a helper's stack, the gate's block) is checked once taken,
- * exactly (whole-MiB figure and reserve), and goes back short of the reserve */
+ * after the workspace's re-check (the pause's frame block, a helper's stack, the gate's block, a tall line's) is checked
+ * once taken, exactly (whole-MiB figure and reserve), and goes back short of the reserve */
 static int carried;
 static __attribute__((noinline)) int carried_short(void) { return carried && free_user_after_reserve() < 0; }
 static int32_t check_free(void)
@@ -2412,6 +2420,7 @@ retry_smaller:
      * is more than the figure read now, so the workspace's block is checked after it is taken (below) */
     out->free_user = check_free();
     carried = out->free_user > free_user();
+    line_ladder = LADDER_ALL; /* every rung again for this job's tall lines (F1) */
     for (unsigned i = try_from; i < n; i++) {
         casc = cascade_of(&cand[i], r, top, casc_us);
         fits = check_with_lm(out, cand[i].m, cand[i].bytes, capture_bytes, lm_max, cand[i].tier, &casc, &lm);

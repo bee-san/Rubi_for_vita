@@ -106,9 +106,11 @@ ae=$BUILD/vjo-apkg-tests
 # VJO_BUDGET_SHELL_ANKI_STACK: the Anki job's thread stack and its TLS, from the budget header
 anki_stack=$(( $(grep -E '^#define VJO_STACK_SHELL_ANKI ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u)
                + $(grep -E '^#define VJO_LEDGER_TLS ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u) ))
-aq=$BUILD/vjo-app-queue-tests
-if [ -x "$ab" ] && [ -x "$ae" ] && [ -x "$aq" ] && "$ab" > "$log/anki-build.log" 2>&1 \
-   && "$PY" host/tests/test_anki_restart.py "$ab" "$ae" "$aq" > "$log/anki-restart.log" 2>&1; then
+# the restart test as ctest registers it (CMakeLists.txt anki_restart: its binaries are listed there only, so the two
+# cannot drift apart as they did from #391 to #576)
+if [ -x "$ab" ] && [ -x "$ae" ] && "$ab" > "$log/anki-build.log" 2>&1 \
+   && ctest --test-dir "$BUILD" -R '^anki_restart$' -V > "$log/anki-restart.log" 2>&1 \
+   && grep -q 'Ran [0-9]* tests' "$log/anki-restart.log"; then
   am=$("$PY" tools/shell_budget_model.py --anki --json 2>/dev/null | "$PY" -c '
 import json, sys
 r = json.load(sys.stdin)
