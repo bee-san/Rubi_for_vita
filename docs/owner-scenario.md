@@ -126,8 +126,9 @@ Normal's at 5,922,816 B (114,688 and 57,344 B less, the same text: host/tests/te
 more at the textbox, the host's spotter block, and 65,536 B at the full screen, where its part also takes a workspace
 page beside the LM's extras; it finds the frame's three lines, where GRAD's full-screen job found a fourth box,
 928 × 26, across the text box). Small and Normal run the spotter and both helpers at 88 MiB too: the table's `spot`
-and `helpers` read the job's step log, whose 20 entries (`VJO_GAME_OCR_STEPS`) a cold job with the LM and the cascade
-fills before those steps, so they print 0 there [measured: the same runs with a 48-entry log].
+and `helpers` printed 0 for them until #578, because they read the job's step log, whose 20 entries
+(`VJO_GAME_OCR_STEPS`) a cold job with the LM and the cascade fills before those steps [measured: the same runs with a
+48-entry log]; since #578 they come from the job's whole stats and print 1 and 2.
 
 With exact figures (the model before #528's whole-MiB reports) 3 MiB read Normal with the 500k LM, 2.5 MiB Normal
 and 2 MiB Small: on a console those games got a smaller model, or none (main `b024c93b`'s table).

@@ -378,10 +378,13 @@ Rules:
 
 - No OCR workspace, model weights, dictionary pages, screenshots or JPEG work in SceShell. Ever
   [expert].
-- The permanent footprint (module pages + stacks + TLS) is the only thing we hold there, and it
-  must shrink, not grow: every kilobyte of `.bss` is a page SceShell's own threads cannot get.
-  Current: 540,672 B [measured]; target: the UI's code and a few KiB of state, with page-sized
-  buffers allocated only while a page is open and freed when it closes.
+- The permanent footprint (module pages + stacks + TLS) must shrink, not grow: every kilobyte of
+  `.bss` is a page SceShell's own threads cannot get. Current: 196,608 B in the normal build and
+  208,896 B in the debug build [measured: `tools/check_memory_ledger.py`, main `14a1a562`; 540,672 B
+  at API 16]. Beside it Rubi holds 28,672 B of SceShell's PAF heap from the Shell's start: the Paf
+  plugin and its RCO (8,192 B [estimate]) and, since #528, the overlay's 20 KiB text block (below).
+  Target: the UI's code and a few KiB of state, with page-sized buffers allocated only while a page
+  is open and freed when it closes.
 - No `sceKernelAllocMemBlock` from the Shell plugin after boot. The one block the overlay needs to
   show anything at all, its 20 KiB text block, is taken from the PAF heap as the Shell starts and
   kept (#528: taken per open, another plugin's buffer had it refused 34 times); the page itself, about
