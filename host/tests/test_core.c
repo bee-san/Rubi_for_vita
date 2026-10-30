@@ -158,15 +158,19 @@ static void test_json(void)
 /* #528 (Maudit-mem-anki-queue-3-6): strict jsmn takes an object's string without a colon ({"a" "b"}) as one of its
  * members, so the object's size is more than its pairs, and vjo_json_obj_get, walking that size in pairs, read past
  * the token array for a key the object does not have (ASan: a heap-buffer-overflow after the tokens of the audit's
- * {"version" "4","x":1}). Here each object's tokens end where a page no read may touch begins, and every key of every
- * object in it is looked up: each lookup stays within the tokens, and gives -1 or a token of the object (at most
- * the token count, which every accessor takes as none). The Rubi app's export reads such records (a hand edit). */
+ * {"version" "4","x":1}). Here the tokens end where a page no read may touch begins, and every key of every object in
+ * them is looked up: each lookup stays within the tokens, and gives -1 or a token of the object asked about (a nested
+ * one's lookup never a token after it: audit-mem-anki-followup-1). The Rubi app's export reads such records (a hand
+ * edit). */
 static void test_json_object_lookups_stay_in_the_tokens(void)
 {
     static const char *const objects[] = {
         "{\"version\" \"4\",\"x\":1}", /* the audit's record */
         "{\"a\" \"b\"}", "{\"a\" \"b\" \"c\" \"d\"}", "{\"x\":1,\"a\"}", "{\"a\" \"version\":5}", "{\"x\":\"a\" \"b\"}",
         "{\"more\":[{\"dictionary\" \"d\",\"meanings\":[]},{\"a\" \"b\"}],\"time\" \"1\"}",
+        "{\"o\":{\"x\":1,\"time\"},\"y\":2}", "[{\"q\" \"r\" \"s\" \"t\"},{\"dictionary\":\"d\",\"meanings\":[\"m\"]}]",
+        "{\"a\" \"b\"}\"version\" 9\n", /* (a nested object's last key without a colon, its members past it; after the root) */
+        "{\"more\":{\"x\":1},\"time\":2}", /* (well formed: a key of the outer object right after a nested one) */
         "{\"version\":4,\"spelling\":\"x\",\"more\":[{\"dictionary\":\"d\"}]}", /* (well formed: the same as before) */
     };
     static const char *const keys[] = {"version", "x", "a", "b", "c", "d", "time", "more", "dictionary", "meanings",
@@ -188,9 +192,9 @@ static void test_json_object_lookups_stay_in_the_tokens(void)
         TEST_ASSERT(vjo_json_parse(&edge, js, strlen(js), &j) == 0 && (uint8_t *)(j.t + j.n) == map + page);
         for (int obj = 0; obj < j.n; obj++)
             for (unsigned k = 0; j.t[obj].type == JSMN_OBJECT && k < sizeof(keys) / sizeof(keys[0]); k++) {
-                int v = vjo_json_obj_get(&j, obj, keys[k]);
-                TEST_CHECK_(v == -1 || (v > obj && v <= j.n), "%s, object %d, \"%s\": %d of %d tokens", js, obj,
-                            keys[k], v, j.n);
+                int v = vjo_json_obj_get(&j, obj, keys[k]), end = vjo_json_skip(&j, obj);
+                TEST_CHECK_(v == -1 || (v > obj && v < end), "%s, object %d (tokens %d-%d), \"%s\": %d of %d tokens", js,
+                            obj, obj, end - 1, keys[k], v, j.n);
             }
         if (o == 0) { /* the audit's record: no "time", and "x" is 1 */
             long x = 0;
@@ -1284,7 +1288,7 @@ static void test_regions(void)
 static void test_styled(void)
 {
     VjoDictResult r;
-    VjoEntryList l;
+    VjoEntryList l = {0}; /* (more_omitted is the caller's, not vjo_entries_build's: read by vjo_styled_entry) */
     VjoStyled st;
     uint32_t a, n;
     static const TestWord words[] = {{"猫", "ねこ", 1500, {"cat <pet>", "A&B"}}, {"好き", "すき", 900, {"liked"}}};
@@ -1469,7 +1473,7 @@ static const char *styled_utf8(const VjoStyled *st, uint32_t from, char *out, si
 static void test_styled_kanji_lines_and_fitting(void)
 {
     VjoDictResult r;
-    VjoEntryList l;
+    VjoEntryList l = {0}; /* (as test_styled's) */
     VjoStyled st;
     char buf[4096];
     static char long_def[2048], summary[200], text[4096];

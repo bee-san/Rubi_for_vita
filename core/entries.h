@@ -25,7 +25,8 @@ typedef struct {
      * (vjo_styled_entry); NULL / 0 otherwise. */
     const VjoVocab **more;
     int n_more;
-    int more_omitted;       /* fixed arena/result limits: ask for a specific reading */
+    int more_omitted;       /* fixed arena/result limits: ask for a specific reading (the caller's: vjo_entries_build
+                             * leaves it as it is) */
 } VjoEntryList;
 
 /* `filtered` is the non-Japanese-filtered OCR text (before newline removal);

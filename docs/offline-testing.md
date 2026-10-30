@@ -184,6 +184,7 @@ hooks' are not listed here):
 | suite | cases | what the ARM build adds over x86_64 |
 |---|---|---|
 | boot_guard | 11 | 32-bit `uint32_t`/`int` arithmetic of the record, byte-identical record text |
+| core | 48 | the JSON helpers on 32-bit tokens (`vjo_json_obj_get`'s walk, with a page no read may touch after the tokens), the entries and styled text, the scene and the settings parser, with an unsigned `char`; in one process, as acutest runs under qemu (#528: `test_styled` read a field of a stack `VjoEntryList` it never set, which only the A9's stack made nonzero) |
 | ledger | 2 | `__sync` atomics compile to LDREX/STREX; 32-bit counters |
 | fbgrey | 4 | `core/fbgrey.h`'s word-at-a-time grey (two multiplies a pixel, the A1B5G5R5 expansion folded into the weights) against the per-channel code it replaced, for every R, G, B, alpha pattern and A1B5G5R5 value: its carries and wraps in 32-bit arithmetic |
 | kernel_capture | 6 | the job's crop of the region (a box, a small frame, the whole frame, the 32 px minimum); the OCR grey rows in every pixel format; a shot's colour rows (API 23) in every format, into the worker's memory and a kernel strip; the first pass's region signature in every format, strip height and 400 random regions (the A1B5G5R5 one-pass rows never skip a sampled row); every box the region selector can save is cropped as drawn. API 24 removed the full-frame capture's tests with it |

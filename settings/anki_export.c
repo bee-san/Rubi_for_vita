@@ -1511,20 +1511,56 @@ enum {
     ARCHIVED_SAME,        /* the queued record's bytes (an export a power cut stopped in its rename can leave both
                            * names to one file's clusters) */
 };
-/* 1 when a record that read_card cannot read is a newer build's (a version this build does not know), not a damaged
- * one. In the room read_card's check gave (its own work given back first), so a refused parse is no record. A version
- * of 10 digits or more, which vjo_json_int refuses (its 9-digit stop), is newer too (#528's audit 3, -4). */
+/* 1 when the n bytes at s begin with digits that read above this build's version: a version this build does not know,
+ * of any length (#528's audit 3, -4: so 1234567890 too, which vjo_json_int refuses; 00000000004 is 4). */
+static int newer_version(const char *s, size_t n)
+{
+    unsigned v = 0;
+    size_t i = 0;
+    for (; i < n && s[i] >= '0' && s[i] <= '9'; i++)
+        if (v <= VJO_QUEUE_VERSION) /* (above it, it stays above) */
+            v = v * 10u + (unsigned)(s[i] - '0');
+    return i > 0 && v > VJO_QUEUE_VERSION;
+}
+
+/* 1 when a record that read_card cannot read is a newer build's (a version this build does not know: newer_version),
+ * not a damaged one. In the room read_card's check gave (its own work given back first), so a refused parse is no
+ * record. */
 static int newer_record(VjoArena *a, const char *json, size_t len)
 {
     size_t mark = vjo_arena_mark(a);
     VjoJson j;
-    long v;
     int t, newer = vjo_json_parse(a, json, len, &j) >= 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
                    vjo_json_is_type(&j, (t = vjo_json_obj_get(&j, 0, "version")), JSMN_PRIMITIVE) &&
-                   json[j.t[t].start] >= '0' && json[j.t[t].start] <= '9' &&
-                   (vjo_json_int(&j, t, &v) < 0 || v > VJO_QUEUE_VERSION);
+                   newer_version(json + j.t[t].start, (size_t)(j.t[t].end - j.t[t].start));
     vjo_arena_release(a, mark);
     return newer;
+}
+
+/* An archived record over this build's 32 KiB, which it does not parse: a newer build's (whole, kept) when it begins
+ * as every writer begins a record, {"version": and a version this build does not know (newer_version, in its first
+ * 64 bytes); else no whole record (audit-mem-anki-followup-1: 40,000 zero bytes are not kept for good); unread when
+ * those bytes cannot be read now. */
+#define VERSION_LEAD "{\"version\":"
+static int oversize_state(const char *path)
+{
+    char head[64];
+    SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+    int rc;
+    if (fd < 0) {
+        io_fail("open", path, fd);
+        return ARCHIVED_UNREAD;
+    }
+    rc = vjo_app_read_exact(fd, head, sizeof(head)); /* (over 32 KiB: it has them) */
+    sceIoClose(fd);
+    if (rc < 0) {
+        vjo_log("anki export: %s: its first bytes could not be read now", path);
+        return ARCHIVED_UNREAD;
+    }
+    return !memcmp(head, VERSION_LEAD, sizeof(VERSION_LEAD) - 1) &&
+                   newer_version(head + sizeof(VERSION_LEAD) - 1, sizeof(head) - (sizeof(VERSION_LEAD) - 1))
+               ? ARCHIVED_WHOLE
+               : ARCHIVED_DAMAGED;
 }
 
 static int archived_state(VjoArena *a, const char *hex)
@@ -1534,10 +1570,10 @@ static int archived_state(VjoArena *a, const char *hex)
     VjoAnkiNote note;
     int state, picture, error;
     card_path(path, 1, hex, "json");
-    /* (a record over this build's limit may be a newer build's, as one of a newer version: whole, kept; #528's audit
-     * 3, -4. An empty file is none.) */
+    /* (a record over this build's limit may be a newer build's: oversize_state; #528's audit 3, -4. An empty file is
+     * none.) */
     if (!(x = read_file(a, path, VJO_QUEUE_TEXT_MAX, &nx, 0, &error)))
-        return error == VJO_E_TOO_LARGE ? ARCHIVED_WHOLE : error == VJO_E_PARSE ? ARCHIVED_DAMAGED : ARCHIVED_UNREAD;
+        return error == VJO_E_TOO_LARGE ? oversize_state(path) : error == VJO_E_PARSE ? ARCHIVED_DAMAGED : ARCHIVED_UNREAD;
     card_path(path, 0, hex, "json");
     q = read_file(a, path, VJO_QUEUE_TEXT_MAX, &nq, 0, NULL);
     read = vjo_arena_mark(a);
