@@ -72,6 +72,7 @@ static int join_failure, start_failure, delete_failure, budget_failure, cancel_r
 static int available, cancel_job, short_reads, open_failure, bad_read;
 /* 1: report free USER memory in whole MiB, rounded down, as a console did (あおかな, 2026-10-26) */
 static int free_mib;
+static int64_t rows_headroom_min = INT64_MAX; /* audit-mem-game-4: the least the game had at a rows call */
 static FILE *model;
 static char model_path[512];
 static unsigned user_open_calls;
@@ -293,6 +294,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
         TEST_CHECK(req->size == sizeof(*req) && req->seq == 12 && !req->y && req->n == frame_h && info);
         TEST_CHECK(frame_live && dst == (void *)frame_memory && req->dst_stride == 200 && capture_live);
         rows_calls++; frame_copies++;
+        if (available - (int64_t)live_bytes < rows_headroom_min) rows_headroom_min = available - (int64_t)live_bytes;
         clock_value += frame_us;
         info->fb_width = 200; info->fb_height = frame_h; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
         info->armed = 1; info->copy_us = 1234; /* the game's wait in its display call */
@@ -307,6 +309,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
     TEST_CHECK(req->dst_stride >= 200 && info && info->size == sizeof(*info));
     TEST_CHECK(capture_live && (unsigned char *)dst >= capture_mem && (unsigned char *)dst < capture_mem + capture_block);
     rows_calls++;
+    if (available - (int64_t)live_bytes < rows_headroom_min) rows_headroom_min = available - (int64_t)live_bytes;
     clock_value += frame_us;
     if (change_at_rows && rows_calls == change_at_rows) { /* the next screen: the line 6 rows lower */
         memset(pixels, 0, sizeof(pixels));
@@ -1129,6 +1132,51 @@ static void the_gate_s_weights_are_a_block_of_their_own(void)
     vjo_game_ocr_run_request(&r, &out);
     TEST_CHECK(out.need_workspace == need - need_weights - VJO_BUDGET_GAME_GATE && !gate_allocs && gate_live);
     TEST_CHECK(!drop_resident() && !gate_live);
+}
+
+/* audit-mem-game-4 (#528, audit-mem-game-1 F1's third block): the gate's block under a carried figure. The console
+ * reports whole MiB. A job of rows read its weights (kept) at a whole MiB, the game took d (under a MiB) since, and the
+ * next job asks for the gate: its check plans with the figure carried from the job before (check_free), more than the
+ * game has now; the workspace's re-check passes; the gate's block, the last the check counted, is taken in the core
+ * without a sample before it. It must go back when it leaves the game less than the reserve (resident_alloc's probe
+ * rule), so no frame of the game runs under the reserve. */
+static void the_gate_s_block_keeps_the_reserve_beside_a_carried_figure(void)
+{
+    const int mib = 1024 * 1024;
+    unsigned runs = 0, taken = 0, back = 0, under = 0, read = 0;
+    int64_t least = INT64_MAX;
+    if (!VJO_VOCR_MODEL_DIR[0] || !VJO_VOCR_GATE_TEST_DIR[0]) { TEST_SKIP("needs the release weights and the gate's"); return; }
+    for (int a = 2; a <= 4; a++)
+        for (int d = 4096; d < mib; d += 4096) {
+            VjoGameOcrRequest r = setup();
+            VjoGameOcrResult out;
+            line();
+            free_mib = 1;
+            available = a * mib;
+            if (vjo_game_ocr_run_request(&r, &out) || !weights_live || gate_live) continue; /* the first job read */
+            available -= d; /* the game takes d between the two jobs */
+            if (available - (int)live_bytes < (int)GAME_RESERVE) continue; /* the game's own doing */
+            r.speed = VJO_GAME_OCR_S_GATE;
+            gate_allocs = gate_frees = 0;
+            rows_headroom_min = INT64_MAX;
+            int rc = vjo_game_ocr_run_request(&r, &out);
+            runs++;
+            read += !rc && out.lines >= 1;
+            taken += gate_allocs > 0;
+            back += gate_allocs > 0 && !gate_live;
+            if (rows_headroom_min < (int64_t)GAME_RESERVE) {
+                under++;
+                if (rows_headroom_min < least) least = rows_headroom_min;
+                fprintf(stderr, "gate carried: %d MiB, then %d B taken: the game ran a frame with %lld B (rc %d)\n", a, d,
+                        (long long)rows_headroom_min, rc);
+            }
+        }
+    fprintf(stderr, "gate carried: %u second jobs (%u read a line), the gate's block taken in %u, given back in %u; "
+                    "a frame under the reserve in %u (least %lld B)\n", runs, read, taken, back, under,
+            (long long)(under ? least : 0));
+    TEST_CHECK_(runs > 0 && taken > 0 && !under, "%u of %u jobs ran a frame under the reserve, least %lld B", under, runs,
+                (long long)least);
+    free_mib = 0;
 }
 
 /* API 20: the job's policy rides in the request's flags. A wait of 150 ms
@@ -4368,6 +4416,8 @@ TEST_LIST = {
     {"API 26: the text-presence gate in the worker: its file, its step, a wait first on one strip", the_gate_runs_in_the_worker},
     {"#418: the gate's weights a block of their own: taken, kept, given back; never the weights' room",
      the_gate_s_weights_are_a_block_of_their_own},
+    {"audit-mem-game-4: the gate's block keeps the reserve beside a carried figure",
+     the_gate_s_block_keeps_the_reserve_beside_a_carried_figure},
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
     {"the returned text is normalised, the recognizer's own kept after it", returned_text_is_normalised_and_kept},
     {"a retry to an empty box returns nothing of the first try", a_retry_to_an_empty_box_returns_nothing},

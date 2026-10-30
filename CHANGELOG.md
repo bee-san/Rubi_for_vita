@@ -43,13 +43,16 @@ been reported.
   overlay is closed and no job runs, one 24 KiB window a second, and its checkpoints are 30 minutes apart. No thread
   or allocation is added. Not yet timed on a console.
 - A game whose free memory shrank by less than a MiB between two OCR reads keeps its 1 MiB reserve beside every
-  block of the second read (#528, audit-mem-game-1 F1). #556's memory check plans with the most the console's
-  whole-MiB figure has shown, and checked the capture and the workspace once taken, but not the blocks taken after
-  them: a helper's stack, the pause's frame block (`ocr_pause = on`) and the text gate's block. Each is now checked
-  once taken and given back short of the reserve: the line runs on the worker's own thread, the read goes on without
-  the pause or the gate. On the host model the game ran 16,384 B under the reserve beside a helper's stack and
-  106,496 B under it in its own frames with the pause; now in none of 2,502 cases. Normal reads and text are
-  unchanged where the game did not shrink. Not yet run on a console.
+  block of the second read (#528, audit-mem-game-1 F1, audit-mem-game-4 N1). #556's memory check plans with the most
+  the console's whole-MiB figure has shown, and checked the capture and the workspace once taken, but not the blocks
+  taken after them: a helper's stack, the pause's frame block (`ocr_pause = on`), the text gate's block and a line
+  taller than a strip (its block, at most 57,344 B). Each is now checked once taken and given back short of the
+  reserve: the line runs on the worker's own thread, the read goes on without the pause or the gate, and a tall line
+  takes CDRAM or phycont instead, or is left out and counted. On the host model the game ran 16,384 B under the
+  reserve beside a helper's stack, 106,496 B under it in its own frames with the pause and 20,480 B under it beside a
+  tall line; now in none of 2,652 grid cases and none of the tall line's. Normal reads and text are unchanged where the
+  game did not shrink. With the pause on, a read can still fail for its weights where it reads without the pause (3 of
+  765 host levels, at 2 MiB; there since #556; docs/game-pause.md). Not yet run on a console.
 - The release zip's README.md shows its screenshots again: the six images it links (`docs/screenshots/`, 482,185 B)
   are in the zip, as tools/tests/test_zip_docs.py requires of every file README.md links.
 - The two-level head's re-read of a doubtful counter line now follows the model (#528, Mmem-game-8): a line whose
