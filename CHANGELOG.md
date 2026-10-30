@@ -11,6 +11,17 @@ been reported.
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-30
+
+Memory fixes for the failures in the owner's 0.10.1 logs (#528). The overlay opens even when another plugin has used
+up SceShell's PAF heap, OCR in games short of memory reads with the model the game has room for instead of failing, and
+an Anki card's save takes 40 KiB less of that heap. Replayed on the host through Rubi's own code (the owner scenario,
+`docs/owner-scenario.md`), the logs' 34 overlays that did not open become 0, the 51 lookups refused with nothing on
+screen become 26 (the overlay shows a memory message for the others), and the game reads that fail drop from 10 to 4
+of 51 cases, all at 1.5 MiB free. OCR and lookups do less work for the same text, Anki cards that a lookup during
+their save had misnamed export again, and the experimental native どうぶつの森e＋ port has a trusted text hook. None
+of this has run on a console yet.
+
 ### Added
 
 - One `memory` line in `tools/install_ftp.sh --status` and `--collect`'s summary (#528): SceShell's PAF free at the
@@ -1619,7 +1630,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.2
 [0.10.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.1
 [0.10.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.0
 [0.9.8]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.8
