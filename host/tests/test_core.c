@@ -201,6 +201,10 @@ static void test_json_object_lookups_stay_in_the_tokens(void)
             TEST_CHECK(vjo_json_obj_get(&j, 0, "time") == -1);
             TEST_CHECK(vjo_json_int(&j, vjo_json_obj_get(&j, 0, "x"), &x) == 0 && x == 1);
         }
+        if (o == 5) { /* {"x":"a" "b"}: "x" has two children, its value the first; "b" is none of the object's keys
+                       * (audit-mem-anki-followup-2) */
+            TEST_CHECK(j.t[1].size == 2 && vjo_json_obj_get(&j, 0, "x") == 2 && vjo_json_obj_get(&j, 0, "b") == -1);
+        }
         if (o == sizeof(objects) / sizeof(objects[0]) - 1) { /* a well-formed one */
             long v = 0;
             TEST_CHECK(vjo_json_int(&j, vjo_json_obj_get(&j, 0, "version"), &v) == 0 && v == 4);
