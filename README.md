@@ -45,7 +45,7 @@ additionally i feel like with a lot of ai software, people spend more time build
 
 ## Screenshots
 
-random assorted screenshots from the actual Rubi app
+random assorted screenshots from the actual Rubi app. Big thanks to Shoui for helping me nail the Sony Vita design language
 
 ![](docs/screenshots/2026-10-29-223532.jpg)
 
