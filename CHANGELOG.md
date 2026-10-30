@@ -24,6 +24,13 @@ been reported.
   owner's 0.10.1 logs have none for the native ports. The `memory` line reads it. No allocation, thread or page:
   the normal kernel's text +380 B and data +32 B (28 B of `.bss`), its pages unchanged; the debug build is
   unchanged (its `log.txt` has every check). Not yet run on a console.
+- The Rubi app says when the boot guard keeps the overlay off (#528, #543, #560). In safe mode the app opens on
+  **Install & repair**, its title in the warning colour, and the page's first lines say that the overlay, its text
+  hooks and OCR are off this boot, why (the Vita's home screen stopped during the last boot, or the overlay never
+  reported a good start), and what ends it: after one failed boot the next restart; after two, the page's install
+  action (such as **Check and repair**), then a restart; with no install action, deleting
+  `ur0:data/VitaJPOverlay/boot.txt` in VitaShell. After the reset the result says to restart the Vita, and `log.txt`
+  gets the boot record. The app only: no plugin changes. Not yet run on a console.
 - A verified native text hook for the experimental native どうぶつの森e＋ r4 port (`AFEJ00001`, `APP_VER 00.01`):
   with trusted hooks on (the default), its dialogue comes from the game's own text instead of OCR (#529). Only that
   build is hooked: its module NID and the 16 bytes at the site must match. Live hook execution on a console is
@@ -31,6 +38,10 @@ been reported.
 
 ### Fixed
 
+- Opening Stats in the overlay no longer reads `history.csv` on the thread that handles the overlay's input (#525).
+  The checked cache of the totals shows at once (`counting…` without one); the count itself runs only while the
+  overlay is closed and no job runs, one 24 KiB window a second, and its checkpoints are 30 minutes apart. No thread
+  or allocation is added. Not yet timed on a console.
 - A game whose free memory shrank by less than a MiB between two OCR reads keeps its 1 MiB reserve beside every
   block of the second read (#528, audit-mem-game-1 F1). #556's memory check plans with the most the console's
   whole-MiB figure has shown, and checked the capture and the workspace once taken, but not the blocks taken after
@@ -130,12 +141,22 @@ been reported.
   reserve by less than a MiB until then), and skips the
   spotter where it cannot fit beside the smallest model. On the host model of the console's figures (the owner
   scenario, the owner's config): 2 MiB reads Small instead of failing, 2.5 MiB's second job reads instead of
-  failing, 3 MiB reads Normal with the 500k LM instead of Small, 4 MiB Large instead of Normal, 5 MiB Large with
-  the 1000k LM instead of none; CLANNAD-sized games are unchanged. The 1 MiB reserve is kept. Not yet run on a
-  console.
+  failing, 3 MiB reads Normal with the 500k LM instead of Small, 4 MiB Large without the LM instead of Normal with
+  it, 5 MiB Large with the 1000k LM instead of none; CLANNAD-sized games are unchanged. The 1 MiB reserve is kept.
+  Not yet run on a console.
 
 ### Changed
 
+- The in-game overlay and the subtitle strip use the colour scheme chosen in **Settings → Appearance** (#527):
+  Mint's highlight, or Paper's opaque light surfaces with dark text. The Shell reads `colour_scheme` from `app.ini`
+  (or its backup) once per game process, so restart the game after changing it. No new buffers, threads or module
+  pages.
+- The Rubi app draws its text from glyphs rasterized at about 36 px instead of magnifying libvita2d's bitmaps of
+  about 18 px (#524). Its four font atlases may now take 4 MiB of the app's own 50 MiB instead of 1 MiB [estimate
+  from the source; the app's memory check counts it]. The overlay's text is unchanged.
+- An Appearance choice shows at once and is saved in the background (#526); if the save fails, the app shows the
+  saved choice again, with an error. The app adds a 64 KiB worker stack and 64 KiB of scratch, counted in its memory
+  check.
 - The same screen read again is not found and recognized again: a job whose region's rows read the same as the last
   job's, asked for the same way, takes that job's text, lines and line stats once its rows have held still, the
   same bytes a fresh read gives (#528). The owner's history had 19 such jobs the worker could have served (13 in

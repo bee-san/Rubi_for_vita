@@ -39,10 +39,11 @@
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
 /* VitaJPOverlay_Shell.suprx. The normal build (docs/release-variants.md) compiles out the self-test
  * (shell/selftest.c), the lines of the game worker's step log, of the recognized text and of every job and lookup,
- * and the timings and traces. Both builds' packaged segments, each rounded to pages: debug 98,148 + 69,632 B ->
- * 167,936 B (156 B of code room, 0 B of data room), normal 85,980 + 69,556 B -> 155,648 B (36 B, 76 B) [measured:
- * tools/check_memory_ledger.py's module rows, tools/fast_gate.sh's vitasdk image, main f3719fb2 (#537); 97,996 + 69,184
- * and 85,724 + 69,116 B at API 57's rear-tap scan]. The normal build's check is exact (--exact): its budget must equal
+ * and the timings and traces. Both builds' packaged segments, each rounded to pages: debug 98,300 + 69,632 B ->
+ * 167,936 B (4 B of code room, 0 B of data room), normal 86,012 + 69,556 B -> 155,648 B (4 B, 76 B) [measured:
+ * tools/check_memory_ledger.py's module rows, tools/fast_gate.sh's vitasdk image, main 14a1a562 (#586); 98,148 +
+ * 69,632 and 85,980 + 69,556 B on main f3719fb2 (#537); 97,996 + 69,184 and 85,724 + 69,116 B at API 57's rear-tap
+ * scan]. The normal build's check is exact (--exact): its budget must equal
  * its pages. How each change moved them: its own
  * section of docs/memory-ledger-history.md, and before #418 that file's "Budget history". */
 #if VJO_DEBUG
