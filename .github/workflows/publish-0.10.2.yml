@@ -1,0 +1,160 @@
+name: Publish Rubi 0.10.2
+
+on:
+  push:
+    branches: ['release/publish-0.10.2']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-rubi-0.10.2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/release/publish-0.10.2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: c721eee8b76587ef44547afff912097188b5d068
+      SOURCE_RUN: 41006788522
+      # The source run's package job printed these (tools/package_variants.py on the same artifacts and models).
+      EXPECTED_SHA256SUMS: |
+        beac0a5bf60f411bf316cc69f4d55d9d1d845a94195b57292d18a07971507492  Rubi-0.10.2.vpk
+        e109b4c4e681be640e9202a2d4041be8e40f4ba3ba861689135ff48dc3375696  Rubi-0.10.2.zip
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c721eee8b76587ef44547afff912097188b5d068
+          persist-credentials: false
+      - name: Require the merged source's successful main build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          gh run watch "$SOURCE_RUN" --repo bee-san/Rubi_for_vita --exit-status --interval 10
+          gh api "repos/bee-san/Rubi_for_vita/actions/runs/$SOURCE_RUN" > source-run.json
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          run = json.loads(Path('source-run.json').read_text())
+          assert run['head_sha'] == os.environ['SOURCE_SHA'], run['head_sha']
+          assert (run['event'], run['head_branch'], run['status'], run['conclusion']) == ('push', 'main', 'completed', 'success')
+          version = re.search(r'^set\(VJO_VERSION "([^"]+)" CACHE STRING', Path('vita/CMakeLists.txt').read_text(), re.M).group(1)
+          assert version == '0.10.2', version
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: Rubi
+          path: ci/debug
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: Rubi-normal
+          path: ci/normal
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: ci/models
+          key: vjo-models-${{ hashFiles('tools/prepare_ocr.py', 'tools/model_tiers.json', 'include/vjo_vocr_sizes.h') }}
+      - name: Verify the pinned OCR models and language models
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python3 tools/prepare_ocr.py --backend vocr-tiers --output ci/models &&
+               python3 tools/prepare_ocr.py --backend vocr-lm --output ci/models; then
+              exit 0
+            fi
+            sleep "$((attempt * 20))"
+          done
+          exit 1
+      - name: Package and test the exact release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          normal=(ci/normal/Rubi-*.zip)
+          debug=(ci/debug/Rubi-*-debug.zip)
+          test "${#normal[@]}" = 1 && test -f "${normal[0]}"
+          test "${#debug[@]}" = 1 && test -f "${debug[0]}"
+          python3 tools/package_variants.py --normal "${normal[0]}" --debug "${debug[0]}" --models ci/models \
+            --version 0.10.2 --source-revision "$SOURCE_SHA" --sources . -o ci/release
+          for package in ci/release/Rubi-*.zip; do
+            python3 tools/e2e_package.py "$package"
+          done
+          mkdir -p publish
+          cp ci/release/Rubi-0.10.2.vpk ci/release/Rubi-0.10.2.zip publish/
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root = Path('publish')
+          names = ['Rubi-0.10.2.vpk', 'Rubi-0.10.2.zip']
+          (root / 'SHA256SUMS').write_text(''.join(f'{hashlib.sha256((root / name).read_bytes()).hexdigest()}  {name}\n' for name in names))
+          PY
+          cat publish/SHA256SUMS
+      - name: Require the source run's package hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          diff <(printf '%s' "$EXPECTED_SHA256SUMS") publish/SHA256SUMS
+          echo 'SHA256SUMS equals the source run package job output'
+      - name: Publish the normal build as Rubi 0.10.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'NOTES'
+          Changes since 0.10.1. Most of them address the memory failures reported in #528, where Rubi often did not open or could not OCR on a real Vita.
+
+          **Memory**
+
+          - **The overlay opens even when another plugin has used up most of SceShell's memory.** In 0.10.1 it often did not open then. In the reported logs, vita-agent-use's remote screenshots held about 2.1 MB of it until the Vita restarted. Rubi now reserves the overlay's 20 KiB text memory when the Vita starts. If there is no room for dictionary results, the overlay still shows the recognized text and says that memory is too low. Replaying the reported logs on a PC, all 274 overlay presses open (34 did not in 0.10.1), and lookups refused with nothing on screen drop from 51 to 26. The overlay stays closed only when SceShell has less than 168,832 B free, because opening it then could take the last memory SceShell needs; `log.txt` records why. Restart the Vita, or update vita-agent-use to e289d06 or later, to fix this. To do this, Rubi keeps 28,672 B of SceShell's memory between uses (8,192 B before); its peak drops from 225,280 B to 184,320 B.
+          - **Fewer OCR failures.** In games short of memory, OCR now uses a model size that fits instead of failing, and it no longer fails every other read. In a PC replay of the reported setup at free memory levels from 1.5 to 88 MiB, failed reads drop from 10 to 4 of 51 cases. All four are at 1.5 MiB free, where no model fits, and each shows why.
+          - **What each model size needs now.** With the reported settings (Large selected, the 1000k LM), a dialogue-box read gets Small with 2 MiB free (0.10.1 needed 2.5 MiB), Normal with the 500k LM from 3 MiB (4 MiB before), Large without the LM from 4 MiB (5 MiB before), and Large with the 1000k LM from 5 MiB (6 MiB before). Rubi still leaves 1 MiB of free memory to the game. Games with plenty of memory, like CLANNAD, read as before. These figures come from the PC replay; free memory levels below 10 MiB have not been measured in a real game.
+          - On a PC, a dialogue-box read with Small uses 114,688 B less game memory and one with Normal 57,344 B less (with the text spotter, the LM and the cascade on). Saving an Anki card uses 40 KiB less of SceShell's memory. The plugins' module pages are the same size as in 0.10.1.
+          - Install, Update and Repair in the Rubi app copy and check every plugin before replacing any. If the app stops partway, the old plugins stay installed, so the overlay keeps working.
+
+          **Speed**
+
+          - If the screen has not changed (the same dialogue box again after a menu, for example), the next read reuses the previous text instead of running OCR again.
+          - Each OCR read takes about 13-20 ms less of Rubi's own processing and reads fewer frames from the screen (about 8.5 ms sooner on average at 60 fps). The recognized text is unchanged.
+          - Dictionary lookups read less of the dictionary: 8.7 file reads per lookup instead of 10.4 with the bundled dictionary, about 5 ms less.
+
+          These console times are estimates.
+
+          **New**
+
+          - A trusted text hook for the experimental native どうぶつの森e＋ r4 port (`AFEJ00001`, #529). With trusted hooks on, its dialogue comes from the game itself instead of OCR. Only that build of the port is hooked. The hook has not been verified on a console yet.
+          - The in-game overlay and the subtitle strip use the colour scheme selected in **Settings → Appearance**. Restart the game after changing it.
+          - Sharper text in the Rubi app, and theme choices apply immediately.
+          - The Rubi app tells you when Rubi's boot safety check has turned the overlay off for this boot, why, and how to turn it back on.
+          - `tools/install_ftp.sh --status` and `--collect` print one `memory` line, which shows when another plugin has used up SceShell's memory. The normal build's `kernel.txt` also records a game's lowest free memory when you leave the game.
+
+          **Fixes**
+
+          - Anki cards saved while the overlay looked up another word now export. Every release since 0.8.0 could misname such a card, and the app then refused it with "checksum mismatch". At least 31 of the reported queued cards are recovered.
+          - Opening Stats no longer reads `history.csv` while the overlay is open.
+          - With Normal and Large, a line that may have a small ヵ or ヶ before a counter such as 月 or 年 is read again, as intended. Since API 42 this second read depended on whatever bytes were left in newly allocated memory.
+          - A screen copy that outlives its call no longer stops OCR in that game until the game restarts.
+          - With the stable-text wait off (`ocr_settle_ms = 0`), a read checks its region once more before recognizing it, so a changing screen is not read half-drawn.
+          - Testing every out-of-memory path on a PC, with each allocation refused in turn, found one latent bug: an error strip with no room for its text passed a NULL pointer. It is fixed.
+          - The release zip includes the README's screenshots.
+
+          This release has 67 pull requests merged after 0.10.1 (#524-#527, #529-#580, #583-#593). They have been tested on a PC; none of them has run on a console yet.
+
+          Install `Rubi-0.10.2.vpk` with VitaShell, open Rubi, choose **Settings → Install & repair → Update**, then restart the Vita. Install all of this version's plugins together (API 57); the app does this for you. `Rubi-0.10.2.zip` is the manual-install package, and `SHA256SUMS` contains both files' hashes. This release is the normal build.
+
+          [Full changelog](https://github.com/bee-san/Rubi_for_vita/blob/v0.10.2/CHANGELOG.md)
+          NOTES
+          gh release create v0.10.2 --repo bee-san/Rubi_for_vita --target "$SOURCE_SHA" \
+            --title 'Rubi 0.10.2' --notes-file release-notes.md --latest \
+            publish/Rubi-0.10.2.vpk publish/Rubi-0.10.2.zip publish/SHA256SUMS
+          test "$(gh api repos/bee-san/Rubi_for_vita/git/ref/tags/v0.10.2 --jq '.object.sha')" = "$SOURCE_SHA"
+          gh release view v0.10.2 --repo bee-san/Rubi_for_vita --json url,tagName,isDraft,isPrerelease,assets
+          cat publish/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
