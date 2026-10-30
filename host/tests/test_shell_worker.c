@@ -716,15 +716,17 @@ int vjo_history_append(const VjoHistoryRecord *record)
 }
 /* The reading total: each poll may handle cached values, but only an idle background step scans a window. */
 static unsigned total_steps, total_keeps, total_windows, total_background;
-int vjo_history_total_step(VjoArena *scratch, int background)
+int vjo_history_total_pending(void) { return total_windows != 0; }
+int vjo_history_total_step(VjoArena *work)
 {
-    TEST_CHECK(scratch != NULL && !held_view && !held_cmd);
+    TEST_CHECK(work != NULL && !held_view && !held_cmd && test_thread == NET_THREAD);
+    TEST_CHECK(work->base != scratch.base && work->size >= VJO_HISTORY_COUNT_WINDOW + 1);
     total_steps++;
-    if (!background) return 0;
     total_background++;
     return total_windows ? (int)(--total_windows > 0) : 0;
 }
 void vjo_history_total_keep(void) { TEST_CHECK(!held_view && !held_cmd); total_keeps++; }
+void vjo_history_total_finish(void) { TEST_CHECK(!held_view && !held_cmd && test_thread == NET_THREAD); }
 static unsigned total_stops;
 void vjo_history_total_stop(void) { TEST_CHECK(!held_view && !held_cmd && !threads_started); total_stops++; }
 /* Line history: history.csv as the tests write it (history_csv), read by the real scanner
@@ -1076,7 +1078,7 @@ static void reset(void)
     history_loads = 0;
     history_load_rc = 0;
     total_steps = total_keeps = total_windows = total_background = 0;
-    stats_next_us = 0;
+    stats_allowed = 0;
     stats_open = 0;
 #endif
     memset(&g_view, 0, sizeof(g_view));
@@ -9342,62 +9344,62 @@ static void test_theme_latched_for_game(void)
     mem_free();
 }
 
-/* CSV windows progress in the stats panel, never in dictionary browsing, and are paced without
- * self-wakeups. Input and foreground jobs win even when a scan is due. */
+/* Run the actual VjoNet event loop: input stays on VjoControl, stats scratch is private,
+ * a newly queued foreground job wins before the next recount window, and a panel close pauses it. */
+static int stats_wait_script(int step)
+{
+    TEST_CHECK(test_thread == CTL_THREAD);
+    switch (step) {
+    case 0:
+        total_windows = 4;
+        ov = OV_OPEN; stats_open = 1;
+        control_tick(0);
+        TEST_CHECK(total_steps == 0 && (posted & NET_EV_STATS));
+        return 1;
+    case 1:
+        TEST_CHECK(total_steps == 1 && total_windows == 3 && (posted & NET_EV_STATS));
+        /* A foreground job takes this wake's slot; no stats may run until control consumes it. */
+        job_prepare = 1; job_running = 1; job_done = 0;
+        prepare_cursor = 0;
+        posted |= NET_EV_JOB;
+        return 1;
+    case 2:
+        TEST_CHECK(job_done && total_steps == 1 && total_windows == 3);
+        job_running = job_done = job_prepare = 0;
+        control_tick(0);
+        return 1;
+    case 3:
+        TEST_CHECK(total_steps == 2 && total_windows == 2);
+        stats_open = 0;
+        control_tick(0);
+        TEST_CHECK(!stats_allowed);
+        return 1; /* a stats bit already posted before the panel closed is harmless */
+    case 4:
+        TEST_CHECK(total_steps == 2 && total_windows == 2);
+        /* Closing the overlay can proceed while a stats chunk is pending. */
+        pending_cmd = VJO_CMD_CLOSED;
+        control_tick(VJO_EV_SHELL);
+        TEST_CHECK(ov == OV_CLOSED && total_steps == 2);
+        control_tick(0);
+        return 1;
+    case 5:
+        TEST_CHECK(total_steps == 3 && total_windows == 1);
+        return 1;
+    default:
+        TEST_CHECK(total_steps == 4 && !total_windows && !(posted & NET_EV_STATS));
+        return 0;
+    }
+}
 static void test_reading_total_on_the_control_thread(void)
 {
     reset();
-    total_windows = 3;
-    control_tick(0);
-    TEST_CHECK(total_background == 1 && total_windows == 2 && !shell_notifications);
-    control_tick(VJO_EV_SHELL);
-    control_tick(0);
-    TEST_CHECK(total_background == 1 && total_windows == 2 && !shell_notifications);
-    test_now += 1000000;
-    control_tick(0);
-    TEST_CHECK(total_background == 2 && total_windows == 1 && !shell_notifications);
-    /* Dictionary browsing still allows only cache handling, even after a window is due. */
-    ov = OV_OPEN;
-    test_now += 1000000;
-    control_tick(0);
-    TEST_CHECK(total_background == 2 && total_windows == 1 && !shell_notifications);
-    /* Triangle's notification handles the small cache first; the next idle poll may count. */
-    stats_open = 1;
-    control_tick(VJO_EV_SHELL);
-    TEST_CHECK(total_background == 2 && total_windows == 1);
-    control_tick(0);
-    TEST_CHECK(total_background == 3 && !total_windows && !shell_notifications);
-    /* A long count continues while the panel stays open, at most one window a second. */
-    total_windows = 3;
-    control_tick(0);
-    TEST_CHECK(total_background == 3 && total_windows == 3);
-    test_now += 1000000;
-    job_running = 1;
-    control_tick(0);
-    TEST_CHECK(total_background == 3 && total_windows == 3);
-    job_running = 0;
-    control_tick(0);
-    TEST_CHECK(total_background == 4 && total_windows == 2);
-    test_now += 1000000;
-    control_tick(0);
-    TEST_CHECK(total_background == 5 && total_windows == 1);
-    /* Returning to the dictionary pauses reconstruction; closing resumes it. */
-    stats_open = 0;
-    test_now += 1000000;
-    control_tick(0);
-    TEST_CHECK(total_background == 5 && total_windows == 1);
-    pending_cmd = VJO_CMD_CLOSED;
-    control_tick(VJO_EV_SHELL);
-    TEST_CHECK(ov == OV_CLOSED && total_background == 5 && total_windows == 1);
-    control_tick(0);
-    TEST_CHECK(total_background == 6 && !total_windows && !shell_notifications);
-    state.game_pid = PS_GAME_PID;
-    control_tick(VJO_EV_GAME_START);
-    TEST_CHECK(!total_keeps); /* a game's start reads nothing for it */
-    state.game_pid = 0;
-    control_tick(VJO_EV_GAME_EXIT);
-    TEST_CHECK(total_keeps == 1);
-    mem_free();
+    wait_step = 0;
+    wait_script = stats_wait_script;
+    net_main(0, NULL);
+    wait_script = NULL;
+    test_thread = CTL_THREAD;
+    TEST_CHECK(total_steps == 4 && !total_windows && wait_step == 7);
+    TEST_CHECK(!scratch.used && !held_cmd && !held_view);
 }
 #endif
 

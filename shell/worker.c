@@ -200,6 +200,8 @@ static int64_t job_started_us;
 /* the job (job thread) */
 #define NET_EV_JOB  1u
 #define NET_EV_QUIT 2u
+#define NET_EV_STATS 4u
+static int stats_allowed; /* atomic permission; recount scratch never belongs to the input thread */
 static volatile int job_running;
 static volatile int job_done;
 static volatile int job_idx;
@@ -1711,6 +1713,20 @@ static void net_stack_check(void)
     vjo_log("VjoNet stack: at least %u of %u B used", (unsigned)used, (unsigned)VJO_STACK_SHELL_NET);
 }
 
+/* The count's private scratch lives only during this job, on VjoNet's existing 16 KiB stack.
+ * No result/transport/control buffer is borrowed. The writer's text+raw text share 4 KiB;
+ * even doubled quotes, a fully escaped game name and every line metric fit this window. */
+typedef char history_record_fits_count_window[
+    2u * VJO_GAME_OCR_TEXT_BYTES + 2u * 128u + 2u * VJO_GAME_OCR_MODEL_BYTES +
+    VJO_GAME_OCR_LINES * 56u + 1024u < VJO_HISTORY_COUNT_WINDOW ? 1 : -1];
+static __attribute__((noinline)) int stats_job(void)
+{
+    uint64_t bytes[(VJO_HISTORY_COUNT_WINDOW + 8u) / 8u];
+    VjoArena work;
+    vjo_arena_init(&work, bytes, sizeof(bytes));
+    return vjo_history_total_step(&work);
+}
+
 static int net_main(SceSize args, void *argp)
 {
 #if !VJO_DEBUG
@@ -1726,13 +1742,13 @@ static int net_main(SceSize args, void *argp)
     while (running) {
         unsigned int bits = 0;
 #if VJO_DEBUG
-        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT,
+        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT | NET_EV_STATS,
                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, NULL);
 #else
         /* The wait is timed (LOG_IDLE_US) only while the batch holds a line (its n: this thread's own
          * lines raise it; a flush by another thread's line only zeroes it, shell/log_vita.c). */
         unsigned int timeout = LOG_IDLE_US;
-        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT,
+        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT | NET_EV_STATS, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT,
                                &bits, net_log.n ? &timeout : NULL);
         net_log_idle();
 #endif
@@ -1744,7 +1760,13 @@ static int net_main(SceSize args, void *argp)
 #endif
             net_job();
         }
+        /* A foreground job always wins, including one posted after the wait returned. Each
+         * recount window returns here before another starts, so queued lookups cannot starve. */
+        if ((bits & NET_EV_STATS) && !job_running && __atomic_load_n(&stats_allowed, __ATOMIC_ACQUIRE) &&
+            stats_job())
+            sceKernelSetEventFlag(net_evf, NET_EV_STATS);
     }
+    vjo_history_total_finish();
 #if !VJO_DEBUG
     vjo_log_batch_end(&net_log); /* the worker stops: what is held goes out before its buffer does */
     net_log.buf = NULL;
@@ -3278,7 +3300,6 @@ static void prepare_words(void)
 
 /* Kernel and local wakeups share the existing event. Handler order gives
  * input, refreshed text and foreground work priority over preparation. */
-static int64_t stats_next_us;
 static void control_tick(uint32_t bits)
 {
     int defer_prepare = bits || refresh_pending;
@@ -3350,13 +3371,12 @@ static void control_tick(uint32_t bits)
     if (!defer_prepare) prepare_words();
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     RESULT_MEM_IDLE();
-    /* Stats shares this input thread. Reconstruct while closed OR while Triangle's stats are shown:
-     * otherwise a missing cache can never finish while the reader watches "counting…". Dictionary
-     * browsing still does no CSV work. One window a second, only after input and jobs, no self-wakeups. */
-    int background = (ov == OV_CLOSED || vjo_overlay_stats_open()) && !net_busy() && pending_cmd == VJO_CMD_NONE &&
-                     !bits && now_us() >= stats_next_us;
-    vjo_history_total_step(&scratch, background);
-    if (background) stats_next_us = now_us() + 1000000;
+    /* Scheduling only: all stats reads, parsing and checkpoints belong to VjoNet. Dictionary
+     * browsing pauses recounts; input is handled above without waiting for a stats window. */
+    int allowed = ov == OV_CLOSED || vjo_overlay_stats_open();
+    __atomic_store_n(&stats_allowed, allowed, __ATOMIC_RELEASE);
+    if (allowed && !net_busy() && pending_cmd == VJO_CMD_NONE && !bits && vjo_history_total_pending())
+        sceKernelSetEventFlag(net_evf, NET_EV_STATS);
 }
 
 static int ctl_main(SceSize args, void *argp)

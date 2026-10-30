@@ -52,13 +52,14 @@ static uint64_t previous_us, previous_append_us;
 /* The reading total (docs/ocr-history.md#total-characters-read), which the overlay's Triangle view shows:
  * the characters of the lines of history.csv's first `covered` bytes. The writer adds each record's as it
  * appends it, when the record is the next one after them; what it did not add (the file's lines before
- * this Rubi, or those appended while the total was being counted or unknown) the control thread counts
+ * this Rubi, or those appended while the total was being counted or unknown) VjoNet counts
  * from the file, a window at a time, once a Triangle press asks for it (vjo_history_total_step).
  * history_total.bin keeps the total between restarts, so a count reads only what was appended since it
- * was saved. The view lock guards chars, covered and state: the writer (VjoNet), the count (the control
- * thread) and the view (the paf thread) take it. Offsets are 32-bit: a history.csv of 4 GiB or more (some
+ * was saved. The view lock guards publication from VjoNet to the paf thread. Offsets are
+ * 32-bit: a history.csv of 4 GiB or more (some
  * ten million lines) has no total ("unavailable"). */
 static const char TOTAL_PATH[] VJO_DATA_TABLE(reading_legacy_cache_path) = VJO_DATA_DIR "/history_total.bin";
+static const char COUNTING[] VJO_DATA_TABLE(history_total_counting) = "counting… %u%%";
 enum { TOTAL_UNREAD, TOTAL_COUNTING, TOTAL_KNOWN, TOTAL_FAILED, TOTAL_CACHED };
 static struct {
     VjoReadingScope scope, scan_scope;
@@ -71,8 +72,7 @@ static struct {
     uint32_t covered, at, top, saved; /* the count: from covered (at: its next window) to top, the file's end */
     SceUID fd;                        /* history.csv while a count reads it (0: closed) */
     uint32_t seq, top_seq;            /* seq: odd while the writer appends a record; top_seq: when top was read */
-    int state, read, clean;           /* TOTAL_*; read: history_total.bin was read; clean: no append ran as top
-                                       * was read */
+    uint8_t state, read, clean, progress; /* TOTAL_*; cache read; stable file end; recount percentage */
     uint32_t streak_seq;              /* `streak`'s stores (vjo_history_streak); 0: not read since the Shell started */
 #if VJO_DEBUG
     uint32_t windows, bytes; /* the count's windows and bytes read, and when it started: its log line */
@@ -208,7 +208,6 @@ int vjo_history_append(const VjoHistoryRecord *r)
     start = sceIoLseek(w.fd, 0, SCE_SEEK_END);
     if (start < 0) { sceIoClose(w.fd); return (int)start; }
     total.seq++; /* odd until the record is whole or gone: a count's end of the file is not read meanwhile */
-    __sync_synchronize();
     /* #338's audit F3: the newest record goes (this one takes its place, its time and its ID) only once the file is
      * open, inside that window, and not while a count reads the file (total.fd: the control thread's, read here only
      * to leave it alone); the end is read after it, which is where the next write goes whether the console's
@@ -289,18 +288,20 @@ int vjo_history_append(const VjoHistoryRecord *r)
             } else if (total.covered == start && !(end >> 32)) {
                 vjo_reading_scope_add(&total.time, &total.scope, us, game, chars);
                 total.chars += total.time.last_chars;
-                if (total.scope.end_us && us >= total.scope.end_us) total.requested = 1;
+                if (total.scope.end_us && us >= total.scope.end_us) total.requested |= 1;
                 total.covered = (uint32_t)end;
                 g_view.version++;
-            } else { /* the file is not the one the total is of, or has more (or 4 GiB): the control thread
+            } else { /* the file is not the one the total is of, or has more (or 4 GiB): VjoNet
                       * counts it */
                 total.state = TOTAL_COUNTING;
             }
+            if (total.state == TOTAL_KNOWN && total.time.last_us > total.saved_us &&
+                total.time.last_us - total.saved_us >= 1800000000ull)
+                total.requested |= 2; /* checkpoint on VjoNet, between foreground jobs */
         }
         vjo_view_unlock();
         rc = 1;
     }
-    __sync_synchronize();
     total.seq++;
     if (rc == 1 && chars)
         vjo_history_streak(1); /* the reading streak: this line's day (core/streak.h) */
@@ -415,22 +416,20 @@ static void total_set(int state)
 
 void vjo_history_total_want(void)
 {
-    int ask;
     vjo_view_lock();
-    total.requested = 1;
-    ask = total.state == TOTAL_UNREAD || total.state == TOTAL_FAILED;
-    if (ask)
-        total.state = TOTAL_COUNTING;
+    total.requested |= 1;
     vjo_view_unlock();
     vjoNotifyShell();
 }
 
 const char *vjo_history_total_text(char *buf, size_t cap)
 {
-    static const char counting[] VJO_DATA_TABLE(history_total_counting) = "counting…";
     static const char unavailable[] VJO_DATA_TABLE(history_total_unavailable) = "unavailable";
-    if (total.state != TOTAL_KNOWN && total.state != TOTAL_CACHED)
-        return total.state == TOTAL_FAILED ? unavailable : counting;
+    if (total.state != TOTAL_KNOWN && total.state != TOTAL_CACHED) {
+        if (total.state == TOTAL_FAILED) return unavailable;
+        sceClibSnprintf(buf, cap, COUNTING, (unsigned)total.progress);
+        return buf;
+    }
     return vjo_history_number(buf, cap, total.chars);
 }
 
@@ -470,9 +469,27 @@ void vjo_history_stats_block(char *buf, size_t cap, int today)
     vjo_history_number(chars, sizeof(chars), today ? total.scope.chars : total.chars);
     if (mins < 60) sceClibSnprintf(buf, cap, minutes, chars, (unsigned)mins, rate);
     else sceClibSnprintf(buf, cap, format, chars, (unsigned long long)(mins / 60), (unsigned)(mins % 60), rate);
+    if (total.state == TOTAL_CACHED) {
+        size_t used = sceClibStrnlen(buf, cap);
+        if (used + 1 < cap) {
+            buf[used++] = '\n';
+            sceClibSnprintf(buf + used, cap - used, COUNTING, (unsigned)total.progress);
+        }
+    }
 }
 
-__attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int background)
+/* All counter and file mutations run on VjoNet; the view lock protects publication, never I/O. */
+static void total_keep(void);
+
+int vjo_history_total_pending(void)
+{
+    vjo_view_lock();
+    int pending = total.requested || total.state == TOTAL_COUNTING || total.state == TOTAL_CACHED;
+    vjo_view_unlock();
+    return pending;
+}
+
+__attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
 {
     size_t mark = vjo_arena_mark(scratch), n = 0, first, last;
     uint32_t from, to, base, covered;
@@ -485,34 +502,31 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int back
     int requested = total.requested;
     total.requested = 0;
     vjo_view_unlock();
-    if (requested) {
+    if (requested & 2) total_keep();
+    if (requested & 1) {
         VjoReadingScope context = {0};
         vjo_history_streak(0); /* the view's streak, as the file has it now (the Rubi app may have seeded it) */
         if (!vjo_history_context(&context)) { vjo_history_total_stop(); total_set(TOTAL_FAILED); return 0; }
         if (sceClibStrcmp(context.uuid, total.scope.uuid) || context.start_us != total.scope.start_us ||
              context.end_us != total.scope.end_us) {
-            if (background) vjo_history_total_keep(); /* never checkpoint on an open overlay's request */
+            total_keep();
             vjo_history_total_stop();
             vjo_view_lock();
             total.scope = context;
             total.chars = total.covered = total.saved = 0;
             sceClibMemset(&total.time, 0, sizeof(total.time));
             total.read = 0;
+            total.progress = 0;
             total.state = TOTAL_COUNTING;
             vjo_view_unlock();
         }
+        if (total.state == TOTAL_UNREAD || total.state == TOTAL_FAILED) {
+            total.progress = 0;
+            total_set(TOTAL_COUNTING);
+        }
     }
-    if (total.state != TOTAL_COUNTING && total.state != TOTAL_CACHED) {
-        /* Checkpoint only in idle background work, at most once per 30 minutes of recorded time.
-         * A dialogue append itself never adds a cache write. */
-        vjo_view_lock();
-        int checkpoint = background && total.state == TOTAL_KNOWN && total.covered != total.saved &&
-            total.time.last_us > total.saved_us && total.time.last_us - total.saved_us >= 1800000000ull;
-        vjo_view_unlock();
-        if (checkpoint) vjo_history_total_keep();
-        return 0;
-    }
-    if (!total.read) { /* the first count since the Shell started: from the total history_total.bin keeps */
+    if (total.state != TOTAL_COUNTING && total.state != TOTAL_CACHED) return 0;
+    if (!total.read) { /* the first count for this context: from its checked cache */
         size_t len = 0;
         char path[80];
         const char *bytes = vjo_file_read(scratch, cache_path(path, sizeof(path), total.scope.uuid), &len);
@@ -521,25 +535,25 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int back
             sceClibMemcpy(&f, bytes, sizeof(f)); /* (the scratch's alignment is its array's) */
             if (f.check == total_file_check(&f) && !sceClibStrcmp(f.scope.uuid, total.scope.uuid) &&
                 f.scope.start_us == total.scope.start_us && f.scope.end_us == total.scope.end_us) {
+                vjo_view_lock();
                 total.scope = f.scope;
                 total.time = f.time;
                 total.chars = f.chars;
                 total.covered = total.saved = f.covered;
                 total.saved_us = f.time.last_us;
-                total_set(TOTAL_CACHED); /* show this checked prefix while its missing tail waits */
+                total.state = TOTAL_CACHED;
+                g_view.version++;
+                vjo_view_unlock(); /* show this checked prefix before reading its missing tail */
             }
         }
         vjo_arena_release(scratch, mark);
         total.read = 1;
     }
-    if (!background) return 0; /* cache/streak reads only: no history.csv read, parse or cache write */
     if (!total.fd) { /* a count's start: history.csv's end, read while no record is being appended */
         uint32_t seq = total.seq;
         SceOff top;
-        __sync_synchronize();
         total.fd = sceIoOpen(HISTORY_PATH, SCE_O_RDONLY, 0);
         top = total.fd >= 0 ? sceIoLseek(total.fd, 0, SCE_SEEK_END) : total.fd == (SceUID)0x80010002 ? 0 : -1;
-        __sync_synchronize();
         total.clean = !(seq & 1) && total.seq == seq;
         total.top_seq = seq;
         if ((uint64_t)top >> 32) /* an error, or 4 GiB or more */
@@ -548,6 +562,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int back
         if (total.covered > total.top) { /* a shorter file than the total is of: another one */
             vjo_view_lock();
             total.state = TOTAL_COUNTING;
+            total.progress = 0;
             total.chars = 0, total.covered = 0;
             total.scope.chars = total.scope.active_us = total.scope.timed_chars = 0;
             sceClibMemset(&total.time, 0, sizeof(total.time));
@@ -564,9 +579,9 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int back
 #endif
     }
     from = total.at;
-    to = total.top - from > VJO_HISTORY_WINDOW ? from + VJO_HISTORY_WINDOW : total.top;
+    to = total.top - from > VJO_HISTORY_COUNT_WINDOW ? from + VJO_HISTORY_COUNT_WINDOW : total.top;
     base = from ? from - 1 : 0; /* the window and the byte before it */
-    buf = vjo_arena_alloc(scratch, VJO_HISTORY_WINDOW + 1);
+    buf = vjo_arena_alloc(scratch, VJO_HISTORY_COUNT_WINDOW + 1);
     if (!buf || (to > base && sceIoLseek(total.fd, base, SCE_SEEK_SET) != base))
         goto failed;
     while (n < to - base) {
@@ -590,6 +605,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int back
         /* no record starts where the total's bytes end: history.csv is not the file it is the total of */
         vjo_view_lock();
         total.state = TOTAL_COUNTING;
+        total.progress = 0;
         total.chars = total.found = 0;
         total.scope.chars = total.scope.active_us = total.scope.timed_chars = 0;
         total.covered = total.at = 0;
@@ -602,6 +618,12 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int back
     }
     if (to < total.top) {
         total.at = last < n && base + last > from ? base + (uint32_t)last : to;
+        /* Byte progress is approximate because a boundary record is read again. Publish only
+         * a changed percentage, never once per byte/window when the displayed value is unchanged. */
+        unsigned progress = total.at / (total.top / 100u + 1u);
+        vjo_view_lock();
+        if (total.progress != progress) { total.progress = (uint8_t)progress; g_view.version++; }
+        vjo_view_unlock();
         return 1;
     }
     if (total.fd > 0)
@@ -627,7 +649,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int back
 #endif
     if (known && covered != total.saved)
         total_save(chars, covered, &time, &scope);
-    return 0;
+    return !known;
 failed:
     vjo_arena_release(scratch, mark);
     if (total.fd > 0)
@@ -637,22 +659,18 @@ failed:
     return 0;
 }
 
+static void total_keep(void)
+{
+    if (total.state == TOTAL_KNOWN && total.covered != total.saved)
+        total_save(total.chars, total.covered, &total.time, &total.scope);
+}
+
 void vjo_history_total_keep(void)
 {
-    uint64_t chars;
-    uint32_t covered;
-    VjoReadingTime time;
-    VjoReadingScope scope;
-    int keep;
     vjo_view_lock();
-    chars = total.chars;
-    time = total.time;
-    scope = total.scope;
-    covered = total.covered;
-    keep = total.state == TOTAL_KNOWN && covered != total.saved;
+    total.requested |= 2;
     vjo_view_unlock();
-    if (keep)
-        total_save(chars, covered, &time, &scope);
+    vjoNotifyShell();
 }
 
 void vjo_history_total_stop(void)
@@ -660,4 +678,10 @@ void vjo_history_total_stop(void)
     if (total.fd > 0) /* a count in progress keeps history.csv open between its windows */
         sceIoClose(total.fd);
     total.fd = 0;
+}
+
+void vjo_history_total_finish(void)
+{
+    total_keep();
+    vjo_history_total_stop();
 }

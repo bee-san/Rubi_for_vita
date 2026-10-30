@@ -9,6 +9,10 @@
 #include "../core/history_lines.h"
 #include "../include/vjo_game_ocr.h"
 
+/* A recount's window, on VjoNet's existing stack. Native records fit even with every quote
+ * escaped and all 16 line metrics present; line history retains its separate 24 KiB window. */
+#define VJO_HISTORY_COUNT_WINDOW 11264u
+
 typedef struct {
     char name[128];
     char title_id[12];
@@ -42,7 +46,7 @@ int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filte
  * file once a view asks for it. */
 /* The Triangle view opened (paf thread, no lock held): the total is counted unless it is known. */
 void vjo_history_total_want(void);
-/* Control-thread context: current game's identity and today's local-midnight UTC bounds. */
+/* Current game's identity and today's local-midnight UTC bounds; Anki's game mailbox is locked. */
 int vjo_history_context(VjoReadingScope *scope);
 /* Under view lock: block 0 today, 1 game total; separate styles are applied by the overlay. */
 void vjo_history_stats_block(char *buf, size_t cap, int today);
@@ -57,14 +61,16 @@ void vjo_history_streak(int add);
 /* Under the view lock: the Triangle view's streak line, "\n\nStreak: current 3 days · longest 12"; "" until the record
  * has been read since the Shell started (a line recorded, or the view's request). */
 void vjo_history_streak_text(char *buf, size_t cap);
-/* Control thread: handles a request with only the checked 112-byte cache and streak. A valid cached prefix
- * is immediately displayable. Only with background set (closed overlay or stats panel, idle worker, paced by the caller)
- * may it scan one 24 KiB CSV window or checkpoint. 1 means more windows remain; never wake immediately
- * for these. A completed count and game exit persist the total; incremental checkpoints are 30 minutes apart. */
-int vjo_history_total_step(VjoArena *scratch, int background);
-/* Control thread, at a game's exit: history_total.bin gets the total if the writer added to it. */
+/* No I/O: whether the existing job thread has a request or an unfinished recount. */
+int vjo_history_total_pending(void);
+/* VjoNet only: one bounded window, or a cache/checkpoint request. Returns 1 for another window;
+ * the worker checks foreground jobs and panel visibility before each one. Scratch is private to this job. */
+int vjo_history_total_step(VjoArena *scratch);
+/* No I/O: queue a checkpoint, normally at game exit. VjoNet saves it after its current job. */
 void vjo_history_total_keep(void);
 /* The Shell's stop, its threads joined: a count's history.csv is closed. */
 void vjo_history_total_stop(void);
+/* VjoNet shutdown: checkpoint a known prefix, then close the count before the thread exits. */
+void vjo_history_total_finish(void);
 
 #endif

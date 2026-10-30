@@ -14,8 +14,9 @@ been reported.
 ### Fixed
 
 - Triangle's reading statistics can finish counting while the panel is open, including with a missing or
-  obsolete cache. Reconstruction remains limited to one window per second, yields to input and active
-  jobs, and pauses during dictionary browsing. No new buffer, allocation or thread.
+  obsolete cache, and show recount progress. History reads and checkpoints now run on the existing
+  background worker, with queued lookups ahead of each bounded chunk. The one-second delay between
+  chunks is removed; dictionary browsing pauses recounts. No new allocation, thread or module/stack budget.
 
 ## [0.10.2] - 2026-10-30
 
