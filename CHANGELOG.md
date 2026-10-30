@@ -84,15 +84,17 @@ been reported.
   exported as it reads, without its frequency source unless that is `Jiten`, and the result says how many. No record
   is written. A card whose queued and archived records differ keeps both and stays queued, unless both are provably
   the card's (the queued copy, which adds nothing, goes) or the archived one is no whole record (replaced by the
-  card's own, as before); a newer build's record (a version above 4, of any length, or a record over 32 KiB) counts
-  as whole. **Export all cards** holds such a card once, its queued copy (past the 20,000 cards a package holds,
+  card's own, as before); a newer build's record (a version whose leading digits read above 4, of any length, or a
+  record over 32 KiB that begins with such a version) counts as whole. **Export all cards** holds such a card once, its queued copy (past the 20,000 cards a package holds,
   that limit counts each copy), and for **Duplicates** the card's other copy is never an earlier card: after a hand
   edit of its time, the queued copy was tagged a duplicate of the card's own archived copy, or with Skip kept queued.
   A record that is not whole stays queued, and the Anki page reads and logs it once instead of at every show (an
   export reads it again). A shortage of memory leaves a record for a later read instead of calling it damaged: each
   read first checks its room, from the record's token count as the parser counts it (exact for a record without a
-  NUL byte). A hand-edited record with a key but no colon (`{"a" "b"}`, which the parser takes) no longer makes the
-  Rubi app read past the record's parsed tokens. The export's `log.txt` line counts the restored and mismatched cards
+  NUL byte). A hand-edited record with a string but no colon in an object (`{"a" "b"}`, which the parser takes) is
+  read member by member: the Rubi app read past the record's parsed tokens, and took values from outside the object it
+  read (one other dictionary's entry got another's meanings). The export's `log.txt` line counts the restored and
+  mismatched cards
   (`N restored, N mismatched`), and `tools/analyse_selftest.py` reports them. Host-tested with every released
   writer's records; not yet run on a console.
 - With `ocr_settle_ms = 0`, a job whose lines the text spotter found reads its region once more before recognizing

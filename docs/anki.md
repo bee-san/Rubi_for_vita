@@ -388,8 +388,9 @@ no card names, unless a Cancel stopped its clearing
 archived is kept: the queued copy goes when the two are the same bytes or both are that card's (its checksum is its
 name, or its name with the frequency source its card was saved with: [#528](#a-record-that-is-not-its-names-528)).
 An archived copy that is no whole record is replaced by the queued one when that is the card's. When the two differ
-otherwise (a whole record edited in either place, or a newer build's record: a version above 4, of any length, or a
-record over this build's 32 KiB), neither is removed: the card stays queued, and `log.txt` says `kept queued: it
+otherwise (a whole record edited in either place, or a newer build's record: one whose version's leading digits read
+above 4, of any length (5, 05, 1234567890; not 4.5 or 1e9), or one over this build's 32 KiB that begins
+`{"version":` with such a version), neither is removed: the card stays queued, and `log.txt` says `kept queued: it
 differs from …`. **Export all cards**, which lists both directories, puts such a card in its package once (the
 queued copy). Past the 20,000 cards a package holds, the limit counts copies, not cards (it keeps the oldest copies,
 then makes each card's copies one): the card's archived copy can then be the one in the package, a card that would

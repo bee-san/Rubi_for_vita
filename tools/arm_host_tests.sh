@@ -101,6 +101,9 @@ TESTS+=(touch_hold text_rows text_join linebreak history_lines history_read stre
         cursor_nav local_cursor settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna hook_sc3 hook_stream_seams psp_probe hooks_engine hooks_engine_external)
 TESTS+=(kernel_text_source hook_titles) # API 31's plumbing (hooks/api)
+# #528 (audit-mem-anki-followup-1): the core suite (the JSON helpers' walk over a 32-bit token array, entries, styled
+# text, the scene and the settings parser, with an unsigned char)
+TESTS+=(core)
 # #528: the OOM paths on the A9's 32-bit layout (every block size differs there), with the lane's dictionary
 [ -z "${VJO_PLAINTEXT_DIR:-}" ] || TESTS+=(oom_paths)
 CMAKE_VOCR=(-DVJO_WITH_VOCR=OFF)

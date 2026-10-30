@@ -57,14 +57,14 @@ int vjo_json_obj_get(const VjoJson *j, int obj, const char *key)
     if (obj < 0 || obj >= j->n || j->t[obj].type != JSMN_OBJECT)
         return -1;
     i = obj + 1;
-    /* (i < j->n: strict jsmn takes an object's string without a colon, {"a" "b"}, as one of its members, so the
-     * object's size is more than its pairs, and the walk in pairs reaches the last token before its size: #528,
-     * Maudit-mem-anki-queue-3-6) */
+    /* One step a member, as jsmn lays them out: a member is one subtree, a key with its value as its first child.
+     * Strict jsmn also takes a string without a colon as a member ({"a" "b"}: two members, neither with a value), which
+     * is no key and a step of its own. Walking in key-value pairs, a lookup ran on past the object, and past the tokens
+     * (#528: Maudit-mem-anki-queue-3-6, Maudit-mem-anki-followup-1-1); i < j->n stays as a guard. */
     for (k = 0; k < j->t[obj].size && i < j->n; k++) {
-        /* jsmn: key token has size 1, value follows. */
-        if (tok_eq(j, i, key))
+        if (j->t[i].size >= 1 && tok_eq(j, i, key))
             return i + 1;
-        i = vjo_json_skip(j, i + 1);
+        i = vjo_json_skip(j, i);
     }
     return -1;
 }

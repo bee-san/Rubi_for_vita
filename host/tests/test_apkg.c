@@ -2944,12 +2944,25 @@ static void test_audit3_a_card_in_both_directories_has_one_place(void)
 }
 
 /* A newer build's record archived beside the card's own queued one (a version this build cannot read: hand copies,
- * as IDs are checksums) is a whole record: neither is removed, the card stays queued. #528's audit 3 (-4): a version
- * of 10 digits or more (vjo_json_int stops at 9) and a record over this build's 32 KiB (read_file refuses it) are
- * such records too; an empty file and a negative version are damaged, replaced by the queued copy. */
+ * as IDs are checksums) is a whole record: neither is removed, the card stays queued. A version is newer when its
+ * leading digits read above 4, of any length (#528's audit 3, -4: 10 and 20 digits, which vjo_json_int refuses; 5, the
+ * next one, audit-mem-anki-followup-1; 0000000005 too, while 00000000004 is 4: in a record the decoder refuses, no
+ * spelling, damaged). A record over this build's 32 KiB, which it does not parse, is a newer build's when it begins
+ * {"version": with such a version (audit-mem-anki-followup-1, -4): else, as 40,000 zero bytes or this build's
+ * version 4 over 32 KiB, it is no whole record, replaced by the queued copy, as an empty file and a negative version
+ * are. (A whole record of version 00000000004, which the decoder reads as 4, is an edited copy: kept.) */
 static void test_a_newer_builds_archived_record_is_kept(void)
 {
-    static const char *const versions[] = {"9", "1234567890", "99999999999999999999", "9", "", "-1234567890"};
+    enum { RECORD, NO_SPELLING, OVER, ZEROS, EMPTY };
+    static const struct {
+        const char *version;
+        int shape, kept;
+    } cases[] = {
+        {"9", RECORD, 1}, {"1234567890", RECORD, 1}, {"99999999999999999999", RECORD, 1}, {"5", RECORD, 1},
+        {"4294967296", RECORD, 1}, /* (2^32: read in 32 bits without a stop, 0) */
+        {"0000000005", NO_SPELLING, 1}, {"00000000004", RECORD, 1}, {"9", OVER, 1},
+        {"00000000004", NO_SPELLING, 0}, {"4", OVER, 0}, {"", ZEROS, 0}, {"", EMPTY, 0}, {"-1234567890", RECORD, 0},
+    };
     static char own[1024], newer[40000], pad[33000];
     static uint8_t back[40000];
     char qpath[256], xpath[256], msg[300], head[64];
@@ -2958,18 +2971,24 @@ static void test_a_newer_builds_archived_record_is_kept(void)
     TEST_ASSERT(!strncmp(own, "{\"version\":4,", 13));
     snprintf(qpath, sizeof(qpath), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
     snprintf(xpath, sizeof(xpath), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
-    for (unsigned k = 0; k < sizeof(versions) / sizeof(versions[0]); k++) {
-        int kept = k < 4;
+    for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        int kept = cases[k].kept;
         VjoExportResult r;
         memcpy(newer, own, no + 1);
-        snprintf(head, sizeof(head), "{\"version\":%s,", versions[k]);
-        nn = k == 4 ? 0 : audit2_edit(newer, sizeof(newer), newer, "{\"version\":4,", head);
-        if (k == 3) { /* over 32 KiB: an unknown key of 32 KiB */
+        snprintf(head, sizeof(head), "{\"version\":%s,", cases[k].version);
+        nn = audit2_edit(newer, sizeof(newer), newer, "{\"version\":4,", head);
+        if (cases[k].shape == NO_SPELLING) {
+            nn = audit2_edit(newer, sizeof(newer), newer, "\"spelling\":\"猫\"", "\"spelling\":\"\"");
+        } else if (cases[k].shape == OVER) { /* over 32 KiB: an unknown key of 32 KiB */
             memset(pad, 'a', 32768);
             memcpy(pad, "\"ocr_confidence\":null,\"x\":\"", 27);
             memcpy(pad + 32768, "\"}", 3);
             nn = audit2_edit(newer, sizeof(newer), newer, "\"ocr_confidence\":null}", pad);
             TEST_ASSERT(nn > VJO_QUEUE_TEXT_MAX);
+        } else if (cases[k].shape == ZEROS) {
+            memset(newer, 0, nn = 40000);
+        } else if (cases[k].shape == EMPTY) {
+            nn = 0;
         }
         reset();
         put_file(qpath, own, no);
@@ -2979,15 +2998,16 @@ static void test_a_newer_builds_archived_record_is_kept(void)
         TEST_CHECK_(kept ? r.cards == 1 && r.kept == 1 && !r.moved && strstr(logs, "(a whole record), and neither replaces")
                          : r.cards == 1 && r.moved == 1 && !r.kept &&
                                strstr(logs, "the archived copy is damaged: replaced by the queued one"),
-                    "version \"%s\"%s: %s\n%s", versions[k], k == 3 ? ", over 32 KiB" : "", msg, logs);
+                    "case %u, version \"%s\" (shape %d): %s\n%s", k, cases[k].version, cases[k].shape, msg, logs);
         TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == (kept ? nn : no) && !memcmp(back, kept ? newer : own, kept ? nn : no));
         TEST_CHECK(kept ? get_bytes(qpath, back, sizeof(back)) == no && !memcmp(back, own, no) : present(qpath) == 0);
     }
 }
 
-/* (#528's audit 3, -4) A queued record over 32 KiB is no record this build reads (-1, as an empty one, while an
- * archived one is kept as a newer build's: above): the Anki page names it once, then knows it (anki_words.bin), and
- * an export leaves it queued. Never "not now" (-2), which the page would read and log again at every show. */
+/* (#528's audit 3, -4) A queued record over 32 KiB is no record this build reads (-1, as an empty one; an archived
+ * one beside the card's own may be a newer build's: above): the Anki page names it once, then knows it
+ * (anki_words.bin), and an export leaves it queued. Never "not now" (-2), which the page would read and log again at
+ * every show. */
 static void test_audit3_a_record_over_the_limit_is_named_once(void)
 {
     static char big[40000], pad[33000];
@@ -3003,19 +3023,114 @@ static void test_audit3_a_record_over_the_limit_is_named_once(void)
     n = audit2_edit(big, sizeof(big), big, "\"ocr_confidence\":null}", pad);
     TEST_ASSERT(n > VJO_QUEUE_TEXT_MAX);
     vjo_queue_id(big, n, name);
+    for (int empty = 0; empty < 2; empty++) { /* (1: an empty one, the same: audit-mem-anki-followup-1) */
+        reset();
+        snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+        put_file(path, big, empty ? 0 : n);
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_CHECK(read_card(&A, 0, name, &note, &picture, 0, REPORT_NONE) == -1);
+        for (int show = 0; show < 3; show++) {
+            logs[0] = '\0';
+            TEST_ASSERT(words(&w, 64) == 0);
+            TEST_CHECK_(!w.n && w.unreadable == 1 && occurrences((const uint8_t *)logs, strlen(logs), "(limit 32768)") == !show,
+                        "%s, show %d: %d words, %d unreadable\n%s", empty ? "empty" : "over the limit", show, w.n,
+                        w.unreadable, logs);
+        }
+        TEST_CHECK(run(0, &r, msg) == VJO_E_PARSE && r.unreadable == 1 && present(path) == 1);
+        TEST_MSG("%s", msg);
+    }
+}
+
+/* (audit-mem-anki-followup-1, -4) An archived copy over 32 KiB beside the card's own queued one: whether it is a newer
+ * build's is read from its first bytes. When they cannot be read now (an I/O error), neither copy is touched, whatever
+ * the file holds; read again, a file that is not a newer build's record (here 40,000 zero bytes) is replaced. A record
+ * over 32 KiB whose first key is not its version is not one either: replaced. */
+static void test_audit_followup1_an_oversize_archived_copy_is_read_from_its_head(void)
+{
+    static char own[1024], big[40000], pad[33000];
+    static uint8_t back[40000];
+    char qpath[256], xpath[256], xrel[256], msg[300];
+    const char *name = released[0].name;
+    size_t no = released_record(own, sizeof(own), 0, "\"Jiten\""), nb;
+    VjoExportResult r;
+    snprintf(qpath, sizeof(qpath), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
+    snprintf(xpath, sizeof(xpath), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, name);
+    snprintf(xrel, sizeof(xrel), "exported/%s.json", name);
+    memset(big, 0, sizeof(big));
+    reset();
+    put_file(qpath, own, no);
+    TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+    put_file(xpath, big, sizeof(big));
+    audit2_fail_read = xrel; /* (from the clearing on: every read of the archived copy fails) */
+    vjo_arena_init(&A, mem, sizeof(mem));
+    TEST_ASSERT(vjo_export_run(&A, 0, NULL, NULL, &audit2_ui, &r, msg, 300) == VJO_OK);
+    audit2_fail_read = NULL;
+    io.fail_read = NULL;
+    TEST_CHECK_(r.cards == 1 && r.kept == 1 && !r.moved && strstr(logs, "its first bytes could not be read now") &&
+                !strstr(logs, "the archived copy is damaged"), "%s\n%s", msg, logs);
+    TEST_CHECK(get_bytes(qpath, back, sizeof(back)) == no && !memcmp(back, own, no));
+    TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == sizeof(big) && !memcmp(back, big, sizeof(big)));
+    logs[0] = '\0';
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK_(r.moved == 1 && !r.kept && strstr(logs, "the archived copy is damaged: replaced by the queued one"),
+                "read again: %s\n%s", msg, logs);
+    TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == no && !memcmp(back, own, no) && present(qpath) == 0);
+    /* over 32 KiB, version 9, but another key first, or a key of version's length that is not version: no newer
+     * build's record by its first bytes */
+    for (int lead = 0; lead < 2; lead++) {
+        memcpy(big, own, no + 1);
+        audit2_edit(big, sizeof(big), big, "{\"version\":4,", lead ? "{\"Version\":9," : "{\"v\":1,\"version\":9,");
+        memset(pad, 'a', 32768);
+        memcpy(pad, "\"ocr_confidence\":null,\"x\":\"", 27);
+        memcpy(pad + 32768, "\"}", 3);
+        nb = audit2_edit(big, sizeof(big), big, "\"ocr_confidence\":null}", pad);
+        TEST_ASSERT(nb > VJO_QUEUE_TEXT_MAX);
+        reset();
+        put_file(qpath, own, no);
+        TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+        put_file(xpath, big, nb);
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+        TEST_CHECK_(r.moved == 1 && !r.kept && strstr(logs, "the archived copy is damaged: replaced by the queued one"),
+                    "%s: %s\n%s", lead ? "\"Version\" first" : "another key first", msg, logs);
+    }
+}
+
+/* (audit-mem-anki-followup-1, -1) A record whose object has a string without a colon is read member by member
+ * (core/json.c vjo_json_obj_get): no lookup gives a token outside the object asked about. So a queued record whose
+ * first other dictionary's entry is {"q" "r" "s" "t"} is no whole record (it took the next entry's meanings and was
+ * exported), and an archived {"a" "b"}"version" 9 (a version after the root object) beside the card's own queued
+ * copy is damaged, replaced (it was kept as a newer build's). */
+static void test_audit_followup1_a_member_without_a_colon_is_no_key(void)
+{
+    char json[1024], name[VJO_QUEUE_ID_SIZE], path[256], qpath[256], xpath[256], msg[300];
+    static const char odd[] = "{\"a\" \"b\"}\"version\" 9\n";
+    uint8_t back[1024];
+    size_t n = released_record(json, sizeof(json), 0, "\"Jiten\""), no;
+    VjoExportResult r;
+    VjoAnkiNote note;
+    int picture;
+    n = audit2_edit(json, sizeof(json), json, "\"more\":[]",
+                    "\"more\":[{\"q\" \"r\" \"s\" \"t\"},{\"dictionary\":\"d\",\"meanings\":[\"m\"]}]");
+    vjo_queue_id(json, n, name);
     reset();
     snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, name);
-    put_file(path, big, n);
+    put_file(path, json, n);
     vjo_arena_init(&A, mem, sizeof(mem));
-    TEST_CHECK(read_card(&A, 0, name, &note, &picture, 0, REPORT_NONE) == -1);
-    for (int show = 0; show < 3; show++) {
-        logs[0] = '\0';
-        TEST_ASSERT(words(&w, 64) == 0);
-        TEST_CHECK_(!w.n && w.unreadable == 1 && occurrences((const uint8_t *)logs, strlen(logs), "(limit 32768)") == !show,
-                    "show %d: %d words, %d unreadable\n%s", show, w.n, w.unreadable, logs);
-    }
+    TEST_CHECK(read_card(&A, 0, name, &note, &picture, 1, REPORT_NONE) == -1);
     TEST_CHECK(run(0, &r, msg) == VJO_E_PARSE && r.unreadable == 1 && present(path) == 1);
-    TEST_MSG("%s", msg);
+    TEST_MSG("%s\n%s", msg, logs);
+    /* the archived copy */
+    no = released_record(json, sizeof(json), 0, "\"Jiten\"");
+    reset();
+    snprintf(qpath, sizeof(qpath), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, released[0].name);
+    snprintf(xpath, sizeof(xpath), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, released[0].name);
+    put_file(qpath, json, no);
+    TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+    put_file(xpath, odd, sizeof(odd) - 1);
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK_(r.moved == 1 && !r.kept && strstr(logs, "the archived copy is damaged: replaced by the queued one"),
+                "%s\n%s", msg, logs);
+    TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == no && !memcmp(back, json, no) && present(qpath) == 0);
 }
 
 static void test_screenshots_are_one_file_each(void)
@@ -4046,6 +4161,9 @@ TEST_LIST = {
     {"#528 audit 3: a card's other copy is not an earlier card", test_audit3_a_cards_other_copy_is_not_an_earlier_card},
     {"#528 audit 3: a card in both directories has one place", test_audit3_a_card_in_both_directories_has_one_place},
     {"#528 audit 3: a record over the limit is named once", test_audit3_a_record_over_the_limit_is_named_once},
+    {"#528 audit-mem-anki-followup-1: an oversize archived copy is read from its head",
+     test_audit_followup1_an_oversize_archived_copy_is_read_from_its_head},
+    {"#528 audit-mem-anki-followup-1: a member without a colon is no key", test_audit_followup1_a_member_without_a_colon_is_no_key},
     {"screenshots_are_one_file_each", test_screenshots_are_one_file_each},
     {"missing_or_damaged_screenshots_export_the_text", test_missing_or_damaged_screenshots_export_the_text},
     {"good_screenshot_copy_survives_a_damaged_copy", test_good_screenshot_copy_survives_a_damaged_copy},
