@@ -3350,10 +3350,10 @@ static void control_tick(uint32_t bits)
     if (!defer_prepare) prepare_words();
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     RESULT_MEM_IDLE();
-    /* Stats shares this input thread. Cached totals may be loaded for the open view, but CSV scans and
-     * checkpoints wait until it is closed and no foreground work runs. At most one window a second,
-     * without immediate self-wakeups; the normal poll still handles input every 50 ms. */
-    int background = ov == OV_CLOSED && !net_busy() && pending_cmd == VJO_CMD_NONE &&
+    /* Stats shares this input thread. Reconstruct while closed OR while Triangle's stats are shown:
+     * otherwise a missing cache can never finish while the reader watches "counting…". Dictionary
+     * browsing still does no CSV work. One window a second, only after input and jobs, no self-wakeups. */
+    int background = (ov == OV_CLOSED || vjo_overlay_stats_open()) && !net_busy() && pending_cmd == VJO_CMD_NONE &&
                      !bits && now_us() >= stats_next_us;
     vjo_history_total_step(&scratch, background);
     if (background) stats_next_us = now_us() + 1000000;

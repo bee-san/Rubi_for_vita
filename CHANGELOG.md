@@ -11,6 +11,12 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- Triangle's reading statistics can finish counting while the panel is open, including with a missing or
+  obsolete cache. Reconstruction remains limited to one window per second, yields to input and active
+  jobs, and pauses during dictionary browsing. No new buffer, allocation or thread.
+
 ## [0.10.2] - 2026-10-30
 
 Memory fixes for the failures in the owner's 0.10.1 logs (#528). The overlay opens even when another plugin has used

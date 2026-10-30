@@ -980,9 +980,9 @@ static uint64_t append_total_lines(VjoHistoryRecord *r, int n)
     return chars;
 }
 
-/* Opening Stats reads only its small checked cache. A stale prefix stays visible until closed-overlay
- * background steps finish; damaged and missing caches never start a CSV read in the open view. */
-static void test_total_deferred_until_closed(void)
+/* A request reads only its small checked cache. A stale prefix stays visible until paced idle
+ * steps finish; damaged and missing caches never start a CSV read during an input/busy tick. */
+static void test_total_deferred_until_idle(void)
 {
     reset();
     VjoHistoryRecord r = record("x");
@@ -1007,7 +1007,7 @@ static void test_total_deferred_until_closed(void)
     TEST_CHECK(reads == before && total_writes == saved);
     count_total();
     TEST_CHECK(total.state == TOTAL_KNOWN && shown() == prefix + tail);
-    /* A checkpoint is deferred while open, including after the 30-minute threshold. */
+    /* A checkpoint waits for an idle slot, including after the 30-minute threshold. */
     r.time_us += 1801000000ull;
     append_total_lines(&r, 1);
     saved = total_writes;
@@ -2385,7 +2385,7 @@ TEST_LIST = {
     {"I/O failures restore file and allow retry", test_failures_roll_back_and_retry},
     {"restart IDs and files beyond 4 GiB", test_restart_and_large_offset},
     {"blank and invalid records do not touch disk", test_empty_and_invalid},
-    {"total: cache shown while open, reconstruction and checkpoints deferred", test_total_deferred_until_closed},
+    {"total: cache shown immediately, reconstruction and checkpoints wait for idle", test_total_deferred_until_idle},
     {"total: the file counted once, in windows, then each append added", test_total_counts_the_file_once_then_adds},
     {"API 49: a grown line replaces its record; the total counts it once", test_grown_line_replaces_its_record},
     {"#338's audit F3: a grown line's rewrite opens first, never under a count, only over its own record", test_grown_line_rewrite_fails_safely},

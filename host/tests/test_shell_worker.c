@@ -308,6 +308,8 @@ uint32_t vjo_shell_heap_free_size(void)
 /* shell/overlay.cpp's take of its text block as the Shell starts (#528, vjo_worker_start's end): overlay.cpp is not
  * built here; the owner scenario runs the step itself (shell/overlay_mem.h vjo_overlay_mem_boot, at its boot event). */
 void vjo_overlay_boot(void) {}
+static int stats_open;
+int vjo_overlay_stats_open(void) { return stats_open; }
 static int theme_loads, theme_choice;
 int vjo_colour_scheme_load(VjoArena *a) { (void)a; theme_loads++; return theme_choice; }
 void vjo_config_load(VjoConfig *out, VjoArena *a) { start_step('C'); *out = loaded; }
@@ -1075,6 +1077,7 @@ static void reset(void)
     history_load_rc = 0;
     total_steps = total_keeps = total_windows = total_background = 0;
     stats_next_us = 0;
+    stats_open = 0;
 #endif
     memset(&g_view, 0, sizeof(g_view));
     view_lock = 81;
@@ -9339,8 +9342,8 @@ static void test_theme_latched_for_game(void)
     mem_free();
 }
 
-/* CSV windows are paced, deferred while open, and never cause immediate wakeups. Closing wins
- * over a due scan, while game exit still checkpoints incremental counters. */
+/* CSV windows progress in the stats panel, never in dictionary browsing, and are paced without
+ * self-wakeups. Input and foreground jobs win even when a scan is due. */
 static void test_reading_total_on_the_control_thread(void)
 {
     reset();
@@ -9353,16 +9356,41 @@ static void test_reading_total_on_the_control_thread(void)
     test_now += 1000000;
     control_tick(0);
     TEST_CHECK(total_background == 2 && total_windows == 1 && !shell_notifications);
-    /* An open overlay always allows only cache handling, even after the next window is due. */
+    /* Dictionary browsing still allows only cache handling, even after a window is due. */
     ov = OV_OPEN;
     test_now += 1000000;
     control_tick(0);
     TEST_CHECK(total_background == 2 && total_windows == 1 && !shell_notifications);
-    pending_cmd = VJO_CMD_CLOSED;
+    /* Triangle's notification handles the small cache first; the next idle poll may count. */
+    stats_open = 1;
     control_tick(VJO_EV_SHELL);
-    TEST_CHECK(ov == OV_CLOSED && total_background == 2 && total_windows == 1);
+    TEST_CHECK(total_background == 2 && total_windows == 1);
     control_tick(0);
     TEST_CHECK(total_background == 3 && !total_windows && !shell_notifications);
+    /* A long count continues while the panel stays open, at most one window a second. */
+    total_windows = 3;
+    control_tick(0);
+    TEST_CHECK(total_background == 3 && total_windows == 3);
+    test_now += 1000000;
+    job_running = 1;
+    control_tick(0);
+    TEST_CHECK(total_background == 3 && total_windows == 3);
+    job_running = 0;
+    control_tick(0);
+    TEST_CHECK(total_background == 4 && total_windows == 2);
+    test_now += 1000000;
+    control_tick(0);
+    TEST_CHECK(total_background == 5 && total_windows == 1);
+    /* Returning to the dictionary pauses reconstruction; closing resumes it. */
+    stats_open = 0;
+    test_now += 1000000;
+    control_tick(0);
+    TEST_CHECK(total_background == 5 && total_windows == 1);
+    pending_cmd = VJO_CMD_CLOSED;
+    control_tick(VJO_EV_SHELL);
+    TEST_CHECK(ov == OV_CLOSED && total_background == 5 && total_windows == 1);
+    control_tick(0);
+    TEST_CHECK(total_background == 6 && !total_windows && !shell_notifications);
     state.game_pid = PS_GAME_PID;
     control_tick(VJO_EV_GAME_START);
     TEST_CHECK(!total_keeps); /* a game's start reads nothing for it */

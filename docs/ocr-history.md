@@ -459,8 +459,10 @@ is skipped. Invalid or incomplete timestamps never contribute time.
 **Counting and persistence.** A Triangle press does no file I/O. The control thread reads the streak's
 16-byte record and the checked 112-byte per-game cache when the view asks for statistics
 ([Streak](#streak)). A valid cached prefix is shown immediately, even if newer history remains to
-count. CSV reads and parsing wait until the overlay is closed and the worker is idle: one window
-in existing 24 KiB scratch at most once a second, with no immediate self-wakeup. With no usable
+count. CSV reads and parsing run while the overlay is closed or Triangle's statistics panel is
+visible, with the worker idle: one window in existing 24 KiB scratch at most once a second, with
+no immediate self-wakeup. Input events and OCR/lookup jobs take priority. Returning to dictionary
+browsing pauses reconstruction. With no usable
 cache the view says `Reading statistics: counting…` until ready, or `unavailable` after a failed
 background read (the next press retries).
 While the totals are known, successful appends update them in constant space. The scan and writer use
@@ -473,7 +475,7 @@ are deferred; console latency and CPU3 usage are unmeasured.
 counters and covered CSV prefix, protected by a checksum. The control thread checkpoints through
 the existing temporary-file/rename path after counting, on game exit, before a background context
 change, and at most once per 30 minutes of newly recorded timestamps while idle with the overlay
-closed. An open view can therefore show stale statistics while reconstruction waits. A dialogue updates RAM counters;
+closed or its statistics panel visible. A cached prefix stays visible until reconstruction finishes. A dialogue updates RAM counters;
 it adds no cache write. Speed is formatted only when the menu is rendered. No new allocation,
 thread or file-size-dependent RAM is added.
 

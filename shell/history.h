@@ -58,7 +58,7 @@ void vjo_history_streak(int add);
  * has been read since the Shell started (a line recorded, or the view's request). */
 void vjo_history_streak_text(char *buf, size_t cap);
 /* Control thread: handles a request with only the checked 112-byte cache and streak. A valid cached prefix
- * is immediately displayable. Only with background set (closed overlay, idle worker, paced by the caller)
+ * is immediately displayable. Only with background set (closed overlay or stats panel, idle worker, paced by the caller)
  * may it scan one 24 KiB CSV window or checkpoint. 1 means more windows remain; never wake immediately
  * for these. A completed count and game exit persist the total; incremental checkpoints are 30 minutes apart. */
 int vjo_history_total_step(VjoArena *scratch, int background);
