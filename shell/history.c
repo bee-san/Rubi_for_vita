@@ -2,9 +2,6 @@
 #include <psp2/io/stat.h>
 #include <psp2/kernel/clib.h>
 #include <psp2/rtc.h> /* the streak's day */
-#if VJO_DEBUG
-#include <psp2/kernel/processmgr.h> /* the total's count time, in its log line */
-#endif
 
 #include "history.h"
 #include "shell.h"
@@ -74,10 +71,6 @@ static struct {
     uint32_t seq, top_seq;            /* completed write attempts; generation of the count's file end */
     uint8_t state, read, progress;    /* TOTAL_*; cache read; recount percentage */
     uint32_t streak_seq;              /* `streak`'s stores (vjo_history_streak); 0: not read since the Shell started */
-#if VJO_DEBUG
-    uint32_t windows, bytes; /* the count's windows and bytes read, and when it started: its log line */
-    int64_t started;
-#endif
 } total;
 /* history_total.bin / reading-<game>.bin: the total, the bytes of history.csv it is the total of, and a check
  * that a torn or foreign file does not have, nor one counted with the other reading_time rule: the check
@@ -409,6 +402,7 @@ static void total_set(int state)
 {
     vjo_view_lock();
     total.state = state;
+    total.progress = 0;
     g_view.version++;
     vjo_view_unlock();
 }
@@ -522,10 +516,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
             total.state = TOTAL_COUNTING;
             vjo_view_unlock();
         }
-        if (total.state == TOTAL_UNREAD || total.state == TOTAL_FAILED) {
-            total.progress = 0;
-            total_set(TOTAL_COUNTING);
-        }
+        if (total.state == TOTAL_UNREAD || total.state == TOTAL_FAILED) total_set(TOTAL_COUNTING);
     }
     if (total.state != TOTAL_COUNTING && total.state != TOTAL_CACHED) return 0;
     if (!total.read) { /* the first count for this context: from its checked cache */
@@ -573,10 +564,6 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
         total.scan_time = total.time;
         total.at = total.covered;
         total.found = 0;
-#if VJO_DEBUG
-        total.windows = total.bytes = 0;
-        total.started = sceKernelGetProcessTimeWide();
-#endif
     }
     from = total.at;
     to = total.top - from > VJO_HISTORY_COUNT_WINDOW ? from + VJO_HISTORY_COUNT_WINDOW : total.top;
@@ -596,10 +583,6 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
      * left for the next window or count */
     cut = to < total.top || (n && buf[n - 1] != '\n');
     total.found += vjo_history_count_scope(buf, n, !from, cut, &first, &last, &total.scan_time, &total.scan_scope);
-#if VJO_DEBUG
-    total.windows++;
-    total.bytes += (uint32_t)n;
-#endif
     vjo_arena_release(scratch, mark);
     if (from && from == total.covered && from < total.top && first != 1) {
         /* no record starts where the total's bytes end: history.csv is not the file it is the total of */
@@ -643,9 +626,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
     g_view.version++;
     vjo_view_unlock();
 #if VJO_DEBUG
-    vjo_log("history total: %llu chars, %u B (%u B, %u windows, %u ms)%s",
-            (unsigned long long)chars, (unsigned)covered, (unsigned)total.bytes, (unsigned)total.windows,
-            (unsigned)((sceKernelGetProcessTimeWide() - total.started) / 1000), known ? "" : "; again");
+    vjo_log("history total: %u B", (unsigned)covered);
 #endif
     if (known && covered != total.saved)
         total_save(chars, covered, &time, &scope);

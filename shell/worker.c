@@ -88,8 +88,8 @@ static uint32_t local_text_generation, local_text_game_generation;
 static uint32_t local_text_scene, local_text_capture_seq;
 static uint32_t local_cursor_byte, local_cursor_seq;
 static int cursor_waiting;
-static int job_cursor_only;
-static int job_prepare;
+static uint8_t job_cursor_only;
+static uint8_t job_prepare;
 static uint32_t prepared_seq, prepare_cursor;
 static int prepare_left;
 static size_t prepared_end;
@@ -152,7 +152,8 @@ enum { OV_CLOSED, OV_OPEN, OV_OPEN_OLD_JOB };
 static int ov = OV_CLOSED;
 /* 0: dialogue, 1: a rear-tap scan queued behind cancellation, 2: its pinned view.
  * The job snapshot survives a close until the game worker has finished. */
-static int full_screen, job_full_screen;
+static int full_screen;
+static uint8_t job_full_screen;
 static int subtitles; /* written by set_subtitles only */
 /* The strip says "Recognizing…" for the lookup or refresh in progress, which
  * brings it nothing (subtitles turned on after the close that dropped it): its
@@ -202,22 +203,22 @@ static int64_t job_started_us;
 #define NET_EV_QUIT 2u
 #define NET_EV_STATS 4u
 static int stats_allowed; /* atomic permission; recount scratch never belongs to the input thread */
-static volatile int job_running;
-static volatile int job_done;
+static volatile uint8_t job_running;
+static volatile uint8_t job_done;
 static volatile int job_idx;
 static volatile int job_rc;
-static volatile int job_lookup;     /* the job looks the words up (else OCR only) */
+static volatile uint8_t job_lookup;     /* the job looks the words up (else OCR only) */
 /* The job is a refresh of the open overlay's text (local pipeline): it writes
  * neither local_text nor the result arena; its text stays in the worker's
  * result (cache_data[1].ocr_text) until on_refresh_done compares the two. */
-static volatile int job_refresh;
+static volatile uint8_t job_refresh;
 static const char *refresh_model; /* the model that read the refresh's text (job_cfg's, or a constant) */
 /* The job is the self-test's (shell/selftest.c, selftest_job_due): its stages
  * run on the screen the last job read text from, with the overlay closed, and
  * it shows nothing: the shown text, its lookup and the result arenas stay, and
  * its captures do not stand in for the shown text's (vocr_note_capture). */
 #if VJO_DEBUG
-static volatile int job_selftest;
+static volatile uint8_t job_selftest;
 #else
 #define job_selftest 0 /* the normal build has no self-test (shell.h) */
 #endif
@@ -229,19 +230,19 @@ static int64_t idle_since_us; /* the last job's end or the overlay's close */
 #if VJO_DEBUG
 static int64_t job_game_us;   /* the job's exchanges with the game worker (job thread) */
 #endif
-static int job_prepares;            /* ...the first word, before the overlay opens (log) */
+static uint8_t job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
 /* The job's capture is done (job_capture_scene, job_capture_seq: its
  * VjoState.capture_scene and region_seq). */
-static volatile int job_captured;
+static volatile uint8_t job_captured;
 static volatile uint32_t job_capture_scene, job_capture_seq;
 /* The job is for an earlier screen: its requests were aborted, its result
  * is dropped. */
-static volatile int job_cancelled;
+static volatile uint8_t job_cancelled;
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
  * job thread only appends to the arena, so the control thread may read it */
-static volatile int job_text_ready;
+static volatile uint8_t job_text_ready;
 /* The job thread's log batch (shell/log_vita.c), its buffer on net_main's stack: no job's line
  * stands between its result and the control thread (owner 2026-10-16, 0.8.0-test.3; #360 for the debug
  * build; docs/release-variants.md "No log append on the result path"). Job thread only. */
@@ -1683,11 +1684,11 @@ static __attribute__((noinline)) void net_stack_paint(void)
     sceClibMemset(&info, 0, sizeof(info));
     info.size = sizeof(info);
     if (sceKernelGetThreadInfo(sceKernelGetThreadId(), &info) < 0 || !info.stack) {
-        vjo_log("VjoNet stack: not painted (no thread info)");
+        vjo_log("VjoNet stack: not painted (no info)");
         return;
     }
     if (info.stackSize != (int)VJO_STACK_SHELL_NET) { /* not the stack this thread was created with */
-        vjo_log("VjoNet stack: not painted (the kernel reports %d B, not %u)", info.stackSize,
+        vjo_log("VjoNet stack: not painted (%d/%u B)", info.stackSize,
                 (unsigned)VJO_STACK_SHELL_NET);
         return;
     }
@@ -1695,7 +1696,7 @@ static __attribute__((noinline)) void net_stack_paint(void)
     uintptr_t lo = (uintptr_t)info.stack, top = lo + (uintptr_t)info.stackSize, frame = (uintptr_t)&here;
     uintptr_t low = lo + STACK_PAINT_FLOOR; /* the paint's first byte */
     if (frame <= low + STACK_PAINT_GAP || frame >= top) {
-        vjo_log("VjoNet stack: not painted (frame 0x%08X outside 0x%08X + %d)", (unsigned)frame, (unsigned)lo,
+        vjo_log("VjoNet stack: not painted (%08X/%08X+%d)", (unsigned)frame, (unsigned)lo,
                 info.stackSize);
         return;
     }
@@ -3426,8 +3427,10 @@ int vjo_worker_start(void)
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
+    static const char anki_unavailable[] VJO_DATA_TABLE(worker_anki_unavailable) =
+        "anki: mailbox unavailable: no card can be saved";
     if (vjo_anki_start() < 0)
-        vjo_log("anki: mailbox unavailable: no card can be saved");
+        vjo_log(anki_unavailable);
     apply_config(); /* logging, triggers and Anki are set up before the first game */
     vjo_reading_rule = (uint32_t)cfg.reading_time; /* once: a Shell's totals are all counted with one rule */
     vjo_selftest_init(&cfg);

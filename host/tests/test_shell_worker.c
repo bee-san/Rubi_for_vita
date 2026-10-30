@@ -4457,10 +4457,10 @@ static void *paint_thread(void *arg)
  * (audit-overlay-shell-slim-2d N1, -4 N2) */
 #define PAINT_MODES 9
 static const char *const paint_refusal[PAINT_MODES + 1] = {
-    NULL, "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (the kernel reports 0 B, not 16384)",
-    "VjoNet stack: not painted (the kernel reports 24576 B, not 16384)", "VjoNet stack: not painted (no thread info)",
-    "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x",
-    "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x"};
+    NULL, "VjoNet stack: not painted (", "VjoNet stack: not painted (0/16384 B)",
+    "VjoNet stack: not painted (24576/16384 B)", "VjoNet stack: not painted (no info)",
+    "VjoNet stack: not painted (", "VjoNet stack: not painted (", "VjoNet stack: not painted (",
+    "VjoNet stack: not painted (", "VjoNet stack: not painted ("};
 static int paint_on_a_thread(int mode, int depth)
 {
     uint8_t *lo = paint_region + PAINT_GUARD;
@@ -4498,7 +4498,7 @@ static int paint_on_a_thread(int mode, int depth)
         if (mode >= 5) { /* the frame the line names is where this mode puts it */
             unsigned frame = 0, low = 0;
             int size = 0;
-            TEST_ASSERT(sscanf(line, "VjoNet stack: not painted (frame 0x%X outside 0x%X + %d)", &frame, &low, &size) == 3);
+            TEST_ASSERT(sscanf(line, "VjoNet stack: not painted (%X/%X+%d)", &frame, &low, &size) == 3);
             uint32_t above = (uint32_t)(frame - low);
             if (mode == 5) /* the frame's full address: the 32-bit line's offset from lo */
                 paint_frame_seen = (uintptr_t)lo + (uint32_t)(frame - (uint32_t)(uintptr_t)lo);
