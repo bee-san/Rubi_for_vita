@@ -910,6 +910,16 @@ static void the_tall_lines_block_keeps_the_reserve_beside_a_carried_figure(void)
             if (stack < least) least = stack;
         }
         TEST_CHECK_(b.rc == 0, "f %lld d %lld: rc %d", (long long)cases[i].f, (long long)cases[i].d, b.rc);
+        /* audit-mem-lead-3 F1: bands left out cost their first try's steps only, so the job's RECOGNIZE step, the one
+         * record of how many were left out, stays in the step log (VJO_GAME_OCR_STEPS) */
+        {
+            const VjoGameOcrStep *rec = NULL;
+            for (unsigned k = 0; k < last_out.n_steps && k < VJO_GAME_OCR_STEPS; k++)
+                if (last_out.step[k].id == VJO_GSTEP_RECOGNIZE) rec = &last_out.step[k];
+            TEST_CHECK_(rec && (rec->sum & 0xFFu) == host_last_stats.tall_skipped,
+                        "f %lld d %lld: RECOGNIZE %s, %u bands left out", (long long)cases[i].f, (long long)cases[i].d,
+                        rec ? "logged" : "missing", host_last_stats.tall_skipped);
+        }
     }
     TEST_CHECK_(run == 3 && tall == 3, "%u cases ran, %u met the tall line", run, tall);
     TEST_CHECK_(!under, "%u of %u cases left the game under the reserve, least %lld B", under, run, (long long)least);
@@ -1175,9 +1185,9 @@ static void spot_overlap_reads_the_same_text(void)
 }
 
 TEST_LIST = {
-    {"owner scenario", owner_scenario_game},
+    {"owner scenario", owner_scenario_game}, /* #528: tools/owner_scenario.py runs it by this name */
     {"the tall line's block keeps the reserve beside a carried figure (audit-mem-game-4)",
-     the_tall_lines_block_keeps_the_reserve_beside_a_carried_figure}, /* #528: tools/owner_scenario.py runs it by this name */
+     the_tall_lines_block_keeps_the_reserve_beside_a_carried_figure},
     {"#528 the spotter's part over the job's extras reads the same text with less workspace", spot_overlap_reads_the_same_text},
     {"#528 the game's memory swept: every tier, the LM and the spotter, exact and in whole MiB", game_memory_sweep},
     {"#528 the game grows by less than a MiB between two jobs: every block leaves it the reserve", game_grows_between_jobs},

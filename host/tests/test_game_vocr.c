@@ -2604,6 +2604,7 @@ static void weights_refused_after_the_check_retry_the_next_smaller_model(void)
                 "the probe left the game %lld B (floor %u B)", (long long)weights_floor,
                 (unsigned)((normal + mib - 1u) / mib * mib - normal));
     TEST_MSG("the probe left the game %lld B beside Normal's weights", (long long)weights_floor);
+
     TEST_CHECK_(rc == VJO_OK, "free %u, then %u B taken: rc %d", f + 4096u, f + 8192u - tier_need(&r, 2, 0), rc);
     TEST_CHECK_(out.lines >= 1 && out.fallback == 1u, "%u lines, fallback %u", out.lines, out.fallback);
     TEST_CHECK_(weights_live && weights_block == small && weight_allocations == 2 && weight_frees == 1,
@@ -2616,6 +2617,38 @@ static void weights_refused_after_the_check_retry_the_next_smaller_model(void)
         unsigned n = check_steps(&out, s);
         TEST_CHECK_(n == 2 && VJO_GCHECK_TIER(s[0]->kind) == 2 && !s[0]->rc && VJO_GCHECK_TIER(s[1]->kind) == 1 &&
                     s[1]->arg == 1u && !s[1]->rc, "%u checks", n); /* Normal passed, then Small, the retry's */
+    }
+    free_mib = 0;
+    TEST_CHECK(!drop_resident());
+    /* audit-mem-lead-3 F2, the floor's two edges: with 139,264 B more taken the probe reaches the floor exactly and goes
+     * back; with 4 KiB more than that, Normal's weights are not even probed (a probe one MiB wider would leave the game
+     * under the floor here) */
+    for (unsigned edge = 0; edge < 2; edge++) {
+        const int more = edge ? 143360 : 139264;
+        unsigned wa0, wf0;
+        TEST_CHECK(!drop_resident());
+        r = setup();
+        r.tiers = 1u << (VJO_VOCR_TIER_NORMAL - 1u) | 1u << (VJO_VOCR_TIER_SMALL - 1u);
+        snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+        line();
+        wa0 = weight_allocations; wf0 = weight_frees;
+        free_mib = 1;
+        available = (int)(f + 4096u);
+        drop_at_allocation = allocations + 1u;
+        drop_once = (int)(f + 8192u - tier_need(&r, 2, 0)) + more;
+        weights_floor = INT64_MAX;
+        rc = vjo_game_ocr_run_request(&r, &out);
+        drop_at_allocation = 0; drop_once = 0;
+        TEST_CHECK_(rc == VJO_OK && out.lines >= 1 && weights_live && weights_block == small, "edge %d: rc %d", more, rc);
+        if (!edge)
+            TEST_CHECK_(weights_floor == (int64_t)((normal + mib - 1u) / mib * mib - normal) &&
+                            weight_allocations - wa0 == 2u && weight_frees - wf0 == 1u,
+                        "edge %d: the probe left %lld B, %u taken, %u given back", more, (long long)weights_floor,
+                        weight_allocations - wa0, weight_frees - wf0);
+        else
+            TEST_CHECK_(weight_allocations - wa0 == 1u && weight_frees - wf0 == 0u,
+                        "edge %d: %u weights blocks taken (Small's only), %u given back", more, weight_allocations - wa0,
+                        weight_frees - wf0);
     }
     free_mib = 0;
     TEST_CHECK(!drop_resident());
