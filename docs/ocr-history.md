@@ -467,7 +467,8 @@ dictionary browsing or region selection pauses further windows. A read already i
 before the worker can begin a newly queued lookup, but cannot block the separate input thread.
 The panel shows `counting… 42%` without a usable cache, with the same progress line under cached totals.
 Progress measures covered file bytes approximately; the boundary record is read again in the next
-window. The panel redraws when the displayed percentage changes. A failed read shows `unavailable`;
+window. Each window atomically commits its counted prefix, so cached totals advance along with progress.
+The panel redraws when the displayed percentage changes. A failed read shows `unavailable`;
 the next Triangle request retries.
 
 Successful appends update known counters in constant space using the same timing rule as a recount.

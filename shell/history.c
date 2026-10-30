@@ -59,14 +59,14 @@ static const char TOTAL_PATH[] VJO_DATA_TABLE(reading_legacy_cache_path) = VJO_D
 static const char COUNTING[] VJO_DATA_TABLE(history_total_counting) = "counting… %u%%";
 enum { TOTAL_UNREAD, TOTAL_COUNTING, TOTAL_KNOWN, TOTAL_FAILED, TOTAL_CACHED };
 static struct {
-    VjoReadingScope scope, scan_scope;
+    VjoReadingScope scope;
     int requested;
     uint32_t streak; /* the Triangle view's streak (vjo_history_streak): the current streak as of the day it was read,
                       * and the longest in the high 16 bits (in what was the padding before saved_us) */
     uint64_t saved_us;
-    VjoReadingTime time, scan_time; /* committed prefix and the count in progress */
-    uint64_t chars, found;            /* chars: the lines' in [0, covered); found: the count's in [covered, at) */
-    uint32_t covered, at, top, saved; /* the count: from covered (at: its next window) to top, the file's end */
+    VjoReadingTime time; /* the committed prefix, advanced atomically after each worker window */
+    uint64_t chars;                  /* the lines in [0, covered) */
+    uint32_t covered, top, saved;    /* committed record boundary, snapshot end, checkpoint boundary */
     SceUID fd;                        /* history.csv while a count reads it (0: closed) */
     uint32_t seq, top_seq;            /* completed write attempts; generation of the count's file end */
     uint8_t state, read, progress;    /* TOTAL_*; cache read; recount percentage */
@@ -493,7 +493,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
     VjoReadingTime time;
     VjoReadingScope scope;
     char *buf;
-    int cut, known;
+    int cut, known, began = !total.fd;
     vjo_view_lock();
     int requested = total.requested;
     total.requested = 0;
@@ -560,12 +560,8 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
             g_view.version++;
             vjo_view_unlock();
         }
-        total.scan_scope = total.scope;
-        total.scan_time = total.time;
-        total.at = total.covered;
-        total.found = 0;
     }
-    from = total.at;
+    from = total.covered;
     to = total.top - from > VJO_HISTORY_COUNT_WINDOW ? from + VJO_HISTORY_COUNT_WINDOW : total.top;
     base = from ? from - 1 : 0; /* the window and the byte before it */
     buf = vjo_arena_alloc(scratch, VJO_HISTORY_COUNT_WINDOW + 1);
@@ -582,54 +578,48 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
      * record runs on from it, and a count of the two takes the cut one only, as a fresh count does), is
      * left for the next window or count */
     cut = to < total.top || (n && buf[n - 1] != '\n');
-    total.found += vjo_history_count_scope(buf, n, !from, cut, &first, &last, &total.scan_time, &total.scan_scope);
+    time = total.time;
+    scope = total.scope;
+    chars = total.chars + vjo_history_count_scope(buf, n, !from, cut, &first, &last, &time, &scope);
     vjo_arena_release(scratch, mark);
-    if (from && from == total.covered && from < total.top && first != 1) {
+    if (began && from && from < total.top && first != 1) {
         /* no record starts where the total's bytes end: history.csv is not the file it is the total of */
         vjo_view_lock();
         total.state = TOTAL_COUNTING;
         total.progress = 0;
-        total.chars = total.found = 0;
+        total.chars = 0;
         total.scope.chars = total.scope.active_us = total.scope.timed_chars = 0;
-        total.covered = total.at = 0;
+        total.covered = 0;
         sceClibMemset(&total.time, 0, sizeof(total.time));
-        total.scan_scope = total.scope;
-        total.scan_time = total.time;
         g_view.version++;
         vjo_view_unlock();
         return 1;
     }
     if (to < total.top) {
-        total.at = last < n && base + last > from ? base + (uint32_t)last : to;
-        /* Byte progress is approximate because a boundary record is read again. Publish only
-         * a changed percentage, never once per byte/window when the displayed value is unchanged. */
-        unsigned progress = total.at / (total.top / 100u + 1u);
-        vjo_view_lock();
-        if (total.progress != progress) { total.progress = (uint8_t)progress; g_view.version++; }
-        vjo_view_unlock();
-        return 1;
+        covered = last < n && base + last > from ? base + (uint32_t)last : to;
+        known = 0;
+    } else {
+        if (total.fd > 0) sceIoClose(total.fd);
+        total.fd = 0;
+        covered = !cut ? to : last < n ? base + (uint32_t)last : from;
+        known = total.seq == total.top_seq;
     }
-    if (total.fd > 0)
-        sceIoClose(total.fd);
-    total.fd = 0;
+    /* Every window commits an exact prefix. Cached values can advance while counting, and no
+     * duplicate time/scope/found accumulators have to survive the job. I/O never holds this lock. */
+    unsigned progress = known ? 100u : covered / (total.top / 100u + 1u);
     vjo_view_lock();
-    chars = total.chars += total.found;
-    scope = total.scope = total.scan_scope;
-    time = total.time = total.scan_time;
-    /* a cut window's total ends where its newest record starts, or, with none, where it starts */
-    covered = total.covered = !cut ? to : last < n ? base + (uint32_t)last : from;
-    /* an append since the end was read: another count, from there, at the next wakeup (the append is
-     * done by then: no count waits for it here) */
-    known = total.seq == total.top_seq;
-    if (known)
-        total.state = TOTAL_KNOWN;
-    g_view.version++;
+    total.chars = chars;
+    total.time = time;
+    total.scope = scope;
+    total.covered = covered;
+    g_view.version += known || total.progress != progress;
+    total.progress = (uint8_t)progress;
+    if (known) total.state = TOTAL_KNOWN;
     vjo_view_unlock();
 #if VJO_DEBUG
-    vjo_log("history total: %u B", (unsigned)covered);
+    if (known) vjo_log("history total: %u B", (unsigned)covered);
 #endif
-    if (known && covered != total.saved)
-        total_save(chars, covered, &time, &scope);
+    if (known && covered != total.saved) total_save(chars, covered, &time, &scope);
     return !known;
 failed:
     vjo_arena_release(scratch, mark);

@@ -1011,7 +1011,7 @@ static void test_total_deferred_until_idle(void)
     TEST_CHECK(reads == before && read_opens == opened && total_writes == saved && !total.fd);
     on_read = check_cached_prefix;
     TEST_CHECK(vjo_history_total_step(&count_scratch) == 1 && total.fd > 0);
-    TEST_CHECK(total.state == TOTAL_CACHED && shown() == cached_prefix);
+    TEST_CHECK(total.state == TOTAL_CACHED && shown() > cached_prefix && shown() < cached_prefix + tail);
     count_total();
     TEST_CHECK(total.state == TOTAL_KNOWN && shown() == cached_prefix + tail);
     TEST_CHECK(!vjo_history_total_pending());

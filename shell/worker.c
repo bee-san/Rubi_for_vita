@@ -3472,7 +3472,9 @@ int vjo_worker_stop(void)
     if (threads_started) {
         if (((threads_started & 1) && sceKernelWaitThreadEnd(net_thread, NULL, NULL) < 0) ||
             ((threads_started & 2) && sceKernelWaitThreadEnd(ctl_thread, NULL, NULL) < 0)) {
-            vjo_log("worker join failed; keeping allocations until stop can be retried");
+            static const char join_failed[] VJO_DATA_TABLE(worker_join_failed) =
+                "worker join failed; keeping allocations until stop can be retried";
+            vjo_log(join_failed);
             return -1;
         }
         threads_started = 0;
