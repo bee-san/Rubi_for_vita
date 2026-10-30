@@ -1548,7 +1548,9 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
  * and this one are written after the result, so they are in no job's appends: `N held` counts those still
  * held when this line is logged (another thread's line, or a batch filled up, wrote earlier ones before the
  * result; 0 with no batch open, refused beside another thread's, or when this line might not fit in it). */
-static void net_job(void)
+/* Keep the foreground job's locals out of net_main's permanent frame: its stack is reused
+ * by the mutually exclusive recount job. LTO must not reserve both jobs' frames at once. */
+static __attribute__((noinline)) void net_job(void)
 {
     if (job_prepare) {
         plat.local_text_generation = job_text_generation;
