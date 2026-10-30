@@ -146,8 +146,8 @@ the same `uuid` and `time`; the reading total counts the line once. So the file 
 record. The rewrite (`shell/history.c` `vjo_history_append`, #338's audit F3):
 
 - opens the file first: one that cannot be opened loses nothing (the earlier part's record stays);
-- truncates inside the window in which a count of the total does not read the file's end (`total.seq` odd), and only
-  while no count has the file open and the file still ends where that record ends (a file replaced or edited since
+- runs serially with the recount on VjoNet, and truncates only while no count holds the file open
+  between windows and the file still ends where that record ends (a file replaced or edited since
   is not truncated: the line is a record of its own after it);
 - reads the file's end again after the truncation, so the record goes where the earlier part's began whether the
   console's `SCE_O_APPEND` places each write at the end or only the open (not measured on a console).
@@ -157,10 +157,8 @@ the earlier part's record began, as any failed append rolls back to where it beg
 earlier part's is gone with it), and a later read of the line writes it as a record of its own. The reading total can
 keep the lost part's characters: it had counted them, and when the next record ends exactly where the lost one ended,
 its count finds the file the length it had counted and adds nothing (one record's characters off, until the file is
-counted again: a count of history.csv from its start; audit-rubi-audit-fix-hooks' probe P2c, host). A count that opens
-the file in the moment between the writer's check that none has it open and its truncation, and reads the file's end
-after the truncation, ends "unavailable" until the next Triangle press, as before this order (its probe P3b, host; the
-window is the time of one `sceIoChstat`); nothing is lost. Two lines are
+counted again: a count of history.csv from its start; audit-rubi-audit-fix-hooks' probe P2c, host). The earlier race between opening a count and truncating a grown
+line no longer occurs: both operations now run serially on VjoNet. Two lines are
 one record when the second starts with the whole first and comes under 750 ms after it
 ([native-hooks.md](native-hooks.md#no-wait-for-a-trusted-line-api-49): 225 of 8,910 consecutive page pairs of a host
 pool start so, 198 of them a box that adds its lines).

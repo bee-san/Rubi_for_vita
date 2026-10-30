@@ -293,7 +293,7 @@ typedef struct {
     char buf[NET_LOG_BYTES];
 } NetHeld;
 static NetHeld *net_held;
-static void net_log_hold(void)
+static __attribute__((noinline, noclone)) void net_log_hold(void)
 {
     if (!net_held->b.buf) /* a begin refused beside another thread's batch: its lines go out one by one */
         vjo_log_batch_begin(&net_held->b, net_held->buf, NET_LOG_BYTES);
@@ -473,7 +473,7 @@ uint32_t vjo_dict_reads, vjo_dict_read_bytes;
 
 #if VJO_DEBUG
 /* Up to `chars` characters of s (the line at most) into out, for the log. */
-static void log_text(char *out, size_t cap, const char *s, size_t len, int chars)
+static __attribute__((noinline, noclone)) void log_text(char *out, size_t cap, const char *s, size_t len, int chars)
 {
     size_t i = 0;
     while (i < len && chars-- > 0) {

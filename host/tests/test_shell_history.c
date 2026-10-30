@@ -925,8 +925,8 @@ static void test_reader_hook_rows_with_characters(void)
 
 static uint8_t count_mem[24 * 1024] __attribute__((aligned(8)));
 static VjoArena count_scratch;
-/* A Triangle press, then the control thread's wakeups until the count ends: the windows it took. The
- * scratch is the control thread's 24 KiB, with something of the caller's below the count's window. */
+/* A Triangle request, then worker windows until complete. Leave some scratch occupied to check
+ * that each step releases only its own allocations. */
 static unsigned count_total(void)
 {
     unsigned windows = 0;
@@ -1171,8 +1171,8 @@ static VjoHistoryRecord grown_line_start(void)
     r.time_us += 50000; strcpy(result.text, "こんにちは");
     return r;
 }
-static int chstat_seq_odd, chstat_calls;
-static void note_chstat(SceOff size) { (void)size; chstat_calls++; chstat_seq_odd += total.seq & 1u; }
+static int chstat_while_count, chstat_calls;
+static void note_chstat(SceOff size) { (void)size; chstat_calls++; chstat_while_count += total.fd != 0; }
 /* #338's audit F3, its probes: the grown line's rewrite opens the file before it truncates it (P1), truncates inside
  * the writer's odd window (P3), never while a count reads the file (P3), and only while the file still ends with the
  * record it replaces (P6); a write that fails after the truncation is the one loss left (P2, documented). */
@@ -1188,15 +1188,15 @@ static void test_grown_line_rewrite_fails_safely(void)
     on_chstat = note_chstat; chstat_calls = 0;
     TEST_CHECK(vjo_history_append(&r) == -71);
     open_error = 0;
-    TEST_CHECK(file_size() == before && records_in_file() == 2 && !chstat_calls && !(total.seq & 1u));
+    TEST_CHECK(file_size() == before && records_in_file() == 2 && !chstat_calls);
     r.time_us += 5000000; strcpy(result.text, "次の行です");
     TEST_CHECK(vjo_history_append(&r) == 1 && records_in_file() == 3);
     /* the rewrite's truncation is inside the odd window, and it is the line's one record afterwards */
     reset();
     r = grown_line_start();
-    on_chstat = note_chstat; chstat_calls = chstat_seq_odd = 0;
+    on_chstat = note_chstat; chstat_calls = chstat_while_count = 0;
     TEST_CHECK(vjo_history_append(&r) == 1 && records_in_file() == 2);
-    TEST_CHECK(chstat_calls == 1 && chstat_seq_odd == 1 && !(total.seq & 1u));
+    TEST_CHECK(chstat_calls == 1 && chstat_while_count == 0);
     on_chstat = NULL;
     /* P2: a write that fails after the truncation rolls back to where the replaced record began: the line's earlier
      * record is gone with it (the one loss left: docs/ocr-history.md), the line before it kept, the file whole */
@@ -1205,7 +1205,7 @@ static void test_grown_line_rewrite_fails_safely(void)
     write_error_after = writes + 1;
     TEST_CHECK(vjo_history_append(&r) == -72);
     write_error_after = 0;
-    TEST_CHECK(records_in_file() == 1 && !(total.seq & 1u));
+    TEST_CHECK(records_in_file() == 1);
     {
         char csv[16384];
         read_history(csv, sizeof(csv));
@@ -1310,7 +1310,7 @@ static int open_fds(void)
 }
 
 /* #528 (mem-leak): history and the streak soaked. A cycle: a game's jobs append their lines (each a history.csv
- * record and the streak's day), the open overlay asks for the total and the control thread's background steps count
+ * record and the streak's day), the open overlay asks for the total and the worker's background steps count
  * what is new, the game's exit keeps it; every tenth cycle the Shell starts again (the total from its cache, then the
  * rest counted). Each cycle must end with no file open (the count's own included), the scratch arena as it began,
  * and the total equal to every line appended. VJO_SOAK_CYCLES=N runs N cycles (60 by default). */
@@ -1434,7 +1434,7 @@ static void test_total_of_a_replaced_file(void)
              (unsigned long long)want, (unsigned long long)first);
 }
 
-/* VjoNet appends while the control thread counts: every record once, none twice */
+/* Appends between worker count windows: every record once, none twice. */
 static VjoHistoryRecord *racing;
 static int race_left;
 static uint64_t race_chars;
@@ -1464,21 +1464,16 @@ static void test_total_with_appends_during_the_count(void)
         TEST_MSG("%d appends: %llu, want %llu", left, (unsigned long long)total.chars,
                  (unsigned long long)(want + race_chars));
     }
-    /* a count that starts while a record is half written (the writer's seq odd): that record is left
-     * for another round, and the total is still every record's once */
+    /* Foreground appends may run between count windows, never inside a real writer operation. */
     reset();
     VjoHistoryRecord r = record("x");
-    uint64_t want = append_total_lines(&r, 30);
-    total.seq = 1; /* as between the writer's two increments */
+    uint64_t want = append_total_lines(&r, 150);
     vjo_history_total_want();
     vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 1); /* another bounded worker job */
-    TEST_CHECK(total.state == TOTAL_COUNTING && total.chars < want && total.covered < (uint32_t)file_size());
-    TEST_CHECK(!total.fd && total_writes == 0);
-    uint32_t newest = total.covered; /* the record that may have been half written: not counted yet */
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 1 && total.state == TOTAL_COUNTING && total.covered == newest);
-    total.seq = 2; /* the append's end */
-    TEST_CHECK(vjo_history_total_step(&count_scratch) == 0);
+    TEST_CHECK(vjo_history_total_step(&count_scratch) == 1 && total.fd > 0);
+    want += append_total_lines(&r, 3);
+    unsigned steps = 0;
+    while (vjo_history_total_step(&count_scratch)) TEST_ASSERT(++steps < 1000);
     TEST_CHECK(total.state == TOTAL_KNOWN && total.chars == want && total.covered == (uint32_t)file_size());
 }
 
@@ -2460,7 +2455,7 @@ TEST_LIST = {
     {"total: kept between starts, only what was appended since counted", test_total_kept_between_starts},
     {"total: a torn, foreign or wrong history_total.bin is counted again", test_total_recovers_from_a_bad_kept_total},
     {"total: a replaced history.csv is counted again", test_total_of_a_replaced_file},
-    {"total: appends while it is counted, a record half written", test_total_with_appends_during_the_count},
+    {"total: appends between worker count windows", test_total_with_appends_during_the_count},
     {"total: no file, failed reads, short reads, 4 GiB", test_total_without_a_file_and_after_failures},
     {"total: the view's number with its commas", test_total_text},
     {"total: an older Rubi's records and a cut one", test_total_of_older_and_cut_records},

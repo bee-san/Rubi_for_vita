@@ -71,8 +71,8 @@ static struct {
     uint64_t chars, found;            /* chars: the lines' in [0, covered); found: the count's in [covered, at) */
     uint32_t covered, at, top, saved; /* the count: from covered (at: its next window) to top, the file's end */
     SceUID fd;                        /* history.csv while a count reads it (0: closed) */
-    uint32_t seq, top_seq;            /* seq: odd while the writer appends a record; top_seq: when top was read */
-    uint8_t state, read, clean, progress; /* TOTAL_*; cache read; stable file end; recount percentage */
+    uint32_t seq, top_seq;            /* completed write attempts; generation of the count's file end */
+    uint8_t state, read, progress;    /* TOTAL_*; cache read; recount percentage */
     uint32_t streak_seq;              /* `streak`'s stores (vjo_history_streak); 0: not read since the Shell started */
 #if VJO_DEBUG
     uint32_t windows, bytes; /* the count's windows and bytes read, and when it started: its log line */
@@ -207,10 +207,9 @@ int vjo_history_append(const VjoHistoryRecord *r)
     if (w.fd < 0) return w.fd;
     start = sceIoLseek(w.fd, 0, SCE_SEEK_END);
     if (start < 0) { sceIoClose(w.fd); return (int)start; }
-    total.seq++; /* odd until the record is whole or gone: a count's end of the file is not read meanwhile */
-    /* #338's audit F3: the newest record goes (this one takes its place, its time and its ID) only once the file is
-     * open, inside that window, and not while a count reads the file (total.fd: the control thread's, read here only
-     * to leave it alone); the end is read after it, which is where the next write goes whether the console's
+    /* The writer and recount run serially on VjoNet. A grown line is replaced only after opening
+     * the file, with no count holding it between windows. Read the end again after truncation, so
+     * the next write goes there whether the console's
      * SCE_O_APPEND appends at each write or sets the position at the open */
     sceClibMemset(&st, 0, sizeof(st));
     st.st_size = previous_start;
@@ -414,13 +413,16 @@ static void total_set(int state)
     vjo_view_unlock();
 }
 
-void vjo_history_total_want(void)
+/* Both callers share the same mailbox operation; avoid LTO cloning its locking/notification path. */
+static __attribute__((noinline, noclone)) void total_request(int bits)
 {
     vjo_view_lock();
-    total.requested |= 1;
+    total.requested |= bits;
     vjo_view_unlock();
     vjoNotifyShell();
 }
+
+void vjo_history_total_want(void) { total_request(1); }
 
 const char *vjo_history_total_text(char *buf, size_t cap)
 {
@@ -549,13 +551,11 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
         vjo_arena_release(scratch, mark);
         total.read = 1;
     }
-    if (!total.fd) { /* a count's start: history.csv's end, read while no record is being appended */
-        uint32_t seq = total.seq;
+    if (!total.fd) { /* this worker cannot append while it reads the count's file end */
         SceOff top;
         total.fd = sceIoOpen(HISTORY_PATH, SCE_O_RDONLY, 0);
         top = total.fd >= 0 ? sceIoLseek(total.fd, 0, SCE_SEEK_END) : total.fd == (SceUID)0x80010002 ? 0 : -1;
-        total.clean = !(seq & 1) && total.seq == seq;
-        total.top_seq = seq;
+        total.top_seq = total.seq;
         if ((uint64_t)top >> 32) /* an error, or 4 GiB or more */
             goto failed;
         total.top = (uint32_t)top;
@@ -590,11 +590,11 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
             goto failed;
         n += (size_t)r;
     }
-    /* the newest record of a window that the file's end does not end, of one read while a record was
-     * appended, or of a file that ends in no line break (a record a power loss cut: the next boot's
+    /* Leave the newest record of an interior window, or a file ending in no line break (a
+     * record a power loss cut: the next boot's
      * record runs on from it, and a count of the two takes the cut one only, as a fresh count does), is
      * left for the next window or count */
-    cut = to < total.top || !total.clean || (n && buf[n - 1] != '\n');
+    cut = to < total.top || (n && buf[n - 1] != '\n');
     total.found += vjo_history_count_scope(buf, n, !from, cut, &first, &last, &total.scan_time, &total.scan_scope);
 #if VJO_DEBUG
     total.windows++;
@@ -637,7 +637,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch)
     covered = total.covered = !cut ? to : last < n ? base + (uint32_t)last : from;
     /* an append since the end was read: another count, from there, at the next wakeup (the append is
      * done by then: no count waits for it here) */
-    known = total.clean && total.seq == total.top_seq;
+    known = total.seq == total.top_seq;
     if (known)
         total.state = TOTAL_KNOWN;
     g_view.version++;
@@ -667,10 +667,7 @@ static void total_keep(void)
 
 void vjo_history_total_keep(void)
 {
-    vjo_view_lock();
-    total.requested |= 2;
-    vjo_view_unlock();
-    vjoNotifyShell();
+    total_request(2);
 }
 
 void vjo_history_total_stop(void)
