@@ -55,6 +55,7 @@ static int drop_on_workspace; /* bytes the game takes when the job's workspace b
 /* bytes the game takes once, when the drop_at_allocation-th workspace block of the test is allocated (0: never): the
  * memory a try's check saw is gone by the time its weights are asked for (#324's retry) */
 static int drop_once; static unsigned drop_at_allocation;
+static int64_t weights_floor = INT64_MAX; /* the least free beside a weights block as it was taken */
 static unsigned char pixels[200*272*4]; /* 200 x frame_h */
 static unsigned frame_h = 60; /* rows of the fake frame (over 64: two strips) */
 /* The capture block and the memory-type ladder: which types refuse. */
@@ -147,7 +148,10 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
         TEST_CHECK(!weights_live && size <= sizeof(weights_memory));
         weight_allocations++;
         if (alloc_failure) return -1;
-        weights_live = 1; weights_block = size; live_bytes += size; return 10;
+        weights_live = 1; weights_block = size; live_bytes += size;
+        /* the least the game kept beside the weights' block, while it was taken (a probe's dip: Maudit-mem-final-6) */
+        if ((int64_t)available - (int64_t)live_bytes < weights_floor) weights_floor = (int64_t)available - (int64_t)live_bytes;
+        return 10;
     }
     /* the job's workspace: the same ladder as the capture, USER first */
     TEST_CHECK(!strcmp(name, "VjoGameVocr") && !memory_live);
@@ -2543,8 +2547,15 @@ static void weights_refused_after_the_check_retry_the_next_smaller_model(void)
     TEST_ASSERT((tier_need(&r, 2, 0) - 4096u) / mib * mib >= tier_need(&r, 1, 0)); /* Small fits after the drop */
     drop_at_allocation = allocations + 1u; /* at this job's first workspace: then the game has Normal's need - 4 KiB */
     drop_once = (int)(f + 8192u - tier_need(&r, 2, 0));
+    weights_floor = INT64_MAX;
     rc = vjo_game_ocr_run_request(&r, &out);
     drop_at_allocation = 0; drop_once = 0;
+    /* Maudit-mem-final-6: while the probed block was taken the game kept at least the whole MiB above the block less
+     * the block (docs/vita-memory.md: the figure is whole MiB and the reserve 1 MiB), here for Normal's weights */
+    TEST_CHECK_(weights_floor >= (int64_t)((normal + mib - 1u) / mib * mib - normal),
+                "the probe left the game %lld B (floor %u B)", (long long)weights_floor,
+                (unsigned)((normal + mib - 1u) / mib * mib - normal));
+    TEST_MSG("the probe left the game %lld B beside Normal's weights", (long long)weights_floor);
     TEST_CHECK_(rc == VJO_OK, "free %u, then %u B taken: rc %d", f + 4096u, f + 8192u - tier_need(&r, 2, 0), rc);
     TEST_CHECK_(out.lines >= 1 && out.fallback == 1u, "%u lines, fallback %u", out.lines, out.fallback);
     TEST_CHECK_(weights_live && weights_block == small && weight_allocations == 2 && weight_frees == 1,
