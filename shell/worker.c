@@ -88,8 +88,8 @@ static uint32_t local_text_generation, local_text_game_generation;
 static uint32_t local_text_scene, local_text_capture_seq;
 static uint32_t local_cursor_byte, local_cursor_seq;
 static int cursor_waiting;
-static int job_cursor_only;
-static int job_prepare;
+static uint8_t job_cursor_only;
+static uint8_t job_prepare;
 static uint32_t prepared_seq, prepare_cursor;
 static int prepare_left;
 static size_t prepared_end;
@@ -152,7 +152,8 @@ enum { OV_CLOSED, OV_OPEN, OV_OPEN_OLD_JOB };
 static int ov = OV_CLOSED;
 /* 0: dialogue, 1: a rear-tap scan queued behind cancellation, 2: its pinned view.
  * The job snapshot survives a close until the game worker has finished. */
-static int full_screen, job_full_screen;
+static int full_screen;
+static uint8_t job_full_screen;
 static int subtitles; /* written by set_subtitles only */
 /* The strip says "Recognizing…" for the lookup or refresh in progress, which
  * brings it nothing (subtitles turned on after the close that dropped it): its
@@ -200,22 +201,24 @@ static int64_t job_started_us;
 /* the job (job thread) */
 #define NET_EV_JOB  1u
 #define NET_EV_QUIT 2u
-static volatile int job_running;
-static volatile int job_done;
+#define NET_EV_STATS 4u
+static int stats_allowed; /* atomic permission; recount scratch never belongs to the input thread */
+static volatile uint8_t job_running;
+static volatile uint8_t job_done;
 static volatile int job_idx;
 static volatile int job_rc;
-static volatile int job_lookup;     /* the job looks the words up (else OCR only) */
+static volatile uint8_t job_lookup;     /* the job looks the words up (else OCR only) */
 /* The job is a refresh of the open overlay's text (local pipeline): it writes
  * neither local_text nor the result arena; its text stays in the worker's
  * result (cache_data[1].ocr_text) until on_refresh_done compares the two. */
-static volatile int job_refresh;
+static volatile uint8_t job_refresh;
 static const char *refresh_model; /* the model that read the refresh's text (job_cfg's, or a constant) */
 /* The job is the self-test's (shell/selftest.c, selftest_job_due): its stages
  * run on the screen the last job read text from, with the overlay closed, and
  * it shows nothing: the shown text, its lookup and the result arenas stay, and
  * its captures do not stand in for the shown text's (vocr_note_capture). */
 #if VJO_DEBUG
-static volatile int job_selftest;
+static volatile uint8_t job_selftest;
 #else
 #define job_selftest 0 /* the normal build has no self-test (shell.h) */
 #endif
@@ -227,19 +230,19 @@ static int64_t idle_since_us; /* the last job's end or the overlay's close */
 #if VJO_DEBUG
 static int64_t job_game_us;   /* the job's exchanges with the game worker (job thread) */
 #endif
-static int job_prepares;            /* ...the first word, before the overlay opens (log) */
+static uint8_t job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
 /* The job's capture is done (job_capture_scene, job_capture_seq: its
  * VjoState.capture_scene and region_seq). */
-static volatile int job_captured;
+static volatile uint8_t job_captured;
 static volatile uint32_t job_capture_scene, job_capture_seq;
 /* The job is for an earlier screen: its requests were aborted, its result
  * is dropped. */
-static volatile int job_cancelled;
+static volatile uint8_t job_cancelled;
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
  * job thread only appends to the arena, so the control thread may read it */
-static volatile int job_text_ready;
+static volatile uint8_t job_text_ready;
 /* The job thread's log batch (shell/log_vita.c), its buffer on net_main's stack: no job's line
  * stands between its result and the control thread (owner 2026-10-16, 0.8.0-test.3; #360 for the debug
  * build; docs/release-variants.md "No log append on the result path"). Job thread only. */
@@ -291,7 +294,7 @@ typedef struct {
     char buf[NET_LOG_BYTES];
 } NetHeld;
 static NetHeld *net_held;
-static void net_log_hold(void)
+static __attribute__((noinline, noclone)) void net_log_hold(void)
 {
     if (!net_held->b.buf) /* a begin refused beside another thread's batch: its lines go out one by one */
         vjo_log_batch_begin(&net_held->b, net_held->buf, NET_LOG_BYTES);
@@ -471,7 +474,7 @@ uint32_t vjo_dict_reads, vjo_dict_read_bytes;
 
 #if VJO_DEBUG
 /* Up to `chars` characters of s (the line at most) into out, for the log. */
-static void log_text(char *out, size_t cap, const char *s, size_t len, int chars)
+static __attribute__((noinline, noclone)) void log_text(char *out, size_t cap, const char *s, size_t len, int chars)
 {
     size_t i = 0;
     while (i < len && chars-- > 0) {
@@ -1546,7 +1549,9 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
  * and this one are written after the result, so they are in no job's appends: `N held` counts those still
  * held when this line is logged (another thread's line, or a batch filled up, wrote earlier ones before the
  * result; 0 with no batch open, refused beside another thread's, or when this line might not fit in it). */
-static void net_job(void)
+/* Keep the foreground job's locals out of net_main's permanent frame: its stack is reused
+ * by the mutually exclusive recount job. LTO must not reserve both jobs' frames at once. */
+static __attribute__((noinline)) void net_job(void)
 {
     if (job_prepare) {
         plat.local_text_generation = job_text_generation;
@@ -1679,11 +1684,11 @@ static __attribute__((noinline)) void net_stack_paint(void)
     sceClibMemset(&info, 0, sizeof(info));
     info.size = sizeof(info);
     if (sceKernelGetThreadInfo(sceKernelGetThreadId(), &info) < 0 || !info.stack) {
-        vjo_log("VjoNet stack: not painted (no thread info)");
+        vjo_log("VjoNet stack: not painted (no info)");
         return;
     }
     if (info.stackSize != (int)VJO_STACK_SHELL_NET) { /* not the stack this thread was created with */
-        vjo_log("VjoNet stack: not painted (the kernel reports %d B, not %u)", info.stackSize,
+        vjo_log("VjoNet stack: not painted (%d/%u B)", info.stackSize,
                 (unsigned)VJO_STACK_SHELL_NET);
         return;
     }
@@ -1691,7 +1696,7 @@ static __attribute__((noinline)) void net_stack_paint(void)
     uintptr_t lo = (uintptr_t)info.stack, top = lo + (uintptr_t)info.stackSize, frame = (uintptr_t)&here;
     uintptr_t low = lo + STACK_PAINT_FLOOR; /* the paint's first byte */
     if (frame <= low + STACK_PAINT_GAP || frame >= top) {
-        vjo_log("VjoNet stack: not painted (frame 0x%08X outside 0x%08X + %d)", (unsigned)frame, (unsigned)lo,
+        vjo_log("VjoNet stack: not painted (%08X/%08X+%d)", (unsigned)frame, (unsigned)lo,
                 info.stackSize);
         return;
     }
@@ -1711,6 +1716,20 @@ static void net_stack_check(void)
     vjo_log("VjoNet stack: at least %u of %u B used", (unsigned)used, (unsigned)VJO_STACK_SHELL_NET);
 }
 
+/* The count's private scratch lives only during this job, on VjoNet's existing 16 KiB stack.
+ * No result/transport/control buffer is borrowed. The writer's text+raw text share 4 KiB;
+ * even doubled quotes, a fully escaped game name and every line metric fit this window. */
+typedef char history_record_fits_count_window[
+    2u * VJO_GAME_OCR_TEXT_BYTES + 2u * 128u + 2u * VJO_GAME_OCR_MODEL_BYTES +
+    VJO_GAME_OCR_LINES * 56u + 1024u < VJO_HISTORY_COUNT_WINDOW ? 1 : -1];
+static __attribute__((noinline)) int stats_job(void)
+{
+    uint64_t bytes[(VJO_HISTORY_COUNT_WINDOW + 8u) / 8u];
+    VjoArena work;
+    vjo_arena_init(&work, bytes, sizeof(bytes));
+    return vjo_history_total_step(&work);
+}
+
 static int net_main(SceSize args, void *argp)
 {
 #if !VJO_DEBUG
@@ -1726,13 +1745,13 @@ static int net_main(SceSize args, void *argp)
     while (running) {
         unsigned int bits = 0;
 #if VJO_DEBUG
-        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT,
+        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT | NET_EV_STATS,
                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, NULL);
 #else
         /* The wait is timed (LOG_IDLE_US) only while the batch holds a line (its n: this thread's own
          * lines raise it; a flush by another thread's line only zeroes it, shell/log_vita.c). */
         unsigned int timeout = LOG_IDLE_US;
-        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT,
+        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT | NET_EV_STATS, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT,
                                &bits, net_log.n ? &timeout : NULL);
         net_log_idle();
 #endif
@@ -1744,7 +1763,13 @@ static int net_main(SceSize args, void *argp)
 #endif
             net_job();
         }
+        /* A foreground job always wins, including one posted after the wait returned. Each
+         * recount window returns here before another starts, so queued lookups cannot starve. */
+        if ((bits & NET_EV_STATS) && !job_running && __atomic_load_n(&stats_allowed, __ATOMIC_ACQUIRE) &&
+            stats_job())
+            sceKernelSetEventFlag(net_evf, NET_EV_STATS);
     }
+    vjo_history_total_finish();
 #if !VJO_DEBUG
     vjo_log_batch_end(&net_log); /* the worker stops: what is held goes out before its buffer does */
     net_log.buf = NULL;
@@ -3278,7 +3303,6 @@ static void prepare_words(void)
 
 /* Kernel and local wakeups share the existing event. Handler order gives
  * input, refreshed text and foreground work priority over preparation. */
-static int64_t stats_next_us;
 static void control_tick(uint32_t bits)
 {
     int defer_prepare = bits || refresh_pending;
@@ -3350,13 +3374,12 @@ static void control_tick(uint32_t bits)
     if (!defer_prepare) prepare_words();
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     RESULT_MEM_IDLE();
-    /* Stats shares this input thread. Cached totals may be loaded for the open view, but CSV scans and
-     * checkpoints wait until it is closed and no foreground work runs. At most one window a second,
-     * without immediate self-wakeups; the normal poll still handles input every 50 ms. */
-    int background = ov == OV_CLOSED && !net_busy() && pending_cmd == VJO_CMD_NONE &&
-                     !bits && now_us() >= stats_next_us;
-    vjo_history_total_step(&scratch, background);
-    if (background) stats_next_us = now_us() + 1000000;
+    /* Scheduling only: all stats reads, parsing and checkpoints belong to VjoNet. Dictionary
+     * browsing pauses recounts; input is handled above without waiting for a stats window. */
+    int allowed = ov == OV_CLOSED || vjo_overlay_stats_open();
+    __atomic_store_n(&stats_allowed, allowed, __ATOMIC_RELEASE);
+    if (allowed && !net_busy() && pending_cmd == VJO_CMD_NONE && !bits && vjo_history_total_pending())
+        sceKernelSetEventFlag(net_evf, NET_EV_STATS);
 }
 
 static int ctl_main(SceSize args, void *argp)
@@ -3404,8 +3427,10 @@ int vjo_worker_start(void)
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
+    static const char anki_unavailable[] VJO_DATA_TABLE(worker_anki_unavailable) =
+        "anki: mailbox unavailable: no card can be saved";
     if (vjo_anki_start() < 0)
-        vjo_log("anki: mailbox unavailable: no card can be saved");
+        vjo_log(anki_unavailable);
     apply_config(); /* logging, triggers and Anki are set up before the first game */
     vjo_reading_rule = (uint32_t)cfg.reading_time; /* once: a Shell's totals are all counted with one rule */
     vjo_selftest_init(&cfg);
@@ -3447,7 +3472,9 @@ int vjo_worker_stop(void)
     if (threads_started) {
         if (((threads_started & 1) && sceKernelWaitThreadEnd(net_thread, NULL, NULL) < 0) ||
             ((threads_started & 2) && sceKernelWaitThreadEnd(ctl_thread, NULL, NULL) < 0)) {
-            vjo_log("worker join failed; keeping allocations until stop can be retried");
+            static const char join_failed[] VJO_DATA_TABLE(worker_join_failed) =
+                "worker join failed; keeping allocations until stop can be retried";
+            vjo_log(join_failed);
             return -1;
         }
         threads_started = 0;

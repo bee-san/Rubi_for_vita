@@ -308,6 +308,8 @@ uint32_t vjo_shell_heap_free_size(void)
 /* shell/overlay.cpp's take of its text block as the Shell starts (#528, vjo_worker_start's end): overlay.cpp is not
  * built here; the owner scenario runs the step itself (shell/overlay_mem.h vjo_overlay_mem_boot, at its boot event). */
 void vjo_overlay_boot(void) {}
+static int stats_open;
+int vjo_overlay_stats_open(void) { return stats_open; }
 static int theme_loads, theme_choice;
 int vjo_colour_scheme_load(VjoArena *a) { (void)a; theme_loads++; return theme_choice; }
 void vjo_config_load(VjoConfig *out, VjoArena *a) { start_step('C'); *out = loaded; }
@@ -714,15 +716,17 @@ int vjo_history_append(const VjoHistoryRecord *record)
 }
 /* The reading total: each poll may handle cached values, but only an idle background step scans a window. */
 static unsigned total_steps, total_keeps, total_windows, total_background;
-int vjo_history_total_step(VjoArena *scratch, int background)
+int vjo_history_total_pending(void) { return total_windows != 0; }
+int vjo_history_total_step(VjoArena *work)
 {
-    TEST_CHECK(scratch != NULL && !held_view && !held_cmd);
+    TEST_CHECK(work != NULL && !held_view && !held_cmd && test_thread == NET_THREAD);
+    TEST_CHECK(work->base != scratch.base && work->size >= VJO_HISTORY_COUNT_WINDOW + 1);
     total_steps++;
-    if (!background) return 0;
     total_background++;
     return total_windows ? (int)(--total_windows > 0) : 0;
 }
 void vjo_history_total_keep(void) { TEST_CHECK(!held_view && !held_cmd); total_keeps++; }
+void vjo_history_total_finish(void) { TEST_CHECK(!held_view && !held_cmd && test_thread == NET_THREAD); }
 static unsigned total_stops;
 void vjo_history_total_stop(void) { TEST_CHECK(!held_view && !held_cmd && !threads_started); total_stops++; }
 /* Line history: history.csv as the tests write it (history_csv), read by the real scanner
@@ -1074,7 +1078,8 @@ static void reset(void)
     history_loads = 0;
     history_load_rc = 0;
     total_steps = total_keeps = total_windows = total_background = 0;
-    stats_next_us = 0;
+    stats_allowed = 0;
+    stats_open = 0;
 #endif
     memset(&g_view, 0, sizeof(g_view));
     view_lock = 81;
@@ -4452,10 +4457,10 @@ static void *paint_thread(void *arg)
  * (audit-overlay-shell-slim-2d N1, -4 N2) */
 #define PAINT_MODES 9
 static const char *const paint_refusal[PAINT_MODES + 1] = {
-    NULL, "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (the kernel reports 0 B, not 16384)",
-    "VjoNet stack: not painted (the kernel reports 24576 B, not 16384)", "VjoNet stack: not painted (no thread info)",
-    "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x",
-    "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x"};
+    NULL, "VjoNet stack: not painted (", "VjoNet stack: not painted (0/16384 B)",
+    "VjoNet stack: not painted (24576/16384 B)", "VjoNet stack: not painted (no info)",
+    "VjoNet stack: not painted (", "VjoNet stack: not painted (", "VjoNet stack: not painted (",
+    "VjoNet stack: not painted (", "VjoNet stack: not painted ("};
 static int paint_on_a_thread(int mode, int depth)
 {
     uint8_t *lo = paint_region + PAINT_GUARD;
@@ -4493,7 +4498,7 @@ static int paint_on_a_thread(int mode, int depth)
         if (mode >= 5) { /* the frame the line names is where this mode puts it */
             unsigned frame = 0, low = 0;
             int size = 0;
-            TEST_ASSERT(sscanf(line, "VjoNet stack: not painted (frame 0x%X outside 0x%X + %d)", &frame, &low, &size) == 3);
+            TEST_ASSERT(sscanf(line, "VjoNet stack: not painted (%X/%X+%d)", &frame, &low, &size) == 3);
             uint32_t above = (uint32_t)(frame - low);
             if (mode == 5) /* the frame's full address: the 32-bit line's offset from lo */
                 paint_frame_seen = (uintptr_t)lo + (uint32_t)(frame - (uint32_t)(uintptr_t)lo);
@@ -9339,37 +9344,62 @@ static void test_theme_latched_for_game(void)
     mem_free();
 }
 
-/* CSV windows are paced, deferred while open, and never cause immediate wakeups. Closing wins
- * over a due scan, while game exit still checkpoints incremental counters. */
+/* Run the actual VjoNet event loop: input stays on VjoControl, stats scratch is private,
+ * a newly queued foreground job wins before the next recount window, and a panel close pauses it. */
+static int stats_wait_script(int step)
+{
+    TEST_CHECK(test_thread == CTL_THREAD);
+    switch (step) {
+    case 0:
+        total_windows = 4;
+        ov = OV_OPEN; stats_open = 1;
+        control_tick(0);
+        TEST_CHECK(total_steps == 0 && (posted & NET_EV_STATS));
+        return 1;
+    case 1:
+        TEST_CHECK(total_steps == 1 && total_windows == 3 && (posted & NET_EV_STATS));
+        /* A foreground job takes this wake's slot; no stats may run until control consumes it. */
+        job_prepare = 1; job_running = 1; job_done = 0;
+        prepare_cursor = 0;
+        posted |= NET_EV_JOB;
+        return 1;
+    case 2:
+        TEST_CHECK(job_done && total_steps == 1 && total_windows == 3);
+        job_running = job_done = job_prepare = 0;
+        control_tick(0);
+        return 1;
+    case 3:
+        TEST_CHECK(total_steps == 2 && total_windows == 2);
+        stats_open = 0;
+        control_tick(0);
+        TEST_CHECK(!stats_allowed);
+        return 1; /* a stats bit already posted before the panel closed is harmless */
+    case 4:
+        TEST_CHECK(total_steps == 2 && total_windows == 2);
+        /* Closing the overlay can proceed while a stats chunk is pending. */
+        pending_cmd = VJO_CMD_CLOSED;
+        control_tick(VJO_EV_SHELL);
+        TEST_CHECK(ov == OV_CLOSED && total_steps == 2);
+        control_tick(0);
+        return 1;
+    case 5:
+        TEST_CHECK(total_steps == 3 && total_windows == 1);
+        return 1;
+    default:
+        TEST_CHECK(total_steps == 4 && !total_windows && !(posted & NET_EV_STATS));
+        return 0;
+    }
+}
 static void test_reading_total_on_the_control_thread(void)
 {
     reset();
-    total_windows = 3;
-    control_tick(0);
-    TEST_CHECK(total_background == 1 && total_windows == 2 && !shell_notifications);
-    control_tick(VJO_EV_SHELL);
-    control_tick(0);
-    TEST_CHECK(total_background == 1 && total_windows == 2 && !shell_notifications);
-    test_now += 1000000;
-    control_tick(0);
-    TEST_CHECK(total_background == 2 && total_windows == 1 && !shell_notifications);
-    /* An open overlay always allows only cache handling, even after the next window is due. */
-    ov = OV_OPEN;
-    test_now += 1000000;
-    control_tick(0);
-    TEST_CHECK(total_background == 2 && total_windows == 1 && !shell_notifications);
-    pending_cmd = VJO_CMD_CLOSED;
-    control_tick(VJO_EV_SHELL);
-    TEST_CHECK(ov == OV_CLOSED && total_background == 2 && total_windows == 1);
-    control_tick(0);
-    TEST_CHECK(total_background == 3 && !total_windows && !shell_notifications);
-    state.game_pid = PS_GAME_PID;
-    control_tick(VJO_EV_GAME_START);
-    TEST_CHECK(!total_keeps); /* a game's start reads nothing for it */
-    state.game_pid = 0;
-    control_tick(VJO_EV_GAME_EXIT);
-    TEST_CHECK(total_keeps == 1);
-    mem_free();
+    wait_step = 0;
+    wait_script = stats_wait_script;
+    net_main(0, NULL);
+    wait_script = NULL;
+    test_thread = CTL_THREAD;
+    TEST_CHECK(total_steps == 4 && !total_windows && wait_step == 7);
+    TEST_CHECK(!scratch.used && !held_cmd && !held_view);
 }
 #endif
 

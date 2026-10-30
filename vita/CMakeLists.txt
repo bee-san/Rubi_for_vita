@@ -152,7 +152,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
-target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
+target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar -fstack-usage
   -ffunction-sections -fdata-sections)
 # Cold core paths (configuration, parsers, queue files): built for
 # size, since every page of the Shell module is SceShell's. OCR text handling
@@ -266,11 +266,11 @@ set_source_files_properties(${ROOT}/shell/main.cpp ${ROOT}/shell/memory.cpp ${RO
   ${ROOT}/core/text_hit.c ${ROOT}/core/styled.c ${ROOT}/vita/games_storage.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 
-target_compile_options(VitaJPOverlay_Shell PRIVATE -O2 -Wall -Wno-unused-parameter -fno-builtin -fshort-wchar
+target_compile_options(VitaJPOverlay_Shell PRIVATE -O2 -Wall -Wno-unused-parameter -fno-builtin -fshort-wchar -fstack-usage
   "$<$<COMPILE_LANGUAGE:CXX>:-fno-rtti;-fno-exceptions;-Wno-sign-compare;-Wno-unused-function>"
   "-D__declspec(x)=")
 target_link_directories(VitaJPOverlay_Shell PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
-target_link_options(VitaJPOverlay_Shell PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
+target_link_options(VitaJPOverlay_Shell PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections -fstack-usage
   -Wl,--undefined=module_start -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
 target_link_libraries(VitaJPOverlay_Shell
   vjo_core_vita
@@ -304,6 +304,9 @@ add_custom_target(vjo_syscall_abi ALL
     --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self
   COMMENT "Checking packaged syscall ABI and firmware-independent kernel imports")
+add_custom_command(TARGET VitaJPOverlay_Shell POST_BUILD
+  COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_stats_stack.py ${CMAKE_CURRENT_BINARY_DIR}
+  COMMENT "Checking recount frames fit the existing VjoNet stack allowance")
 
 # ---------------- game-process vocr worker ----------------
 if(VJO_WITH_VOCR)

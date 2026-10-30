@@ -11,6 +11,13 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- Triangle's reading statistics can finish counting while the panel is open, including with a missing or
+  obsolete cache, and show recount progress. History reads and checkpoints now run on the existing
+  background worker, with queued lookups ahead of each bounded chunk. The one-second delay between
+  chunks is removed; dictionary browsing pauses recounts. No new allocation, thread or module/stack budget.
+
 ## [0.10.2] - 2026-10-30
 
 Memory fixes for the failures in the owner's 0.10.1 logs (#528). The overlay opens even when another plugin has used

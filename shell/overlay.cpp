@@ -205,6 +205,10 @@ static VjoShown s_shown; /* the lookups shown and their press-to-screen times (l
 #define COUNT_MOVE() ((void)0)
 #endif
 static int s_mode;
+extern "C" int vjo_overlay_stats_open(void)
+{
+    return __atomic_load_n(&s_mode, __ATOMIC_RELAXED) == MODE_LINE_DEBUG;
+}
 static uint32_t s_prev_buttons;
 static uint64_t s_arrow_repeat_us; /* when a held d-pad arrow next repeats; 0: none armed */
 static int s_arrow_repeated;       /* this frame's arrow is a hold's repeat, not a press */
@@ -800,7 +804,7 @@ static void touch_write(int action)
  * selector refuses too). */
 static void enter_region_mode(uint32_t rows)
 {
-    s_mode = MODE_REGION;
+    __atomic_store_n(&s_mode, MODE_REGION, __ATOMIC_RELAXED);
     touch_write(vjo_touch_hold(&s_touch));
     s_square_down_us = sceKernelGetProcessTimeWide();
     s_square_clear_armed = 1;
@@ -818,7 +822,7 @@ static void enter_region_mode(uint32_t rows)
 
 static void leave_region_mode(void)
 {
-    s_mode = MODE_OVERLAY;
+    __atomic_store_n(&s_mode, MODE_OVERLAY, __ATOMIC_RELAXED);
     /* #358: the region mode was used in this activation of the game (a suggested box offered, or □): no box is offered
      * after it until the game next starts or resumes (core/region_select.h VJO_RSEL_TAKEN) */
     __atomic_store_n(&g_view.suggest, VJO_RSEL_TAKEN, __ATOMIC_RELAXED);
@@ -889,7 +893,7 @@ static void open_page(void)
         }
     }
     /* frame_body always renders before this first frame is drawn, including the themed footer. */
-    s_mode = MODE_OVERLAY;
+    __atomic_store_n(&s_mode, MODE_OVERLAY, __ATOMIC_RELAXED);
     s_selected = 0;
     s_hl_len = 0;
     s_hl_dirty = false;
@@ -945,6 +949,7 @@ static void close_page(int handback)
     int rc, write;
     if (s_mode == MODE_REGION)
         leave_region_mode();
+    __atomic_store_n(&s_mode, MODE_OVERLAY, __ATOMIC_RELAXED);
     sceClibMemset(&st, 0, sizeof(st));
     st.size = sizeof(st);
     rc = vjoGetState(&st);
@@ -1079,7 +1084,7 @@ static void input_header_touch(void)
 static void input_overlay(const VjoInput *in, uint32_t pressed)
 {
     if (pressed & SCE_CTRL_TRIANGLE) {
-        s_mode = s_mode == MODE_LINE_DEBUG ? MODE_OVERLAY : MODE_LINE_DEBUG;
+        __atomic_store_n(&s_mode, s_mode == MODE_LINE_DEBUG ? MODE_OVERLAY : MODE_LINE_DEBUG, __ATOMIC_RELAXED);
         if (s_mode == MODE_LINE_DEBUG)
             vjo_history_total_want(); /* its top line: the characters read (history.c) */
         render(0);

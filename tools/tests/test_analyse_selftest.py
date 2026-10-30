@@ -2694,7 +2694,7 @@ class PressesAndRereads(unittest.TestCase):
         press's `open:` line ended during the press's own handling: not counted. A press job's times run from its
         start, after the press's own handling, which the line says."""
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
-        net_job = worker[worker.index("static void net_job(void)"):]
+        net_job = worker[worker.index("void net_job(void)"):]
         net_job = net_job[:net_job.index("\n}\n")]
         # The early preparation branch has no done log: the final publication is the
         # foreground/OCR job whose done line the analyser reads.

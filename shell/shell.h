@@ -266,6 +266,8 @@ void vjo_anki_reap(void);
 void vjo_overlay_init(void *plugin);
 /* Takes the overlay's text block (VJO_SL_PAF_UI) for good, as the Shell starts (vjo_worker_start; overlay_mem.h). */
 void vjo_overlay_boot(void);
+/* Control thread: atomic snapshot of whether Triangle's statistics panel is selected. */
+int vjo_overlay_stats_open(void);
 
 /* platform_vita.c: the local dictionaries' files and the process clock */
 void vjo_platform_vita(VjoPlatform *p);

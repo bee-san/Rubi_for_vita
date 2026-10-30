@@ -101,7 +101,7 @@ The overlay reads the file back for two things. [Line history](line-history.md):
 first goes past the overlay's top row, the control thread reads the file's last 24,512 B once
 (into its existing 24 KiB scratch) and keeps up to 32 of this game's lines, by `uuid`, in a 16 KiB Paf
 block while the user looks back. And the [total characters read](#total-characters-read) that △ shows,
-when it is not known yet: the control thread counts the file 24,512 B at a time in the same scratch.
+when it is not known yet: VjoNet counts the file in separate, stack-backed 11 KiB windows.
 Neither reader writes `history.csv`. An append in progress can only cut the last record: the reader
 skips it until its line and the time's first digit after it are written, then reads its line, which is
 whole ([line-history.md](line-history.md#where-the-lines-come-from-and-why)); the count leaves out the
@@ -146,8 +146,8 @@ the same `uuid` and `time`; the reading total counts the line once. So the file 
 record. The rewrite (`shell/history.c` `vjo_history_append`, #338's audit F3):
 
 - opens the file first: one that cannot be opened loses nothing (the earlier part's record stays);
-- truncates inside the window in which a count of the total does not read the file's end (`total.seq` odd), and only
-  while no count has the file open and the file still ends where that record ends (a file replaced or edited since
+- runs serially with the recount on VjoNet, and truncates only while no count holds the file open
+  between windows and the file still ends where that record ends (a file replaced or edited since
   is not truncated: the line is a record of its own after it);
 - reads the file's end again after the truncation, so the record goes where the earlier part's began whether the
   console's `SCE_O_APPEND` places each write at the end or only the open (not measured on a console).
@@ -157,10 +157,8 @@ the earlier part's record began, as any failed append rolls back to where it beg
 earlier part's is gone with it), and a later read of the line writes it as a record of its own. The reading total can
 keep the lost part's characters: it had counted them, and when the next record ends exactly where the lost one ended,
 its count finds the file the length it had counted and adds nothing (one record's characters off, until the file is
-counted again: a count of history.csv from its start; audit-rubi-audit-fix-hooks' probe P2c, host). A count that opens
-the file in the moment between the writer's check that none has it open and its truncation, and reads the file's end
-after the truncation, ends "unavailable" until the next Triangle press, as before this order (its probe P3b, host; the
-window is the time of one `sceIoChstat`); nothing is lost. Two lines are
+counted again: a count of history.csv from its start; audit-rubi-audit-fix-hooks' probe P2c, host). The earlier race between opening a count and truncating a grown
+line no longer occurs: both operations now run serially on VjoNet. Two lines are
 one record when the second starts with the whole first and comes under 750 ms after it
 ([native-hooks.md](native-hooks.md#no-wait-for-a-trusted-line-api-49): 225 of 8,910 consecutive page pairs of a host
 pool start so, 198 of them a box that adds its lines).
@@ -456,26 +454,37 @@ characters in the overlay. The existing power-loss recovery rule for character c
 record with its line and time's first digit may count once, while a record glued to it without a newline
 is skipped. Invalid or incomplete timestamps never contribute time.
 
-**Counting and persistence.** A Triangle press does no file I/O. The control thread reads the streak's
-16-byte record and the checked 112-byte per-game cache when the view asks for statistics
-([Streak](#streak)). A valid cached prefix is shown immediately, even if newer history remains to
-count. CSV reads and parsing wait until the overlay is closed and the worker is idle: one window
-in existing 24 KiB scratch at most once a second, with no immediate self-wakeup. With no usable
-cache the view says `Reading statistics: counting…` until ready, or `unavailable` after a failed
-background read (the next press retries).
-While the totals are known, successful appends update them in constant space. The scan and writer use
-the same timing rule, including the interval across scan windows or a saved prefix. No new threads or
-heap allocations are used. While a count runs, it shares storage with game reads and word lookups ahead
-are deferred; console latency and CPU3 usage are unmeasured.
+**Counting and persistence.** Triangle and the control/input thread only queue requests. The
+existing VjoNet worker reads the streak's 16-byte record and checked 112-byte per-game cache,
+publishes a valid cached prefix, then reconstructs any missing history between foreground jobs.
+Every recount job reads at most 11 KiB (source bound, not a console timing measurement), using
+private scratch on VjoNet's existing stack. The input thread keeps its own 24 KiB scratch; neither
+thread borrows the other's buffer or overwrites the displayed lookup or OCR result.
+
+The worker checks queued foreground jobs between every window. Windows continue without the old
+one-second delay while idle with the overlay closed or Triangle's statistics selected. Returning to
+dictionary browsing or region selection pauses further windows. A read already in progress finishes
+before the worker can begin a newly queued lookup, but cannot block the separate input thread.
+The panel shows `counting… 42%` without a usable cache, with the same progress line under cached totals.
+Progress measures covered file bytes approximately; the boundary record is read again in the next
+window. Each window atomically commits its counted prefix, so cached totals advance along with progress.
+The panel redraws when the displayed percentage changes. A failed read shows `unavailable`;
+the next Triangle request retries.
+
+Successful appends update known counters in constant space using the same timing rule as a recount.
+No thread, heap allocation, static buffer or stack-budget increase is added. The count's temporary
+window uses space in the existing 16 KiB VjoNet stack. The Vita build checks the three enclosing
+compiler frames plus a 2 KiB estimated allowance for nested helpers and firmware. Console latency,
+stack high-water usage and CPU3 cost remain unmeasured for this change.
 
 `ux0:data/VitaJPOverlay/reading-<platform>-<title_id>.bin` is a **112-byte cache**
-(C `sizeof`, not a console measurement) for one game's identity, calendar bounds, character/time
-counters and covered CSV prefix, protected by a checksum. The control thread checkpoints through
-the existing temporary-file/rename path after counting, on game exit, before a background context
-change, and at most once per 30 minutes of newly recorded timestamps while idle with the overlay
-closed. An open view can therefore show stale statistics while reconstruction waits. A dialogue updates RAM counters;
-it adds no cache write. Speed is formatted only when the menu is rendered. No new allocation,
-thread or file-size-dependent RAM is added.
+(C `sizeof`, not a console measurement), protected by a checksum, for one game's identity, calendar
+bounds, character/time counters and covered CSV prefix. VjoNet writes it through the existing
+temporary-file/rename path after counting, before a context change, on queued game-exit checkpoints
+and at shutdown. Incremental checkpoints are requested at most once per 30 minutes of newly recorded
+timestamps. A dialogue updates RAM and may flag a checkpoint; it never writes the cache itself.
+Checkpoints wait for the same foreground-job and visibility rules as recounts. A cached prefix
+stays visible until reconstruction finishes; memory use does not grow with the history file.
 
 A missing, damaged, obsolete or different-day cache triggers a bounded recount; otherwise only
 new CSV bytes are scanned. So does one counted with the other `reading_time` rule: the cache's checksum
