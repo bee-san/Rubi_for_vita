@@ -41,7 +41,11 @@ ai is really good at doing gruntwork that i dont want to do. for example, "when 
 
 there was a time in my life where i would be the one to find that bug. i was never the one to feel good about squashing it, i always felt good about using the things i created. so i am thankful i no longer have to do that and I can focus entirely on making the program feel great, fast, and smooth.
 
+additionally i feel like with a lot of ai software, people spend more time building it than using it. which means to me as a user, the software is horrible to use. this software is the opposite, i definitely use this more than i code it
+
 ## Screenshots
+
+random assorted screenshots from the actual Rubi app
 
 ![](docs/screenshots/2026-10-29-223532.jpg)
 
