@@ -379,9 +379,13 @@ __attribute__((noinline)) void vjo_history_streak(int add)
 
 void vjo_history_streak_text(char *buf, size_t cap)
 {
-    /* Pay for the stats-panel mode check in the normal Shell's full code pages, using room in
-     * its existing last data page (core/port.h). The format and its call stay the same. */
-    static const char format[] VJO_DATA_TABLE(history_streak_format) = "\n\nStreak: current %u day%s · longest %u";
+    /* The normal Shell has room in its last data page; debug's data page is full, so it keeps
+     * this format in code and uses a shorter count log below. Neither build takes another page. */
+    static const char format[]
+#if !VJO_DEBUG
+        VJO_DATA_TABLE(history_streak_format)
+#endif
+        = "\n\nStreak: current %u day%s · longest %u";
     uint32_t current = total.streak & 0xFFFFu;
     *buf = '\0'; /* not read yet (the view's first frames after a press since the Shell started): no line, not 0 */
     if (total.streak_seq)
@@ -617,7 +621,7 @@ __attribute__((noinline)) int vjo_history_total_step(VjoArena *scratch, int back
     g_view.version++;
     vjo_view_unlock();
 #if VJO_DEBUG
-    vjo_log("history total: %llu characters in %u B of history.csv (%u B read in %u windows, %u ms)%s",
+    vjo_log("history total: %llu chars, %u B (%u B, %u windows, %u ms)%s",
             (unsigned long long)chars, (unsigned)covered, (unsigned)total.bytes, (unsigned)total.windows,
             (unsigned)((sceKernelGetProcessTimeWide() - total.started) / 1000), known ? "" : "; again");
 #endif
