@@ -693,8 +693,12 @@ typedef char vjo_line_unchecked_check[VJO_GAME_LINE_UNCHECKED <= VJO_VOCR_ROTATE
  * cascade's room for it: those blocks keep the reserve themselves, and their refusal only costs the LM's or the
  * cascade's reading. */
 /* The rungs line_buffer may still ask in this job (audit-mem-lead-3 F1): LADDER_ALL; once a USER block went back
- * under a carried figure, the others; 0 once they refused too, so each later tall band costs no step and no dip. */
+ * under a carried figure, the others; 0 once they refused too (their units ask every band the same block), so a
+ * later tall band costs no CDRAM or phycont step. USER is asked again only for a block smaller than the smallest
+ * that went back (line_user_short, page-rounded; 0 none): a smaller band can keep the reserve where a larger one
+ * did not, and was read so before (audit-mem-lead-4 F1). */
 static unsigned line_ladder = LADDER_ALL;
+static uint32_t line_user_short;
 static void *line_buffer(void *ud, size_t bytes)
 {
     void *base = NULL;
@@ -716,9 +720,12 @@ static void *line_buffer(void *ud, size_t bytes)
             to_come += PAGE_ROUND(job_lm->bytes);
         if (free_user_after_reserve() < to_come) return NULL;
     }
-    if (!line_ladder) return NULL;
-    line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, line_ladder,
-                                   &base, &leaked, &held, &mem);
+    {
+        const unsigned which = line_ladder | (PAGE_ROUND(bytes) < line_user_short ? LADDER_USER : 0u);
+        if (!which) return NULL;
+        line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, which,
+                                       &base, &leaked, &held, &mem);
+    }
     if (line_uid < 0) {
         line_uid = leaked;
         if (line_ladder != LADDER_ALL) line_ladder = 0;
@@ -730,7 +737,8 @@ static void *line_buffer(void *ud, size_t bytes)
      * later ones (line_ladder) */
     if (mem == VJO_GAME_OCR_MEM_USER && carried_short()) {
         if (game_memblock_free(GL_LINE, VJO_GITEM_LINE, line_uid, held) < 0) { line_bytes_held = held; return NULL; }
-        line_ladder = LADDER_ALL & ~LADDER_USER;
+        line_user_short = held;
+        line_ladder &= ~LADDER_USER;
         line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, nm_line, (uint32_t)bytes, line_ladder,
                                        &base, &leaked, &held, &mem);
         if (line_uid < 0) {
@@ -2421,6 +2429,7 @@ retry_smaller:
     out->free_user = check_free();
     carried = out->free_user > free_user();
     line_ladder = LADDER_ALL; /* every rung again for this job's tall lines (F1) */
+    line_user_short = 0;
     for (unsigned i = try_from; i < n; i++) {
         casc = cascade_of(&cand[i], r, top, casc_us);
         fits = check_with_lm(out, cand[i].m, cand[i].bytes, capture_bytes, lm_max, cand[i].tier, &casc, &lm);

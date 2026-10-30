@@ -10,13 +10,15 @@ comments until #418 ("Budget history"). The ledger itself, its table and its che
 A line taller than a strip takes its own block (`game_ocr/main.c` `line_buffer`, at most 57,344 B unchecked on the
 Vita), after the workspace's re-check and counted by no memory check. Under a carried figure a USER one now keeps the
 reserve (`carried_short`) or goes back for CDRAM or phycont, else the band is left out and counted (#590,
-audit-mem-game-4 N1); once that happened, the job's later bands skip the rungs that refused (audit-mem-lead-3 F1). No
-block, thread or budget is added.
+audit-mem-game-4 N1); once that happened, the job's later bands skip CDRAM and phycont once they refused (#591,
+audit-mem-lead-3 F1), and ask USER again only for a block smaller than the smallest that went back (audit-mem-lead-4
+F1: #591 had skipped USER for every later band, so smaller bands that kept the reserve were left out). No block,
+thread or budget is added.
 
-| Build | main `0aaea0ac` text + data | #590 | its follow-up | Pages |
-|---|---|---|---|---|
-| normal | 159,220 + 31,056 B | 159,316 + 31,056 B | 159,348 + 31,056 B | 192,512 B, unchanged |
-| debug | 168,376 + 31,072 B | 168,456 + 31,072 B | 168,504 + 31,072 B | 204,800 B, unchanged |
+| Build | main `0aaea0ac` text + data | #590 | #591 | audit-mem-lead-4's fix | Pages |
+|---|---|---|---|---|---|
+| normal | 159,220 + 31,056 B | 159,316 + 31,056 B | 159,348 + 31,056 B | 159,396 + 31,056 B | 192,512 B, unchanged |
+| debug | 168,376 + 31,072 B | 168,456 + 31,072 B | 168,504 + 31,072 B | 168,552 + 31,072 B | 204,800 B, unchanged |
 
 [measured: `tools/check_memory_ledger.py`, the gate's VitaSDK image].
 

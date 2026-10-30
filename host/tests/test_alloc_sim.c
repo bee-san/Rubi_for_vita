@@ -884,7 +884,9 @@ static int grow_case(int64_t f, int64_t d, uint32_t speed, int64_t *frames, int6
  * game's CDRAM and phycont taken) that left the game 20,480 B under the reserve on main 0aaea0ac. */
 static void the_tall_lines_block_keeps_the_reserve_beside_a_carried_figure(void)
 {
-    static const struct { int64_t f, d; } cases[] = {{4194304, 262144}, {5242880, 262144}, {6291456, 589824}};
+    /* read: the bands whose USER block keeps the reserve (081c1a1f read them; audit-mem-lead-4 F1) */
+    static const struct { int64_t f, d; unsigned read; } cases[] = {
+        {4194304, 262144, 1}, {5242880, 262144, 2}, {6291456, 589824, 0}};
     unsigned run = 0, under = 0, tall = 0;
     int64_t least = INT64_MAX;
     if (!have_models()) { TEST_MSG("release weights absent (VJO_VOCR_MODEL_DIR): skipped"); return; }
@@ -910,6 +912,10 @@ static void the_tall_lines_block_keeps_the_reserve_beside_a_carried_figure(void)
             if (stack < least) least = stack;
         }
         TEST_CHECK_(b.rc == 0, "f %lld d %lld: rc %d", (long long)cases[i].f, (long long)cases[i].d, b.rc);
+        TEST_CHECK_(host_last_stats.tall - host_last_stats.tall_skipped == cases[i].read,
+                    "f %lld d %lld: %u of %u bands read, %u keep the reserve", (long long)cases[i].f,
+                    (long long)cases[i].d, host_last_stats.tall - host_last_stats.tall_skipped, host_last_stats.tall,
+                    cases[i].read);
         /* audit-mem-lead-3 F1: bands left out cost their first try's steps only, so the job's RECOGNIZE step, the one
          * record of how many were left out, stays in the step log (VJO_GAME_OCR_STEPS) */
         {
