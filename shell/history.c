@@ -379,10 +379,13 @@ __attribute__((noinline)) void vjo_history_streak(int add)
 
 void vjo_history_streak_text(char *buf, size_t cap)
 {
+    /* Pay for the stats-panel mode check in the normal Shell's full code pages, using room in
+     * its existing last data page (core/port.h). The format and its call stay the same. */
+    static const char format[] VJO_DATA_TABLE(history_streak_format) = "\n\nStreak: current %u day%s · longest %u";
     uint32_t current = total.streak & 0xFFFFu;
     *buf = '\0'; /* not read yet (the view's first frames after a press since the Shell started): no line, not 0 */
     if (total.streak_seq)
-        sceClibSnprintf(buf, cap, "\n\nStreak: current %u day%s · longest %u", (unsigned)current, current == 1 ? "" : "s",
+        sceClibSnprintf(buf, cap, format, (unsigned)current, current == 1 ? "" : "s",
                     (unsigned)(total.streak >> 16));
 }
 
