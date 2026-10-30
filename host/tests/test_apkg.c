@@ -2961,6 +2961,8 @@ static void test_a_newer_builds_archived_record_is_kept(void)
         {"9", RECORD, 1}, {"1234567890", RECORD, 1}, {"99999999999999999999", RECORD, 1}, {"5", RECORD, 1},
         {"4294967296", RECORD, 1}, /* (2^32: read in 32 bits without a stop, 0) */
         {"0000000005", NO_SPELLING, 1}, {"00000000004", RECORD, 1}, {"9", OVER, 1},
+        /* (over 32 KiB, its version read from the head: of any length, leading zeros too; audit-mem-anki-followup-2) */
+        {"1234567890", OVER, 1}, {"0000000005", OVER, 1}, {"00000000004", OVER, 0},
         {"00000000004", NO_SPELLING, 0}, {"4", OVER, 0}, {"", ZEROS, 0}, {"", EMPTY, 0}, {"-1234567890", RECORD, 0},
     };
     static char own[1024], newer[40000], pad[33000];
@@ -3070,16 +3072,29 @@ static void test_audit_followup1_an_oversize_archived_copy_is_read_from_its_head
                 !strstr(logs, "the archived copy is damaged"), "%s\n%s", msg, logs);
     TEST_CHECK(get_bytes(qpath, back, sizeof(back)) == no && !memcmp(back, own, no));
     TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == sizeof(big) && !memcmp(back, big, sizeof(big)));
+    /* (audit-mem-anki-followup-2) the head's own opening fails (the clearing's second opening of a record: read_file's,
+     * then oversize_state's): unread as well, both kept */
+    logs[0] = '\0';
+    audit2_fail_json_at = 2;
+    vjo_arena_init(&A, mem, sizeof(mem));
+    TEST_ASSERT(vjo_export_run(&A, 0, NULL, NULL, &audit2_ui, &r, msg, 300) == VJO_OK);
+    audit2_fail_json_at = 0;
+    io.fail_json_read_at = 0;
+    TEST_CHECK_(r.cards == 1 && r.kept == 1 && !r.moved && strstr(logs, "anki export: open ") &&
+                !strstr(logs, "the archived copy is damaged"), "the head's opening failing: %s\n%s", msg, logs);
+    TEST_CHECK(get_bytes(qpath, back, sizeof(back)) == no && !memcmp(back, own, no));
+    TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == sizeof(big) && !memcmp(back, big, sizeof(big)));
     logs[0] = '\0';
     TEST_ASSERT(run(0, &r, msg) == VJO_OK);
     TEST_CHECK_(r.moved == 1 && !r.kept && strstr(logs, "the archived copy is damaged: replaced by the queued one"),
                 "read again: %s\n%s", msg, logs);
     TEST_CHECK(get_bytes(xpath, back, sizeof(back)) == no && !memcmp(back, own, no) && present(qpath) == 0);
-    /* over 32 KiB, version 9, but another key first, or a key of version's length that is not version: no newer
-     * build's record by its first bytes */
-    for (int lead = 0; lead < 2; lead++) {
+    /* over 32 KiB, version 9, but another key first, or a key of version's length that is not version, or version
+     * without its colon (audit-mem-anki-followup-2): no newer build's record by its first bytes */
+    for (int lead = 0; lead < 3; lead++) {
+        static const char *const leads[] = {"{\"v\":1,\"version\":9,", "{\"Version\":9,", "{\"version\" 9,"};
         memcpy(big, own, no + 1);
-        audit2_edit(big, sizeof(big), big, "{\"version\":4,", lead ? "{\"Version\":9," : "{\"v\":1,\"version\":9,");
+        audit2_edit(big, sizeof(big), big, "{\"version\":4,", leads[lead]);
         memset(pad, 'a', 32768);
         memcpy(pad, "\"ocr_confidence\":null,\"x\":\"", 27);
         memcpy(pad + 32768, "\"}", 3);
@@ -3091,7 +3106,7 @@ static void test_audit_followup1_an_oversize_archived_copy_is_read_from_its_head
         put_file(xpath, big, nb);
         TEST_ASSERT(run(0, &r, msg) == VJO_OK);
         TEST_CHECK_(r.moved == 1 && !r.kept && strstr(logs, "the archived copy is damaged: replaced by the queued one"),
-                    "%s: %s\n%s", lead ? "\"Version\" first" : "another key first", msg, logs);
+                    "%s: %s\n%s", leads[lead], msg, logs);
     }
 }
 
