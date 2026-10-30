@@ -425,7 +425,10 @@ Facts:
   resident blocks (while it stays within a MiB of that), and it checks a block whose need falls in
   that last MiB after taking it: the reserve is a whole MiB too, so "the game still keeps 1 MiB"
   is then exact, and a block that leaves less goes back (from the block's allocation until the worker
-  gives it back, the game had less than the reserve, by less than a MiB; a game thread can preempt the
+  gives it back, the game had less than the reserve, by less than a MiB: at least the whole MiB above
+  the block less the block, which for the 1000k LM's 983,040 B is 65,536 B, for Small's weights
+  (823,296 B) 225,280 B, for the 2000k LM's 1,974,272 B 122,880 B and for Large's (2,478,080 B)
+  667,648 B; this happens only when the game took memory after the job's check; a game thread can preempt the
   worker in between [inference: the worker runs at the lowest user priority; unmeasured]). The blocks a
   job takes after its workspace (a helper's stack, the pause's frame block, the gate's) are checked the
   same way when the check planned with a carried figure (audit-mem-game-1 F1). Before #528 the second figure refused

@@ -724,7 +724,7 @@ static void game_say(const char *what, int64_t free_bytes, const GameJob *a, con
             a->passed > 1 || b->passed > 1 ? "  (a passed check was retried smaller)" : "",
             a->probes || b->probes ? "  (a probe went back)" : "");
     if (a->probes || b->probes)
-        fprintf(stderr, "game-mem:   probes given back %u + %u, at most %lld B under the reserve for one sample\n",
+        fprintf(stderr, "game-mem:   probes given back %u + %u, at most %lld B under the reserve while the block was held\n",
                 a->probes, b->probes, (long long)(a->dip > b->dip ? a->dip : b->dip));
 }
 
@@ -815,8 +815,9 @@ static void game_memory_sweep(void)
                     TEST_CHECK_(a.headroom >= VJO_GAME_RESERVE && b.headroom >= VJO_GAME_RESERVE,
                                 "%s at %lld B: %lld / %lld B left to the game", what, (long long)f,
                                 (long long)a.headroom, (long long)b.headroom);
-                    /* a block the worker takes to see whether it fits, and gives back at once, leaves the game less
-                     * than the reserve for one sample only, by less than the console's unit */
+                    /* a block the worker takes to see whether it fits, and gives back if not, leaves the game less
+                     * than the reserve only until it is given back, by less than the console's unit (the game keeps
+                     * at least the whole MiB above the block less the block: docs/vita-memory.md) */
                     TEST_CHECK_(a.dip < (1 << 20) && b.dip < (1 << 20) &&
                                     (mode || f % (1 << 20) == 0 || (!a.probes && !b.probes)),
                                 "%s at %lld B%s: probes %u / %u, %lld / %lld B under the reserve", what, (long long)f,
