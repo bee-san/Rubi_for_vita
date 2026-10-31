@@ -20,7 +20,8 @@ been reported.
   double-tap's scan does. The box is never saved: closing the overlay goes back to the dialogue region. It reuses the
   rear tap's one-off scan and the region selector: one new request flag (API 58, `VJO_GAME_OCR_F_RECT`, the free bit
   15) tells the kernel to read the Shell's box instead of the saved region; no new buffer, thread or allocation.
-  Cancel no longer closes the overlay: the toggle does (L + R by default), as the hint line now says, except when
+  Cancel no longer closes the overlay: the toggle does (L + R by default), as the overlay's footer now says (shorter: `Tap / pad / stick word · × queue · □ region · ○ OCR box · L+R close`;
+  the right stick and the rear double-tap are in the guide and the README's diagram), except when
   the toggle is the rear double-tap, which scans while the overlay is open, so Cancel still closes it there (and the
   box is not offered). The README's controls diagram shows it. Host-tested; not yet run on a console.
 

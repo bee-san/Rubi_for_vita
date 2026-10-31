@@ -279,7 +279,7 @@ app when it starts.
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
-| L + R (the toggle) | Close the overlay. With the rear double-tap as the toggle, which scans while the overlay is open, Cancel closes it instead (and draws no box) |
+| L + R (the toggle) | Close the overlay (the footer names your toggle: `○ OCR box · L+R close`; it no longer lists the right stick or the rear double-tap). With the rear double-tap as the toggle, which scans while the overlay is open, Cancel closes it instead (and draws no box) |
 
 **Read outside the dialogue box.** With the overlay open, double-tap the rear touchpad: Rubi reads the
 whole game screen with its text spotter, OCR and configured language-model decoder, then shows the words

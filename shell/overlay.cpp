@@ -418,7 +418,7 @@ static void render(int new_content)
     static const char line_queue_count[] VJO_DATA_TABLE(line_queue_count) = "Anki queue: %d · export in the Rubi app";
     static const char line_queue_export[] VJO_DATA_TABLE(line_queue_export) = "Anki queue · export in the Rubi app";
     static const char line_queue_error[] VJO_DATA_TABLE(line_queue_error) = "Anki queue unavailable: check ux0 storage";
-    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "%s · %sR stick ↕ · □ box · %srear ×2 full · %s close";
+    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "%s · %s□ region · %s%s close";
     static const char line_nav_character[] VJO_DATA_TABLE(line_nav_character) = "Tap / pad / stick character";
     static const char line_nav_japanese[] VJO_DATA_TABLE(line_nav_japanese) = "Tap / pad / stick Japanese";
     static const char line_nav_word[] VJO_DATA_TABLE(line_nav_word) = "Tap / pad / stick word";
@@ -625,10 +625,10 @@ static void render(int new_content)
     vjo_view_unlock();
 
     /* The other dictionaries' entries for the word follow it in the body (the
-     * right stick scrolls to them). The longest hint, Character mode
-     * with Japanese-only and Anki, is 95 characters with the sticks' parts and the
-     * one-off box's, 100 with Select+R as the toggle (86 before; 72 before #138):
-     * whether it fits the 920 px line is for the console run. */
+     * right stick scrolls to them). The hint names the buttons only (the right stick
+     * and the rear double tap are the guide's): the longest, Character mode with
+     * Japanese-only and Anki, is 77 characters with Select+R as the toggle (86 with
+     * the sticks' and the rear tap's parts before the one-off box). */
     {
         char hint[192];
         const char *nav = s_local_cursor_mode
@@ -643,7 +643,7 @@ static void render(int new_content)
         if (s_anki_enabled)
             sceClibSnprintf(anki, sizeof(anki), "%s queue · ", s_btn.enter_glyph);
         if (!rear)
-            sceClibSnprintf(box, sizeof(box), "%s read box · ", s_btn.cancel_glyph);
+            sceClibSnprintf(box, sizeof(box), "%s OCR box · ", s_btn.cancel_glyph);
         sceClibSnprintf(hint, sizeof(hint),
                         line_hint_format, nav, anki, box,
                         rear ? s_btn.cancel_glyph : close_names[s_toggle]);
@@ -770,11 +770,10 @@ static void region_hint(int force)
         "or drag on screen · %s cancel · hold □ full screen</font>";
     /* the one-off box (Cancel): read once as it is drawn, never saved */
     static const char once_box[] VJO_DATA_TABLE(region_once_box) =
-        "<font color=\"#ffd24a\">Read this box? %d x %d</font><font color=\"#ffffff\">"
-        " · stick / ◀▶▲▼ opposite corner · %s read · %s undo corner</font>";
+        "<font color=\"#ffd24a\">OCR %d x %d</font><font color=\"#ffffff\">"
+        " · stick / ◀▶▲▼ corner · %s read · %s undo</font>";
     static const char once_first[] VJO_DATA_TABLE(region_once_first) =
-        "<font color=\"#ffffff\">Read a box once: drag on screen · or stick / ◀▶▲▼ move, "
-        "%s first corner · %s back</font>";
+        "<font color=\"#ffffff\">Drag a box to OCR · or stick / ◀▶▲▼ + %s · %s back</font>";
     int x, y, w = 0, h = 0, corner = vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     int64_t now = sceKernelGetProcessTimeWide();
     char hint[192]; /* the longest is 154 B */

@@ -427,7 +427,7 @@
       <text x="20" y="245" font-size="21"><tspan font-size="27" class="rubi-screen-text">明</tspan>=light, bright</text>
       <text x="20" y="283" font-size="21"><tspan font-size="27" class="rubi-screen-text">日</tspan>=day, counter for days, Japan, sun</text>
       <rect y="500" width="960" height="44" fill="#08080a"/>
-      <text x="20" y="531" font-size="20" class="rubi-screen-rank" clip-path="url(#rubi-screen-hint-clip)">Tap / pad / stick word · × queue · R stick ↕ · □ box · ○ read box · rear ×2 full · L+R close</text>
+      <text x="20" y="531" font-size="20" class="rubi-screen-rank" clip-path="url(#rubi-screen-hint-clip)">Tap / pad / stick word · × queue · □ region · ○ OCR box · L+R close</text>
     </svg>
   </g>
 
@@ -482,7 +482,7 @@
     <circle cx="1476" cy="652" r="21" fill="#e6eaf0"/>
     <use href="#rubi-icon-circle" transform="translate(1476 652)" color="#596b83"/>
     <text x="1511" y="648" class="rubi-action">Cancel: read a box*</text>
-    <text x="1511" y="676" class="rubi-detail">Text not in the hook? Draw it.</text>
+    <text x="1511" y="676" class="rubi-detail">OCR it once, no save.</text>
   </g>
   <g id="rubi-right-stick-callout">
     <path class="rubi-wire" d="M1326 626 H1419 V753 H1459" stroke="#29857a"/>
@@ -544,21 +544,19 @@
   <g id="rubi-read-once" aria-label="Read text outside the dialogue box once: a box with Cancel, or the whole screen with a rear double tap">
     <rect x="1106" y="1018" width="630" height="310" rx="24" fill="#fff" stroke="#e0e2e4"/>
     <text x="1138" y="1065" class="rubi-heading">Text not in the hook?</text>
-    <text x="1138" y="1100" class="rubi-body rubi-muted">Read it once with OCR while Rubi is open.</text>
+    <text x="1138" y="1100" class="rubi-body rubi-muted">OCR it once. Nothing is saved.</text>
 
     <!-- Cancel: the one-off box, read as soon as it is drawn. -->
-    <circle cx="1159" cy="1153" r="21" fill="#e6eaf0"/>
-    <use href="#rubi-icon-circle" transform="translate(1159 1153)" color="#596b83"/>
-    <text x="1194" y="1150" class="rubi-action" style="fill:#24766d">Cancel*: draw a box</text>
-    <text x="1194" y="1178" class="rubi-detail">Lift your finger (or press Enter*) and it is read.</text>
+    <circle cx="1159" cy="1163" r="21" fill="#e6eaf0"/>
+    <use href="#rubi-icon-circle" transform="translate(1159 1163)" color="#596b83"/>
+    <text x="1194" y="1160" class="rubi-action" style="fill:#24766d">Cancel*: draw a box</text>
+    <text x="1194" y="1188" class="rubi-detail">Read as soon as you let go.</text>
 
     <!-- Rear double tap: the whole screen. -->
-    <circle cx="1159" cy="1225" r="21" fill="#e0eeea"/>
-    <text x="1159" y="1231" text-anchor="middle" font-size="17" font-weight="700" style="fill:#24766d">×2</text>
-    <text x="1194" y="1222" class="rubi-action" style="fill:#24766d">Rear double-tap: whole screen</text>
-    <text x="1194" y="1250" class="rubi-detail">Menus and other text, all at once.</text>
-    <text x="1138" y="1290" class="rubi-detail">Nothing is saved: your dialogue region stays.</text>
-    <text x="1138" y="1314" font-size="16" class="rubi-muted">Close Rubi to return to it. Minimum box: 32 × 32 pixels.</text>
+    <circle cx="1159" cy="1255" r="21" fill="#e0eeea"/>
+    <text x="1159" y="1261" text-anchor="middle" font-size="17" font-weight="700" style="fill:#24766d">×2</text>
+    <text x="1194" y="1252" class="rubi-action" style="fill:#24766d">Rear double-tap</text>
+    <text x="1194" y="1280" class="rubi-detail">The whole screen.</text>
   </g>
 
   <g id="rubi-button-notes">
