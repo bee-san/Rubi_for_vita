@@ -110,7 +110,23 @@ int vjoSetInputBlock(int on)
 }
 int vjoGetVersion(void) { return VJO_API_VERSION; }
 int vjoRegisterShell(void) { return 0; }
-int vjoWaitEvent(uint32_t mask, uint32_t *out, uint32_t timeout) { *out = 0; return -1; }
+/* ctl_main's waits on the kernel's VjoEvents flag (kernel_events), as a console's wait writes *out
+ * (VitaAutotests event_flag_wait_out_bits, recorded on a PS Vita TV, firmware 3.65): the flag's whole pattern,
+ * bits outside the mask too, also when none of the mask's bits is set and the wait times out; a wait that takes
+ * clears the mask's bits only (SCE_EVENT_WAITCLEAR_PAT). ctl_wait_script runs before each wait: what the kernel
+ * and the other threads post meanwhile; it ends the loop (running = 0). */
+static uint32_t kernel_events;
+static void (*ctl_wait_script)(int step);
+static int ctl_wait_step;
+int vjoWaitEvent(uint32_t mask, uint32_t *out, uint32_t timeout)
+{
+    (void)timeout;
+    if (ctl_wait_script) ctl_wait_script(ctl_wait_step++);
+    *out = kernel_events;
+    if (!(kernel_events & mask)) return (int)0x80028005; /* SCE_KERNEL_ERROR_WAIT_TIMEOUT */
+    kernel_events &= ~mask;
+    return 0;
+}
 static unsigned shell_notifications;
 /* A test's look at the moment the network thread tells the control thread (job_done, job_text_ready). */
 static void (*on_notify)(void);
@@ -9401,6 +9417,57 @@ static void test_reading_total_on_the_control_thread(void)
     TEST_CHECK(total_steps == 4 && !total_windows && wait_step == 7);
     TEST_CHECK(!scratch.used && !held_cmd && !held_view);
 }
+
+/* ctl_main itself on a console's flag (vjoWaitEvent above), with VJO_EV_CAPTURE_DONE left set by the boot's
+ * first OCR job: no thread waits for it, and every wait's *out has it. A quiet poll stays quiet: Triangle's
+ * count starts at the poll after its wake (0.10.3 showed "counting… 0%" for good), and so do prepared words. */
+static void stats_poll_script(int step)
+{
+    switch (step) {
+    case 0:
+        kernel_events |= VJO_EV_SHELL; /* Triangle's request wakes the control thread (total_request) */
+        break;
+    case 1: /* that wake's tick handles the wake only; this poll times out, *out VJO_EV_CAPTURE_DONE */
+        TEST_CHECK(!(posted & NET_EV_STATS) && kernel_events == VJO_EV_CAPTURE_DONE);
+        break;
+    default:
+        TEST_CHECK(posted & NET_EV_STATS); /* the quiet poll asked VjoNet for the count's next window */
+        running = 0;
+    }
+}
+static void prepare_poll_script(int step)
+{
+    if (!step) {
+        test_now += 100001; /* past the job's 100 ms idle: a word is due */
+        return;
+    }
+    TEST_CHECK(job_running && job_prepare);
+    running = 0;
+}
+static void test_a_capture_bit_no_thread_waits_for_leaves_quiet_polls_quiet(void)
+{
+    reset();
+    total_windows = 2; /* a count to make */
+    ov = OV_OPEN; stats_open = 1;
+    kernel_events = VJO_EV_CAPTURE_DONE;
+    ctl_wait_step = 0;
+    ctl_wait_script = stats_poll_script;
+    ctl_main(0, NULL);
+    TEST_CHECK(ctl_wait_step == 3 && kernel_events == VJO_EV_CAPTURE_DONE && stats_allowed);
+    ov = OV_CLOSED; stats_open = 0;
+
+    cursor_setup(); open_overlay(); finish_current_job();
+    kernel_events = VJO_EV_CAPTURE_DONE;
+    ctl_wait_step = 0;
+    ctl_wait_script = prepare_poll_script;
+    ctl_main(0, NULL);
+    ctl_wait_script = NULL;
+    TEST_CHECK(ctl_wait_step == 2);
+    if (job_running) finish_current_job();
+    close_overlay(); mem_free();
+    kernel_events = 0;
+    running = 1;
+}
 #endif
 
 #ifdef VJO_PAF_ALLOC
@@ -9905,6 +9972,8 @@ TEST_LIST = {
     {"theme selection is latched until a new game process", test_theme_latched_for_game},
     {"reading_total_a_window_a_wakeup_kept_at_a_games_exit",
      test_reading_total_on_the_control_thread},
+    {"a_capture_bit_no_thread_waits_for_leaves_quiet_polls_quiet",
+     test_a_capture_bit_no_thread_waits_for_leaves_quiet_polls_quiet},
     {"#528 soak: a game session holds no more after each cycle", test_soak_a_game_session_holds_no_more_after_each_cycle},
 #endif
     {NULL, NULL}

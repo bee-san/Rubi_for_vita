@@ -3382,6 +3382,13 @@ static void control_tick(uint32_t bits)
         sceKernelSetEventFlag(net_evf, NET_EV_STATS);
 }
 
+/* A console's wait writes the flag's whole pattern into *out, also when it times out (VitaAutotests
+ * event_flag_wait_out_bits, recorded on a PS Vita TV, firmware 3.65). VJO_EV_CAPTURE_DONE, which no thread
+ * has waited for since #130, stays set after the boot's first OCR job, so a tick takes only the bits its
+ * wait took: with the whole pattern no tick was quiet (!bits), and the reading total's count and
+ * prepare_words never started. */
+#define CTL_EVENTS (VJO_EV_TRIGGER | VJO_EV_SUBTITLE | VJO_EV_FULL_SCREEN | VJO_EV_REGION_STABLE | \
+                    VJO_EV_REGION_QUIET | VJO_EV_GAME_START | VJO_EV_GAME_EXIT | VJO_EV_SHELL)
 static int ctl_main(SceSize args, void *argp)
 {
     (void)args;
@@ -3390,10 +3397,9 @@ static int ctl_main(SceSize args, void *argp)
     boot_ok_attempts = 0;
     while (running) {
         uint32_t bits = 0;
-        vjoWaitEvent(VJO_EV_TRIGGER | VJO_EV_SUBTITLE | VJO_EV_FULL_SCREEN | VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET |
-                         VJO_EV_GAME_START | VJO_EV_GAME_EXIT | VJO_EV_SHELL,
-                     &bits, POLL_TIMEOUT_US);
-        control_tick(bits);
+        if (vjoWaitEvent(CTL_EVENTS, &bits, POLL_TIMEOUT_US) < 0)
+            bits = 0; /* a timeout: nothing taken */
+        control_tick(bits & CTL_EVENTS);
     }
     return 0;
 }

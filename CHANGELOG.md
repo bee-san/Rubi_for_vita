@@ -13,6 +13,15 @@ been reported.
 
 ### Fixed
 
+- Triangle's reading statistics no longer stay at `counting… 0%`. The Shell's control thread starts a count only on
+  a poll with no event, and on a console no poll had none: a Vita's event-flag wait writes the flag's whole bit
+  pattern, also when it times out (VitaAutotests `event_flag_wait_out_bits`, recorded on a PS Vita TV, firmware 3.65),
+  and the kernel's `VJO_EV_CAPTURE_DONE`, which nothing has waited for since #130, stays set after a boot's first OCR
+  job. So the count never started on a console: since 0.10.2 a total showed only from a cache of the same day, and
+  in 0.10.3 not even then. The control thread now takes only the bits its wait took. The same check held back Auto
+  mode's prepared lookups of the next words (#203), which have not run on a console after a boot's first OCR job;
+  they run now. The host tests' wait now writes what a console's does, and a test runs the control thread's loop with
+  the bit left set. Not yet run on a console.
 - The release zip's README.md links the promo's artwork notes on GitHub, as `docs/promo/` is not in the zip
   (`tools_zip_docs` was red on main since the link was added).
 
