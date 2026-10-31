@@ -173,6 +173,27 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"AFEJ00001", 0x7FEE3308u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
      0, VJO_PLACE_READ_STRING, 0x0001u},
+    /* r5 (town-combination byte-order fix; PR #582): same offset and veneer, new module NID. Its observer runs once per
+     * typewriter step and its name/date strings are corrupt (string.bin loader), so r6 is the build to use. */
+    {"AFEJ00001", 0xC7116601u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
+     0, VJO_PLACE_READ_STRING, 0x0001u},
+    /* r6 (eboot f34fe31c, psandvita release hooks-ac-r6-deltarune-20261031): the observer runs once per typed-out page
+     * (mMsg NORMAL), a repeated line is published again, drawn pictograms are mapped, the string.bin INF1 loader fix
+     * restores names/dates, and emu64 skips a NULL display list. Vita3K 0x810020f0, 19 farm pages
+     * (paired-vita-afej00001-hv2-20261031) + 18 on an earlier r6 build; emulator-proven, not run on a console. */
+    {"AFEJ00001", 0x04B3ED1Cu, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
+     0, VJO_PLACE_READ_STRING, 0x0001u},
+    /* DELT00001 DELTARUNE (APP_VER 00.73): DeltaruneVita v0.73, the Butterscotch GameMaker runner (eboot 9d9c7a6d): segment 0
+     * + 0xA4AA4 in builtin_string_char_at, r5 = the UTF-8 string of argument 0 after RValue_toString, on the in-range
+     * path. The GML writer passes its whole message for every drawn character, every frame (a hot site: the text
+     * repeats until the message changes). VJO_RF_DELT00001 drops the writer markup. Vita3K 0x810a4aa4, 6 farm pages
+     * (paired-vita-delt00001-hv-20261031; 5 reviewed by gpt-6.1-terra max); patch: ldr r3, [sp, #0xc]; sub.w r9, r3,
+     * r4; add.w r10, r9, #0x1. Emulator-proven, not run on a console; its per-call cost there is unmeasured. */
+    {"DELT00001", 0x8D433617u, 0xA4AA4u, 1, 5, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x03, 0x9B, 0xA3, 0xEB, 0x04, 0x09, 0x09, 0xF1, 0x01, 0x0A, 0x50, 0x46, 0x09, 0xF1, 0xF6, 0xFE},
+     VJO_RF_DELT00001, VJO_PLACE_READ_STRING, 0x0073u},
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, VJO_RF_PCSG00415, 0, 0},
     {"PCSG01198", 0x8AA413F2u, 0x745C8u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,

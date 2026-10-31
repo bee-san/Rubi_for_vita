@@ -441,11 +441,14 @@ Luna recorded these before its `addr_offset` (f237a9f4, 2026-05-20), at Vita3K's
 
 ## Rubi's own entries
 
-core/hook_place.c's verified table (`vjo_place_verified`): 63 title IDs, 36 of them games of Luna's table, 20 at the address of one of Luna's sites there (where Rubi's placement check refuses Luna's site, the entry's signature unlocks it; at one it accepts, the entry pins the game's bytes and gives the text Rubi's clean-up). Commercial-game evidence comes from the psandvita hook farm's Vita3K pages (CLANNAD's from the PR #16 profile). Experimental native-port checks are described in [native-hooks.md](native-hooks.md#experimental-e-native-port). Console: what a console run showed. Site: the offset in the module the NID names, with the signature's length; Version: the game version (param.sfo's APP_VER) the entry is tried in.
+core/hook_place.c's verified table (`vjo_place_verified`): 66 title IDs, 36 of them games of Luna's table, 20 at the address of one of Luna's sites there (where Rubi's placement check refuses Luna's site, the entry's signature unlocks it; at one it accepts, the entry pins the game's bytes and gives the text Rubi's clean-up). Commercial-game evidence comes from the psandvita hook farm's Vita3K pages (CLANNAD's from the PR #16 profile). Experimental native-port checks are described in [native-hooks.md](native-hooks.md#experimental-e-native-port). Console: what a console run showed. Site: the offset in the module the NID names, with the signature's length; Version: the game version (param.sfo's APP_VER) the entry is tried in.
 
 | Title ID | Region | Game | Site | Encoding | Version | In Luna's table | Console |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AFEJ00001 | ? | どうぶつの森e＋ experimental native port r4 | segment 0 + 0x20F0 (Thumb), r0; module NID 0x7FEE3308, 16-byte signature | UTF-8 | 00.01 | no | not yet |
+| AFEJ00001 | ? | どうぶつの森e＋ experimental native port r4 | segment 0 + 0x20F0 (Thumb), r0; module NID 0xC7116601, 16-byte signature | UTF-8 | 00.01 | no | not yet |
+| AFEJ00001 | ? | どうぶつの森e＋ experimental native port r4 | segment 0 + 0x20F0 (Thumb), r0; module NID 0x04B3ED1C, 16-byte signature | UTF-8 | 00.01 | no | not yet |
+| DELT00001 | ? | DELTARUNE | segment 0 + 0xA4AA4 (Thumb), r5; module NID 0x8D433617, 16-byte signature | UTF-8 | 00.73 | no | not yet |
 | PCSG00415 | JP | CLANNAD | segment 0 + 0x2CA70 (Thumb), r6; module NID 0xC5187D60, 8-byte signature | CP932 | any | no | this site: not yet (Vita3K only, vita-vn-ocr notes 22); CLANNAD's string-copy CALL source, the SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports of the game executable (no entry of this table): the owner's Vita, the combined debug test build (2026-10-20) |
 | PCSG01198 | JP | アマツツミ | segment 0 + 0x745C8 (Thumb), r2; module NID 0x8AA413F2, 16-byte signature | CP932 | 01.00 | its site | PCH-2000, 3.65 (2026-10-23): hooked, its stream answered the jobs, the overlay showed the game's line |
 | PCSG00007 | JP | リトルバスターズ！ Converted Edition | segment 0 + 0x1D15C (Thumb), r4; module NID 0x8A335ECD, 16-byte signature | CP932 | 01.00 | no | not yet |

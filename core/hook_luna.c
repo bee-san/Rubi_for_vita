@@ -830,6 +830,15 @@ static const LunaOp r_PCSG01282[] VJO_DATA_TABLE(rubi_PCSG01282) = {
     SUB("#STAND\\\\[^#]*#", ""), SUB("@m\\w\\w\\w\\w\\w\\w", ""), DEL("@0"), DEL("\\u"), DEL("$"), REP("\\d", ""),
     REP("\\n", "\n"), SPECIAL(OP_TRIM), END};
 
+/* DELT00001 DELTARUNE (DeltaruneVita v0.73, builtin_string_char_at 0x810a4aa4 r5): the GML writer's message with its
+ * markup, as chapter1/lang/lang_ja.json stores it (6,242 strings): \Xn two-character codes (\E face, \M, \C choice,
+ * \c colour, \F, \T voice, \I, \S, \f, \ac) and ^n pauses are not drawn, & is a line break, and a trailing / (wait
+ * for a key), % or %% (close) ends the message (farm pages 000001-000006, paired-vita-delt00001-hv-20261031, and the
+ * farm's hook_text rule deltarune-writer-markup-v1-ampersand-newlines). */
+static const LunaOp r_DELT00001[] VJO_DATA_TABLE(rubi_DELT00001) = {
+    SUB("\\\\[A-Za-z][A-Za-z0-9*]", ""), SUB("\\^[0-9]", ""), REP("&", "\n"), SPECIAL(OP_TRIM), SUB("[/%]+$", ""),
+    SPECIAL(OP_TRIM), END};
+
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* read-only data (above) */
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
@@ -847,7 +856,7 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* rea
     [VJO_RF_PCSG01250 - VJO_RF_BASE] = r_PCSG01250,
     [VJO_RF_PCSG00370 - VJO_RF_BASE] = r_PCSG00370, [VJO_RF_PCSG00766 - VJO_RF_BASE] = r_PCSG00766,
     [VJO_RF_PCSG01282 - VJO_RF_BASE] = r_PCSG01282, [VJO_RF_FOAF4 - VJO_RF_BASE] = r_FOAF4,
-    [VJO_RF_PCSG00769 - VJO_RF_BASE] = r_PCSG00769,
+    [VJO_RF_PCSG00769 - VJO_RF_BASE] = r_PCSG00769, [VJO_RF_DELT00001 - VJO_RF_BASE] = r_DELT00001,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */
