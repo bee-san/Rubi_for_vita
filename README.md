@@ -25,7 +25,7 @@ Go to a game and press left trigger + right trigger to open the overlay.
 PS Vita illustration by [Tokyoship](https://commons.wikimedia.org/wiki/User:Tokyoship),
 [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:PlayStation_Vita_illustration.svg),
 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); adapted with control labels and an illustrated
-Rubi overlay over the [promo's original visual novel artwork](docs/promo/README.md#the-captures-capturerunsh).
+Rubi overlay over the [promo's original visual novel artwork](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/promo/README.md#the-captures-capturerunsh).
 
 1. Left trackpad == word by word lookup
 2. Left joystick == character by character

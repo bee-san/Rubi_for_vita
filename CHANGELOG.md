@@ -11,6 +11,11 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- The release zip's README.md links the promo's artwork notes on GitHub, as `docs/promo/` is not in the zip
+  (`tools_zip_docs` was red on main since the link was added).
+
 ## [0.10.3] - 2026-10-31
 
 Native text hooks for two homebrew ports, proven in the psandvita emulator farm (Vita3K; not run on a console): the
