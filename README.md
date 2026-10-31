@@ -11,10 +11,10 @@ In a visual novel, press L + R: Rubi reads the dialogue off the screen, and you 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
 **Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.10.3/Rubi-0.10.3.zip)
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.10.4/Rubi-0.10.4.zip)
 and extract it.
 
-Install Rubi-0.10.3.vpk with VitaShell, open Rubi, choose Settings → Install & repair → Update, then restart the Vita
+Install Rubi-0.10.4.vpk with VitaShell, open Rubi, choose Settings → Install & repair → Update, then restart the Vita
 
 # Usage
 
