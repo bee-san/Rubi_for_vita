@@ -11,8 +11,25 @@ been reported.
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-31
+
+Native text hooks for two homebrew ports, proven in the psandvita emulator farm (Vita3K; not run on a console): the
+どうぶつの森e＋ port's r5 and r6 builds, and DELTARUNE (DeltaruneVita v0.73). Triangle's reading statistics finish
+counting while the panel is open, and the release zip carries the README's controls diagram.
+
+### Added
+
+- Hook entries for **どうぶつの森e＋** r5 and r6 (`AFEJ00001`, #597): the r4 observer's offset and bytes under each build's
+  module NID. r6 (psandvita release `hooks-ac-r6-deltarune-20261031`) publishes once per typed-out page, republishes a
+  repeated line, maps drawn pictograms, and its names and dates are no longer corrupt; it is the build to use
+  (19 + 18 farm pages).
+- A hook entry for **DELTARUNE** (DeltaruneVita v0.73, `DELT00001`, #597): Butterscotch's `string_char_at` builtin at
+  segment 0 + `0xA4AA4`, r5, UTF-8, with `VJO_RF_DELT00001` dropping the writer's markup (6 farm pages).
+
 ### Fixed
 
+- The release zip has `docs/img/rubi-controls.svg`, which README.md links (`tools_zip_docs` was red on main since the
+  diagram was added).
 - Triangle's reading statistics can finish counting while the panel is open, including with a missing or
   obsolete cache, and show recount progress. History reads and checkpoints now run on the existing
   background worker, with queued lookups ahead of each bounded chunk. The one-second delay between
@@ -1637,7 +1654,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.3...HEAD
+[0.10.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.3
 [0.10.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.2
 [0.10.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.1
 [0.10.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.0
