@@ -2141,8 +2141,8 @@ static void test_reading_time_caches(void)
  * real writer, which updates the counters, then counted again from the file: both must give those. */
 static const char *const fixtures[] = {
     "clean-learner", "afk-breaks-learner", "suspend-standby-learner", "menus-backlog-learner",
-    "skip-mode-learner", "auto-mode-learner", "everyday-learner", "everyday-hook-learner", "everyday-beginner",
-    "everyday-fluent",
+    "skip-mode-learner", "skip-mode-trusted-hook-learner", "auto-mode-learner", "everyday-learner",
+    "everyday-hook-learner", "everyday-beginner", "everyday-fluent",
 };
 static uint64_t header_value(const char *text, const char *key, const char *name)
 {
@@ -2222,6 +2222,72 @@ static void test_reading_time_fixtures(void)
         }
     }
 }
+
+/* Skip mode (core/history_lines.h, #602): a trusted hook records lines while the game skips. Three lines of 12 or
+ * more characters, each followed by the next record in under 1 s, are a skip: they, and the skimmed lines after
+ * them, come out of the characters, the time and the timed characters, the day's too; fewer stay counted. The
+ * writer's counters, a restart from the cache in the middle of a run, and a recount of the file agree. */
+static void skip_append(VjoHistoryRecord *r, uint64_t us, const char *id, unsigned chars)
+{
+    fixture_text(result.text, sizeof(result.text), id, chars);
+    r->time_us = us;
+    TEST_ASSERT_(vjo_history_append(r) == 1, "%s", id);
+}
+static void reading_time_skip(uint32_t rule)
+{
+    reset();
+    vjo_reading_rule = rule;
+    strcpy(context.uuid, "vita-PCSG00415");
+    context.start_us = 1792195200000000ull;
+    context.end_us = context.start_us + 86400000000ull;
+    unlink(cache_file("x/reading-vita-PCSG00415.bin"));
+    count_total();
+    VjoHistoryRecord r = record("");
+    uint64_t t = context.start_us + 100000000;
+    skip_append(&r, t, "L1", 20);             /* read 10 s (both rules: under the caps) */
+    skip_append(&r, t += 10000000, "P1", 20); /* skimmed: 0.4 s each */
+    skip_append(&r, t += 400000, "P2", 20);
+    checkpoint_total(); /* the run so far is kept with the total: a restart goes on with it */
+    memset(&total, 0, sizeof(total));
+    count_total();
+    TEST_CHECK(total.chars == 60 && total.time.active_us == 10400000 && total.time.timed_chars == 40);
+    skip_append(&r, t += 400000, "P3", 20);
+    TEST_CHECK(total.chars == 80 && total.time.active_us == 10800000); /* two skimmed lines: counted */
+    skip_append(&r, t += 400000, "P4", 3);  /* P3 the third: P1-P3 out */
+    TEST_CHECK(total.chars == 23 && total.time.active_us == 10000000 && total.time.timed_chars == 20);
+    TEST_CHECK(total.scope.chars == 23 && total.scope.active_us == 10000000 && total.scope.timed_chars == 20);
+    skip_append(&r, t += 400000, "P5", 30); /* P4, short, in a skip: out too */
+    skip_append(&r, t += 200000, "L2", 15); /* the line it landed on: P5 out */
+    skip_append(&r, t += 8000000, "L3", 10); /* L2 read 8 s */
+    TEST_CHECK(total.chars == 45 && total.time.active_us == 18000000 && total.time.timed_chars == 35);
+    TEST_CHECK(total.scope.chars == 45 && total.scope.active_us == 18000000 && total.scope.timed_chars == 35);
+    /* two quick lines and a short one between them are no skip: all counted, all timed */
+    skip_append(&r, t += 6000000, "X1", 20);
+    skip_append(&r, t += 500000, "X2", 4);
+    skip_append(&r, t += 500000, "X3", 20);
+    skip_append(&r, t += 500000, "L4", 12);
+    skip_append(&r, t += 5000000, "L5", 9);
+    TEST_CHECK(total.chars == 110 && total.time.active_us == 30500000 && total.time.timed_chars == 101);
+    TEST_MSG("%llu chars, %llu us, %llu timed", (unsigned long long)total.chars,
+             (unsigned long long)total.time.active_us, (unsigned long long)total.time.timed_chars);
+    /* lines 1 s apart are no skip: the gap must be under it */
+    skip_append(&r, t += 1000000, "M1", 20);
+    skip_append(&r, t += 1000000, "M2", 20);
+    skip_append(&r, t += 1000000, "M3", 20);
+    skip_append(&r, t += 1000000, "M4", 20);
+    TEST_CHECK(total.chars == 190 && total.time.active_us == 34500000);
+    VjoReadingTime kept = total.time;
+    VjoReadingScope day = total.scope;
+    uint64_t chars = total.chars;
+    memset(&total, 0, sizeof(total));
+    unlink(cache_file("x/reading-vita-PCSG00415.bin"));
+    count_total();
+    TEST_CHECK(total.chars == chars && !memcmp(&total.time, &kept, sizeof(kept)) &&
+               !memcmp(&total.scope, &day, sizeof(day)));
+    unlink(cache_file("x/reading-vita-PCSG00415.bin"));
+}
+static void test_reading_time_skip(void) { reading_time_skip(VJO_READING_ADAPTIVE); }
+static void test_reading_time_skip_15s(void) { reading_time_skip(VJO_READING_GAPS_15S); }
 
 /* ---- the reading streak (core/streak.h): the writer adds a line's day, the Triangle view reads it ---- */
 
@@ -2429,6 +2495,8 @@ TEST_LIST = {
      test_reading_time_pace_floor},
     {"reading time: 0.9.7's caches stay valid with 15s, adaptive counts again", test_reading_time_caches},
     {"reading time: event-timeline fixtures, the writer and a recount, both rules", test_reading_time_fixtures},
+    {"reading time: skip mode's lines out (adaptive)", test_reading_time_skip},
+    {"reading time: skip mode's lines out (15s)", test_reading_time_skip_15s},
     {"reading time: window boundaries, errors and corrupt cache", test_reading_time_windows_and_retry},
     {"CSV quotes UTF-8 and complete OCR metadata", test_csv_fields_and_metadata},
     {"0.8.0's and 0.9's columns stay; characters and line_source are appended, also to their files",

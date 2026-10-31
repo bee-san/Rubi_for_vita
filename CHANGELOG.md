@@ -11,6 +11,21 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- Skip mode no longer inflates Triangle's reading statistics (#602). Since API 49 a trusted hook (`hook_trust = on`,
+  the default) records the lines the game's skip mode passes, and each added its characters and its fraction of a
+  second to the totals, so characters read and characters/hour rose with every skip. Now three lines of 12 or more
+  characters in a row, each followed by the next record in under a second, are a skip: they, and the quick lines
+  after them until a line is read, count neither characters nor time, in the game's total or today's, in both
+  `reading_time` rules; one or two quick lines stay counted. `history.csv` keeps every line, so line history, lookups
+  and Anki are unchanged. This is GameSentenceMiner's skip detection, cut down to what Rubi's records show. Totals that
+  earlier skips inflated are corrected: each game's total is counted once more from `history.csv` at the first
+  Triangle press. `tools/reading_stats.py` gives the same numbers and says how many lines it left out. On simulated
+  skips (a line recorded every 0.1-0.5 s) characters went from 59 % over the truth to 0.2 %; clean reading, auto mode
+  and the other scenarios are unchanged [estimates: simulated, docs/reading-time.md#skip-mode]. The Shell's code
+  grows by 192 B and its data by 8 B in both builds, in the same pages [measured]. Not yet run on a console.
+
 ## [0.10.4] - 2026-10-31
 
 Triangle's reading statistics start counting on a console: since 0.10.2 a stray event bit kept the count from ever

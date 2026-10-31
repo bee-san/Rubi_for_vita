@@ -212,7 +212,7 @@ static Count reader_count(const char *buf, size_t len, int whole, int cut, const
         if (!vjo_history_row(copy + s, copy + e, 5, &row)) {
             vjo_reading_scope_add(&c.time, &c.scope, row.time_us, vjo_history_game(row.uuid, row.len[0]),
                                   vjo_line_characters(row.line, row.len[3]));
-            c.chars += c.time.last_chars;
+            c.chars += (uint32_t)c.time.counted;
         } else {
             c.time.last_us = 0; /* damaged records break the interval */
         }

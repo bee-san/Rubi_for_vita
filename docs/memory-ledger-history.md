@@ -2552,3 +2552,20 @@ audit-mem-paf-2 (MERGE_OK for #539 and #552) found, and this change does:
   tried: a version latch and one on `s_fresh`), which has 20 B; it waits for room. The refusal notice
   (Maudit-mem-paf-2-6) waits for the strip's measurement (Mmem-lead-7).
 
+
+## Skip mode's reading statistics (#602)
+
+The reading total leaves a skip's lines out (`core/history_lines.c` `vjo_reading_scope_add`,
+[reading-time.md](reading-time.md#skip-mode)): code in the Shell, which links the counter, and 8 B more in its
+`.bss` (`VjoReadingTime.skim`, `skim_chars` and `counted` in the total's copy). Packaged Shell segments, the gate's
+VitaSDK image, against main `4e91602d`:
+
+| Shell | Before: text + data/bss | After: text + data/bss | Loaded pages |
+| --- | --- | --- | --- |
+| normal | 85,676 + 69,568 B | 85,868 + 69,576 B (148 B of code room, 56 B of data room) | 155,648 B, unchanged |
+| debug | 98,044 + 69,608 B | 98,236 + 69,616 B (68 B, 16 B) | 167,936 B, unchanged |
+
+[measured: `tools/check_memory_ledger.py`'s module rows, both builds.] A first form, with the day's counters taken
+down by a clamped subtraction each, took 288 B of debug code and a page more; a run that midnight ends (as it already
+ends the day's interval) needs no clamp. The cache record (`TotalFile`, on VjoNet's stack and in the file) grows from
+112 to 120 B. The kernel and the game worker are unchanged. No block, thread or allocation.
