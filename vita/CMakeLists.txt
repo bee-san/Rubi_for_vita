@@ -38,7 +38,7 @@ option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime
 # The release's version: the base zips' names and the Rubi app's version (beside its title). The
 # test builds use this version with a -test.N suffix; the final release sets it to its own
 # version first (docs/release-variants.md), and tools/package_variants.py checks the two agree.
-set(VJO_VERSION "0.10.2" CACHE STRING "Release archive version")
+set(VJO_VERSION "0.10.3" CACHE STRING "Release archive version")
 # The build variant (docs/release-variants.md). ON, the default, is the debug build, the test
 # builds' own: every log line, the self-test, the timing and trace lines, the game worker's step
 # log. OFF is the normal build, the release's main download: errors, warnings and a short log;
@@ -714,7 +714,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/img/line-history-host.png
     ${ROOT}/docs/img/conjugation-before-polite-host.png ${ROOT}/docs/img/conjugation-after-polite-host.png
     ${ROOT}/docs/img/conjugation-after-chain-host.png ${ROOT}/docs/img/conjugation-after-exact-host.png
-    ${STAGE}/docs/img/
+    ${ROOT}/docs/img/rubi-controls.svg ${STAGE}/docs/img/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/settings-dictionaries-vita3k.png ${STAGE}/docs/
   # README.md's screenshots (its images show in the zip's README too: tools/tests/test_zip_docs.py)
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/screenshots/2026-10-29-223532.jpg
