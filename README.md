@@ -30,18 +30,7 @@ Go to a game and press left trigger + right trigger to open the overlay.
 8. There is a Rubi app that lets you disable the overlay for some games like Uncharted where you use both triggers (or any game you like). You can also look up words you want in your dicts and mine them
 9. Also you can install custom dicts, but it's a bit of a pain... I don't want to support custom dicts bc they are unpredictable in terms of HTML / Size and the Vita is super brittle so custom dicts may break everything :/
 
-# ai usage
 
-this project uses AI, mostly claude opus 5.5
-i am a software engineer, u can look atmy github to see i have built massive systems before ai
-
-llms are really bad at designing software for the vita, especially software that has never been achieved before like fully local OCR. i consulted with some great engineers like https://github.com/shoui520 who know a lot about how the vita is designed. They even contributed to this project with some code fixes.
-
-ai is really good at doing gruntwork that i dont want to do. for example, "when i am in a game and i have a ocr region set but the game has a texthooker, and hooked text comes in and then i press lt + rt triangle triangle X lt + rt my vita crashes and the logs say we went over our memory allocation as we tried to allocate 3 bytes more than needed. find where those 3 bytes are" and the ai will spend like 10+ hours and write me a report that tells me where those 3 bytes came from
-
-there was a time in my life where i would be the one to find that bug. i was never the one to feel good about squashing it, i always felt good about using the things i created. so i am thankful i no longer have to do that and I can focus entirely on making the program feel great, fast, and smooth.
-
-additionally i feel like with a lot of ai software, people spend more time building it than using it. which means to me as a user, the software is horrible to use. this software is the opposite, i definitely use this more than i code it
 
 ## Screenshots
 
@@ -58,3 +47,16 @@ random assorted screenshots from the actual Rubi app. Big thanks to Shoui for he
 ![](docs/screenshots/2026-10-29-223548.jpg)
 
 ![](docs/screenshots/2026-10-29-223559.jpg)
+
+# ai usage
+
+this project uses AI, mostly claude opus 5.5
+i am a software engineer, u can look atmy github to see i have built massive systems before ai
+
+llms are really bad at designing software for the vita, especially software that has never been achieved before like fully local OCR. i consulted with some great engineers like https://github.com/shoui520 who know a lot about how the vita is designed. They even contributed to this project with some code fixes.
+
+ai is really good at doing gruntwork that i dont want to do. for example, "when i am in a game and i have a ocr region set but the game has a texthooker, and hooked text comes in and then i press lt + rt triangle triangle X lt + rt my vita crashes and the logs say we went over our memory allocation as we tried to allocate 3 bytes more than needed. find where those 3 bytes are" and the ai will spend like 10+ hours and write me a report that tells me where those 3 bytes came from
+
+there was a time in my life where i would be the one to find that bug. i was never the one to feel good about squashing it, i always felt good about using the things i created. so i am thankful i no longer have to do that and I can focus entirely on making the program feel great, fast, and smooth.
+
+additionally i feel like with a lot of ai software, people spend more time building it than using it. which means to me as a user, the software is horrible to use. this software is the opposite, i definitely use this more than i code it
