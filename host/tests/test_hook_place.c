@@ -220,7 +220,11 @@ static void test_verified_eplus(void)
                                     0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46};
     static uint8_t code[0x2100];
     const VjoPlaceVerified *v;
-    TEST_ASSERT(vjo_place_verified("AFEJ00001", &v) == 1 && v);
+    /* three builds, one row each, in order r4, r5, r6: the same offset and bytes under each build's module NID */
+    TEST_ASSERT(vjo_place_verified("AFEJ00001", &v) == 3 && v);
+    TEST_CHECK(v[1].module_nid == 0xC7116601u && v[2].module_nid == 0x04B3ED1Cu);
+    for (unsigned k = 1; k < 3; k++)
+        TEST_CHECK(v[k].off == 0x20F0u && v[k].reg == 0 && !memcmp(v[k].sig, sig, 16) && v[k].app_ver == 0x0001u);
     TEST_CHECK(v->module_nid == 0x7FEE3308u && v->off == 0x20F0u && v->thumb == 1 && v->reg == 0);
     TEST_CHECK(v->encoding == VJO_HOOK_ENC_UTF8 && v->sig_len == 16 && !memcmp(v->sig, sig, 16));
     TEST_CHECK(v->padding == 0 && v->read == VJO_PLACE_READ_STRING && v->filter == 0);

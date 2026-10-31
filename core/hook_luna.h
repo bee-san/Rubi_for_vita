@@ -162,6 +162,7 @@ enum {
     VJO_RF_PCSG01282,               /* 死神と少女: \d click waits dropped, \n line breaks */
     VJO_RF_FOAF4,                   /* Nippon Ichi's foaf4: ㊤㊥㊦ dash pieces (PCSG00380's ops but its names) */
     VJO_RF_PCSG00769,               /* 逢魔が刻～かくりよの縁～: ㌫ ㍊ as the default 榊 水緒, then FOAF4 */
+    VJO_RF_DELT00001,               /* DELTARUNE (DeltaruneVita): writer markup \Xn, ^n, & line breaks, / and % ends */
     VJO_RF_END
 };
 

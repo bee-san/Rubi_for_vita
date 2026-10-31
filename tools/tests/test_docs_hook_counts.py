@@ -33,7 +33,11 @@ def counts():
     rubi = gen.rubi_entries(sites)
     ported = [s for s in sites if s["ported"]]
     luna_titles = {s["id"] for s in ported}
-    more = [r for r in rubi if r["title"] != CLANNAD]
+    # One title can have several rows (one per build: AFEJ00001 r4, r5, r6): count title IDs, each by its first row
+    first = {}
+    for r in rubi:
+        first.setdefault(r["title"], r)
+    more = [r for t, r in first.items() if t != CLANNAD]
     return {"luna_titles": len(luna_titles), "luna_sites": len(ported), "rubi_more": len(more),
             "rubi_in_luna": sum(r["luna"] != "no" for r in more),
             "rubi_at_luna_site": sum(r["luna"] == "its site" for r in more),

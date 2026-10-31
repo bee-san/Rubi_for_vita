@@ -1132,6 +1132,15 @@ static void rubi_filters(void)
     rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "貴方のお名前は？", "貴方のお名前は？");
     rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "#STAND\\TOW01A_N.bmp 3#「台詞」\\d", "「台詞」");
     rubi_to(VJO_RF_PCSG01282, VJO_HOOK_ENC_CP932, "@m3F3F3F灰色@0の$強調$。\\u\\d", "灰色の強調。");
+    /* DELT00001 (paired-vita-delt00001-hv-20261031): Toriel's first boxes, the raw writer strings from chapter1's
+     * lang_ja.json, then a timed intro line and a choice line (\\C) */
+    rubi_to(VJO_RF_DELT00001, VJO_HOOK_ENC_UTF8, "＊ クリス！/", "＊ クリス！");
+    rubi_to(VJO_RF_DELT00001, VJO_HOOK_ENC_UTF8, "＊ クリス\xe3\x80\x80おきなさい^1！&\xe3\x80\x80 がっこうに&\xe3\x80\x80 ちこくするわよ！/%",
+            "＊ クリス\xe3\x80\x80おきなさい！\n\xe3\x80\x80 がっこうに\n\xe3\x80\x80 ちこくするわよ！");
+    rubi_to(VJO_RF_DELT00001, VJO_HOOK_ENC_UTF8, "^6 \\M0ワレワレハ^6& 接続サレテ& イマスカ^6？\\M1 ^6 ^6 %%",
+            "ワレワレハ\n 接続サレテ\n イマスカ？");
+    rubi_to(VJO_RF_DELT00001, VJO_HOOK_ENC_UTF8, "\\E4＊ どうする？& &   まって        きいてみて\\C1 ",
+            "＊ どうする？\n \n   まって        きいてみて");
     /* PCSG00769 (paired-vita-pcsg00769-20261023, foaf4 cells as CP932): page 22's dash pieces and the page's last line
      * break; pages 16 and 27, where the farm's text leaves the player's name codes out and its glyph counts (10 each) show
      * the default names drawn */

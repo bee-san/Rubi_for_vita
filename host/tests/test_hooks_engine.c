@@ -1799,7 +1799,8 @@ static void test_eplus_row(void)
         if (cases[k].sfo) set_sfo(cases[k].sfo);
         vjo_hooks_start("AFEJ00001", VJO_TEXT_SOURCE_AUTO, 0);
         vjo_hooks_counts(NULL, &inst, &refused);
-        TEST_CHECK_((inst >> 16) == (unsigned)cases[k].hooked && refused == (unsigned)!cases[k].hooked &&
+        /* AFEJ00001 has three rows (r4, r5, r6: one module NID each); the two other builds' rows are refused */
+        TEST_CHECK_((inst >> 16) == (unsigned)cases[k].hooked && refused == 3u - (unsigned)cases[k].hooked &&
                         n_offs == (unsigned)cases[k].hooked,
                     "case %u (APP_VER %s, NID %08X): hooked %u, refused %u", k, cases[k].sfo ? cases[k].sfo : "(none)",
                     (unsigned)cases[k].nid, (unsigned)(inst >> 16), (unsigned)refused);

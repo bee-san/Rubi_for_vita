@@ -8,9 +8,9 @@ copies bytes and lets the game's function run as before.
 
 
 The tables contain **175 Vita title IDs from LunaTranslator's table**, using 294 ported hook sites,
-and **62 more Vita title IDs with Rubi's own verified entries**. Of those entries, 36 are games of
+and **63 more Vita title IDs with Rubi's own verified entries**. Of those entries, 36 are games of
 Luna's table: for 20 of them the entry is at Luna's own site. Including CLANNAD and counting each
-title once, that is **202 Vita title IDs with game-specific hook entries**. These counts describe
+title once, that is **203 Vita title IDs with game-specific hook entries**. These counts describe
 available entries, not console compatibility; see the [full title list](hook-titles.md#vita-titles)
 for each game's checks and evidence.
 
@@ -38,6 +38,21 @@ runs the row through the worker's own path in both table modes); live hook execu
 unverified. The exact r4 executable has SHA-256
 `acf744c9be46d5945676d4e41f4661ad75771797bcf65a09f34d177e1b207ff6` (recorded provenance; runtime
 installation checks the NID, version and instruction signature).
+
+Builds r5 (module NID `C7116601`) and r6 (`04B3ED1C`) have entries at the same offset and bytes. **r6 is the build
+to use** (eboot SHA-256 `f34fe31cb8b4800ed376ca4a1b51671d81395ae105283353fef23b67139ae216`, VPK in psandvita's
+`hooks-ac-r6-deltarune-20261031` release): its publisher calls the observer once per typed-out page instead of once per
+typewriter step, publishes a repeated line again, maps drawn pictograms, and the game's `string.bin` loader no longer
+corrupts names and dates. It is emulator-proven (Vita3K, 19 + 18 farm pages), not console-tested.
+
+## DELTARUNE (DeltaruneVita v0.73)
+
+`DELT00001`, `APP_VER 00.73`, module NID `8D433617` (`deltarune_butterscotch_pro`), segment 0 + `A4AA4`, Thumb, `r5`,
+UTF-8: inside the Butterscotch runner's `string_char_at` builtin, after the argument's `RValue_toString`. The GML text
+writer passes its whole message there for every character it draws, every frame, so the stream repeats the current
+message until it changes; [`VJO_RF_DELT00001`](#rubis-filters) drops the writer's markup. Emulator-proven (6 farm pages,
+`paired-vita-delt00001-hv-20261031`), not console-tested; the site is hot, and its per-call cost on a console is unmeasured.
+The Oct 29 prototype (#581) captured `_strdup_r` copies instead, which include preloaded text.
 
 ## Where it runs
 
@@ -493,6 +508,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00020`, `PCSG00883` | 極限脱出ＡＤＶ 善人シボウデス (and the Double Pack's) | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
 | `PCSG00769` | 逢魔が刻～かくりよの縁～ | `㌫` `㍊` to the defaults of its name entry, 榊 and 水緒; then `FOAF4`: `PCSG00380`'s array from its third op (the dash pieces, the trim, not its names) | pages 14 and 22 (`㊤㊥…㊦` drawn as one `―` each; 6 of its 37 pages); pages 27 and 16 (`「大丈夫、㌫さん？」` and `「―――㍊！！！」`, 10 glyphs each: the farm's text leaves the codes out) |
+| `DELT00001` | DELTARUNE (DeltaruneVita v0.73) | the writer's markup: `\Xn` two-character codes (`\E` face, `\M`, `\C` choice, `\c` colour, `\F`, `\T`, `\I`, `\S`, `\f`, `\ac`) and `^n` pauses dropped, `&` a line break, a trailing `/`, `%` or `%%` dropped (chapter 1's `lang_ja.json`, 6,242 strings) | pages 1-6 (Toriel's lines and room objects) |
 | `PCSG00370` | デュラララ!! 3way standoff -alley- V | drops the `▼` (0x81A5) that ends every page, a click wait not drawn; keeps the line breaks, the `　` that indents a continued line and the `＞` that opens a monologue (Luna's filter for the title drops all four) | all 101 pages of its relocation run; page 2 (`＞不思議な街だったなあ、池袋。\n　活気があって…。▼`) |
 | `PCSG00766` | ニル・アドミラリの天秤 帝都幻惑綺譚 | the speaker glued before `#Pos` on a line of its own (the nameplate); then `IFENGINE` | page 2 (`久世ヒタキ#Pos[0,42]#Speed[5]#Effect[0]#Scale[1]「今、…`, 久世ヒタキ over the line); page 29 (`#Ruby[睨,にら]`); all 31 pages |
 | `PCSG01282` | 死神と少女 | drops the two-character `\d` (a click wait); the two-character `\n` to a line break; drops the engine's other undrawn codes, as the farm's rule does: `#STAND\<file>.bmp N#` (a sprite change), `@mRRGGBB` and `@0` (a colour), `\u` (NVL continue), `$` (emphasis: a `$` the game drew would go too, as with Luna's filter); trims | page 6 (`\n陽が沈み、…色。\d`, an NVL page's first hit); 55 `\d` and 92 `\n` codes in the 72 hits its 31 pages hold; the other codes are in none of them, only in the farm's survey of the script's message records (`\u` 92 records, `@m..@0` 476, `#STAND..#` 73, `$..$` 62; audit-psandvita-1 F1: Luna's filter dropped `#STAND..#` and `$`) |
