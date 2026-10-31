@@ -20,6 +20,8 @@ Install Rubi-0.10.2.vpk with VitaShell, open Rubi, choose Settings → Install &
 
 Go to a game and press left trigger + right trigger to open the overlay.
 
+![Rubi PS Vita controls: buttons, sticks, touch gestures, and dialogue-region editing](docs/img/rubi-controls.svg)
+
 1. Left trackpad == word by word lookup
 2. Left joystick == character by character
 3. Double tap the back of the Vita to OCR, useful for menus etc that may not appear in dialogue text

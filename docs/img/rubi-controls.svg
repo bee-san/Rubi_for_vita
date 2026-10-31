@@ -1,0 +1,520 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1580" viewBox="0 0 1800 1580" role="img" aria-labelledby="rubi-title rubi-description">
+  <title id="rubi-title">Rubi: PS Vita in-game controls</title>
+  <desc id="rubi-description">Default controls: L plus R opens or closes Rubi. Select plus R toggles the subtitle strip. D-pad left and right move by matched word, or by character in Character mode. Up and Down move between text rows; Up at the top opens earlier dialogue in Automatic reading mode, and Down past the last row of an earlier line moves toward the live text. The left stick moves by character horizontally and by text row vertically, stopping at the current text's ends. The right stick scrolls definitions. Tap a recognized character on the front touchscreen to look up its word. Triangle toggles reading statistics and the hook or OCR text source. Square opens the dialogue-region editor; hold Square for one second to restore the full screen. Enter saves the selected Anki card when Card mining is on. Cancel closes Rubi. Enter and Cancel follow the Vita's system setting: usually cross and circle respectively, but they can be swapped. PS closes Rubi and opens LiveArea. Double-tap the rear touchpad while Rubi is open for one full-screen OCR scan without changing the saved region. In the region editor, move with the left stick or D-pad, press Enter at the first corner, move to the opposite corner and press Enter to save; alternatively drag on the front screen, then press Enter. Cancel undoes the first corner or exits the editor. Hold L while launching a game to skip Rubi for that launch. The opening and subtitle shortcuts can be remapped in config.ini.</desc>
+  <metadata>Control mappings checked against docs/guide.md, core/config.c, core/buttons.h, core/region_select.c, shell/overlay.cpp and kernel/input.c at cc7ba80a. Device artwork adapted from docs/promo/assets/device/vita-white.svg (original vector drawing, CC0-1.0; provenance in docs/promo/assets/SOURCES.md). All artwork is inline vector; no external images, fonts or scripts are required.</metadata>
+  <defs>
+    <style>
+      text { font-family: 'DejaVu Sans', 'Noto Sans', sans-serif; fill: #1b293d; }
+      .rubi-muted { fill: #5c6978; }
+      .rubi-small { font-size: 17px; }
+      .rubi-body { font-size: 20px; }
+      .rubi-detail { font-size: 18px; fill: #5c6978; }
+      .rubi-label { font-size: 16px; font-weight: 700; letter-spacing: 2px; }
+      .rubi-heading { font-size: 25px; font-weight: 700; }
+      .rubi-action { font-size: 20px; font-weight: 700; }
+      .rubi-wire { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .rubi-key { fill: #fff; stroke: #d9dce0; stroke-width: 1.5; }
+      .rubi-japanese { font-family: 'Noto Sans CJK JP', 'Noto Sans JP', sans-serif; }
+    </style>
+    <linearGradient id="rubi-paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#faf7f2"/>
+      <stop offset="1" stop-color="#f0f3f4"/>
+    </linearGradient>
+    <linearGradient id="rubi-screen-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#203a4d"/>
+      <stop offset="1" stop-color="#111d2e"/>
+    </linearGradient>
+    <filter id="rubi-device-shadow" x="-15%" y="-20%" width="130%" height="150%">
+      <feGaussianBlur stdDeviation="13"/>
+    </filter>
+    <clipPath id="rubi-screen-clip"><rect x="357" y="149" width="1106" height="627"/></clipPath>
+    <pattern id="rubi-rear-dots" width="12" height="12" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="1.3" fill="#aeb8bd"/>
+    </pattern>
+    <g id="rubi-icon-triangle"><path d="M0 -11 12 10 H-12 Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></g>
+    <g id="rubi-icon-square"><rect x="-10" y="-10" width="20" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="2.5"/></g>
+    <g id="rubi-icon-cross"><path d="m-9 -9 18 18 m-18 0 18 -18" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round"/></g>
+    <g id="rubi-icon-circle"><circle r="11" fill="none" stroke="currentColor" stroke-width="2.7"/></g>
+  </defs>
+
+  <rect width="1800" height="1580" fill="url(#rubi-paper)"/>
+  <rect x="64" y="54" width="6" height="72" rx="3" fill="#d9576c"/>
+  <text x="91" y="112" font-size="76" font-weight="700" letter-spacing="-4">Rubi<tspan fill="#d9576c">.</tspan></text>
+  <path d="M301 58 V124" stroke="#d6d9dc" stroke-width="2"/>
+  <text x="333" y="80" font-size="25" font-weight="700" letter-spacing="3">PS VITA CONTROLS</text>
+  <text x="333" y="116" class="rubi-body rubi-muted">Read a line. Look up a word. Make it yours.</text>
+  <rect x="1488" y="66" width="248" height="43" rx="21.5" fill="#e9edef"/>
+  <text x="1612" y="94" text-anchor="middle" font-size="15" font-weight="700" letter-spacing="1.2">IN-GAME · DEFAULTS</text>
+
+  <!-- Both shoulder buttons lead to the same opening shortcut. -->
+  <path class="rubi-wire" d="M566 356 V307 H721 V274 M1233 356 V307 H1079 V274" stroke="#d9576c"/>
+  <rect x="590" y="186" width="620" height="88" rx="23" fill="#1b293d"/>
+  <rect x="614" y="205" width="143" height="50" rx="13" fill="#334056"/>
+  <text x="685.5" y="240" text-anchor="middle" font-size="29" font-weight="700" style="fill:#fff">L + R</text>
+  <text x="783" y="238" font-size="26" font-weight="700" style="fill:#fff">Open / close Rubi</text>
+
+  <!-- The original device is embedded, so the SVG travels as a single file. -->
+  <ellipse cx="900" cy="804" rx="472" ry="31" fill="#25364b" opacity="0.13" filter="url(#rubi-device-shadow)"/>
+  <g id="rubi-device" transform="translate(390 329) scale(.56)" aria-label="Front view of a white PS Vita">
+
+  <!-- Original front-view drawing of a white handheld (182.0 x 83.5 mm body, 5" 960x544 screen).
+       Drawn from scratch from published dimensions; units = 0.1 mm. No logos or trademarks. -->
+  <defs>
+    <!-- body -->
+    <path id="outline" d="M330,45 H1490 C1734.2,45 1820,153.55 1820,462.5 C1820,771.45 1734.2,880 1490,880 H330 C85.8,880 0,771.45 0,462.5 C0,153.55 85.8,45 330,45 Z"/>
+    <clipPath id="body-clip"><use href="#outline"/></clipPath>
+    <linearGradient id="g-body" x1="0" y1="45" x2="0" y2="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fdfdfe"/>
+      <stop offset="0.45" stop-color="#f6f7f9"/>
+      <stop offset="1" stop-color="#e8eaee"/>
+    </linearGradient>
+    <linearGradient id="g-rim" x1="0" y1="45" x2="0" y2="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d5d9df"/>
+      <stop offset="1" stop-color="#a8aeb7"/>
+    </linearGradient>
+    <linearGradient id="g-rim-hi" x1="0" y1="45" x2="0" y2="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="f-soft" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <filter id="f-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+
+    <!-- shoulders -->
+    <linearGradient id="g-shoulder" x1="0" y1="18" x2="0" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f1f3f5"/>
+      <stop offset="0.5" stop-color="#e4e7eb"/>
+      <stop offset="1" stop-color="#cdd2d8"/>
+    </linearGradient>
+
+    <!-- glass -->
+    <linearGradient id="g-gloss" x1="325" y1="112" x2="1100" y2="813" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.38" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="0.43" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="g-glass-edge" x1="0" y1="112" x2="0" y2="813" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a3f47"/>
+      <stop offset="1" stop-color="#15181c"/>
+    </linearGradient>
+    <radialGradient id="g-lens" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#4a5a78"/>
+      <stop offset="0.35" stop-color="#1a2130"/>
+      <stop offset="1" stop-color="#05070a"/>
+    </radialGradient>
+
+    <!-- buttons -->
+    <linearGradient id="g-well" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b9bec6"/>
+      <stop offset="1" stop-color="#e2e5e9"/>
+    </linearGradient>
+    <radialGradient id="g-cap" cx="0.42" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.6" stop-color="#f3f4f6"/>
+      <stop offset="1" stop-color="#d9dde2"/>
+    </radialGradient>
+    <linearGradient id="g-cap-edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#b4bac3"/>
+    </linearGradient>
+    <linearGradient id="g-dpad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e3e6ea"/>
+    </linearGradient>
+    <linearGradient id="g-cross-well" x1="0" y1="241" x2="0" y2="389" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#bfc4cb"/>
+      <stop offset="1" stop-color="#dde0e5"/>
+    </linearGradient>
+    <radialGradient id="g-hub" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#2a2e34"/>
+      <stop offset="1" stop-color="#555b64"/>
+    </radialGradient>
+
+    <!-- sticks -->
+    <radialGradient id="g-stick-well" cx="0.5" cy="0.45" r="0.55">
+      <stop offset="0.7" stop-color="#0f1114"/>
+      <stop offset="0.9" stop-color="#2b2f35"/>
+      <stop offset="1" stop-color="#6d737c"/>
+    </radialGradient>
+    <linearGradient id="g-stick-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f5f7"/>
+      <stop offset="0.55" stop-color="#d6dade"/>
+      <stop offset="1" stop-color="#a9afb7"/>
+    </linearGradient>
+    <linearGradient id="g-stick-dish" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b8bdc4"/>
+      <stop offset="0.5" stop-color="#d3d7dc"/>
+      <stop offset="1" stop-color="#eceef1"/>
+    </linearGradient>
+    <radialGradient id="g-stick-centre" cx="0.5" cy="0.62" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <g id="grille-row">
+      <circle cx="-28" cy="0" r="3.3"/><circle cx="-14" cy="0" r="3.3"/><circle cx="0" cy="0" r="3.3"/><circle cx="14" cy="0" r="3.3"/><circle cx="28" cy="0" r="3.3"/>
+    </g>
+  </defs>
+
+  <!-- ===== shoulder buttons (behind the body) ===== -->
+  <g id="btn-l">
+    <path d="M430,62 V40 Q430,20 410,20 H330 C180,20 95,85 64.4,150.1 L90,160 C122,95 200,62 330,62 Z" fill="url(#g-shoulder)" stroke="#c3c8cf" stroke-width="1.5"/>
+    <path d="M80,128 C124,72 205,47 330,46 H426" fill="none" stroke="#9ea4ad" stroke-width="5" stroke-opacity="0.55"/>
+    <path d="M110,90 C160,45 220,24 330,23.5 H408" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-opacity="0.8" stroke-linecap="round"/>
+    <path class="glow" d="M430,62 V40 Q430,20 410,20 H330 C180,20 95,85 64.4,150.1 L90,160 C122,95 200,62 330,62 Z" fill="#5bdccf" opacity="0"/>
+  </g>
+  <!-- the power button, on the top edge at the left (the PCH-1000's part A, inboard of L) -->
+  <g id="btn-power">
+    <rect x="474" y="29" width="80" height="19" rx="9.5" fill="url(#g-shoulder)" stroke="#c3c8cf" stroke-width="1.5"/>
+    <rect x="484" y="32" width="60" height="3.5" rx="1.75" fill="#ffffff" opacity="0.75"/>
+    <rect class="glow" x="474" y="29" width="80" height="19" rx="9.5" fill="#5bdccf" opacity="0"/>
+  </g>
+  <g id="btn-r">
+    <path d="M1390,62 V40 Q1390,20 1410,20 H1490 C1640,20 1725,85 1755.6,150.1 L1730,160 C1698,95 1620,62 1490,62 Z" fill="url(#g-shoulder)" stroke="#c3c8cf" stroke-width="1.5"/>
+    <path d="M1740,128 C1696,72 1615,47 1490,46 H1394" fill="none" stroke="#9ea4ad" stroke-width="5" stroke-opacity="0.55"/>
+    <path d="M1710,90 C1660,45 1600,24 1490,23.5 H1412" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-opacity="0.8" stroke-linecap="round"/>
+    <path class="glow" d="M1390,62 V40 Q1390,20 1410,20 H1490 C1640,20 1725,85 1755.6,150.1 L1730,160 C1698,95 1620,62 1490,62 Z" fill="#5bdccf" opacity="0"/>
+  </g>
+
+  <!-- ===== body ===== -->
+  <g id="body">
+    <use href="#outline" fill="url(#g-body)"/>
+    <g clip-path="url(#body-clip)">
+      <!-- darker shading toward the outer edge -->
+      <use href="#outline" fill="none" stroke="#9aa2ad" stroke-width="80" stroke-opacity="0.5" filter="url(#f-soft)"/>
+      <!-- soft top highlight -->
+      <ellipse cx="910" cy="70" rx="760" ry="40" fill="#ffffff" opacity="0.7" filter="url(#f-soft)"/>
+      <!-- bevel highlight just inside the rim -->
+      <use href="#outline" fill="none" stroke="url(#g-rim-hi)" stroke-width="10"/>
+    </g>
+    <!-- chrome rim -->
+    <use href="#outline" fill="none" stroke="url(#g-rim)" stroke-width="3"/>
+  </g>
+
+  <!-- ===== glass and screen ===== -->
+  <g id="glass-panel">
+    <rect x="322.5" y="109.5" width="1175" height="706" rx="32.5" fill="none" stroke="#c4c9d0" stroke-width="2"/>
+    <rect id="glass" x="325" y="112" width="1170" height="701" rx="30" fill="#0b0d10"/>
+    <rect x="325" y="112" width="1170" height="701" rx="30" fill="url(#g-gloss)"/>
+    <rect x="326" y="113" width="1168" height="699" rx="29" fill="none" stroke="url(#g-glass-edge)" stroke-width="2"/>
+    <rect x="355.5" y="147.5" width="1109" height="630" fill="none" stroke="#1a1d22" stroke-width="1.5"/>
+    <rect id="screen-rect" x="357" y="149" width="1106" height="627" fill="#000"/>
+    <!-- front camera -->
+    <circle cx="1440" cy="130" r="12" fill="#1b1f25"/>
+    <circle id="camera" cx="1440" cy="130" r="9" fill="url(#g-lens)"/>
+    <circle cx="1437" cy="127" r="2.2" fill="#9fb4d8" opacity="0.55"/>
+  </g>
+
+  <!-- ===== left wing ===== -->
+  <g id="dpad" transform="translate(185 315) scale(1.6) translate(-170 -315)">
+    <rect x="131" y="241" width="78" height="148" rx="18" fill="url(#g-cross-well)"/>
+    <rect x="96" y="276" width="148" height="78" rx="18" fill="url(#g-cross-well)"/>
+    <circle cx="170" cy="315" r="17" fill="url(#g-hub)"/>
+    <g fill="#8a919b" opacity="0.5" filter="url(#f-shadow)">
+      <path d="M164,303 Q170,309 176,303 L203,276 V261 Q203,249 191,249 H149 Q137,249 137,261 V276 Z"/>
+      <path d="M164,331 Q170,325 176,331 L203,358 V373 Q203,385 191,385 H149 Q137,385 137,373 V358 Z"/>
+      <path d="M156,311 Q162,317 156,323 L129,350 H114 Q102,350 102,338 V296 Q102,284 114,284 H129 Z"/>
+      <path d="M184,311 Q178,317 184,323 L211,350 H226 Q238,350 238,338 V296 Q238,284 226,284 H211 Z"/>
+    </g>
+    <g id="dpad-up">
+      <path d="M164,301 Q170,307 176,301 L203,274 V259 Q203,247 191,247 H149 Q137,247 137,259 V274 Z" fill="url(#g-dpad)" stroke="url(#g-cap-edge)" stroke-width="1.8"/>
+      <path d="M170,264 L179,279 H161 Z" fill="#b3b9c2" stroke="#ffffff" stroke-width="1" stroke-opacity="0.9"/>
+      <path class="glow" d="M164,301 Q170,307 176,301 L203,274 V259 Q203,247 191,247 H149 Q137,247 137,259 V274 Z" fill="#5bdccf" opacity="0"/>
+    </g>
+    <g id="dpad-down">
+      <path d="M164,329 Q170,323 176,329 L203,356 V371 Q203,383 191,383 H149 Q137,383 137,371 V356 Z" fill="url(#g-dpad)" stroke="url(#g-cap-edge)" stroke-width="1.8"/>
+      <path d="M170,366 L179,351 H161 Z" fill="#b3b9c2" stroke="#ffffff" stroke-width="1" stroke-opacity="0.9"/>
+      <path class="glow" d="M164,329 Q170,323 176,329 L203,356 V371 Q203,383 191,383 H149 Q137,383 137,371 V356 Z" fill="#5bdccf" opacity="0"/>
+    </g>
+    <g id="dpad-left">
+      <path d="M156,309 Q162,315 156,321 L129,348 H114 Q102,348 102,336 V294 Q102,282 114,282 H129 Z" fill="url(#g-dpad)" stroke="url(#g-cap-edge)" stroke-width="1.8"/>
+      <path d="M118,315 L133,306 V324 Z" fill="#b3b9c2" stroke="#ffffff" stroke-width="1" stroke-opacity="0.9"/>
+      <path class="glow" d="M156,309 Q162,315 156,321 L129,348 H114 Q102,348 102,336 V294 Q102,282 114,282 H129 Z" fill="#5bdccf" opacity="0"/>
+    </g>
+    <g id="dpad-right">
+      <path d="M184,309 Q178,315 184,321 L211,348 H226 Q238,348 238,336 V294 Q238,282 226,282 H211 Z" fill="url(#g-dpad)" stroke="url(#g-cap-edge)" stroke-width="1.8"/>
+      <path d="M222,315 L207,306 V324 Z" fill="#b3b9c2" stroke="#ffffff" stroke-width="1" stroke-opacity="0.9"/>
+      <path class="glow" d="M184,309 Q178,315 184,321 L211,348 H226 Q238,348 238,336 V294 Q238,282 226,282 H211 Z" fill="#5bdccf" opacity="0"/>
+    </g>
+  </g>
+
+  <g id="stick-l">
+    <circle cx="250" cy="590" r="72.5" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-opacity="0.9"/>
+    <circle cx="250" cy="590" r="71" fill="url(#g-stick-well)"/>
+    <circle cx="252" cy="596" r="60" fill="#000" opacity="0.55" filter="url(#f-shadow)"/>
+    <g id="stick-l-cap">
+      <circle cx="250" cy="590" r="60" fill="url(#g-stick-rim)"/>
+      <circle cx="250" cy="590" r="56" fill="none" stroke="#8d949d" stroke-width="6" stroke-dasharray="2 2.4" stroke-opacity="0.45"/>
+      <circle cx="250" cy="590" r="51" fill="url(#g-stick-dish)" stroke="#aeb4bc" stroke-width="1.2"/>
+      <circle cx="250" cy="590" r="51" fill="url(#g-stick-centre)"/>
+      <circle class="glow" cx="250" cy="590" r="60" fill="#5bdccf" opacity="0"/>
+    </g>
+  </g>
+
+  <g id="btn-ps">
+    <circle cx="150" cy="745" r="38" fill="url(#g-well)"/>
+    <circle cx="150" cy="745" r="34" fill="url(#g-cap)" stroke="url(#g-cap-edge)" stroke-width="1.5"/>
+    <circle cx="150" cy="745" r="24" fill="none" stroke="#c9ced5" stroke-width="1.2" stroke-opacity="0.8"/>
+    <circle class="glow" cx="150" cy="745" r="34" fill="#5bdccf" opacity="0"/>
+  </g>
+
+  <g id="grille-l" fill="#7c838d">
+    <use href="#grille-row" x="285" y="823"/>
+    <use href="#grille-row" x="285" y="835"/>
+    <use href="#grille-row" x="285" y="847"/>
+  </g>
+
+  <!-- ===== right wing ===== -->
+  <g id="face-buttons">
+    <g fill="#8a919b" opacity="0.45" filter="url(#f-shadow)">
+      <circle cx="1650" cy="222" r="39"/><circle cx="1745" cy="317" r="39"/>
+      <circle cx="1650" cy="412" r="39"/><circle cx="1555" cy="317" r="39"/>
+    </g>
+    <g id="btn-triangle">
+      <circle cx="1650" cy="220" r="44" fill="url(#g-well)"/>
+      <circle cx="1650" cy="220" r="39" fill="url(#g-cap)" stroke="url(#g-cap-edge)" stroke-width="1.5"/>
+      <path d="M1650,203 L1667.5,233 H1632.5 Z" fill="none" stroke="#8f96a0" stroke-width="3.5" stroke-linejoin="round"/>
+      <circle class="glow" cx="1650" cy="220" r="39" fill="#5bdccf" opacity="0"/>
+    </g>
+    <g id="btn-circle">
+      <circle cx="1745" cy="315" r="44" fill="url(#g-well)"/>
+      <circle cx="1745" cy="315" r="39" fill="url(#g-cap)" stroke="url(#g-cap-edge)" stroke-width="1.5"/>
+      <circle cx="1745" cy="315" r="15" fill="none" stroke="#8f96a0" stroke-width="3.5"/>
+      <circle class="glow" cx="1745" cy="315" r="39" fill="#5bdccf" opacity="0"/>
+    </g>
+    <g id="btn-cross">
+      <circle cx="1650" cy="410" r="44" fill="url(#g-well)"/>
+      <circle cx="1650" cy="410" r="39" fill="url(#g-cap)" stroke="url(#g-cap-edge)" stroke-width="1.5"/>
+      <path d="M1638,398 L1662,422 M1662,398 L1638,422" fill="none" stroke="#8f96a0" stroke-width="3.5" stroke-linecap="round"/>
+      <circle class="glow" cx="1650" cy="410" r="39" fill="#5bdccf" opacity="0"/>
+    </g>
+    <g id="btn-square">
+      <circle cx="1555" cy="315" r="44" fill="url(#g-well)"/>
+      <circle cx="1555" cy="315" r="39" fill="url(#g-cap)" stroke="url(#g-cap-edge)" stroke-width="1.5"/>
+      <rect x="1541.5" y="301.5" width="27" height="27" rx="1.5" fill="none" stroke="#8f96a0" stroke-width="3.5"/>
+      <circle class="glow" cx="1555" cy="315" r="39" fill="#5bdccf" opacity="0"/>
+    </g>
+  </g>
+
+  <g id="stick-r">
+    <circle cx="1570" cy="590" r="72.5" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-opacity="0.9"/>
+    <circle cx="1570" cy="590" r="71" fill="url(#g-stick-well)"/>
+    <circle cx="1572" cy="596" r="60" fill="#000" opacity="0.55" filter="url(#f-shadow)"/>
+    <g id="stick-r-cap">
+      <circle cx="1570" cy="590" r="60" fill="url(#g-stick-rim)"/>
+      <circle cx="1570" cy="590" r="56" fill="none" stroke="#8d949d" stroke-width="6" stroke-dasharray="2 2.4" stroke-opacity="0.45"/>
+      <circle cx="1570" cy="590" r="51" fill="url(#g-stick-dish)" stroke="#aeb4bc" stroke-width="1.2"/>
+      <circle cx="1570" cy="590" r="51" fill="url(#g-stick-centre)"/>
+      <circle class="glow" cx="1570" cy="590" r="60" fill="#5bdccf" opacity="0"/>
+    </g>
+  </g>
+
+  <g id="btn-select">
+    <rect x="1555" y="744" width="70" height="32" rx="16" fill="url(#g-well)"/>
+    <rect x="1558" y="747" width="64" height="26" rx="13" fill="url(#g-cap)" stroke="url(#g-cap-edge)" stroke-width="1.2"/>
+    <rect class="glow" x="1558" y="747" width="64" height="26" rx="13" fill="#5bdccf" opacity="0"/>
+  </g>
+  <g id="btn-start">
+    <rect x="1655" y="744" width="70" height="32" rx="16" fill="url(#g-well)"/>
+    <rect x="1658" y="747" width="64" height="26" rx="13" fill="url(#g-cap)" stroke="url(#g-cap-edge)" stroke-width="1.2"/>
+    <rect class="glow" x="1658" y="747" width="64" height="26" rx="13" fill="#5bdccf" opacity="0"/>
+  </g>
+  <g id="labels" fill="#9aa1ab" font-family="'Promo Sans', sans-serif" font-size="17" letter-spacing="1" text-anchor="middle">
+    <text x="1590.5" y="800">SELECT</text>
+    <text x="1690.5" y="800">START</text>
+  </g>
+
+  <g id="grille-r" fill="#7c838d">
+    <use href="#grille-row" x="1535" y="823"/>
+    <use href="#grille-row" x="1535" y="835"/>
+    <use href="#grille-row" x="1535" y="847"/>
+  </g>
+  <circle id="mic" cx="910" cy="852" r="3" fill="#7c838d"/>
+
+
+    <g clip-path="url(#rubi-screen-clip)" aria-label="Illustrative Rubi dictionary overlay">
+      <rect x="357" y="149" width="1106" height="627" fill="url(#rubi-screen-bg)"/>
+      <circle cx="1260" cy="240" r="143" fill="#436471" opacity="0.35"/>
+      <path d="M357 650 650 430 840 615 1135 372 1463 590 V776 H357Z" fill="#486274" opacity="0.28"/>
+      <rect x="399" y="225" width="1022" height="490" rx="22" fill="#fffaf4"/>
+      <path d="M421 225 H1399 Q1421 225 1421 247 V286 H399 V247 Q399 225 421 225Z" fill="#eee6df"/>
+      <circle cx="436" cy="255" r="7" fill="#d9576c"/>
+      <text x="455" y="265" font-size="27" font-weight="700">Rubi</text>
+      <text x="1376" y="264" text-anchor="end" font-size="21" font-weight="700" letter-spacing="2" class="rubi-muted">LOCAL DICTIONARY</text>
+      <text x="441" y="353" font-size="43" class="rubi-japanese">一緒に</text>
+      <rect x="572" y="307" width="53" height="58" rx="9" fill="#f3bdc5"/>
+      <text x="577" y="353" font-size="43" class="rubi-japanese">本</text>
+      <text x="626" y="353" font-size="43" class="rubi-japanese">を読もう。</text>
+      <path d="M440 392 H1380" stroke="#ddd7d0" stroke-width="2"/>
+      <text x="441" y="478" font-size="58" font-weight="700" class="rubi-japanese">本</text>
+      <text x="522" y="474" font-size="30" class="rubi-japanese rubi-muted">ほん</text>
+      <rect x="636" y="444" width="92" height="36" rx="9" fill="#e0eeea"/>
+      <text x="682" y="469" text-anchor="middle" font-size="19" font-weight="700" style="fill:#246c63">NOUN</text>
+      <text x="444" y="542" font-size="35">book; volume</text>
+      <text x="444" y="597" font-size="25" class="rubi-muted">Tap a character to look up its word.</text>
+      <path d="M440 629 H1380" stroke="#ddd7d0" stroke-width="2"/>
+      <text x="444" y="675" font-size="24" class="rubi-muted">L + R: close</text>
+      <text x="1377" y="675" text-anchor="end" font-size="24" class="rubi-muted">Enter: save card</text>
+    </g>
+    <text x="313" y="64" text-anchor="middle" font-size="32" font-weight="700" class="rubi-muted">L</text>
+    <text x="1507" y="64" text-anchor="middle" font-size="32" font-weight="700" class="rubi-muted">R</text>
+    <text x="150" y="754" text-anchor="middle" font-size="23" font-weight="700" style="fill:#71809a">PS</text>
+    <text x="910" y="843" text-anchor="middle" font-size="19" letter-spacing="4" style="fill:#9aa1ab">PS VITA</text>
+  </g>
+
+  <!-- Left-side annotations: words, characters, and LiveArea. -->
+  <g id="rubi-dpad-callout">
+    <path class="rubi-wire" d="M481 505 H365 V407 H341" stroke="#29857a"/>
+    <circle cx="481" cy="505" r="5" fill="#29857a"/>
+    <text x="64" y="399" class="rubi-heading">D-pad</text>
+    <text x="64" y="435" class="rubi-action" style="fill:#24766d">← / →  Move by word</text>
+    <text x="64" y="467" class="rubi-body">↑ / ↓  Change text rows</text>
+    <text x="64" y="508" class="rubi-detail">↑ at the top: earlier dialogue.</text>
+    <text x="64" y="536" class="rubi-detail">↓ past its end: newer / live.</text>
+    <text x="64" y="574" font-size="16" class="rubi-muted">History needs Automatic reading.</text>
+    <text x="64" y="599" font-size="16" class="rubi-muted">Character mode: one character.</text>
+  </g>
+  <g id="rubi-left-stick-callout">
+    <path class="rubi-wire" d="M495 659 H373 V674 H341" stroke="#29857a"/>
+    <circle cx="495" cy="659" r="5" fill="#29857a"/>
+    <text x="64" y="666" class="rubi-heading">Left stick</text>
+    <text x="64" y="702" class="rubi-action" style="fill:#24766d">Move by character</text>
+    <text x="64" y="734" class="rubi-detail">↑ / ↓ changes text rows.</text>
+    <text x="64" y="762" class="rubi-detail">Hold: faster. Rest: look up.</text>
+  </g>
+  <g id="rubi-ps-callout">
+    <path class="rubi-wire" d="M474 746 H365 V842 H341" stroke="#8995a5"/>
+    <circle cx="474" cy="746" r="5" fill="#8995a5"/>
+    <text x="64" y="846" class="rubi-heading">PS button</text>
+    <text x="64" y="879" class="rubi-body">Close Rubi / open LiveArea</text>
+  </g>
+
+  <!-- Face buttons are grouped to keep the leader lines out of the screen. -->
+  <g id="rubi-face-callout">
+    <path class="rubi-wire" d="M1392 505 H1436 V397 H1459" stroke="#d9576c"/>
+    <circle cx="1392" cy="505" r="5" fill="#d9576c"/>
+    <text x="1460" y="378" class="rubi-label" style="fill:#b5475b">FACE BUTTONS</text>
+
+    <circle cx="1476" cy="418" r="21" fill="#f4e3e6"/>
+    <use href="#rubi-icon-triangle" transform="translate(1476 418)" color="#b5475b"/>
+    <text x="1511" y="414" class="rubi-action">Stats &amp; text source</text>
+    <text x="1511" y="442" class="rubi-detail">Press again to return.</text>
+
+    <circle cx="1476" cy="496" r="21" fill="#f4e3e6"/>
+    <use href="#rubi-icon-square" transform="translate(1476 496)" color="#b5475b"/>
+    <text x="1511" y="492" class="rubi-action">Set dialogue region</text>
+    <text x="1511" y="520" class="rubi-detail">Hold 1 s: full screen.</text>
+
+    <circle cx="1476" cy="574" r="21" fill="#e0eeea"/>
+    <use href="#rubi-icon-cross" transform="translate(1476 574)" color="#24766d"/>
+    <text x="1511" y="570" class="rubi-action">Enter: save to Anki*</text>
+    <text x="1511" y="598" class="rubi-detail">With Card mining ON.</text>
+
+    <circle cx="1476" cy="652" r="21" fill="#e6eaf0"/>
+    <use href="#rubi-icon-circle" transform="translate(1476 652)" color="#596b83"/>
+    <text x="1511" y="648" class="rubi-action">Cancel: close Rubi*</text>
+  </g>
+  <g id="rubi-right-stick-callout">
+    <path class="rubi-wire" d="M1304 659 H1419 V753 H1459" stroke="#29857a"/>
+    <circle cx="1304" cy="659" r="5" fill="#29857a"/>
+    <text x="1460" y="749" class="rubi-heading">Right stick</text>
+    <text x="1460" y="785" class="rubi-action" style="fill:#24766d">↑ / ↓  Scroll definition</text>
+  </g>
+
+  <!-- Secondary front controls sit beneath the device. -->
+  <g id="rubi-front-touch-callout">
+    <path class="rubi-wire" d="M897 768 V847 H710 V871" stroke="#29857a"/>
+    <circle cx="897" cy="768" r="5" fill="#29857a"/>
+    <text x="620" y="903" class="rubi-label" style="fill:#24766d">TOUCHSCREEN</text>
+    <text x="620" y="937" class="rubi-body">Tap a recognized character</text>
+    <text x="620" y="965" class="rubi-detail">to look up the word there.</text>
+  </g>
+  <g id="rubi-subtitle-callout">
+    <path class="rubi-wire" d="M1280 755 V849 H1152 V872" stroke="#657d9f"/>
+    <circle cx="1280" cy="755" r="5" fill="#657d9f"/>
+    <rect x="1048" y="882" width="118" height="38" rx="9" class="rubi-key"/>
+    <text x="1107" y="907" text-anchor="middle" font-size="17" font-weight="700">SELECT</text>
+    <text x="1178" y="908" font-size="23" class="rubi-muted">+</text>
+    <rect x="1208" y="882" width="40" height="38" rx="9" class="rubi-key"/>
+    <text x="1228" y="908" text-anchor="middle" font-size="20" font-weight="700">R</text>
+    <text x="1048" y="954" class="rubi-body">Toggle subtitle strip</text>
+  </g>
+
+  <!-- The region editor changes the meaning of Enter and Cancel. -->
+  <g id="rubi-region-editor" aria-label="Drawing a dialogue region">
+    <rect x="64" y="1018" width="1018" height="310" rx="24" fill="#fff" stroke="#e0e2e4"/>
+    <text x="96" y="1065" class="rubi-heading">Set the dialogue region</text>
+    <text x="96" y="1100" class="rubi-body rubi-muted">Press Square in the overlay.</text>
+    <rect x="1005" y="1044" width="45" height="45" rx="12" fill="#f4e3e6"/>
+    <use href="#rubi-icon-square" transform="translate(1027.5 1066.5)" color="#b5475b"/>
+
+    <circle cx="111" cy="1154" r="15" fill="#e0eeea"/>
+    <text x="111" y="1160" text-anchor="middle" font-size="16" font-weight="700" style="fill:#24766d">1</text>
+    <text x="139" y="1161" class="rubi-action">Move to a corner</text>
+    <text x="139" y="1191" class="rubi-detail">Left stick or D-pad.</text>
+    <path d="M368 1162 H393 m-7 -6 7 6 -7 6" fill="none" stroke="#aeb6bf" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <circle cx="429" cy="1154" r="15" fill="#e0eeea"/>
+    <text x="429" y="1160" text-anchor="middle" font-size="16" font-weight="700" style="fill:#24766d">2</text>
+    <text x="457" y="1161" class="rubi-action">Press Enter*</text>
+    <text x="457" y="1191" class="rubi-detail">Fix the first corner.</text>
+    <path d="M685 1162 H710 m-7 -6 7 6 -7 6" fill="none" stroke="#aeb6bf" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <circle cx="746" cy="1154" r="15" fill="#e0eeea"/>
+    <text x="746" y="1160" text-anchor="middle" font-size="16" font-weight="700" style="fill:#24766d">3</text>
+    <text x="774" y="1161" class="rubi-action">Move + Enter*</text>
+    <text x="774" y="1191" class="rubi-detail">Save the opposite corner.</text>
+
+    <path d="M96 1221 H1050" stroke="#e6e8eb"/>
+    <text x="96" y="1254" class="rubi-body">Or drag on the touchscreen, then press Enter* to save.</text>
+    <text x="96" y="1289" class="rubi-detail">Cancel*: undo corner / exit.     Hold Square 1 s: restore full screen.</text>
+    <text x="96" y="1313" font-size="16" class="rubi-muted">Saved per game. Minimum box: 32 × 32 pixels.</text>
+  </g>
+
+  <g id="rubi-rear-touchpad" aria-label="Double-tap the rear touchpad while the overlay is open">
+    <rect x="1106" y="1018" width="630" height="310" rx="24" fill="#fff" stroke="#e0e2e4"/>
+    <text x="1138" y="1065" class="rubi-heading">Rear touchpad</text>
+    <text x="1138" y="1100" class="rubi-body rubi-muted">Double-tap while Rubi is open.</text>
+
+    <!-- Original simplified rear view, with the touch surface stippled. -->
+    <g transform="translate(1138 1133)">
+      <path d="M47 0 H203 Q250 0 250 62 Q250 124 203 124 H47 Q0 124 0 62 Q0 0 47 0Z" fill="#f1f3f4" stroke="#aeb8c1" stroke-width="1.5"/>
+      <path d="M18 38 Q36 37 43 54 L49 88 Q51 105 36 109 M232 38 Q214 37 207 54 L201 88 Q199 105 214 109" fill="none" stroke="#d0d6dc" stroke-width="8" stroke-linecap="round"/>
+      <rect x="53" y="28" width="144" height="72" rx="17" fill="#e3e8e9" stroke="#c2cbce"/>
+      <rect x="53" y="28" width="144" height="72" rx="17" fill="url(#rubi-rear-dots)"/>
+      <circle cx="125" cy="13" r="5" fill="#596b7a"/>
+      <circle cx="125" cy="63" r="26" fill="#fff" opacity="0.7"/>
+      <circle cx="125" cy="63" r="19" fill="none" stroke="#29857a" stroke-width="2"/>
+      <circle cx="125" cy="63" r="11" fill="none" stroke="#29857a" stroke-width="2"/>
+      <circle cx="125" cy="63" r="4" fill="#29857a"/>
+      <rect x="166" y="77" width="63" height="33" rx="16.5" fill="#1b293d"/>
+      <text x="197.5" y="100" text-anchor="middle" font-size="21" font-weight="700" style="fill:#fff">×2</text>
+    </g>
+    <text x="1413" y="1161" class="rubi-action" style="fill:#24766d">Scan the whole screen</text>
+    <text x="1413" y="1194" class="rubi-detail">Read menus and other text</text>
+    <text x="1413" y="1222" class="rubi-detail">outside your dialogue box.</text>
+    <text x="1138" y="1283" class="rubi-detail">One OCR scan. Your saved dialogue region stays.</text>
+    <text x="1138" y="1311" font-size="16" class="rubi-muted">Close Rubi to return to the saved box.</text>
+  </g>
+
+  <g id="rubi-button-notes">
+    <rect x="64" y="1352" width="1672" height="145" rx="22" fill="#e8edef"/>
+    <text x="96" y="1391" font-size="21" font-weight="700">* × / ○ follow your Vita’s system setting.</text>
+    <text x="96" y="1425" class="rubi-detail">Shown here: × = Enter, ○ = Cancel. Japanese or swapped layouts</text>
+    <text x="96" y="1454" class="rubi-detail">reverse them. Anki saving in the overlay needs Card mining ON.</text>
+    <path d="M873 1376 V1473" stroke="#cbd3d9"/>
+    <text x="907" y="1391" font-size="21" font-weight="700">Custom shortcuts</text>
+    <text x="907" y="1425" class="rubi-detail">Change the open / subtitle triggers in config.ini:</text>
+    <text x="907" y="1454" font-size="17" class="rubi-muted">L+R · Select · Start · Select+L · Select+R · rear double-tap</text>
+    <text x="907" y="1480" font-size="15" class="rubi-muted">Rear double-tap always scans while open; use Cancel to close.</text>
+  </g>
+  <text x="64" y="1538" font-size="17" class="rubi-muted">Hold L while launching a game to skip Rubi for that launch.</text>
+  <a href="https://github.com/bee-san/Rubi_for_vita/blob/main/docs/guide.md#use-in-a-game" aria-label="Read the full Rubi control guide">
+    <text x="1736" y="1538" text-anchor="end" font-size="17" font-weight="700" style="fill:#24766d">Full control guide ↗</text>
+  </a>
+</svg>
