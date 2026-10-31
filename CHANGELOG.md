@@ -11,6 +11,12 @@ been reported.
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-31
+
+Triangle's reading statistics start counting on a console: since 0.10.2 a stray event bit kept the count from ever
+starting (in 0.10.3 nothing showed), and the same check held back Auto mode's prepared lookups of the next words.
+The release zip's README links the promo's artwork notes on GitHub.
+
 ### Fixed
 
 - Triangle's reading statistics no longer stay at `counting… 0%`. The Shell's control thread starts a count only on
@@ -1668,7 +1674,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.3...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.4...HEAD
+[0.10.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.4
 [0.10.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.3
 [0.10.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.2
 [0.10.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.1
