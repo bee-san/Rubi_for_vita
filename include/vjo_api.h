@@ -13,7 +13,8 @@
  * meaning) takes the next number. A number names one interface only, so numbers only grow, past those that drafts
  * or reverted changes used.
  * 58: VJO_GAME_OCR_F_RECT (include/vjo_game_ocr.h), a job of the box the Shell gives in the request, whatever the
- * saved region: the overlay's one-off box (Cancel, then a box). Sizes and layouts are unchanged.
+ * saved region: the overlay's one-off scans (Cancel, then a box; the rear double tap's whole frame, w == 0, which
+ * used F_FULL). Sizes and layouts are unchanged.
  * 57: current-game hook profiles, loaded by vjoOcrHookProfile before hook installation, and VJO_EV_FULL_SCREEN,
  * the rear double tap while the overlay blocks game input, for one full-screen OCR lookup.
  * 55: the pause for the frame (config.ini ocr_pause, off by default; #348, docs/game-pause.md):

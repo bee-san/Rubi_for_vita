@@ -427,7 +427,7 @@
       <text x="20" y="245" font-size="21"><tspan font-size="27" class="rubi-screen-text">明</tspan>=light, bright</text>
       <text x="20" y="283" font-size="21"><tspan font-size="27" class="rubi-screen-text">日</tspan>=day, counter for days, Japan, sun</text>
       <rect y="500" width="960" height="44" fill="#08080a"/>
-      <text x="20" y="531" font-size="20" class="rubi-screen-rank" clip-path="url(#rubi-screen-hint-clip)">Tap / pad / stick word · × queue · □ region · ○ OCR box · L+R close</text>
+      <text x="20" y="531" font-size="20" class="rubi-screen-rank" clip-path="url(#rubi-screen-hint-clip)">Tap / pad / stick word · × queue · □ region · ○ OCR box</text>
     </svg>
   </g>
 
@@ -568,7 +568,7 @@
     <text x="907" y="1391" font-size="21" font-weight="700">Custom shortcuts</text>
     <text x="907" y="1425" class="rubi-detail">Change the open / subtitle triggers in config.ini:</text>
     <text x="907" y="1454" font-size="17" class="rubi-muted">L+R · Select · Start · Select+L · Select+R · rear double-tap</text>
-    <text x="907" y="1480" font-size="15" class="rubi-muted">Opened by rear double-tap? It scans while open; Cancel closes.</text>
+    <text x="907" y="1480" font-size="15" class="rubi-muted">Opened by rear double-tap? It scans while open; Select+R closes.</text>
   </g>
   <text x="64" y="1538" font-size="17" class="rubi-muted">Hold L while launching a game to skip Rubi for that launch.</text>
   <a href="https://github.com/bee-san/Rubi_for_vita/blob/main/docs/guide.md#use-in-a-game" aria-label="Read the full Rubi control guide">

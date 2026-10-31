@@ -62,16 +62,20 @@ static uint32_t pad_steps(uint32_t us)
     return n;
 }
 
+/* Not inlined into the overlay's frame in the debug build: its 80 B there went to the frame's register pressure, out
+ * of the debug Shell's last code page (include/vjo_ledger_budget.h); the normal build keeps it inline, 16 B smaller. */
+#if VJO_DEBUG
+__attribute__((noinline))
+#endif
 int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in)
 {
     int64_t step = in->now_us - s->last_us;
     uint32_t dt = step <= 0 ? 0u : step > VJO_RSEL_MAX_STEP_US ? VJO_RSEL_MAX_STEP_US : (uint32_t)step;
-    int ev = VJO_RSEL_NONE;
+    int ev = VJO_RSEL_NONE, lift = 0;
     s->last_us = in->now_us;
 
     if (!in->touch) {
-        if (s->touching == 1 && s->anchored)
-            ev = VJO_RSEL_LIFT;
+        lift = s->once && s->touching == 1; /* the one-off box: a drag's lift is enter (anchored; 2: a cancelled one) */
         s->touching = 0;
     } else if (s->touching != 2) {
         int tx = clamp_px(in->tx, VJO_RSEL_W), ty = clamp_px(in->ty, VJO_RSEL_H);
@@ -144,7 +148,7 @@ int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in)
             s->touching = 2; /* the finger still down must not start a drag again */
         return VJO_RSEL_BACK;
     }
-    if (in->pressed & in->enter) {
+    if ((in->pressed & in->enter) || lift) {
         int x, y, w, h;
         if (!s->anchored) {
             s->anchored = 1;

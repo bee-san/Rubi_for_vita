@@ -279,7 +279,7 @@ app when it starts.
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
-| L + R (the toggle) | Close the overlay (the footer names your toggle: `○ OCR box · L+R close`; it no longer lists the right stick or the rear double-tap). With the rear double-tap as the toggle, which scans while the overlay is open, Cancel closes it instead (and draws no box) |
+| L + R (the toggle) | Close the overlay (the footer, `Tap / pad / stick word · × queue · □ region · ○ OCR box`, names the face buttons only) |
 
 **Read outside the dialogue box.** With the overlay open, double-tap the rear touchpad: Rubi reads the
 whole game screen with its text spotter, OCR and configured language-model decoder, then shows the words
@@ -289,8 +289,9 @@ finder fallback still applies. The results stay until you scan again or close th
 game's dialogue changes. Closing returns to the saved dialogue box; this scan never writes `region.ini`,
 adds menus to the dialogue history or offers a replacement dialogue box. Two short taps are needed:
 holds, drags and fingers already held when the overlay opens are ignored. If rear double-tap is your
-configured opening or subtitle trigger, it keeps that action while closed; while open it scans, so as the opening
-trigger Cancel closes the overlay (and draws no box); as the subtitle trigger the opening trigger still closes it. This binding is new in 0.10.1 and has not been tested on a console.
+configured opening or subtitle trigger, it keeps that action while closed; while open it scans. As the opening
+trigger, close the overlay with the subtitle trigger (Select + R by default, which closes everything) or PS; as the
+subtitle trigger, the opening trigger closes it. This binding is new in 0.10.1 and has not been tested on a console.
 
 <a id="read-a-box-once"></a>**Read a box once.** For text the hook does not carry and the dialogue region does not cover (a menu, a
 choice, a sign), press Cancel with the overlay open: the game shows again, dimmed, with the region selector. Drag a
@@ -300,9 +301,10 @@ asked, and shows its words with the same navigation, lookups and card saving as 
 under 32 × 32 pixels is refused in red and the selector stays; Cancel with no corner set goes back to the overlay.
 The box is never saved and never written to `region.ini`: it is read once, its text stays until you read another box,
 double-tap the rear or close the overlay, and the next opening reads the dialogue region as before. It is OCR always
-(no hook answers it), with the configured line finder (the rear tap's scan uses the text spotter), and its lines are
-not added to the dialogue history. Same machinery as the rear tap: the box goes to the game worker in the job's
-request (API 58, `VJO_GAME_OCR_F_RECT`), so it costs that job's memory and nothing more. Host-tested; not yet run on a
+(no hook answers it), with the text spotter as the rear tap's scan is, and its lines are not added to the dialogue
+history. It is the rear tap's scan on a box: the box goes to the game worker in the job's request (API 58,
+`VJO_GAME_OCR_F_RECT`; the rear tap's is the whole frame), so it costs that job's memory and nothing more, and SceShell
+keeps its pages ([ledger history](memory-ledger-history.md#read-a-box-once-api-58)). Host-tested; not yet run on a
 console.
 
 **Earlier lines.** With **Read text** on **Automatically**, the overlay can go back through this game's

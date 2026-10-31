@@ -18,12 +18,13 @@ been reported.
   box by dragging on the screen or with the stick or the d-pad and Enter, and Rubi reads that box with OCR as soon as
   it is drawn, lifting the finger or pressing Enter, with no question asked, and shows its words as the rear
   double-tap's scan does. The box is never saved: closing the overlay goes back to the dialogue region. It reuses the
-  rear tap's one-off scan and the region selector: one new request flag (API 58, `VJO_GAME_OCR_F_RECT`, the free bit
-  15) tells the kernel to read the Shell's box instead of the saved region; no new buffer, thread or allocation.
-  Cancel no longer closes the overlay: the toggle does (L + R by default), as the overlay's footer now says (shorter: `Tap / pad / stick word · × queue · □ region · ○ OCR box · L+R close`;
-  the right stick and the rear double-tap are in the guide and the README's diagram), except when
-  the toggle is the rear double-tap, which scans while the overlay is open, so Cancel still closes it there (and the
-  box is not offered). The README's controls diagram shows it. Host-tested; not yet run on a console.
+  rear tap's one-off scan, now one path for both, and the region selector: one new request flag (API 58,
+  `VJO_GAME_OCR_F_RECT`, the free bit 15) tells the kernel to read the Shell's box (the rear tap's: the whole frame)
+  instead of the saved region; no new buffer, thread or allocation, and SceShell keeps its pages in both builds (the
+  selector's hints are shared and shorter). Cancel no longer closes the overlay: the toggle does (L + R by default).
+  The footer is shorter: `Tap / pad / stick word · × queue · □ region · ○ OCR box` (the right stick, the rear
+  double-tap and the close are in the guide and the README's diagram). With the rear double-tap as the toggle, which
+  scans while the overlay is open, close it with Select + R or PS. Host-tested; not yet run on a console.
 
 ## [0.10.5] - 2026-10-31
 

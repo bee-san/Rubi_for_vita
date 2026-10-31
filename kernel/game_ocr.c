@@ -459,9 +459,8 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         (shot ? !shot_id_ok(next.shot) || (next.flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL)) ||
                     next.tiers || next.hook_pick
               : !next.model[0] || !next.model_dir[0] || next.shot[0] || !VJO_HOOK_PICK_OK(next.hook_pick)) ||
-        /* API 58: a box of the Shell's own, nonempty, never with the whole frame */
-        ((next.flags & VJO_GAME_OCR_F_RECT) &&
-         (!next.region.w || !next.region.h || (next.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE))))) {
+        /* API 58: the Shell's own box, never with the whole frame's flag or the probe */
+        ((next.flags & VJO_GAME_OCR_F_RECT) && (next.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)))) {
         rc = VJO_ERR_ARG; goto out;
     }
     VJO_LOCK();
@@ -477,7 +476,8 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         if (fw > VJO_MAX_W) fw = VJO_MAX_W;
         if (fh > VJO_MAX_H) fh = VJO_MAX_H;
         if (next.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_SHOT)) memset(&next.region, 0, sizeof(next.region));
-        else if (!(next.flags & VJO_GAME_OCR_F_RECT)) next.region = g.region; /* API 58: F_RECT keeps the Shell's box */
+        else if (!(next.flags & VJO_GAME_OCR_F_RECT)) next.region = g.region; /* API 58: F_RECT keeps the Shell's box
+                                                                                * (w == 0: the whole frame) */
         capture_crop_of(&next.region, fw, fh, &next.x, &next.y, &next.width, &next.height);
         next.fb_width = fw;
         next.fb_height = fh;

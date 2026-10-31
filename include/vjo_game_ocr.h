@@ -66,9 +66,10 @@
  * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed but
  * (API 32) VJO_GAME_OCR_S_TRIM. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
-/* API 58, bit 15: the box the Shell gives in VjoGameOcrRequest.region (normalized, w != 0), whatever the saved
- * region: the overlay's one-off box (Cancel, then a box drawn; docs/guide.md "Read a box once"). Like F_FULL its
- * capture is never the region's (no published capture, no trusted hook's answer), and nothing saves the box. */
+/* API 58, bit 15: the box the Shell gives in VjoGameOcrRequest.region (normalized; w == 0 the whole frame), whatever
+ * the saved region: the overlay's one-off scans, the box drawn after Cancel (docs/guide.md "Read a box once") and the
+ * rear double tap's whole frame. Like F_FULL its capture is never the region's (no published capture, no trusted
+ * hook's answer), and nothing saves the box. Never with F_FULL or F_PROBE. */
 #define VJO_GAME_OCR_F_RECT 0x8000u
 #define VJO_GAME_OCR_F_ALL 0xFFFFFFFFu
 /* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
@@ -190,7 +191,7 @@ typedef struct {
     uint32_t speed;       /* API 22: VJO_GAME_OCR_S_* */
     /* Filled by Submit: the kernel's region (normalized; w == 0 is the whole frame), the size of
      * the game's last frame and the region's pixels in it, which every row request reads. With
-     * VJO_GAME_OCR_F_RECT the Shell sets region itself (w != 0) and Submit keeps it. */
+     * VJO_GAME_OCR_F_RECT the Shell sets region itself and Submit keeps it. */
     VjoRect region;
     uint32_t fb_width, fb_height;
     uint32_t x, y, width, height;

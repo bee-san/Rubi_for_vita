@@ -58,6 +58,7 @@ extern "C" {
 #include "../core/stick_cursor.h"
 #include "../vita/buttons_vita.h"
 /* The region selector and the enter/cancel buttons take the pad's own button bits. */
+static_assert(VJO_CMD_SCAN_BOX == VJO_CMD_SET_REGION + 1, "input_region posts either by the selector's once");
 static_assert(VJO_RSEL_UP == SCE_CTRL_UP && VJO_RSEL_RIGHT == SCE_CTRL_RIGHT && VJO_RSEL_DOWN == SCE_CTRL_DOWN &&
               VJO_RSEL_LEFT == SCE_CTRL_LEFT && VJO_BUTTON_CIRCLE == SCE_CTRL_CIRCLE &&
               VJO_BUTTON_CROSS == SCE_CTRL_CROSS, "region selector buttons are SCE_CTRL_* bits");
@@ -230,10 +231,6 @@ static int s_refused[2];               /* the box size enter was refused for: to
 static int64_t s_hint_us;
 static int64_t s_square_down_us;
 static int s_square_clear_armed;
-/* The selector draws the one-off box (Cancel): a box drawn is read once at once (VJO_CMD_SCAN_BOX), never saved, and
- * hold □ restores nothing. s_toggle: the configured toggle_button (render, from the view): the hint's close, and with
- * the rear double tap (which scans while the overlay is open) Cancel still closes. */
-static int s_box_once, s_toggle;
 
 /* The text-building arena, in SceShell's PAF heap, so no page of its partition
  * is held for it (#59; it was a 96 KiB static buffer). Its size is what
@@ -418,7 +415,7 @@ static void render(int new_content)
     static const char line_queue_count[] VJO_DATA_TABLE(line_queue_count) = "Anki queue: %d · export in the Rubi app";
     static const char line_queue_export[] VJO_DATA_TABLE(line_queue_export) = "Anki queue · export in the Rubi app";
     static const char line_queue_error[] VJO_DATA_TABLE(line_queue_error) = "Anki queue unavailable: check ux0 storage";
-    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "%s · %s□ region · %s%s close";
+    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "%s · %s□ region · %s OCR box";
     static const char line_nav_character[] VJO_DATA_TABLE(line_nav_character) = "Tap / pad / stick character";
     static const char line_nav_japanese[] VJO_DATA_TABLE(line_nav_japanese) = "Tap / pad / stick Japanese";
     static const char line_nav_word[] VJO_DATA_TABLE(line_nav_word) = "Tap / pad / stick word";
@@ -432,7 +429,6 @@ static void render(int new_content)
     l = g_view.list;
     s_highlight_mode = g_view.highlight_mode;
     s_stick.rest_us = (uint32_t)g_view.stick_lookup_ms * 1000u;
-    s_toggle = g_view.toggle_button;
     if (s_highlight_mode != VJO_HIGHLIGHT_WORD)
         s_nav.words.count = 0;
     s_match_end = 0;
@@ -625,28 +621,23 @@ static void render(int new_content)
     vjo_view_unlock();
 
     /* The other dictionaries' entries for the word follow it in the body (the
-     * right stick scrolls to them). The hint names the buttons only (the right stick
-     * and the rear double tap are the guide's): the longest, Character mode with
-     * Japanese-only and Anki, is 77 characters with Select+R as the toggle (86 with
-     * the sticks' and the rear tap's parts before the one-off box). */
+     * right stick scrolls to them). The hint names the buttons only (the right stick,
+     * the rear double tap and the toggle that closes are the guide's): the longest,
+     * Character mode with Japanese-only and Anki, is 58 characters (86 with the
+     * sticks', the rear tap's and the close's parts before the one-off box). */
     {
         char hint[192];
         const char *nav = s_local_cursor_mode
             ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? line_nav_word
                : s_japanese_only_selection ? line_nav_japanese : line_nav_character)
             : "◀ ▶ ▲ ▼ word";
-        /* the toggle's names (config.c's, as the Rubi app shows them); the rear double tap's scans while open */
-        static const char *const close_names[] VJO_DATA_TABLE(line_close_names) = {"Select", "Start", "L+R",
-                                                                                    "Select+L", "Select+R"};
-        char anki[32] = "", box[24] = "";
-        int rear = s_toggle < 0 || s_toggle >= VJO_TRIGGER_REAR_DOUBLE_TAP;
+        char anki[32] = "";
         if (s_anki_enabled)
             sceClibSnprintf(anki, sizeof(anki), "%s queue · ", s_btn.enter_glyph);
-        if (!rear)
-            sceClibSnprintf(box, sizeof(box), "%s OCR box · ", s_btn.cancel_glyph);
+        /* the toggle closes, as it opened; Cancel draws the one-off box */
         sceClibSnprintf(hint, sizeof(hint),
-                        line_hint_format, nav, anki, box,
-                        rear ? s_btn.cancel_glyph : close_names[s_toggle]);
+                        line_hint_format, nav, anki,
+                        s_btn.cancel_glyph);
         set_rich(s_hint, hint);
     }
     if (rebuild_header) {
@@ -761,19 +752,12 @@ static void region_hint(int force)
 {
     static const char short_box[] VJO_DATA_TABLE(region_short_box) =
         "<font color=\"%s\">Box %d x %d (min. %d x %d)</font>"
-        "<font color=\"#ffffff\"> · stick / ◀▶▲▼ opposite corner · %s undo corner</font>";
+        "<font color=\"#ffffff\"> · stick / ◀▶▲▼ corner · %s undo</font>";
     static const char use_box[] VJO_DATA_TABLE(region_use_box) =
         "<font color=\"#ffd24a\">Use this box? %d x %d</font><font color=\"#ffffff\">"
-        " · stick / ◀▶▲▼ opposite corner · %s save · %s undo corner</font>";
+        " · stick / ◀▶▲▼ corner · %s use · %s undo</font>";
     static const char first_corner[] VJO_DATA_TABLE(region_first_corner) =
-        "<font color=\"#ffffff\">Stick / ◀▶▲▼ move · %s first corner · "
-        "or drag on screen · %s cancel · hold □ full screen</font>";
-    /* the one-off box (Cancel): read once as it is drawn, never saved */
-    static const char once_box[] VJO_DATA_TABLE(region_once_box) =
-        "<font color=\"#ffd24a\">OCR %d x %d</font><font color=\"#ffffff\">"
-        " · stick / ◀▶▲▼ corner · %s read · %s undo</font>";
-    static const char once_first[] VJO_DATA_TABLE(region_once_first) =
-        "<font color=\"#ffffff\">Drag a box to OCR · or stick / ◀▶▲▼ + %s · %s back</font>";
+        "<font color=\"#ffffff\">Drag a box · or stick / ◀▶▲▼ + %s at each corner · %s back</font>";
     int x, y, w = 0, h = 0, corner = vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     int64_t now = sceKernelGetProcessTimeWide();
     char hint[192]; /* the longest is 154 B */
@@ -785,7 +769,7 @@ static void region_hint(int force)
     s_hint_box[2] = h;
     s_hint_us = now;
     if (!corner)
-        sceClibSnprintf(hint, sizeof(hint), s_box_once ? once_first : first_corner,
+        sceClibSnprintf(hint, sizeof(hint), first_corner,
                         s_btn.enter_glyph, s_btn.cancel_glyph);
     else if (w < VJO_RSEL_MIN || h < VJO_RSEL_MIN)
         sceClibSnprintf(hint, sizeof(hint), short_box,
@@ -793,7 +777,7 @@ static void region_hint(int force)
                         VJO_RSEL_MIN, s_btn.cancel_glyph);
     else
         /* #358: a box drawn, the suggested one or the user's: the question enter answers */
-        sceClibSnprintf(hint, sizeof(hint), s_box_once ? once_box : use_box, w, h,
+        sceClibSnprintf(hint, sizeof(hint), use_box, w, h,
                         s_btn.enter_glyph, s_btn.cancel_glyph);
     set_rich(s_region_hint, hint);
 }
@@ -819,14 +803,13 @@ static void touch_write(int action)
 }
 
 /* rows: #358's suggested box, drawn from the start (core/region_select.h vjo_rsel_preset), or 0 (□: by hand; a box the
- * selector refuses too). once: the one-off box (Cancel), read as drawn and never saved. */
-static void enter_region_mode(uint32_t rows, int once)
+ * selector refuses too; Cancel: the one-off box, s_rsel.once, set by the caller). */
+static void enter_region_mode(uint32_t rows)
 {
     __atomic_store_n(&s_mode, MODE_REGION, __ATOMIC_RELAXED);
     touch_write(vjo_touch_hold(&s_touch));
     s_square_down_us = sceKernelGetProcessTimeWide();
-    s_box_once = once;
-    s_square_clear_armed = !once;
+    s_square_clear_armed = 1;
     vjo_rsel_begin(&s_rsel, s_square_down_us);
     vjo_rsel_preset(&s_rsel, rows);
     if (s_panel)
@@ -1203,13 +1186,12 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
     /* #358: a game with no region of its own: the box its whole-screen job suggests, offered once an activation
      * (core/region_select.h vjo_rsel_take), after this frame's buttons (a press as it comes is the overlay's, never
      * the question's), and never as cancel closes the overlay */
-    uint32_t offer;
-    if ((pressed & s_btn.cancel) && (s_toggle < 0 || s_toggle >= VJO_TRIGGER_REAR_DOUBLE_TAP))
-        vjo_post_command(VJO_CMD_CLOSED, NULL); /* the rear double tap scans while open: Cancel closes */
-    else if (pressed & s_btn.cancel)
-        enter_region_mode(0, 1); /* a box read once (the toggle closes) */
-    else if ((offer = vjo_rsel_take(&g_view.suggest)) != 0 || (pressed & SCE_CTRL_SQUARE))
-        enter_region_mode(offer, 0);
+    uint32_t offer = 0;
+    int once = (pressed & s_btn.cancel) != 0;
+    if (once || (offer = vjo_rsel_take(&g_view.suggest)) != 0 || (pressed & SCE_CTRL_SQUARE)) {
+        enter_region_mode(offer);
+        s_rsel.once = once; /* Cancel: a box read once as it is drawn (the toggle closes the overlay) */
+    }
 }
 
 static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
@@ -1238,10 +1220,10 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
     ri.now_us = sceKernelGetProcessTimeWide();
     ev = vjo_rsel_update(&s_rsel, &ri);
 
-    /* hold □ (from entering region mode) for 1 s -> full screen; not the one-off box's */
+    /* hold □ (from entering region mode) for 1 s -> full screen */
     if (!(held & SCE_CTRL_SQUARE))
         s_square_clear_armed = 0;
-    if ((pressed & SCE_CTRL_SQUARE) && !s_box_once) {
+    if (pressed & SCE_CTRL_SQUARE) {
         s_square_clear_armed = 1;
         s_square_down_us = ri.now_us;
     }
@@ -1252,28 +1234,23 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
         return;
     }
     vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
-    /* the one-off box: a drag's lift reads its box at once, as enter does; one too small is refused as enter's */
-    if (ev == VJO_RSEL_LIFT)
-        ev = !s_box_once ? VJO_RSEL_NONE : w >= VJO_RSEL_MIN && h >= VJO_RSEL_MIN ? VJO_RSEL_SAVE : VJO_RSEL_SMALL;
+    /* the debug build's one line per event (core/region_select.h VJO_RSEL_*: 1 corner, 2 corner undone, 3 too small,
+     * 4 save, 5 unchanged), the one-off box's with once 1 */
+    if (ev != VJO_RSEL_NONE)
+        vjo_dlog("region ev %d once %d: %d,%d %dx%d", ev, s_rsel.once, x, y, w, h);
     if (ev == VJO_RSEL_SAVE) {
         VjoRect r = vjo_rsel_rect(x, y, w, h);
-        vjo_dlog("%s box %d,%d %dx%d", s_box_once ? "one-off" : "region", x, y, w, h);
         leave_region_mode();
-        /* #358: the suggested box too, saved as a drawn one is; the one-off box is read and never saved */
-        vjo_post_command(s_box_once ? VJO_CMD_SCAN_BOX : VJO_CMD_SET_REGION, &r);
+        /* #358: the suggested box too, saved as a drawn one is; the one-off box (a drag's lift too) is read once and
+         * never saved */
+        vjo_post_command(VJO_CMD_SET_REGION + (s_rsel.once != 0), &r); /* VJO_CMD_SCAN_BOX for the one-off box */
         return;
     }
     if (ev == VJO_RSEL_CANCEL) {
-        vjo_dlog("region unchanged");
         leave_region_mode();
         return;
     }
-    if (ev == VJO_RSEL_CORNER) /* by enter, or by a new touch */
-        vjo_dlog("region corner %d,%d%s", x, y, pressed & s_btn.enter ? "" : " (touch)");
-    else if (ev == VJO_RSEL_BACK)
-        vjo_dlog("region corner undone");
-    else if (ev == VJO_RSEL_SMALL) {
-        vjo_dlog("region box %dx%d too small", w, h);
+    if (ev == VJO_RSEL_SMALL) {
         s_refused[0] = w;
         s_refused[1] = h;
     }

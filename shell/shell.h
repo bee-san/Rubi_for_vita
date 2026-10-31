@@ -110,8 +110,6 @@ typedef struct {
     uint32_t suggest;
     int full_scan_requested; /* one-shot UI handoff: dismiss an in-progress region selector */
     int colour_scheme; /* app.ini, latched for this game process; atomic UI read */
-    int toggle_button; /* config toggle_button (enum VjoTrigger): the overlay's close in its hint; with the rear
-                        * double tap, which scans while the overlay is open, Cancel still closes it */
 } VjoView;
 
 extern VjoView g_view;
@@ -127,10 +125,11 @@ const char *vjo_view_notice(void);
 /* ---- overlay -> control thread commands ---- */
 enum {
     VJO_CMD_NONE = 0,
-    VJO_CMD_CLOSED,          /* overlay closed (by the cancel button when the rear double tap opens it) */
+    VJO_CMD_CLOSED,          /* overlay closed (no page memory) */
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command); #358's suggested box too */
+    VJO_CMD_SCAN_BOX,        /* Cancel, then a box: read it once, never saved (rect passed to vjo_post_command);
+                              * VJO_CMD_SET_REGION + 1 (overlay.cpp) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
-    VJO_CMD_SCAN_BOX,        /* Cancel, then a box: read it once, never saved (rect passed to vjo_post_command) */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
     /* (after CURSOR: a cursor move or a page takes their slot, worker.c vjo_post_cursor) */
     VJO_CMD_EARLIER,         /* Up from the text's top row: this game's earlier line (line history) */

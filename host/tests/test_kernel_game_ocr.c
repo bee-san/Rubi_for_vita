@@ -1172,9 +1172,9 @@ static void invalid_capture_and_wire(void)
     r.model_dir[sizeof(r.model_dir) - 1] = 0;
     r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 23: a shot names no model */
     /* flags bit 15, unknown from API 47 (API 27's and draft #223's vertical text, which API 47 has in the speed word)
-     * to 57, is API 58's one-off box: every bit is defined, and the bit without a box is refused */
+     * to 57, is API 58's one-off box: every bit is defined, and the box with the probe is refused */
     TEST_CHECK(VJO_GAME_OCR_F_ALL == 0xFFFFFFFFu && VJO_GAME_OCR_F_RECT == 0x8000u);
-    r.flags = 0x8000u; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.flags = 0x8000u | VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = 0;
     r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: 4) */
     r.speed = VJO_GAME_OCR_S_TRIM; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 32: bit 6, a shot's only */
@@ -1790,9 +1790,10 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     TEST_CHECK(vjoOcrComplete(&message) == 0);
 }
 
-/* API 58: VJO_GAME_OCR_F_RECT, the overlay's one-off box. Submit keeps the Shell's box, never the saved region (which
- * stays as it was), and refuses an empty box, or one with the whole frame or the probe; a shot takes no box. Its
- * capture is never the region's: a trusted hook's capture without pixels is refused, as a full frame's is. */
+/* API 58: VJO_GAME_OCR_F_RECT, the overlay's one-off scans. Submit keeps the Shell's box, never the saved region (which
+ * stays as it was), an empty one as the whole frame, and refuses it with the whole frame's flag or the probe; a shot
+ * takes no box. Its capture is never the region's: a trusted hook's capture without pixels is refused, as a full
+ * frame's is. */
 static void rect_job_reads_the_shells_box(void)
 {
     VjoGameOcrRequest r;
@@ -1800,9 +1801,8 @@ static void rect_job_reads_the_shells_box(void)
     const VjoRect saved = {1000, 2000, 30000, 20000}, box = {32768, 0, 32768, 32768};
     setup();
     g.region = saved;
-    r = make_request(); r.flags = VJO_GAME_OCR_F_RECT; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* no box */
-    r.region = box; r.region.h = 0; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
-    r.region = box; r.flags |= VJO_GAME_OCR_F_FULL; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = make_request(); r.region = box; r.flags = VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL;
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.region = box; r.flags |= VJO_GAME_OCR_F_RECT; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(!valid && !pending);
@@ -1814,6 +1814,12 @@ static void rect_job_reads_the_shells_box(void)
     TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG);
     message.size = sizeof(message); message.seq = r.seq; message.text[0] = 0;
     TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3;
+    /* an empty box: the whole frame (the rear double tap's scan) */
+    r = make_request(); r.flags = VJO_GAME_OCR_F_RECT;
+    TEST_CHECK(vjoOcrSubmit(&r) > 0 && !request.region.w && request.width == FB_W && request.height == FB_H);
+    caller = 7; TEST_CHECK(vjoOcrTake(&r) == 0);
+    message.seq = r.seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
     caller = 3;
     /* the next region job reads the saved region again */
     r = make_request(); TEST_CHECK(vjoOcrSubmit(&r) > 0 && !memcmp(&request.region, &saved, sizeof(saved)));
