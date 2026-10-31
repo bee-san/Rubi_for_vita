@@ -69,7 +69,9 @@ enum {
     VJO_RSEL_BACK,     /* cancel took the first corner back */
     VJO_RSEL_SMALL,    /* enter with a box under VJO_RSEL_MIN either way: not saved */
     VJO_RSEL_SAVE,     /* enter: save vjo_rsel_box's box and leave */
-    VJO_RSEL_CANCEL    /* cancel with no first corner: leave, nothing saved */
+    VJO_RSEL_CANCEL,   /* cancel with no first corner: leave, nothing saved */
+    VJO_RSEL_LIFT      /* a drag's finger lifted, the box drawn (vjo_rsel_box): the one-off box reads it at once
+                        * (shell/overlay.cpp); the saved region's selector goes on, as with VJO_RSEL_NONE */
 };
 
 typedef struct {

@@ -438,10 +438,11 @@ static void touch_draws_and_the_stick_finishes(void)
     TEST_CHECK(frame(&r, VJO_RSEL_LEFT, FRAME_US) == VJO_RSEL_NONE);
     frames(&r, 0, 30, FRAME_US);
     TEST_CHECK(box_is(&r, 100, 400, 601, 101));
-    /* lifted: the stick and the d-pad move the opposite corner */
+    /* lifted: the stick and the d-pad move the opposite corner (the one-off box reads it now: VJO_RSEL_LIFT) */
     stick(&r, C, C);
     touch(&r, 0, 0, 0);
-    frame(&r, 0, FRAME_US);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_LIFT);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_NONE); /* once */
     TEST_CHECK(box_is(&r, 100, 400, 601, 101));
     dpad_to(&r, 703, 498);
     TEST_CHECK(box_is(&r, 100, 400, 604, 99));
@@ -476,7 +477,7 @@ static void cancel_during_a_drag_waits_for_the_finger(void)
     touch(&r, 1, 400, 300);
     frame(&r, 0, FRAME_US);
     TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_BACK);
-    /* the finger still down neither starts a new corner nor moves the cursor */
+    /* the finger still down neither starts a new corner nor moves the cursor, and its lift reads no box */
     touch(&r, 1, 450, 350);
     TEST_CHECK(frames(&r, 0, 30, FRAME_US) == VJO_RSEL_NONE);
     TEST_CHECK(cx(&r) == 400 && cy(&r) == 300);
@@ -484,7 +485,7 @@ static void cancel_during_a_drag_waits_for_the_finger(void)
     frame(&r, VJO_RSEL_RIGHT, FRAME_US);
     TEST_CHECK(cx(&r) == 401);
     touch(&r, 0, 0, 0);
-    frame(&r, 0, FRAME_US);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_NONE);
     touch(&r, 1, 50, 60);
     TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_CORNER);
     TEST_CHECK(box_is(&r, 50, 60, 1, 1));

@@ -269,6 +269,7 @@ app when it starts.
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
 | Double-tap the rear touchpad, with the overlay open | Read the whole game screen once with OCR, then look up its words; keep the saved dialogue box |
+| Cancel, then draw a box | [Read that box once](#read-a-box-once) with OCR as soon as it is drawn, then look up its words; nothing is saved |
 | Left / Right | Move through the text in reading order, across its rows: skip matched words in Whole word mode, one character in Character mode (the left stick: one character in both); Right from a row's last word goes to the next row's first, Left from a row's first to the row above's last, and the text's first and last stop the cursor. A text on one row goes round its ends (Right from the last to the first, Left from the first to the last). Held, it repeats (after 0.35 s, 10 steps a second), stopping at the text's ends |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position (held: repeats). **Up on the text's top row shows this game's earlier line** (with **Read text: Automatically**), dimmed between its neighbours: more Up goes further back, up to 32 lines; Down on an earlier line's last row goes to the line after it, and past the newest back to the current text ([line history](line-history.md)) |
@@ -278,7 +279,7 @@ app when it starts.
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
-| Cancel | Close the overlay |
+| L + R (the toggle) | Close the overlay. With the rear double-tap as the toggle, which scans while the overlay is open, Cancel closes it instead (and draws no box) |
 
 **Read outside the dialogue box.** With the overlay open, double-tap the rear touchpad: Rubi reads the
 whole game screen with its text spotter, OCR and configured language-model decoder, then shows the words
@@ -288,8 +289,21 @@ finder fallback still applies. The results stay until you scan again or close th
 game's dialogue changes. Closing returns to the saved dialogue box; this scan never writes `region.ini`,
 adds menus to the dialogue history or offers a replacement dialogue box. Two short taps are needed:
 holds, drags and fingers already held when the overlay opens are ignored. If rear double-tap is your
-configured opening or subtitle trigger, it keeps that action while closed; while open it scans, so use
-Cancel to close. This binding is new in 0.10.1 and has not been tested on a console.
+configured opening or subtitle trigger, it keeps that action while closed; while open it scans, so as the opening
+trigger Cancel closes the overlay (and draws no box); as the subtitle trigger the opening trigger still closes it. This binding is new in 0.10.1 and has not been tested on a console.
+
+<a id="read-a-box-once"></a>**Read a box once.** For text the hook does not carry and the dialogue region does not cover (a menu, a
+choice, a sign), press Cancel with the overlay open: the game shows again, dimmed, with the region selector. Drag a
+box on the touchscreen, or move with the left stick or the d-pad, press Enter at one corner and again at the opposite
+one. As soon as the box is drawn (the finger lifts, or the second Enter) Rubi reads it with OCR, with no question
+asked, and shows its words with the same navigation, lookups and card saving as the rear double-tap's scan. A box
+under 32 × 32 pixels is refused in red and the selector stays; Cancel with no corner set goes back to the overlay.
+The box is never saved and never written to `region.ini`: it is read once, its text stays until you read another box,
+double-tap the rear or close the overlay, and the next opening reads the dialogue region as before. It is OCR always
+(no hook answers it), with the configured line finder (the rear tap's scan uses the text spotter), and its lines are
+not added to the dialogue history. Same machinery as the rear tap: the box goes to the game worker in the job's
+request (API 58, `VJO_GAME_OCR_F_RECT`), so it costs that job's memory and nothing more. Host-tested; not yet run on a
+console.
 
 **Earlier lines.** With **Read text** on **Automatically**, the overlay can go back through this game's
 earlier dialogue, the lines `history.csv` keeps ([ocr-history.md](ocr-history.md)): Up on the text's

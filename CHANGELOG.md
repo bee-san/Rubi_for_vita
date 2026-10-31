@@ -11,6 +11,19 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- **Read a box once with Circle.** Text the hook does not carry (a menu, a choice, a sign) can now be read without
+  touching the dialogue region: with the overlay open, press Cancel (○ on most consoles, × where × is Cancel), draw a
+  box by dragging on the screen or with the stick or the d-pad and Enter, and Rubi reads that box with OCR as soon as
+  it is drawn, lifting the finger or pressing Enter, with no question asked, and shows its words as the rear
+  double-tap's scan does. The box is never saved: closing the overlay goes back to the dialogue region. It reuses the
+  rear tap's one-off scan and the region selector: one new request flag (API 58, `VJO_GAME_OCR_F_RECT`, the free bit
+  15) tells the kernel to read the Shell's box instead of the saved region; no new buffer, thread or allocation.
+  Cancel no longer closes the overlay: the toggle does (L + R by default), as the hint line now says, except when
+  the toggle is the rear double-tap, which scans while the overlay is open, so Cancel still closes it there (and the
+  box is not offered). The README's controls diagram shows it. Host-tested; not yet run on a console.
+
 ## [0.10.5] - 2026-10-31
 
 The game's skip mode no longer inflates Triangle's reading statistics: with a trusted hook, the lines a skip passes

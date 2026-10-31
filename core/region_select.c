@@ -70,6 +70,8 @@ int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in)
     s->last_us = in->now_us;
 
     if (!in->touch) {
+        if (s->touching == 1 && s->anchored)
+            ev = VJO_RSEL_LIFT;
         s->touching = 0;
     } else if (s->touching != 2) {
         int tx = clamp_px(in->tx, VJO_RSEL_W), ty = clamp_px(in->ty, VJO_RSEL_H);

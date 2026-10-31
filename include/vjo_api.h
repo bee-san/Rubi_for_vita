@@ -12,6 +12,8 @@
  * path, and a change the three must agree on (a struct's layout, a syscall, a flag bit, a step kind, a value's
  * meaning) takes the next number. A number names one interface only, so numbers only grow, past those that drafts
  * or reverted changes used.
+ * 58: VJO_GAME_OCR_F_RECT (include/vjo_game_ocr.h), a job of the box the Shell gives in the request, whatever the
+ * saved region: the overlay's one-off box (Cancel, then a box). Sizes and layouts are unchanged.
  * 57: current-game hook profiles, loaded by vjoOcrHookProfile before hook installation, and VJO_EV_FULL_SCREEN,
  * the rear double tap while the overlay blocks game input, for one full-screen OCR lookup.
  * 55: the pause for the frame (config.ini ocr_pause, off by default; #348, docs/game-pause.md):
@@ -20,7 +22,7 @@
  * (VJO_GITEM_FRAME), which the job reads from; the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged.
  * What each earlier number changed: 14 to 57 one by one in this comment as main f5d66795 has it (git show
  * f5d66795:include/vjo_api.h), and CHANGELOG.md (the releases that changed it name it). */
-#define VJO_API_VERSION 57
+#define VJO_API_VERSION 58
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

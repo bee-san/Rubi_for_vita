@@ -1040,6 +1040,7 @@ int vjoOcrCancel(uint32_t seq) { return 0; }
 static void reset(void)
 {
     full_screen = job_full_screen = 0;
+    memset(&scan_box, 0, sizeof(scan_box));
     /* API 31: no game session's hook state, no hook fields in the results */
     hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
     theme_loads = theme_choice = 0;
@@ -6055,6 +6056,68 @@ static void test_rear_full_screen_retries_fallback_and_exit(void)
     mem_free();
 }
 
+/* Cancel, then a box (overlay.cpp): the box read once, as the rear tap's scan is, through its own region
+ * (API 58's VJO_GAME_OCR_F_RECT) with the configured finder; nothing saved, the saved region kept, the text pinned
+ * until the close, which brings the dialogue region back. A rear tap after it reads the whole frame. */
+static void test_scan_box_once(void)
+{
+  for (int mode = VJO_OCR_AUTO; mode <= VJO_OCR_ON_PRESS; mode++) {
+    cursor_setup();
+    cfg.ocr_mode = loaded.ocr_mode = mode;
+    cfg.ocr_finder = loaded.ocr_finder = VJO_FINDER_GRAD; /* the box keeps it: no spotter */
+    open_overlay(); finish_current_job();
+    int saves = region_saves, pushes = regions_set;
+    unsigned recorded = history_calls;
+    const VjoRect box = {1000, 2000, 30000, 9000};
+    fake_recognized_text = "犬猫";
+    vjo_post_command(VJO_CMD_SCAN_BOX, &box);
+    control_tick(0);
+    TEST_ASSERT(job_running && job_full_screen && full_screen == 2 && ov == OV_OPEN && input_blocked);
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN && !g_view.full_scan_requested);
+    finish_current_job();
+    TEST_CHECK((fake_game_request.flags & (VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL)) == VJO_GAME_OCR_F_RECT);
+    TEST_CHECK(!memcmp(&fake_game_request.region, &box, sizeof(box)));
+    TEST_CHECK(!(fake_game_request.speed & VJO_GAME_OCR_S_SPOT));
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
+    TEST_CHECK(region_saves == saves && regions_set == pushes && history_calls == recorded);
+    TEST_CHECK(!local_text_scene && !local_text_capture_seq && !text_generation);
+    check_shown("犬猫", "dog", 0);
+    unsigned scans = submits;
+    next_scene(40);
+    test_now += 4 * REFRESH_GAP_US;
+    control_tick(VJO_EV_REGION_STABLE); /* pinned: no refresh replaces it */
+    TEST_CHECK(!job_running && submits == scans);
+    check_shown("犬猫", "dog", 0);
+    /* an empty box is ignored; the rear tap then reads the whole frame */
+    const VjoRect empty = {1000, 2000, 0, 0};
+    vjo_post_command(VJO_CMD_SCAN_BOX, &empty);
+    control_tick(0);
+    TEST_CHECK(!job_running && full_screen == 2);
+    control_tick(VJO_EV_FULL_SCREEN);
+    TEST_ASSERT(job_running && job_full_screen);
+    finish_current_job();
+    TEST_CHECK((fake_game_request.flags & (VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL)) == VJO_GAME_OCR_F_FULL);
+    TEST_CHECK(fake_game_request.speed & VJO_GAME_OCR_S_SPOT);
+    vjo_post_command(VJO_CMD_SCAN_BOX, &box); /* a box again, then the close */
+    control_tick(0);
+    TEST_ASSERT(job_running && job_full_screen);
+    close_overlay();
+    TEST_CHECK(job_cancelled && !full_screen && !scan_box.w && !input_blocked);
+    finish_current_job();
+    TEST_CHECK(!local_text_valid && !g_view.open);
+    unsigned before = submits;
+    vjo_post_command(VJO_CMD_SCAN_BOX, &box); /* no action outside the overlay */
+    control_tick(0);
+    TEST_CHECK(!full_screen);
+    if (job_running) { TEST_CHECK(!job_full_screen); finish_current_job(); }
+    open_overlay(); /* the dialogue region, as before (Auto may have read it already) */
+    if (job_running) finish_current_job();
+    TEST_CHECK(submits > before && !(fake_game_request.flags & (VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL)));
+    TEST_CHECK(region_saves == saves && regions_set == pushes);
+    close_overlay(); mem_free();
+  }
+}
+
 static void test_on_press_overlay_never_refreshes(void)
 {
     cursor_setup();
@@ -9794,6 +9857,7 @@ TEST_LIST = {
     {"rear_full_screen_pipeline_and_lifetime", test_rear_full_screen_pipeline_and_lifetime},
     {"rear_full_screen_supersedes_work_and_cancels", test_rear_full_screen_supersedes_work_and_cancels},
     {"rear_full_screen_retries_fallback_and_exit", test_rear_full_screen_retries_fallback_and_exit},
+    {"scan_box_once", test_scan_box_once},
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},
     {"refresh_names_its_model_on_the_cards_only_when_it_replaces", test_refresh_names_its_model_on_the_cards_only_when_it_replaces},
     {"refresh_logs_quietly_and_a_failing_one_backs_off", test_refresh_logs_quietly_and_a_failing_one_backs_off},
