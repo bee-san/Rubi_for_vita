@@ -82,7 +82,8 @@ typedef struct {
     VjoReadingTime time;
     VjoReadingScope scope;
 } TotalFile;
-_Static_assert(sizeof(TotalFile) == 112, "reading cache layout");
+/* 120 B since skip mode's counters (#602): a cache of 112 B, which counted skipped lines, is counted again */
+_Static_assert(sizeof(TotalFile) == 120, "reading cache layout");
 static uint32_t total_file_check(const TotalFile *f)
 {
     uint32_t check = 0x33544d44u + vjo_reading_rule;
@@ -279,7 +280,7 @@ int vjo_history_append(const VjoHistoryRecord *r)
                 g_view.version++;
             } else if (total.covered == start && !(end >> 32)) {
                 vjo_reading_scope_add(&total.time, &total.scope, us, game, chars);
-                total.chars += total.time.last_chars;
+                total.chars += total.time.counted; /* less a skip's lines (core/history_lines.h) */
                 if (total.scope.end_us && us >= total.scope.end_us) total.requested |= 1;
                 total.covered = (uint32_t)end;
                 g_view.version++;

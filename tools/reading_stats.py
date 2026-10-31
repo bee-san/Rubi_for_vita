@@ -30,7 +30,10 @@ time order (this tool sorts by time; the overlay breaks its interval where the c
 change of game is a break. --time-rule break (or --break-minutes N) is Rubi 0.9.7's rule instead: a gap of more
 than N minutes (default 5) is a break, and the record before it gets none (how long it was read is
 unknown). With either rule two records at one time make no interval, as in the overlay. Characters per
-hour divides the characters of the records that got a time by that time; the totals count every record.
+hour divides the characters of the records that got a time by that time; the totals count every record
+but skip mode's: as in the overlay, three lines of 12 or more characters in a row, each followed by the
+next record in under a second, are a skip, and they and the quick lines after them count neither
+characters nor time (docs/reading-time.md#skip-mode).
 
 A record cut short (power lost while it was written: no line break at the file's end, or fewer
 cells than Rubi writes), even when more records were appended after it, is skipped and counted;
@@ -127,7 +130,8 @@ class Record:
     time: float      # UTC Unix seconds
     characters: int
     stored: bool     # the count came from the file (else this tool counted the line)
-    seconds: float | None = None  # reading time credited to it, None after a break
+    seconds: float | None = None  # reading time credited to it, None after a break or when skipped
+    skipped: bool = False         # shown in skip mode: neither its characters nor its time count (skipped_lines)
     source: str = "unknown"       # where the line came from: hook, ocr or unknown (SOURCES)
     us: int = 0      # the time in whole microseconds, as written (Rubi's six digits: exact)
 
@@ -138,9 +142,15 @@ class Totals:
     characters: int = 0
     timed_characters: int = 0
     seconds: float = 0.0
+    skipped_lines: int = 0       # records skip mode took out (counted in lines, not in characters or time)
+    skipped_characters: int = 0
 
     def add(self, r: Record) -> None:
         self.lines += 1
+        if r.skipped:
+            self.skipped_lines += 1
+            self.skipped_characters += r.characters
+            return
         self.characters += r.characters
         if r.seconds is not None:
             self.timed_characters += r.characters
@@ -469,25 +479,58 @@ def adaptive_credit(gap_us: int, chars: int, pace: int) -> tuple[int, int]:
     return min(g, cap), pace
 
 
+# Skip mode (core/history_lines.h, docs/reading-time.md#skip-mode): a line of SKIM_CHARS or more credited its whole
+# gap to the next record, under SKIM_GAP_US, was skimmed, not read; SKIM_LINES such lines in a row (shorter skimmed
+# lines between them neither count nor end the run) are a skip, and they and every skimmed line after them, of any
+# length, count neither characters nor time, until a line is not skimmed or the interval breaks.
+SKIM_GAP_US = 1_000_000   # VJO_READING_SKIM_GAP_US
+SKIM_CHARS = 12           # VJO_READING_SKIM_CHARS
+SKIM_LINES = 3            # VJO_READING_SKIM_LINES
+
+
+def skipped_lines(lines) -> list:
+    """lines: (credit_us, characters) of each record in order, credit_us the microseconds its line was credited
+    from the gap to the next record (0 or None: none, a break). The indexes of the lines skip mode takes out."""
+    out, run, skip = [], [], False
+    for i, (credit, chars) in enumerate(lines):
+        if not credit or credit >= SKIM_GAP_US:
+            run, skip = [], False  # read, or a break: no run
+        elif skip:
+            out.append(i)
+        elif chars >= SKIM_CHARS:
+            run.append(i)
+            if len(run) == SKIM_LINES:
+                out += run
+                run, skip = [], True
+    return out
+
+
 def credit_time(records, break_seconds: float | None = None) -> None:
     """Each record's reading time: its line's share of the gap to the next record of the same game (the
     records are in time order). With break_seconds, a gap of more than that is a break and the line gets
-    none (Rubi 0.9.7's rule: the overlay's 15 s, this tool's 5 minutes); without, the adaptive rule."""
+    none (Rubi 0.9.7's rule: the overlay's 15 s, this tool's 5 minutes); without, the adaptive rule. Then
+    skip mode's lines (skipped_lines) are marked skipped."""
     paces: dict = {}
+    credits = []
     for r, nxt in zip(records, records[1:]):
+        credit = 0
         if nxt.game != r.game:
             r.seconds = None
         elif break_seconds is not None:
             # (two records at one time: no interval, as the overlay's 15s rule and 0.9.7's have it)
             gap = nxt.time - r.time
             r.seconds = gap if 0 < gap <= break_seconds else None
+            credit = nxt.us - r.us if r.seconds is not None else 0
         elif nxt.us > r.us:
             credit, paces[r.game] = adaptive_credit(nxt.us - r.us, r.characters, paces.get(r.game, 0))
             r.seconds = credit / 1e6
         else:  # the same time, or a clock set back: no interval
             r.seconds = None
+        credits.append((credit, r.characters))
     if records:
         records[-1].seconds = None
+    for i in skipped_lines(credits):
+        records[i].skipped, records[i].seconds = True, None
 
 
 def summarize(records, utc: bool = False):
@@ -562,6 +605,9 @@ def render(report: Report, break_minutes: float | None, utc: bool) -> str:
              " is a break" if break_minutes is not None else
              "Reading time: each line at most 2.5 times what your pace takes for it (2 s to 5 minutes), as the"
              " overlay counts (adaptive); a change of game is a break"), ""]
+    if total.skipped_lines:
+        out.insert(-1, f"Skip mode: {total.skipped_lines:,} lines ({total.skipped_characters:,} characters) shown"
+                       " for under a second in a row, not counted (docs/reading-time.md#skip-mode)")
     out += table([("All games", total)])
     out += ["", "By text source"]
     out += table([(SOURCE_LABELS[s], t) for s, t in by_source(report.records).items()])

@@ -9,6 +9,7 @@ method against the truth:
     python3 tools/reading_time_sim.py                 # the table of errors (markdown)
     python3 tools/reading_time_sim.py --json out.json # and every number, per scenario and profile
     python3 tools/reading_time_sim.py --fixtures DIR  # event-timeline fixtures: history.csv + truth
+    python3 tools/reading_time_sim.py --skip          # skip mode's filter (docs/reading-time.md#skip-mode)
 
 Every parameter below is an assumption, not a measurement on a console (docs/reading-time.md says
 which ones and why); `--sensitivity` reruns the comparison with each one changed. Nothing here reads a
@@ -26,7 +27,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from reading_stats import adaptive_credit  # noqa: E402  (the overlay's rule, in its integers)
+from reading_stats import adaptive_credit, skipped_lines  # noqa: E402  (the overlay's rules, in its integers)
 
 # ---- the readers ----
 
@@ -65,6 +66,13 @@ def mean_box_chars() -> float:
 # ---- the sessions ----
 
 
+# A trusted hook's line (API 49, hook_trust = on) wakes the Shell even while the line before it still draws, so
+# in skip mode a line is recorded whenever no job is claimed: one line per job, the job's time apart. The host's
+# hook latency bench reads a trusted line 78-86 ms after the game writes it (docs/native-hooks.md, measured on the
+# host); on a console unmeasured, hence up to 0.5 s here [assumed, docs/reading-time.md#skip-mode].
+SKIP_JOB = (0.1, 0.5)
+
+
 @dataclass(frozen=True)
 class Scenario:
     """What happens besides reading. Rates are per hour of true reading; durations in seconds."""
@@ -79,6 +87,7 @@ class Scenario:
     backlog: tuple = (0.0, (1, 4))          # (per hour, lines re-shown)
     backlog_recorded: float = 0.6           # an old line re-shown in the box is recorded again
     skip: tuple = (0.0, (20, 200))          # (per hour, lines skipped at 0.1 s each)
+    skip_job: tuple = ()                    # a trusted hook (API 49): a skipped line recorded every (min, max) s
     auto_share: float = 0.0                 # lines read in the game's auto mode
     partial: float = 0.0                    # a typewriter pause records a part of the line first
     flicker: float = 0.0                    # the same screen read again with a different reading
@@ -104,6 +113,9 @@ SCENARIOS = (
     everyday("ocr"),
     replace(everyday("hook"), name="everyday (hook)"),
 )
+# Skip mode's own scenario (--skip, docs/reading-time.md#skip-mode): out of the grid above, where it would measure the
+# skip filter, which only Rubi's rule has, rather than the AFK rules the grid compares.
+TRUSTED_SKIP = Scenario("skip mode (trusted hook)", "hook", skip=(1.0, (20, 200)), skip_job=SKIP_JOB)
 
 
 @dataclass
@@ -191,6 +203,13 @@ def simulate(p: Profile, s: Scenario, seed: int, game: str = "vita-PCSG00415"):
     while truth.seconds < s.hours * 3600.0:
         if happens(rng, s.skip[0], 60.0):  # a skip: lines flash by, nothing settles, nothing is read
             n = rng.randint(*s.skip[1])
+            if s.skip_job:  # a trusted hook: the line shown as each job starts is recorded
+                skipped = [box_chars(rng) for _ in range(n)]
+                at = t + rng.uniform(*s.skip_job)
+                while at < t + n * 0.1:
+                    k = int((at - t) / 0.1)
+                    read(at, skipped[k], ("line", line_id + 1 + k))
+                    at += rng.uniform(*s.skip_job)
             t += n * 0.1
             line_id += n
         chars = box_chars(rng)
@@ -381,20 +400,35 @@ def gsm_v2(scale: float = 1.0, filtered: bool = False, session: float = math.inf
     return run
 
 
+def adaptive_lines(recs) -> list:
+    """(credit_us, characters) of each record by the adaptive rule, in the overlay's integers."""
+    pace, lines = 0, []
+    for g, r in gaps(recs):
+        credit = 0
+        gap = int(round(g * 1e6)) if g is not None else 0
+        if gap > 0:
+            credit, pace = adaptive_credit(gap, r.chars, pace)
+        lines.append((credit, r.chars))
+    return lines
+
+
 def rubi_adaptive(recs, truth=None):
     """Rubi's adaptive rule (reading_time = adaptive): tools/reading_stats.py adaptive_credit, the same
-    integers as core/history_lines.c vjo_reading_time_add; per game, no sessions."""
-    pace, sec, timed = 0, 0, 0
-    for g, r in gaps(recs):
-        if g is None:
-            continue
-        gap = int(round(g * 1e6))
-        if gap <= 0:
-            continue
-        credit, pace = adaptive_credit(gap, r.chars, pace)
-        sec += credit
-        timed += r.chars
-    return Result(sec / 1e6, sum(r.chars for r in recs), timed)
+    integers as core/history_lines.c vjo_reading_time_add; per game, no sessions; skip mode's lines out."""
+    return skip_filtered(adaptive_lines(recs))
+
+
+def rubi_adaptive_unfiltered(recs, truth=None):
+    """rubi_adaptive with every line counted, skip mode's too (Rubi before #602)."""
+    lines = adaptive_lines(recs)
+    return Result(sum(c for c, _ in lines) / 1e6, sum(n for _, n in lines), sum(n for c, n in lines if c))
+
+
+def skip_filtered(lines) -> Result:
+    """(credit_us, characters) of each record: the totals less skip mode's lines (tools/reading_stats.py)."""
+    out = set(skipped_lines(lines))
+    kept = [x for i, x in enumerate(lines) if i not in out]
+    return Result(sum(c for c, _ in kept) / 1e6, sum(n for _, n in kept), sum(n for c, n in kept if c))
 
 
 def method_online(q: float = 0.5, k: float = 2.5, step: float = 0.125, floor: float = 2.0,
@@ -568,7 +602,7 @@ def compact(results, methods, key: str) -> str:
 # appends the records through the real writer and checks the counters; tools/tests/test_reading_stats.py
 # checks this tool and the error against the truth.
 FIXTURES = (  # (scenario, profile): every scenario, a learner; the everyday one at the two ends too
-    *((s.name, "learner 6k") for s in SCENARIOS),
+    *((s.name, "learner 6k") for s in SCENARIOS + (TRUSTED_SKIP,)),
     ("everyday", "beginner 3k"), ("everyday", "fluent 18k"))
 FIXTURE_HOURS = 1.0
 
@@ -580,27 +614,33 @@ def text_id(text) -> str:
     return {"line": "L", "part": "P", "misread": "X", "menu": "M"}[kind] + str(n)
 
 
+def overlay_totals(lines) -> tuple:
+    """(credit_us, characters) of each record, in the overlay's integers: (active_us, timed_chars, characters)
+    less skip mode's lines."""
+    out = set(skipped_lines(lines))
+    kept = [x for i, x in enumerate(lines) if i not in out]
+    return sum(c for c, _ in kept), sum(n for c, n in kept if c), sum(n for _, n in kept)
+
+
 def rule_15s(recs) -> tuple:
     """Rubi 0.9.7's overlay rule in its integers: (active_us, timed_chars, characters)."""
-    active = timed = 0
-    for r, n in zip(recs, recs[1:]):
-        gap = int(round(n.time * 1e6)) - int(round(r.time * 1e6))
-        if 0 < gap <= 15_000_000:
-            active += gap
-            timed += r.chars
-    return active, timed, sum(r.chars for r in recs)
+    lines = []
+    for r, n in zip(recs, recs[1:] + [None]):
+        gap = int(round(n.time * 1e6)) - int(round(r.time * 1e6)) if n else 0
+        lines.append((gap if 0 < gap <= 15_000_000 else 0, r.chars))
+    return overlay_totals(lines)
 
 
 def rule_adaptive(recs) -> tuple:
     """The adaptive rule in the overlay's integers (tools/reading_stats.py adaptive_credit), one game."""
-    active = timed = pace = 0
-    for r, n in zip(recs, recs[1:]):
-        gap = int(round(n.time * 1e6)) - int(round(r.time * 1e6))
+    pace, lines = 0, []
+    for r, n in zip(recs, recs[1:] + [None]):
+        gap = int(round(n.time * 1e6)) - int(round(r.time * 1e6)) if n else 0
+        credit = 0
         if gap > 0:
             credit, pace = adaptive_credit(gap, r.chars, pace)
-            active += credit
-            timed += r.chars
-    return active, timed, sum(r.chars for r in recs), pace
+        lines.append((credit, r.chars))
+    return (*overlay_totals(lines), pace)
 
 
 def fixture_name(scenario: str, profile: str) -> str:
@@ -611,7 +651,7 @@ def fixture_name(scenario: str, profile: str) -> str:
 def write_fixtures(directory: Path) -> list:
     """FIXTURES as directory/<name>.tsv; returns the names."""
     directory.mkdir(parents=True, exist_ok=True)
-    scen, prof = {s.name: s for s in SCENARIOS}, {p.name: p for p in PROFILES}
+    scen, prof = {s.name: s for s in SCENARIOS + (TRUSTED_SKIP,)}, {p.name: p for p in PROFILES}
     made = []
     for sname, pname in FIXTURES:
         s, p = replace(scen[sname], hours=FIXTURE_HOURS), prof[pname]
@@ -646,6 +686,47 @@ def read_fixture(path: Path):
     return head, recs
 
 
+def skip_report(seeds: int = 12) -> str:
+    """Skip mode (docs/reading-time.md#skip-mode): the characters' and characters/hour's error (estimated / true - 1,
+    %: the mean and the worst run of every reader) with every line counted and with skip mode's lines out, for a
+    trusted hook's skip at several job times; then what the filter takes from fast readers' ordinary reading."""
+    def error(scenario):
+        rows = {"before": [], "after": []}
+        for p in PROFILES:
+            for seed in range(seeds):
+                recs, truth = simulate(p, scenario, seed)
+                true_cph = truth.chars * 3600.0 / truth.seconds
+                for key, method in (("before", rubi_adaptive_unfiltered), ("after", rubi_adaptive)):
+                    res = method(recs)
+                    rows[key].append((100.0 * (res.chars / truth.chars - 1), 100.0 * ((res.cph() or 0) / true_cph - 1)))
+        cells = []
+        for col in (0, 1):
+            for key in ("before", "after"):
+                v = [r[col] for r in rows[key]]
+                cells.append(f"{statistics.mean(v):+.1f} % ({max(v, key=abs):+.1f})")
+        return cells[0], cells[1], cells[2], cells[3]
+    lines = ["| a record every | characters before | after | characters/hour before | after |", "|---|---:|---:|---:|---:|"]
+    for job in ((0.1, 0.3), SKIP_JOB, (0.3, 1.0), (0.5, 1.5)):
+        name = f"{job[0]:g}-{job[1]:g} s" + (" (the scenario)" if job == SKIP_JOB else "")
+        lines.append(f"| {name} | " + " | ".join(error(replace(TRUSTED_SKIP, skip_job=job))) + " |")
+    lines.append(f"| everyday, trusted hook ({SKIP_JOB[0]:g}-{SKIP_JOB[1]:g} s) | "
+                 + " | ".join(error(replace(everyday("hook"), skip_job=SKIP_JOB))) + " |")
+    lines += ["", "| reader | spread | characters of ordinary reading taken as skipped |", "|---|---:|---:|"]
+    ordinary = [s for s in SCENARIOS if s.name in ("clean", "auto mode", "everyday", "everyday (hook)")]
+    for cph in (18000, 30000, 40000):
+        for sigma in (0.4, 0.6):
+            p = Profile(f"{cph}", cph, 0.002, sigma=sigma)
+            lost = total = 0
+            for s in ordinary:
+                for seed in range(seeds // 3 or 1):
+                    recs, _ = simulate(p, s, seed)
+                    lines_ = adaptive_lines(recs)
+                    lost += sum(lines_[i][1] for i in skipped_lines(lines_))
+                    total += sum(n for _, n in lines_)
+            lines.append(f"| {cph:,} an hour | {sigma} | {100.0 * lost / total:.2f} % |")
+    return "\n".join(lines)
+
+
 def sensitivity(seeds: int = 6, methods=CANDIDATES):
     """The methods' mean |time error| over the grid with one assumption changed at a time."""
     base_profiles = PROFILES
@@ -678,8 +759,12 @@ def main(argv=None) -> int:
     ap.add_argument("--json", type=Path)
     ap.add_argument("--fixtures", type=Path)
     ap.add_argument("--sensitivity", action="store_true")
+    ap.add_argument("--skip", action="store_true", help="skip mode's report only (docs/reading-time.md#skip-mode)")
     ap.add_argument("--all", action="store_true", help="every method, not just the headline ones")
     args = ap.parse_args(argv)
+    if args.skip:
+        print(skip_report(args.seeds))
+        return 0
     if args.fixtures:
         for stem in write_fixtures(args.fixtures):
             print(stem)

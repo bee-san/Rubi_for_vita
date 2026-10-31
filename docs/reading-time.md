@@ -27,20 +27,23 @@ simulated timelines: `tools/reading_time_sim.py`. It is a test harness, not a fe
   text is not the record before's (a blank read lets the same text be written again), timed at the
   read's start: 300 ms after the line finished typing (30 a second) for OCR, at once for a hook
   (API 41); a line the player pressed past before the read is not recorded; skipped lines are not
-  recorded (they never settle, and a hook's quick lines wake nobody).
+  recorded by OCR or an untrusted hook (they never settle, and such a hook's quick lines wake nobody), but
+  a trusted hook (API 49) records one at each job ([Skip mode](#skip-mode)).
 - **The truth**: the time on each read line, lookups and re-reading in the backlog included; no AFK,
   suspend, standby, menu or skipped line. Its characters: each read line once.
 
 Eight scenarios (clean reading, AFK breaks, suspend and standby, menus and backlog, skip mode, auto mode,
-and an everyday mix of all of them, by OCR and by hook), four readers, 12 runs of 4 hours each. Every
+and an everyday mix of all of them, by OCR and by hook), four readers, 12 runs of 4 hours each (skip mode with a
+trusted hook has its own report: [Skip mode](#skip-mode)). Every
 parameter is an assumption, so `--sensitivity` reruns the comparison with each changed. To reproduce:
 
 ```sh
 python3 tools/reading_time_sim.py --seeds 12 --sensitivity
 python3 tools/reading_time_sim.py --fixtures host/fixtures/reading_time   # the tests' timelines
+python3 tools/reading_time_sim.py --skip                                  # skip mode's filter
 ```
 
-`host/fixtures/reading_time/*.tsv` are ten 1-hour timelines from it, with what each rule credits;
+`host/fixtures/reading_time/*.tsv` are eleven 1-hour timelines from it, with what each rule credits;
 `host/tests/test_shell_history.c` appends them through the real writer and checks the Shell's counters
 and a recount, and `tools/tests/test_reading_stats.py` checks `tools/reading_stats.py` and the error
 against the truth.
@@ -132,6 +135,71 @@ tracker on reader events (Moderate) or any loss of focus (Strict), and after an 
 interaction (off by default), rolling the idle time back (`book-reading-tracker.svelte`,
 `settings-content.svelte`, `e7ec1d26`): the 15 s rule was that idle rollback at 15 s.
 
+## Skip mode
+
+Since API 49 a trusted hook's line (`hook_trust = on`, the default) wakes the Shell even while the line before it
+still draws (`kernel/game_ocr.c`), so in the game's skip mode every line that arrives while no job is claimed becomes
+a job and a record in `history.csv` ([#602](https://github.com/bee-san/Rubi_for_vita/issues/602)). Each such line
+added its characters to the totals and was credited its fraction of a second, so characters and characters/hour
+rose with every skip. OCR and untrusted hooks never record a skip: nothing settles, and such a hook's quick lines
+wake nobody.
+
+**The rule** (`core/history_lines.c` `vjo_reading_scope_add`, both `reading_time` rules; `tools/reading_stats.py`
+`skipped_lines`): a line of 12 or more characters whose next record of its game came less than 1 s later was
+skimmed, not read (12 characters in under a second is over 43,200 an hour). Three such lines in a row are a skip:
+their characters, their time and their timed characters come out of the counters again, the day's too, and so does
+every skimmed line after them, of any length, until a line is not skimmed (the one the skip landed on, which is
+read) or the interval breaks (another game, a clock set back, a damaged record; in the overlay also local
+midnight, which already breaks the day's interval, so that a skip's lines are all of one day).
+Skimmed lines under 12 characters neither count towards the three nor end the run; one or two skimmed lines stay
+counted. `history.csv` keeps every line, so line history, lookups and Anki are as before. The writer applies the rule
+as it appends and a recount applies it to the file, with the same function: the run so far is kept with the total
+(`VjoReadingTime.skim`, `skim_chars`), so a cache or a restart in the middle of a run continues it. Histories that
+earlier skips inflated are corrected at the first count: the cache grew from 112 to 120 B, so every game's total is
+counted once more from `history.csv`.
+
+This is [GameSentenceMiner](https://github.com/bpwhelan/GameSentenceMiner)'s skip detection
+(`docs/SKIP_DETECTION.md`, `text_pipeline/skip_detection.py`) cut down to what Rubi sees. GameSentenceMiner sees
+every line, holds each one out of the stats for 1.5 s, and confirms a burst by its volume (300 new characters in
+1.5 s, 180 of them outside the largest line), by rapid replacement (4 replacements of 12 or more characters within
+750 ms, 100 in all) or by Ctrl held; then it leaves the pending lines out and records a reading break. Rubi records at
+most one line per job, so it sees fewer lines and only their times: no volume window and no held button (many games
+toggle skip mode, and the button varies). It counts each line as it is recorded, so the total moves at once, and takes
+a skip's lines back when the third one shows it is a skip. The thresholds keep GameSentenceMiner's 12 characters and
+take three lines in a row in place of its four replacements in 750 ms.
+
+**Simulated** (`python3 tools/reading_time_sim.py --skip`, its `skip mode (trusted hook)`: a skip of 20-200 lines at
+0.1 s each, once an hour, a line recorded at each job; four readers, 12 runs of 4 hours) [estimates: simulated]. The time between two
+records in a skip is the job's: the host's hook latency bench reads a trusted line 78-86 ms after the game writes it
+([native-hooks.md](native-hooks.md#how-fast-measured), measured on the host), and on a console it is unmeasured, so
+the scenario takes 0.1-0.5 s and the table tries others. Error against the truth (estimated / true − 1, the
+mean, and the worst reader-run), adaptive rule:
+
+| a record every | characters before | after | characters/hour before | after |
+|---|---:|---:|---:|---:|
+| 0.1-0.3 s | +92.8 % (+160.9) | +0.2 % (+0.5) | +92.4 % (+160.2) | +2.0 % (+3.9) |
+| 0.1-0.5 s (the scenario) | +59.3 % (+95.9) | +0.2 % (+0.6) | +59.0 % (+94.3) | +1.9 % (+4.1) |
+| 0.3-1 s | +26.8 % (+48.8) | +0.3 % (+1.1) | +26.6 % (+48.1) | +1.9 % (+3.7) |
+| 0.5-1.5 s | +17.1 % (+30.3) | +13.5 % (+21.7) | +17.2 % (+29.6) | +13.9 % (+21.2) |
+| everyday, trusted hook (0.1-0.5 s) | +18.2 % (+40.3) | +0.5 % (+1.8) | +13.5 % (+32.4) | −3.0 % (−12.4) |
+
+Reading time hardly moves (−1.7 % after, the clean scenario's own error): the skipped lines' credits are small, and
+the line the skip landed on is still credited. Every other scenario, and every existing fixture, is unchanged: in
+them no three lines of 12 or more characters each go in under a second. Readers faster than the simulation's assume
+lose almost nothing either: of the characters of clean reading, auto mode and both everyday mixes, a reader at
+30,000 an hour lost none and one at 40,000 an hour 0.04 % (with the spread of a line's time at 0.6) [simulated, the
+same report]. With 1.5 s (`SKIM_GAP_US`), which would catch a skip whose jobs take up to 1.5 s, those were 0.1-0.3 %
+and 2-3.5 %; the host bench's 80 ms jobs make 1 s enough.
+
+**Cost** (both builds' packaged Shell, the gate's VitaSDK image, against main `4e91602d`): code +192 B, data/bss
++8 B (the total's two new fields), the same pages [measured: `tools/check_memory_ledger.py`'s module rows]; no block,
+thread or allocation. The cache file is 8 B larger.
+
+**Not done (the issue's second step).** In skip mode the worker still reads and the Shell still records every line it
+can: the kernel could fall back to API 41's behaviour while trusted lines arrive faster than a skip's (no wakeup while
+drawing; the settle read takes the line it lands on), as GameSentenceMiner pauses its overlay's OCR until the text
+settles. That is a kernel change and waits for a console run of this one.
+
 ## Limits
 
 - Simulated, not measured on a console: the error figures depend on the assumed readers and breaks
@@ -144,3 +212,9 @@ interaction (off by default), rolling the idle time back (`book-reading-tracker.
   32 units its 1/32 steps are 0: before this floor, a game with many records of 489 or more characters, a
   second or more apart and read at under 2 ms a character (a hook returning a page at once), could take
   the pace there for good, and every later line of the game got the 2 s floor (audit of #303).
+- Skip mode's rule is untested on a console: how often a trusted hook records a line in a skip there is
+  unmeasured (a debug build's `hook line:` log would show it). Jobs a second or more apart would make every
+  skimmed line look read. A skip slow enough for a reader (a game's "skip read text" that shows each line a
+  second) is reading time by this rule. Four or more lines of 12 or more characters a hook gives together (a
+  choice menu's options, recorded a job apart) are taken for a skip, but for the last. `tools/reading_stats.py`
+  has no local midnight in its run, so a skip that crosses it can differ from the overlay's by its first lines.

@@ -59,8 +59,19 @@ uint32_t vjo_line_characters(const char *s, size_t len);
  *   15s (Rubi 0.9.7 and older): only an interval (0, 15 s] counts, whole; a longer one gets nothing.
  * Another game's record, an invalid time or a clock set back breaks the interval. timed_chars belongs to
  * the earlier line; untimed lines never inflate the speed. Stored with the total (and the pace with it)
- * so incremental scans and restarts retain the interval at their boundary. */
+ * so incremental scans and restarts retain the interval at their boundary.
+ *
+ * Skip mode (docs/reading-time.md#skip-mode, #602; GameSentenceMiner's burst detection, in records): a line of
+ * VJO_READING_SKIM_CHARS or more whose next record came less than VJO_READING_SKIM_GAP_US later was skimmed, not
+ * read. VJO_READING_SKIM_LINES such lines in a row (shorter skimmed lines between them neither count nor end the
+ * run) are a skip: their characters, their time and their timed characters come out of the counters again, in
+ * both rules, and so does every skimmed line after them, of any length, until a line is not skimmed (it is read:
+ * the one the skip landed on) or the interval breaks. Fewer in a row stay counted. history.csv keeps every line. */
 enum { VJO_READING_ADAPTIVE, VJO_READING_GAPS_15S };
+#define VJO_READING_SKIM_GAP_US 1000000u /* 12 characters in under 1 s: over 43,200 an hour */
+#define VJO_READING_SKIM_CHARS 12u       /* GameSentenceMiner's rapid replacement: lines of 12 or more */
+#define VJO_READING_SKIM_LINES 3u
+#define VJO_READING_SKIM_SHIFT 29        /* VjoReadingTime.skim: the run's lines from this bit */
 #define VJO_READING_PACE_UNIT_SHIFT 6         /* the pace's unit: 64 us a character (16 bits: to 4.19 s) */
 #define VJO_READING_PACE_START 18750u         /* 1.2 s a character, 3,000 an hour: GameSentenceMiner's 3 s cap */
 #define VJO_READING_PACE_MIN 32u              /* 2 ms a character: the smallest pace whose 1/32 step is not 0 */
@@ -75,6 +86,14 @@ typedef struct {
      * its high half, which was zero: a cache of 0.9.7 reads as the same counters with no pace learned */
     uint16_t last_chars;
     uint16_t pace; /* adaptive: the pace, in 64 us a character (0: not learned yet) */
+    /* skip mode: the skimmed lines of the run so far (VJO_READING_SKIM_LINES: a skip) from bit
+     * VJO_READING_SKIM_SHIFT, and below it the microseconds credited to them while the run is shorter than a skip
+     * (under 2 s); skim_chars: their characters (at most 2 x 4,095) */
+    uint32_t skim;
+    uint16_t skim_chars;
+    /* the characters the last record added to the total: its line's, less any of a skip it showed (negative
+     * then); not kept between records (a cache's is the last record's) */
+    int16_t counted;
 } VjoReadingTime;
 /* One selected game's daily counters. UTC bounds represent local midnight on the Vita.
  * Empty uuid retains the unfiltered total used by offline tools. */
@@ -88,14 +107,16 @@ void vjo_reading_scope_add(VjoReadingTime *t, VjoReadingScope *scope,
  * characters it gains, also in the scope's day, and 0 when that line was not counted (another game, or not the
  * newest). No time is credited: the gap before it is the same. */
 uint32_t vjo_reading_scope_grow(VjoReadingTime *t, VjoReadingScope *scope, uint64_t us, uint32_t chars);
-uint32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut,
+/* The characters of the lines of buf's records, less those of skips (VjoReadingTime.counted): negative when a window
+ * holds less than the skip it ends took back of lines counted before it. */
+int32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut,
     size_t *first, size_t *last, VjoReadingTime *time, VjoReadingScope *scope);
 /* Adds the record at `us` (its game, its line's characters) and credits the record before it: returns the
  * microseconds credited to that line, 0 when none were (a break, another game, a time that is not later). */
 uint32_t vjo_reading_time_add(VjoReadingTime *t, uint64_t us, uint32_t game, uint32_t chars);
 /* Like vjo_history_chars, also updating reading time in file order, across window boundaries. */
-uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
-                           VjoReadingTime *time);
+int32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
+                          VjoReadingTime *time);
 
 /* The total (docs/ocr-history.md#total-characters-read): the characters of the lines of the records that
  * start in buf[0, len), a window of history.csv read with the byte before it (buf[0], or the file's first

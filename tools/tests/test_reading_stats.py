@@ -1145,17 +1145,45 @@ class Adaptive(unittest.TestCase):
             want = head["adaptive"]
             self.assertEqual(credited_us(records), want["active_us"], path.name)
             self.assertEqual(sum(r.characters for r in records if r.seconds is not None), want["timed_chars"])
-            self.assertEqual(sum(r.characters for r in records), want["characters"])
+            self.assertEqual(sum(r.characters for r in records if not r.skipped), want["characters"])
             errors["adaptive"].append(want["active_us"] / 1e6 / head["truth"]["seconds"] - 1)
             rs.credit_time(records, 15)
             want = head["15s"]
             self.assertLessEqual(abs(credited_us(records) - want["active_us"]), len(records), path.name)
             self.assertEqual(sum(r.characters for r in records if r.seconds is not None), want["timed_chars"])
+            self.assertEqual(sum(r.characters for r in records if not r.skipped), want["characters"])
             errors["15s"].append(want["active_us"] / 1e6 / head["truth"]["seconds"] - 1)
         adaptive = [abs(e) for e in errors["adaptive"]]
         self.assertLessEqual(max(adaptive), 0.20)
         self.assertLessEqual(sum(adaptive) / len(adaptive), 0.06)
         self.assertGreaterEqual(sum(abs(e) for e in errors["15s"]) / len(adaptive), 0.40)
+
+    @need_writer
+    def test_skip_mode(self):
+        """host/tests/test_shell_history.c reading_time_skip's rule (core/history_lines.h): three lines of 12 or more
+        characters each credited under 1 s in a row are a skip, and so is each quick line after them, of any length,
+        until a line is read (1 s or more) or the interval breaks; shorter quick lines neither count nor end a run."""
+        s, q = rs.skipped_lines, 400_000
+        self.assertEqual(s([(10_000_000, 20), (q, 20), (q, 20), (q, 20), (q, 3), (q, 30), (8_000_000, 15), (0, 10)]),
+                         [1, 2, 3, 4, 5])
+        self.assertEqual(s([(q, 20), (q, 4), (q, 20), (5_000_000, 12)]), [])  # two, and a short one between
+        self.assertEqual(s([(q, 20), (q, 4), (q, 20), (q, 11), (q, 12)]), [0, 2, 4])
+        self.assertEqual(s([(q, 20), (q, 20), (None, 20), (q, 20)]), [])  # a break ends the run
+        self.assertEqual(s([(1_000_000, 20)] * 4 + [(999_999, 20)] * 3), [4, 5, 6])  # 1 s is read
+        # the report: those lines count neither characters nor time, and it says how many it left out
+        path = self.dir / "skip.csv"
+        times = [0, 10, 10.4, 10.8, 11.2, 11.6, 11.8, 19.8]
+        write_history(path, [(A, t, "「" + chr(0x3042 + 2 * i) * n + "」", n)  # (no line the one before again)
+                             for i, (t, n) in enumerate(zip(times, (20, 20, 20, 20, 3, 30, 15, 10)))])
+        report = rs.read_history([path])
+        rs.credit_time(report.records)
+        total = rs.summarize(report.records)[0]
+        self.assertEqual((total.lines, total.characters, total.timed_characters, round(total.seconds * 1e6)),
+                         (8, 45, 35, 18_000_000))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(rs.main([str(path)]), 0)
+        self.assertIn("Skip mode: 5 lines (93 characters) shown for under a second in a row, not counted", out.getvalue())
 
     @need_writer
     def test_the_shells_counters(self):
@@ -1169,6 +1197,9 @@ class Adaptive(unittest.TestCase):
             records.append((A if i % 7 else B, sec, f'{i}猫\n"台詞", ABC{"あ" * rnd.randrange(30)}', None))
         mixed = self.dir / "mixed.csv"
         write_history(mixed, records)
+        report = rs.read_history([mixed])
+        rs.credit_time(report.records)
+        self.assertGreater(sum(r.skipped for r in report.records), 0)  # skip mode's lines among them
         head, timeline = timeline_records(TIMELINES[0], game="vita-PROMO0004")
         line = self.dir / "timeline.csv"
         write_history(line, [(A, (us - timeline[0].us) / 1e6, "「" + "あ" * r.characters + f"」{n}", r.characters)

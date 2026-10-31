@@ -184,16 +184,39 @@ void vjo_reading_scope_add(VjoReadingTime *t, VjoReadingScope *scope,
     uint32_t selected = 2166136261u;
     if (scope && scope->uuid[0]) {
         for (const char *p = scope->uuid; *p; p++) selected = (selected ^ (unsigned char)*p) * 16777619u;
-        if (game != selected) { t->last_us = 0; t->last_chars = 0; return; }
+        /* (the next record's interval breaks at last_us 0, and so does a run of skimmed lines) */
+        if (game != selected) { t->last_us = 0; t->last_chars = 0; t->counted = 0; return; }
     }
     uint64_t prev = t->last_us;
-    uint32_t timed = t->last_chars, credit = vjo_reading_time_add(t, us, game, chars);
-    if (scope && us >= scope->start_us && us < scope->end_us) {
-        scope->chars += chars;
+    uint32_t timed = t->last_chars, credit = vjo_reading_time_add(t, us, game, chars), skim = t->skim, drop = 0,
+             drop_us = 0;
+    int day = scope && us >= scope->start_us && us < scope->end_us;
+    /* Skip mode (history_lines.h): the line before this record was skimmed when its credit is its whole gap and
+     * under 1 s (both rules' caps are 2 s or more). Midnight ends a run, as it breaks the day's interval: a
+     * skip's lines are then all the day's. */
+    if (!credit || credit >= VJO_READING_SKIM_GAP_US || (day && prev < scope->start_us)) {
+        skim = 0; /* read, or a break: no run */
+        t->skim_chars = 0;
+    } else if (timed >= VJO_READING_SKIM_CHARS || skim >> VJO_READING_SKIM_SHIFT == VJO_READING_SKIM_LINES) {
+        skim += (1u << VJO_READING_SKIM_SHIFT) + credit; /* counted, and kept to take back */
+        t->skim_chars = (uint16_t)(t->skim_chars + timed);
+        if (skim >> VJO_READING_SKIM_SHIFT >= VJO_READING_SKIM_LINES) { /* a skip: the run comes out again */
+            drop = t->skim_chars;
+            drop_us = skim & ((1u << VJO_READING_SKIM_SHIFT) - 1);
+            skim = VJO_READING_SKIM_LINES << VJO_READING_SKIM_SHIFT;
+            t->skim_chars = 0;
+            t->active_us -= drop_us;
+            t->timed_chars -= drop;
+        }
+    }
+    t->skim = skim;
+    t->counted = (int16_t)(chars - drop);
+    if (day) {
+        scope->chars += t->counted;
         /* Midnight breaks the daily interval, rather than crediting yesterday's line today. */
         if (credit && prev >= scope->start_us) {
-            scope->active_us += credit;
-            scope->timed_chars += timed;
+            scope->active_us += (int32_t)(credit - drop_us);
+            scope->timed_chars += (int32_t)(timed - drop);
         }
     }
 }
@@ -207,10 +230,10 @@ uint32_t vjo_reading_scope_grow(VjoReadingTime *t, VjoReadingScope *scope, uint6
     return chars - was;
 }
 
-uint32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
-                           VjoReadingTime *time, VjoReadingScope *scope)
+int32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
+                                VjoReadingTime *time, VjoReadingScope *scope)
 {
-    uint32_t n = 0;
+    int32_t n = 0;
     size_t start = len;
     *first = *last = len;
     /* Forward order preserves the previous line's time across windows. A record is parsed only
@@ -219,7 +242,7 @@ uint32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut, size
         if (i < len && (buf[i] != '"' || !record_starts(buf, i, len))) continue;
         if (start < len && (i < len || !cut)) {
             char *line = record_line(buf + start, buf + i, "", 0, NULL, time, scope);
-            if (line) n += time ? time->last_chars : vjo_line_characters(line, strlen(line));
+            if (line) n += time ? time->counted : (int32_t)vjo_line_characters(line, strlen(line));
             else if (time) time->last_us = 0; /* damaged records break the interval */
         }
         if (i < len) {
@@ -230,15 +253,15 @@ uint32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut, size
     return n;
 }
 
-uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
-                           VjoReadingTime *time)
+int32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
+                          VjoReadingTime *time)
 {
     return vjo_history_count_scope(buf, len, whole, cut, first, last, time, NULL);
 }
 
 uint32_t vjo_history_chars(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last)
 {
-    return vjo_history_count(buf, len, whole, cut, first, last, NULL);
+    return (uint32_t)vjo_history_count(buf, len, whole, cut, first, last, NULL);
 }
 
 char *vjo_history_number(char *buf, size_t cap, uint64_t n)

@@ -283,9 +283,9 @@ whichever supplied it. Not recorded:
   player clicks through are recorded too, and counted in the total and in characters per hour; only a line replaced
   faster than a job takes (about 80 ms with the first word's lookup, on the host) is cancelled with its job and not
   recorded. In the host latency bench's clicking scenario (a line every 0.5 s), 63 of 8,895 lines were read before
-  API 49 and all 8,895 after [measured, host: #338's audit's rerun]. The reading-time simulation
-  ([reading-time.md](reading-time.md)) modelled skip and auto mode with the old reads; whether a line replaced
-  within some time should count as read is the owner's call (#338's audit F4).
+  API 49 and all 8,895 after [measured, host: #338's audit's rerun]. The history keeps the lines of a skip too, but
+  the reading statistics leave them out: three lines of 12 or more characters in a row, each followed by the next
+  record in under a second, are a skip ([Reading time](#reading-time), #602).
 - A line the same as the record before it, whatever its source: OCR's reading, then
   the same text from a hook, is one record, `ocr` (unless a read between them failed:
   [#252](https://github.com/bee-san/Rubi_for_vita/issues/252), above).
@@ -392,6 +392,12 @@ counts, from the Vita's next start (the Shell takes it once, as it starts):
 - **15s**: Rubi 0.9.7's rule. Only a gap of 15 s or less counts, whole; a line that took longer gets
   nothing, however much of the gap was reading, and its characters leave characters/hour.
 
+**Skip mode** (both rules, #602): a line of 12 or more characters whose next record came less than 1 s later was
+skimmed, not read. Three such lines in a row are a skip (a trusted hook records the lines the game's skip mode
+passes): they, and the skimmed lines after them until a line is read, count neither characters nor time, in the
+total or today's; one or two stay counted. `history.csv` keeps them all. The rule, why these numbers, and what it
+does to simulated skips: [reading-time.md](reading-time.md#skip-mode).
+
 This is GameSentenceMiner's adaptive cap (`util/stats/stats_util.py` `adaptive_cap_seconds`,
 `reading_speed_sample`, at `5190b613`) without its 30-minute sessions, and with a running 75th
 percentile where it takes a session's median. On simulated reading timelines (readers at 3,000-18,000
@@ -455,7 +461,8 @@ record with its line and time's first digit may count once, while a record glued
 is skipped. Invalid or incomplete timestamps never contribute time.
 
 **Counting and persistence.** Triangle and the control/input thread only queue requests. The
-existing VjoNet worker reads the streak's 16-byte record and checked 112-byte per-game cache,
+existing VjoNet worker reads the streak's 16-byte record and checked 120-byte per-game cache (112 B before #602's
+skip mode, whose caches are counted again),
 publishes a valid cached prefix, then reconstructs any missing history between foreground jobs.
 Every recount job reads at most 11 KiB (source bound, not a console timing measurement), using
 private scratch on VjoNet's existing stack. The input thread keeps its own 24 KiB scratch; neither

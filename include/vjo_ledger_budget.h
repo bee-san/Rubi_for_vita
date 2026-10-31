@@ -41,7 +41,9 @@
  * (shell/selftest.c), the lines of the game worker's step log, of the recognized text and of every job and lookup,
  * and the timings and traces. Both builds' packaged segments, each rounded to pages: debug 98,300 + 69,632 B ->
  * 167,936 B (4 B of code room, 0 B of data room), normal 86,012 + 69,556 B -> 155,648 B (4 B, 76 B) [measured:
- * tools/check_memory_ledger.py's module rows, tools/fast_gate.sh's vitasdk image, main 14a1a562 (#586); 98,148 +
+ * tools/check_memory_ledger.py's module rows, tools/fast_gate.sh's vitasdk image, main 14a1a562 (#586); #602's skip
+ * mode: debug 98,236 + 69,616 B (68 B, 16 B), normal 85,868 + 69,576 B (148 B, 56 B), from main 4e91602d's 98,044 +
+ * 69,608 and 85,676 + 69,568 B; 98,148 +
  * 69,632 and 85,980 + 69,556 B on main f3719fb2 (#537); 97,996 + 69,184 and 85,724 + 69,116 B at API 57's rear-tap
  * scan]. The normal build's check is exact (--exact): its budget must equal
  * its pages. How each change moved them: its own
