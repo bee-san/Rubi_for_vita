@@ -11,6 +11,11 @@ been reported.
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-10-31
+
+The game's skip mode no longer inflates Triangle's reading statistics: with a trusted hook, the lines a skip passes
+count neither characters nor time, and totals that earlier skips inflated are counted again.
+
 ### Fixed
 
 - Skip mode no longer inflates Triangle's reading statistics (#602). Since API 49 a trusted hook (`hook_trust = on`,
@@ -1689,7 +1694,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.4...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.5...HEAD
+[0.10.5]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.5
 [0.10.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.4
 [0.10.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.3
 [0.10.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.2
