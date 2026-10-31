@@ -22,6 +22,10 @@ Go to a game and press left trigger + right trigger to open the overlay.
 
 ![Rubi PS Vita controls: buttons, sticks, touch gestures, and dialogue-region editing](docs/img/rubi-controls.svg)
 
+PS Vita illustration by [Tokyoship](https://commons.wikimedia.org/wiki/User:Tokyoship),
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:PlayStation_Vita_illustration.svg),
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); adapted with a Rubi screen and control labels.
+
 1. Left trackpad == word by word lookup
 2. Left joystick == character by character
 3. Double tap the back of the Vita to OCR, useful for menus etc that may not appear in dialogue text
