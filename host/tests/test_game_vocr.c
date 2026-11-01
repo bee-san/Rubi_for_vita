@@ -595,7 +595,11 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.x = 0; r.flags = VJO_GAME_OCR_F_SHOT; r.speed = 1u << VJO_GAME_OCR_S_VERTICAL_SHIFT; /* API 47: no shot's */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
-    r.flags = 0x8000u; r.speed = 0; /* flags bit 15 is unknown (API 27's and draft #223's vertical text) */
+    /* flags bit 15 (unknown from API 47 to 57: API 27's and draft #223's vertical text) is API 58's one-off box:
+     * refused with the whole frame's flag or the probe, as the kernel refuses it */
+    r.flags = VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL; r.speed = 0;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
+    r.flags = VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_PROBE;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.flags = 0; r.speed = VJO_GAME_OCR_S_VERTICAL; /* API 47: the vertical field's 3 is refused */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);

@@ -13,11 +13,11 @@ static const char owner_config[] =
     "ocr_boost_clock = on\nocr_settle_ms = 150\nocr_settle_max_ms = 2000\nocr_skip_blank_lines = off\n"
     "ocr_text_gate = off\nnon_japanese_filter = lines\ntext_source = auto\nocr_mode = auto\n";
 
-/* A user's job (not a self-test stage) of config c: tiers up to c's, flags F_FULL or 0, the screen settled (no
- * F_SETTLE_FIRST: the kernel saw it settle), as the Shell's vocr_run_one packs it. */
+/* A user's job (not a self-test stage) of config c: tiers up to c's, flags F_RECT (API 58: a one-off scan; F_FULL
+ * before) or 0, the screen settled (no F_SETTLE_FIRST: the kernel saw it settle), as the Shell's vocr_run_one packs it. */
 static void owner_request(VjoGameOcrRequest *q, const VjoConfig *c, uint32_t flags, const char *model)
 {
-    int full = (flags & VJO_GAME_OCR_F_FULL) != 0;
+    int full = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_RECT)) != 0;
     memset(q, 0, sizeof(*q));
     q->size = sizeof(*q);
     q->tiers = (1u << c->vocr_tier) - 1u;

@@ -441,7 +441,7 @@ static void touch_draws_and_the_stick_finishes(void)
     /* lifted: the stick and the d-pad move the opposite corner */
     stick(&r, C, C);
     touch(&r, 0, 0, 0);
-    frame(&r, 0, FRAME_US);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_NONE);
     TEST_CHECK(box_is(&r, 100, 400, 601, 101));
     dpad_to(&r, 703, 498);
     TEST_CHECK(box_is(&r, 100, 400, 604, 99));
@@ -467,6 +467,44 @@ static void touch_draws_and_the_stick_finishes(void)
     TEST_CHECK(box_is(&r, 500, 300, 401, 201));
 }
 
+/* The overlay's one-off box (Cancel): a drag's lift is enter, so the box is read as soon as it is drawn; a tap's
+ * 1 x 1 box is refused as enter refuses it, and the stick and enter still finish a box; a drag cancelled while the
+ * finger is down reads nothing as it lifts. */
+static void the_one_off_box_reads_on_lift(void)
+{
+    Rig r;
+    int x, y, w, h;
+    rig_begin(&r, 0);
+    r.s.once = 1;
+    touch(&r, 1, 100, 400);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_CORNER);
+    touch(&r, 1, 300, 480);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_NONE);
+    touch(&r, 0, 0, 0);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_SAVE);
+    TEST_ASSERT(vjo_rsel_box(&r.s, &x, &y, &w, &h));
+    TEST_CHECK(x == 100 && y == 400 && w == 201 && h == 81);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_NONE); /* one lift, one read */
+    /* a tap: too small, the corner kept; the d-pad and enter finish it */
+    rig_begin(&r, 0);
+    r.s.once = 1;
+    touch(&r, 1, 10, 20);
+    frame(&r, 0, FRAME_US);
+    touch(&r, 0, 0, 0);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_SMALL);
+    dpad_to(&r, 60, 70);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE && box_is(&r, 10, 20, 51, 51));
+    /* cancel during the drag: its lift reads nothing */
+    rig_begin(&r, 0);
+    r.s.once = 1;
+    touch(&r, 1, 200, 200);
+    frame(&r, 0, FRAME_US);
+    touch(&r, 1, 400, 300);
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_BACK);
+    touch(&r, 0, 0, 0);
+    TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_NONE);
+}
+
 static void cancel_during_a_drag_waits_for_the_finger(void)
 {
     Rig r;
@@ -476,7 +514,7 @@ static void cancel_during_a_drag_waits_for_the_finger(void)
     touch(&r, 1, 400, 300);
     frame(&r, 0, FRAME_US);
     TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_BACK);
-    /* the finger still down neither starts a new corner nor moves the cursor */
+    /* the finger still down neither starts a new corner nor moves the cursor, and its lift reads no box */
     touch(&r, 1, 450, 350);
     TEST_CHECK(frames(&r, 0, 30, FRAME_US) == VJO_RSEL_NONE);
     TEST_CHECK(cx(&r) == 400 && cy(&r) == 300);
@@ -628,6 +666,7 @@ TEST_LIST = {
     {"cancel takes the corner back, then cancels", cancel_takes_the_corner_back_then_cancels},
     {"○ enters on a console set to ○", circle_enters_on_a_circle_console},
     {"touch draws, the stick finishes", touch_draws_and_the_stick_finishes},
+    {"the one-off box is read as the drag lifts", the_one_off_box_reads_on_lift},
     {"cancel during a drag waits for the finger", cancel_during_a_drag_waits_for_the_finger},
     {"saved region round-trips region.ini", saved_region_round_trips_region_ini},
     {"a suggested box is drawn and saved as it is (#358)", a_suggested_box_is_drawn_and_saved_as_it_is},

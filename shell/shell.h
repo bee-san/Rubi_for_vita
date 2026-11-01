@@ -125,8 +125,10 @@ const char *vjo_view_notice(void);
 /* ---- overlay -> control thread commands ---- */
 enum {
     VJO_CMD_NONE = 0,
-    VJO_CMD_CLOSED,          /* overlay closed by the cancel button */
+    VJO_CMD_CLOSED,          /* overlay closed (no page memory) */
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command); #358's suggested box too */
+    VJO_CMD_SCAN_BOX,        /* Cancel, then a box: read it once, never saved (rect passed to vjo_post_command);
+                              * VJO_CMD_SET_REGION + 1 (overlay.cpp) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
     /* (after CURSOR: a cursor move or a page takes their slot, worker.c vjo_post_cursor) */

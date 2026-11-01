@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1580" viewBox="0 0 1800 1580" role="img" aria-labelledby="rubi-title rubi-description">
   <title id="rubi-title">Rubi: PS Vita in-game controls</title>
-  <desc id="rubi-description">The Vita display is an illustrated preview of Rubi over a visual novel scene. Default controls: L plus R opens or closes Rubi. Select plus R toggles the subtitle strip. D-pad left and right move by matched word, or by character in Character mode. Up and Down move between text rows; Up at the top opens earlier dialogue in Automatic reading mode, and Down past the last row of an earlier line moves toward the live text. The left stick moves by character horizontally and by text row vertically, stopping at the current text's ends. The right stick scrolls definitions. Tap a recognized character on the front touchscreen to look up its word. Triangle toggles reading statistics and the hook or OCR text source. Square opens the dialogue-region editor; hold Square for one second to restore the full screen. Enter saves the selected Anki card when Card mining is on. Cancel closes Rubi. Enter and Cancel follow the Vita's system setting: usually cross and circle respectively, but they can be swapped. PS closes Rubi and opens LiveArea. Double-tap the rear touchpad while Rubi is open for one full-screen OCR scan without changing the saved region. In the region editor, move with the left stick or D-pad, press Enter at the first corner, move to the opposite corner and press Enter to save; alternatively drag on the front screen, then press Enter. Cancel undoes the first corner or exits the editor. Hold L while launching a game to skip Rubi for that launch. The opening and subtitle shortcuts can be remapped in config.ini.</desc>
-  <metadata>Control mappings checked against docs/guide.md, core/config.c, core/buttons.h, core/region_select.c, shell/overlay.cpp and kernel/input.c at cc7ba80a. Device artwork: "PlayStation Vita illustration.svg" by Tokyoship, Wikimedia Commons (https://commons.wikimedia.org/wiki/File:PlayStation_Vita_illustration.svg), licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Source SVG: https://upload.wikimedia.org/wikipedia/commons/3/3f/PlayStation_Vita_illustration.svg; SHA-256: 583f4c9b852d728d277708a01dba7ef972ba00299ff1b685d3c0631eedddbe97. Adaptations: scaled and embedded inline, IDs prefixed and editor metadata removed, illustrated Rubi overlay and control annotations added. Screen: original mock visual novel artwork from docs/promo/assets/vn/shot-s1-m2.jpg (CC0; provenance in docs/promo/README.md and docs/promo/assets/SOURCES.md), embedded unchanged, SHA-256: 8088ef7224a9c853e1b4cc7d63bb2c54b1737a495c166a92bf6eac37e6eaf73d. Overlay layout, opacity and colours follow shell/overlay.cpp, shell/rco/vitajpoverlay.xml and core/styled.h at ad16c618; sample lookup from docs/promo/src/overlay-states.json (s1-m2-ov01-open), current footer from shell/overlay.cpp. Font line heights are estimates, not console measurements; the screen is an illustrated preview, not a console capture. All graphics and the JPEG are inline; no external images, fonts or scripts are required.</metadata>
+  <desc id="rubi-description">The Vita display is an illustrated preview of Rubi over a visual novel scene. Default controls: L plus R opens or closes Rubi. Select plus R toggles the subtitle strip. D-pad left and right move by matched word, or by character in Character mode. Up and Down move between text rows; Up at the top opens earlier dialogue in Automatic reading mode, and Down past the last row of an earlier line moves toward the live text. The left stick moves by character horizontally and by text row vertically, stopping at the current text's ends. The right stick scrolls definitions. Tap a recognized character on the front touchscreen to look up its word. Triangle toggles reading statistics and the hook or OCR text source. Square opens the dialogue-region editor; hold Square for one second to restore the full screen. Enter saves the selected Anki card when Card mining is on. Cancel draws a box that Rubi reads once with OCR as soon as it is drawn, without saving it, for text the hook or the dialogue region misses; L plus R closes Rubi. Enter and Cancel follow the Vita's system setting: usually cross and circle respectively, but they can be swapped. PS closes Rubi and opens LiveArea. Double-tap the rear touchpad while Rubi is open for one full-screen OCR scan without changing the saved region. In the region editor, move with the left stick or D-pad, press Enter at the first corner, move to the opposite corner and press Enter to save; alternatively drag on the front screen, then press Enter. Cancel undoes the first corner or exits the editor. Hold L while launching a game to skip Rubi for that launch. The opening and subtitle shortcuts can be remapped in config.ini.</desc>
+  <metadata>Control mappings checked against docs/guide.md, core/config.c, core/buttons.h, core/region_select.c, shell/overlay.cpp and kernel/input.c at 3d415cdc plus the one-off box (Cancel). Device artwork: "PlayStation Vita illustration.svg" by Tokyoship, Wikimedia Commons (https://commons.wikimedia.org/wiki/File:PlayStation_Vita_illustration.svg), licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Source SVG: https://upload.wikimedia.org/wikipedia/commons/3/3f/PlayStation_Vita_illustration.svg; SHA-256: 583f4c9b852d728d277708a01dba7ef972ba00299ff1b685d3c0631eedddbe97. Adaptations: scaled and embedded inline, IDs prefixed and editor metadata removed, illustrated Rubi overlay and control annotations added. Screen: original mock visual novel artwork from docs/promo/assets/vn/shot-s1-m2.jpg (CC0; provenance in docs/promo/README.md and docs/promo/assets/SOURCES.md), embedded unchanged, SHA-256: 8088ef7224a9c853e1b4cc7d63bb2c54b1737a495c166a92bf6eac37e6eaf73d. Overlay layout, opacity and colours follow shell/overlay.cpp, shell/rco/vitajpoverlay.xml and core/styled.h at ad16c618; sample lookup from docs/promo/src/overlay-states.json (s1-m2-ov01-open), current footer from shell/overlay.cpp (the one-off box's). Font line heights are estimates, not console measurements; the screen is an illustrated preview, not a console capture. All graphics and the JPEG are inline; no external images, fonts or scripts are required.</metadata>
   <defs>
     <style>
       text { font-family: 'DejaVu Sans', 'Noto Sans', sans-serif; fill: #1b293d; }
@@ -23,9 +23,6 @@
     <filter id="rubi-device-shadow" x="-15%" y="-20%" width="130%" height="150%">
       <feGaussianBlur stdDeviation="13"/>
     </filter>
-    <pattern id="rubi-rear-dots" width="12" height="12" patternUnits="userSpaceOnUse">
-      <circle cx="3" cy="3" r="1.3" fill="#aeb8bd"/>
-    </pattern>
     <g id="rubi-icon-triangle"><path d="M0 -11 12 10 H-12 Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></g>
     <g id="rubi-icon-square"><rect x="-10" y="-10" width="20" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="2.5"/></g>
     <g id="rubi-icon-cross"><path d="m-9 -9 18 18 m-18 0 18 -18" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round"/></g>
@@ -430,7 +427,7 @@
       <text x="20" y="245" font-size="21"><tspan font-size="27" class="rubi-screen-text">明</tspan>=light, bright</text>
       <text x="20" y="283" font-size="21"><tspan font-size="27" class="rubi-screen-text">日</tspan>=day, counter for days, Japan, sun</text>
       <rect y="500" width="960" height="44" fill="#08080a"/>
-      <text x="20" y="531" font-size="20" class="rubi-screen-rank" clip-path="url(#rubi-screen-hint-clip)">Tap / pad / stick word · × queue · R stick ↕ · □ box · rear ×2 full OCR · ○ close</text>
+      <text x="20" y="531" font-size="20" class="rubi-screen-rank" clip-path="url(#rubi-screen-hint-clip)">Tap / pad / stick word · × queue · □ region · ○ OCR box</text>
     </svg>
   </g>
 
@@ -484,7 +481,8 @@
 
     <circle cx="1476" cy="652" r="21" fill="#e6eaf0"/>
     <use href="#rubi-icon-circle" transform="translate(1476 652)" color="#596b83"/>
-    <text x="1511" y="648" class="rubi-action">Cancel: close Rubi*</text>
+    <text x="1511" y="648" class="rubi-action">Cancel: read a box*</text>
+    <text x="1511" y="676" class="rubi-detail">OCR it once, no save.</text>
   </g>
   <g id="rubi-right-stick-callout">
     <path class="rubi-wire" d="M1326 626 H1419 V753 H1459" stroke="#29857a"/>
@@ -543,30 +541,22 @@
     <text x="96" y="1313" font-size="16" class="rubi-muted">Saved per game. Minimum box: 32 × 32 pixels.</text>
   </g>
 
-  <g id="rubi-rear-touchpad" aria-label="Double-tap the rear touchpad while the overlay is open">
+  <g id="rubi-read-once" aria-label="Read text outside the dialogue box once: a box with Cancel, or the whole screen with a rear double tap">
     <rect x="1106" y="1018" width="630" height="310" rx="24" fill="#fff" stroke="#e0e2e4"/>
-    <text x="1138" y="1065" class="rubi-heading">Rear touchpad</text>
-    <text x="1138" y="1100" class="rubi-body rubi-muted">Double-tap while Rubi is open.</text>
+    <text x="1138" y="1065" class="rubi-heading">Text not in the hook?</text>
+    <text x="1138" y="1100" class="rubi-body rubi-muted">OCR it once. Nothing is saved.</text>
 
-    <!-- Original simplified rear view, with the touch surface stippled. -->
-    <g transform="translate(1138 1133)">
-      <path d="M47 0 H203 Q250 0 250 62 Q250 124 203 124 H47 Q0 124 0 62 Q0 0 47 0Z" fill="#f1f3f4" stroke="#aeb8c1" stroke-width="1.5"/>
-      <path d="M18 38 Q36 37 43 54 L49 88 Q51 105 36 109 M232 38 Q214 37 207 54 L201 88 Q199 105 214 109" fill="none" stroke="#d0d6dc" stroke-width="8" stroke-linecap="round"/>
-      <rect x="53" y="28" width="144" height="72" rx="17" fill="#e3e8e9" stroke="#c2cbce"/>
-      <rect x="53" y="28" width="144" height="72" rx="17" fill="url(#rubi-rear-dots)"/>
-      <circle cx="125" cy="13" r="5" fill="#596b7a"/>
-      <circle cx="125" cy="63" r="26" fill="#fff" opacity="0.7"/>
-      <circle cx="125" cy="63" r="19" fill="none" stroke="#29857a" stroke-width="2"/>
-      <circle cx="125" cy="63" r="11" fill="none" stroke="#29857a" stroke-width="2"/>
-      <circle cx="125" cy="63" r="4" fill="#29857a"/>
-      <rect x="166" y="77" width="63" height="33" rx="16.5" fill="#1b293d"/>
-      <text x="197.5" y="100" text-anchor="middle" font-size="21" font-weight="700" style="fill:#fff">×2</text>
-    </g>
-    <text x="1413" y="1161" class="rubi-action" style="fill:#24766d">Scan the whole screen</text>
-    <text x="1413" y="1194" class="rubi-detail">Read menus and other text</text>
-    <text x="1413" y="1222" class="rubi-detail">outside your dialogue box.</text>
-    <text x="1138" y="1283" class="rubi-detail">One OCR scan. Your saved dialogue region stays.</text>
-    <text x="1138" y="1311" font-size="16" class="rubi-muted">Close Rubi to return to the saved box.</text>
+    <!-- Cancel: the one-off box, read as soon as it is drawn. -->
+    <circle cx="1159" cy="1163" r="21" fill="#e6eaf0"/>
+    <use href="#rubi-icon-circle" transform="translate(1159 1163)" color="#596b83"/>
+    <text x="1194" y="1160" class="rubi-action" style="fill:#24766d">Cancel*: draw a box</text>
+    <text x="1194" y="1188" class="rubi-detail">Read as soon as you let go.</text>
+
+    <!-- Rear double tap: the whole screen. -->
+    <circle cx="1159" cy="1255" r="21" fill="#e0eeea"/>
+    <text x="1159" y="1261" text-anchor="middle" font-size="17" font-weight="700" style="fill:#24766d">×2</text>
+    <text x="1194" y="1252" class="rubi-action" style="fill:#24766d">Rear double-tap</text>
+    <text x="1194" y="1280" class="rubi-detail">The whole screen.</text>
   </g>
 
   <g id="rubi-button-notes">
@@ -578,7 +568,7 @@
     <text x="907" y="1391" font-size="21" font-weight="700">Custom shortcuts</text>
     <text x="907" y="1425" class="rubi-detail">Change the open / subtitle triggers in config.ini:</text>
     <text x="907" y="1454" font-size="17" class="rubi-muted">L+R · Select · Start · Select+L · Select+R · rear double-tap</text>
-    <text x="907" y="1480" font-size="15" class="rubi-muted">Rear double-tap always scans while open; use Cancel to close.</text>
+    <text x="907" y="1480" font-size="15" class="rubi-muted">Opened by rear double-tap? It scans while open; Select+R closes.</text>
   </g>
   <text x="64" y="1538" font-size="17" class="rubi-muted">Hold L while launching a game to skip Rubi for that launch.</text>
   <a href="https://github.com/bee-san/Rubi_for_vita/blob/main/docs/guide.md#use-in-a-game" aria-label="Read the full Rubi control guide">

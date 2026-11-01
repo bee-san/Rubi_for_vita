@@ -150,10 +150,14 @@ static uint32_t job_generation;
  * Each event has one handler below (on_*). */
 enum { OV_CLOSED, OV_OPEN, OV_OPEN_OLD_JOB };
 static int ov = OV_CLOSED;
-/* 0: dialogue, 1: a rear-tap scan queued behind cancellation, 2: its pinned view.
- * The job snapshot survives a close until the game worker has finished. */
+/* 0: dialogue, 1: a one-off scan queued behind cancellation, 2: its pinned view.
+ * The job snapshot survives a close until the game worker has finished.
+ * scan_box: what the scan reads (API 58's VJO_GAME_OCR_F_RECT), never saved: the
+ * whole frame for the rear double tap, the box drawn after Cancel
+ * (VJO_CMD_SCAN_BOX). Set only as a scan begins, which cancels the job running. */
 static int full_screen;
 static uint8_t job_full_screen;
+static VjoRect scan_box;
 static int subtitles; /* written by set_subtitles only */
 /* The strip says "Recognizing…" for the lookup or refresh in progress, which
  * brings it nothing (subtitles turned on after the close that dropped it): its
@@ -1140,6 +1144,7 @@ static void line_debug_accept(const VjoGameOcrResult *r)
 static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers, unsigned *ran, int stage)
 {
     VjoGameOcrRequest request = {.size=sizeof(request), .flags=flags, .tiers=tiers};
+    request.region = scan_box; /* API 58: the one-off scan's box, which Submit keeps with F_RECT only */
     VjoState st0;
     unsigned top = vocr_top_tier(tiers);
     *ran = top;
@@ -1154,7 +1159,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     st0.size = sizeof(st0);
     if (vjoGetState(&st0) < 0) st0.done_seq = st0.stable = 0;
     vocr_done_before = st0.done_seq;
-    vocr_capture_fixed = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)) != 0;
+    vocr_capture_fixed = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_PROBE)) != 0;
     /* The job's policy (API 20). The config keeps both waits in range, so the
      * counts fit their 8 bits (10 and 50 ms steps, rounded; a wait of 1-4 ms is
      * one step, not none); a screen not settled now is waited for first. */
@@ -1179,7 +1184,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     if (job_cfg.ocr_text_gate && stage < 0) request.speed |= VJO_GAME_OCR_S_GATE;
     /* API 42: vita-vn-ocr #117's head gate and two-level head, ocr_head_gate's VJO_HEAD_* bits, in the user's jobs */
     if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_head_gate << VJO_GAME_OCR_S_HEAD_SHIFT; /* 0-3: config.c */
-    /* API 54: the text spotter as the finder, and its boxes refined, in the user's jobs too */
+    /* API 54: the text spotter as the finder, and its boxes refined, in the user's jobs too; a one-off scan's always */
     if ((job_cfg.ocr_finder || job_full_screen) && stage < 0)
         request.speed |= VJO_GAME_OCR_S_SPOT | (job_cfg.ocr_spotter_refine ? VJO_GAME_OCR_S_SPOT_REFINE : 0u);
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
@@ -1347,7 +1352,7 @@ static int run_vocr(VjoOverlayData *out)
     if (job_selftest) /* its records are its result: nothing is shown */
         return out->err.rc = run_selftest_stages(&vocr_result, tiers, &ran);
 #endif
-    uint32_t flags = job_full_screen ? VJO_GAME_OCR_F_FULL : 0;
+    uint32_t flags = job_full_screen ? VJO_GAME_OCR_F_RECT : 0; /* API 58: scan_box, the whole frame's too */
     out->err.rc = vocr_run_one(&vocr_result, flags, tiers, &ran, -1);
     /* A tier's model failed to open or verify: keep OCR working with the next
      * smaller tier for this job. Only a file that is absent, the wrong length or
@@ -2871,8 +2876,9 @@ static void on_subtitle(void)
     }
 }
 
-/* A command from the overlay (paf main thread). */
-static void on_command(void)
+/* A command from the overlay (paf main thread). Returns VJO_EV_FULL_SCREEN for the one-off box (scan_box set), which
+ * control_tick then starts as it starts the rear tap's scan; 0 otherwise. */
+static uint32_t on_command(void)
 {
     int cmd;
     VjoRect r;
@@ -2900,6 +2906,9 @@ static void on_command(void)
     case VJO_CMD_LATER:
         history_ask(cmd == VJO_CMD_EARLIER ? 1 : -1);
         break;
+    case VJO_CMD_SCAN_BOX: /* (the selector's box: at least 32 x 32 px, never empty) */
+        scan_box = r;
+        return VJO_EV_FULL_SCREEN;
     case VJO_CMD_SET_REGION:
     case VJO_CMD_CLEAR_REGION:
         if (!game_active()) { /* the game exited meanwhile */
@@ -2940,6 +2949,7 @@ static void on_command(void)
         }
         break;
     }
+    return 0;
 }
 
 /* ---- is the new foreground process a game? ----
@@ -3318,6 +3328,13 @@ static void control_tick(uint32_t bits)
         on_trigger();
     if (bits & VJO_EV_SUBTITLE)
         on_subtitle();
+    /* The open overlay's one-off scan: the whole frame (the rear double tap) or the box drawn after Cancel
+     * (VJO_CMD_SCAN_BOX: scan_box). It supersedes any job (on_job_done), starts below, and its text stays until the
+     * next scan or the close. */
+    if (bits & VJO_EV_FULL_SCREEN)
+        scan_box.w = 0; /* the whole frame */
+    if (pending_cmd != VJO_CMD_NONE)
+        bits |= on_command();
     if ((bits & VJO_EV_FULL_SCREEN) && ov != OV_CLOSED && game_active()) {
         full_screen = 1;
         history_step = 0;
@@ -3325,8 +3342,6 @@ static void control_tick(uint32_t bits)
         __atomic_store_n(&g_view.full_scan_requested, 1, __ATOMIC_RELEASE);
         if (job_running) job_cancelled = 1;
     }
-    if (pending_cmd != VJO_CMD_NONE)
-        on_command();
     if (job_running && job_text_ready)
         on_job_text();
     if (job_running && job_done)
@@ -3364,7 +3379,7 @@ static void control_tick(uint32_t bits)
         open_retry = refresh_pending = 0;
         screen_changed_streak = 0;
         screen_retry_until = 0;
-        start_job("rear double tap: full screen", 1);
+        start_job("one-off scan", 1);
     }
     auto_prefetch();
     background_open();

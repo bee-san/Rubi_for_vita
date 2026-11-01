@@ -20,7 +20,7 @@ Install Rubi-0.10.5.vpk with VitaShell, open Rubi, choose Settings → Install &
 
 Go to a game and press left trigger + right trigger to open the overlay.
 
-![Rubi PS Vita controls: buttons, sticks, touch gestures, and dialogue-region editing](docs/img/rubi-controls.svg)
+![Rubi PS Vita controls: buttons, sticks, touch gestures, dialogue-region editing and reading a box once](docs/img/rubi-controls.svg)
 
 PS Vita illustration by [Tokyoship](https://commons.wikimedia.org/wiki/User:Tokyoship),
 [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:PlayStation_Vita_illustration.svg),
@@ -30,12 +30,13 @@ Rubi overlay over the [promo's original visual novel artwork](https://github.com
 1. Left trackpad == word by word lookup
 2. Left joystick == character by character
 3. Double tap the back of the Vita to OCR, useful for menus etc that may not appear in dialogue text
-4. Mine anki cards by pressing X in the overlay
-5. Press Triangle to see stats, a hook means we get the text from the game ram (most games do this). OCR means we take a photo of the screen and ask a robot to identify what the text is, this is all done on the Vita -- no internet!
-6. Press Square to set a dialogue region. This increases accuracy a lot. If you have text above the dialogue box... Double tap the back to OCR it ;)
-7. Press Up on the left trackpad to read previous lines and mine from them, that way if you're ever faced with a dialogue and you kinda were whitenoising what the characters were saying you can just re-read it
-8. There is a Rubi app that lets you disable the overlay for some games like Uncharted where you use both triggers (or any game you like). You can also look up words you want in your dicts and mine them
-9. Also you can install custom dicts, but it's a bit of a pain... I don't want to support custom dicts bc they are unpredictable in terms of HTML / Size and the Vita is super brittle so custom dicts may break everything :/
+4. Text not in the hook (menu options, choices...)? Press Circle and draw a box around it. As soon as you let go, Rubi OCRs that box once and shows it in the overlay. No confirm, nothing saved: close the overlay with L + R and you're back to the dialogue
+5. Mine anki cards by pressing X in the overlay
+6. Press Triangle to see stats, a hook means we get the text from the game ram (most games do this). OCR means we take a photo of the screen and ask a robot to identify what the text is, this is all done on the Vita -- no internet!
+7. Press Square to set a dialogue region. This increases accuracy a lot. If you have text above the dialogue box... Double tap the back to OCR it, or press Circle and box it ;)
+8. Press Up on the left trackpad to read previous lines and mine from them, that way if you're ever faced with a dialogue and you kinda were whitenoising what the characters were saying you can just re-read it
+9. There is a Rubi app that lets you disable the overlay for some games like Uncharted where you use both triggers (or any game you like). You can also look up words you want in your dicts and mine them
+10. Also you can install custom dicts, but it's a bit of a pain... I don't want to support custom dicts bc they are unpredictable in terms of HTML / Size and the Vita is super brittle so custom dicts may break everything :/
 
 
 

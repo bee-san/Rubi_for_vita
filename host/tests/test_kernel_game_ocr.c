@@ -1171,9 +1171,10 @@ static void invalid_capture_and_wire(void)
     r.model_dir[sizeof(r.model_dir) - 1] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.model_dir[sizeof(r.model_dir) - 1] = 0;
     r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 23: a shot names no model */
-    /* flags bit 15 is unknown: API 27's and draft #223's vertical text, which API 47 has in the speed word */
-    TEST_CHECK(VJO_GAME_OCR_F_ALL == 0xFFFF7FFFu);
-    r.flags = 0x8000u; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    /* flags bit 15, unknown from API 47 (API 27's and draft #223's vertical text, which API 47 has in the speed word)
+     * to 57, is API 58's one-off box: every bit is defined, and the box with the probe is refused */
+    TEST_CHECK(VJO_GAME_OCR_F_ALL == 0xFFFFFFFFu && VJO_GAME_OCR_F_RECT == 0x8000u);
+    r.flags = 0x8000u | VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = 0;
     r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: 4) */
     r.speed = VJO_GAME_OCR_S_TRIM; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 32: bit 6, a shot's only */
@@ -1787,6 +1788,44 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     TEST_CHECK(vjoOcrModelOpen(r.seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && !model_io.seq);
     message.size = sizeof(message); message.seq = r.seq; message.text[0] = 0;
     TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+/* API 58: VJO_GAME_OCR_F_RECT, the overlay's one-off scans. Submit keeps the Shell's box, never the saved region (which
+ * stays as it was), an empty one as the whole frame, and refuses it with the whole frame's flag or the probe; a shot
+ * takes no box. Its capture is never the region's: a trusted hook's capture without pixels is refused, as a full
+ * frame's is. */
+static void rect_job_reads_the_shells_box(void)
+{
+    VjoGameOcrRequest r;
+    VjoGameOcrRowsInfo info;
+    const VjoRect saved = {1000, 2000, 30000, 20000}, box = {32768, 0, 32768, 32768};
+    setup();
+    g.region = saved;
+    r = make_request(); r.region = box; r.flags = VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL;
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.flags = VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.region = box; r.flags |= VJO_GAME_OCR_F_RECT; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    TEST_CHECK(!valid && !pending);
+    r = make_request(); r.flags = VJO_GAME_OCR_F_RECT; r.region = box;
+    TEST_CHECK(vjoOcrSubmit(&r) > 0 && !memcmp(&request.region, &box, sizeof(box)));
+    TEST_CHECK(!memcmp(&g.region, &saved, sizeof(saved)));
+    caller = 7; TEST_CHECK(vjoOcrTake(&r) == 0 && r.flags == VJO_GAME_OCR_F_RECT && !memcmp(&r.region, &box, sizeof(box)));
+    VjoGameOcrRows q = {.size = sizeof(q), .seq = r.seq, .mode = VJO_GAME_OCR_SRC_HOOK, .flags = VJO_ROWS_HOOK};
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG);
+    message.size = sizeof(message); message.seq = r.seq; message.text[0] = 0;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3;
+    /* an empty box: the whole frame (the rear double tap's scan) */
+    r = make_request(); r.flags = VJO_GAME_OCR_F_RECT;
+    TEST_CHECK(vjoOcrSubmit(&r) > 0 && !request.region.w && request.width == FB_W && request.height == FB_H);
+    caller = 7; TEST_CHECK(vjoOcrTake(&r) == 0);
+    message.seq = r.seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3;
+    /* the next region job reads the saved region again */
+    r = make_request(); TEST_CHECK(vjoOcrSubmit(&r) > 0 && !memcmp(&request.region, &saved, sizeof(saved)));
+    caller = 7; TEST_CHECK(vjoOcrTake(&r) == 0);
+    message.seq = r.seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3;
 }
 
 /* A shot's rows are the frame's colours, A8B8G8R8 words, and only a shot reads
@@ -3430,6 +3469,7 @@ TEST_LIST = {
     {"rows: a pending request pins captures; process exit clears it", rows_pending_pins_and_process_exit},
     {"API 23: a shot names its card and nothing else; it reads the whole frame and opens no model",
      shot_requests_name_a_card_and_nothing_else},
+    {"API 58: a one-off box job reads the Shell's box, never the saved region's capture", rect_job_reads_the_shells_box},
     {"API 23: a shot's rows are the frame's colours, through the hook or the kernel strip; only a shot's",
      shot_rows_are_colour_and_only_a_shots},
     {"API 23: the shot's JPEG is written in order by the kernel worker and saved under the card's name",

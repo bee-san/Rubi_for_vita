@@ -1040,6 +1040,7 @@ int vjoOcrCancel(uint32_t seq) { return 0; }
 static void reset(void)
 {
     full_screen = job_full_screen = 0;
+    memset(&scan_box, 0, sizeof(scan_box));
     /* API 31: no game session's hook state, no hook fields in the results */
     hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
     theme_loads = theme_choice = 0;
@@ -2375,7 +2376,7 @@ static void test_owner_scenario_request(void)
             fake_recognized_text = "猫";
             TEST_CHECK(run_vocr_job() == VJO_OK);
             snprintf(what, sizeof(what), "%s, case %u", full ? "full screen" : "textbox", i);
-            owner_request_matches(what, full ? VJO_GAME_OCR_F_FULL : 0u);
+            owner_request_matches(what, full ? VJO_GAME_OCR_F_RECT : 0u); /* API 58: a one-off scan's box */
             job_full_screen = 0;
             mem_free();
         }
@@ -5973,7 +5974,9 @@ static void test_rear_full_screen_pipeline_and_lifetime(void)
     TEST_ASSERT(job_running && job_full_screen && full_screen == 2 && ov == OV_OPEN && input_blocked);
     TEST_CHECK(g_view.full_scan_requested && g_view.suggest == VJO_RSEL_TAKEN);
     finish_current_job();
-    TEST_CHECK(fake_game_request.flags & VJO_GAME_OCR_F_FULL);
+    /* API 58: the one-off scan's box, w == 0: the whole frame */
+    TEST_CHECK((fake_game_request.flags & (VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL)) == VJO_GAME_OCR_F_RECT &&
+               !fake_game_request.region.w);
     TEST_CHECK(fake_game_request.speed & VJO_GAME_OCR_S_SPOT);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
     TEST_CHECK(((fake_game_request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK) == (unsigned)cfg.ocr_lm);
@@ -5991,7 +5994,7 @@ static void test_rear_full_screen_pipeline_and_lifetime(void)
     close_overlay();
     TEST_CHECK(!full_screen && !local_text_valid && !cache_ok && !input_blocked);
     open_overlay(); finish_current_job();
-    TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_FULL));
+    TEST_CHECK(!(fake_game_request.flags & (VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL)));
     TEST_CHECK(!(fake_game_request.speed & VJO_GAME_OCR_S_SPOT));
     close_overlay(); mem_free();
   }
@@ -6040,11 +6043,11 @@ static void test_rear_full_screen_retries_fallback_and_exit(void)
     control_tick(VJO_EV_FULL_SCREEN);
     finish_current_job(); /* a torn screen retries the full frame, never the saved region */
     TEST_ASSERT(job_running && job_full_screen);
-    TEST_CHECK(fake_game_request.flags & VJO_GAME_OCR_F_FULL);
+    TEST_CHECK((fake_game_request.flags & VJO_GAME_OCR_F_RECT) && !fake_game_request.region.w);
     fake_missing_model = vjo_vocr_tier_model(VJO_VOCR_TIER_NORMAL);
     unsigned before = submits;
     finish_current_job();
-    TEST_CHECK(submits == before + 2 && (fake_game_request.flags & VJO_GAME_OCR_F_FULL));
+    TEST_CHECK(submits == before + 2 && (fake_game_request.flags & VJO_GAME_OCR_F_RECT) && !fake_game_request.region.w);
     TEST_CHECK(fake_game_request.speed & VJO_GAME_OCR_S_SPOT);
     check_shown("犬猫", "dog", 0);
     control_tick(VJO_EV_FULL_SCREEN);
@@ -6053,6 +6056,64 @@ static void test_rear_full_screen_retries_fallback_and_exit(void)
     finish_current_job();
     TEST_CHECK(!local_text_valid && !g_view.open);
     mem_free();
+}
+
+/* Cancel, then a box (overlay.cpp): the box read once, as the rear tap's scan is and on its path (API 58's
+ * VJO_GAME_OCR_F_RECT, the text spotter); nothing saved, the saved region kept, the text pinned until the close,
+ * which brings the dialogue region back. A rear tap after it reads the whole frame. */
+static void test_scan_box_once(void)
+{
+  for (int mode = VJO_OCR_AUTO; mode <= VJO_OCR_ON_PRESS; mode++) {
+    cursor_setup();
+    cfg.ocr_mode = loaded.ocr_mode = mode;
+    cfg.ocr_finder = loaded.ocr_finder = VJO_FINDER_GRAD; /* the box is read with the spotter all the same */
+    open_overlay(); finish_current_job();
+    int saves = region_saves, pushes = regions_set;
+    unsigned recorded = history_calls;
+    const VjoRect box = {1000, 2000, 30000, 9000};
+    fake_recognized_text = "犬猫";
+    vjo_post_command(VJO_CMD_SCAN_BOX, &box);
+    control_tick(0);
+    TEST_ASSERT(job_running && job_full_screen && full_screen == 2 && ov == OV_OPEN && input_blocked);
+    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN && g_view.full_scan_requested);
+    finish_current_job();
+    TEST_CHECK((fake_game_request.flags & (VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL)) == VJO_GAME_OCR_F_RECT);
+    TEST_CHECK(!memcmp(&fake_game_request.region, &box, sizeof(box)));
+    TEST_CHECK(fake_game_request.speed & VJO_GAME_OCR_S_SPOT);
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
+    TEST_CHECK(region_saves == saves && regions_set == pushes && history_calls == recorded);
+    TEST_CHECK(!local_text_scene && !local_text_capture_seq && !text_generation);
+    check_shown("犬猫", "dog", 0);
+    unsigned scans = submits;
+    next_scene(40);
+    test_now += 4 * REFRESH_GAP_US;
+    control_tick(VJO_EV_REGION_STABLE); /* pinned: no refresh replaces it */
+    TEST_CHECK(!job_running && submits == scans);
+    check_shown("犬猫", "dog", 0);
+    /* the rear tap then reads the whole frame */
+    control_tick(VJO_EV_FULL_SCREEN);
+    TEST_ASSERT(job_running && job_full_screen);
+    finish_current_job();
+    TEST_CHECK((fake_game_request.flags & VJO_GAME_OCR_F_RECT) && !fake_game_request.region.w);
+    TEST_CHECK(fake_game_request.speed & VJO_GAME_OCR_S_SPOT);
+    vjo_post_command(VJO_CMD_SCAN_BOX, &box); /* a box again, then the close */
+    control_tick(0);
+    TEST_ASSERT(job_running && job_full_screen);
+    close_overlay();
+    TEST_CHECK(job_cancelled && !full_screen && !input_blocked);
+    finish_current_job();
+    TEST_CHECK(!local_text_valid && !g_view.open);
+    unsigned before = submits;
+    vjo_post_command(VJO_CMD_SCAN_BOX, &box); /* no action outside the overlay */
+    control_tick(0);
+    TEST_CHECK(!full_screen);
+    if (job_running) { TEST_CHECK(!job_full_screen); finish_current_job(); }
+    open_overlay(); /* the dialogue region, as before (Auto may have read it already) */
+    if (job_running) finish_current_job();
+    TEST_CHECK(submits > before && !(fake_game_request.flags & (VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_FULL)));
+    TEST_CHECK(region_saves == saves && regions_set == pushes);
+    close_overlay(); mem_free();
+  }
 }
 
 static void test_on_press_overlay_never_refreshes(void)
@@ -9794,6 +9855,7 @@ TEST_LIST = {
     {"rear_full_screen_pipeline_and_lifetime", test_rear_full_screen_pipeline_and_lifetime},
     {"rear_full_screen_supersedes_work_and_cancels", test_rear_full_screen_supersedes_work_and_cancels},
     {"rear_full_screen_retries_fallback_and_exit", test_rear_full_screen_retries_fallback_and_exit},
+    {"scan_box_once", test_scan_box_once},
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},
     {"refresh_names_its_model_on_the_cards_only_when_it_replaces", test_refresh_names_its_model_on_the_cards_only_when_it_replaces},
     {"refresh_logs_quietly_and_a_failing_one_backs_off", test_refresh_logs_quietly_and_a_failing_one_backs_off},

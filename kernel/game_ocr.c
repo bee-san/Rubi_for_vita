@@ -458,7 +458,9 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         /* API 31: an OCR job's hook pick is automatic, a stream or OCR only; a shot answers from no text */
         (shot ? !shot_id_ok(next.shot) || (next.flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL)) ||
                     next.tiers || next.hook_pick
-              : !next.model[0] || !next.model_dir[0] || next.shot[0] || !VJO_HOOK_PICK_OK(next.hook_pick))) {
+              : !next.model[0] || !next.model_dir[0] || next.shot[0] || !VJO_HOOK_PICK_OK(next.hook_pick)) ||
+        /* API 58: the Shell's own box, never with the whole frame's flag or the probe */
+        ((next.flags & VJO_GAME_OCR_F_RECT) && (next.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)))) {
         rc = VJO_ERR_ARG; goto out;
     }
     VJO_LOCK();
@@ -474,7 +476,8 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         if (fw > VJO_MAX_W) fw = VJO_MAX_W;
         if (fh > VJO_MAX_H) fh = VJO_MAX_H;
         if (next.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_SHOT)) memset(&next.region, 0, sizeof(next.region));
-        else next.region = g.region;
+        else if (!(next.flags & VJO_GAME_OCR_F_RECT)) next.region = g.region; /* API 58: F_RECT keeps the Shell's box
+                                                                                * (w == 0: the whole frame) */
         capture_crop_of(&next.region, fw, fh, &next.x, &next.y, &next.width, &next.height);
         next.fb_width = fw;
         next.fb_height = fh;
@@ -689,7 +692,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
          * reads the pass. */
         const int line = g.hook_scene && g.hook_scene == g.tracker.id && g.tracker.hook_us;
         if (req.flags != VJO_ROWS_HOOK || req.n || req.y || dst || req.dst_stride ||
-            (request.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))
+            (request.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))
             rc = VJO_ERR_ARG;
         else if (!line && (!g.tracker.id || !g.tracker.ref.w))
             rc = VJO_ERR_FORMAT;
@@ -844,10 +847,10 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     rows.in_call = 0;
     if (rc > 0 && (req.flags & VJO_ROWS_SIG)) {
         rows.sig_next = req.y + req.n;
-        /* Only a region job's capture is the region's: a full-frame or probe
+        /* Only a region job's capture is the region's: a full-frame, one-off box (API 58) or probe
          * pass (the self-test's) must not stand in for the Shell's region. */
         if ((req.flags & VJO_ROWS_LAST) && valid && claimed && !cancelled && req.seq == request.seq &&
-            !(request.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE))) {
+            !(request.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_RECT | VJO_GAME_OCR_F_PROBE))) {
             publish_capture_locked();
             VJO_UNLOCK();
             ksceKernelSetEventFlag(g.evf, VJO_EV_CAPTURE_DONE);

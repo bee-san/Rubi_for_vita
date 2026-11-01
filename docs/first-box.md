@@ -16,8 +16,9 @@ has run on a console yet; everything below was measured on a computer.
   offered is always the one of the last screen read. Refreshes, lookups and the self-test change nothing.
 - The overlay is open, not drawing a box, and since the game started or resumed no box was offered and the region
   mode was not used (`core/region_select.h` `vjo_rsel_take`). After the frame's buttons, and never in the frame whose
-  Cancel closes the overlay, it opens the region mode with the band drawn (`vjo_rsel_preset`) and the hint "Use this
-  box? 960 x 170 · stick / ◀▶▲▼ opposite corner · Enter save · Cancel undo corner" (the console's own glyphs). A box
+  Cancel opens the one-off box, it opens the region mode with the band drawn (`vjo_rsel_preset`) and the hint "Use this
+  box? 960 x 170 · stick / ◀▶▲▼ corner · Enter use · Cancel undo" (the console's own glyphs; "opposite corner · Enter
+  save · Cancel undo corner" before API 58's one-off box shared it). A box
   drawn with □ asks the same question; before, its hint began "Box 960 x 170".
 
 Enter saves the box as one drawn with □ is (`VJO_CMD_SET_REGION`): the overlay closes, and from the next L + R the game

@@ -5,6 +5,29 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## Read a box once (API 58)
+
+Cancel in the overlay draws a box that is read once with OCR as soon as it is drawn and never saved
+([guide](guide.md#read-a-box-once)). It is the rear double-tap's one-off scan on a box: one request flag
+(`VJO_GAME_OCR_F_RECT`, the free bit 15) has the kernel read the box the Shell puts in the request (the rear tap's:
+the whole frame) instead of the saved region. No block, thread, stack or budget is added; the job is the rear tap's,
+in the game's memory.
+
+SceShell's code pages had 148 B (normal) and 68 B (debug) of room, so the box takes its bytes back in the Shell
+itself: the region selector's three hints are shared by both modes and shorter (no second set), the overlay's footer
+names the face buttons only, the rear tap's scan and the box are one path in `control_tick` (`on_command` returns the
+scan's event), a drag's lift is the selector's own enter (`VjoRegionSelect.once`), the selector's five debug lines are
+one, and in the debug build `vjo_rsel_update` stays out of the overlay's frame (inlined there, the frame's register
+pressure cost 80 B). A first draft (a box flag of its own, a names table for the footer, separate hints) took 40
+pages, two over the budget, in both builds.
+
+| Shell build | main `3d415cdc` text + data | API 58 | Pages |
+|---|---|---|---|
+| normal | 85,868 + 69,576 B | 86,012 + 69,488 B | 155,648 B, unchanged (4 B, 144 B of room) |
+| debug | 98,236 + 69,616 B | 98,172 + 69,536 B | 167,936 B, unchanged (132 B, 96 B of room) |
+
+[measured: `tools/check_memory_ledger.py`'s module rows, the gate's VitaSDK image].
+
 ## A tall line's block beside a carried figure (#528, #590 and audit-mem-lead-3's follow-up; no API change)
 
 A line taller than a strip takes its own block (`game_ocr/main.c` `line_buffer`, at most 57,344 B unchecked on the

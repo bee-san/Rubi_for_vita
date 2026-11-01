@@ -2245,6 +2245,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         r->x > r->fb_width - r->width || r->y > r->fb_height - r->height ||
         (shot ? r->tiers || r->hook_pick || (r->flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL))
               : !r->model_dir[0] || !r->model[0]) ||
+        /* API 58: the one-off scan's box, as the kernel takes it: never with the whole frame's flag or the probe */
+        ((r->flags & VJO_GAME_OCR_F_RECT) && (r->flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE))) ||
         r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1] ||
         r->fallback[sizeof(r->fallback)-1] ||
         (r->hook_pick > VJO_HOOK_STREAMS && r->hook_pick != VJO_HOOK_PICK_OCR)) goto done;
