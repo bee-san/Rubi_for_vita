@@ -1008,8 +1008,9 @@ class Archive(unittest.TestCase):
             deletes = [line for line in ftp.log if line.upper().startswith("DELE")]
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertEqual(deletes, [f"DELE /ux0:/data/{self.old[1]}"])  # never one for the file that changed
-        self.assertRegex(result.stdout, rf"  kept: {self.old[0]} \(on the Vita it is 5004 B, Oct \d+ \d\d:\d\d now, "
-                                        r"not the collect's 5,000 B, Oct 11 13:57\)")
+        # "now" is the grown file's real time, in any month
+        self.assertRegex(result.stdout, rf"  kept: {self.old[0]} \(on the Vita it is 5004 B, [A-Z][a-z]{{2}} +\d+ "
+                                        r"\d\d:\d\d now, not the collect's 5,000 B, Oct 11 13:57\)")
         self.assertIn(f"  kept: {self.old[1]} (DELE answered error_perm: 550 injected failure)", result.stdout)
         self.assertIn("archived: 0 deleted from the Vita, 2 left on it;", result.stdout)
         self.assertTrue((self.device / "ux0/data" / self.old[1]).is_file())

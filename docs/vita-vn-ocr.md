@@ -57,7 +57,10 @@ two-level head](#head-gate-and-two-level-head-api-42)). At 444 MHz (`ocr_boost_c
 same estimates are 0.50, 0.61 and 1.47 s; with `ocr_head_gate = off` 0.63, 0.92 and 2.07 s (0.50, 0.71 and 1.62 s at
 444 MHz), and with credit for the prefetch 0.56, 0.67 and 1.34 s at 333 MHz; a real Vita box of 89 CTC frames takes
 an estimated 0.30, 0.35 and 0.76 s at 333 MHz; parallel lines (`ocr_threads`) take less again ([OCR
-speed](ocr-speed.md)). Small is about 0.11 s a box slower than VOCR5-S as 0.9.8 ran it, with its head gate (0.52 s),
+speed](ocr-speed.md)). The runtime pinned since vita-vn-ocr #165 (`6a6d919`, built with `-DVOCR_NO_ATTN`) reads every
+line to the same text with fewer instructions: by the same method 0.58, 0.74 and 1.81 s at 333 MHz (0.46, 0.58 and
+1.42 s at 444 MHz), and the spotter's 900×150 region 76 → 55 ms (vita-vn-ocr `docs/c-speed.md`; estimates). The table
+and the app keep #157's figures, the earlier runtime's, until a console run measures the new one. Small is about 0.11 s a box slower than VOCR5-S as 0.9.8 ran it, with its head gate (0.52 s),
 and still well inside Small's < 1 s ceiling; Normal is 0.02 s faster than v0.4.0-vocr6.1's VOCR6-N (0.79 s), Large
 level with its (1.87 s). The Rubi app showed 0.5, 0.7 and 1.8 s for VOCR5's sizes (its protocol's less each path's
 published saving, another derivation). No console has run a VOCR6 model: the buttons' times are estimates until a
@@ -1437,7 +1440,7 @@ intervals). On the console the rule is a few hundred instructions a job (an esti
 (184,320 B normal, 192,512 B debug: [memory-ledger.md](memory-ledger-history.md#vertical-text-api-47)). SceShell's and the
 kernel's pages are as before. A job of columns takes the vertical model's weights (823,296 B in pages, a Small job's)
 and a workspace of VOCR5-S's shape plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,920
-(the console's runtime structs, `VJO_VOCR_VITA_STRUCTS`, at vita-vn-ocr f8a1856 since API 50; 3,872 B before) +
+(the console's runtime structs, `VJO_VOCR_VITA_STRUCTS`, at vita-vn-ocr f8a1856 since API 50 and at 6a6d919; 3,872 B before) +
 57,344 B, 188,416 B in pages at 960×544; with the LM extras, the greedy text and both helpers' slots 706,448 B on the
 host build (706,320 B before API 50; 708,608 B in pages either way),
 within `VJO_BUDGET_GAME_WORKSPACE` (1,220,608 B; `host/tests/test_ledger.c`). A
@@ -1967,9 +1970,9 @@ guard and hval pages, as the rule says, and were read once on the test sets:
   leaves out every multi-scale path, `-DVOCR_TEXTSPOT6_NO_MS`) and `VJO_VOCR_SPOT_PUBLISHED`
   (`tools/tests/test_spot_pins.py`).
 - **The runtime** is vita-vn-ocr's `runtime/vocr_textspot6.c` (and its headers), pinned in `cmake/VocrOCR.cmake` at
-  vita-vn-ocr main's merge of textspot6 (`VJO_VOCR_SPOT_COMMIT`, `4674e54`) until the recognizer's pin holds it
-  (see [Build](#build)). It is built into the game worker only, at the runtime's `-O2`; the Shell links no OCR
-  runtime.
+  vita-vn-ocr #165's merge (`VJO_VOCR_SPOT_COMMIT`, `6a6d919`, the recognizer's pin too; #147's `4674e54` before,
+  whose spotter #165 made faster with the same boxes bit for bit) (see [Build](#build)). It is built into the game
+  worker only, at the runtime's `-O2`; the Shell links no OCR runtime.
 
 **Memory** (exact bytes; [memory-ledger.md](memory-ledger-history.md#the-spotter-finder-api-54)):
 
@@ -2206,7 +2209,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout f8a1856c1b21bf41af744c159b54ce8203408a89  # #135's merge (after #130's, #123's, #122's, #120's, #112's, #111's, #101's, #85's, #83's and #82's): the line finder fixes, the attention op (unused by the pinned blobs), the two-level head, the head gate, the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout 6a6d919bc6176ac290191f41616f047e83be006d  # #165's merge (after #135's, #130's, #123's, #122's, #120's, #112's, #111's, #101's, #85's, #83's and #82's): c-speed's faster NEON kernels (the same outputs bit for bit) and the build without the attention op, the line finder fixes, the attention op (unused by the pinned blobs; Rubi builds without it), the two-level head, the head gate, the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
@@ -2228,15 +2231,15 @@ cmake --build build/host && ctest --test-dir build/host --output-on-failure
 SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. The text spotter's files
 (`vocr_textspot6.c`, `vocr_textspot6.h` and the headers they include from their own directory, `vocr_textspot.h`,
 `vocr_lines.h`, `vocr_lines_rows.h`: [the spotter finder](#the-spotter-finder-api-54)) are pinned at their own
-commit, `VJO_VOCR_SPOT_COMMIT` (`4674e54`, vita-vn-ocr main after #147, whose runtime differs from the recognizer's
-pin only by the spotter's own files; the five files are byte-identical at the earlier pin `a54a5b2`): they are taken from
+commit, `VJO_VOCR_SPOT_COMMIT`: since vita-vn-ocr #165 the recognizer's (`6a6d919`; from #147's `4674e54` until then,
+whose runtime differed from the recognizer's pin only by the spotter's own files), so one checkout serves both; they are taken from
 `-DVJO_VOCR_SPOT_SOURCE_DIR=/path/to/a/checkout` of that commit, else from `VJO_VOCR_SOURCE_DIR` when it holds them at
 their pins, else from `.refs/vita-vn-ocr-spot`, else CMake downloads those five files at that commit from the public
 repository into the build directory and checks each (`tools/fast_gate.sh` and CI pass a checkout):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr-spot
-git -C /path/to/vita-vn-ocr-spot checkout 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b52c  # main, textspot6 merged: the spotter
+git -C /path/to/vita-vn-ocr-spot checkout 6a6d919bc6176ac290191f41616f047e83be006d  # #165's merge: the recognizer's pin too
 # then add -DVJO_VOCR_SPOT_SOURCE_DIR=/path/to/vita-vn-ocr-spot to either configure above
 ```
 

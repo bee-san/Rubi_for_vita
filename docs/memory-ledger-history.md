@@ -5,6 +5,30 @@ verbatim, #418): the modules' rows, the pools' figures and their sources; at the
 comments until #418 ("Budget history"). The ledger itself, its table and its checks, is
 [memory-ledger.md](memory-ledger.md).
 
+## vita-vn-ocr's faster runtime, pinned at #165's merge (c-speed; no API change)
+
+The recognizer's and the text spotter's pins move to vita-vn-ocr `6a6d919` (#165; they were `f8a1856` and `4674e54`),
+one commit for both. Its NEON kernels compute every output as before, bit for bit, in fewer instructions, and Rubi
+builds the recognizer with `-DVOCR_NO_ATTN` (`cmake/VocrOCR.cmake`): #130's attention op, which no pinned blob has,
+is left out, and `vocr_load` refuses a blob with one. No block, thread, arena or budget changes.
+
+| Build | main `3d415cdc` text + data | this change | Pages |
+|---|---|---|---|
+| normal | 159,396 + 31,056 B | 159,204 + 31,056 B | 192,512 B, unchanged (540 B of code room) |
+| debug | 168,552 + 31,072 B | 168,360 + 31,072 B | 204,800 B, unchanged |
+
+[measured: `tools/check_memory_ledger.py`, both builds, `tools/fast_gate.sh`'s vitasdk image]
+
+- **The objects** (arm-vita-eabi-gcc, the build's `-O2 -ffunction-sections -fdata-sections`): `vocr.o` 25,963 →
+  24,083 B (the kernels +748 B, the attention op's code out), `vocr_textspot6.o` (`-DVOCR_TEXTSPOT6_NO_MS`) 13,532 →
+  15,240 B (its 1×1, depthwise and stem kernels).
+- **Arenas and structs: unchanged** (vita-vn-ocr's plans did not change): 124,832 / 184,448 / 262,480 B for VOCR6.2
+  S / N / L at 1,024 px with their options, the spotter's 235,119 B for a 900×150 region and 244,607 B for 960×544;
+  `vocr_model` + `vocr_ctx` 3,920 B (`VJO_VOCR_VITA_STRUCTS`: `vocr.h` differs from `f8a1856`'s only in comments).
+- **A helper's stack** (`VJO_STACK_GAME_HELPER`, 16,384 B): the recognizer's deepest chain 2,536 → 2,312 B (`vocr_run`
+  600 + `run_head` 1,328 + `mm_f32` 384, W8F's and F32's; W8I's, a job's, 2,264 B with `mm_i16` 336, which was 616 B)
+  [measured: arm-vita-eabi-gcc `-fcallgraph-info=su`, the build's flags].
+
 ## A tall line's block beside a carried figure (#528, #590 and audit-mem-lead-3's follow-up; no API change)
 
 A line taller than a strip takes its own block (`game_ocr/main.c` `line_buffer`, at most 57,344 B unchecked on the

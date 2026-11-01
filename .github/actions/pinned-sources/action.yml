@@ -22,20 +22,22 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: bee-san/vita-vn-ocr
-        # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #135's merge: #129's line finder fixes, #130's attention
-        # op (no pinned blob has one), #122's two-level head and #120's head gate, after #112's counter re-decode,
-        # #101's text-presence gate, #85, #83 and #82)
-        ref: f8a1856c1b21bf41af744c159b54ce8203408a89
+        # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #165's merge: c-speed's faster NEON kernels and the
+        # build without the attention op, after #135's line finder fixes, #130's attention op (no pinned blob has
+        # one), #122's two-level head and #120's head gate, #112's counter re-decode, #101's text-presence gate, #85,
+        # #83 and #82)
+        ref: 6a6d919bc6176ac290191f41616f047e83be006d
         ssh-key: ${{ inputs.vocr-key }}
         persist-credentials: false
         path: .refs/vita-vn-ocr
     # cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT: the text spotter (vita-vn-ocr #128, #149; API 54), pinned apart from the
-    # recognizer's files until the recognizer's pin holds them (then one commit pins both, and this step goes)
+    # recognizer's files until the recognizer's pin held them; since #165's merge one commit pins both (this checkout
+    # stays, so that the two pins can part again without a change to the jobs)
     - name: Check out the text spotter's pinned runtime
       uses: actions/checkout@v4
       with:
         repository: bee-san/vita-vn-ocr
-        ref: 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b52c
+        ref: 6a6d919bc6176ac290191f41616f047e83be006d
         ssh-key: ${{ inputs.vocr-key }}
         persist-credentials: false
         path: .refs/vita-vn-ocr-spot

@@ -55,8 +55,9 @@
 #define VJO_VOCR6_L_BYTES 2475680u
 /* The runtime's two structs a job's workspace holds beside its arena (vocr_model and vocr_ctx, each 16-byte
  * aligned: core/vocr_ocr.c's layout) as the console's compiler lays them out at the pinned runtime: 3,920 B at
- * vita-vn-ocr f8a1856, whose vocr.h has #130's attention op (1,872 + 2,048 B; 3,872 B at 47cf3a3, 3,760 B at
- * 817d203; measured: arm-vita-eabi-gcc, sizeof). The Vita build checks it
+ * vita-vn-ocr 6a6d919 (#165, whose vocr.h differs from f8a1856's only in comments; the attention op's fields stay
+ * though the build leaves its code out) and at f8a1856, whose vocr.h has #130's attention op (1,872 + 2,048 B;
+ * 3,872 B at 47cf3a3, 3,760 B at 817d203; measured: arm-vita-eabi-gcc, sizeof). The Vita build checks it
  * (core/vocr_ocr.c), so a runtime pin that changes the structs fails until this is updated; the host tests
  * reckon the console's job with it (host/tests/test_vocr.c), as a 64-bit host's structs are larger. */
 #define VJO_VOCR_VITA_STRUCTS 3920u

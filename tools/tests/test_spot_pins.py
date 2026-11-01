@@ -113,8 +113,12 @@ class Pins(unittest.TestCase):
         gate = (ROOT / "tools/fast_gate.sh").read_text()
         self.assertIn("s/^set(VJO_VOCR_SPOT_COMMIT", gate)
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
-        # the host, ARM and Vita jobs' checkouts: the action they share
-        self.assertEqual((ROOT / ".github/actions/pinned-sources/action.yml").read_text().count(f"ref: {commit}"), 1)
+        # the host, ARM and Vita jobs' checkouts: the action they share (its spotter's checkout, and the recognizer's
+        # when one commit pins both)
+        pin = re.search(r"^set\(VJO_VOCR_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
+        action = (ROOT / ".github/actions/pinned-sources/action.yml").read_text()
+        self.assertEqual(action.count(f"ref: {commit}"), 2 if commit == pin else 1)
+        self.assertEqual(action.count("path: .refs/vita-vn-ocr-spot\n"), 1)
         self.assertEqual(workflow.count("\n      - uses: ./.github/actions/pinned-sources\n"), 3)
         self.assertEqual(workflow.count("VJO_VOCR_SPOT_SOURCE_DIR=$PWD/.refs/vita-vn-ocr-spot"), 4)
 

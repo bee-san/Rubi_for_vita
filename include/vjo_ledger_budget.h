@@ -71,7 +71,12 @@
  * #528 (the game's whole-MiB free memory, mem-game): debug 168,808 + 29,544 B, normal 159,636 + 29,528 B, the same
  * pages (normal: 108 B of code room left; the ledger table, the resident descriptors and the blocks' and threads'
  * names moved to the data page) [measured: tools/check_memory_ledger.py, both builds, the gate's VitaSDK image, on
- * main e8b6abe3]. */
+ * main e8b6abe3].
+ * vita-vn-ocr #165 (c-speed, the pin at its merge): its faster NEON kernels with the same outputs (the spotter's
+ * vocr_textspot6.o +1,708 B) and the recognizer built with -DVOCR_NO_ATTN (no attention op: vocr.o -1,880 B against
+ * f8a1856's) take 192 B off each build's code: debug 168,552 -> 168,360 + 31,072 B, normal 159,396 -> 159,204 +
+ * 31,056 B, the same pages (normal: 540 B of code room) [measured: tools/check_memory_ledger.py, both builds,
+ * tools/fast_gate.sh's vitasdk image, on main 3d415cdc and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
 #else
@@ -285,10 +290,12 @@
 #define VJO_BUDGET_GAME_WORKSPACE 1216512u
 /* API 22: one thread per line a helper recognizes, created for the line and deleted once it is
  * placed (game_ocr/main.c pool_run): at most VJO_VOCR_HELPERS_MAX at once, none between jobs.
- * Its deepest chain: vocr_run 600 + run_head 1,320 + mm_i16 616 = 2,536 B with the Vita compiler
- * (-fstack-usage, the build's flags, vita-vn-ocr f8a1856's runtime, since API 50; 592 + 1,320 + 616 = 2,528 B with
- * 47cf3a3's from API 42, 448 + 1,328 + 616 = 2,392 B with 817d203's before it; the two-level path's vocr_run 600 +
- * run_head2 1,240 + mm_i16 616 = 2,456 B), about a sixth of it. */
+ * Its deepest chain: vocr_run 600 + run_head 1,328 + mm_f32 384 = 2,312 B with the Vita compiler
+ * (-fcallgraph-info=su, the build's flags with -DVOCR_NO_ATTN, vita-vn-ocr #165's runtime; mm_f32 is W8F's and
+ * F32's, so a job's W8I takes vocr_run 600 + run_head 1,328 + mm_i16 336 = 2,264 B, and the two-level path's
+ * 600 + run_head2 1,248 + 336 = 2,184 B; 600 + 1,320 + mm_i16 616 = 2,536 B with f8a1856's from API 50,
+ * 592 + 1,320 + 616 = 2,528 B with 47cf3a3's from API 42, 448 + 1,328 + 616 = 2,392 B with 817d203's before it),
+ * about a seventh of it. */
 #define VJO_STACK_GAME_HELPER 16384u
 #define VJO_BUDGET_GAME_HELPER_STACK (VJO_STACK_GAME_HELPER + VJO_LEDGER_TLS)
 #define VJO_BUDGET_GAME_HELPERS (2u * VJO_BUDGET_GAME_HELPER_STACK)
