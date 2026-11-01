@@ -185,6 +185,12 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"AFEJ00001", 0x04B3ED1Cu, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
      0, VJO_PLACE_READ_STRING, 0x0001u},
+    /* r7 (eboot 38c3b56d, 2026-11-01): r6 plus the name-entry fix (eight display lists loaded with their 32-bit swap)
+     * and the Vita keyboard in the game's editors; the observer and its bytes at +0x20F0 are r6's, under a new module
+     * NID. The owner's Vita runs r7, and without this row Rubi refused the site there (owner: "hook no worky"). */
+    {"AFEJ00001", 0xDC1F0733u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
+     0, VJO_PLACE_READ_STRING, 0x0001u},
     /* DELT00001 DELTARUNE (APP_VER 00.73): DeltaruneVita v0.73, the Butterscotch GameMaker runner (eboot 9d9c7a6d): segment 0
      * + 0xA4AA4 in builtin_string_char_at, r5 = the UTF-8 string of argument 0 after RValue_toString, on the in-range
      * path. The GML writer passes its whole message for every drawn character, every frame (a hot site: the text

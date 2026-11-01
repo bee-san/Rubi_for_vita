@@ -27,7 +27,7 @@ class HookProfiles(unittest.TestCase):
                 subprocess.run(command + [*[str(ROOT / p) for p in sources], "-o", str(exe)], check=True)
                 outputs.append(subprocess.check_output([str(exe), str(archive)]))
             self.assertEqual(outputs[0], outputs[1])
-            self.assertIn(b"AFEJ00001 0 3\n", outputs[0])
+            self.assertIn(b"AFEJ00001 0 4\n", outputs[0])
             self.assertIn(b"DELT00001 0 1\n", outputs[0])
             self.assertIn(b"PCSG00415", outputs[0])
             self.assertIn(b"PCSG00628", outputs[0])
