@@ -1785,6 +1785,7 @@ static void test_eplus_row(void)
         const char *log; /* the debug build's hooks.log line for the row */
     } cases[] = {{"00.01", 0x7FEE3308u, 1, "verified +20F0 thumb r0 hooked, stream 1"},
                  {NULL, 0x7FEE3308u, 1, "verified +20F0 thumb r0 hooked, stream 1"},
+                 {"00.01", 0xDC1F0733u, 1, "verified +20F0 thumb r0 hooked, stream 1"}, /* r7 */
                  {"00.02", 0x7FEE3308u, 0, "verified +20F0 thumb r0 refused: version"},
                  {"00.01", 0x52DEA492u, 0, "verified +20F0 thumb r0 refused: signature"}};
     static const char page[] = "こんにちは！\x01\n今日もいい天気だね。";
@@ -1799,8 +1800,8 @@ static void test_eplus_row(void)
         if (cases[k].sfo) set_sfo(cases[k].sfo);
         vjo_hooks_start("AFEJ00001", VJO_TEXT_SOURCE_AUTO, 0);
         vjo_hooks_counts(NULL, &inst, &refused);
-        /* AFEJ00001 has three rows (r4, r5, r6: one module NID each); the two other builds' rows are refused */
-        TEST_CHECK_((inst >> 16) == (unsigned)cases[k].hooked && refused == 3u - (unsigned)cases[k].hooked &&
+        /* AFEJ00001 has four rows (r4, r5, r6, r7: one module NID each); the other builds' rows are refused */
+        TEST_CHECK_((inst >> 16) == (unsigned)cases[k].hooked && refused == 4u - (unsigned)cases[k].hooked &&
                         n_offs == (unsigned)cases[k].hooked,
                     "case %u (APP_VER %s, NID %08X): hooked %u, refused %u", k, cases[k].sfo ? cases[k].sfo : "(none)",
                     (unsigned)cases[k].nid, (unsigned)(inst >> 16), (unsigned)refused);

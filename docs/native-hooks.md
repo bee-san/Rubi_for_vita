@@ -39,11 +39,17 @@ unverified. The exact r4 executable has SHA-256
 `acf744c9be46d5945676d4e41f4661ad75771797bcf65a09f34d177e1b207ff6` (recorded provenance; runtime
 installation checks the NID, version and instruction signature).
 
-Builds r5 (module NID `C7116601`) and r6 (`04B3ED1C`) have entries at the same offset and bytes. **r6 is the build
-to use** (eboot SHA-256 `f34fe31cb8b4800ed376ca4a1b51671d81395ae105283353fef23b67139ae216`, VPK in psandvita's
+Builds r5 (module NID `C7116601`), r6 (`04B3ED1C`) and r7 (`DC1F0733`) have entries at the same offset and bytes.
+r6 (eboot SHA-256 `f34fe31cb8b4800ed376ca4a1b51671d81395ae105283353fef23b67139ae216`, VPK in psandvita's
 `hooks-ac-r6-deltarune-20261031` release): its publisher calls the observer once per typed-out page instead of once per
 typewriter step, publishes a repeated line again, maps drawn pictograms, and the game's `string.bin` loader no longer
-corrupts names and dates. It is emulator-proven (Vita3K, 19 + 18 farm pages), not console-tested.
+corrupts names and dates. It is emulator-proven (Vita3K, 19 + 18 farm pages). **r7 is the build to use** (eboot SHA-256
+`38c3b56dcd89da3544fbf4c61ed02cbb0bbe6bf41ad1b61f878cd01169228e1e`): r6 with the name-entry screens drawn (eight display
+lists the port loaded without their 32-bit swap) and the Vita keyboard in the game's editors; its observer is r6's.
+
+Console: on the owner's Vita with Rubi 0.10.3 and r5 (2026-10-31), the r5 row hooked (`1 table sites ... hooked, 2 sites
+refused`: the r4 and r6 rows) and the overlay's history kept the observer's pages, 32 in that session; the hooked lines
+appear only in the sessions that hooked a table site. r7 runs on that Vita now; its row is not yet console-tested.
 
 ## DELTARUNE (DeltaruneVita v0.73)
 

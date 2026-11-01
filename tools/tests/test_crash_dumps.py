@@ -1003,13 +1003,15 @@ class Archive(unittest.TestCase):
             self.assertEqual(self.run_ftp(ftp, "--collect").returncode, 0)
         grown = self.device / "ux0/data" / self.old[0]
         grown.write_bytes(grown.read_bytes() + b"more")
+        # by the Vita's clock, not this machine's: the listing's date was the real day, so the "Oct" below failed in November
+        os.utime(grown, (self.VITA_NOW - 600, self.VITA_NOW - 600))
         with FtpMock(self.device, clock=lambda: self.VITA_NOW, fail={"DELE": lambda arg: True}) as ftp:
             result = self.run_ftp(ftp, "--archive-dumps")
             deletes = [line for line in ftp.log if line.upper().startswith("DELE")]
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertEqual(deletes, [f"DELE /ux0:/data/{self.old[1]}"])  # never one for the file that changed
-        self.assertRegex(result.stdout, rf"  kept: {self.old[0]} \(on the Vita it is 5004 B, Oct \d+ \d\d:\d\d now, "
-                                        r"not the collect's 5,000 B, Oct 11 13:57\)")
+        self.assertIn(f"  kept: {self.old[0]} (on the Vita it is 5004 B, Oct 20 13:50 now, "
+                      "not the collect's 5,000 B, Oct 11 13:57)", result.stdout)
         self.assertIn(f"  kept: {self.old[1]} (DELE answered error_perm: 550 injected failure)", result.stdout)
         self.assertIn("archived: 0 deleted from the Vita, 2 left on it;", result.stdout)
         self.assertTrue((self.device / "ux0/data" / self.old[1]).is_file())

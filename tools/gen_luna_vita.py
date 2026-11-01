@@ -46,6 +46,8 @@ PLACE = ROOT / "core" / "hook_place.c"  # Rubi's own verified entries (vjo_place
 # Which of Rubi's own entries a console has run, and what it showed (core/hook_place.c's comments, README.md's table, the
 # console reports): every other entry is proven in Vita3K only. A title here that the table lacks fails the generator.
 RUBI_CONSOLE = {
+    "AFEJ00001": "r5 (module NID 0xC7116601): the owner's Vita, Rubi 0.10.3 (2026-10-31): hooked (the r4 and r6 rows "
+                 "refused), the overlay's history kept the observer's pages; r4, r6, r7: not yet",
     "PCSG00415": "this site: not yet (Vita3K only, vita-vn-ocr notes 22); CLANNAD's string-copy CALL source, the "
                  "SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports of the game executable (no entry of this "
                  "table): the owner's Vita, the combined debug test build (2026-10-20)",
