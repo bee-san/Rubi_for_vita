@@ -173,8 +173,10 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"AFEJ00001", 0x7FEE3308u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
      0, VJO_PLACE_READ_STRING, 0x0001u},
-    /* r5 (town-combination byte-order fix; PR #582): same offset and veneer, new module NID. Its observer runs once per
-     * typewriter step and its name/date strings are corrupt (string.bin loader), so r6 is the build to use. */
+    /* AFEJ00001 r5 (town-combination byte-order fix; PR #582): same offset and veneer, new module NID. Its observer runs
+     * once per typewriter step and its name/date strings are corrupt (string.bin loader), so r7 is the build to use.
+     * Ran on the owner's Vita (Rubi 0.10.3, 2026-10-31): "1 table sites ... hooked, 2 sites refused" (the r4 and r6
+     * rows), and the overlay's history kept the observer's pages, 32 in that session. */
     {"AFEJ00001", 0xC7116601u, 0x20F0u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x10, 0xB5, 0x04, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46, 0x24, 0x46},
      0, VJO_PLACE_READ_STRING, 0x0001u},
