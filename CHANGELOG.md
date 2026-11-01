@@ -11,6 +11,10 @@ been reported.
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-11-01
+
+Circle reads a box once with OCR, and the どうぶつの森e＋ native port's r7 build gets its hook.
+
 ### Added
 
 - **Read a box once with Circle.** Text the hook does not carry (a menu, a choice, a sign) can now be read without
@@ -25,6 +29,14 @@ been reported.
   The footer is shorter: `Tap / pad / stick word · × queue · □ region · ○ OCR box` (the right stick, the rear
   double-tap and the close are in the guide and the README's diagram). With the rear double-tap as the toggle, which
   scans while the overlay is open, close it with Select + R or PS. Host-tested; not yet run on a console.
+
+### Fixed
+
+- **どうぶつの森e＋ (`AFEJ00001`) r7 is hooked.** The native port's r7 build (the name-entry screens drawn, the Vita
+  keyboard in its editors) keeps r6's dialogue observer at the same offset and bytes, but has a new module NID
+  (`DC1F0733`), so Rubi refused the site and the game fell back to OCR (the owner's Vita, 2026-11-01). r7 now has its
+  own row. The r5 row's console run is recorded: on the owner's Vita with 0.10.3 (2026-10-31) it hooked and the
+  overlay's history kept the observer's pages. r7's row is host-tested; not yet run on a console.
 
 ## [0.10.5] - 2026-10-31
 
@@ -1709,7 +1721,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.5...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.6...HEAD
+[0.10.6]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.6
 [0.10.5]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.5
 [0.10.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.4
 [0.10.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.3
