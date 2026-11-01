@@ -11,6 +11,23 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- **A faster OCR runtime, the same text bit for bit** (vita-vn-ocr #165, its `docs/c-speed.md`; thanks to astra,
+  whose ONNX report started it). The runtime pin is now vita-vn-ocr `6a6d919` for both the recognizer and the text
+  spotter (they were `f8a1856` and `4674e54`). Its NEON kernels do the same arithmetic in fewer instructions, so every
+  model reads every line to the same text, top-K and confidences, and the spotter finds the same boxes (checked on
+  vita-vn-ocr's development data in five builds and in Vita3K). Estimated time per 3-line box at 333 MHz, one core
+  (estimates; nothing of it has run on a console yet): Small 0.627 → 0.579 s, Normal 0.774 → 0.743 s, Large 1.880 →
+  1.813 s; the spotter 76 → 55 ms for a 900×150 region. The recognizer is built without vita-vn-ocr's attention op
+  (`-DVOCR_NO_ATTN`; no pinned model has one). Memory: the game worker's code is 192 B smaller in each build, its
+  pages, the arenas and every budget are unchanged.
+
+### Fixed
+
+- `tools_crash_dumps` no longer fails outside October: one check expected the month a grown dump's listing shows to
+  be October, and the listing shows the file's real time.
+
 ## [0.10.5] - 2026-10-31
 
 The game's skip mode no longer inflates Triangle's reading statistics: with a trusted hook, the lines a skip passes

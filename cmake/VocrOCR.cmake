@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT f8a1856c1b21bf41af744c159b54ce8203408a89)
+set(VJO_VOCR_COMMIT 6a6d919bc6176ac290191f41616f047e83be006d)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -33,14 +33,16 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # since #123 it also parses width strides up to 3 (stride-12 blobs; none is pinned) and
 # refuses a kernel narrower than its stride. Its gate and two-level code is #122's (fb63532). Since #130
 # (VOCR6's stage-3 candidate) it also runs a light global-attention op (op type 5) in a blob that has one; no
-# pinned blob has one, and every other blob reads bit for bit as before.
+# pinned blob has one, and every other blob reads bit for bit as before. Since #165 (c-speed) its NEON kernels are
+# faster with every output the same bit for bit, and it builds without that op with -DVOCR_NO_ATTN, as Rubi does
+# (below): vocr_load then refuses a blob with one, which no pin is, and the worker's code is 2,628 B smaller.
 # vocr_vertical.c (vita-vn-ocr #99, merged by #103 and unchanged since: the same
 # file at this pin) finds the columns of vertical text (GRAD on the region's
 # transpose, right to left) and turns a column 90 degrees anticlockwise for the
 # vertical recognizer (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text").
 set(_vocr_pins
-  vocr.c e2d43c501e8cec076fd21539feb03b1178bb920cc85782cba0e6422c66d9cd60
-  vocr.h c9670efd980a993f98307e6093ca17c7595f64a09c11a3d4c7bb6cea84993de5
+  vocr.c f4d5262c5d1e6155249e9494df827d5c6afa306d6c3fa36b63639981572cf55b
+  vocr.h 0b43a90131acd955326c879d8f71e011607ab94d704be93dc8df1951ee44d371
   vocr_lines.c 90c30a1c1e1707b818c2bd919243ee589700ff44ceac8b8d7a842b9d55d8d9ca
   vocr_lines.h 4f768c9a7aaa1f9e3b8f16990be23c3b098b675cf6316df7eb20dc6198b9f37d
   vocr_lines_rows.c 3207edb85d1cd7c79899390bb2ee028839dd120ca5d2278a28edd5fa9ca2ee6e
@@ -76,19 +78,19 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 
 # vocr_textspot6.c (vita-vn-ocr #128 and #149; docs/textspot6.md, docs/textspot8.md) is the text spotter, the game
 # worker's default finder (config.ini ocr_finder = spotter; core/vocr_ocr.c reads its boxes as the lines). It is pinned
-# apart from the recognizer's files: its sha256 at vita-vn-ocr main's merge of textspot6 (#147, 4674e54), whose
-# runtime holds the spotter's files that VJO_VOCR_COMMIT predates, until the recognizer's pin reaches a commit that
-# holds them (then VJO_VOCR_SPOT_COMMIT is VJO_VOCR_COMMIT and the source below is the same checkout). Its headers
+# apart from the recognizer's files (from #147's merge, 4674e54, whose runtime held the spotter's files that the
+# recognizer's pin predated) until the recognizer's pin reached a commit that holds them: since #165's merge
+# VJO_VOCR_SPOT_COMMIT is VJO_VOCR_COMMIT, and the source below is the same checkout. Its headers
 # are read from its own directory (vocr_textspot6.h includes vocr_textspot.h, which includes vocr_lines.h and
 # vocr_lines_rows.h), so those are pinned there too, at the hashes the recognizer's checkout has. The source: an
 # explicit VJO_VOCR_SPOT_SOURCE_DIR (a checkout of VJO_VOCR_SPOT_COMMIT), else VJO_VOCR_SOURCE_DIR when it holds the
 # five files at these pins, else .refs/vita-vn-ocr-spot, else the five files at VJO_VOCR_SPOT_COMMIT downloaded from
 # the public repository into the build directory, each checked against its hash (tools/fast_gate.sh and CI pass a
 # checkout; other tools need nothing new). The five files are byte-identical at the earlier pin a54a5b2.
-set(VJO_VOCR_SPOT_COMMIT 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b52c)
+set(VJO_VOCR_SPOT_COMMIT 6a6d919bc6176ac290191f41616f047e83be006d)
 set(VJO_VOCR_SPOT_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_SPOT_COMMIT} (the text spotter)")
 set(_vocr_spot_pins
-  vocr_textspot6.c 678e88b60a8347b2019c054f74eb9c741b0bf871b97505f70c682a8e34bb018c
+  vocr_textspot6.c 71e956fb81e06bdc78860b2e43f9c62754a6a20257e7cc044d126bfda5153b33
   vocr_textspot6.h 526d6d19796c3aa314d3ec14655129c5ef2dbab75125d2b31225c7e78620b512
   vocr_textspot.h a25ef000164af61610a6f5201fb9e345f8a67cf6525d2f16bae44afca712dd57
   vocr_lines.h 4f768c9a7aaa1f9e3b8f16990be23c3b098b675cf6316df7eb20dc6198b9f37d
@@ -247,6 +249,9 @@ if(VJO_VOCR_SPOT_NO_MS)
 endif()
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)
+# vita-vn-ocr #165: the recognizer without #130's attention op (no pinned blob has one; vocr_load refuses such a blob),
+# 2,628 B less of the worker's code (vita-vn-ocr docs/c-speed.md); every pinned blob reads as in the default build.
+target_compile_definitions(vjo_vocr_rt PRIVATE VOCR_NO_ATTN=1)
 if(VJO_BUILD_VITA)
   target_compile_options(vjo_vocr_rt PRIVATE -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard)
   # The counter re-decode is a line's control code, a few thousand integer steps, not per-pixel work:
