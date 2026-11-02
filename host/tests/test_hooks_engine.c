@@ -475,6 +475,7 @@ static void reset(void)
     sc3_pin = NULL;
     sc3_table = NULL;
     sc3_count = 0;
+    sc3_dialect = 0;
 #if VJO_DEBUG
     dlog = -1;
 #endif
@@ -2387,10 +2388,11 @@ static void test_sc3_sites(void)
         char text[1024];
         size_t n, n_other;
         uint32_t seq;
+        unsigned dialect;
 #ifdef VJO_EXTERNAL_HOOK_PROFILES
         profile_for_farm(row->title);
 #endif
-        TEST_ASSERT_(vjo_place_verified(row->title, &v) == 1 && v->read == VJO_PLACE_READ_SC3 &&
+        TEST_ASSERT_(vjo_place_verified(row->title, &v) == 1 && vjo_place_sc3(v->read, &dialect) &&
                      v->off + 64u <= seg_size, "%s: its SC3 entry", row->title);
         fs = farm_entry(row->title, &v); /* the farm's record of the hook, which the game below is */
         titles += strcmp(last, row->title) != 0;
@@ -2447,7 +2449,7 @@ static void test_sc3_sites(void)
         TEST_CHECK(!vjo_hooks_sc3_set(NULL, 0) && vjo_hooks_text(&s, text, sizeof text) == 0); /* forgotten */
         memset(seg + fs->off, 0, fs->sig_len);
     }
-    TEST_CHECK_(titles == 3, "excerpts of %u titles", titles);
+    TEST_CHECK_(titles == 6, "excerpts of %u titles", titles);
     /* a site without an SC3 entry wants no charset */
     reset();
     TEST_CHECK(!vjo_hooks_sc3_want() && !vjo_hooks_sc3_set(file, VJO_SC3_HEADER));

@@ -69,6 +69,7 @@ static uint32_t scratch_lock;
  * thread loads at its first job (vjo_hooks_sc3_set, game_ocr/main.c hooks_sc3_load): its count little-endian 16-bit
  * code points. Until then the site's text is empty. Read and written in the worker's thread only. */
 static const VjoSc3Pin *sc3_pin;
+static unsigned sc3_dialect; /* its entry's token rules (core/hook_place.h vjo_place_sc3) */
 static const uint8_t *sc3_table;
 static uint32_t sc3_count;
 
@@ -295,6 +296,7 @@ static void site_hit(unsigned i, const uint32_t *regs)
     if (si->ver) {
         uint32_t addr = regs[si->ver->reg & 15u] + (uint32_t)si->ver->padding, word, count_at = 0, cells_at = 0;
         const int cells = vjo_place_cells_layout(si->ver->read, &count_at, &cells_at);
+        unsigned dialect = 0;
         uint8_t w[4];
         enc = si->ver->encoding;
         unit = enc == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
@@ -302,8 +304,8 @@ static void site_hit(unsigned i, const uint32_t *regs)
         word = (si->ver->read == VJO_PLACE_READ_DEREF || cells) && read_game(NULL, addr + count_at, w, 4, 0) == 4
                    ? (uint32_t)w[0] | (uint32_t)w[1] << 8 | (uint32_t)w[2] << 16 | (uint32_t)w[3] << 24
                    : 0u;
-        if (si->ver->read == VJO_PLACE_READ_SC3) { /* to its end token: its 0x00 bytes are line breaks and glyphs */
-            n = vjo_sc3_span(scratch, read_game(NULL, addr, scratch, sizeof(scratch), VJO_HOOK_READ_SPAN));
+        if (vjo_place_sc3(si->ver->read, &dialect)) { /* to its end token: its 0x00 bytes are line breaks and glyphs */
+            n = vjo_sc3_span(scratch, read_game(NULL, addr, scratch, sizeof(scratch), VJO_HOOK_READ_SPAN), dialect);
         } else if (cells) { /* exactly its cells, as CP932 bytes */
             if (word > sizeof(scratch) / 2u) word = sizeof(scratch) / 2u;
             n = word && read_game(NULL, addr + cells_at, scratch, word * 2u, 0) == word * 2u
@@ -510,7 +512,10 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
              same ? ", Luna's text" : "");
         if (r == VJO_PLACE_OK) r = hook_site(tai->modid, v->off, v->thumb, same, v);
         /* an SC3 site's text needs its game's charset, which the worker's thread loads at its first job */
-        if (r == VJO_PLACE_OK && v->encoding == VJO_HOOK_ENC_SC3) sc3_pin = vjo_sc3_pin(title_id);
+        if (r == VJO_PLACE_OK && v->encoding == VJO_HOOK_ENC_SC3) {
+            sc3_pin = vjo_sc3_pin(title_id);
+            if (!vjo_place_sc3(v->read, &sc3_dialect)) sc3_dialect = VJO_SC3_ADV7;
+        }
         site_result(r, v->off, code, code_size);
     }
     for (unsigned i = 0; i < nl; i++) {
@@ -715,7 +720,8 @@ size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
         n = vjo_luna_text_filter(s->site, v->filter, v->encoding, s->raw, s->n, s->encoding, out, cap);
     } else if (s->site) n = vjo_luna_text(s->site, s->raw, s->n, s->encoding, out, cap);
     else if (s->encoding == VJO_HOOK_ENC_SC3)
-        n = sc3_table ? vjo_sc3_decode(sc3_table, sc3_count, s->raw, s->n, out, cap) : 0; /* no charset: no text */
+        n = sc3_table ? vjo_sc3_decode(sc3_table, sc3_count, s->raw, s->n, out, cap, sc3_dialect)
+                      : 0; /* no charset: no text */
     else n = vjo_hook_decode(s->encoding, s->raw, s->n, out, cap, NULL);
     /* One clean text for selection, display, mining and history's character count. */
     return vjo_hook_clean(out, n);

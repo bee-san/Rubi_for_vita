@@ -13,12 +13,18 @@ no other file; ctest `hook_sc3_pins` checks the pins against these files). The r
 | File | Game | Glyphs (named) | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | `PCSG00146.sc3` | STEINS;GATE 比翼恋理のだーりん | 2,666 (2,528) | 5,364 | `278637d67f43caaee9b9008daf6a102e2c32fccc4cb83dade0c60c04a069399e` |
+| `PCSG00147.sc3` | STEINS;GATE | 2,816 (2,641) | 5,664 | `be0d22b4a4b4e5f3c0e175e19228cdf84abcd731fa2fdd131599dd32479bbe9f` |
+| `PCSG00250.sc3` | STEINS;GATE 線形拘束のフェノグラム | 2,730 (2,607) | 5,492 | `79117853805b33da90b391b58257fdf591c0f85c8e5b2c41bc651d6cfc47a4a5` |
 | `PCSG00352.sc3` | ROBOTICS;NOTES ELITE | 3,200 (2,688) | 6,432 | `a8ebe56944198a4df3a7f1c94daecf1559ebff93067e740e11d0061a5d1e98cc` |
 | `PCSG00555.sc3` | CHAOS;CHILD | 8,000 (7,345) | 16,032 | `c95d566c64190cf97e58abc2592654dee32b1fbfcd547b9ab81b2ca8c486ee7f` |
+| `PCSG00673.sc3` | STEINS;GATE 0 | 8,000 (7,344) | 16,032 | `64572cae58dfe9c94b6be50193be24c7432dfeea97104659030b4a63cd56c36e` |
 
 Farm inputs (SHA-256 of `sc3-charset.json`, the farm's commit `56f4f88`): PCSG00146 `fa7b2387…61b3`, PCSG00352
-`d581ec7f…e5cd4`, PCSG00555 `ee776425…4c41`. A glyph the table cannot name is 0 in the file: the decoder drops it,
-it never guesses one.
+`d581ec7f…e5cd4`, PCSG00555 `ee776425…4c41`; the farm's commit `01718ea`: PCSG00147 `d3d5b324…7f2a`, PCSG00250
+`0d7674d7…60d5`, PCSG00673 `79e8f469…9e4d`. A glyph the table cannot name is 0 in the file: the decoder drops it, it
+never guesses one. So is a font cell that draws two characters, which no one code point names (PCSG00147's 268 `¹⁸`,
+270 `⁻¹⁹`, 271 `⁻²⁴`, 272 `キタ`: `tools/sc3_charset.py --farm` writes 0; PCSG00250's farm table has its 13 such
+cells null already).
 
 ## Where each table comes from
 
@@ -36,6 +42,21 @@ it never guesses one.
   (MIT); its private-use placeholders and filler slots are unknown (512). That table is the English patch's font: 14
   slots were restored to the Japanese font's glyphs (「」『』 and others; event 33 of the farm's run draws 「」), and
   three corrected from the font atlas on 2026-10-25 (269 `²`, 270 `♥`, 271 `©`).
+- **PCSG00147.** The game's own UTF-16 tables in its eboot: the half-width one (segment 1 at 0x810E4000) for indices
+  0x000-0x07F and the main one (0x810E3FB4 + 2 × index) for 0x080-0xAD6, which the engine uses for its system
+  strings. Every named index was then checked against the game's font atlas (`system1.cpk`, 32 px cells): 2,223 cells
+  correlate at least 0.97 with the same glyph of the PCSG00146 table's (the same face), the other 419 were compared
+  by eye. From the atlas: 267-273 are superscripts and compound cells, not the eboot's ⑭-⑳; 17 cells the eboot lists
+  as U+3000 draw kaomoji fragments (unknown); filler and blank cells are unknown (171 in all).
+- **PCSG00250.** The game's own UTF-16 tables in its eboot (half-width at 0x810C8FA8, indices 0-88; full-width at
+  0x810C905C, from 0x7F), every index scored against its cell of the font atlas (`system.cpk`, 32 px cells) and 16
+  entries corrected from it (`²` `♥` `©` `•`, three half-width kana, and seven kanji past the table's end). The PC
+  texthook's table has another layout from index 0x51 on and is not used. 88 filler slots and 13 two-character cells
+  are unknown (123 in all).
+- **PCSG00673.** The PCSG00555 table above (the same font layout), checked against this game's own font atlas
+  (`USRDIR/system.mpk`, `FONT.gxt`, 24 px cells) by a rank test of every cell against all 8,000 of CHAOS;CHILD's
+  (6,080 the same character, the rest the two typefaces' look-alikes) and by eye for rows 0-5 and 115-116; nine
+  entries differ from PCSG00555's (267-273 and two Cyrillic letters).
 - **PCSG00555.** 0xDC00/scripts' PC texthook for *CHAOS;CHILD* (MIT), which is based on sc3tools' `sg0` resources
   (MIT); its private-use placeholders and filler slots are unknown (655). Every index was then checked against the
   Vita game's own font atlas (`USRDIR/system.mpk`, `font.gxt`: 64 × 125 cells of 24 px), cell by cell for indices
@@ -55,8 +76,12 @@ read decoded with these files by the farm's decoder:
 | PCSG00146 | 1,496 | 1,493 | 3 pages read `⑯` before glyph 269 was corrected; the screen draws `²` |
 | PCSG00352 | 605 | 586 | 19 pages' text was made before the 14 slots' restoration: `“”` and `––` where the screen draws `「」` and `――` |
 | PCSG00555 | 390 | 390 | |
+| PCSG00147 | 56 | 56 | (read by adv6's token rules: with adv7's, one page loses 「機関」) |
+| PCSG00250 | 60 | 60 | |
+| PCSG00673 | 101 | 101 | |
 
 Statically, the farm decoded the games' script strings with the same tables: 45,697 of 45,698 (PCSG00352) and
-46,496 of 46,496 (PCSG00555) decode with no unknown glyph. `host/tests/test_hook_sc3.c` and
+46,496 of 46,496 (PCSG00555), 26,582 of 26,591 (PCSG00250) and 30,362 of 30,367 (PCSG00673) decode with no unknown
+glyph. `host/tests/test_hook_sc3.c` and
 `host/tests/test_hooks_engine.c` run a few short pages of each game (`host/tests/fixtures/hook_sc3_farm.inc`,
 `tools/sc3_charset.py --fixtures`) through Rubi's own reader and decoder.

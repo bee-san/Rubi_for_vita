@@ -27,8 +27,9 @@ typedef struct {
 static const FarmRow farm_rows[] = {HOOK_SC3_FARM_ROWS};
 _Static_assert(sizeof farm_rows / sizeof farm_rows[0] == HOOK_SC3_FARM_FIXTURES, "every excerpt");
 
-static uint8_t files[3][VJO_SC3_MAX_BYTES];
-static const char *const titles[3] = {"PCSG00146", "PCSG00352", "PCSG00555"};
+#define TITLES 6u
+static uint8_t files[TITLES][VJO_SC3_MAX_BYTES];
+static const char *const titles[TITLES] = {"PCSG00146", "PCSG00147", "PCSG00250", "PCSG00352", "PCSG00555", "PCSG00673"};
 
 /* The committed charset file of title (its bytes in files[]), its size; 0 when missing. */
 static size_t charset(const char *title, const uint8_t **out)
@@ -37,8 +38,8 @@ static size_t charset(const char *title, const uint8_t **out)
     FILE *f;
     size_t n;
     unsigned k = 0;
-    while (k < 3 && strcmp(titles[k], title)) k++;
-    TEST_ASSERT_(k < 3, "%s: one of the SC3 titles", title);
+    while (k < TITLES && strcmp(titles[k], title)) k++;
+    TEST_ASSERT_(k < TITLES, "%s: one of the SC3 titles", title);
     snprintf(path, sizeof path, "%s/third_party/sc3-charsets/%s.sc3", VJO_SOURCE_DIR, title);
     f = fopen(path, "rb");
     TEST_ASSERT_(f != NULL, "%s", path);
@@ -59,7 +60,7 @@ static void charsets_and_entries(void)
     const VjoSc3Pin *pins;
     const VjoPlaceVerified *all;
     unsigned np = vjo_sc3_pins(&pins), nv = vjo_place_verified_all(&all), sc3 = 0;
-    TEST_CHECK(np == 3);
+    TEST_CHECK(np == TITLES);
     for (unsigned i = 0; i < np; i++) {
         const VjoPlaceVerified *v;
         const uint8_t *file;
@@ -82,10 +83,14 @@ static void charsets_and_entries(void)
                     (unsigned)v->module_nid);
     }
     for (unsigned i = 0; i < nv; i++) {
-        if (all[i].encoding != VJO_HOOK_ENC_SC3 && all[i].read != VJO_PLACE_READ_SC3) continue;
+        unsigned dialect = 0;
+        const int read = vjo_place_sc3(all[i].read, &dialect);
+        if (all[i].encoding != VJO_HOOK_ENC_SC3 && !read) continue;
         sc3++;
-        TEST_CHECK_(all[i].encoding == VJO_HOOK_ENC_SC3 && all[i].read == VJO_PLACE_READ_SC3 && !all[i].filter &&
-                    all[i].reg <= 12 && vjo_sc3_pin(all[i].title), "%s: SC3 read, encoding, no filter, a pin",
+        TEST_CHECK_(all[i].encoding == VJO_HOOK_ENC_SC3 && read && !all[i].filter && all[i].reg <= 12 &&
+                        vjo_sc3_pin(all[i].title), "%s: SC3 read, encoding, no filter, a pin", all[i].title);
+        /* adv6's token rules for STEINS;GATE's engine alone */
+        TEST_CHECK_((dialect == VJO_SC3_ADV6) == !strcmp(all[i].title, "PCSG00147"), "%s: its token rules",
                     all[i].title);
     }
     TEST_CHECK(sc3 == np);
@@ -97,28 +102,32 @@ static void charsets_and_entries(void)
  * string's, a read without its end token keeps nothing, and the decoder gives the farm's text. */
 static void farm_excerpts(void)
 {
-    unsigned seen[3] = {0};
+    unsigned seen[TITLES] = {0};
     for (unsigned k = 0; k < HOOK_SC3_FARM_FIXTURES; k++) {
         const FarmRow *row = &farm_rows[k];
         const uint8_t *file;
+        const VjoPlaceVerified *v;
         size_t n = charset(row->title, &file);
         uint8_t raw[VJO_SC3_MAX_BYTES];
         char out[1024];
         size_t len;
-        for (unsigned t = 0; t < 3; t++) seen[t] += !strcmp(titles[t], row->title);
+        unsigned d = 0; /* the entry's token rules */
+        TEST_ASSERT_(vjo_place_verified(row->title, &v) == 1 && vjo_place_sc3(v->read, &d), "%s: its entry", row->title);
+        for (unsigned t = 0; t < TITLES; t++) seen[t] += !strcmp(titles[t], row->title);
         TEST_ASSERT(row->n >= 2 && row->n + 64u <= sizeof raw && (uint8_t)row->raw[row->n - 1] == 0xFF);
         memcpy(raw, row->raw, row->n);
         memset(raw + row->n, 0x00, 32); /* the next string's bytes, or zeros */
         memcpy(raw + row->n + 32, "\x01\x82\xD2\x02\xFF", 5);
-        TEST_CHECK_(vjo_sc3_span(raw, row->n + 37) == row->n, "%s excerpt %u: its span", row->title, k);
-        TEST_CHECK(vjo_sc3_span(raw, row->n - 1) == 0);
+        TEST_CHECK_(vjo_sc3_span(raw, row->n + 37, d) == row->n, "%s excerpt %u: its span", row->title, k);
+        TEST_CHECK(vjo_sc3_span(raw, row->n - 1, d) == 0);
         len = vjo_sc3_decode(file + VJO_SC3_HEADER, (unsigned)(n - VJO_SC3_HEADER) / 2u, raw, row->n + 37, out,
-                             sizeof out);
+                             sizeof out, d);
         TEST_CHECK_(len == strlen(row->text) && !strcmp(out, row->text), "%s excerpt %u", row->title, k);
         TEST_MSG("got  [%s]", out);
         TEST_MSG("want [%s]", row->text);
     }
-    for (unsigned t = 0; t < 3; t++) TEST_CHECK_(seen[t] >= 4, "%s: %u excerpts", titles[t], seen[t]);
+    /* STEINS;GATE's 56 farm pages hold three that show a new token */
+    for (unsigned t = 0; t < TITLES; t++) TEST_CHECK_(seen[t] >= 3, "%s: %u excerpts", titles[t], seen[t]);
 }
 
 /* A table of glyphs 0..5 and 0x100, 0x1FF: 0 'A', 1 'B' (U+3042 あ), 2 none, 3 a surrogate, 4 'é', 5 ' ', ... */
@@ -141,7 +150,7 @@ static void make_table(void)
 
 static size_t dec(const char *src, size_t n, char *out, size_t cap)
 {
-    return vjo_sc3_decode(table, 0x200, (const uint8_t *)src, n, out, cap);
+    return vjo_sc3_decode(table, 0x200, (const uint8_t *)src, n, out, cap, VJO_SC3_ADV7);
 }
 
 #define DECODES(src, want)                                                                         \
@@ -152,7 +161,8 @@ static size_t dec(const char *src, size_t n, char *out, size_t cap)
         TEST_MSG("want [%s], got [%s]", want, out_);                                               \
     } while (0)
 
-#define SPAN(src) vjo_sc3_span((const uint8_t *)(src), sizeof(src) - 1)
+#define SPAN(src) vjo_sc3_span((const uint8_t *)(src), sizeof(src) - 1, VJO_SC3_ADV7)
+#define SPAN6(src) vjo_sc3_span((const uint8_t *)(src), sizeof(src) - 1, VJO_SC3_ADV6)
 
 static void span_tokens(void)
 {
@@ -168,9 +178,14 @@ static void span_tokens(void)
     TEST_CHECK(SPAN("\x01\x80\x00\x02\x00") == 0);
     TEST_CHECK(SPAN("\x80") == 0 && SPAN("\x11\xFF") == 0 && SPAN("\x04\x28\xFF") == 0 &&
                SPAN("\x04\xE0\xFF\x00") == 0);
-    TEST_CHECK(SPAN("") == 0 && vjo_sc3_span(NULL, 8) == 0);
+    TEST_CHECK(SPAN("") == 0 && vjo_sc3_span(NULL, 8, VJO_SC3_ADV7) == 0);
     /* n bounds every read: a string whose end token is past n has none */
-    TEST_CHECK(vjo_sc3_span((const uint8_t *)"\x80\x01\xFF", 2) == 0);
+    TEST_CHECK(vjo_sc3_span((const uint8_t *)"\x80\x01\xFF", 2, VJO_SC3_ADV7) == 0);
+    /* adv6 (STEINS;GATE): 0x04 one colour byte, 0x14 two bytes; the other tokens as adv7's */
+    TEST_CHECK(SPAN6("\x04\xFF\x14\xFF\x00\x80\x01\xFF") == 8);
+    TEST_CHECK(SPAN("\x04\xFF\x14\xFF\x00\x80\x01\xFF") == 0); /* adv7: an expression, cut by the end */
+    TEST_CHECK(SPAN6("\x11\xFF\x00\x15\x28\xFF\x00\x81\xFF\xFF") == 10);
+    TEST_CHECK(SPAN6("\x04") == 0 && SPAN6("\x14\x00") == 0 && SPAN6("\x14\x00\xFF") == 0);
 }
 
 static void decode_rules(void)
@@ -196,12 +211,23 @@ static void decode_rules(void)
         TEST_CHECK(dec("\x80\x01\xFF", 3, out, 3) == 0 && !out[0]);
         TEST_CHECK(dec("\x80\x00\xFF", 3, out, 1) == 0 && !out[0]);
         TEST_CHECK(dec("\x80\x00\xFF", 3, NULL, 8) == 0 && dec("\x80\x00\xFF", 3, out, 0) == 0);
-        TEST_CHECK(vjo_sc3_decode(table, 0x200, NULL, 4, out, sizeof out) == 0 && !out[0]);
+        TEST_CHECK(vjo_sc3_decode(table, 0x200, NULL, 4, out, sizeof out, VJO_SC3_ADV7) == 0 && !out[0]);
+    }
+    /* adv6: the farm's 04 02 8244 822a 04 00 (STEINS;GATE, run paired-vita-pcsg00147-hf-20261027 event 21): a colour
+     * around two glyphs, which adv7's expression read swallows */
+    {
+        char out[16];
+        TEST_CHECK(vjo_sc3_decode(table, 0x200, (const uint8_t *)"\x04\x02\x81\x00\x81\xFF\x04\x00\x14\x80\x01\x80\x00\xFF",
+                                  14, out, sizeof out, VJO_SC3_ADV6) == 7 &&
+                   !strcmp(out, "漢字A"));
+        vjo_sc3_decode(table, 0x200, (const uint8_t *)"\x04\x02\x81\x00\x81\xFF\x04\x00\x14\x80\x01\x80\x00\xFF", 14, out,
+                       sizeof out, VJO_SC3_ADV7);
+        TEST_CHECK_(!strcmp(out, "字あA"), "adv7 loses 漢 to the expression: [%s]", out);
     }
     /* no table: no glyph at all, the controls' line breaks only */
     {
         char out[16];
-        TEST_CHECK(vjo_sc3_decode(NULL, 0, (const uint8_t *)"\x80\x00\x00\x80\x01\xFF", 6, out, sizeof out) == 1 &&
+        TEST_CHECK(vjo_sc3_decode(NULL, 0, (const uint8_t *)"\x80\x00\x00\x80\x01\xFF", 6, out, sizeof out, VJO_SC3_ADV7) == 1 &&
                    !strcmp(out, "\n"));
     }
 }
@@ -209,7 +235,7 @@ static void decode_rules(void)
 TEST_LIST = {
     {"the committed charsets: their pins, headers and Rubi's SC3 entries", charsets_and_entries},
     {"the farm's pages: the span of a 512-byte read, the decoded text", farm_excerpts},
-    {"span: through the end token, past 0x00 and 0xFF in glyphs, arguments and expressions", span_tokens},
+    {"span: through the end token, past 0x00 and 0xFF in glyphs, arguments and expressions; adv6's", span_tokens},
     {"decode: names, line breaks, ruby's base, unknown glyphs dropped, the cap", decode_rules},
     {NULL, NULL},
 };

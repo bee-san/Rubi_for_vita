@@ -30,13 +30,15 @@ unsigned vjo_sc3_pins(const VjoSc3Pin **out)
     return PINS_N;
 }
 
-/* The length of the token at p[i] (i < n), or 0 when n cuts it. */
-static size_t token(const uint8_t *p, size_t n, size_t i)
+/* The length of the token at p[i] (i < n) by a dialect's rules (VJO_SC3_*), or 0 when n cuts it. */
+static size_t token(const uint8_t *p, size_t n, size_t i, unsigned dialect)
 {
     unsigned c = p[i];
     size_t k = i + 1u;
     if (c >= 0x80u && c != 0xFFu) {
         k++; /* a glyph's second byte */
+    } else if (dialect == VJO_SC3_ADV6 && (c == 0x04u || c == 0x14u)) {
+        k += c == 0x04u ? 1u : 2u; /* adv6: a colour byte; two bytes */
     } else if (c == 0x0Cu || (c >= 0x11u && c <= 0x13u)) {
         k += 2u;
     } else if (c == 0x04u || c == 0x15u) { /* an SC3 expression, through the 0x00 that ends it */
@@ -52,25 +54,26 @@ static size_t token(const uint8_t *p, size_t n, size_t i)
     return k <= n ? k - i : 0;
 }
 
-unsigned vjo_sc3_span(const uint8_t *p, unsigned n)
+unsigned vjo_sc3_span(const uint8_t *p, unsigned n, unsigned dialect)
 {
     size_t i = 0, k;
     if (!p) return 0;
     while (i < n) {
         if (p[i] == 0xFFu) return (unsigned)i + 1u;
-        if (!(k = token(p, n, i))) return 0;
+        if (!(k = token(p, n, i, dialect))) return 0;
         i += k;
     }
     return 0;
 }
 
-size_t vjo_sc3_decode(const uint8_t *table, unsigned count, const uint8_t *src, size_t n, char *dst, size_t cap)
+size_t vjo_sc3_decode(const uint8_t *table, unsigned count, const uint8_t *src, size_t n, char *dst, size_t cap,
+                      unsigned dialect)
 {
     size_t i = 0, w = 0, k;
     int name = 0, reading = 0;
     if (!dst || !cap) return 0;
     if (!src) n = 0;
-    while (i < n && src[i] != 0xFFu && (k = token(src, n, i))) {
+    while (i < n && src[i] != 0xFFu && (k = token(src, n, i, dialect))) {
         unsigned c = src[i];
         uint32_t cp = 0;
         if (c >= 0x80u) {

@@ -29,9 +29,10 @@ Vendored sources:
            stringfilters.cpp and LICENSE, unchanged, none compiled; their SHA-256 are in
            LunaTranslator/README.md and checked by the generator
 - sc3-charsets: the glyph tables of the MAGES/5pb. SC3 hooks (STEINS;GATE 比翼恋理のだーりん PCSG00146,
-           ROBOTICS;NOTES ELITE PCSG00352, CHAOS;CHILD PCSG00555), made by bee-san/psandvita's farm from each
+           STEINS;GATE PCSG00147, STEINS;GATE 線形拘束のフェノグラム PCSG00250, ROBOTICS;NOTES ELITE PCSG00352,
+           CHAOS;CHILD PCSG00555, STEINS;GATE 0 PCSG00673), made by bee-san/psandvita's farm from each
            game's own eboot tables and font atlas and from https://github.com/0xDC00/scripts 41af798 (MIT),
-           whose tables for two of them come from https://github.com/CommitteeOfZero/sc3tools (MIT; its
+           whose tables for three of them come from https://github.com/CommitteeOfZero/sc3tools (MIT; its
            LICENSE as of 2945fe1): sc3-charsets/README.md; notices licenses/0xDC00-scripts-MIT.txt and
            licenses/CommitteeOfZero-sc3tools-MIT.txt
 - yomichan https://github.com/FooSoft/yomichan 2f13cf5d2ad33a627152457a3f120deb76739f60 (GPL-3.0):

@@ -38,6 +38,9 @@ HEADER = 32
 MAX_BYTES = 16384  # core/hook_sc3.h VJO_SC3_MAX_BYTES
 SCHEMA = "vn-sc3-charset/1"
 TITLE = re.compile(r"[A-Z]{4}[0-9]{5}")
+# The titles whose engine is adv6 (core/hook_sc3.h VJO_SC3_ADV6, their entries' VJO_PLACE_READ_SC3_ADV6): 0x04 a colour
+# with one argument byte, 0x14 two argument bytes (STEINS;GATE's page parser 0x8102d576).
+ADV6 = frozenset({"PCSG00147"})
 
 
 def code_point(char, title, index):
@@ -96,9 +99,9 @@ def pins_text(files):
     return "\n".join(lines) + "\n"
 
 
-def tokens(raw):
-    """(kind, value, start, end) of an SC3 string's tokens through its end token (core/hook_sc3.c token()); ValueError
-    when there is no end token or one is cut."""
+def tokens(raw, adv6=False):
+    """(kind, value, start, end) of an SC3 string's tokens through its end token (core/hook_sc3.c token(); adv6: by
+    VJO_SC3_ADV6's rules); ValueError when there is no end token or one is cut."""
     i = 0
     while i < len(raw):
         c = raw[i]
@@ -108,6 +111,8 @@ def tokens(raw):
         k = i + 1
         if c >= 0x80:
             k += 1
+        elif adv6 and c in (0x04, 0x14):
+            k += 1 if c == 0x04 else 2
         elif c in (0x0C, 0x11, 0x12, 0x13):
             k += 2
         elif c in (0x04, 0x15):
@@ -126,12 +131,12 @@ def tokens(raw):
     raise ValueError("no end token")
 
 
-def decode(raw, table, farm=False):
+def decode(raw, table, farm=False, adv6=False):
     """The text of an SC3 string by core/hook_sc3.c's rules: a glyph its table entry (0, or past the table: dropped;
     with farm=True a ValueError, as the farm's strict codec), 0x00 a line break, a name (0x01..0x02) on its own line,
     ruby's base only; farm=True writes ruby as the farm does, <base,reading>."""
     out, name, reading = [], False, False
-    for kind, value, _, _ in tokens(raw):
+    for kind, value, _, _ in tokens(raw, adv6):
         if kind == "end":
             break
         if kind == "glyph":
@@ -161,14 +166,14 @@ def decode(raw, table, farm=False):
     return "".join(out)
 
 
-def features(raw):
+def features(raw, adv6=False):
     """What an excerpt shows of the decoder: its controls and the glyphs whose low byte is 0x00 or 0xFF."""
     out = set()
-    for kind, value, start, end in tokens(raw):
+    for kind, value, start, end in tokens(raw, adv6):
         if kind == "glyph" and raw[start + 1] in (0x00, 0xFF):
             out.add(f"glyph-{raw[start + 1]:02x}")
         elif kind == "control":
-            out.add(f"control-{value:02x}" if value in (0x00, 0x01, 0x02, 0x09, 0x0A, 0x0B, 0x04, 0x15) else
+            out.add(f"control-{value:02x}" if value in (0x00, 0x01, 0x02, 0x09, 0x0A, 0x0B, 0x04, 0x14, 0x15) else
                     "control-args" if value in (0x0C, 0x11, 0x12, 0x13) else "control-other")
     return out
 
@@ -193,14 +198,15 @@ def cmd_fixtures(runs, out_path, max_bytes=128, per_title=5):
             raw = bytes.fromhex(events[0]["raw_hex"])
             data = files[title]
             table = [v for (v,) in struct.iter_unpack("<H", data[HEADER:])]
+            adv6 = title in ADV6
             try:
-                if len(raw) > max_bytes or decode(raw, table, farm=True) != page["text"]:
+                if len(raw) > max_bytes or decode(raw, table, farm=True, adv6=adv6) != page["text"]:
                     continue
-                text = decode(raw, table)
+                text = decode(raw, table, adv6=adv6)
             except ValueError:
                 continue
-            span = next(e for k, _, _, e in tokens(raw) if k == "end")
-            cands.append((path.stem, raw[:span], text, features(raw)))
+            span = next(e for k, _, _, e in tokens(raw, adv6) if k == "end")
+            cands.append((path.stem, raw[:span], text, features(raw, adv6)))
         pick, have = [], set()
         while len(pick) < per_title:
             best, score = None, 0.0
@@ -247,7 +253,10 @@ def from_farm(farm, title):
         raise ValueError(f"{title}: not a {SCHEMA} charset of {title}")
     if source.get("charset_length", len(source["charset"])) != len(source["charset"]):
         raise ValueError(f"{title}: charset_length is not the charset's")
-    return build(title, source["charset"], int(hook["module_nid"], 16))
+    # a font cell that draws two characters (PCSG00147's ¹⁸ ⁻¹⁹ ⁻²⁴ キタ) has no one code point: unknown, so dropped, as
+    # the farm's PCSG00250 table nulls its own (its multi_glyph_cells)
+    charset = [c if not isinstance(c, str) or len(c) <= 1 else None for c in source["charset"]]
+    return build(title, charset, int(hook["module_nid"], 16))
 
 
 def main():

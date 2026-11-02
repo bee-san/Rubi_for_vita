@@ -364,13 +364,19 @@ Two lists name them:
       before `RF_PCSG00700` had its ruby rule (then 1000), 3 scored 0.
 
   - MAGES/5pb. SC3 engine titles from the psandvita Vita3K farm, Rubi's own sites (proven in Vita3K only; no branch,
-    PC use or IT in the patched bytes, `push.w {r4-r11, lr}; sub sp, #imm; movw r4, #imm`, and no branch or pointer
+    PC use or IT in the patched bytes, `push.w {r4-r11, lr}; sub sp, #imm; movw r4, #imm` (STEINS;GATE's
+    `push.w {r4-r8, lr}; movw r3, #imm`; PHENOGRAM's then `mov r9, r1`), and no branch or pointer
     in segment 0 into them, checked on each title's dumped segment 0, whose SHA-256 the farm's `rubi-hook.json`
     records). The entry of the game's page function, whose r0 is the page's SC3 string: read through its end token
-    (`VJO_PLACE_READ_SC3`) and decoded with the game's charset ([SC3 text](#sc3-text)); no filter, no Luna site:
+    (`VJO_PLACE_READ_SC3`; STEINS;GATE's adv6 engine `VJO_PLACE_READ_SC3_ADV6`) and decoded with the game's charset
+    ([SC3 text](#sc3-text)); no filter, no Luna site:
     - PCSG00146 STEINS;GATE 比翼恋理のだーりん (module adv7), NID 0x2BAC7A6D, +0x2B018, Thumb, r0, SC3; 1498 farm pages
+    - PCSG00147 STEINS;GATE (module adv6), NID 0xBEF20357, +0x2E360, Thumb, r0, SC3 (adv6); 56 farm pages
+    - PCSG00250 STEINS;GATE 線形拘束のフェノグラム (module sgfd2), NID 0xEAA927FE, +0x2973A, Thumb, r0, SC3; 60 farm
+      pages
     - PCSG00352 ROBOTICS;NOTES ELITE (module robono), NID 0x5409CF98, +0xF1D8, Thumb, r0, SC3; 606 farm pages
     - PCSG00555 CHAOS;CHILD (module Game), NID 0x5681A30D, +0x2F9BC, Thumb, r0, SC3; 395 farm pages
+    - PCSG00673 STEINS;GATE 0 (module Game), NID 0xC35E78E1, +0x227C8, Thumb, r0, SC3; 101 farm pages
 
   - From the farm's data bucket (the hooks of its finished titles, with every approved page's hook bytes:
     [farm checks](#farm-checks)), Rubi's own sites, proven in Vita3K only. The bucket has no segment-0 dump,
@@ -610,7 +616,8 @@ filters before this change and Rubi's now [measured: `tools/hook_farm.py check` 
 
 That is 12,465 of the 12,503 single-hit pages, and the other 38 differ by a default name only. Exactly, before
 the shown form, 12,131 (the rest: full-width `！？` for `!?`, the ends' white space, the 0xA0 blank). MAGES' SC3
-titles (STEINS;GATE 比翼恋理のだーりん `PCSG00146`, ROBOTICS;NOTES ELITE `PCSG00352`, CHAOS;CHILD `PCSG00555`) have
+titles (STEINS;GATE 比翼恋理のだーりん `PCSG00146`, ROBOTICS;NOTES ELITE `PCSG00352`, CHAOS;CHILD `PCSG00555`, and
+since 2026-11-02 STEINS;GATE `PCSG00147`, 線形拘束のフェノグラム `PCSG00250` and STEINS;GATE 0 `PCSG00673`) have
 entries since [SC3 text](#sc3-text), checked on the farm's own run data there (`hook_farm.py check` decodes them
 with the committed charsets). The bucket's other 16 Vita titles have no entry, for one of these reasons (the hook
 bucket's inventory: `rubi-bucket-hooks` report):
@@ -696,7 +703,7 @@ then bytes with no end, a read Rubi does not have): the farm's relocation jobs a
 
 MAGES/5pb.'s adv engines keep their script text as SC3 strings: a glyph is a big-endian 16-bit `0x8000 | index`
 into the game's own font, a byte below 0x80 a control, 0xFF the end. The bytes are no character encoding: only a
-table of that game names a glyph's character (its charset: 2,666, 3,200 and 8,000 glyphs for the three games), and
+table of that game names a glyph's character (its charset: 2,666 to 8,000 glyphs for the six games), and
 0x00 is both a line break and the low byte of many glyphs (0x8100, 0x8200, ...), so a NUL-terminated read cuts a
 page there (13.5 % of STEINS;GATE's story strings have one, by the farm's survey of its scripts; the farm's first
 reader halted at its page 11 on one).
@@ -706,21 +713,25 @@ reader halted at its page 11 on one).
   at the memory block's end, NUL bytes included), and `vjo_sc3_span` keeps them through the string's 0xFF end token,
   walking its tokens as the game's page parser does (a glyph's second byte, a control's two argument bytes for
   0x0C/0x11/0x12/0x13, an SC3 expression after 0x04/0x15 up to its 0x00), so a 0xFF or 0x00 inside a glyph,
-  argument or expression ends nothing. Only those bytes go to the stream (`VJO_HOOK_ENC_SC3`): its change test
+  argument or expression ends nothing. STEINS;GATE (`PCSG00147`) is the older adv6 engine, whose page parser
+  (0x8102D576) reads 0x04 as a colour with one argument byte and 0x14 with two: its entry's
+  `VJO_PLACE_READ_SC3_ADV6` reads by those rules (`VJO_SC3_ADV6`; read as an expression, the farm's
+  `04 02 8244 822a 04 00` lost 「機関」). Only those bytes go to the stream (`VJO_HOOK_ENC_SC3`): its change test
   hashes the string itself, never the next string in the script buffer after it. A string whose end token is not
-  within the 512 bytes (or the block) gives no hit; the farm's pages are at most 211, 183 and 208 bytes [measured:
-  every hit of the farm's runs].
+  within the 512 bytes (or the block) gives no hit; the farm's pages are at most 211, 183 and 208 bytes (PCSG00146,
+  00352, 00555), and 171, 165 and 169 (PCSG00147, 00250, 00673) [measured: every hit of the farm's runs].
 - **The text** (job time, `vjo_hooks_text`): `vjo_sc3_decode` with the game's charset. A glyph is its character;
   one the table cannot name (unknown, or past it) is dropped, never guessed; 0x00 is a line break; the speaker's
   name (0x01 .. 0x02) a line of its own, as Rubi's other filters write a name; ruby (0x09 base 0x0A reading 0x0B)
   keeps its base, the word the dictionary looks up; every other control is dropped. Then `vjo_hook_clean`, as for
-  every stream. At most 312, 255 and 282 bytes of UTF-8 for the farm's pages, under `HOOK_TEXT_CAP` (769).
+  every stream. At most 312, 255 and 282 bytes of UTF-8 for the farm's pages (222, 211 and 234 for the second
+  three), under `HOOK_TEXT_CAP` (769).
 - **The charsets** (`third_party/sc3-charsets/<title>.sc3`, written by `tools/sc3_charset.py` from the farm's
   `sc3-charset.json`; their sources, licences and checks in its README): a 32-byte header (`vjosc3`, the title, the
-  module NID, the glyph count) and a 16-bit code point a glyph, 5,364, 6,432 and 16,032 bytes. The release installs
-  them to `ux0:data/VitaJPOverlay/hooks/` (the one-VPK payload, `install_ftp.sh`). Compiled into the worker the three
-  tables (27,732 B) would take about seven more pages in every game that is ON [estimate: the tables' bytes]; on the
-  card each costs memory only in its own game.
+  module NID, the glyph count) and a 16-bit code point a glyph, 5,364 to 16,032 bytes. The release installs
+  them to `ux0:data/VitaJPOverlay/hooks/` (the one-VPK payload, `install_ftp.sh`). Compiled into the worker the six
+  tables (54,824 B) would take about fourteen more pages in every game that is ON [estimate: the tables' bytes]; on
+  the card each costs memory only in its own game.
 - **The load** (`game_ocr/main.c` `hooks_sc3_load`): at the first job of a game with an SC3 site hooked, before the
   job's snapshot; an open or a read that was cancelled or timed out again at a later job (three tries in all; a read's
   timeout since #368's audit), any other outcome once a session. A close that fails is the job's I/O error (the
@@ -1522,7 +1533,9 @@ Hardware is paused; these are for the test issue (#230):
     a dialogue line then says `flags 0x118` with the speaker's name on its own line and no reading of a ruby; the
     game runs through several scenes and a chapter change. With the file removed: the first job allocates and frees
     the block, no later job tries again, and OCR reads the lines. The same for ROBOTICS;NOTES ELITE `PCSG00352` and
-    CHAOS;CHILD `PCSG00555` (a 16,384 B block).
+    CHAOS;CHILD `PCSG00555` (a 16,384 B block), and STEINS;GATE `PCSG00147` (8,192 B; its adv6 colour codes: a
+    line with a coloured word keeps that word), 線形拘束のフェノグラム `PCSG00250` (8,192 B) and STEINS;GATE 0
+    `PCSG00673` (16,384 B).
 17. #316's audit (the debug build, `auto`): アマツツミ (`PCSG01198`)'s `hooks.log` first line says `APP_VER 0100`
     (the first console reading of `app_version()`; its entry names 01.00, so a misread one refuses it as
     `version`). 真 流行り神 (`PCSG00380`), if a console has it: `seg0 81000000` and `verified +4DE9E thumb r15`

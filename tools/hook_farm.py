@@ -36,6 +36,9 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import sc3_charset  # noqa: E402  (ADV6: the SC3 titles read by adv6's token rules)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SEG0 = 0x81000000
 CHECK_SOURCES = ["host/hook_farm_check.c", "core/hook_place.c", "core/hook_luna.c", "core/hook_re.c",
@@ -282,7 +285,8 @@ def farm_site(hook):
     reader = {k: v for k, v in (hook.get("reader") or {}).items() if k not in ("schema", "encoding", "provenance")}
     count_off = data_off = 0
     if hook.get("terminator") == "sc3":  # MAGES' script text, through its end token (tools/sc3_charset.py)
-        enc, read = "VJO_HOOK_ENC_SC3", "VJO_PLACE_READ_SC3"
+        enc = "VJO_HOOK_ENC_SC3"
+        read = "VJO_PLACE_READ_SC3_ADV6" if hook.get("title") in sc3_charset.ADV6 else "VJO_PLACE_READ_SC3"
     else:
         enc = ENC_NAMES[hook["encoding"]]
         length = reader.pop("length", None)
@@ -350,7 +354,7 @@ def cmd_fixtures(args):
                 off, nid, thumb, reg, pad, enc, read, count_off, data_off, sig = site
                 sites.append("    {\"%s\", 0x%08Xu, 0x%Xu, %d, %d, 0x%08Xu, %s, %s, 0x%02Xu, 0x%02Xu, \"%s\", %d}," % (
                     tid, nid, off, thumb, reg, pad, enc, read, count_off, data_off, c_bytes(sig), len(sig)))
-                if read == "VJO_PLACE_READ_SC3":
+                if read.startswith("VJO_PLACE_READ_SC3"):
                     continue
             recs = [r for r in pages(folder) if r.get("review_state") == "approved" and len(r["raw_text_events"]) == 1]
             cands = []
