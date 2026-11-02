@@ -8,9 +8,9 @@ copies bytes and lets the game's function run as before.
 
 
 The tables contain **175 Vita title IDs from LunaTranslator's table**, using 294 ported hook sites,
-and **63 more Vita title IDs with Rubi's own verified entries**. Of those entries, 36 are games of
+and **66 more Vita title IDs with Rubi's own verified entries**. Of those entries, 36 are games of
 Luna's table: for 20 of them the entry is at Luna's own site. Including CLANNAD and counting each
-title once, that is **203 Vita title IDs with game-specific hook entries**. These counts describe
+title once, that is **206 Vita title IDs with game-specific hook entries**. These counts describe
 available entries, not console compatibility; see the [full title list](hook-titles.md#vita-titles)
 for each game's checks and evidence.
 
