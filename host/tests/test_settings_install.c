@@ -3129,8 +3129,9 @@ static void a_payload_the_folder_refuses_is_installed_from_app0(void)
 static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
 {
     static unsigned char bytes[1 << 20];
-    static const char *const sc3[] = {VJO_PAYLOAD_HOOKS "PCSG00146.sc3", VJO_PAYLOAD_HOOKS "PCSG00352.sc3",
-                                      VJO_PAYLOAD_HOOKS "PCSG00555.sc3"};
+    static const char *const sc3[] = {VJO_PAYLOAD_HOOKS "PCSG00146.sc3", VJO_PAYLOAD_HOOKS "PCSG00147.sc3",
+                                      VJO_PAYLOAD_HOOKS "PCSG00250.sc3", VJO_PAYLOAD_HOOKS "PCSG00352.sc3",
+                                      VJO_PAYLOAD_HOOKS "PCSG00555.sc3", VJO_PAYLOAD_HOOKS "PCSG00673.sc3"};
     static const struct { const char *path, *line; } one[] = {
         {VJO_PAYLOAD_HOOKS "PCSG00352.sc3", "1. Copy 1 data file to ux0:data/VitaJPOverlay/hooks (the plugins already match)."},
         {VJO_PAYLOAD_OCR VJO_VOCR_TIER1_NAME, "1. Copy 1 data file to ux0:data/VitaJPOverlay/ocr (the plugins already match)."},
@@ -3149,7 +3150,7 @@ static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
         size_t n = payload_bytes(i, 0, bytes, sizeof(bytes));
         put(vjo_payload_dest(i), bytes, n);
     }
-    TEST_CHECK(hooks == 4 && !there("ux0:data/VitaJPOverlay/hooks"));
+    TEST_CHECK(hooks == 7 && !there("ux0:data/VitaJPOverlay/hooks"));
     put_text(VJO_APP_STAMP_PACKAGE, "vjoapp1 api=" VJO_STR(VJO_API_VERSION) " build=fedcba9876543210\n");
     VjoInstallScan s = scan_now();
     TEST_CHECK_(s.state == VJO_INSTALL_UPDATE, "state %d %s", s.state, s.title);
@@ -3162,7 +3163,7 @@ static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
     TEST_CHECK(!has_line((const char (*)[VJO_INSTALL_LINE])plan, np, "VitaJPOverlay/ocr"));
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
     TEST_CHECK(installed_files(1));
-    for (unsigned k = 0; k < 3; k++) TEST_CHECK_(there(sc3[k]), "%s", sc3[k]);
+    for (unsigned k = 0; k < 6; k++) TEST_CHECK_(there(sc3[k]), "%s", sc3[k]);
     TEST_CHECK(there(VJO_PAYLOAD_HOOKS "profiles.vjhp"));
     TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
     /* one data file deleted by hand: a Check and repair, whose plan names the file's folder */

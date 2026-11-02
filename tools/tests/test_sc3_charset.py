@@ -26,15 +26,16 @@ def c_string(text):
 class Files(unittest.TestCase):
     def test_the_committed_files_and_pins_agree(self):
         files = sc3_charset.committed()
-        self.assertEqual(sorted(files), ["PCSG00146", "PCSG00352", "PCSG00555"])
+        self.assertEqual(sorted(files), ["PCSG00146", "PCSG00147", "PCSG00250", "PCSG00352", "PCSG00555", "PCSG00673"])
         self.assertEqual(sc3_charset.PINS.read_text(encoding="utf-8"), sc3_charset.pins_text(files))
         for title, data in files.items():
             name, _, count = sc3_charset.parse(data, title)
             self.assertEqual((name, count), (title, (len(data) - 32) // 2))
             self.assertIn(hashlib.sha256(data).hexdigest(),
                           (ROOT / "third_party/sc3-charsets/README.md").read_text(encoding="utf-8"))
-        self.assertEqual({t: len(d) for t, d in files.items()}, {"PCSG00146": 5364, "PCSG00352": 6432,
-                                                                 "PCSG00555": 16032})
+        self.assertEqual({t: len(d) for t, d in files.items()}, {"PCSG00146": 5364, "PCSG00147": 5664,
+                                                                 "PCSG00250": 5492, "PCSG00352": 6432,
+                                                                 "PCSG00555": 16032, "PCSG00673": 16032})
 
     def test_build_and_parse(self):
         data = sc3_charset.build("PCSG00146", ["　", "A", None, "漢"], 0x2BAC7A6D)
@@ -82,6 +83,26 @@ class Rules(unittest.TestCase):
             with self.assertRaises(ValueError):
                 list(sc3_charset.tokens(cut))
 
+    def test_adv6_tokens(self):
+        # STEINS;GATE (PCSG00147): 0x04 one colour byte, 0x14 two bytes; adv7 reads 0x04 as an expression
+        raw = bytes.fromhex("0402" "8100" "81ff" "0400" "148001" "8000" "ff")
+        self.assertEqual(sc3_charset.ADV6, {"PCSG00147"})
+        self.assertEqual(sc3_charset.decode(raw, self.TABLE, adv6=True), "漢字A")
+        self.assertEqual(sc3_charset.decode(raw, self.TABLE), "字あA")
+        with self.assertRaises(ValueError):
+            list(sc3_charset.tokens(b"\x14\x00\xff", adv6=True))
+
+    def test_a_cell_of_two_characters_is_unknown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            farm = Path(tmp)
+            (farm / "PCSG00147").mkdir()
+            (farm / "PCSG00147/sc3-charset.json").write_text(
+                '{"schema": "vn-sc3-charset/1", "title_id": "PCSG00147", "charset": ["A", "\u00b9\u2078", null, "B"]}',
+                encoding="utf-8")
+            (farm / "PCSG00147/rubi-hook.json").write_text('{"title": "PCSG00147", "module_nid": "0xbef20357"}')
+            data = sc3_charset.from_farm(farm, "PCSG00147")
+            self.assertEqual(struct.unpack_from("<4H", data, 32), (0x41, 0, 0, 0x42))
+
     def test_decode(self):
         raw = bytes.fromhex("01800102" "8000" "00" "098100" "0a80018001" "0b" "81ff" "8002" "ff")
         self.assertEqual(sc3_charset.decode(raw, self.TABLE), "あ\nA\n漢字")
@@ -92,12 +113,13 @@ class Rules(unittest.TestCase):
     def test_the_committed_excerpts_decode_as_written(self):
         files = sc3_charset.committed()
         rows = re.findall(r'\{"(\w+)", "([^"]*)", (\d+), "([^"]*)"\}', FIXTURES.read_text(encoding="utf-8"))
-        self.assertGreaterEqual(len(rows), 12)
+        self.assertGreaterEqual(len(rows), 24)
         for title, raw, n, text in rows:
             raw = c_string(raw)
             table = [v for (v,) in struct.iter_unpack("<H", files[title][32:])]
             self.assertEqual(len(raw), int(n))
-            self.assertEqual(sc3_charset.decode(raw, table), c_string(text).decode("utf-8"))
+            self.assertEqual(sc3_charset.decode(raw, table, adv6=title in sc3_charset.ADV6),
+                             c_string(text).decode("utf-8"))
 
 
 if __name__ == "__main__":

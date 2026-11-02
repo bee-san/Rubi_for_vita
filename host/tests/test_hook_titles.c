@@ -46,6 +46,9 @@ static void test_every_verified_entry(void)
     TEST_CHECK(vjo_hook_title_listed("PCSG00700") == VJO_HOOK_TITLE_RUBI); /* 蒼の彼方のフォーリズム */
     TEST_CHECK(vjo_hook_title_listed("PCSG00883") == VJO_HOOK_TITLE_RUBI); /* ZERO ESCAPE ダブルパック */
     TEST_CHECK(vjo_hook_title_listed("PCSG00146") == VJO_HOOK_TITLE_RUBI); /* STEINS;GATE 比翼恋理のだーりん (SC3) */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00147") == VJO_HOOK_TITLE_RUBI); /* STEINS;GATE (SC3, adv6) */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00250") == VJO_HOOK_TITLE_RUBI); /* STEINS;GATE 線形拘束のフェノグラム (SC3) */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00673") == VJO_HOOK_TITLE_RUBI); /* STEINS;GATE 0 (SC3) */
     /* the hook farm's batch of 2026-10-27: four of the eight Luna's table lacks, and four of the twelve it has */
     TEST_CHECK(vjo_hook_title_listed("PCSG00183") == VJO_HOOK_TITLE_RUBI); /* 三国恋戦記 */
     TEST_CHECK(vjo_hook_title_listed("PCSG00638") == VJO_HOOK_TITLE_RUBI); /* あまつみそらに！ 雲のはたてに */
@@ -63,7 +66,7 @@ static void test_every_verified_entry(void)
     TEST_CHECK(vjo_hook_title_listed("PCSG01127") == VJO_HOOK_TITLE_RUBI); /* 千の刃濤、桃花染の皇姫 */
     TEST_CHECK(vjo_hook_title_listed("PCSG01282") == VJO_HOOK_TITLE_RUBI); /* 死神と少女 */
 #if VJO_HOOK_LUNA
-    TEST_CHECK_(only_rubi == 31u, "%u verified titles are not in Luna's table (CLANNAD, 24 of the farm's, あおかな, native e+ r4/r5/r6/r7, DELTARUNE)",
+    TEST_CHECK_(only_rubi == 34u, "%u verified titles are not in Luna's table (CLANNAD, 27 of the farm's, あおかな, native e+ r4/r5/r6/r7, DELTARUNE)",
                 only_rubi);
     TEST_CHECK(vjo_luna_title_ported("PCSG01198") && vjo_luna_title_ported("PCSG00469"));
 #endif

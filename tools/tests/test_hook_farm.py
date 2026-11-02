@@ -142,6 +142,10 @@ class HookFarm(unittest.TestCase):
         self.assertEqual(hook_farm.farm_site(rec)[2:9], (1, 6, 0, "VJO_HOOK_ENC_CP932", "VJO_PLACE_READ_CELLS_B", 32, 46))
         with self.assertRaises(SystemExit):  # a layout neither read has
             hook_farm.farm_site(dict(rec, reader=dict(rec["reader"], data_offset=44)))
+        # SC3: STEINS;GATE's adv6 engine has its own token rules (tools/sc3_charset.py ADV6)
+        self.assertEqual(hook_farm.farm_site(RECORD_146)[5:7], ("VJO_HOOK_ENC_SC3", "VJO_PLACE_READ_SC3"))
+        self.assertEqual(hook_farm.farm_site(dict(RECORD_146, title="PCSG00147"))[5:7],
+                         ("VJO_HOOK_ENC_SC3", "VJO_PLACE_READ_SC3_ADV6"))
         rec = dict(RECORD_628, reader={"schema": "vn-hook-reader/1", "pointer_offsets": [0]})
         self.assertEqual(hook_farm.farm_site(rec)[2:7], (1, 5, 0, "VJO_HOOK_ENC_CP932", "VJO_PLACE_READ_DEREF"))
         # a record that says to check its mode by disassembly: the mode decided from exactly its bytes, else a stop

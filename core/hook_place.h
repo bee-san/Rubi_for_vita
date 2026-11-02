@@ -118,6 +118,17 @@ typedef struct {
 #define VJO_PLACE_READ_CELLS_B 4u
 #define VJO_PLACE_CELLS_B_COUNT 0x20u
 #define VJO_PLACE_CELLS_B_DATA 0x2Eu
+/* VJO_PLACE_READ_SC3 by the adv6 engine's token rules (STEINS;GATE PCSG00147, core/hook_sc3.h VJO_SC3_ADV6). */
+#define VJO_PLACE_READ_SC3_ADV6 5u
+
+/* An SC3 read (VJO_PLACE_READ_SC3 or VJO_PLACE_READ_SC3_ADV6): 1 and its token rules (VJO_SC3_*) in *dialect;
+ * else 0. */
+static inline int vjo_place_sc3(unsigned read, unsigned *dialect)
+{
+    if (read != VJO_PLACE_READ_SC3 && read != VJO_PLACE_READ_SC3_ADV6) return 0;
+    *dialect = read == VJO_PLACE_READ_SC3_ADV6 ? 1u : 0u; /* VJO_SC3_ADV6, VJO_SC3_ADV7 */
+    return 1;
+}
 
 /* A read of cells (VJO_PLACE_READ_CELLS or VJO_PLACE_READ_CELLS_B): 1 and its record's count and cells offsets in
  * *count and *data; else 0. */

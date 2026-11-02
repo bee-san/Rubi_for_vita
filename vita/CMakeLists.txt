@@ -695,8 +695,10 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay/hooks
   COMMAND ${Python3_EXECUTABLE} ${VJO_HOOK_PROFILE_GENERATOR}
     --output ${STAGE}/ux0/data/VitaJPOverlay/hooks/profiles.vjhp
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/sc3-charsets/PCSG00146.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00352.sc3
-    ${ROOT}/third_party/sc3-charsets/PCSG00555.sc3 ${STAGE}/ux0/data/VitaJPOverlay/hooks/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/sc3-charsets/PCSG00146.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00147.sc3
+    ${ROOT}/third_party/sc3-charsets/PCSG00250.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00352.sc3
+    ${ROOT}/third_party/sc3-charsets/PCSG00555.sc3 ${ROOT}/third_party/sc3-charsets/PCSG00673.sc3
+    ${STAGE}/ux0/data/VitaJPOverlay/hooks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${ROOT}/docs/ocr-history.md ${STAGE}/docs/
   # Keep the guide's feature and recovery links usable in the downloaded ZIP: every document README.md, CHANGELOG.md
   # and the guide link and every document those link, but the history (docs/history/,

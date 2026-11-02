@@ -2,7 +2,7 @@
  *   TITLE <tab> OFFSET <tab> APP_VER <tab> RAW [<tab> FARM]
  * (the verified entry's segment-0 offset and the game's APP_VER, both hex; RAW the bytes the farm read at
  * the entry's register, hex: a cell record's cells for VJO_PLACE_READ_CELLS or VJO_PLACE_READ_CELLS_B, an SC3 string's
- * bytes (through its end token, or more) for VJO_PLACE_READ_SC3; FARM, hex of UTF-8, the farm's
+ * bytes (through its end token, or more) for VJO_PLACE_READ_SC3 or _SC3_ADV6; FARM, hex of UTF-8, the farm's
  * text) gives one stdout line
  *   STATUS <tab> TEXT <tab> SHOWN <tab> FARM_SHOWN
  * with TEXT (hex of UTF-8) what the game worker would show for that hit: the capture as game_ocr/hooks.c
@@ -83,6 +83,7 @@ int main(void)
         const VjoLunaSite *sites, *same;
         unsigned nv, nl, unit, appv, off, n, cut = 0;
         uint32_t count_at, cells_at;
+        unsigned dialect = 0;
         size_t m, len;
         for (unsigned i = 0; i < 5 && p; i++) {
             f[i] = p;
@@ -101,8 +102,8 @@ int main(void)
         }
         m = unhex(f[3], mem, sizeof mem);
         unit = ver->encoding == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
-        if (ver->read == VJO_PLACE_READ_SC3) { /* site_hit: the string through its end token, within RAW_BYTES */
-            n = vjo_sc3_span(mem, m < RAW_BYTES ? (unsigned)m : RAW_BYTES);
+        if (vjo_place_sc3(ver->read, &dialect)) { /* site_hit: the string through its end token, within RAW_BYTES */
+            n = vjo_sc3_span(mem, m < RAW_BYTES ? (unsigned)m : RAW_BYTES, dialect);
             if (!n && m > RAW_BYTES) cut = 1;
         } else if (vjo_place_cells_layout(ver->read, &count_at, &cells_at)) { /* the farm read the record's count of
                                                                                 * cells: these */
@@ -125,7 +126,7 @@ int main(void)
         if (ver->encoding == VJO_HOOK_ENC_SC3) {
             unsigned count = 0;
             const uint8_t *table = sc3_table(f[0], &count);
-            len = table ? vjo_sc3_decode(table, count, mem, n, out, sizeof out) : 0;
+            len = table ? vjo_sc3_decode(table, count, mem, n, out, sizeof out, dialect) : 0;
         } else if (ver->filter)
             len = vjo_luna_text_filter(same, ver->filter, ver->encoding, mem, n, ver->encoding, out, sizeof out);
         else if (same)

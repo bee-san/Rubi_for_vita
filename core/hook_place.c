@@ -426,10 +426,19 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* MAGES/5pb. SC3 engine (psandvita farm, Vita3K only): the entry of each game's page function, whose r0 is the
      * page's SC3 string (core/hook_sc3.h), read through its end token and decoded with the game's charset
      * (third_party/sc3-charsets/). No branch, PC use or IT in the patched bytes, and no branch or pointer in segment
-     * 0 into them: checked on each farm dump of segment 0 (the SHA-256 in its rubi-hook.json). No Luna site. */
+     * 0 into them: checked on each farm dump of segment 0 (the SHA-256 in its rubi-hook.json). No Luna site.
+     * STEINS;GATE (PCSG00147) is the older adv6 engine, whose tokens VJO_PLACE_READ_SC3_ADV6 reads (core/hook_sc3.h). */
     /* PCSG00146 STEINS;GATE 比翼恋理のだーりん (APP_VER 01.00, module adv7): Vita3K 0x8102b018, 1498 farm pages (paired-vita-pcsg00146-20261023); patch: push.w {r4-r11, lr}; sub sp, #4; movw r4, #0xaba0 */
     {"PCSG00146", 0x2BAC7A6Du, 0x2B018u, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
      {0x2D, 0xE9, 0xF0, 0x4F, 0x81, 0xB0, 0x4A, 0xF6, 0xA0, 0x34, 0xC8, 0xF2, 0x4B, 0x14, 0x00, 0x25}, 0, VJO_PLACE_READ_SC3,
+     0x0100u},
+    /* PCSG00147 STEINS;GATE (APP_VER 01.00, module adv6): Vita3K 0x8102e360, 56 farm pages (paired-vita-pcsg00147-hf-20261027); patch: push.w {r4-r8, lr}; movw r3, #0x69a8; the adv6 token rules (VJO_PLACE_READ_SC3_ADV6) */
+    {"PCSG00147", 0xBEF20357u, 0x2E360u, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x41, 0x46, 0xF6, 0xA8, 0x13, 0xC8, 0xF2, 0x4F, 0x13, 0x5F, 0xF0, 0x00, 0x08}, 0, VJO_PLACE_READ_SC3_ADV6,
+     0x0100u},
+    /* PCSG00250 STEINS;GATE 線形拘束のフェノグラム (APP_VER 01.00, module sgfd2): Vita3K 0x8102973a, 60 farm pages (paired-vita-pcsg00250-20261023); patch: push.w {r4-r11, lr}; sub sp, #4; movw r4, #0x28; mov r9, r1 */
+    {"PCSG00250", 0xEAA927FEu, 0x2973Au, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x81, 0xB0, 0x40, 0xF2, 0x28, 0x04, 0x89, 0x46, 0x48, 0xF6, 0x64, 0x71}, 0, VJO_PLACE_READ_SC3,
      0x0100u},
     /* PCSG00352 ROBOTICS;NOTES ELITE (APP_VER 01.00, module robono): Vita3K 0x8100f1d8, 606 farm pages (paired-vita-pcsg00352-20261023); patch: push.w {r4-r11, lr}; sub sp, #4; movw r4, #0x28 */
     {"PCSG00352", 0x5409CF98u, 0xF1D8u, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
@@ -438,6 +447,10 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG00555 CHAOS;CHILD (APP_VER 01.00, module Game): Vita3K 0x8102f9bc, 395 farm pages (paired-vita-pcsg00555-20261023); patch: push.w {r4-r11, lr}; sub sp, #0x14; movw r4, #0xc604 */
     {"PCSG00555", 0x5681A30Du, 0x2F9BCu, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
      {0x2D, 0xE9, 0xF0, 0x4F, 0x85, 0xB0, 0x4C, 0xF2, 0x04, 0x64, 0xC8, 0xF2, 0x06, 0x14, 0x24, 0x68}, 0, VJO_PLACE_READ_SC3,
+     0x0100u},
+    /* PCSG00673 STEINS;GATE 0 (APP_VER 01.00, module Game): Vita3K 0x810227c8, 101 farm pages (paired-vita-pcsg00673-20261023); patch: push.w {r4-r11, lr}; sub sp, #0x14; movw r4, #0xabe0 */
+    {"PCSG00673", 0xC35E78E1u, 0x227C8u, 1, 0, VJO_HOOK_ENC_SC3, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x85, 0xB0, 0x4A, 0xF6, 0xE0, 0x34, 0xC8, 0xF2, 0x06, 0x14, 0x24, 0x68}, 0, VJO_PLACE_READ_SC3,
      0x0100u},
 };
 #define VERIFIED_N (sizeof(verified) / sizeof(verified[0]))

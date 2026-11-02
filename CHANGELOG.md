@@ -11,6 +11,17 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- **STEINS;GATE, STEINS;GATE 0 and 線形拘束のフェノグラム have native hooks.** STEINS;GATE (`PCSG00147`),
+  STEINS;GATE 線形拘束のフェノグラム (`PCSG00250`) and STEINS;GATE 0 (`PCSG00673`), all APP_VER 01.00, get verified
+  MAGES SC3 entries like 比翼恋理のだーりん's, with their charsets in the payload (`ux0:data/VitaJPOverlay/hooks/`,
+  5,664, 5,492 and 16,032 B; the one-VPK payload has three more files). STEINS;GATE is the older adv6 engine, whose
+  0x04 is a colour with one argument byte and 0x14 a control with two: its entry reads by those rules
+  (`VJO_PLACE_READ_SC3_ADV6`), as adv7's expression read loses the coloured words. Each game's 56, 60 and 101 farm
+  pages decode to the text the farm verified against the frame drawn. Proven in the Vita3K emulator only, not on a
+  console.
+
 ## [0.10.6] - 2026-11-01
 
 Circle reads a box once with OCR, and the どうぶつの森e＋ native port's r7 build gets its hook.
