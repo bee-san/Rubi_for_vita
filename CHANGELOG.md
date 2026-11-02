@@ -11,6 +11,10 @@ been reported.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-02
+
+STEINS;GATE, STEINS;GATE 0 and 線形拘束のフェノグラム get native hooks: their text comes from the game, not OCR.
+
 ### Added
 
 - **STEINS;GATE, STEINS;GATE 0 and 線形拘束のフェノグラム have native hooks.** STEINS;GATE (`PCSG00147`),
@@ -1732,7 +1736,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.10.6...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.11.0
 [0.10.6]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.6
 [0.10.5]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.5
 [0.10.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.10.4
