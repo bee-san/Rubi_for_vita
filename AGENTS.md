@@ -31,6 +31,10 @@ git merge upstream/main
 
 Build and test instructions are in [the guide](docs/guide.md#build-and-validation).
 
+## README (binding, owner 2026-11-02)
+
+- Never edit `README.md` (the repository root README) unless the owner explicitly asks for that change. Leave it out of every other pull request, including docs updates and releases; describe user-visible changes in the CHANGELOG, release notes or `docs/` instead.
+
 ## Merge gate (binding, owner 2026-10-26)
 
 Pull requests do not wait for GitHub CI ("i'd rather us just merge everything and release quickly").
