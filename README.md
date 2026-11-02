@@ -22,10 +22,6 @@ Go to a game and press left trigger + right trigger to open the overlay.
 
 ![Rubi PS Vita controls: buttons, sticks, touch gestures, dialogue-region editing and reading a box once](docs/img/rubi-controls.svg)
 
-PS Vita illustration by [Tokyoship](https://commons.wikimedia.org/wiki/User:Tokyoship),
-[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:PlayStation_Vita_illustration.svg),
-[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); adapted with control labels and an illustrated
-Rubi overlay over the [promo's original visual novel artwork](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/promo/README.md#the-captures-capturerunsh).
 
 1. Left trackpad == word by word lookup
 2. Left joystick == character by character
@@ -66,5 +62,11 @@ llms are really bad at designing software for the vita, especially software that
 ai is really good at doing gruntwork that i dont want to do. for example, "when i am in a game and i have a ocr region set but the game has a texthooker, and hooked text comes in and then i press lt + rt triangle triangle X lt + rt my vita crashes and the logs say we went over our memory allocation as we tried to allocate 3 bytes more than needed. find where those 3 bytes are" and the ai will spend like 10+ hours and write me a report that tells me where those 3 bytes came from
 
 there was a time in my life where i would be the one to find that bug. i was never the one to feel good about squashing it, i always felt good about using the things i created. so i am thankful i no longer have to do that and I can focus entirely on making the program feel great, fast, and smooth.
+
+PS Vita illustration by [Tokyoship](https://commons.wikimedia.org/wiki/User:Tokyoship),
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:PlayStation_Vita_illustration.svg),
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); adapted with control labels and an illustrated
+Rubi overlay over the [promo's original visual novel artwork](https://github.com/bee-san/Rubi_for_vita/blob/main/docs/promo/README.md#the-captures-capturerunsh).
+
 
 additionally i feel like with a lot of ai software, people spend more time building it than using it. which means to me as a user, the software is horrible to use. this software is the opposite, i definitely use this more than i code it
