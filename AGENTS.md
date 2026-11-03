@@ -71,7 +71,13 @@ cache first (the releases' public downloads, each checked) and fails the gate if
 - Audits of non-trivial code changes run in parallel: merge first; their findings become a follow-up PR.
 - CI still runs on every pull request (path-filtered: Markdown alone builds nothing) and on `main`,
   whose run makes the test-build artifacts. A red run on `main` gets a follow-up PR at once.
-- Releases: tag right after merging; the tag's Release run builds the assets.
+- Releases: tag right after merging. **A release is not done until its GitHub release has all five files
+  attached** (owner, 2026-11-02: "when i say 'cut a release' i mean 'include the vpks'"): `Rubi-X.Y.Z.vpk`,
+  `Rubi-X.Y.Z-debug.vpk`, both zips and `SHA256SUMS`. The tag's Release run builds and checks them but uploads
+  nothing: download its `Rubi` and `Rubi-normal` artifacts, package them with `tools/package_variants.py` from a
+  checkout of the tag, run `tools/e2e_package.py` on both zips and `gh release create` with the five
+  ([docs/release-variants.md](docs/release-variants.md#the-releases-packages)). Before saying it is released,
+  `gh release view vX.Y.Z -R bee-san/Rubi_for_vita --json assets` must list all five as `uploaded`.
 
 Needs docker or podman, and SSH access to `bee-san/plaintext-dicts` (or a checkout of its pinned
 revision in `.refs/plaintext-dicts`). Without the dictionary the gate runs what CI runs for a fork's
