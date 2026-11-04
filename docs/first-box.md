@@ -21,8 +21,9 @@ has run on a console yet; everything below was measured on a computer.
   save · Cancel undo corner" before API 58's one-off box shared it). A box
   drawn with □ asks the same question; before, its hint began "Box 960 x 170".
 
-Enter saves the box as one drawn with □ is (`VJO_CMD_SET_REGION`): the overlay closes, and from the next L + R the game
-reads the box only. Cancel takes the box's corner back, as for any box: drawing by hand from there, and Cancel again
+Enter saves the box as one drawn with □ is (`VJO_CMD_SET_REGION`): the overlay stays open and reads the box at once,
+and from then on the game reads the box only (before 0.11.1 the overlay closed, and the box was read from the next
+L + R). Cancel takes the box's corner back, as for any box: drawing by hand from there, and Cancel again
 leaves the region mode, the game still on its whole screen. Holding □ still saves the full screen. A game with a line
 in `region.ini` (any box, or the full screen) is never offered one again.
 

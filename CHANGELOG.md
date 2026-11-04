@@ -11,6 +11,20 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- **Saving a region keeps the overlay open on it.** Square, a box, Enter (or Enter on the suggested box, or Square
+  held for the full screen) now saves the region and reads it at once: the overlay stays open, says "Recognizing…" and
+  shows the new region's text, as L + R would. Before, it closed and the new region was read from the next L + R. The
+  old text, its cached lookup and an earlier line from the line history go as before; the game's controls and the
+  overlay's page stay as they are, so the page never closes and opens again (`shell/worker.c` `on_command`:
+  `close_overlay_for(CLOSE_REOPEN)` stops before the controls and the view, then `open_overlay`). The normal Shell's
+  code grows 48 B, which its last code page did not have (4 B of room), so the dictionary's "Local lookup exceeds the
+  text/result limit" message moves to the data segment in the normal build (`core/client.c`, `VJO_DATA_TABLE`): text
+  86,012 → 85,964 B and data/bss 69,488 → 69,592 B, the same 155,648 B of pages; the debug Shell, whose data page has no
+  room for it, keeps it in its code, the same 167,936 B of pages [measured: the memory ledger's module rows, main
+  `675272c` and this change, both builds]. Host-tested; not yet run on a console.
+
 ## [0.11.0] - 2026-11-02
 
 STEINS;GATE, STEINS;GATE 0 and 線形拘束のフェノグラム get native hooks: their text comes from the game, not OCR.
