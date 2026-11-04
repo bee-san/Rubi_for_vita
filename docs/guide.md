@@ -432,11 +432,13 @@ with the left stick, which speeds up while you hold it, or one pixel per press
 with the d-pad (held, the d-pad repeats). Press Enter at one corner of the text
 box, then move to the opposite corner: the box follows the cursor, and the line
 at the top shows its size in screen pixels. Enter saves it as this game's
-region. A box smaller than 32 × 32 pixels, the capture's minimum, is not saved.
+region, and the overlay stays open and reads the new box at once ("Recognizing…", then its text), as L + R
+would; before 0.11.1 it closed, and the box was read from the next L + R. A box smaller than 32 × 32 pixels, the
+capture's minimum, is not saved.
 Cancel takes the first corner back; with no first corner it leaves without
 saving. A touch drag still draws the box: the first corner is where the finger
 lands, and after it lifts the stick or the d-pad can still move the opposite
-corner before Enter. Hold Square for one second for the full screen. The cursor
+corner before Enter. Hold Square for one second for the full screen, which the overlay then reads the same way. The cursor
 and its acceleration are covered by host tests; how they feel on the console is
 not tested yet.
 
@@ -446,7 +448,7 @@ A game with no box of its own (no line for it in `region.ini`, not even a full s
 read on its whole screen, which reads the picture, the buttons and the menus as well as the dialogue. So the first
 time the overlay is open over that game's text, Rubi offers a box: the region mode opens by itself with the box drawn
 around the screen's dialogue and asks **Use this box?** Enter saves it as this game's region, as a box drawn with
-Square is: the overlay closes, and from the next L + R the game reads the box only. The stick and the d-pad move its
+Square is: the overlay stays open and reads the box at once, and from then on the game reads the box only. The stick and the d-pad move its
 bottom right corner first (Enter then saves the box as it is); Cancel takes its corner back to draw your own, and
 Cancel again leaves the region mode, the game still on its whole screen. The question comes once each time the game
 starts or resumes (not again after Cancel, nor after a box drawn with Square), and never once the game has a box

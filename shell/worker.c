@@ -2164,7 +2164,7 @@ static void open_overlay(void)
 
 /* Why the overlay closes (close_overlay_for): logged, and it decides what the
  * page does with SceShell's front touch region (touch_hold.h). */
-enum { CLOSE_IN_GAME = 0, CLOSE_GAME_LEFT, CLOSE_FOREGROUND };
+enum { CLOSE_IN_GAME = 0, CLOSE_GAME_LEFT, CLOSE_FOREGROUND, CLOSE_REOPEN };
 
 static void close_overlay_for(int why)
 {
@@ -2201,6 +2201,11 @@ static void close_overlay_for(int why)
      * overlay closed, Auto recognizes settled screens itself. */
     if (job_running && (job_cursor_only || job_refresh)) job_cancelled = 1;
     view_waiting = view_job_text = 0;
+    /* A saved region's (on_command): what the overlay showed goes, and it stays open, the game's input blocked and
+     * the view open, so the page never closes, and reads the new region (open_overlay: a block again is the kernel's
+     * no-op) */
+    if (why == CLOSE_REOPEN)
+        return;
     rc = vjoSetInputBlock(0); /* the kernel already dropped it if the foreground changed */
     vjo_view_lock();
     __atomic_store_n(&g_view.open, 0, __ATOMIC_RELEASE);
@@ -2880,7 +2885,7 @@ static void on_subtitle(void)
  * control_tick then starts as it starts the rear tap's scan; 0 otherwise. */
 static uint32_t on_command(void)
 {
-    int cmd;
+    int cmd, reopen;
     VjoRect r;
     uint32_t cursor_byte, cursor_generation;
     sceKernelLockMutex(cmd_lock, 1, NULL);
@@ -2930,7 +2935,8 @@ static uint32_t on_command(void)
          * and the retry pace start over, as a new game's do (invalidate_game_work) */
         screen_changed_streak = 0;
         screen_retry_until = 0;
-        close_overlay();
+        reopen = ov != OV_CLOSED; /* an open overlay stays open on the new region (CLOSE_REOPEN) */
+        close_overlay_for(CLOSE_REOPEN);
         /* A job in progress read the old region (a lookup or a refresh, which the
          * close dropped, or OCR): its result goes, as the text and the cache did;
          * an OCR job's would publish the old region's text and lookup again (#182). */
@@ -2938,7 +2944,8 @@ static uint32_t on_command(void)
             job_cancelled = 1;
         if (subtitles) {
             if (!job_running) {
-                start_job("region changed", want_lookup());
+                if (!reopen) /* else the overlay's own recognition, whose result the strip takes */
+                    start_job("region changed", want_lookup());
             } else if (!job_selftest) { /* the self-test's end shows the strip's sentence itself */
                 /* The strip's job for the new region cannot start beside it: the
                  * strip waits for its end (strip_after_wait). Before, it kept the
@@ -2947,6 +2954,8 @@ static uint32_t on_command(void)
                 strip_waiting = 1;
             }
         }
+        if (reopen)
+            open_overlay();
         break;
     }
     return 0;

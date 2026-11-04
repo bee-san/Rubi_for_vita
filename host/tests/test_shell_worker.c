@@ -101,8 +101,10 @@ static void start_step(char c) { size_t n = strlen(start_order); if (n + 1 < siz
 static int active_mode = -1; /* the last vjoSetGameActive's */
 int vjoSetGameActive(int pid, int mode) { active_mode = mode; if (mode != VJO_GAME_NONE) start_step('A'); return 0; }
 static int fail_input_unblock; /* the kernel refuses to drop the block (vjoSetInputBlock(0)) */
+static unsigned input_unblocks; /* vjoSetInputBlock(0) calls */
 int vjoSetInputBlock(int on)
 {
+    if (!on) input_unblocks++;
     if (on && fail_input_block) return -123;
     if (!on && fail_input_unblock) return (int)0x80010016;
     input_blocked = on;
@@ -3827,11 +3829,15 @@ static void test_character_scene_change_keeps_the_shown_text(void)
         cursor_saved_text(); open_overlay(); finish_current_job();
         uint32_t generation = local_text_generation;
         VjoRect r = {2, 4, 100, 50};
+        unsigned unblocks = input_unblocks;
         vjo_post_command(cmd, &r); on_command();
-        /* Kernel may retain scene ID after a region reset. */
-        TEST_CHECK(state.scene == 2 && !local_text_valid && ov == OV_CLOSED);
-        TEST_CHECK(local_text_generation != generation && !g_view.list);
-        open_overlay(); TEST_CHECK(job_running && !job_cursor_only && !g_view.list);
+        /* Kernel may retain scene ID after a region reset. The overlay stays open and reads the new region; the
+         * game's input stays blocked and the view open all along (CLOSE_REOPEN: the page never closes). */
+        TEST_CHECK(state.scene == 2 && !local_text_valid && ov == OV_OPEN && g_view.open && input_blocked);
+        TEST_CHECK_(input_unblocks == unblocks, "the input block was dropped %u times", input_unblocks - unblocks);
+        TEST_CHECK(local_text_generation != generation && !g_view.list && !strcmp(g_view.status, "Recognizing…"));
+        TEST_CHECK(job_running && !job_cursor_only);
+        close_overlay();
         job_running = 0;
     }
 }
@@ -3840,7 +3846,8 @@ static void test_character_scene_change_keeps_the_shown_text(void)
  * takes an earlier screen's out. A game with a region line (its own, or region.ini's "full" for every game: the Rubi
  * app's Suggest a text box OFF) gets none, nor one whose box the overlay took in this activation
  * (core/region_select.h VJO_RSEL_TAKEN), until it next starts or resumes (push_region). The overlay's enter saves the
- * box as a drawn one is (VJO_CMD_SET_REGION): the overlay closes, and the game has its region. */
+ * box as a drawn one is (VJO_CMD_SET_REGION): the game has its region, and the overlay stays
+ * open and reads it. */
 static void test_the_suggested_box_reaches_the_view_once_an_activation(void)
 {
     const VjoRect r = vjo_rsel_rect(0, 544 - 169, 960, 169);
@@ -3854,6 +3861,7 @@ static void test_the_suggested_box_reaches_the_view_once_an_activation(void)
 #define NEXT_SCREEN() /* Auto's job on a newly settled screen, the overlay closed */ \
     do { \
         state.scene = state.capture_scene = state.region_scene = scene++; \
+        state.region_seq++; /* a new capture of the region: never the cached result's */ \
         stable_pending = 1; auto_prefetch(); \
         TEST_ASSERT(job_running); \
         finish_current_job(); \
@@ -3890,8 +3898,8 @@ static void test_the_suggested_box_reaches_the_view_once_an_activation(void)
     NEXT_SCREEN();
     TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
     saved_region_all_full = 0;
-    /* the box taken with the overlay open and saved by its enter, as a drawn one is: the overlay closes, the game's
-     * region is the box, none after it */
+    /* the box taken with the overlay open and saved by its enter, as a drawn one is: the game's region is the box,
+     * none after it, and the overlay stays open on it */
     push_region();
     NEXT_SCREEN();
     open_overlay();
@@ -3901,10 +3909,12 @@ static void test_the_suggested_box_reaches_the_view_once_an_activation(void)
     saved_region = r; /* what region.ini holds once saved (the stub's save keeps no file) */
     vjo_post_command(VJO_CMD_SET_REGION, &r); on_command();
     TEST_CHECK(region_saves == 1 && !memcmp(&region_saved_rect, &r, sizeof(r)) && logged("region set for PCSG00415"));
-    TEST_CHECK(ov == OV_CLOSED && !__atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE));
+    /* the overlay stays open and reads the box */
+    TEST_CHECK(ov == OV_OPEN && __atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE) && job_running && !job_cursor_only);
     TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN); /* push_region: the box is this game's region now */
-    NEXT_SCREEN();
-    TEST_CHECK(g_view.suggest == VJO_RSEL_TAKEN);
+    finish_current_job(); /* the overlay's job on the box: it offers none */
+    TEST_CHECK(!job_running && local_text_valid && g_view.suggest == VJO_RSEL_TAKEN);
+    close_overlay();
     /* a region.ini that cannot be written: the game keeps its whole screen (no line), and is not asked again in this
      * activation */
     saved_region.w = 0;
@@ -5211,13 +5221,13 @@ static void test_open_overlay_says_why_it_waits(void)
     TEST_ASSERT(job_running);
     check_waiting(hint_pause());
     VjoRect drawn = {10, 10, 200, 60};
-    vjo_post_command(VJO_CMD_SET_REGION, &drawn); control_tick(0); /* saved: the overlay closes, the try cancelled */
-    TEST_CHECK(ov == OV_CLOSED && job_running && job_cancelled && !screen_changed_streak && !screen_retry_until);
+    vjo_post_command(VJO_CMD_SET_REGION, &drawn); control_tick(0); /* saved: the try cancelled, the overlay open */
+    TEST_CHECK(ov == OV_OPEN_OLD_JOB && job_running && job_cancelled && !screen_changed_streak && !screen_retry_until);
+    check_waiting("Recognizing…");
     finish_current_job(); /* cancelled before its read: VJO_E_CANCELLED, no read (the third torn result is left) */
     TEST_CHECK(!screen_changed_streak && !screen_retry_until && fake_screen_changes == 1);
-    /* the new region: that one torn read, then the text */
-    open_overlay();
-    TEST_ASSERT(job_running);
+    /* the new region, read by the overlay that stayed open: that one torn read, then the text */
+    TEST_ASSERT(job_running && ov == OV_OPEN);
     check_waiting("Recognizing…");
     finish_current_job(); /* one in a row: again at once, still "Recognizing…" */
     TEST_ASSERT(job_running);
@@ -5577,8 +5587,11 @@ static void test_history_a_step_never_holds_a_move_or_a_close(void)
     vjo_post_command(VJO_CMD_SET_REGION, &r);
     vjo_post_command(VJO_CMD_EARLIER, NULL);
     TEST_CHECK(pending_cmd == VJO_CMD_SET_REGION);
-    control_tick(0);
-    TEST_CHECK(ov == OV_CLOSED && !history);
+    control_tick(0); /* the overlay stays open and reads the new region, on no earlier line */
+    TEST_CHECK(ov != OV_CLOSED && g_view.open && !history && !g_view.history);
+    TEST_CHECK(job_running && !job_cursor_only && !strcmp(g_view.status, "Recognizing…"));
+    while (job_running)
+        finish_current_job(), control_tick(0);
 }
 
 /* The overlay closed on an earlier line while its lookup runs, then Select + R before that lookup ends,
@@ -5724,8 +5737,12 @@ static void test_history_close_exit_and_region(void)
     check_shown("犬鳥", "dog", 0);
     VjoRect r = {10, 10, 300, 80};
     vjo_post_command(VJO_CMD_SET_REGION, &r);
-    control_tick(0);
-    TEST_CHECK(!history && history_frees == 4 && ov == OV_CLOSED && !history_held());
+    control_tick(0); /* the overlay stays open, on the new region's recognition */
+    TEST_CHECK(!history && history_frees == 4 && ov != OV_CLOSED && g_view.open && !g_view.history && !history_held());
+    TEST_CHECK(job_running && !job_cursor_only && !g_view.list && !strcmp(g_view.status, "Recognizing…"));
+    finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    TEST_CHECK(!history && !history_held());
 }
 
 /* #81 request 4, the open overlay: its text stays usable whatever the screen
@@ -7128,10 +7145,10 @@ static void test_an_opening_during_autos_job_on_a_changed_screen_gets_its_own(vo
 
 /* #182 (a), #179's audit N4: a region drawn (Square, a box, Enter) while the
  * open overlay's lookup or refresh runs, the subtitle strip on. The region change
- * retires the text and the cached result, and the close drops that job, which
- * brings the strip nothing; the strip's job for the new region cannot start
- * beside it. The strip says "Recognizing…" and waits for the job's end
- * (strip_after_wait), which starts the strip's job: the new region's sentence.
+ * retires the text and the cached result and drops that job, which brings the
+ * strip nothing; the new region's job cannot start beside it. The strip says
+ * "Recognizing…" and waits for the job's end (strip_after_wait), which starts the
+ * open overlay's recognition of the new region: the strip's sentence too.
  * Before, the strip kept the old region's sentence, not busy, until the new
  * region's screen settled (here no event comes), whether or not the kernel's
  * scene number had moved on. */
@@ -7148,8 +7165,8 @@ static void test_a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_s
         fake_recognized_text = "鳥"; /* the new region's text */
         if (moved) next_scene(30);
         unsigned inferences = vocr_allocs;
-        control_tick(0); /* saved: the text and the cache retired, the overlay closed */
-        TEST_ASSERT(ov == OV_CLOSED && !local_text_valid && job_running && job_cursor_only);
+        control_tick(0); /* saved: the text and the cache retired, the overlay open on the new region */
+        TEST_ASSERT(ov == OV_OPEN_OLD_JOB && !local_text_valid && job_running && job_cursor_only);
         TEST_CHECK_(g_view.strip_kind == VJO_STRIP_STATUS && g_view.strip_busy && !strcmp(g_view.strip_text, "Recognizing…"),
                     "moved %d, at the region change: strip '%s' (kind %d, busy %d)", moved, g_view.strip_text,
                     g_view.strip_kind, g_view.strip_busy);
@@ -7179,7 +7196,7 @@ static void test_a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_s
     vjo_post_command(VJO_CMD_SET_REGION, &r);
     fake_recognized_text = "鳥";
     control_tick(0);
-    TEST_ASSERT(ov == OV_CLOSED && job_running && job_refresh && job_cancelled);
+    TEST_ASSERT(ov == OV_OPEN_OLD_JOB && job_running && job_refresh && job_cancelled);
     TEST_CHECK_(g_view.strip_busy && !strcmp(g_view.strip_text, "Recognizing…"),
                 "a refresh, at the region change: strip '%s' (busy %d)", g_view.strip_text, g_view.strip_busy);
     finish_by_tick(); /* the dropped refresh ends */
@@ -7285,8 +7302,10 @@ static void test_a_retired_texts_cached_sentence_is_never_the_strips(void)
     open_overlay(); /* the saved word, at once */
     check_shown("猫犬鳥", "cat", 0);
     VjoRect r = {10, 10, 200, 60};
-    vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0);
-    TEST_ASSERT(ov == OV_CLOSED && !job_running && !local_text_valid);
+    vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0); /* the overlay reads the new region */
+    TEST_ASSERT(ov == OV_OPEN && job_running && !job_cursor_only && !local_text_valid);
+    close_overlay(); /* L + R at once: the recognition goes on */
+    TEST_ASSERT(job_running && !job_cursor_only && !local_text_valid);
     fake_recognized_text = "鳥";
     control_tick(VJO_EV_SUBTITLE); /* Select + R: the scene number has not moved on yet */
     TEST_CHECK_(g_view.strip_kind == VJO_STRIP_STATUS && !strcmp(g_view.strip_text, "Recognizing…"),
@@ -7332,7 +7351,7 @@ static void test_a_region_drawn_between_a_jobs_answer_and_its_publish_never_brin
             test_thread = NET_THREAD;
             job_rc = run_job_t(&results[idx], &cache_data[idx]);
             test_thread = CTL_THREAD;
-            TEST_ASSERT(!between_answer_and_publish && job_cancelled && ov == OV_CLOSED);
+            TEST_ASSERT(!between_answer_and_publish && job_cancelled && ov == OV_OPEN_OLD_JOB);
             fake_recognized_text = "鳥"; /* the new region's text, for the jobs after it */
             if (moved) next_scene(30); /* the kernel sampled the new region before the job's end was taken */
             state.stable = 0;           /* not settled yet: no Auto job for it */
@@ -7344,11 +7363,10 @@ static void test_a_region_drawn_between_a_jobs_answer_and_its_publish_never_brin
                             "strip on, moved %d: the strip shows the old region's sentence (busy %d)", moved,
                             g_view.strip_busy);
                 TEST_CHECK_(job_running && !job_cursor_only, "strip on, moved %d: no job for the new region", moved);
-            } else {
-                open_overlay(); /* L + R at once */
+            } else { /* the overlay, open on the new region */
                 TEST_CHECK_(!(g_view.list && g_view.list->header && !strcmp(g_view.list->header, "猫犬鳥")) &&
                             !strcmp(g_view.status, "Recognizing…"),
-                            "strip off, moved %d: the reopen shows '%s' (status '%s', a lookup %d)", moved,
+                            "strip off, moved %d: the overlay shows '%s' (status '%s', a lookup %d)", moved,
                             g_view.list && g_view.list->header ? g_view.list->header : "", g_view.status,
                             job_cursor_only);
                 TEST_CHECK(job_running && !job_cursor_only);
@@ -7390,8 +7408,9 @@ static void test_select_r_during_a_cancelled_job_waits_for_its_end(void)
             open_overlay(); /* L + R during it */
             TEST_ASSERT(ov == OV_OPEN_OLD_JOB);
             next_scene(30); state.stable = 0; /* the region about to be drawn: a new scene, not settled */
-            vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0); /* the job cancelled */
-            TEST_ASSERT(ov == OV_CLOSED && job_running && job_cancelled && strip_waiting == !how);
+            vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0); /* the job cancelled, the overlay open */
+            TEST_ASSERT(ov == OV_OPEN_OLD_JOB && job_running && job_cancelled && strip_waiting == !how);
+            close_overlay(); /* L + R at once, before the cancelled job's end */
         } else {
             identify_rc = 0;
             memset(&identified, 0, sizeof(identified));
@@ -7439,8 +7458,9 @@ static void test_a_region_drawn_with_the_strip_on_and_no_job_starts_the_strips_o
     log_count = 0;
     vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0);
     TEST_ASSERT_(job_running && !job_cursor_only, "no job for the new region");
-    TEST_CHECK_(!job_cancelled && !strip_waiting && DLOGGED("job start (region changed)"),
-                "the strip's own job: cancelled %d, strip_waiting %d", job_cancelled, strip_waiting);
+    TEST_CHECK_(!job_cancelled && !strip_waiting && ov == OV_OPEN && DLOGGED("job start (overlay opened)"),
+                "the open overlay's job, the strip's too: cancelled %d, strip_waiting %d, ov %d", job_cancelled,
+                strip_waiting, ov);
     finish_by_tick();
     TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "鳥"),
                 "strip '%s' (kind %d, busy %d)", g_view.strip_text, g_view.strip_kind, g_view.strip_busy);
@@ -7464,8 +7484,9 @@ static void test_a_reopen_during_the_strips_wait_leaves_nothing_waiting(void)
     TEST_ASSERT(ov == OV_OPEN_OLD_JOB);
     next_scene(30); state.stable = 0;
     vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0); /* the job cancelled: the strip waits */
-    TEST_ASSERT(ov == OV_CLOSED && job_running && job_cancelled && strip_waiting);
-    control_tick(VJO_EV_TRIGGER); /* L + R during the wait */
+    TEST_ASSERT(ov == OV_OPEN_OLD_JOB && job_running && job_cancelled && strip_waiting);
+    close_overlay(); /* L + R: closed during the wait */
+    control_tick(VJO_EV_TRIGGER); /* L + R again, still during the wait */
     TEST_ASSERT(ov == OV_OPEN_OLD_JOB && !strcmp(g_view.status, "Recognizing…"));
     finish_by_tick(); /* the cancelled job ends (it read the old region): the opening's own recognition */
     fake_recognized_text = "犬猫";
@@ -7512,9 +7533,9 @@ static void test_a_region_drawn_during_the_selftest_job_leaves_the_strip_no_wait
     TEST_CHECK(job_cancelled && ov == OV_OPEN);
     VjoRect r = {10, 10, 200, 60};
     vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0); /* Square, a box, Enter */
-    TEST_CHECK_(!strip_waiting && ov == OV_CLOSED && job_running && job_selftest, "strip_waiting %d", strip_waiting);
-    open_overlay(); /* L + R again: it waits for that job */
-    TEST_CHECK(ov == OV_OPEN_OLD_JOB);
+    /* the overlay stays open on the new region: it waits for that job */
+    TEST_CHECK_(!strip_waiting && ov == OV_OPEN_OLD_JOB && job_running && job_selftest, "strip_waiting %d, ov %d",
+                strip_waiting, ov);
     fake_recognized_text = "犬猫"; /* the new region's text */
     finish_by_tick(); /* the self-test's job ends: the opening's own recognition */
     TEST_ASSERT(job_running && !job_selftest && !job_cursor_only);

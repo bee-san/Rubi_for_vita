@@ -249,6 +249,13 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         "Cannot read local dictionaries. Check the .vjdict files and local_dictionaries in config.ini.";
     static const char ocr_region[] VJO_DATA_TABLE(error_ocr_region) =
         "Local OCR needs a tight dialogue region with horizontal white text. Select a region, excluding portraits and menus.";
+    /* the normal Shell's data segment (its code page had no room for the region change's reopen); the debug Shell's
+     * data page has none for it, its code page has */
+    static const char dict_too_large[]
+#if !VJO_DEBUG
+        VJO_DATA_TABLE(error_dict_too_large)
+#endif
+        = "Local lookup exceeds the text/result limit. Select a smaller OCR region or enable fewer dictionaries.";
     /* (and these, for the reading statistics' adaptive time: docs/memory-ledger.md) */
     static const char dictionary_format[] VJO_DATA_TABLE(error_dictionary_format) =
         "Invalid or incomplete local dictionary. Reconvert the Yomitan ZIP and copy the complete .vjdict file again.";
@@ -314,7 +321,7 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         break;
     case VJO_E_TOO_LARGE:
         if (stage == VJO_STAGE_DICT) {
-            vjo_buf_puts(&b, "Local lookup exceeds the text/result limit. Select a smaller OCR region or enable fewer dictionaries.");
+            vjo_buf_puts(&b, dict_too_large);
             break;
         }
         vjo_buf_printf(&b, "%s failed: response too large", what);
